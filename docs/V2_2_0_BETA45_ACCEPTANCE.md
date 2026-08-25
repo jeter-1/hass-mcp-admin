@@ -36,16 +36,27 @@ independently proven unable to carry entity identity.
 
 Literal `label_entities(...)` selectors are resolved while the dependency
 index is built, using the same bounded entity and label registry generation as
-the scan. Exact membership, label identity, completeness and the membership
-fingerprint are bound into the ledger evidence. Complete membership containing
+the scan. Lookup follows Home Assistant's reviewed semantics: an exact label ID
+wins; otherwise the selector is matched to a label name after Unicode case
+folding and removal of ordinary spaces. An ID match is never unioned with a
+different label whose normalized name collides with that ID.
+
+Exact membership, lookup model and mode, resolved label identity,
+completeness, complete composite candidate set and the membership fingerprint
+are bound into ledger evidence. Label membership is unioned with independent
+finite producers from lists, mappings, branches and loops; resolving one label
+must never replace an already-proven candidate. Complete membership containing
 the target remains an exact dependency; complete membership excluding it is an
-authoritative exclusion; a complete empty membership is neutral.
+authoritative exclusion; a complete empty membership is neutral only when the
+entire composite candidate universe is proven complete.
 
 Dynamic labels, failed registry reads, incomplete registries, malformed
 memberships, selector overflow and membership truncation remain opaque. No
 later live reconciliation is used. A membership change must alter the
 approval-bound fingerprint and fail final preflight until a new plan is
-created and approved.
+created and approved. A partial set cannot prove exclusion, while an exact
+inclusion from another component remains target-relevant even when additional
+composite provenance is unresolved.
 
 ## Causality, consequence and actionability
 
@@ -76,9 +87,10 @@ Exact helper dependencies receive the exact helper/dependency lock. Proven
 exclusion and neutral sources receive no unnecessary helper dependency lock.
 Unresolved target-capable evidence receives the conservative dependency lock.
 Create/update races and final preflight must bind changes to candidate and label
-membership, possible domains, branch provenance, source configuration,
-evidence completeness, semantic-registry identity and lock projection.
-Display-only metadata remains nonmaterial.
+membership, label lookup mode and resolved identity, possible domains, branch
+provenance, source configuration, evidence completeness, semantic-registry
+identity and lock projection. Display-only metadata remains nonmaterial unless
+it changes Home Assistant's normalized lookup identity.
 
 The public MCP schemas, helper inputs, approval authority, task schema,
 provider routing, exact input-boolean dispatch, durable intent, one-attempt and

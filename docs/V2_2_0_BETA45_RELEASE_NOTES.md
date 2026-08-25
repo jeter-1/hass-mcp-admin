@@ -21,9 +21,15 @@ are neutral after retaining any exact source-state dependency.
 
 Literal `label_entities(...)` membership is resolved during dependency-index
 construction against the scan's bounded entity and label registry generation.
-Exact membership and its fingerprint become approval-bound evidence. Dynamic
-labels, failed or partial registry evidence, truncation and overflow remain
-conservative.
+The resolver uses Home Assistant's ID-first lookup, falling back to label-name
+matching with `casefold().replace(" ", "")`; a colliding label ID takes
+precedence over another label's matching name. Exact membership, lookup mode,
+resolved identity and the complete composite candidate union become
+approval-bound evidence. Label candidates never replace independent exact
+candidates from finite lists, mappings, branches or loops. Dynamic labels,
+failed or partial registry evidence, unresolved composite branches, truncation
+and overflow remain conservative, and a proven target inclusion cannot be
+erased by those unresolved components.
 
 ## Consequence, actionability and locks
 

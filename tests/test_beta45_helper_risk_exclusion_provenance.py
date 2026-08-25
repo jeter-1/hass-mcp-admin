@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
 import sys
 import time
 import unittest
@@ -24,6 +26,7 @@ from ha_mcp_engineering.dependency.models import (  # noqa: E402
 )
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     DirectHaDependencyProvider,
+    _build_label_membership_evidence,
 )
 from ha_mcp_engineering.dependency.obligation_ledger import (  # noqa: E402
     MAX_TEMPLATE_CANDIDATES,
@@ -361,6 +364,43 @@ class Beta45LiteralLabelTests(unittest.TestCase):
             label_memberships={"reviewed_label": tuple(members)},
             label_membership_fingerprints={"reviewed_label": "b" * 64},
             label_membership_truncated=truncated,
+            label_lookup_resolutions={
+                "reviewed_label": ("label_id", "reviewed_label")
+            },
+            label_registry_complete=complete,
+        )
+
+    def _resolve_template(
+        self,
+        template,
+        memberships,
+        *,
+        complete=True,
+        truncated=(),
+        resolutions=None,
+    ):
+        obligations = _extract(template)[1]
+        fingerprints = {
+            selector: hashlib.sha256(
+                json.dumps(
+                    list(members), separators=(",", ":")
+                ).encode("utf-8")
+            ).hexdigest()
+            for selector, members in memberships.items()
+        }
+        return resolve_literal_label_obligations(
+            obligations,
+            label_memberships={
+                selector: tuple(members)
+                for selector, members in memberships.items()
+            },
+            label_membership_fingerprints=fingerprints,
+            label_membership_truncated=truncated,
+            label_lookup_resolutions=resolutions
+            or {
+                selector: ("label_id", selector)
+                for selector in memberships
+            },
             label_registry_complete=complete,
         )
 
@@ -368,12 +408,29 @@ class Beta45LiteralLabelTests(unittest.TestCase):
         excluding = _binding(self._resolve(UNRELATED))
         self.assertTrue(excluding["evidence_complete"])
         self.assertEqual([], excluding["relevant_downstream_object_ids"])
+        self.assertEqual(
+            [],
+            excluding["dependency_lock_projection"][
+                "automation_resource_ids"
+            ],
+        )
 
         including = _binding(self._resolve((UNRELATED[0], TARGET)))
         self.assertTrue(including["evidence_complete"])
         self.assertIn(
             "automation.unrelated_cover",
             including["relevant_downstream_object_ids"],
+        )
+        self.assertTrue(
+            including["dependency_lock_projection"][
+                "exact_helper_dependency"
+            ]
+        )
+        self.assertEqual(
+            ["unrelated_cover"],
+            including["dependency_lock_projection"][
+                "automation_resource_ids"
+            ],
         )
 
     def test_empty_complete_label_is_neutral_but_other_helper_is_excluded(self):
@@ -399,7 +456,11 @@ class Beta45LiteralLabelTests(unittest.TestCase):
             with self.subTest(obligations=obligations):
                 binding = _binding(obligations)
                 self.assertFalse(binding["evidence_complete"])
-                self.assertGreater(binding["opaque_obligation_count"], 0)
+                self.assertGreater(
+                    binding["opaque_obligation_count"]
+                    + binding["coverage_failure_count"],
+                    0,
+                )
 
     def test_membership_and_provenance_change_fingerprints(self):
         first = self._resolve(("sensor.alpha",))
@@ -415,6 +476,311 @@ class Beta45LiteralLabelTests(unittest.TestCase):
         self.assertEqual(
             _binding(first)["evidence_fingerprint"],
             _binding(first)["evidence_fingerprint"],
+        )
+
+    def test_composite_label_resolution_preserves_explicit_target(self):
+        _config, obligations = _extract(
+            "{% set xs = label_entities('reviewed_label') "
+            "+ ['input_boolean.beta45_target'] %}"
+            "{% for entity in xs %}{{ states(entity) }}{% endfor %}"
+        )
+        resolved = resolve_literal_label_obligations(
+            obligations,
+            label_memberships={"reviewed_label": ("sensor.alpha",)},
+            label_membership_fingerprints={
+                "reviewed_label": "b" * 64
+            },
+            label_membership_truncated=(),
+            label_lookup_resolutions={
+                "reviewed_label": ("label_id", "reviewed_label")
+            },
+            label_registry_complete=True,
+        )
+
+        binding = _binding(resolved)
+        risk = helper_dependency_risk_assessment(
+            {"binding": binding, "provenance": {"generation": 45}}
+        )
+
+        self.assertTrue(binding["evidence_complete"])
+        self.assertIn(
+            "automation.unrelated_cover",
+            binding["relevant_downstream_object_ids"],
+        )
+        self.assertEqual("safety_critical", binding["physical_consequence"])
+        self.assertEqual("high", risk.level.value)
+
+    def test_label_name_lookup_uses_home_assistant_normalization(self):
+        (
+            memberships,
+            _fingerprints,
+            truncated,
+            resolutions,
+            complete,
+        ) = (
+            _build_label_membership_evidence(
+                ["safetycontrols"],
+                entity_registry=[
+                    {"entity_id": TARGET, "labels": ["safety_controls"]}
+                ],
+                label_registry=[
+                    {
+                        "label_id": "safety_controls",
+                        "name": "Safety Controls",
+                    }
+                ],
+            )
+        )
+
+        self.assertTrue(complete)
+        self.assertEqual((), truncated)
+        self.assertEqual(
+            ("normalized_name", "safety_controls"),
+            resolutions["safetycontrols"],
+        )
+        self.assertEqual((TARGET,), memberships["safetycontrols"])
+
+    def test_composite_candidate_producers_form_one_complete_union(self):
+        cases = (
+            (
+                "{% set xs = label_entities('reviewed_label') + "
+                "label_entities('other_label') + ['input_boolean.beta45_target'] %}"
+                "{% for entity in xs %}{{ states(entity) }}{% endfor %}",
+                {
+                    "reviewed_label": ("sensor.alpha",),
+                    "other_label": ("sensor.bravo",),
+                },
+            ),
+            (
+                "{% set xs = label_entities('reviewed_label') + "
+                "(['input_boolean.beta45_target'] if enabled else "
+                "['sensor.bravo']) %}{% for entity in xs %}"
+                "{{ states(entity) }}{% endfor %}",
+                {"reviewed_label": ("sensor.alpha",)},
+            ),
+            (
+                "{% set values = {'label': label_entities('reviewed_label'), "
+                "'fixed': ['input_boolean.beta45_target']} %}"
+                "{% for entity in values.label + values['fixed'] %}"
+                "{{ states(entity) }}{% endfor %}",
+                {"reviewed_label": ("sensor.alpha",)},
+            ),
+        )
+        for template, memberships in cases:
+            with self.subTest(template=template):
+                obligations = self._resolve_template(template, memberships)
+                binding = _binding(obligations)
+                self.assertTrue(binding["evidence_complete"], obligations)
+                self.assertIn(
+                    "automation.unrelated_cover",
+                    binding["relevant_downstream_object_ids"],
+                )
+                self.assertTrue(
+                    any(
+                        TARGET in item.exact_entity_ids
+                        and "sensor.alpha" in item.exact_entity_ids
+                        for item in obligations
+                        if item.literal_selectors
+                    )
+                )
+
+    def test_empty_label_cannot_erase_an_explicit_target(self):
+        obligations = self._resolve_template(
+            "{% set xs = label_entities('reviewed_label') + "
+            "['input_boolean.beta45_target'] %}"
+            "{% for entity in xs %}{{ states(entity) }}{% endfor %}",
+            {"reviewed_label": ()},
+        )
+        binding = _binding(obligations)
+        self.assertTrue(binding["evidence_complete"])
+        self.assertIn(
+            "automation.unrelated_cover",
+            binding["relevant_downstream_object_ids"],
+        )
+
+    def test_unresolved_composite_retains_target_and_opacity(self):
+        obligations = self._resolve_template(
+            "{% set xs = label_entities('reviewed_label') + "
+            "(['input_boolean.beta45_target'] if enabled else "
+            "caller_supplied) %}{% for entity in xs %}"
+            "{{ states(entity) }}{% endfor %}",
+            {"reviewed_label": ("sensor.alpha",)},
+        )
+        binding = _binding(obligations)
+        risk = helper_dependency_risk_assessment(
+            {"binding": binding, "provenance": {"generation": 45}}
+        )
+        self.assertFalse(binding["evidence_complete"])
+        self.assertFalse(binding["execution_eligible"])
+        self.assertIn(
+            "automation.unrelated_cover",
+            binding["relevant_downstream_object_ids"],
+        )
+        self.assertGreater(binding["opaque_obligation_count"], 0)
+        self.assertEqual("safety_critical", binding["physical_consequence"])
+        self.assertEqual("high", risk.level.value)
+        self.assertFalse(risk.apply_allowed)
+
+    def test_composite_candidate_union_bounds_fail_closed(self):
+        members = tuple(
+            f"sensor.label_member_{index}"
+            for index in range(MAX_TEMPLATE_CANDIDATES)
+        )
+        template = (
+            "{% set xs = label_entities('reviewed_label') + "
+            "['input_boolean.beta45_target'] %}"
+            "{% for entity in xs %}{{ states(entity) }}{% endfor %}"
+        )
+        at_limit = self._resolve_template(
+            template,
+            {"reviewed_label": members[:-1]},
+        )
+        above_limit = self._resolve_template(
+            template,
+            {"reviewed_label": members},
+        )
+        self.assertTrue(_binding(at_limit)["evidence_complete"])
+        above_binding = _binding(above_limit)
+        self.assertFalse(above_binding["coverage_complete"])
+        self.assertFalse(above_binding["execution_eligible"])
+        self.assertGreater(above_binding["coverage_failure_count"], 0)
+        self.assertTrue(
+            any(TARGET in item.exact_entity_ids for item in above_limit)
+        )
+
+    def test_partial_membership_preserves_exact_inclusion_and_opacity(self):
+        template = (
+            "{% set xs = label_entities('reviewed_label') + "
+            "['input_boolean.beta45_target'] %}"
+            "{% for entity in xs %}{{ states(entity) }}{% endfor %}"
+        )
+        for kwargs in (
+            {"complete": False},
+            {"truncated": ("reviewed_label",)},
+        ):
+            with self.subTest(kwargs=kwargs):
+                obligations = self._resolve_template(
+                    template,
+                    {"reviewed_label": ("sensor.alpha",)},
+                    **kwargs,
+                )
+                binding = _binding(obligations)
+                self.assertFalse(binding["evidence_complete"])
+                self.assertIn(
+                    "automation.unrelated_cover",
+                    binding["relevant_downstream_object_ids"],
+                )
+                self.assertTrue(
+                    any(TARGET in item.exact_entity_ids for item in obligations)
+                )
+                self.assertTrue(
+                    binding["dependency_lock_projection"][
+                        "exact_helper_dependency"
+                    ]
+                )
+                self.assertTrue(
+                    binding["dependency_lock_projection"][
+                        "conservative_helper_dependency"
+                    ]
+                )
+
+    def test_label_lookup_id_precedence_and_normalized_names(self):
+        selectors = [
+            "safety_controls",
+            "Safety Controls",
+            "SAFETYCONTROLS",
+            "safety controls",
+        ]
+        (
+            memberships,
+            _fingerprints,
+            _truncated,
+            resolutions,
+            complete,
+        ) = _build_label_membership_evidence(
+            selectors,
+            entity_registry=[
+                {"entity_id": TARGET, "labels": ["safety_controls"]},
+                {"entity_id": "sensor.alpha", "labels": ["other_label"]},
+            ],
+            label_registry=[
+                {"label_id": "safety_controls", "name": "Primary"},
+                {"label_id": "other_label", "name": "Safety Controls"},
+            ],
+        )
+        self.assertTrue(complete)
+        self.assertEqual((TARGET,), memberships["safety_controls"])
+        self.assertEqual(
+            ("label_id", "safety_controls"),
+            resolutions["safety_controls"],
+        )
+        for selector in selectors[1:]:
+            self.assertEqual(("sensor.alpha",), memberships[selector])
+            self.assertEqual(
+                ("normalized_name", "other_label"),
+                resolutions[selector],
+            )
+
+    def test_missing_and_malformed_registry_evidence(self):
+        missing = _build_label_membership_evidence(
+            ["missing"],
+            entity_registry=[{"entity_id": "sensor.alpha", "labels": []}],
+            label_registry=[{"label_id": "known", "name": "Known"}],
+        )
+        self.assertTrue(missing[-1])
+        self.assertEqual((), missing[0]["missing"])
+        self.assertEqual(("missing", None), missing[3]["missing"])
+
+        malformed_cases = (
+            [{"label_id": "known"}],
+            [
+                {"label_id": "first", "name": "Same Name"},
+                {"label_id": "second", "name": "same name"},
+            ],
+            [
+                {"label_id": "same", "name": "First"},
+                {"label_id": "same", "name": "Second"},
+            ],
+        )
+        for label_registry in malformed_cases:
+            with self.subTest(label_registry=label_registry):
+                evidence = _build_label_membership_evidence(
+                    ["known"],
+                    entity_registry=[
+                        {"entity_id": "sensor.alpha", "labels": []}
+                    ],
+                    label_registry=label_registry,
+                )
+                self.assertFalse(evidence[-1])
+
+    def test_lookup_identity_and_composite_membership_bind_drift(self):
+        template = (
+            "{% for entity in label_entities('reviewed_label') + "
+            "['sensor.fixed'] %}{{ states(entity) }}{% endfor %}"
+        )
+        by_id = self._resolve_template(
+            template,
+            {"reviewed_label": ("sensor.alpha",)},
+        )
+        by_name = self._resolve_template(
+            template,
+            {"reviewed_label": ("sensor.alpha",)},
+            resolutions={
+                "reviewed_label": ("normalized_name", "label_id")
+            },
+        )
+        changed_member = self._resolve_template(
+            template,
+            {"reviewed_label": (TARGET,)},
+        )
+        fingerprints = [
+            _binding(items)["evidence_fingerprint"]
+            for items in (by_id, by_name, changed_member)
+        ]
+        self.assertEqual(3, len(set(fingerprints)))
+        self.assertEqual(
+            _binding(by_id)["evidence_fingerprint"],
+            _binding(by_id)["evidence_fingerprint"],
         )
 
 
@@ -542,6 +908,97 @@ class Beta45LabelProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([], binding["relevant_downstream_object_ids"])
         self.assertEqual("none", binding["physical_consequence"])
 
+    async def test_normalized_label_lookup_retains_consequential_target(self):
+        class Rest(self.Rest):
+            async def request(inner_self, method, path):
+                if path == "/config/automation/config/label_cover":
+                    config = await super(Rest, inner_self).request(
+                        method, path
+                    )
+                    config["condition"][0]["value_template"] = (
+                        "{% for entity in "
+                        "label_entities('safetycontrols') %}"
+                        "{{ states(entity) }}{% endfor %}"
+                    )
+                    return config
+                return await super(Rest, inner_self).request(method, path)
+
+        class WebSocket:
+            async def command(inner_self, payload):
+                if payload == {"type": "config/entity_registry/list"}:
+                    return [
+                        {
+                            "entity_id": TARGET,
+                            "labels": ["safety_controls"],
+                        }
+                    ]
+                if payload == {"type": "config/label_registry/list"}:
+                    return [
+                        {
+                            "label_id": "safety_controls",
+                            "name": "Safety Controls",
+                        }
+                    ]
+                raise AssertionError(payload)
+
+        result = await DirectHaDependencyProvider(
+            Rest(), WebSocket(), concurrency=2
+        ).scan()
+        snapshot = DependencyIndexSnapshot(
+            fingerprint="d" * 64,
+            generation=45,
+            built_at_monotonic=time.monotonic(),
+            built_at="2026-08-25T12:00:00+00:00",
+            findings=tuple(result.findings),
+            dynamic_references=tuple(result.dynamic_references),
+            target_metadata=result.target_metadata,
+            coverage=tuple(result.coverage),
+            automation_action_profiles=tuple(
+                result.automation_action_profiles
+            ),
+            obligations=tuple(result.obligations),
+            obligation_ledger_model=result.obligation_ledger_model,
+            label_memberships=result.label_memberships,
+            label_membership_fingerprints=(
+                result.label_membership_fingerprints
+            ),
+            label_registry_complete=result.label_registry_complete,
+            home_assistant_version=result.home_assistant_version,
+            home_assistant_version_status=(
+                result.home_assistant_version_status
+            ),
+        )
+        binding = build_helper_dependency_risk_binding(
+            snapshot,
+            entity_id=TARGET,
+            index_metadata={
+                "freshness": "current",
+                "evidence_stale": False,
+                "invalidated": False,
+            },
+        )
+        risk = helper_dependency_risk_assessment(
+            {"binding": binding, "provenance": {"generation": 45}}
+        )
+        self.assertTrue(binding["evidence_complete"])
+        self.assertIn(
+            "automation.label_cover",
+            binding["relevant_downstream_object_ids"],
+        )
+        self.assertEqual("safety_critical", binding["physical_consequence"])
+        self.assertEqual("high", risk.level.value)
+        self.assertTrue(
+            binding["dependency_lock_projection"][
+                "exact_helper_dependency"
+            ]
+        )
+        self.assertEqual(
+            ["label_cover"],
+            binding["dependency_lock_projection"][
+                "automation_resource_ids"
+            ],
+        )
+
 
 class Beta45ConfigurationLockTests(unittest.IsolatedAsyncioTestCase):
     async def _lock_keys(self, template: str, *, action: str) -> set[str]:
@@ -591,6 +1048,20 @@ class Beta45ConfigurationLockTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertIn(
                     unconstrained_helper_dependency_lock_key(), opaque_keys
+                )
+
+    async def test_composite_label_lock_preserves_exact_and_unresolved_edges(self):
+        template = (
+            "{% set xs = label_entities('reviewed_label') + "
+            "['input_boolean.beta45_target'] %}"
+            "{% for entity in xs %}{{ states(entity) }}{% endfor %}"
+        )
+        for action in ("create", "update"):
+            with self.subTest(action=action):
+                keys = await self._lock_keys(template, action=action)
+                self.assertIn(helper_dependency_lock_key(TARGET), keys)
+                self.assertIn(
+                    unconstrained_helper_dependency_lock_key(), keys
                 )
 
 

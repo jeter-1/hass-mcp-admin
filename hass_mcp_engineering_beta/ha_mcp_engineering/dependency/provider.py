@@ -23,6 +23,7 @@ from ..providers import (
     ProviderResult,
 )
 from .extraction import (
+    LABEL_LOOKUP_MODEL,
     discharge_resolved_blueprint_source_obligation,
     extract_document_with_obligations,
     make_coverage_failure_obligation,
@@ -141,6 +142,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         metadata: dict[str, dict[str, Any]] = {}
         label_memberships: dict[str, tuple[str, ...]] = {}
         label_membership_fingerprints: dict[str, str] = {}
+        label_lookup_resolutions: dict[
+            str, tuple[str, str | None]
+        ] = {}
         label_membership_truncated: tuple[str, ...] = ()
         label_registry_complete = False
         coverage: list[SourceCoverageItem] = []
@@ -575,6 +579,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 label_memberships,
                 label_membership_fingerprints,
                 label_membership_truncated,
+                label_lookup_resolutions,
                 membership_complete,
             ) = _build_label_membership_evidence(
                 literal_label_selectors,
@@ -595,6 +600,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 label_membership_fingerprints
             ),
             label_membership_truncated=label_membership_truncated,
+            label_lookup_resolutions=label_lookup_resolutions,
             label_registry_complete=label_registry_complete,
         )
         # Compatibility findings are a projection of the same post-registry
@@ -885,30 +891,68 @@ def _build_label_membership_evidence(
     dict[str, tuple[str, ...]],
     dict[str, str],
     tuple[str, ...],
+    dict[str, tuple[str, str | None]],
     bool,
 ]:
-    """Resolve exact literal label names/IDs without template execution."""
+    """Resolve literal labels with admitted Home Assistant lookup semantics.
+
+    Home Assistant 2026.7.2, 2026.8.0, and 2026.8.1 all use an exact label-ID
+    lookup first, then a normalized-name index where normalization is exactly
+    ``name.casefold().replace(" ", "")``.  The provider has already bound the
+    running release to that reviewed semantic registry before this helper is
+    called.
+    """
 
     complete = True
-    label_ids_by_selector: dict[str, set[str]] = {
-        selector: set() for selector in selectors
-    }
+    labels_by_id: dict[str, str] = {}
+    label_ids_by_normalized_name: dict[str, str] = {}
     for item in label_registry:
         if not isinstance(item, dict):
             complete = False
             continue
         label_id = item.get("label_id")
         name = item.get("name")
-        if not isinstance(label_id, str) or not label_id:
+        if (
+            not isinstance(label_id, str)
+            or not label_id
+            or not isinstance(name, str)
+            or not name
+        ):
             complete = False
             continue
-        for selector in selectors:
-            if selector == label_id or selector == name:
-                label_ids_by_selector[selector].add(label_id)
+        normalized_name = name.casefold().replace(" ", "")
+        if (
+            label_id in labels_by_id
+            or normalized_name in label_ids_by_normalized_name
+        ):
+            # Home Assistant's registry enforces unique IDs and normalized
+            # names.  A snapshot that violates either invariant cannot prove
+            # absence or membership.
+            complete = False
+            continue
+        labels_by_id[label_id] = name
+        label_ids_by_normalized_name[normalized_name] = label_id
+
+    label_lookup_resolutions: dict[str, tuple[str, str | None]] = {}
+    label_ids_by_selector: dict[str, str | None] = {}
+    for selector in selectors:
+        if selector in labels_by_id:
+            label_ids_by_selector[selector] = selector
+            label_lookup_resolutions[selector] = ("label_id", selector)
+            continue
+        resolved_label_id = label_ids_by_normalized_name.get(
+            selector.casefold().replace(" ", "")
+        )
+        label_ids_by_selector[selector] = resolved_label_id
+        label_lookup_resolutions[selector] = (
+            "normalized_name" if resolved_label_id is not None else "missing",
+            resolved_label_id,
+        )
 
     memberships: dict[str, set[str]] = {
         selector: set() for selector in selectors
     }
+    seen_entity_ids: set[str] = set()
     for item in entity_registry:
         if not isinstance(item, dict):
             complete = False
@@ -922,14 +966,19 @@ def _build_label_membership_evidence(
             complete = False
             continue
         if not isinstance(entity_id, str) or not valid_entity_id(entity_id):
+            complete = False
             continue
+        if entity_id in seen_entity_ids:
+            complete = False
+            continue
+        seen_entity_ids.add(entity_id)
         exact_labels = {
             label for label in labels if isinstance(label, str)
         }
         if any(not isinstance(label, str) for label in labels):
             complete = False
-        for selector, label_ids in label_ids_by_selector.items():
-            if exact_labels.intersection(label_ids):
+        for selector, label_id in label_ids_by_selector.items():
+            if label_id is not None and label_id in exact_labels:
                 memberships[selector].add(entity_id)
 
     retained: dict[str, tuple[str, ...]] = {}
@@ -940,7 +989,16 @@ def _build_label_membership_evidence(
             memberships[selector], key=lambda item: item.encode("utf-8")
         )
         encoded = json.dumps(
-            ordered, separators=(",", ":"), ensure_ascii=True
+            {
+                "model": LABEL_LOOKUP_MODEL,
+                "selector": selector,
+                "lookup_mode": label_lookup_resolutions[selector][0],
+                "resolved_label_id": label_lookup_resolutions[selector][1],
+                "entity_ids": ordered,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
         )
         fingerprints[selector] = hashlib.sha256(
             encoded.encode("utf-8")
@@ -950,4 +1008,10 @@ def _build_label_membership_evidence(
             retained[selector] = tuple(ordered[:MAX_LABEL_MEMBERSHIP])
         else:
             retained[selector] = tuple(ordered)
-    return retained, fingerprints, tuple(sorted(truncated)), complete
+    return (
+        retained,
+        fingerprints,
+        tuple(sorted(truncated)),
+        label_lookup_resolutions,
+        complete,
+    )

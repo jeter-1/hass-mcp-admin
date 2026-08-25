@@ -260,6 +260,11 @@ class _Value:
     # makes the selected runtime subset uncertain without making its bounded
     # candidate universe incomplete.
     entity_candidate_evidence_complete: bool = False
+    # True when every candidate source other than a pending reviewed entity-set
+    # producer is complete.  A registry-backed producer such as
+    # ``label_entities`` can therefore be discharged without certifying an
+    # unrelated unresolved branch in the same expression.
+    non_selector_candidate_evidence_complete: bool = False
     literal_selectors: set[str] = field(default_factory=set)
     selector_producers: set[str] = field(default_factory=set)
     selector_provenance_complete: bool = False
@@ -317,6 +322,9 @@ class _Value:
             domain_evidence_complete=self.domain_evidence_complete,
             entity_candidate_evidence_complete=(
                 self.entity_candidate_evidence_complete
+            ),
+            non_selector_candidate_evidence_complete=(
+                self.non_selector_candidate_evidence_complete
             ),
             literal_selectors=set(self.literal_selectors),
             selector_producers=set(self.selector_producers),
@@ -400,6 +408,7 @@ def _ordinary_value(*, strings: Iterable[str] = ()) -> _Value:
         ordinary=True,
         complete=True,
         entity_candidate_evidence_complete=True,
+        non_selector_candidate_evidence_complete=True,
         selector_provenance_complete=True,
     )
 
@@ -453,6 +462,7 @@ def _values_equivalent(
             "possible_domains",
             "domain_evidence_complete",
             "entity_candidate_evidence_complete",
+            "non_selector_candidate_evidence_complete",
             "literal_selectors",
             "selector_producers",
             "selector_provenance_complete",
@@ -612,6 +622,10 @@ def _merge_values(
         ),
         entity_candidate_evidence_complete=all(
             value.entity_candidate_evidence_complete
+            for value in candidates
+        ),
+        non_selector_candidate_evidence_complete=all(
+            value.non_selector_candidate_evidence_complete
             for value in candidates
         ),
         selector_provenance_complete=all(
@@ -775,6 +789,7 @@ def _merge_values(
         result.unknown = True
         result.order_uncertain = True
         result.entity_candidate_evidence_complete = False
+        result.non_selector_candidate_evidence_complete = False
         result.selector_provenance_complete = False
     return result
 
@@ -913,6 +928,9 @@ class TemplateObligationAnalyzer:
                 unknown=name in incomplete,
                 complete=name not in incomplete,
                 entity_candidate_evidence_complete=name not in incomplete,
+                non_selector_candidate_evidence_complete=(
+                    name not in incomplete
+                ),
                 selector_provenance_complete=name not in incomplete,
             )
             values[name] = (
@@ -985,6 +1003,7 @@ class TemplateObligationAnalyzer:
                 ordinary=True,
                 complete=evidence.complete,
                 entity_candidate_evidence_complete=evidence.complete,
+                non_selector_candidate_evidence_complete=evidence.complete,
                 selector_provenance_complete=evidence.complete,
             )
         if evidence.kind in {"boolean", "null"}:
@@ -1006,6 +1025,13 @@ class TemplateObligationAnalyzer:
                     evidence.complete
                     and all(
                         value.entity_candidate_evidence_complete
+                        for value in fields.values()
+                    )
+                ),
+                non_selector_candidate_evidence_complete=bool(
+                    evidence.complete
+                    and all(
+                        value.non_selector_candidate_evidence_complete
                         for value in fields.values()
                     )
                 ),
@@ -1039,6 +1065,13 @@ class TemplateObligationAnalyzer:
                 evidence.complete
                 and all(
                     item.entity_candidate_evidence_complete
+                    for item in items
+                )
+            )
+            merged.non_selector_candidate_evidence_complete = bool(
+                evidence.complete
+                and all(
+                    item.non_selector_candidate_evidence_complete
                     for item in items
                 )
             )
@@ -1197,6 +1230,10 @@ class TemplateObligationAnalyzer:
                 result.entity_candidate_evidence_complete
                 and source.entity_candidate_evidence_complete
             )
+            result.non_selector_candidate_evidence_complete = bool(
+                result.non_selector_candidate_evidence_complete
+                and source.non_selector_candidate_evidence_complete
+            )
             result.selector_provenance_complete = bool(
                 result.selector_provenance_complete
                 and source.selector_provenance_complete
@@ -1206,6 +1243,7 @@ class TemplateObligationAnalyzer:
             result.unknown = True
             result.complete = False
             result.entity_candidate_evidence_complete = False
+            result.non_selector_candidate_evidence_complete = False
             result.selector_provenance_complete = False
         return result
 
@@ -1510,6 +1548,7 @@ class TemplateObligationAnalyzer:
                     unknown=not bool(entity_ids),
                     complete=bool(entity_ids),
                     entity_candidate_evidence_complete=bool(entity_ids),
+                    non_selector_candidate_evidence_complete=bool(entity_ids),
                     selector_provenance_complete=bool(entity_ids),
                 )
             if node.name == "wait":
@@ -1527,6 +1566,7 @@ class TemplateObligationAnalyzer:
                     unknown=not bool(entity_ids),
                     complete=bool(entity_ids),
                     entity_candidate_evidence_complete=bool(entity_ids),
+                    non_selector_candidate_evidence_complete=bool(entity_ids),
                     selector_provenance_complete=bool(entity_ids),
                 )
             return _unknown_value()
@@ -2135,6 +2175,9 @@ class TemplateObligationAnalyzer:
                     unknown=membership_opaque,
                     complete=not membership_opaque,
                     entity_candidate_evidence_complete=not membership_opaque,
+                    non_selector_candidate_evidence_complete=(
+                        not membership_opaque
+                    ),
                     selector_provenance_complete=not membership_opaque,
                 )
             if name in _VALUE_RETURNING_STATE_HELPERS:
@@ -2165,6 +2208,13 @@ class TemplateObligationAnalyzer:
                         and not selectors[0].limit_exceeded
                         else "entity_selector_provenance:incomplete"
                     ),
+                    (
+                        "entity_non_selector_evidence:complete"
+                        if selectors
+                        and selectors[0].entity_candidate_evidence_complete
+                        and not selectors[0].limit_exceeded
+                        else "entity_non_selector_evidence:incomplete"
+                    ),
                 ),
                 lock="conservative",
             )
@@ -2175,6 +2225,11 @@ class TemplateObligationAnalyzer:
                 literal_selectors=set(literals),
                 selector_producers={name},
                 selector_provenance_complete=bool(
+                    selectors
+                    and selectors[0].entity_candidate_evidence_complete
+                    and not selectors[0].limit_exceeded
+                ),
+                non_selector_candidate_evidence_complete=bool(
                     selectors
                     and selectors[0].entity_candidate_evidence_complete
                     and not selectors[0].limit_exceeded
@@ -3219,6 +3274,7 @@ class TemplateObligationAnalyzer:
                 # exact IDs remain diagnostic, but cannot certify the output
                 # candidate universe for a later entity selector.
                 selected.entity_candidate_evidence_complete = False
+                selected.non_selector_candidate_evidence_complete = False
                 selected.selector_provenance_complete = False
                 return selected
             if value.context_paths:
@@ -3429,6 +3485,9 @@ class TemplateObligationAnalyzer:
                     entity_candidate_evidence_complete=(
                         base.entity_candidate_evidence_complete
                     ),
+                    non_selector_candidate_evidence_complete=(
+                        base.non_selector_candidate_evidence_complete
+                    ),
                     selector_provenance_complete=(
                         base.selector_provenance_complete
                     ),
@@ -3473,6 +3532,12 @@ class TemplateObligationAnalyzer:
                         and candidates
                     ),
                     entity_candidate_evidence_complete=bool(
+                        base.complete
+                        and not base.unknown
+                        and not base.projection_uncertain
+                        and candidates
+                    ),
+                    non_selector_candidate_evidence_complete=bool(
                         base.complete
                         and not base.unknown
                         and not base.projection_uncertain
@@ -3651,6 +3716,13 @@ class TemplateObligationAnalyzer:
                         and not key.unknown
                     ),
                     entity_candidate_evidence_complete=bool(
+                        base.complete
+                        and not base.unknown
+                        and not base.projection_uncertain
+                        and key.complete
+                        and not key.unknown
+                    ),
+                    non_selector_candidate_evidence_complete=bool(
                         base.complete
                         and not base.unknown
                         and not base.projection_uncertain
@@ -3890,6 +3962,7 @@ class TemplateObligationAnalyzer:
                     context_paths=paths,
                     complete=True,
                     entity_candidate_evidence_complete=True,
+                    non_selector_candidate_evidence_complete=True,
                     selector_provenance_complete=True,
                 )
                 self._consume_entity_value(
@@ -3925,6 +3998,7 @@ class TemplateObligationAnalyzer:
                     context_paths=paths,
                     complete=True,
                     entity_candidate_evidence_complete=True,
+                    non_selector_candidate_evidence_complete=True,
                     selector_provenance_complete=True,
                 )
                 self._consume_entity_value(
@@ -4040,6 +4114,13 @@ class TemplateObligationAnalyzer:
                             "entity_candidate_evidence:complete"
                             if value.entity_candidate_evidence_complete
                             else "entity_candidate_evidence:incomplete"
+                        )
+                    },
+                    {
+                        (
+                            "entity_non_selector_evidence:complete"
+                            if value.non_selector_candidate_evidence_complete
+                            else "entity_non_selector_evidence:incomplete"
                         )
                     },
                     (
@@ -4498,6 +4579,13 @@ class TemplateObligationAnalyzer:
                                 "entity_candidate_evidence:complete"
                                 if value.entity_candidate_evidence_complete
                                 else "entity_candidate_evidence:incomplete"
+                            )
+                        },
+                        {
+                            (
+                                "entity_non_selector_evidence:complete"
+                                if value.non_selector_candidate_evidence_complete
+                                else "entity_non_selector_evidence:incomplete"
                             )
                         },
                         (

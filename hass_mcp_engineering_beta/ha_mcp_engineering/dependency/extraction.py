@@ -88,6 +88,7 @@ MAX_CONTEXT_VARIABLES = 128
 MAX_CONTEXT_VALUE_DEPTH = 8
 MAX_CONTEXT_SCALAR_CHARS = 1_024
 MAX_DOCUMENT_OBLIGATIONS = 2_000
+LABEL_LOOKUP_MODEL = "home-assistant-label-id-first-normalized-name-v1"
 MAX_CONFIGURATION_NODES = 10_000
 MAX_CONFIGURATION_DEPTH = 64
 MAX_EVENT_SELECTOR_VALUES = 128
@@ -1505,6 +1506,7 @@ def resolve_literal_label_obligations(
     label_memberships: dict[str, tuple[str, ...]],
     label_membership_fingerprints: dict[str, str],
     label_membership_truncated: Iterable[str],
+    label_lookup_resolutions: dict[str, tuple[str, str | None]],
     label_registry_complete: bool,
 ) -> list[DependencyObligation]:
     """Discharge literal ``label_entities`` opacity from one scan snapshot.
@@ -1513,6 +1515,8 @@ def resolve_literal_label_obligations(
     dependency provider then resolves that selector against the same complete
     entity/label registry generation used to build the index.  Failed,
     truncated, mixed-producer, or dynamic selector evidence is left opaque.
+    Independently proven exact candidates are always retained and are unioned
+    with complete label memberships rather than replaced by them.
     """
 
     truncated = set(label_membership_truncated)
@@ -1539,22 +1543,9 @@ def resolve_literal_label_obligations(
             selector in truncated
             or selector not in label_memberships
             or selector not in label_membership_fingerprints
+            or selector not in label_lookup_resolutions
             for selector in selectors
         ):
-            resolved.append(item)
-            continue
-        candidates = tuple(
-            sorted(
-                {
-                    entity_id
-                    for selector in selectors
-                    for entity_id in label_memberships[selector]
-                    if valid_entity_id(entity_id)
-                },
-                key=lambda value: value.encode("utf-8"),
-            )
-        )
-        if len(candidates) > MAX_TEMPLATE_CANDIDATES:
             resolved.append(item)
             continue
         if any(
@@ -1567,11 +1558,24 @@ def resolve_literal_label_obligations(
         ):
             resolved.append(item)
             continue
+        label_candidates = {
+            entity_id
+            for selector in selectors
+            for entity_id in label_memberships[selector]
+        }
+        candidates = tuple(
+            sorted(
+                set(item.exact_entity_ids).union(label_candidates),
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
         resolution_material = {
-            "model": "literal-label-membership-v1",
+            "model": LABEL_LOOKUP_MODEL,
             "selectors": [
                 {
                     "selector": selector,
+                    "lookup_mode": label_lookup_resolutions[selector][0],
+                    "resolved_label_id": label_lookup_resolutions[selector][1],
                     "membership_fingerprint": (
                         label_membership_fingerprints[selector]
                     ),
@@ -1591,10 +1595,60 @@ def resolve_literal_label_obligations(
             sorted(
                 context.union(
                     {
-                        "label_membership_model:literal-label-membership-v1",
-                        "label_membership_fingerprint:"
+                        "label_lookup_model:" + LABEL_LOOKUP_MODEL,
+                        "label_resolution_fingerprint:"
                         + resolution_fingerprint,
                     }
+                )
+            )
+        )
+        if len(candidates) > MAX_TEMPLATE_CANDIDATES:
+            resolved.append(
+                replace(
+                    item,
+                    outcome="coverage_failure",
+                    reason_code="literal_label_candidate_union_limit_exceeded",
+                    exact_entity_ids=tuple(
+                        candidates[:MAX_TEMPLATE_CANDIDATES]
+                    ),
+                    context_provenance=bound_context,
+                    limit_exceeded=True,
+                    lock_projection="coverage_failure",
+                )
+            )
+            continue
+        composition_complete = bool(
+            "entity_non_selector_evidence:complete" in context
+            and "entity_non_selector_evidence:incomplete" not in context
+        )
+        if not composition_complete:
+            # The label component is known, but another candidate-producing
+            # branch remains unresolved.  Bind the lookup evidence for drift,
+            # retain all proven inclusions, and preserve opacity.
+            resolved.append(
+                replace(
+                    item,
+                    exact_entity_ids=candidates,
+                    possible_entity_domains=(
+                        tuple(
+                            sorted(
+                                set(item.possible_entity_domains or ()).union(
+                                    value.split(".", 1)[0]
+                                    for value in candidates
+                                )
+                            )
+                        )
+                        if candidates or item.possible_entity_domains is not None
+                        else None
+                    ),
+                    context_provenance=bound_context,
+                )
+            )
+            continue
+        domains = tuple(
+            sorted(
+                set(item.possible_entity_domains or ()).union(
+                    value.split(".", 1)[0] for value in candidates
                 )
             )
         )
@@ -1617,15 +1671,7 @@ def resolve_literal_label_obligations(
                     else "dependency_neutral"
                 ),
                 exact_entity_ids=candidates,
-                possible_entity_domains=(
-                    tuple(
-                        sorted(
-                            {value.split(".", 1)[0] for value in candidates}
-                        )
-                    )
-                    if candidates
-                    else None
-                ),
+                possible_entity_domains=domains if domains else None,
                 context_provenance=bound_context,
                 lock_projection="exact" if candidates else "none",
             )
