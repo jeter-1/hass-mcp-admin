@@ -581,7 +581,7 @@ class ObligationResourceGovernanceAndLockTests(
             (
                 "{% macro f(entity) %}{{ f(entity) }}{% endmacro %}"
                 "{{ f('" + TARGET + "') }}",
-                True,
+                False,
                 "bounded_opaque",
             ),
             (

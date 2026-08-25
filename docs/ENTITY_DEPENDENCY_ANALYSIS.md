@@ -125,6 +125,18 @@ evidence, and neutral/excluded terminals do not create false graph edges. Full
 template or automation bodies are never retained. Blueprint input values remain
 visible under the established supported input context.
 
+Beta 45 separates the completeness of an entity-candidate universe from exact
+runtime-value precision. A bounded filter can therefore leave its selected
+subset uncertain while preserving proof that every possible result belongs to
+one complete finite candidate set. Exact candidates and complete domain unions
+support authoritative target inclusion or exclusion; diagnostic candidates on
+an opaque terminal never do. Literal `label_entities` membership is resolved
+against the same complete bounded registry generation as the dependency scan,
+and the label identity plus membership fingerprint is retained in the ledger.
+Dynamic labels, incomplete registries, truncation and overflow remain opaque or
+fail coverage. Consequences and F3 locks consume those authoritative terminal
+outcomes rather than reconstructing discarded proofs downstream.
+
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned
 count, total, and cursor state; no detail level silently substitutes a lower cap.

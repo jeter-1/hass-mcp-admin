@@ -165,6 +165,7 @@ _RUNTIME_SCALAR_ATTRIBUTES = {
     "time": frozenset(
         {"hour", "minute", "second", "microsecond", "fold"}
     ),
+    "timedelta": frozenset({"days", "seconds", "microseconds"}),
 }
 _RUNTIME_SCALAR_METHODS = {
     "datetime": frozenset(
@@ -181,6 +182,7 @@ _RUNTIME_SCALAR_METHODS = {
         {"strftime", "isoformat", "weekday", "isoweekday", "isocalendar"}
     ),
     "time": frozenset({"strftime", "isoformat"}),
+    "timedelta": frozenset({"total_seconds"}),
 }
 _RUNTIME_TRANSFORM_METHODS = {
     "datetime": {
@@ -252,6 +254,20 @@ class _Value:
     literal_numbers: set[float] = field(default_factory=set)
     possible_domains: set[str] = field(default_factory=set)
     domain_evidence_complete: bool = False
+    # True when every possible entity identity carried by this value is
+    # represented by ``entity_ids``/``literal_strings``.  Runtime value
+    # precision is deliberately separate: filtering a complete finite list
+    # makes the selected runtime subset uncertain without making its bounded
+    # candidate universe incomplete.
+    entity_candidate_evidence_complete: bool = False
+    # True when every candidate source other than a pending reviewed entity-set
+    # producer is complete.  A registry-backed producer such as
+    # ``label_entities`` can therefore be discharged without certifying an
+    # unrelated unresolved branch in the same expression.
+    non_selector_candidate_evidence_complete: bool = False
+    literal_selectors: set[str] = field(default_factory=set)
+    selector_producers: set[str] = field(default_factory=set)
+    selector_provenance_complete: bool = False
     callables: set[str] = field(default_factory=set)
     fields: dict[str, "_Value"] = field(default_factory=dict)
     items: list["_Value"] = field(default_factory=list)
@@ -304,6 +320,17 @@ class _Value:
             literal_numbers=set(self.literal_numbers),
             possible_domains=set(self.possible_domains),
             domain_evidence_complete=self.domain_evidence_complete,
+            entity_candidate_evidence_complete=(
+                self.entity_candidate_evidence_complete
+            ),
+            non_selector_candidate_evidence_complete=(
+                self.non_selector_candidate_evidence_complete
+            ),
+            literal_selectors=set(self.literal_selectors),
+            selector_producers=set(self.selector_producers),
+            selector_provenance_complete=(
+                self.selector_provenance_complete
+            ),
             callables=set(self.callables),
             fields=dict(self.fields),
             items=list(self.items),
@@ -377,7 +404,12 @@ class _AnalysisLimit(RuntimeError):
 
 def _ordinary_value(*, strings: Iterable[str] = ()) -> _Value:
     return _Value(
-        literal_strings=set(strings), ordinary=True, complete=True
+        literal_strings=set(strings),
+        ordinary=True,
+        complete=True,
+        entity_candidate_evidence_complete=True,
+        non_selector_candidate_evidence_complete=True,
+        selector_provenance_complete=True,
     )
 
 
@@ -429,6 +461,11 @@ def _values_equivalent(
             "literal_numbers",
             "possible_domains",
             "domain_evidence_complete",
+            "entity_candidate_evidence_complete",
+            "non_selector_candidate_evidence_complete",
+            "literal_selectors",
+            "selector_producers",
+            "selector_provenance_complete",
             "callables",
             "container_kinds",
             "namespace_ids",
@@ -583,6 +620,17 @@ def _merge_values(
         domain_evidence_complete=all(
             value.domain_evidence_complete for value in candidates
         ),
+        entity_candidate_evidence_complete=all(
+            value.entity_candidate_evidence_complete
+            for value in candidates
+        ),
+        non_selector_candidate_evidence_complete=all(
+            value.non_selector_candidate_evidence_complete
+            for value in candidates
+        ),
+        selector_provenance_complete=all(
+            value.selector_provenance_complete for value in candidates
+        ),
         limit_exceeded=bool(
             merge_overflow
             or any(value.limit_exceeded for value in candidates)
@@ -604,6 +652,8 @@ def _merge_values(
         result.literal_strings.update(value.literal_strings)
         result.literal_numbers.update(value.literal_numbers)
         result.possible_domains.update(value.possible_domains)
+        result.literal_selectors.update(value.literal_selectors)
+        result.selector_producers.update(value.selector_producers)
         result.callables.update(value.callables)
         result.container_kinds.update(value.container_kinds)
         result.namespace_ids.update(value.namespace_ids)
@@ -681,6 +731,8 @@ def _merge_values(
         or len(result.literal_strings) > MAX_TEMPLATE_CANDIDATES
         or len(result.literal_numbers) > MAX_TEMPLATE_CANDIDATES
         or len(result.possible_domains) > MAX_TEMPLATE_CANDIDATES
+        or len(result.literal_selectors) > MAX_TEMPLATE_CANDIDATES
+        or len(result.selector_producers) > MAX_TEMPLATE_CANDIDATES
         or len(result.callables) > MAX_TEMPLATE_CANDIDATES
         or len(result.container_kinds) > MAX_TEMPLATE_CANDIDATES
         or len(result.namespace_ids) > MAX_TEMPLATE_CANDIDATES
@@ -701,6 +753,12 @@ def _merge_values(
         )
         result.possible_domains = set(
             sorted(result.possible_domains)[:MAX_TEMPLATE_CANDIDATES]
+        )
+        result.literal_selectors = set(
+            sorted(result.literal_selectors)[:MAX_TEMPLATE_CANDIDATES]
+        )
+        result.selector_producers = set(
+            sorted(result.selector_producers)[:MAX_TEMPLATE_CANDIDATES]
         )
         result.callables = set(
             sorted(result.callables)[:MAX_TEMPLATE_CANDIDATES]
@@ -730,6 +788,9 @@ def _merge_values(
         result.limit_exceeded = True
         result.unknown = True
         result.order_uncertain = True
+        result.entity_candidate_evidence_complete = False
+        result.non_selector_candidate_evidence_complete = False
+        result.selector_provenance_complete = False
     return result
 
 
@@ -866,6 +927,11 @@ class TemplateObligationAnalyzer:
                 literal_strings=set(entity_ids),
                 unknown=name in incomplete,
                 complete=name not in incomplete,
+                entity_candidate_evidence_complete=name not in incomplete,
+                non_selector_candidate_evidence_complete=(
+                    name not in incomplete
+                ),
+                selector_provenance_complete=name not in incomplete,
             )
             values[name] = (
                 self._merge((values[name], entity_value), node=None)
@@ -936,6 +1002,9 @@ class TemplateObligationAnalyzer:
                 literal_numbers={float(evidence.literal_number or 0.0)},
                 ordinary=True,
                 complete=evidence.complete,
+                entity_candidate_evidence_complete=evidence.complete,
+                non_selector_candidate_evidence_complete=evidence.complete,
+                selector_provenance_complete=evidence.complete,
             )
         if evidence.kind in {"boolean", "null"}:
             return _ordinary_value()
@@ -952,6 +1021,27 @@ class TemplateObligationAnalyzer:
                 ordinary=all(value.ordinary for value in fields.values()),
                 unknown=not evidence.complete,
                 complete=evidence.complete,
+                entity_candidate_evidence_complete=bool(
+                    evidence.complete
+                    and all(
+                        value.entity_candidate_evidence_complete
+                        for value in fields.values()
+                    )
+                ),
+                non_selector_candidate_evidence_complete=bool(
+                    evidence.complete
+                    and all(
+                        value.non_selector_candidate_evidence_complete
+                        for value in fields.values()
+                    )
+                ),
+                selector_provenance_complete=bool(
+                    evidence.complete
+                    and all(
+                        value.selector_provenance_complete
+                        for value in fields.values()
+                    )
+                ),
                 contained_semantic_uncertainty=any(
                     value.unknown
                     or not value.complete
@@ -971,6 +1061,24 @@ class TemplateObligationAnalyzer:
             # aggregate projection; it must not poison a proven fixed index.
             merged.unknown = not evidence.complete
             merged.complete = evidence.complete
+            merged.entity_candidate_evidence_complete = bool(
+                evidence.complete
+                and all(
+                    item.entity_candidate_evidence_complete
+                    for item in items
+                )
+            )
+            merged.non_selector_candidate_evidence_complete = bool(
+                evidence.complete
+                and all(
+                    item.non_selector_candidate_evidence_complete
+                    for item in items
+                )
+            )
+            merged.selector_provenance_complete = bool(
+                evidence.complete
+                and all(item.selector_provenance_complete for item in items)
+            )
             merged.projection_uncertain = False
             merged.contained_semantic_uncertainty = any(
                 item.unknown
@@ -1097,6 +1205,8 @@ class TemplateObligationAnalyzer:
             result.literal_strings.update(source.literal_strings)
             result.literal_numbers.update(source.literal_numbers)
             result.possible_domains.update(source.possible_domains)
+            result.literal_selectors.update(source.literal_selectors)
+            result.selector_producers.update(source.selector_producers)
             result.callables.update(source.callables)
             result.context_paths.update(source.context_paths)
             result.runtime_kinds.update(source.runtime_kinds)
@@ -1116,10 +1226,25 @@ class TemplateObligationAnalyzer:
                 result.domain_evidence_complete
                 and source.domain_evidence_complete
             )
+            result.entity_candidate_evidence_complete = bool(
+                result.entity_candidate_evidence_complete
+                and source.entity_candidate_evidence_complete
+            )
+            result.non_selector_candidate_evidence_complete = bool(
+                result.non_selector_candidate_evidence_complete
+                and source.non_selector_candidate_evidence_complete
+            )
+            result.selector_provenance_complete = bool(
+                result.selector_provenance_complete
+                and source.selector_provenance_complete
+            )
         if source.limit_exceeded:
             result.limit_exceeded = True
             result.unknown = True
             result.complete = False
+            result.entity_candidate_evidence_complete = False
+            result.non_selector_candidate_evidence_complete = False
+            result.selector_provenance_complete = False
         return result
 
     def _analyze_statements(
@@ -1422,6 +1547,9 @@ class TemplateObligationAnalyzer:
                     context_paths={"trigger"},
                     unknown=not bool(entity_ids),
                     complete=bool(entity_ids),
+                    entity_candidate_evidence_complete=bool(entity_ids),
+                    non_selector_candidate_evidence_complete=bool(entity_ids),
+                    selector_provenance_complete=bool(entity_ids),
                 )
             if node.name == "wait":
                 return _Value(context_paths={"wait"}, complete=True)
@@ -1437,6 +1565,9 @@ class TemplateObligationAnalyzer:
                     context_paths={"this"},
                     unknown=not bool(entity_ids),
                     complete=bool(entity_ids),
+                    entity_candidate_evidence_complete=bool(entity_ids),
+                    non_selector_candidate_evidence_complete=bool(entity_ids),
+                    selector_provenance_complete=bool(entity_ids),
                 )
             return _unknown_value()
         if isinstance(node, (nodes.List, nodes.Tuple)):
@@ -1715,6 +1846,42 @@ class TemplateObligationAnalyzer:
                 and not right.unknown
             ):
                 return _ordinary_value()
+            if isinstance(node, (nodes.Add, nodes.Sub)):
+                if left.runtime_kinds == {"datetime"} and (
+                    right.runtime_kinds == {"timedelta"}
+                    or (
+                        isinstance(node, nodes.Sub)
+                        and right.runtime_kinds == {"datetime"}
+                    )
+                ):
+                    self._neutral(
+                        node, "datetime_arithmetic_dependency_neutral"
+                    )
+                    return _Value(
+                        runtime_kinds={
+                            "timedelta"
+                            if right.runtime_kinds == {"datetime"}
+                            else "datetime"
+                        },
+                        ordinary=True,
+                        unknown=True,
+                        dynamic_scalar=True,
+                        complete=False,
+                    )
+                if (
+                    left.runtime_kinds == {"timedelta"}
+                    and right.runtime_kinds == {"timedelta"}
+                ):
+                    self._neutral(
+                        node, "timedelta_arithmetic_dependency_neutral"
+                    )
+                    return _Value(
+                        runtime_kinds={"timedelta"},
+                        ordinary=True,
+                        unknown=True,
+                        dynamic_scalar=True,
+                        complete=False,
+                    )
             return _dynamic_scalar_value()
         if isinstance(node, nodes.Not):
             self._eval(node.node, scope, depth=depth + 1)
@@ -2007,6 +2174,11 @@ class TemplateObligationAnalyzer:
                     state_object=name == "closest",
                     unknown=membership_opaque,
                     complete=not membership_opaque,
+                    entity_candidate_evidence_complete=not membership_opaque,
+                    non_selector_candidate_evidence_complete=(
+                        not membership_opaque
+                    ),
+                    selector_provenance_complete=not membership_opaque,
                 )
             if name in _VALUE_RETURNING_STATE_HELPERS:
                 return _dynamic_scalar_value()
@@ -2027,12 +2199,41 @@ class TemplateObligationAnalyzer:
                 category=category,
                 node=node,
                 selectors=tuple(literals),
+                context=(
+                    f"entity_set_producer:{name}",
+                    (
+                        "entity_selector_provenance:complete"
+                        if selectors
+                        and selectors[0].entity_candidate_evidence_complete
+                        and not selectors[0].limit_exceeded
+                        else "entity_selector_provenance:incomplete"
+                    ),
+                    (
+                        "entity_non_selector_evidence:complete"
+                        if selectors
+                        and selectors[0].entity_candidate_evidence_complete
+                        and not selectors[0].limit_exceeded
+                        else "entity_non_selector_evidence:incomplete"
+                    ),
+                ),
                 lock="conservative",
             )
             return _Value(
                 state_collection=True,
                 unknown=True,
                 complete=False,
+                literal_selectors=set(literals),
+                selector_producers={name},
+                selector_provenance_complete=bool(
+                    selectors
+                    and selectors[0].entity_candidate_evidence_complete
+                    and not selectors[0].limit_exceeded
+                ),
+                non_selector_candidate_evidence_complete=bool(
+                    selectors
+                    and selectors[0].entity_candidate_evidence_complete
+                    and not selectors[0].limit_exceeded
+                ),
             )
         if category == "attribute_item_access":
             self._emit(
@@ -3068,6 +3269,13 @@ class TemplateObligationAnalyzer:
                 )
                 selected.unknown = True
                 selected.complete = False
+                # The source entity identifies the state object, not the
+                # runtime value of an arbitrary state attribute.  Retained
+                # exact IDs remain diagnostic, but cannot certify the output
+                # candidate universe for a later entity selector.
+                selected.entity_candidate_evidence_complete = False
+                selected.non_selector_candidate_evidence_complete = False
+                selected.selector_provenance_complete = False
                 return selected
             if value.context_paths:
                 selected = missing_or_uncertain(value)
@@ -3274,6 +3482,23 @@ class TemplateObligationAnalyzer:
                     unknown=base.unknown,
                     complete=base.complete,
                     limit_exceeded=base.limit_exceeded,
+                    entity_candidate_evidence_complete=(
+                        base.entity_candidate_evidence_complete
+                    ),
+                    non_selector_candidate_evidence_complete=(
+                        base.non_selector_candidate_evidence_complete
+                    ),
+                    selector_provenance_complete=(
+                        base.selector_provenance_complete
+                    ),
+                )
+            if attribute in {"last_changed", "last_updated"}:
+                return _Value(
+                    runtime_kinds={"datetime"},
+                    ordinary=True,
+                    unknown=True,
+                    dynamic_scalar=True,
+                    complete=False,
                 )
             return _dynamic_scalar_value()
         if base.state_attribute_container:
@@ -3301,6 +3526,24 @@ class TemplateObligationAnalyzer:
                         or not candidates
                     ),
                     complete=bool(
+                        base.complete
+                        and not base.unknown
+                        and not base.projection_uncertain
+                        and candidates
+                    ),
+                    entity_candidate_evidence_complete=bool(
+                        base.complete
+                        and not base.unknown
+                        and not base.projection_uncertain
+                        and candidates
+                    ),
+                    non_selector_candidate_evidence_complete=bool(
+                        base.complete
+                        and not base.unknown
+                        and not base.projection_uncertain
+                        and candidates
+                    ),
+                    selector_provenance_complete=bool(
                         base.complete
                         and not base.unknown
                         and not base.projection_uncertain
@@ -3466,6 +3709,27 @@ class TemplateObligationAnalyzer:
                         or not key.complete
                     ),
                     complete=bool(
+                        base.complete
+                        and not base.unknown
+                        and not base.projection_uncertain
+                        and key.complete
+                        and not key.unknown
+                    ),
+                    entity_candidate_evidence_complete=bool(
+                        base.complete
+                        and not base.unknown
+                        and not base.projection_uncertain
+                        and key.complete
+                        and not key.unknown
+                    ),
+                    non_selector_candidate_evidence_complete=bool(
+                        base.complete
+                        and not base.unknown
+                        and not base.projection_uncertain
+                        and key.complete
+                        and not key.unknown
+                    ),
+                    selector_provenance_complete=bool(
                         base.complete
                         and not base.unknown
                         and not base.projection_uncertain
@@ -3697,6 +3961,9 @@ class TemplateObligationAnalyzer:
                     state_object=True,
                     context_paths=paths,
                     complete=True,
+                    entity_candidate_evidence_complete=True,
+                    non_selector_candidate_evidence_complete=True,
+                    selector_provenance_complete=True,
                 )
                 self._consume_entity_value(
                     value,
@@ -3730,6 +3997,9 @@ class TemplateObligationAnalyzer:
                     state_object=attribute in {"from_state", "to_state", "zone"},
                     context_paths=paths,
                     complete=True,
+                    entity_candidate_evidence_complete=True,
+                    non_selector_candidate_evidence_complete=True,
+                    selector_provenance_complete=True,
                 )
                 self._consume_entity_value(
                     value,
@@ -3836,6 +4106,43 @@ class TemplateObligationAnalyzer:
                 if self.valid_entity_id(item)
             }
         )
+        selector_context = tuple(
+            sorted(
+                set(value.context_paths).union(
+                    {
+                        (
+                            "entity_candidate_evidence:complete"
+                            if value.entity_candidate_evidence_complete
+                            else "entity_candidate_evidence:incomplete"
+                        )
+                    },
+                    {
+                        (
+                            "entity_non_selector_evidence:complete"
+                            if value.non_selector_candidate_evidence_complete
+                            else "entity_non_selector_evidence:incomplete"
+                        )
+                    },
+                    (
+                        {"entity_domain_evidence:complete"}
+                        if value.domain_evidence_complete
+                        else set()
+                    ),
+                    {
+                        f"entity_set_producer:{producer}"
+                        for producer in value.selector_producers
+                    },
+                    (
+                        {"entity_selector_provenance:complete"}
+                        if value.selector_producers
+                        and value.selector_provenance_complete
+                        else {"entity_selector_provenance:incomplete"}
+                        if value.selector_producers
+                        else set()
+                    ),
+                )
+            )
+        )
         if value.limit_exceeded:
             self._emit(
                 outcome="coverage_failure",
@@ -3849,7 +4156,8 @@ class TemplateObligationAnalyzer:
                     if value.domain_evidence_complete
                     else None
                 ),
-                context=tuple(sorted(value.context_paths)),
+                selectors=tuple(sorted(value.literal_selectors)),
+                context=selector_context,
                 limit=True,
                 lock="coverage_failure",
             )
@@ -3867,12 +4175,12 @@ class TemplateObligationAnalyzer:
                     if value.domain_evidence_complete
                     else None
                 ),
-                context=tuple(sorted(value.context_paths)),
+                selectors=tuple(sorted(value.literal_selectors)),
+                context=selector_context,
                 lock="exact",
             )
             if (
-                value.complete
-                and not value.unknown
+                value.entity_candidate_evidence_complete
                 and not value.contained_semantic_uncertainty
             ):
                 return
@@ -3884,8 +4192,24 @@ class TemplateObligationAnalyzer:
                 category="state_entity_access",
                 node=node,
                 domains=tuple(sorted(value.possible_domains)),
-                context=tuple(sorted(value.context_paths)),
+                selectors=tuple(sorted(value.literal_selectors)),
+                context=selector_context,
                 lock="conservative",
+            )
+            return
+        if (
+            value.entity_candidate_evidence_complete
+            and not value.contained_semantic_uncertainty
+        ):
+            self._emit(
+                outcome="proven_dependency_neutral",
+                kind=kind,
+                reason=f"{reason}_no_entity_candidates",
+                category="dependency_neutral",
+                node=node,
+                selectors=tuple(sorted(value.literal_selectors)),
+                context=selector_context,
+                lock="none",
             )
             return
         self._emit(
@@ -3900,7 +4224,8 @@ class TemplateObligationAnalyzer:
                 if value.domain_evidence_complete
                 else None
             ),
-            context=tuple(sorted(value.context_paths)),
+            selectors=tuple(sorted(value.literal_selectors)),
+            context=selector_context,
             limit=False,
             lock="conservative",
         )
@@ -4120,6 +4445,8 @@ class TemplateObligationAnalyzer:
                 + len(current.literal_strings)
                 + len(current.literal_numbers)
                 + len(current.possible_domains)
+                + len(current.literal_selectors)
+                + len(current.selector_producers)
                 + len(current.callables)
                 + len(current.container_kinds)
                 + len(current.namespace_ids)
@@ -4243,7 +4570,44 @@ class TemplateObligationAnalyzer:
                 if value.domain_evidence_complete
                 else None
             ),
-            context=tuple(sorted(value.context_paths)),
+            selectors=tuple(sorted(value.literal_selectors)),
+            context=tuple(
+                sorted(
+                    set(value.context_paths).union(
+                        {
+                            (
+                                "entity_candidate_evidence:complete"
+                                if value.entity_candidate_evidence_complete
+                                else "entity_candidate_evidence:incomplete"
+                            )
+                        },
+                        {
+                            (
+                                "entity_non_selector_evidence:complete"
+                                if value.non_selector_candidate_evidence_complete
+                                else "entity_non_selector_evidence:incomplete"
+                            )
+                        },
+                        (
+                            {"entity_domain_evidence:complete"}
+                            if value.domain_evidence_complete
+                            else set()
+                        ),
+                        {
+                            f"entity_set_producer:{producer}"
+                            for producer in value.selector_producers
+                        },
+                        (
+                            {"entity_selector_provenance:complete"}
+                            if value.selector_producers
+                            and value.selector_provenance_complete
+                            else {"entity_selector_provenance:incomplete"}
+                            if value.selector_producers
+                            else set()
+                        ),
+                    )
+                )
+            ),
             limit=value.limit_exceeded,
             lock=(
                 "coverage_failure" if value.limit_exceeded else "conservative"

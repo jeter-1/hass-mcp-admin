@@ -305,7 +305,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         self.assertTrue(risk.apply_allowed)
         self.assertEqual(risk.level.value, "low")
 
-    def test_bounded_opaque_benign_effect_is_transparent_and_actionable(self):
+    def test_bounded_opaque_benign_effect_is_transparent_and_nonactionable(self):
         observed = bind(
             snapshot(
                 (obligation("bounded_semantic_opaque"),),
@@ -318,24 +318,24 @@ class ObligationGovernanceTests(unittest.TestCase):
 
         self.assertTrue(observed["coverage_complete"])
         self.assertFalse(observed["evidence_complete"])
-        self.assertTrue(observed["execution_eligible"])
+        self.assertFalse(observed["execution_eligible"])
         self.assertEqual(observed["semantic_precision"], "bounded_opaque")
         self.assertEqual(observed["opaque_obligation_count"], 1)
         self.assertEqual(observed["physical_consequence"], "none")
-        self.assertTrue(risk.apply_allowed)
-        self.assertEqual(risk.level.value, "low")
+        self.assertFalse(risk.apply_allowed)
+        self.assertEqual(risk.level.value, "high")
         self.assertTrue(risk.warnings)
         plan = make_plan("set_input_boolean_state", target_id=TARGET)
         plan.operational.baseline["dependency_risk"] = observed
         plan.risk = risk
         policy = evaluate_change_policy(plan)
-        self.assertEqual(policy.policy_class.value, "standard_admin")
+        self.assertEqual(policy.policy_class.value, "elevated_admin")
         self.assertIn(
             "helper_dependency_bounded_semantic_opacity",
             policy.reason_codes,
         )
 
-    def test_bounded_opaque_consequential_effect_is_elevated_and_actionable(self):
+    def test_bounded_opaque_consequential_effect_is_elevated_and_nonactionable(self):
         observed = bind(
             snapshot(
                 (obligation("bounded_semantic_opaque"),),
@@ -346,10 +346,10 @@ class ObligationGovernanceTests(unittest.TestCase):
             {"binding": observed, "provenance": {"generation": 39}}
         )
 
-        self.assertTrue(observed["execution_eligible"])
+        self.assertFalse(observed["execution_eligible"])
         self.assertEqual(observed["physical_consequence"], "safety_critical")
         self.assertEqual(risk.level.value, "high")
-        self.assertTrue(risk.apply_allowed)
+        self.assertFalse(risk.apply_allowed)
         plan = make_plan("set_input_boolean_state", target_id=TARGET)
         plan.operational.baseline["dependency_risk"] = observed
         plan.risk = risk
@@ -364,7 +364,7 @@ class ObligationGovernanceTests(unittest.TestCase):
             snapshot(
                 (
                     obligation(
-                        "bounded_semantic_opaque",
+                        "exact_dependency",
                         domains=("sensor",),
                         category="dynamic_filter_test_dispatch",
                         reason="dynamic_test_name",
@@ -611,7 +611,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         )
         self.assertEqual("safety_critical", observed["physical_consequence"])
         self.assertEqual("high", risk.level.value)
-        self.assertTrue(risk.apply_allowed)
+        self.assertFalse(risk.apply_allowed)
 
     def test_wait_scalar_metadata_does_not_create_helper_consequence(self):
         config = {
@@ -932,7 +932,9 @@ class ObligationGovernanceTests(unittest.TestCase):
                     observed["physical_consequence"],
                 )
                 self.assertEqual("high", risk.level.value)
-                self.assertTrue(risk.apply_allowed)
+                self.assertEqual(
+                    risk.apply_allowed, observed["execution_eligible"]
+                )
 
     def test_configuration_and_repeat_context_keep_proportional_consequence(self):
         cases = (
@@ -1206,7 +1208,9 @@ class ObligationGovernanceTests(unittest.TestCase):
                     f"automation.{source_id}"
                     in observed["relevant_downstream_object_ids"],
                 )
-                self.assertTrue(risk.apply_allowed)
+                self.assertEqual(
+                    risk.apply_allowed, observed["execution_eligible"]
+                )
 
     def test_dynamic_trigger_metadata_selector_is_consequentially_opaque(self):
         config = {
@@ -1259,7 +1263,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         )
         self.assertEqual("safety_critical", observed["physical_consequence"])
         self.assertEqual("high", risk.level.value)
-        self.assertTrue(risk.apply_allowed)
+        self.assertFalse(risk.apply_allowed)
 
     def test_broad_state_changed_trigger_retains_consequential_effect(self):
         config = {
@@ -1308,7 +1312,7 @@ class ObligationGovernanceTests(unittest.TestCase):
             "safety_critical", observed["physical_consequence"]
         )
         self.assertEqual("high", risk.level.value)
-        self.assertTrue(risk.apply_allowed)
+        self.assertFalse(risk.apply_allowed)
 
     def test_broad_call_service_trigger_retains_consequential_effect(self):
         config = {
@@ -1356,7 +1360,7 @@ class ObligationGovernanceTests(unittest.TestCase):
             "safety_critical", observed["physical_consequence"]
         )
         self.assertEqual("high", risk.level.value)
-        self.assertTrue(risk.apply_allowed)
+        self.assertFalse(risk.apply_allowed)
 
     def test_literal_action_target_is_noncausal_but_template_action_data_is_causal(self):
         literal = obligation(
@@ -1493,8 +1497,8 @@ class ObligationGovernanceTests(unittest.TestCase):
 
         self.assertTrue(observed["coverage_complete"])
         self.assertEqual("bounded_opaque", observed["semantic_precision"])
-        self.assertTrue(observed["execution_eligible"])
-        self.assertTrue(risk.apply_allowed)
+        self.assertFalse(observed["execution_eligible"])
+        self.assertFalse(risk.apply_allowed)
         self.assertIn(unconstrained_helper_dependency_lock_key(), keys)
         self.assertIn("automation:porch_light", keys)
 

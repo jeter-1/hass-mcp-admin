@@ -23,6 +23,7 @@ from .models import (
     obligation_fingerprint,
 )
 from .obligation_ledger import (
+    MAX_TEMPLATE_CANDIDATES,
     TemplateContextEvidence,
     TemplateContextValueEvidence,
     analyze_template_obligations,
@@ -87,6 +88,7 @@ MAX_CONTEXT_VARIABLES = 128
 MAX_CONTEXT_VALUE_DEPTH = 8
 MAX_CONTEXT_SCALAR_CHARS = 1_024
 MAX_DOCUMENT_OBLIGATIONS = 2_000
+LABEL_LOOKUP_MODEL = "home-assistant-label-id-first-normalized-name-v1"
 MAX_CONFIGURATION_NODES = 10_000
 MAX_CONFIGURATION_DEPTH = 64
 MAX_EVENT_SELECTOR_VALUES = 128
@@ -1486,6 +1488,195 @@ def _project_obligations(
             )
         )
     return findings, dynamic
+
+
+def project_obligations(
+    obligations: Iterable[DependencyObligation],
+    *,
+    secret: str = "",
+) -> tuple[list[DependencyFinding], list[DynamicReference]]:
+    """Project an already-resolved authoritative ledger for compatibility."""
+
+    return _project_obligations(list(obligations), secret=secret)
+
+
+def resolve_literal_label_obligations(
+    obligations: Iterable[DependencyObligation],
+    *,
+    label_memberships: dict[str, tuple[str, ...]],
+    label_membership_fingerprints: dict[str, str],
+    label_membership_truncated: Iterable[str],
+    label_lookup_resolutions: dict[str, tuple[str, str | None]],
+    label_registry_complete: bool,
+) -> list[DependencyObligation]:
+    """Discharge literal ``label_entities`` opacity from one scan snapshot.
+
+    The template analyzer proves only the selector's bounded provenance.  The
+    dependency provider then resolves that selector against the same complete
+    entity/label registry generation used to build the index.  Failed,
+    truncated, mixed-producer, or dynamic selector evidence is left opaque.
+    Independently proven exact candidates are always retained and are unioned
+    with complete label memberships rather than replaced by them.
+    """
+
+    truncated = set(label_membership_truncated)
+    resolved: list[DependencyObligation] = []
+    for item in obligations:
+        context = set(item.context_provenance)
+        producers = {
+            value.removeprefix("entity_set_producer:")
+            for value in context
+            if value.startswith("entity_set_producer:")
+        }
+        eligible = bool(
+            producers == {"label_entities"}
+            and "entity_selector_provenance:complete" in context
+            and "entity_selector_provenance:incomplete" not in context
+            and item.literal_selectors
+            and label_registry_complete
+        )
+        if not eligible:
+            resolved.append(item)
+            continue
+        selectors = tuple(sorted(set(item.literal_selectors)))
+        if any(
+            selector in truncated
+            or selector not in label_memberships
+            or selector not in label_membership_fingerprints
+            or selector not in label_lookup_resolutions
+            for selector in selectors
+        ):
+            resolved.append(item)
+            continue
+        if any(
+            len(label_memberships[selector])
+            != sum(
+                valid_entity_id(entity_id)
+                for entity_id in label_memberships[selector]
+            )
+            for selector in selectors
+        ):
+            resolved.append(item)
+            continue
+        label_candidates = {
+            entity_id
+            for selector in selectors
+            for entity_id in label_memberships[selector]
+        }
+        candidates = tuple(
+            sorted(
+                set(item.exact_entity_ids).union(label_candidates),
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
+        resolution_material = {
+            "model": LABEL_LOOKUP_MODEL,
+            "selectors": [
+                {
+                    "selector": selector,
+                    "lookup_mode": label_lookup_resolutions[selector][0],
+                    "resolved_label_id": label_lookup_resolutions[selector][1],
+                    "membership_fingerprint": (
+                        label_membership_fingerprints[selector]
+                    ),
+                }
+                for selector in selectors
+            ],
+            "candidate_entity_ids": list(candidates),
+        }
+        resolution_fingerprint = hashlib.sha256(
+            json.dumps(
+                resolution_material,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        bound_context = tuple(
+            sorted(
+                context.union(
+                    {
+                        "label_lookup_model:" + LABEL_LOOKUP_MODEL,
+                        "label_resolution_fingerprint:"
+                        + resolution_fingerprint,
+                    }
+                )
+            )
+        )
+        if len(candidates) > MAX_TEMPLATE_CANDIDATES:
+            resolved.append(
+                replace(
+                    item,
+                    outcome="coverage_failure",
+                    reason_code="literal_label_candidate_union_limit_exceeded",
+                    exact_entity_ids=tuple(
+                        candidates[:MAX_TEMPLATE_CANDIDATES]
+                    ),
+                    context_provenance=bound_context,
+                    limit_exceeded=True,
+                    lock_projection="coverage_failure",
+                )
+            )
+            continue
+        composition_complete = bool(
+            "entity_non_selector_evidence:complete" in context
+            and "entity_non_selector_evidence:incomplete" not in context
+        )
+        if not composition_complete:
+            # The label component is known, but another candidate-producing
+            # branch remains unresolved.  Bind the lookup evidence for drift,
+            # retain all proven inclusions, and preserve opacity.
+            resolved.append(
+                replace(
+                    item,
+                    exact_entity_ids=candidates,
+                    possible_entity_domains=(
+                        tuple(
+                            sorted(
+                                set(item.possible_entity_domains or ()).union(
+                                    value.split(".", 1)[0]
+                                    for value in candidates
+                                )
+                            )
+                        )
+                        if candidates or item.possible_entity_domains is not None
+                        else None
+                    ),
+                    context_provenance=bound_context,
+                )
+            )
+            continue
+        domains = tuple(
+            sorted(
+                set(item.possible_entity_domains or ()).union(
+                    value.split(".", 1)[0] for value in candidates
+                )
+            )
+        )
+        resolved.append(
+            replace(
+                item,
+                outcome=(
+                    "exact_dependency"
+                    if candidates
+                    else "proven_dependency_neutral"
+                ),
+                reason_code=(
+                    "literal_label_membership_resolved"
+                    if candidates
+                    else "literal_label_membership_empty"
+                ),
+                semantic_category=(
+                    "state_entity_access"
+                    if candidates
+                    else "dependency_neutral"
+                ),
+                exact_entity_ids=candidates,
+                possible_entity_domains=domains if domains else None,
+                context_provenance=bound_context,
+                lock_projection="exact" if candidates else "none",
+            )
+        )
+    return resolved
 
 
 def _deduplicate_obligations(
