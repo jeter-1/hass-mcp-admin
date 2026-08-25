@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
@@ -21,6 +23,9 @@ from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance import GOVERNANCE  # noqa: E402
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.governance.models import PlanStatus  # noqa: E402
+from ha_mcp_engineering.governance.risk import (  # noqa: E402
+    automation_action_consequence_profile,
+)
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
 )
@@ -92,6 +97,59 @@ def _profile(index: int, *, padding: int = 0, truncated: bool = False) -> dict:
             {"automation": automation, "profile": index}
         ),
         "bounded_diagnostic": "y" * padding,
+    }
+
+
+def _production_profile(
+    index: int,
+    *,
+    action_count: int = 256,
+    entity_id_chars: int = 80,
+) -> dict:
+    """Build one persisted profile through the production action projector."""
+
+    actions = []
+    for action_index in range(action_count):
+        suffix = f"_{action_index:04d}"
+        entity_id = "cover." + "x" * (
+            entity_id_chars - len("cover.") - len(suffix)
+        ) + suffix
+        actions.append(
+            {
+                "action": "cover.set_cover_position",
+                "target": {"entity_id": entity_id},
+                "data": {"position": (50 + index) % 100},
+            }
+        )
+    consequence = automation_action_consequence_profile(
+        {"action": actions}
+    )
+    automation = f"automation.synthetic_profile_{index:04d}"
+    return {
+        "automation_id": automation,
+        "automation_resource_id": automation.removeprefix("automation."),
+        "relationships": ["trigger"],
+        "physical_consequence": consequence["physical_consequence"],
+        "complete": consequence["complete"],
+        "truncated": consequence["truncated"],
+        "action_domains": consequence["action_domains"],
+        "services": consequence["services"],
+        "reason_codes": consequence["reason_codes"],
+        "effect_projection_model": consequence[
+            "effect_projection_model"
+        ],
+        "effect_targets": consequence["effect_targets"],
+        "effect_data": consequence["effect_data"],
+        "effect_structure_fingerprint": consequence[
+            "effect_structure_fingerprint"
+        ],
+        "effect_projection_fingerprint": consequence[
+            "effect_projection_fingerprint"
+        ],
+        "effect_projection_clipped": consequence[
+            "effect_projection_clipped"
+        ],
+        "profile_fingerprint": consequence["evidence_fingerprint"],
     }
 
 
@@ -223,6 +281,19 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(created["provider_dispatch_occurred"])
         return created["plan"]["plan_id"]
 
+    async def _create_plan_with_profiles(
+        self, profiles: list[dict]
+    ) -> str:
+        self.reader.obligations = []
+        self.reader.profiles = deepcopy(profiles)
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.helper.entity_id,
+            desired_state="on",
+            expiration_minutes=120,
+        )
+        self.assertFalse(created["provider_dispatch_occurred"])
+        return created["plan"]["plan_id"]
+
     def _persisted_files(self) -> dict[str, bytes]:
         return {
             str(path.relative_to(self.root)): path.read_bytes()
@@ -237,6 +308,135 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.service.helper_dependency_risk_reader = forbidden_reader
         self.service.helper_state_gateway = _Unreachable()
         self.service.gateway = _Unreachable()
+
+    def _traverse_downstream_profiles(
+        self,
+        plan_id: str,
+        *,
+        page_size: int = 100,
+    ) -> tuple[list[dict], list[dict]]:
+        cursor = ""
+        profiles = []
+        pages = []
+        fragment_bytes = bytearray()
+        fragment_record_index = None
+        fragment_fingerprint = None
+        while True:
+            page = self.service.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+                cursor=cursor,
+                page_size=page_size,
+            )
+            pages.append(page)
+            detail = page["detail"]
+            profiles.extend(detail["items"])
+            for fragment in detail["fragments"]:
+                if fragment_record_index is None:
+                    fragment_record_index = fragment[
+                        "logical_record_index"
+                    ]
+                    fragment_fingerprint = fragment[
+                        "logical_record_fingerprint"
+                    ]
+                self.assertEqual(
+                    fragment["logical_record_index"],
+                    fragment_record_index,
+                )
+                self.assertEqual(
+                    fragment["logical_record_fingerprint"],
+                    fragment_fingerprint,
+                )
+                self.assertEqual(fragment["byte_start"], len(fragment_bytes))
+                encoded = fragment["payload"]
+                payload = base64.b64decode(
+                    encoded + "=" * (-len(encoded) % 4),
+                    altchars=b"-_",
+                    validate=True,
+                )
+                self.assertEqual(
+                    base64.urlsafe_b64encode(payload)
+                    .decode("ascii")
+                    .rstrip("="),
+                    encoded,
+                )
+                fragment_bytes.extend(payload)
+                self.assertEqual(fragment["byte_end"], len(fragment_bytes))
+                if fragment["is_final"]:
+                    profile = json.loads(fragment_bytes.decode("utf-8"))
+                    self.assertEqual(stable_hash(profile), fragment_fingerprint)
+                    profiles.append(profile)
+                    fragment_bytes = bytearray()
+                    fragment_record_index = None
+                    fragment_fingerprint = None
+            cursor = detail["next_cursor"] or ""
+            if not detail["has_more"]:
+                self.assertFalse(fragment_bytes)
+                return profiles, pages
+
+    def _assert_complete_profile_traversal(
+        self,
+        plan_id: str,
+        expected: list[dict],
+        *,
+        page_size: int = 100,
+    ) -> tuple[list[dict], list[dict]]:
+        profiles, pages = self._traverse_downstream_profiles(
+            plan_id,
+            page_size=page_size,
+        )
+        ordered = sorted(
+            expected,
+            key=lambda item: self.service._plan_observability_sort_key(
+                "downstream_profiles", item
+            ),
+        )
+        self.assertEqual(profiles, ordered)
+        self.assertEqual(len(profiles), len(expected))
+        self.assertEqual(
+            len({item["profile_fingerprint"] for item in profiles}),
+            len(expected),
+        )
+        self.assertEqual(
+            {page["detail"]["total_count"] for page in pages},
+            {len(expected)},
+        )
+        self.assertEqual(
+            len(
+                {
+                    page["detail"]["full_set_fingerprint"]
+                    for page in pages
+                }
+            ),
+            1,
+        )
+        self.assertEqual(
+            pages[0]["detail"]["full_set_fingerprint"],
+            stable_hash(ordered),
+        )
+        self.assertEqual(
+            {
+                page["canonical_summary"][
+                    "downstream_profile_full_set_fingerprint"
+                ]
+                for page in pages
+            },
+            {stable_hash(ordered)},
+        )
+        self.assertTrue(
+            all(
+                self.service._plan_observability_encoded_chars(page)
+                <= 52_000
+                for page in pages
+            )
+        )
+        self.assertFalse(pages[-1]["detail"]["has_more"])
+        self.assertIsNone(pages[-1]["detail"]["next_cursor"])
+        self.assertEqual(
+            sum(not page["detail"]["has_more"] for page in pages),
+            1,
+        )
+        return profiles, pages
 
     async def _create_contract_v1_plan(
         self,
@@ -332,14 +532,17 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
 
     def _synthetic_cursor_claims(self) -> dict:
         return {
-            "version": 2,
-            "plan_id": "plan_beta43_opaque_cursor_sentinel",
+            "version": 3,
+            "plan_id": "plan_beta44_opaque_cursor_sentinel",
             "plan_hash": "1f" * 32,
             "evidence_fingerprint": "2e" * 32,
             "section": "obligation_evidence",
-            "ordering_version": 1,
+            "ordering_version": 2,
             "full_set_fingerprint": "3d" * 32,
             "offset": 123456789,
+            "fragment_offset": 0,
+            "fragment_index": 0,
+            "record_fingerprint": "4c" * 32,
             "page_size": 97,
         }
 
@@ -457,6 +660,9 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             detail_section="obligation_evidence",
         )
         self.assertEqual(page["detail"]["returned_count"], 2)
+        self.assertEqual(page["detail"]["completed_logical_record_count"], 2)
+        self.assertEqual(page["detail"]["returned_fragment_count"], 0)
+        self.assertEqual(page["detail"]["fragments"], [])
         self.assertEqual(page["detail"]["total_count"], 2)
         self.assertFalse(page["detail"]["has_more"])
         self.assertIsNone(page["detail"]["next_cursor"])
@@ -491,6 +697,358 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             parsed["data"]["canonical_summary"]["downstream_profile_total_count"],
             30,
         )
+
+    async def test_production_profile_after_eight_records_is_fully_traversable(self):
+        # Released Beta 43 measured 14,165 formatted base characters and
+        # 42,332 for this profile: 59,743 together versus its 52,000 pager
+        # budget. The first page returned eight records; the next call failed.
+        profiles = [_profile(index) for index in range(31)]
+        profiles[8] = _production_profile(8)
+        plan_id = await self._create_plan_with_profiles(profiles)
+        blocking_profile = profiles[8]
+        self.assertEqual(blocking_profile["physical_consequence"], "direct")
+        self.assertEqual(len(blocking_profile["effect_targets"]), 256)
+        self.assertEqual(len(blocking_profile["effect_data"]), 256)
+        self.assertEqual(
+            len(
+                self.service._plan_observability_record_bytes(
+                    blocking_profile
+                )
+            ),
+            39_669,
+        )
+        self.assertEqual(
+            self.service._plan_observability_encoded_chars(blocking_profile),
+            42_332,
+        )
+        self._disable_authority_paths()
+
+        returned, pages = self._assert_complete_profile_traversal(
+            plan_id, profiles
+        )
+        repeated, repeated_pages = self._assert_complete_profile_traversal(
+            plan_id, profiles
+        )
+        self.assertEqual(returned, repeated)
+        self.assertEqual(
+            pages[0]["detail"]["full_set_fingerprint"],
+            repeated_pages[0]["detail"]["full_set_fingerprint"],
+        )
+        fragment_fields = (
+            "logical_record_index",
+            "logical_record_fingerprint",
+            "fragment_index",
+            "byte_start",
+            "byte_end",
+            "total_bytes",
+            "is_final",
+            "fragment_fingerprint",
+        )
+        self.assertEqual(
+            [
+                tuple(fragment[field] for field in fragment_fields)
+                for page in pages
+                for fragment in page["detail"]["fragments"]
+            ],
+            [
+                tuple(fragment[field] for field in fragment_fields)
+                for page in repeated_pages
+                for fragment in page["detail"]["fragments"]
+            ],
+        )
+        self.assertTrue(any(page["detail"]["fragments"] for page in pages))
+
+    async def test_oversized_profile_positions_and_page_sizes_make_progress(self):
+        first = [_production_profile(0), *[_profile(i) for i in range(1, 7)]]
+        last = [*[_profile(i) for i in range(6)], _production_profile(6)]
+        consecutive = [_profile(i) for i in range(8)]
+        consecutive[3] = _production_profile(3)
+        consecutive[4] = _production_profile(4)
+        plans = []
+        for name, profiles in (
+            ("first", first),
+            ("last", last),
+            ("consecutive", consecutive),
+        ):
+            plans.append(
+                (name, profiles, await self._create_plan_with_profiles(profiles))
+            )
+        self._disable_authority_paths()
+
+        for name, profiles, plan_id in plans:
+            for page_size in (1, 20, 100):
+                with self.subTest(position=name, page_size=page_size):
+                    _, pages = self._assert_complete_profile_traversal(
+                        plan_id,
+                        profiles,
+                        page_size=page_size,
+                    )
+                    self.assertLess(len(pages), 100)
+                    self.assertTrue(
+                        any(page["detail"]["fragments"] for page in pages)
+                    )
+
+    async def test_profile_larger_than_gateway_limit_is_reconstructed(self):
+        profiles = [_production_profile(0, entity_id_chars=150)]
+        self.assertGreater(
+            self.service._plan_observability_encoded_chars(profiles[0]),
+            60_000,
+        )
+        plan_id = await self._create_plan_with_profiles(profiles)
+        self._disable_authority_paths()
+
+        _, pages = self._assert_complete_profile_traversal(plan_id, profiles)
+
+        self.assertGreater(len(pages), 1)
+        self.assertTrue(
+            all(page["detail"]["returned_fragment_count"] == 1 for page in pages)
+        )
+        self.assertEqual(
+            sum(
+                page["detail"]["completed_logical_record_count"]
+                for page in pages
+            ),
+            1,
+        )
+
+    async def test_fragment_response_exact_budget_and_one_character_less(self):
+        profiles = [_production_profile(0)]
+        plan_id = await self._create_plan_with_profiles(profiles)
+        self._disable_authority_paths()
+        ordinary = self.service.get_plan_observability(
+            plan_id,
+            detail_section="downstream_profiles",
+            page_size=100,
+        )
+        ordinary_size = self.service._plan_observability_encoded_chars(ordinary)
+
+        exact = self.service.get_plan_observability(
+            plan_id,
+            detail_section="downstream_profiles",
+            page_size=100,
+            response_limit=ordinary_size + 8_000,
+        )
+        one_less = self.service.get_plan_observability(
+            plan_id,
+            detail_section="downstream_profiles",
+            page_size=100,
+            response_limit=ordinary_size + 7_999,
+        )
+
+        self.assertEqual(
+            self.service._plan_observability_encoded_chars(exact),
+            ordinary_size,
+        )
+        self.assertLessEqual(
+            self.service._plan_observability_encoded_chars(one_less),
+            ordinary_size - 1,
+        )
+        self.assertLess(
+            one_less["detail"]["fragments"][0]["byte_end"],
+            exact["detail"]["fragments"][0]["byte_end"],
+        )
+
+    async def test_tool_framing_remains_below_gateway_limit_for_fragments(self):
+        profiles = [_profile(index) for index in range(31)]
+        profiles[8] = _production_profile(8)
+        plan_id = await self._create_plan_with_profiles(profiles)
+        self._disable_authority_paths()
+        prior = GOVERNANCE.service
+        GOVERNANCE.service = self.service
+        try:
+            cursor = ""
+            completed = 0
+            response_count = 0
+            while True:
+                encoded = await get_change_plan(
+                    plan_id,
+                    detail_section="downstream_profiles",
+                    cursor=cursor,
+                    page_size=100,
+                )
+                self.assertLess(len(encoded), 60_000)
+                parsed = json.loads(encoded)
+                self.assertTrue(parsed["success"])
+                detail = parsed["data"]["detail"]
+                completed += detail["completed_logical_record_count"]
+                response_count += 1
+                cursor = detail["next_cursor"] or ""
+                if not detail["has_more"]:
+                    break
+        finally:
+            GOVERNANCE.service = prior
+
+        self.assertEqual(completed, 31)
+        self.assertGreater(response_count, 2)
+
+    async def test_fragment_cursor_binds_record_collection_and_byte_position(self):
+        profiles = [_production_profile(0), _profile(1)]
+        plan_id = await self._create_plan_with_profiles(profiles)
+        self._disable_authority_paths()
+        first = self.service.get_plan_observability(
+            plan_id,
+            detail_section="downstream_profiles",
+            page_size=100,
+        )
+        fragment = first["detail"]["fragments"][0]
+        cursor = first["detail"]["next_cursor"]
+        claims = self.service._decode_plan_observability_cursor(cursor)
+        self.assertGreater(claims["fragment_offset"], 0)
+        self.assertEqual(claims["fragment_index"], 1)
+        self.assertEqual(
+            claims["record_fingerprint"], stable_hash(profiles[0])
+        )
+
+        fragment_material = dict(fragment)
+        supplied_fingerprint = fragment_material.pop("fragment_fingerprint")
+        self.assertEqual(stable_hash(fragment_material), supplied_fingerprint)
+        fragment_material["payload"] += "A"
+        self.assertNotEqual(stable_hash(fragment_material), supplied_fingerprint)
+
+        changed_record = dict(claims)
+        changed_record["record_fingerprint"] = "a" * 64
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+                cursor=self.service._encode_plan_observability_cursor(
+                    changed_record
+                ),
+                page_size=100,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.STALE_CURSOR)
+
+        out_of_range = dict(claims)
+        out_of_range["fragment_offset"] = len(
+            self.service._plan_observability_record_bytes(profiles[0])
+        )
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+                cursor=self.service._encode_plan_observability_cursor(
+                    out_of_range
+                ),
+                page_size=100,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+        self.assertEqual(
+            caught.exception.details["reason"],
+            "fragment_offset_out_of_range",
+        )
+
+        completed = dict(claims)
+        completed.update(
+            {
+                "offset": len(profiles),
+                "fragment_offset": 0,
+                "fragment_index": 0,
+                "record_fingerprint": "b" * 64,
+            }
+        )
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+                cursor=self.service._encode_plan_observability_cursor(completed),
+                page_size=100,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+        self.assertEqual(caught.exception.details["reason"], "offset_out_of_range")
+
+        restarted = ChangeGovernanceService(
+            ChangePlanRepository(self.root / "plans"),
+            UnusedLegacyGateway(),
+            now=self.clock,
+            helper_state_gateway=_Unreachable(),
+            helper_dependency_risk_reader=_Unreachable(),
+        )
+        with self.assertRaises(GovernanceError) as caught:
+            restarted.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+                cursor=cursor,
+                page_size=100,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+
+    async def test_fragment_cursor_rejects_changed_persisted_profile_material(self):
+        profiles = [_production_profile(0), _profile(1)]
+        plan_id = await self._create_plan_with_profiles(profiles)
+        first = self.service.get_plan_observability(
+            plan_id,
+            detail_section="downstream_profiles",
+            page_size=100,
+        )
+        cursor = first["detail"]["next_cursor"]
+        persisted = self.service._load(plan_id)
+        binding = persisted.operational.baseline["dependency_risk"]
+        binding["downstream_profiles"][0]["effect_data"][0] += "-changed"
+        self.service._save(persisted)
+        self._disable_authority_paths()
+
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+                cursor=cursor,
+                page_size=100,
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.STALE_CURSOR)
+
+    async def test_malformed_oversized_persisted_profile_fails_closed(self):
+        profiles = [_production_profile(0)]
+        profiles[0]["effect_data"][0] = float("nan")
+        plan_id = await self._create_plan_with_profiles(profiles)
+        self._disable_authority_paths()
+
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+                page_size=100,
+            )
+        self.assertEqual(
+            caught.exception.code,
+            ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+        )
+
+    async def test_fragment_success_interruption_and_refusal_are_read_only(self):
+        profiles = [_production_profile(0), _profile(1)]
+        plan_id = await self._create_plan_with_profiles(profiles)
+        reads_before = self.reader.read_count
+        before = self._persisted_files()
+        self._disable_authority_paths()
+
+        first = self.service.get_plan_observability(
+            plan_id,
+            detail_section="downstream_profiles",
+            page_size=100,
+        )
+        continuation = self.service.get_plan_observability(
+            plan_id,
+            detail_section="downstream_profiles",
+            cursor=first["detail"]["next_cursor"],
+            page_size=100,
+        )
+        with self.assertRaises(GovernanceError) as caught:
+            self.service.get_plan_observability(
+                plan_id,
+                detail_section="downstream_profiles",
+                cursor=first["detail"]["next_cursor"] + "!",
+                page_size=100,
+            )
+
+        self.assertEqual(caught.exception.code, ErrorCode.INVALID_CURSOR)
+        self.assertEqual(first["detail"]["returned_fragment_count"], 1)
+        self.assertEqual(
+            continuation["detail"]["returned_fragment_count"], 1
+        )
+        self.assertEqual(self.reader.read_count, reads_before)
+        self.assertEqual(self.helper.dispatch_count, 0)
+        self.assertEqual(self.service._plan_locks, {})
+        self.assertEqual(self.service._target_locks, {})
+        self.assertEqual(before, self._persisted_files())
 
     async def test_response_budget_exact_boundary_and_above_boundary(self):
         plan_id = await self._create_plan(obligations=3, profiles=2)
@@ -553,6 +1111,7 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             "plan_hash",
             "evidence_fingerprint",
             "full_set_fingerprint",
+            "record_fingerprint",
             "section",
         ):
             recognizable = str(claims[field]).encode("utf-8")
@@ -560,18 +1119,21 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(str(claims[field]), first, field)
         for fragment in (
             b'"offset":123456789',
+            b'"fragment_offset":0',
+            b'"fragment_index":0',
             b'"page_size":97',
         ):
             self.assertNotIn(fragment, decoded)
 
         largest_valid_claims = dict(claims)
+        largest_valid_claims["plan_id"] = "p" * 256
         for field, marker in (
-            ("plan_id", "p"),
-            ("plan_hash", "h"),
-            ("evidence_fingerprint", "e"),
-            ("full_set_fingerprint", "f"),
+            ("plan_hash", "a"),
+            ("evidence_fingerprint", "b"),
+            ("full_set_fingerprint", "c"),
+            ("record_fingerprint", "d"),
         ):
-            largest_valid_claims[field] = marker * 256
+            largest_valid_claims[field] = marker * 64
         largest_valid = self.service._encode_plan_observability_cursor(
             largest_valid_claims
         )
@@ -681,6 +1243,38 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             "full_set_fingerprint",
         ):
             self.assertNotIn(str(claims[field]), bounded_error)
+
+    def test_beta43_encrypted_cursor_is_rejected_under_beta44_domain(self):
+        claims = {
+            "version": 2,
+            "plan_id": "plan_beta43_cursor",
+            "plan_hash": "1f" * 32,
+            "evidence_fingerprint": "2e" * 32,
+            "section": "downstream_profiles",
+            "ordering_version": 1,
+            "full_set_fingerprint": "3d" * 32,
+            "offset": 8,
+            "page_size": 100,
+        }
+        payload = json.dumps(
+            claims,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        old_key = hmac.new(
+            self.service._plan_observability_cursor_key,
+            b"ha-mcp-engineering:plan-observability:cursor-encryption-key:v2",
+            hashlib.sha256,
+        ).digest()
+        nonce = b"\x01" * 12
+        encrypted = AESGCM(old_key).encrypt(
+            nonce,
+            payload,
+            b"ha-mcp-engineering:plan-observability:cursor:v2",
+        )
+        cursor = self._encode_public_cursor_bytes(nonce + encrypted)
+
+        self._assert_invalid_cursor_token(cursor)
 
     async def test_every_obligation_is_returned_once_across_stable_pages(self):
         plan_id = await self._create_plan(
@@ -808,7 +1402,7 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
 
         unsupported = self.service._encode_plan_observability_cursor(
             {
-                "version": 99,
+                "version": 2,
                 "plan_id": plan_id,
                 "plan_hash": first["canonical_summary"]["plan_hash"],
                 "evidence_fingerprint": first["canonical_summary"][
@@ -820,6 +1414,9 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
                     "full_set_fingerprint"
                 ],
                 "offset": 1,
+                "fragment_offset": 0,
+                "fragment_index": 0,
+                "record_fingerprint": "4c" * 32,
                 "page_size": 1,
             }
         )
@@ -838,18 +1435,21 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
 
         out_of_range = self.service._encode_plan_observability_cursor(
             {
-                "version": 2,
+                "version": 3,
                 "plan_id": plan_id,
                 "plan_hash": first["canonical_summary"]["plan_hash"],
                 "evidence_fingerprint": first["canonical_summary"][
                     "evidence_fingerprint"
                 ],
                 "section": "obligation_evidence",
-                "ordering_version": 1,
+                "ordering_version": 2,
                 "full_set_fingerprint": first["detail"][
                     "full_set_fingerprint"
                 ],
                 "offset": 4,
+                "fragment_offset": 0,
+                "fragment_index": 0,
+                "record_fingerprint": "4c" * 32,
                 "page_size": 1,
             }
         )
