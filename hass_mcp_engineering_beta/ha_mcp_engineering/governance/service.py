@@ -162,8 +162,8 @@ LIFECYCLE_OPERATIONS = frozenset(
 )
 MAX_CONFIGURATION_OPERATIONS = 8
 MAX_PLAN_PROJECTION_FAILURES = 20
-PLAN_OBSERVABILITY_CURSOR_VERSION = 2
-PLAN_OBSERVABILITY_ORDERING_VERSION = 1
+PLAN_OBSERVABILITY_CURSOR_VERSION = 3
+PLAN_OBSERVABILITY_ORDERING_VERSION = 2
 PLAN_OBSERVABILITY_DEFAULT_PAGE_SIZE = 20
 PLAN_OBSERVABILITY_MAX_PAGE_SIZE = 100
 PLAN_OBSERVABILITY_CURSOR_MAX_CHARS = 2_048
@@ -171,15 +171,19 @@ PLAN_OBSERVABILITY_CURSOR_NONCE_BYTES = 12
 PLAN_OBSERVABILITY_CURSOR_TAG_BYTES = 16
 PLAN_OBSERVABILITY_CURSOR_MAX_OFFSET = (1 << 63) - 1
 PLAN_OBSERVABILITY_CURSOR_KEY_CONTEXT = (
-    b"ha-mcp-engineering:plan-observability:cursor-encryption-key:v2"
+    b"ha-mcp-engineering:plan-observability:cursor-encryption-key:v3"
 )
 PLAN_OBSERVABILITY_CURSOR_ASSOCIATED_DATA = (
-    b"ha-mcp-engineering:plan-observability:cursor:v2"
+    b"ha-mcp-engineering:plan-observability:cursor:v3"
 )
 PLAN_OBSERVABILITY_CURSOR_BASE64URL_CHARS = frozenset(
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 )
 PLAN_OBSERVABILITY_RESPONSE_HEADROOM_CHARS = 8_000
+PLAN_OBSERVABILITY_FRAGMENT_MODEL = (
+    "downstream-profile-canonical-json-utf8-fragment-v1"
+)
+PLAN_OBSERVABILITY_FRAGMENT_BYTES = 8_192
 PLAN_OBSERVABILITY_SECTIONS = frozenset(
     {"summary", "obligation_evidence", "downstream_profiles"}
 )
@@ -4860,21 +4864,34 @@ class ChangeGovernanceService:
                 "ordering_version",
                 "full_set_fingerprint",
                 "offset",
+                "fragment_offset",
+                "fragment_index",
+                "record_fingerprint",
                 "page_size",
             }
             if not isinstance(value, dict) or set(value) != required:
                 raise ValueError("cursor fields are invalid")
+            plan_id = value["plan_id"]
+            if (
+                not isinstance(plan_id, str)
+                or not plan_id
+                or len(plan_id) > 256
+            ):
+                raise ValueError("cursor plan_id is invalid")
             for field in (
-                "plan_id",
                 "plan_hash",
                 "evidence_fingerprint",
                 "full_set_fingerprint",
+                "record_fingerprint",
             ):
                 field_value = value[field]
                 if (
                     not isinstance(field_value, str)
-                    or not field_value
-                    or len(field_value) > 256
+                    or len(field_value) != 64
+                    or any(
+                        character not in "0123456789abcdef"
+                        for character in field_value
+                    )
                 ):
                     raise ValueError(f"cursor {field} is invalid")
             if value["section"] not in (
@@ -4894,8 +4911,25 @@ class ChangeGovernanceService:
                 or not 0
                 <= value["offset"]
                 <= PLAN_OBSERVABILITY_CURSOR_MAX_OFFSET
+                or type(value["fragment_offset"]) is not int
+                or not 0
+                <= value["fragment_offset"]
+                <= PLAN_OBSERVABILITY_CURSOR_MAX_OFFSET
+                or type(value["fragment_index"]) is not int
+                or not 0
+                <= value["fragment_index"]
+                <= PLAN_OBSERVABILITY_CURSOR_MAX_OFFSET
             ):
                 raise ValueError("cursor offset is invalid")
+            if bool(value["fragment_offset"]) != bool(
+                value["fragment_index"]
+            ):
+                raise ValueError("cursor fragment position is invalid")
+            if (
+                value["section"] != "downstream_profiles"
+                and (value["fragment_offset"] or value["fragment_index"])
+            ):
+                raise ValueError("cursor fragment section is invalid")
             if (
                 type(value["page_size"]) is not int
                 or not 1
@@ -4919,11 +4953,89 @@ class ChangeGovernanceService:
         return len(
             json.dumps(
                 value,
-                ensure_ascii=False,
+                ensure_ascii=True,
                 indent=2,
                 default=str,
             )
         )
+
+    @staticmethod
+    def _plan_observability_record_bytes(item: dict[str, Any]) -> bytes:
+        try:
+            return json.dumps(
+                item,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        except (TypeError, ValueError) as exc:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
+
+    @staticmethod
+    def _plan_observability_fragment(
+        *,
+        item: dict[str, Any],
+        record_bytes: bytes,
+        logical_record_index: int,
+        fragment_index: int,
+        byte_start: int,
+        byte_end: int,
+    ) -> dict[str, Any]:
+        payload = base64.urlsafe_b64encode(
+            record_bytes[byte_start:byte_end]
+        ).decode("ascii").rstrip("=")
+        material = {
+            "model": PLAN_OBSERVABILITY_FRAGMENT_MODEL,
+            "logical_record_index": logical_record_index,
+            "logical_record_fingerprint": stable_hash(item),
+            "profile_fingerprint": str(item.get("profile_fingerprint") or ""),
+            "fragment_index": fragment_index,
+            "byte_start": byte_start,
+            "byte_end": byte_end,
+            "total_bytes": len(record_bytes),
+            "is_final": byte_end == len(record_bytes),
+            "payload_encoding": "canonical-json-utf8-base64url-v1",
+            "payload": payload,
+        }
+        return {
+            **material,
+            "fragment_fingerprint": stable_hash(material),
+        }
+
+    def _plan_observability_cursor_claims(
+        self,
+        *,
+        plan_id: str,
+        public: dict[str, Any],
+        summary: dict[str, Any],
+        detail_section: str,
+        full_set_fingerprint: str,
+        items: list[dict[str, Any]],
+        offset: int,
+        fragment_offset: int,
+        fragment_index: int,
+        page_size: int,
+    ) -> dict[str, Any]:
+        if not 0 <= offset < len(items):
+            raise GovernanceError(
+                ErrorCode.INVALID_REQUEST,
+                details={"reason": "cursor_offset_not_continuable"},
+            )
+        return {
+            "version": PLAN_OBSERVABILITY_CURSOR_VERSION,
+            "plan_id": plan_id,
+            "plan_hash": public.get("plan_hash"),
+            "evidence_fingerprint": summary.get("evidence_fingerprint"),
+            "section": detail_section,
+            "ordering_version": PLAN_OBSERVABILITY_ORDERING_VERSION,
+            "full_set_fingerprint": full_set_fingerprint,
+            "offset": offset,
+            "fragment_offset": fragment_offset,
+            "fragment_index": fragment_index,
+            "record_fingerprint": stable_hash(items[offset]),
+            "page_size": page_size,
+        }
 
     @staticmethod
     def _compact_plan_observability_core(
@@ -5097,11 +5209,19 @@ class ChangeGovernanceService:
             "section": detail_section,
             "ordering_version": PLAN_OBSERVABILITY_ORDERING_VERSION,
             "returned_count": 0,
+            "completed_logical_record_count": 0,
+            "returned_fragment_count": 0,
             "total_count": 0,
             "has_more": False,
             "next_cursor": None,
             "full_set_fingerprint": None,
             "items": [],
+            "fragment_model": (
+                PLAN_OBSERVABILITY_FRAGMENT_MODEL
+                if detail_section == "downstream_profiles"
+                else None
+            ),
+            "fragments": [],
         }
         result = {
             "canonical_summary": summary,
@@ -5134,6 +5254,8 @@ class ChangeGovernanceService:
         )
         full_set_fingerprint = stable_hash(items)
         offset = 0
+        fragment_offset = 0
+        fragment_index = 0
         if decoded_cursor is not None:
             if (
                 decoded_cursor.get("plan_hash") != public.get("plan_hash")
@@ -5151,12 +5273,34 @@ class ChangeGovernanceService:
                     },
                 )
             offset = decoded_cursor["offset"]
-        if offset > len(items):
+            fragment_offset = decoded_cursor["fragment_offset"]
+            fragment_index = decoded_cursor["fragment_index"]
+        if offset > len(items) or (decoded_cursor is not None and offset == len(items)):
             raise GovernanceError(
                 ErrorCode.INVALID_CURSOR,
                 details={
                     "field": "cursor",
                     "reason": "offset_out_of_range",
+                    "operation": "get_change_plan",
+                },
+            )
+        if decoded_cursor is not None and decoded_cursor.get(
+            "record_fingerprint"
+        ) != stable_hash(items[offset]):
+            raise GovernanceError(
+                ErrorCode.STALE_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "logical_record_binding_changed",
+                    "operation": "get_change_plan",
+                },
+            )
+        if fragment_offset and detail_section != "downstream_profiles":
+            raise GovernanceError(
+                ErrorCode.INVALID_CURSOR,
+                details={
+                    "field": "cursor",
+                    "reason": "fragment_section_mismatch",
                     "operation": "get_change_plan",
                 },
             )
@@ -5166,37 +5310,151 @@ class ChangeGovernanceService:
                 "full_set_fingerprint": full_set_fingerprint,
             }
         )
-        for item in items[offset : offset + page_size]:
-            candidate = deepcopy(detail["items"])
-            candidate.append(item)
-            detail["items"] = candidate
-            detail["returned_count"] = len(candidate)
-            if self._plan_observability_encoded_chars(result) > response_budget:
-                detail["items"].pop()
-                detail["returned_count"] = len(detail["items"])
-                break
+        if not fragment_offset:
+            for item in items[offset : offset + page_size]:
+                candidate = deepcopy(detail["items"])
+                candidate.append(item)
+                detail["items"] = candidate
+                detail["returned_count"] = len(candidate)
+                detail["completed_logical_record_count"] = len(candidate)
+                if (
+                    self._plan_observability_encoded_chars(result)
+                    > response_budget
+                ):
+                    detail["items"].pop()
+                    detail["returned_count"] = len(detail["items"])
+                    detail["completed_logical_record_count"] = len(
+                        detail["items"]
+                    )
+                    break
+
         if offset < len(items) and not detail["items"]:
-            raise GovernanceError(
-                ErrorCode.INVALID_REQUEST,
-                details={"reason": "detail_record_exceeds_response_budget"},
+            if detail_section != "downstream_profiles":
+                raise GovernanceError(
+                    ErrorCode.INVALID_REQUEST,
+                    details={
+                        "reason": "detail_record_exceeds_response_budget"
+                    },
+                )
+            record_bytes = self._plan_observability_record_bytes(items[offset])
+            if fragment_offset >= len(record_bytes):
+                raise GovernanceError(
+                    ErrorCode.INVALID_CURSOR,
+                    details={
+                        "field": "cursor",
+                        "reason": "fragment_offset_out_of_range",
+                        "operation": "get_change_plan",
+                    },
+                )
+            summary["base_plan_projection_compacted"] = True
+            result = {
+                "canonical_summary": summary,
+                **self._compact_plan_observability_core(public),
+                "detail": detail,
+            }
+            maximum = min(
+                PLAN_OBSERVABILITY_FRAGMENT_BYTES,
+                len(record_bytes) - fragment_offset,
             )
+            low = 1
+            high = maximum
+            selected: tuple[dict[str, Any], str | None, bool] | None = None
+            while low <= high:
+                length = (low + high) // 2
+                byte_end = fragment_offset + length
+                fragment = self._plan_observability_fragment(
+                    item=items[offset],
+                    record_bytes=record_bytes,
+                    logical_record_index=offset,
+                    fragment_index=fragment_index,
+                    byte_start=fragment_offset,
+                    byte_end=byte_end,
+                )
+                fragment_complete = byte_end == len(record_bytes)
+                has_more = not (
+                    fragment_complete and offset + 1 == len(items)
+                )
+                next_cursor = None
+                if has_more:
+                    next_offset = offset + (1 if fragment_complete else 0)
+                    next_fragment_offset = 0 if fragment_complete else byte_end
+                    next_fragment_index = (
+                        0 if fragment_complete else fragment_index + 1
+                    )
+                    next_cursor = self._encode_plan_observability_cursor(
+                        self._plan_observability_cursor_claims(
+                            plan_id=plan_id,
+                            public=public,
+                            summary=summary,
+                            detail_section=detail_section,
+                            full_set_fingerprint=full_set_fingerprint,
+                            items=items,
+                            offset=next_offset,
+                            fragment_offset=next_fragment_offset,
+                            fragment_index=next_fragment_index,
+                            page_size=page_size,
+                        )
+                    )
+                detail.update(
+                    {
+                        "returned_count": 0,
+                        "completed_logical_record_count": (
+                            1 if fragment_complete else 0
+                        ),
+                        "returned_fragment_count": 1,
+                        "has_more": has_more,
+                        "next_cursor": next_cursor,
+                        "items": [],
+                        "fragments": [fragment],
+                    }
+                )
+                if (
+                    self._plan_observability_encoded_chars(result)
+                    <= response_budget
+                ):
+                    selected = (fragment, next_cursor, has_more)
+                    low = length + 1
+                else:
+                    high = length - 1
+            if selected is None:
+                raise GovernanceError(
+                    ErrorCode.INVALID_REQUEST,
+                    details={
+                        "reason": "detail_fragment_exceeds_response_budget"
+                    },
+                )
+            fragment, next_cursor, has_more = selected
+            detail.update(
+                {
+                    "returned_count": 0,
+                    "completed_logical_record_count": (
+                        1 if fragment["is_final"] else 0
+                    ),
+                    "returned_fragment_count": 1,
+                    "has_more": has_more,
+                    "next_cursor": next_cursor,
+                    "items": [],
+                    "fragments": [fragment],
+                }
+            )
+            return result
+
         next_offset = offset + len(detail["items"])
         detail["has_more"] = next_offset < len(items)
         if detail["has_more"]:
             detail["next_cursor"] = self._encode_plan_observability_cursor(
-                {
-                    "version": PLAN_OBSERVABILITY_CURSOR_VERSION,
-                    "plan_id": plan_id,
-                    "plan_hash": public.get("plan_hash"),
-                    "evidence_fingerprint": summary.get(
-                        "evidence_fingerprint"
-                    ),
-                    "section": detail_section,
-                    "ordering_version": PLAN_OBSERVABILITY_ORDERING_VERSION,
-                    "full_set_fingerprint": full_set_fingerprint,
-                    "offset": next_offset,
-                    "page_size": page_size,
-                }
+                self._plan_observability_cursor_claims(
+                    plan_id=plan_id,
+                    public=public,
+                    summary=summary,
+                    detail_section=detail_section,
+                    full_set_fingerprint=full_set_fingerprint,
+                    items=items,
+                    offset=next_offset,
+                    fragment_offset=0,
+                    fragment_index=0,
+                    page_size=page_size,
+                )
             )
         return result
 
