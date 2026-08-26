@@ -1664,6 +1664,90 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(exact_key, conditional_unrelated_locks)
         self.assertNotIn(dynamic_key, conditional_unrelated_locks)
 
+    async def test_typed_trigger_time_provenance_does_not_add_helper_lock(self):
+        helper = "input_boolean.beta46_target"
+        exact_key = helper_dependency_lock_key(helper)
+        dynamic_key = unconstrained_helper_dependency_lock_key()
+        base = valid_config("automation")
+        neutral_template = (
+            "{{ as_timestamp(now()) - "
+            "as_timestamp(trigger.from_state.last_changed) }} "
+            "{{ (now() - trigger.to_state.last_updated).total_seconds() }} "
+            "{{ trigger.to_state.context.user_id or 'system' }}"
+        )
+
+        for action in ("create", "update"):
+            with self.subTest(action=action, outcome="excluded"):
+                proposed = valid_config("automation")
+                proposed["trigger"] = [
+                    {
+                        "platform": "state",
+                        "entity_id": ["person.alpha", "person.bravo"],
+                    }
+                ]
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": neutral_template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    action,
+                    operation_id=f"typed_trigger_excluded_{action}",
+                    current_config=(base if action == "update" else None),
+                    proposed_config=proposed,
+                )
+                locks = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertNotIn(exact_key, locks)
+                self.assertNotIn(dynamic_key, locks)
+
+            with self.subTest(action=action, outcome="exact"):
+                proposed = valid_config("automation")
+                proposed["trigger"] = [
+                    {"platform": "state", "entity_id": helper}
+                ]
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": neutral_template,
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    action,
+                    operation_id=f"typed_trigger_exact_{action}",
+                    current_config=(base if action == "update" else None),
+                    proposed_config=proposed,
+                )
+                locks = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(exact_key, locks)
+                self.assertNotIn(dynamic_key, locks)
+
+            with self.subTest(action=action, outcome="opaque"):
+                proposed = valid_config("automation")
+                proposed["condition"] = [
+                    {
+                        "condition": "template",
+                        "value_template": "{{ states(caller_selector) }}",
+                    }
+                ]
+                prepared = await self._prepared(
+                    "automation",
+                    action,
+                    operation_id=f"typed_trigger_opaque_{action}",
+                    current_config=(base if action == "update" else None),
+                    proposed_config=proposed,
+                )
+                locks = {
+                    item.key for item in operation_lock_requests(prepared)
+                }
+                self.assertIn(dynamic_key, locks)
+
     async def test_matching_reload_and_restart_exclusive_locks_conflict_atomically(self):
         timing = LockTiming(60, 10, 0)
         expected_reload = {

@@ -16,7 +16,7 @@ SEMANTIC_REGISTRY_FILE = Path(__file__).with_name(
 )
 SEMANTIC_REGISTRY_MODEL = "home-assistant-template-semantic-registry-v1"
 EXPECTED_SEMANTIC_REGISTRY_SHA256 = (
-    "faf4ce7933ea5fcc358f46c69432dcdae237b7ab6073f29137f86574aea9f092"
+    "49ad6f56f04371d6ae8fef7c9108e50e1b179d8caf180451dfe3a7a54902f0c1"
 )
 SEMANTIC_REGISTRY_CATEGORIES = frozenset(
     {
