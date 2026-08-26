@@ -356,6 +356,27 @@ the only compiled generic release/profile authority. Other observed versions
 remain unavailable even when their self-advertised contracts match. Automatic
 no-rebuild admission for reviewed newer releases is deferred to Dev16.
 
+## Capability-scoped automatic-readmission foundation
+
+[ADR-020](architecture/ADR-020-CAPABILITY-SCOPED-AUTOMATIC-READMISSION.md)
+defines the offline decision and race model for a later capability-scoped
+readmission integration. The foundation is intentionally inert: production
+startup, routing, providers, health, tool registration and admission do not
+import it, so operators must continue to use the exact runtime compatibility
+checks in this guide.
+
+The model treats Core, ha-mcp and configured transport as independent
+surfaces. A successful reconnect restores only transport observation; it does
+not restore provider authority. Unknown Core versions may later regain only
+separately authorized structural read profiles, never template semantics,
+configuration semantics or governed writes by implication.
+
+The current server does not advertise `tools.listChanged=true` and does not
+claim `notifications/tools/list_changed` delivery. Clients must reconnect or
+explicitly re-list after the existing runtime changes its dynamic catalog.
+Notification support remains a separate pinned-SDK, protocol and client
+compatibility decision.
+
 ## Deferred registry administration writes
 
 The upstream 7.14.1 `ha_set_entity` and `ha_set_device` contracts are retained as

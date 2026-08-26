@@ -1,0 +1,404 @@
+{
+  "schema_version": 1,
+  "profiles": [
+    {
+      "profile_id": "ha_mcp_read_v1",
+      "profile_version": 1,
+      "surface": "ha_mcp",
+      "adapter_id": "compiled_ha_mcp_read_adapter_v1",
+      "expected_identity": "synthetic-ha-mcp",
+      "supported_protocols": ["2025-06-18"],
+      "capabilities": [
+        {
+          "capability_id": "ha_get_state",
+          "kind": "ordinary_read",
+          "contract_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        {
+          "capability_id": "ha_search",
+          "kind": "ordinary_read",
+          "contract_fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        }
+      ]
+    },
+    {
+      "profile_id": "ha_mcp_write_v1",
+      "profile_version": 1,
+      "surface": "ha_mcp",
+      "adapter_id": "compiled_ha_mcp_write_adapter_v1",
+      "expected_identity": "synthetic-ha-mcp",
+      "supported_protocols": ["2025-06-18"],
+      "capabilities": [
+        {
+          "capability_id": "ha_call_service",
+          "kind": "governed_write",
+          "contract_fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        }
+      ]
+    },
+    {
+      "profile_id": "core_ordinary_read_v1",
+      "profile_version": 1,
+      "surface": "home_assistant_core",
+      "adapter_id": "compiled_core_ordinary_read_adapter_v1",
+      "expected_identity": "home-assistant-core",
+      "supported_protocols": ["ha-rest-websocket-v1"],
+      "capabilities": [
+        {
+          "capability_id": "core.states_read",
+          "kind": "ordinary_read",
+          "contract_fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      ]
+    },
+    {
+      "profile_id": "core_registry_read_v1",
+      "profile_version": 1,
+      "surface": "home_assistant_core",
+      "adapter_id": "compiled_core_registry_read_adapter_v1",
+      "expected_identity": "home-assistant-core",
+      "supported_protocols": ["ha-rest-websocket-v1"],
+      "capabilities": [
+        {
+          "capability_id": "core.entity_registry_read",
+          "kind": "registry_read",
+          "contract_fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        }
+      ]
+    },
+    {
+      "profile_id": "core_template_semantics_v1",
+      "profile_version": 1,
+      "surface": "home_assistant_core",
+      "adapter_id": "compiled_core_template_semantics_adapter_v1",
+      "expected_identity": "home-assistant-core",
+      "supported_protocols": ["ha-rest-websocket-v1"],
+      "capabilities": [
+        {
+          "capability_id": "core.template_semantics",
+          "kind": "template_semantics",
+          "contract_fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        }
+      ]
+    },
+    {
+      "profile_id": "core_configuration_semantics_v1",
+      "profile_version": 1,
+      "surface": "home_assistant_core",
+      "adapter_id": "compiled_core_configuration_semantics_adapter_v1",
+      "expected_identity": "home-assistant-core",
+      "supported_protocols": ["ha-rest-websocket-v1"],
+      "capabilities": [
+        {
+          "capability_id": "core.configuration_semantics",
+          "kind": "configuration_semantics",
+          "contract_fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+        }
+      ]
+    },
+    {
+      "profile_id": "core_governed_helper_write_v1",
+      "profile_version": 1,
+      "surface": "home_assistant_core",
+      "adapter_id": "compiled_core_helper_write_adapter_v1",
+      "expected_identity": "home-assistant-core",
+      "supported_protocols": ["ha-rest-websocket-v1"],
+      "capabilities": [
+        {
+          "capability_id": "core.helper_write",
+          "kind": "governed_write",
+          "contract_fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+        }
+      ]
+    },
+    {
+      "profile_id": "configured_transport_v1",
+      "profile_version": 1,
+      "surface": "configured_transport",
+      "adapter_id": "compiled_streamable_http_transport_v1",
+      "expected_identity": "configured-streamable-http",
+      "supported_protocols": ["streamable-http-stateless-v1"],
+      "capabilities": [
+        {
+          "capability_id": "transport.streamable_http",
+          "kind": "transport",
+          "contract_fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+        }
+      ]
+    }
+  ],
+  "scenarios": {
+    "ha_mcp_exact": {
+      "surface": "ha_mcp",
+      "session_id": "synthetic-session-ha-mcp-1",
+      "initialize": {
+        "server_name": "synthetic-ha-mcp",
+        "server_version": "1.0.0-synthetic",
+        "protocol_version": "2025-06-18"
+      },
+      "tools_list_pages": [
+        {
+          "tools": [
+            {
+              "capability_id": "ha_get_state",
+              "kind": "ordinary_read",
+              "contract_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "capability_id": "ha_search",
+              "kind": "ordinary_read",
+              "contract_fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+            },
+            {
+              "capability_id": "ha_call_service",
+              "kind": "governed_write",
+              "contract_fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+            }
+          ],
+          "next_cursor": null
+        }
+      ],
+      "connected": true,
+      "authenticated": true,
+      "catalog_complete": true,
+      "evidence_reason": "observation_complete"
+    },
+    "ha_mcp_compatible": {
+      "surface": "ha_mcp",
+      "session_id": "synthetic-session-ha-mcp-2",
+      "initialize": {
+        "server_name": "synthetic-ha-mcp",
+        "server_version": "1.1.0-synthetic",
+        "protocol_version": "2025-06-18"
+      },
+      "tools_list_pages": [
+        {
+          "tools": [
+            {
+              "capability_id": "ha_get_state",
+              "kind": "ordinary_read",
+              "contract_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            },
+            {
+              "capability_id": "ha_search",
+              "kind": "ordinary_read",
+              "contract_fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+            },
+            {
+              "capability_id": "ha_call_service",
+              "kind": "governed_write",
+              "contract_fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+            }
+          ],
+          "next_cursor": null
+        }
+      ],
+      "connected": true,
+      "authenticated": true,
+      "catalog_complete": true,
+      "evidence_reason": "observation_complete"
+    },
+    "core_unknown_compatible": {
+      "surface": "home_assistant_core",
+      "session_id": "synthetic-session-core-1",
+      "rest_config": {"version": "2026.9.0-synthetic"},
+      "websocket_auth_ok": {"ha_version": "2026.9.0-synthetic"},
+      "websocket_get_config": {"version": "2026.9.0-synthetic"},
+      "capabilities": [
+        {
+          "capability_id": "core.states_read",
+          "kind": "ordinary_read",
+          "contract_fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        },
+        {
+          "capability_id": "core.entity_registry_read",
+          "kind": "registry_read",
+          "contract_fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+        },
+        {
+          "capability_id": "core.template_semantics",
+          "kind": "template_semantics",
+          "contract_fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+        },
+        {
+          "capability_id": "core.configuration_semantics",
+          "kind": "configuration_semantics",
+          "contract_fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+        },
+        {
+          "capability_id": "core.helper_write",
+          "kind": "governed_write",
+          "contract_fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+        }
+      ],
+      "connected": true,
+      "authenticated": true,
+      "catalog_complete": true,
+      "evidence_reason": "observation_complete"
+    },
+    "core_version_disagreement": {
+      "surface": "home_assistant_core",
+      "session_id": "synthetic-session-core-2",
+      "rest_config": {"version": "2026.9.0-synthetic"},
+      "websocket_auth_ok": {"ha_version": "2026.9.0-synthetic"},
+      "websocket_get_config": {"version": "2026.8.1-synthetic"},
+      "capabilities": [
+        {
+          "capability_id": "core.states_read",
+          "kind": "ordinary_read",
+          "contract_fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      ],
+      "connected": true,
+      "authenticated": true,
+      "catalog_complete": true,
+      "evidence_reason": "observation_complete"
+    },
+    "transport_restored": {
+      "surface": "configured_transport",
+      "session_id": "synthetic-session-transport-1",
+      "configured_contract": {
+        "identity": "configured-streamable-http",
+        "version": "1-synthetic",
+        "protocol_version": "streamable-http-stateless-v1",
+        "capabilities": [
+          {
+            "capability_id": "transport.streamable_http",
+            "kind": "transport",
+            "contract_fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+          }
+        ]
+      },
+      "connected": true,
+      "authenticated": true,
+      "evidence_reason": "transport_restored"
+    }
+  },
+  "authority_sets": {
+    "compiled_ha_mcp_exact": {
+      "evaluated_at_epoch": 1800000000,
+      "decisions": [
+        {
+          "source": "compiled_exact",
+          "status": "positive",
+          "profile_id": "ha_mcp_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled_ha_mcp_read_adapter_v1",
+          "subject_identity": "synthetic-ha-mcp",
+          "subject_version": "1.0.0-synthetic",
+          "protocol_version": "2025-06-18",
+          "capability_ids": ["ha_get_state", "ha_search"],
+          "reason_code": "compiled_exact_release",
+          "registry_sequence": null,
+          "registry_digest": null,
+          "expires_at_epoch": null
+        },
+        {
+          "source": "compiled_exact",
+          "status": "positive",
+          "profile_id": "ha_mcp_write_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled_ha_mcp_write_adapter_v1",
+          "subject_identity": "synthetic-ha-mcp",
+          "subject_version": "1.0.0-synthetic",
+          "protocol_version": "2025-06-18",
+          "capability_ids": ["ha_call_service"],
+          "reason_code": "compiled_exact_release",
+          "registry_sequence": null,
+          "registry_digest": null,
+          "expires_at_epoch": null
+        }
+      ]
+    },
+    "signed_ha_mcp_compatible": {
+      "evaluated_at_epoch": 1800000000,
+      "decisions": [
+        {
+          "source": "signed_registry",
+          "status": "positive",
+          "profile_id": "ha_mcp_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled_ha_mcp_read_adapter_v1",
+          "subject_identity": "synthetic-ha-mcp",
+          "subject_version": "1.1.0-synthetic",
+          "protocol_version": "2025-06-18",
+          "capability_ids": ["ha_get_state", "ha_search"],
+          "reason_code": "signed_compatible_release",
+          "registry_sequence": 12,
+          "registry_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expires_at_epoch": 1900000000
+        },
+        {
+          "source": "signed_registry",
+          "status": "positive",
+          "profile_id": "ha_mcp_write_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled_ha_mcp_write_adapter_v1",
+          "subject_identity": "synthetic-ha-mcp",
+          "subject_version": "1.1.0-synthetic",
+          "protocol_version": "2025-06-18",
+          "capability_ids": ["ha_call_service"],
+          "reason_code": "signed_compatible_release",
+          "registry_sequence": 12,
+          "registry_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "expires_at_epoch": 1900000000
+        }
+      ]
+    },
+    "signed_core_ordinary_only": {
+      "evaluated_at_epoch": 1800000000,
+      "decisions": [
+        {
+          "source": "signed_registry",
+          "status": "positive",
+          "profile_id": "core_ordinary_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled_core_ordinary_read_adapter_v1",
+          "subject_identity": "home-assistant-core",
+          "subject_version": "2026.9.0-synthetic",
+          "protocol_version": "ha-rest-websocket-v1",
+          "capability_ids": ["core.states_read"],
+          "reason_code": "signed_structural_core_read",
+          "registry_sequence": 4,
+          "registry_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "expires_at_epoch": 1900000000
+        },
+        {
+          "source": "signed_registry",
+          "status": "positive",
+          "profile_id": "core_registry_read_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled_core_registry_read_adapter_v1",
+          "subject_identity": "home-assistant-core",
+          "subject_version": "2026.9.0-synthetic",
+          "protocol_version": "ha-rest-websocket-v1",
+          "capability_ids": ["core.entity_registry_read"],
+          "reason_code": "signed_structural_core_read",
+          "registry_sequence": 4,
+          "registry_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "expires_at_epoch": 1900000000
+        }
+      ]
+    },
+    "compiled_transport": {
+      "evaluated_at_epoch": 1800000000,
+      "decisions": [
+        {
+          "source": "compiled_exact",
+          "status": "positive",
+          "profile_id": "configured_transport_v1",
+          "profile_version": 1,
+          "adapter_id": "compiled_streamable_http_transport_v1",
+          "subject_identity": "configured-streamable-http",
+          "subject_version": "1-synthetic",
+          "protocol_version": "streamable-http-stateless-v1",
+          "capability_ids": ["transport.streamable_http"],
+          "reason_code": "compiled_transport_contract",
+          "registry_sequence": null,
+          "registry_digest": null,
+          "expires_at_epoch": null
+        }
+      ]
+    }
+  }
+}
