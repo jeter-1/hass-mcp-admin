@@ -114,6 +114,7 @@ _HELPER_EFFECT_STRUCTURE_NODE_LIMIT = 512
 _HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT = 16
 _HELPER_ACTION_ANALYSIS_STEP_LIMIT = 512
 _HELPER_ACTION_ANALYSIS_DEPTH_LIMIT = 16
+_HELPER_EFFECT_ANALYSIS_NODE_LIMIT = 4096
 # Bounds the effect projection's structural evidence: how many service-call
 # data leaves may be flattened, and how many target/data values are retained.
 # These are a subset of the action structure, so the bound stays below the
@@ -160,13 +161,16 @@ _HELPER_EFFECT_SENSITIVE_TERMS = frozenset(
 
 
 def _walk(value: Any) -> Iterable[Any]:
-    yield value
-    if isinstance(value, dict):
-        for item in value.values():
-            yield from _walk(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from _walk(item)
+    """Walk JSON-like material without consuming the Python call stack."""
+
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        yield item
+        if isinstance(item, dict):
+            pending.extend(reversed(tuple(item.values())))
+        elif isinstance(item, list):
+            pending.extend(reversed(item))
 
 
 def _has_template(value: str) -> bool:
@@ -283,6 +287,7 @@ def _bounded_action_analysis_coverage(config: dict[str, Any]) -> dict[str, Any]:
 
     state: dict[str, Any] = {
         "count": 0,
+        "effect_node_count": 0,
         "limit_exceeded": False,
         "reason": None,
         "overflow": hashlib.sha256(),
@@ -295,18 +300,44 @@ def _bounded_action_analysis_coverage(config: dict[str, Any]) -> dict[str, Any]:
             f"{path}:{_effect_value_hash(value)}".encode("utf-8")
         )
 
-    def visit(
-        value: Any,
-        path: str,
-        *,
-        depth: int,
-        allow_sequence_wrapper: bool = False,
-    ) -> None:
+    def inspect_effect_value(value: Any, path: str) -> None:
+        pending: list[tuple[Any, str, int]] = [(value, path, 0)]
+        while pending and not state["limit_exceeded"]:
+            item, item_path, depth = pending.pop()
+            if depth > _HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT:
+                fail("effect_data_depth_limit_exceeded", item_path, item)
+                return
+            if state["effect_node_count"] >= (
+                _HELPER_EFFECT_ANALYSIS_NODE_LIMIT
+            ):
+                fail("effect_data_node_limit_exceeded", item_path, item)
+                return
+            state["effect_node_count"] += 1
+            if isinstance(item, dict):
+                children = [
+                    (item[key], f"{item_path}.{key}", depth + 1)
+                    for key in sorted(
+                        item, key=lambda key: str(key).encode("utf-8")
+                    )
+                ]
+                pending.extend(reversed(children))
+            elif isinstance(item, list):
+                pending.extend(
+                    (child, f"{item_path}[{index}]", depth + 1)
+                    for index, child in reversed(tuple(enumerate(item)))
+                )
+
+    pending: list[tuple[Any, str, int, bool]] = [
+        (root, root_path, 0, False)
+        for root_path, root in reversed(_action_roots(config))
+    ]
+    while pending and not state["limit_exceeded"]:
+        value, path, depth, allow_sequence_wrapper = pending.pop()
         if depth > _HELPER_ACTION_ANALYSIS_DEPTH_LIMIT:
             fail("action_analysis_depth_limit_exceeded", path, value)
-            return
+            break
         if not isinstance(value, list):
-            return
+            continue
         for index, step in enumerate(value):
             step_path = f"{path}[{index}]"
             if state["count"] >= _HELPER_ACTION_ANALYSIS_STEP_LIMIT:
@@ -315,60 +346,88 @@ def _bounded_action_analysis_coverage(config: dict[str, Any]) -> dict[str, Any]:
                     step_path,
                     value[index:],
                 )
-                return
+                break
             state["count"] += 1
             if not isinstance(step, dict):
                 continue
+            for effect_key in ("data", "data_template", "event_data"):
+                if effect_key in step:
+                    inspect_effect_value(
+                        step[effect_key], f"{step_path}.{effect_key}"
+                    )
+                    if state["limit_exceeded"]:
+                        break
+            if state["limit_exceeded"]:
+                break
+            children: list[tuple[Any, str, int, bool]] = []
             choices = step.get("choose")
             if isinstance(choices, list):
                 for choice_index, choice in enumerate(choices):
                     if isinstance(choice, dict):
-                        visit(
-                            choice.get("sequence"),
-                            f"{step_path}.choose[{choice_index}].sequence",
-                            depth=depth + 1,
+                        children.append(
+                            (
+                                choice.get("sequence"),
+                                f"{step_path}.choose[{choice_index}].sequence",
+                                depth + 1,
+                                False,
+                            )
                         )
             if "default" in step:
-                visit(
-                    step.get("default"),
-                    f"{step_path}.default",
-                    depth=depth + 1,
+                children.append(
+                    (
+                        step.get("default"),
+                        f"{step_path}.default",
+                        depth + 1,
+                        False,
+                    )
                 )
             for branch in ("then", "else"):
                 if branch in step:
-                    visit(
-                        step.get(branch),
-                        f"{step_path}.{branch}",
-                        depth=depth + 1,
+                    children.append(
+                        (
+                            step.get(branch),
+                            f"{step_path}.{branch}",
+                            depth + 1,
+                            False,
+                        )
                     )
             repeat = step.get("repeat")
             if isinstance(repeat, dict):
-                visit(
-                    repeat.get("sequence"),
-                    f"{step_path}.repeat.sequence",
-                    depth=depth + 1,
+                children.append(
+                    (
+                        repeat.get("sequence"),
+                        f"{step_path}.repeat.sequence",
+                        depth + 1,
+                        False,
+                    )
                 )
             if "parallel" in step:
-                visit(
-                    step.get("parallel"),
-                    f"{step_path}.parallel",
-                    depth=depth + 1,
-                    allow_sequence_wrapper=True,
+                children.append(
+                    (
+                        step.get("parallel"),
+                        f"{step_path}.parallel",
+                        depth + 1,
+                        True,
+                    )
                 )
             if allow_sequence_wrapper and "sequence" in step:
-                visit(
-                    step.get("sequence"),
-                    f"{step_path}.sequence",
-                    depth=depth + 1,
+                children.append(
+                    (
+                        step.get("sequence"),
+                        f"{step_path}.sequence",
+                        depth + 1,
+                        False,
+                    )
                 )
-
-    for root_path, root in _action_roots(config):
-        visit(root, root_path, depth=0)
+            pending.extend(reversed(children))
     return {
         "complete": not state["limit_exceeded"],
         "observed_step_count": int(state["count"]),
         "step_limit": _HELPER_ACTION_ANALYSIS_STEP_LIMIT,
         "depth_limit": _HELPER_ACTION_ANALYSIS_DEPTH_LIMIT,
+        "observed_effect_node_count": int(state["effect_node_count"]),
+        "effect_node_limit": _HELPER_EFFECT_ANALYSIS_NODE_LIMIT,
+        "effect_depth_limit": _HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT,
         "reason": state["reason"],
         "overflow_fingerprint": (
             state["overflow"].hexdigest()
@@ -736,6 +795,63 @@ def _effect_value_hash(value: Any) -> str:
             allow_nan=False,
             default=str,
         )
+    except RecursionError:
+        # Processing-failure evidence must itself remain bounded.  Hash a
+        # deterministic structural prefix instead of recursing again through
+        # an already over-depth value with repr().  The corresponding profile
+        # is non-actionable, so this diagnostic fingerprint is not presented
+        # as complete material evidence.
+        digest = hashlib.sha256(b"bounded-overflow-v1")
+        pending: list[tuple[str, Any, int]] = [("$", value, 0)]
+        seen: set[int] = set()
+        visited = 0
+        while pending and visited < _HELPER_EFFECT_STRUCTURE_NODE_LIMIT:
+            path, item, depth = pending.pop()
+            visited += 1
+            digest.update(path.encode("utf-8")[:_HELPER_PROFILE_VALUE_BYTES])
+            digest.update(type(item).__name__.encode("utf-8"))
+            if isinstance(item, (dict, list)):
+                item_id = id(item)
+                if item_id in seen:
+                    digest.update(b":cycle")
+                    continue
+                seen.add(item_id)
+            if depth >= _HELPER_EFFECT_STRUCTURE_DEPTH_LIMIT:
+                digest.update(b":depth-bound")
+                if isinstance(item, (dict, list)):
+                    digest.update(str(len(item)).encode("ascii"))
+                continue
+            if isinstance(item, dict):
+                keys = sorted(
+                    item, key=lambda key: str(key).encode("utf-8")
+                )
+                digest.update(str(len(keys)).encode("ascii"))
+                children = [
+                    (f"{path}.{key}", item[key], depth + 1)
+                    for key in keys
+                ]
+                pending.extend(reversed(children))
+            elif isinstance(item, list):
+                digest.update(str(len(item)).encode("ascii"))
+                pending.extend(
+                    (f"{path}[{index}]", child, depth + 1)
+                    for index, child in reversed(tuple(enumerate(item)))
+                )
+            else:
+                try:
+                    scalar = json.dumps(
+                        item,
+                        ensure_ascii=True,
+                        allow_nan=False,
+                        default=lambda ignored: type(ignored).__name__,
+                    )
+                except (TypeError, ValueError, RecursionError):
+                    scalar = type(item).__name__
+                digest.update(
+                    hashlib.sha256(scalar.encode("utf-8")).digest()
+                )
+        digest.update(str(len(pending)).encode("ascii"))
+        return digest.hexdigest()
     except (TypeError, ValueError):
         encoded = repr(value)
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
@@ -1162,6 +1278,104 @@ def _notification_effect_semantics(
     )
 
 
+def _processing_failure_action_profile(
+    action_coverage: dict[str, Any],
+) -> dict[str, Any]:
+    """Return a bounded, fail-closed profile after structural analysis stops."""
+
+    reason = str(
+        action_coverage.get("reason")
+        or "action_analysis_processing_limit_exceeded"
+    )
+    overflow_fingerprint = action_coverage.get("overflow_fingerprint")
+    empty_fingerprint = _effect_value_hash([])
+    structure_fingerprint = _effect_value_hash(
+        {
+            "model": "bounded-processing-failure-v1",
+            "reason": reason,
+            "overflow_fingerprint": overflow_fingerprint,
+        }
+    )
+    effect_projection = {
+        "model": _HELPER_EFFECT_PROJECTION_MODEL,
+        "targets": [],
+        "data": [],
+        "structure_fingerprint": structure_fingerprint,
+        "target_count": 0,
+        "targets_fingerprint": empty_fingerprint,
+        "data_count": 0,
+        "data_fingerprint": empty_fingerprint,
+        "processing_limit_exceeded": True,
+        "processing_overflow_fingerprint": overflow_fingerprint,
+        "projection_clipped": False,
+    }
+    effect_projection_fingerprint = _effect_value_hash(effect_projection)
+    normalized = {
+        "model": "automation-action-consequence-v3",
+        "risk_level": "high",
+        "physical_consequence": "unknown",
+        "complete": False,
+        "analysis_complete": False,
+        "semantic_complete": False,
+        "presentation_truncated": False,
+        "processing_limit_exceeded": True,
+        "processing_limit_reason": reason,
+        "processing_observed_action_step_count": int(
+            action_coverage.get("observed_step_count", 0)
+        ),
+        "processing_action_step_limit": int(
+            action_coverage.get("step_limit", 0)
+        ),
+        "processing_action_depth_limit": int(
+            action_coverage.get("depth_limit", 0)
+        ),
+        "processing_observed_effect_node_count": int(
+            action_coverage.get("observed_effect_node_count", 0)
+        ),
+        "processing_effect_node_limit": int(
+            action_coverage.get("effect_node_limit", 0)
+        ),
+        "processing_effect_depth_limit": int(
+            action_coverage.get("effect_depth_limit", 0)
+        ),
+        "processing_overflow_fingerprint": overflow_fingerprint,
+        "truncated": False,
+        "action_domains": [],
+        "action_domain_count": 0,
+        "action_domains_fingerprint": empty_fingerprint,
+        "services": [],
+        "service_count": 0,
+        "services_fingerprint": empty_fingerprint,
+        "reason_codes": ["action_processing_limit_exceeded"],
+        "reason_code_count": 1,
+        "reason_codes_fingerprint": _effect_value_hash(
+            ["action_processing_limit_exceeded"]
+        ),
+        "effect_projection_model": _HELPER_EFFECT_PROJECTION_MODEL,
+        "effect_targets": [],
+        "effect_target_count": 0,
+        "effect_targets_fingerprint": empty_fingerprint,
+        "effect_data": [],
+        "effect_data_count": 0,
+        "effect_data_fingerprint": empty_fingerprint,
+        "effect_structure_fingerprint": structure_fingerprint,
+        "effect_projection_fingerprint": effect_projection_fingerprint,
+        "effect_projection_clipped": False,
+    }
+    encoded = json.dumps(
+        normalized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
+    return {
+        **normalized,
+        "evidence_fingerprint": hashlib.sha256(
+            encoded.encode("utf-8")
+        ).hexdigest(),
+    }
+
+
 def automation_action_consequence_profile(
     config: dict[str, Any],
 ) -> dict[str, Any]:
@@ -1171,6 +1385,10 @@ def automation_action_consequence_profile(
     structure-first F2 action analysis and returns only the normalized facts
     needed to assess an exact helper dependency.
     """
+
+    action_coverage = _bounded_action_analysis_coverage(config)
+    if not action_coverage["complete"]:
+        return _processing_failure_action_profile(action_coverage)
 
     services, evidence, warnings, targets = _structured_analysis(config)
     service_domains = {
@@ -1186,7 +1404,6 @@ def automation_action_consequence_profile(
     device_domains = _device_action_domains(config)
     action_domains = service_domains | target_domains | device_domains
     action_families = _effect_action_families(config)
-    action_coverage = _bounded_action_analysis_coverage(config)
     effect = _automation_effect_projection(config)
     (
         notification_present,
@@ -1371,6 +1588,15 @@ def automation_action_consequence_profile(
         ],
         "processing_action_step_limit": action_coverage["step_limit"],
         "processing_action_depth_limit": action_coverage["depth_limit"],
+        "processing_observed_effect_node_count": action_coverage[
+            "observed_effect_node_count"
+        ],
+        "processing_effect_node_limit": action_coverage[
+            "effect_node_limit"
+        ],
+        "processing_effect_depth_limit": action_coverage[
+            "effect_depth_limit"
+        ],
         "processing_overflow_fingerprint": (
             processing_overflow_fingerprint
         ),

@@ -72,7 +72,10 @@ True step or depth exhaustion, missing profiles, unavailable lock identities,
 unsupported target-capable action semantics and other stopped analysis remain
 coverage failures. They carry bounded reasons, observed limits and drift-bound
 overflow evidence where available and remain non-actionable with conservative
-locking.
+locking. Action traversal is fenced at 512 steps and depth 16; material effect
+data is fenced at 4,096 nodes and depth 16. The fences are evaluated without
+recursive call-stack dependence, so deeply nested malformed material terminates
+as explicit processing failure rather than an absent profile or runtime error.
 
 ## Risk model, actionability and locks
 

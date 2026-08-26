@@ -526,6 +526,9 @@ def _project_downstream_profile(
                 "processing_observed_action_step_count": 0,
                 "processing_action_step_limit": 0,
                 "processing_action_depth_limit": 0,
+                "processing_observed_effect_node_count": 0,
+                "processing_effect_node_limit": 0,
+                "processing_effect_depth_limit": 0,
                 "processing_overflow_fingerprint": None,
                 "truncated": False,
                 "action_domains": [],
@@ -575,6 +578,11 @@ def _project_downstream_profile(
         ),
         "processing_action_step_limit": profile.processing_action_step_limit,
         "processing_action_depth_limit": profile.processing_action_depth_limit,
+        "processing_observed_effect_node_count": (
+            profile.processing_observed_effect_node_count
+        ),
+        "processing_effect_node_limit": profile.processing_effect_node_limit,
+        "processing_effect_depth_limit": profile.processing_effect_depth_limit,
         "processing_overflow_fingerprint": (
             profile.processing_overflow_fingerprint
         ),

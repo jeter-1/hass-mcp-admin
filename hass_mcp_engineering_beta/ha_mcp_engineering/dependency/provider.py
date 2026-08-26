@@ -554,6 +554,17 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     processing_action_depth_limit=int(
                         consequence["processing_action_depth_limit"]
                     ),
+                    processing_observed_effect_node_count=int(
+                        consequence[
+                            "processing_observed_effect_node_count"
+                        ]
+                    ),
+                    processing_effect_node_limit=int(
+                        consequence["processing_effect_node_limit"]
+                    ),
+                    processing_effect_depth_limit=int(
+                        consequence["processing_effect_depth_limit"]
+                    ),
                     processing_overflow_fingerprint=(
                         str(consequence["processing_overflow_fingerprint"])
                         if consequence["processing_overflow_fingerprint"]

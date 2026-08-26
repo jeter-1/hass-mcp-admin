@@ -309,6 +309,9 @@ class AutomationActionRiskProfile:
     processing_observed_action_step_count: int = 0
     processing_action_step_limit: int = 0
     processing_action_depth_limit: int = 0
+    processing_observed_effect_node_count: int = 0
+    processing_effect_node_limit: int = 0
+    processing_effect_depth_limit: int = 0
     processing_overflow_fingerprint: str | None = None
     action_domain_count: int = 0
     action_domains_fingerprint: str = ""

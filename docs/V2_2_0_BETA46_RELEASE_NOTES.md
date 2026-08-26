@@ -36,9 +36,12 @@ prefix still invalidate approval evidence.
 
 Actual action-step or depth exhaustion, unavailable profiles or lock identities
 and unsupported target-capable effects remain explicit analytical failures.
-They stay non-actionable and conservatively locked. Large logical downstream
-profiles continue to reconstruct through the existing authenticated pagination
-and fragment contract; presentation fragmentation is not a coverage failure.
+They stay non-actionable and conservatively locked. Action and effect-data
+coverage fences are iterative, so extreme nesting terminates with bounded
+processing-failure evidence rather than recursion failure. Large logical
+downstream profiles continue to reconstruct through the existing authenticated
+pagination and fragment contract; presentation fragmentation is not a coverage
+failure.
 
 New helper plans use `helper-dependency-risk-v5`. Existing v3 and v4 plans stay
 readable for historical review and recovery but require replanning and acquire

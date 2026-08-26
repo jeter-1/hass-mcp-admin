@@ -16,6 +16,7 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     helper_dependency_risk_assessment,
 )
 from ha_mcp_engineering.governance.risk import (  # noqa: E402
+    _HELPER_EFFECT_ANALYSIS_NODE_LIMIT,
     _HELPER_EFFECT_PROJECTION_VALUE_LIMIT,
     _HELPER_PROFILE_LIMIT,
     automation_action_consequence_profile,
@@ -194,6 +195,63 @@ class Beta46ActionProfileCompletenessTests(unittest.TestCase):
         self.assertEqual(
             "action_analysis_depth_limit_exceeded",
             profile["processing_limit_reason"],
+        )
+        self.assertTrue(profile["processing_overflow_fingerprint"])
+        self.assertFalse(profile["complete"])
+
+    def test_extreme_action_depth_fails_closed_without_recursing(self):
+        actions: list[dict] = [
+            {
+                "service": "cover.open_cover",
+                "target": {"entity_id": "cover.synthetic_garage"},
+            }
+        ]
+        for _ in range(1200):
+            actions = [{"repeat": {"sequence": actions}}]
+
+        profile = automation_action_consequence_profile({"action": actions})
+        self.assertFalse(profile["analysis_complete"])
+        self.assertFalse(profile["semantic_complete"])
+        self.assertTrue(profile["processing_limit_exceeded"])
+        self.assertEqual(
+            "action_analysis_depth_limit_exceeded",
+            profile["processing_limit_reason"],
+        )
+        self.assertEqual("unknown", profile["physical_consequence"])
+        self.assertEqual("high", profile["risk_level"])
+        self.assertTrue(profile["processing_overflow_fingerprint"])
+        self.assertFalse(profile["complete"])
+
+    def test_effect_node_bound_is_processing_failure(self):
+        config = {
+            "action": [
+                {
+                    "service": "cover.open_cover",
+                    "target": {"entity_id": "cover.synthetic_garage"},
+                    "data": {
+                        f"field_{index:04d}": index
+                        for index in range(
+                            _HELPER_EFFECT_ANALYSIS_NODE_LIMIT + 1
+                        )
+                    },
+                }
+            ]
+        }
+
+        profile = automation_action_consequence_profile(config)
+        self.assertFalse(profile["analysis_complete"])
+        self.assertTrue(profile["processing_limit_exceeded"])
+        self.assertEqual(
+            "effect_data_node_limit_exceeded",
+            profile["processing_limit_reason"],
+        )
+        self.assertEqual(
+            _HELPER_EFFECT_ANALYSIS_NODE_LIMIT,
+            profile["processing_observed_effect_node_count"],
+        )
+        self.assertEqual(
+            _HELPER_EFFECT_ANALYSIS_NODE_LIMIT,
+            profile["processing_effect_node_limit"],
         )
         self.assertTrue(profile["processing_overflow_fingerprint"])
         self.assertFalse(profile["complete"])
