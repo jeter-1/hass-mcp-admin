@@ -10,7 +10,7 @@ import re
 from typing import Any, Iterable
 
 
-MODEL_VERSION = 1
+MODEL_VERSION = 2
 MAX_IDENTIFIER_CHARS = 128
 MAX_REASON_CHARS = 96
 MAX_PROFILES = 64
@@ -18,6 +18,7 @@ MAX_CAPABILITIES_PER_PROFILE = 128
 MAX_OBSERVED_CAPABILITIES = 512
 MAX_AUTHORITY_DECISIONS = 256
 MAX_PROJECTION_BYTES = 32_768
+MAX_SAFE_INTEGER = (1 << 53) - 1
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _REASON = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
@@ -100,9 +101,16 @@ class RegistryRefreshResult:
     idempotent: bool
 
     def __post_init__(self) -> None:
-        if isinstance(self.sequence, bool) or self.sequence < 1:
-            raise CompatibilityModelError("registry_refresh_sequence_invalid")
+        if not isinstance(self.status, AuthorityStatus):
+            raise CompatibilityModelError("registry_refresh_status_invalid")
+        _bounded_int(
+            self.sequence,
+            code="registry_refresh_sequence_invalid",
+            minimum=1,
+        )
         _digest(self.digest, code="registry_refresh_digest_invalid")
+        _exact_bool(self.accepted, code="registry_refresh_accepted_invalid")
+        _exact_bool(self.idempotent, code="registry_refresh_idempotent_invalid")
 
 
 def classify_registry_refresh(
@@ -114,8 +122,11 @@ def classify_registry_refresh(
 ) -> RegistryRefreshResult:
     """Reject rollback/conflict while accepting a byte-identical replay."""
 
-    if isinstance(candidate_sequence, bool) or candidate_sequence < 1:
-        raise CompatibilityModelError("registry_refresh_sequence_invalid")
+    _bounded_int(
+        candidate_sequence,
+        code="registry_refresh_sequence_invalid",
+        minimum=1,
+    )
     _digest(candidate_digest, code="registry_refresh_digest_invalid")
     if current_sequence is None:
         if current_digest is not None:
@@ -128,8 +139,9 @@ def classify_registry_refresh(
             idempotent=False,
         )
     if (
-        isinstance(current_sequence, bool)
+        type(current_sequence) is not int
         or current_sequence < 1
+        or current_sequence > MAX_SAFE_INTEGER
         or current_digest is None
     ):
         raise CompatibilityModelError("registry_refresh_state_invalid")
@@ -215,6 +227,30 @@ def _unique(items: Iterable[str], *, code: str) -> tuple[str, ...]:
     return result
 
 
+def _exact_bool(value: Any, *, code: str) -> bool:
+    if type(value) is not bool:
+        raise CompatibilityModelError(code)
+    return value
+
+
+def _bounded_int(
+    value: Any,
+    *,
+    code: str,
+    minimum: int = 0,
+    maximum: int = MAX_SAFE_INTEGER,
+) -> int:
+    if type(value) is not int or value < minimum or value > maximum:
+        raise CompatibilityModelError(code)
+    return value
+
+
+def _exact_tuple(value: Any, *, code: str, maximum: int) -> tuple[Any, ...]:
+    if not isinstance(value, tuple) or len(value) > maximum:
+        raise CompatibilityModelError(code)
+    return value
+
+
 @dataclass(frozen=True)
 class CapabilityContract:
     """One executable contract already compiled into the Engineering binary."""
@@ -224,6 +260,8 @@ class CapabilityContract:
     contract_fingerprint: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, CapabilityKind):
+            raise CompatibilityModelError("capability_kind_invalid")
         _safe_text(self.capability_id, code="capability_id_invalid")
         _digest(self.contract_fingerprint, code="contract_fingerprint_invalid")
 
@@ -248,17 +286,34 @@ class CapabilityProfile:
     capabilities: tuple[CapabilityContract, ...]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.surface, UpstreamSurface):
+            raise CompatibilityModelError("profile_surface_invalid")
         _safe_text(self.profile_id, code="profile_id_invalid")
         _safe_text(self.adapter_id, code="adapter_id_invalid")
         _safe_text(self.expected_identity, code="profile_identity_invalid")
-        if isinstance(self.profile_version, bool) or self.profile_version < 1:
-            raise CompatibilityModelError("profile_version_invalid")
+        _bounded_int(
+            self.profile_version,
+            code="profile_version_invalid",
+            minimum=1,
+        )
+        _exact_tuple(
+            self.supported_protocols,
+            code="profile_protocols_invalid",
+            maximum=MAX_CAPABILITIES_PER_PROFILE,
+        )
         if not self.supported_protocols:
             raise CompatibilityModelError("profile_protocols_invalid")
         for protocol in self.supported_protocols:
             _safe_text(protocol, code="profile_protocols_invalid")
         _unique(self.supported_protocols, code="profile_protocols_duplicate")
-        if not self.capabilities or len(self.capabilities) > MAX_CAPABILITIES_PER_PROFILE:
+        _exact_tuple(
+            self.capabilities,
+            code="profile_capabilities_invalid",
+            maximum=MAX_CAPABILITIES_PER_PROFILE,
+        )
+        if not self.capabilities:
+            raise CompatibilityModelError("profile_capabilities_invalid")
+        if any(not isinstance(item, CapabilityContract) for item in self.capabilities):
             raise CompatibilityModelError("profile_capabilities_invalid")
         _unique(
             (item.capability_id for item in self.capabilities),
@@ -295,6 +350,8 @@ class ObservedCapability:
     contract_fingerprint: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.kind, CapabilityKind):
+            raise CompatibilityModelError("observed_capability_kind_invalid")
         _safe_text(self.capability_id, code="observed_capability_id_invalid")
         _digest(
             self.contract_fingerprint,
@@ -328,13 +385,22 @@ class CompatibilityObservation:
     core_websocket_config_version: str | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.surface, UpstreamSurface):
+            raise CompatibilityModelError("observation_surface_invalid")
         _safe_text(self.identity, code="observation_identity_invalid")
         _safe_text(self.version, code="observation_version_invalid")
         _safe_text(self.protocol_version, code="observation_protocol_invalid")
         _safe_text(self.session_id, code="observation_session_invalid")
         _reason(self.evidence_reason)
+        if not isinstance(self.capabilities, tuple):
+            raise CompatibilityModelError("observed_catalog_invalid")
         if len(self.capabilities) > MAX_OBSERVED_CAPABILITIES:
             raise CompatibilityModelError("observed_catalog_oversized")
+        if any(not isinstance(item, ObservedCapability) for item in self.capabilities):
+            raise CompatibilityModelError("observed_catalog_invalid")
+        _exact_bool(self.connected, code="observation_connected_invalid")
+        _exact_bool(self.authenticated, code="observation_authenticated_invalid")
+        _exact_bool(self.catalog_complete, code="observation_catalog_complete_invalid")
         core_versions = (
             self.core_rest_version,
             self.core_websocket_auth_version,
@@ -432,24 +498,34 @@ class AuthorityDecision:
     expires_at_epoch: int | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.source, AuthoritySource):
+            raise CompatibilityModelError("authority_source_invalid")
+        if not isinstance(self.status, AuthorityStatus):
+            raise CompatibilityModelError("authority_status_invalid")
         _safe_text(self.profile_id, code="authority_profile_invalid")
         _safe_text(self.adapter_id, code="authority_adapter_invalid")
         _safe_text(self.subject_identity, code="authority_identity_invalid")
         _safe_text(self.subject_version, code="authority_version_invalid")
         _safe_text(self.protocol_version, code="authority_protocol_invalid")
         _reason(self.reason_code)
-        if isinstance(self.profile_version, bool) or self.profile_version < 1:
-            raise CompatibilityModelError("authority_profile_version_invalid")
-        if len(self.capability_ids) > MAX_CAPABILITIES_PER_PROFILE:
-            raise CompatibilityModelError("authority_capabilities_oversized")
+        _bounded_int(
+            self.profile_version,
+            code="authority_profile_version_invalid",
+            minimum=1,
+        )
+        _exact_tuple(
+            self.capability_ids,
+            code="authority_capabilities_invalid",
+            maximum=MAX_CAPABILITIES_PER_PROFILE,
+        )
         for capability_id in self.capability_ids:
             _safe_text(capability_id, code="authority_capability_invalid")
         _unique(self.capability_ids, code="authority_capability_duplicate")
         if self.source is AuthoritySource.SIGNED_REGISTRY:
             if (
-                isinstance(self.registry_sequence, bool)
-                or not isinstance(self.registry_sequence, int)
+                type(self.registry_sequence) is not int
                 or self.registry_sequence < 1
+                or self.registry_sequence > MAX_SAFE_INTEGER
             ):
                 raise CompatibilityModelError("authority_sequence_invalid")
             _digest(self.registry_digest, code="authority_registry_digest_invalid")
@@ -459,9 +535,9 @@ class AuthorityDecision:
         ):
             raise CompatibilityModelError("authority_registry_fields_unexpected")
         if self.expires_at_epoch is not None and (
-            isinstance(self.expires_at_epoch, bool)
-            or not isinstance(self.expires_at_epoch, int)
+            type(self.expires_at_epoch) is not int
             or self.expires_at_epoch < 0
+            or self.expires_at_epoch > MAX_SAFE_INTEGER
         ):
             raise CompatibilityModelError("authority_expiry_invalid")
 
@@ -498,18 +574,37 @@ class AuthorityBundle:
     decisions: tuple[AuthorityDecision, ...]
 
     def __post_init__(self) -> None:
-        if (
-            isinstance(self.evaluated_at_epoch, bool)
-            or not isinstance(self.evaluated_at_epoch, int)
-            or self.evaluated_at_epoch < 0
-        ):
-            raise CompatibilityModelError("authority_time_invalid")
+        _bounded_int(self.evaluated_at_epoch, code="authority_time_invalid")
+        if not isinstance(self.decisions, tuple):
+            raise CompatibilityModelError("authority_decisions_invalid")
         if len(self.decisions) > MAX_AUTHORITY_DECISIONS:
             raise CompatibilityModelError("authority_decisions_oversized")
+        if any(not isinstance(item, AuthorityDecision) for item in self.decisions):
+            raise CompatibilityModelError("authority_decisions_invalid")
 
     @property
     def fingerprint(self) -> str:
-        return evidence_fingerprint(self.to_mapping())
+        return evidence_fingerprint(self.material_mapping())
+
+    def material_mapping(self) -> dict[str, Any]:
+        """Return effective authority without non-material observation time."""
+
+        decisions = []
+        for item in self.decisions:
+            value = item.to_mapping()
+            value["expired_at_evaluation"] = bool(
+                item.source is AuthoritySource.SIGNED_REGISTRY
+                and item.status is AuthorityStatus.POSITIVE
+                and (
+                    item.expires_at_epoch is None
+                    or item.expires_at_epoch <= self.evaluated_at_epoch
+                )
+            )
+            decisions.append(value)
+        return {
+            "model_version": MODEL_VERSION,
+            "decisions": sorted(decisions, key=canonical_json),
+        }
 
     def to_mapping(self) -> dict[str, Any]:
         return {
@@ -517,16 +612,7 @@ class AuthorityBundle:
             "evaluated_at_epoch": self.evaluated_at_epoch,
             "decisions": [
                 item.to_mapping()
-                for item in sorted(
-                    self.decisions,
-                    key=lambda decision: (
-                        decision.profile_id,
-                        decision.profile_version,
-                        decision.source.value,
-                        decision.status.value,
-                        decision.subject_version,
-                    ),
-                )
+                for item in sorted(self.decisions, key=lambda value: canonical_json(value.to_mapping()))
             ],
         }
 
@@ -542,6 +628,12 @@ class CapabilityDecision:
     contract_fingerprint: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.disposition, AdmissionDisposition):
+            raise CompatibilityModelError("decision_disposition_invalid")
+        if self.authority_source is not None and not isinstance(
+            self.authority_source, AuthoritySource
+        ):
+            raise CompatibilityModelError("decision_authority_source_invalid")
         _safe_text(self.capability_id, code="decision_capability_invalid")
         if self.profile_id is not None:
             _safe_text(self.profile_id, code="decision_profile_invalid")
@@ -576,8 +668,26 @@ class DecisionGeneration:
     decisions: tuple[CapabilityDecision, ...]
 
     def __post_init__(self) -> None:
-        if isinstance(self.generation, bool) or self.generation < 1:
-            raise CompatibilityModelError("decision_generation_invalid")
+        _bounded_int(
+            self.generation,
+            code="decision_generation_invalid",
+            minimum=1,
+        )
+        if not isinstance(self.surface, UpstreamSurface):
+            raise CompatibilityModelError("decision_surface_invalid")
+        if not isinstance(self.disposition, AdmissionDisposition):
+            raise CompatibilityModelError("decision_disposition_invalid")
+        _exact_tuple(
+            self.decisions,
+            code="decision_entries_invalid",
+            maximum=MAX_OBSERVED_CAPABILITIES + MAX_CAPABILITIES_PER_PROFILE,
+        )
+        if any(not isinstance(item, CapabilityDecision) for item in self.decisions):
+            raise CompatibilityModelError("decision_entries_invalid")
+        _unique(
+            (item.capability_id for item in self.decisions),
+            code="decision_capability_duplicate",
+        )
         for value in (
             self.observation_fingerprint,
             self.authority_fingerprint,
@@ -630,6 +740,17 @@ class ReconciliationResult:
     events: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        if not isinstance(self.disposition, AdmissionDisposition):
+            raise CompatibilityModelError("reconciliation_disposition_invalid")
+        if self.retired_generation is not None:
+            _bounded_int(
+                self.retired_generation,
+                code="reconciliation_retired_generation_invalid",
+                minimum=1,
+            )
+        _exact_bool(self.published, code="reconciliation_published_invalid")
+        _exact_bool(self.idempotent, code="reconciliation_idempotent_invalid")
+        _exact_tuple(self.events, code="reconciliation_events_invalid", maximum=16)
         _reason(self.reason_code)
         for event in self.events:
             _reason(event)
@@ -651,12 +772,18 @@ class ReconciliationResult:
 class RouteLease:
     lease_id: str
     generation: int
+    surface: UpstreamSurface
     capability_id: str
     adapter_id: str
     session_fingerprint: str
 
     def __post_init__(self) -> None:
         _digest(self.lease_id, code="lease_id_invalid")
+        _bounded_int(self.generation, code="lease_generation_invalid", minimum=1)
+        if not isinstance(self.surface, UpstreamSurface):
+            raise CompatibilityModelError("lease_surface_invalid")
+        _safe_text(self.capability_id, code="lease_capability_invalid")
+        _safe_text(self.adapter_id, code="lease_adapter_invalid")
         _digest(self.session_fingerprint, code="lease_session_invalid")
 
 
@@ -666,4 +793,6 @@ class DispatchCommit:
     commit_id: str
 
     def __post_init__(self) -> None:
+        if not isinstance(self.lease, RouteLease):
+            raise CompatibilityModelError("commit_lease_invalid")
         _digest(self.commit_id, code="commit_id_invalid")

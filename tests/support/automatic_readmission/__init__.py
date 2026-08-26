@@ -30,6 +30,13 @@ from .models import (
     classify_registry_refresh,
     evidence_fingerprint,
 )
+from .vector_runner import (
+    ContractAdapter,
+    ReferenceContractAdapter,
+    VECTOR_SCHEMA_VERSION,
+    run_contract_suite,
+    run_contract_vector,
+)
 
 __all__ = [
     "AdmissionDisposition",
@@ -44,6 +51,7 @@ __all__ = [
     "CapabilityProfile",
     "CompatibilityModelError",
     "CompatibilityObservation",
+    "ContractAdapter",
     "DecisionGeneration",
     "DispatchCommit",
     "HARNESS_SCHEMA_VERSION",
@@ -51,10 +59,14 @@ __all__ = [
     "OfflineUpdateHarness",
     "ReconciliationAttempt",
     "ReconciliationResult",
+    "ReferenceContractAdapter",
     "RegistryRefreshResult",
     "RouteLease",
     "UpstreamSurface",
+    "VECTOR_SCHEMA_VERSION",
     "canonical_json",
     "classify_registry_refresh",
     "evidence_fingerprint",
+    "run_contract_suite",
+    "run_contract_vector",
 ]

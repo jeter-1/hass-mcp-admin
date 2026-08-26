@@ -1,0 +1,1761 @@
+{
+  "foundation_fixture": "foundation_v1.json",
+  "schema_version": 2,
+  "vectors": [
+    {
+      "requirements": [
+        "independent_surfaces",
+        "unrelated_surface_continuity",
+        "surface_bound_leases",
+        "zero_write_authority"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "admit_ha_mcp"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_core_ordinary_only",
+            "observation_id": "core_unknown_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "core.entity_registry_read",
+              "core.states_read"
+            ],
+            "disposition": "partial",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "core.helper_write",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "home_assistant_core",
+            "unavailable": [
+              {
+                "capability_id": "core.configuration_semantics",
+                "reason_code": "positive_authority_missing"
+              },
+              {
+                "capability_id": "core.template_semantics",
+                "reason_code": "positive_authority_missing"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "admit_core"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "ha",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "ha_route_survives_core"
+        },
+        {
+          "arguments": {
+            "capability_id": "core.states_read",
+            "lease_id": "core",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "generation": 2,
+            "granted": true,
+            "surface": "home_assistant_core"
+          },
+          "operation": "acquire_lease",
+          "step_id": "core_route_available"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_transport",
+            "observation_id": "transport_restored"
+          },
+          "expected": {
+            "admitted": [
+              "transport.streamable_http"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 3,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [],
+            "retired_generation": null,
+            "surface": "configured_transport",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "admit_transport"
+        },
+        {
+          "arguments": {
+            "lease_id": "ha",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "valid": true
+          },
+          "operation": "validate_lease",
+          "step_id": "ha_route_survives_transport"
+        },
+        {
+          "arguments": {},
+          "expected": {
+            "admitted_count": 5,
+            "bounded": true,
+            "fallback_count": 0,
+            "model_version": 2,
+            "sensitive_material_present": false,
+            "surface_count": 3
+          },
+          "operation": "health",
+          "step_id": "health_is_bounded"
+        }
+      ],
+      "vector_id": "independent_surface_authority_lifecycles"
+    },
+    {
+      "requirements": [
+        "surface_specific_retirement",
+        "immutable_leases",
+        "precommit_generation_revalidation"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "initial_ha"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_core_ordinary_only",
+            "observation_id": "core_unknown_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "core.entity_registry_read",
+              "core.states_read"
+            ],
+            "disposition": "partial",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "core.helper_write",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "home_assistant_core",
+            "unavailable": [
+              {
+                "capability_id": "core.configuration_semantics",
+                "reason_code": "positive_authority_missing"
+              },
+              {
+                "capability_id": "core.template_semantics",
+                "reason_code": "positive_authority_missing"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "initial_core"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "old_ha",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "old_ha_lease"
+        },
+        {
+          "arguments": {
+            "capability_id": "core.states_read",
+            "lease_id": "core",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "generation": 2,
+            "granted": true,
+            "surface": "home_assistant_core"
+          },
+          "operation": "acquire_lease",
+          "step_id": "core_lease"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "observation_id": "ha_mcp_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_compatible",
+            "generation": 3,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": 1,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "update_ha_only"
+        },
+        {
+          "arguments": {
+            "lease_id": "old_ha",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "valid": false
+          },
+          "operation": "validate_lease",
+          "step_id": "old_ha_rejected"
+        },
+        {
+          "arguments": {
+            "lease_id": "core",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "valid": true
+          },
+          "operation": "validate_lease",
+          "step_id": "core_preserved"
+        }
+      ],
+      "vector_id": "surface_specific_update_and_lease_retirement"
+    },
+    {
+      "requirements": [
+        "duplicate_capability_ownership",
+        "deterministic_surface_resolution"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "access": {
+              "kind": "coordinator"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "profiles",
+                  2,
+                  "capabilities",
+                  0,
+                  "capability_id"
+                ],
+                "value": "ha_get_state"
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "profile_registry_capability_duplicate"
+          },
+          "operation": "validate_fixture",
+          "step_id": "duplicate_owner"
+        }
+      ],
+      "vector_id": "duplicate_capability_ownership_fails_closed"
+    },
+    {
+      "requirements": [
+        "lower_sequence_rollback",
+        "equal_sequence_replay",
+        "equal_sequence_content_conflict",
+        "idempotent_replay"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "candidate_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "candidate_sequence": 10,
+            "current_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "current_sequence": 10
+          },
+          "expected": {
+            "accepted": true,
+            "idempotent": true,
+            "status": "positive"
+          },
+          "operation": "registry_refresh",
+          "step_id": "identical_replay"
+        },
+        {
+          "arguments": {
+            "candidate_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "candidate_sequence": 9,
+            "current_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "current_sequence": 10
+          },
+          "expected": {
+            "accepted": false,
+            "idempotent": false,
+            "status": "rollback"
+          },
+          "operation": "registry_refresh",
+          "step_id": "rollback"
+        },
+        {
+          "arguments": {
+            "candidate_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "candidate_sequence": 10,
+            "current_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "current_sequence": 10
+          },
+          "expected": {
+            "accepted": false,
+            "idempotent": false,
+            "status": "replay_conflict"
+          },
+          "operation": "registry_refresh",
+          "step_id": "content_conflict"
+        }
+      ],
+      "vector_id": "signed_registry_refresh_security"
+    },
+    {
+      "requirements": [
+        "revocation",
+        "deny_only",
+        "compiled_authority_precedence"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "fixture_mutations": [
+              {
+                "operation": "append",
+                "path": [
+                  "authority_sets",
+                  "compiled_ha_mcp_exact",
+                  "decisions"
+                ],
+                "value": {
+                  "adapter_id": "compiled_ha_mcp_read_adapter_v1",
+                  "capability_ids": [],
+                  "expires_at_epoch": 1700000000,
+                  "profile_id": "ha_mcp_read_v1",
+                  "profile_version": 1,
+                  "protocol_version": "2025-06-18",
+                  "reason_code": "retained_signed_revocation",
+                  "registry_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "registry_sequence": 13,
+                  "source": "signed_registry",
+                  "status": "deny_only",
+                  "subject_identity": "synthetic-ha-mcp",
+                  "subject_version": "1.0.0-synthetic"
+                }
+              }
+            ],
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [],
+            "disposition": "quarantined",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              },
+              {
+                "capability_id": "ha_get_state",
+                "reason_code": "retained_signed_revocation"
+              },
+              {
+                "capability_id": "ha_search",
+                "reason_code": "retained_signed_revocation"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "retained_revocation"
+        }
+      ],
+      "vector_id": "signed_revocation_and_deny_only_override_positive"
+    },
+    {
+      "requirements": [
+        "expiry_crossing",
+        "clock_stability",
+        "generation_retirement"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "observation_id": "ha_mcp_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_compatible",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "before_expiry"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "signed_ha_mcp_compatible",
+                  "evaluated_at_epoch"
+                ],
+                "value": 1800000001
+              }
+            ],
+            "observation_id": "ha_mcp_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_compatible",
+            "generation": 1,
+            "idempotent": true,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "one_second_later"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "signed_ha_mcp_compatible",
+                  "evaluated_at_epoch"
+                ],
+                "value": 1900000000
+              }
+            ],
+            "observation_id": "ha_mcp_compatible"
+          },
+          "expected": {
+            "admitted": [],
+            "disposition": "unavailable",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": 1,
+            "surface": "ha_mcp",
+            "unavailable": [
+              {
+                "capability_id": "ha_get_state",
+                "reason_code": "signed_positive_authority_expired"
+              },
+              {
+                "capability_id": "ha_search",
+                "reason_code": "signed_positive_authority_expired"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "at_expiry"
+        }
+      ],
+      "vector_id": "signed_expiry_boundary_is_material"
+    },
+    {
+      "requirements": [
+        "partial_admission",
+        "contract_drift",
+        "unknown_tools",
+        "write_tools_unreachable"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools",
+                  1,
+                  "contract_fingerprint"
+                ],
+                "value": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+              }
+            ],
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state"
+            ],
+            "disposition": "partial",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              },
+              {
+                "capability_id": "ha_search",
+                "reason_code": "capability_contract_changed"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "changed_one_tool"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "read",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "read_route_survives"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_call_service",
+            "lease_id": "write",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": null,
+            "granted": false,
+            "surface": null
+          },
+          "operation": "acquire_lease",
+          "step_id": "write_route_absent"
+        }
+      ],
+      "vector_id": "per_capability_catalog_drift"
+    },
+    {
+      "requirements": [
+        "missing_tool",
+        "duplicate_tool",
+        "incomplete_catalog",
+        "unknown_tool",
+        "annotation_description_provenance_drift"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools"
+                ],
+                "value": [
+                  {
+                    "capability_id": "ha_get_state",
+                    "contract_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                    "kind": "ordinary_read"
+                  },
+                  {
+                    "capability_id": "ha_call_service",
+                    "contract_fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                    "kind": "governed_write"
+                  }
+                ]
+              }
+            ],
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state"
+            ],
+            "disposition": "partial",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [
+              {
+                "capability_id": "ha_search",
+                "reason_code": "capability_missing"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "missing_expected"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "fixture_mutations": [
+              {
+                "operation": "append",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools"
+                ],
+                "value": {
+                  "capability_id": "ha_get_state",
+                  "contract_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+                  "kind": "ordinary_read"
+                }
+              }
+            ],
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_search"
+            ],
+            "disposition": "partial",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              },
+              {
+                "capability_id": "ha_get_state",
+                "reason_code": "capability_duplicate"
+              }
+            ],
+            "retired_generation": 1,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "duplicate_tool"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "catalog_complete"
+                ],
+                "value": false
+              }
+            ],
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [],
+            "disposition": "unavailable",
+            "generation": 3,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": 2,
+            "surface": "ha_mcp",
+            "unavailable": [
+              {
+                "capability_id": "ha_get_state",
+                "reason_code": "catalog_incomplete"
+              },
+              {
+                "capability_id": "ha_search",
+                "reason_code": "catalog_incomplete"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "incomplete_catalog"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "fixture_mutations": [
+              {
+                "operation": "append",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools"
+                ],
+                "value": {
+                  "capability_id": "synthetic_future_read",
+                  "contract_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "kind": "ordinary_read"
+                }
+              }
+            ],
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 4,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              },
+              {
+                "capability_id": "synthetic_future_read",
+                "reason_code": "capability_not_compiled"
+              }
+            ],
+            "retired_generation": 3,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "unknown_new_tool"
+        }
+      ],
+      "vector_id": "missing_duplicate_incomplete_and_unknown_catalog_entries"
+    },
+    {
+      "requirements": [
+        "begin_reconciliation",
+        "stale_precommit_rejection",
+        "committed_call_completion",
+        "no_generation_revival"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "initial"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "call",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "lease"
+        },
+        {
+          "arguments": {
+            "lease_id": "call",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit"
+        },
+        {
+          "arguments": {
+            "attempt_id": "new",
+            "authority_id": "signed_ha_mcp_compatible",
+            "observation_id": "ha_mcp_compatible"
+          },
+          "expected": {
+            "generation": 2,
+            "idempotent": false,
+            "retired_generation": 1,
+            "surface": "ha_mcp"
+          },
+          "operation": "begin_reconciliation",
+          "step_id": "retire"
+        },
+        {
+          "arguments": {
+            "lease_id": "call",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "valid": false
+          },
+          "operation": "validate_lease",
+          "step_id": "old_lease_invalid"
+        },
+        {
+          "arguments": {
+            "lease_id": "call"
+          },
+          "expected": {
+            "finished": true
+          },
+          "operation": "finish_commit",
+          "step_id": "committed_finishes"
+        },
+        {
+          "arguments": {
+            "attempt_id": "new"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_compatible",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": 1,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "complete_reconciliation",
+          "step_id": "publish_new"
+        }
+      ],
+      "vector_id": "lifecycle_stale_generation_and_committed_completion"
+    },
+    {
+      "requirements": [
+        "stale_verification_completion",
+        "newest_ticket_wins"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "attempt_id": "old",
+            "authority_id": "compiled_ha_mcp_exact",
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "generation": 1,
+            "idempotent": false,
+            "retired_generation": null,
+            "surface": "ha_mcp"
+          },
+          "operation": "begin_reconciliation",
+          "step_id": "older"
+        },
+        {
+          "arguments": {
+            "attempt_id": "new",
+            "authority_id": "signed_ha_mcp_compatible",
+            "observation_id": "ha_mcp_compatible"
+          },
+          "expected": {
+            "generation": 2,
+            "idempotent": false,
+            "retired_generation": null,
+            "surface": "ha_mcp"
+          },
+          "operation": "begin_reconciliation",
+          "step_id": "newer"
+        },
+        {
+          "arguments": {
+            "attempt_id": "old"
+          },
+          "expected": {
+            "admitted": [],
+            "disposition": "unavailable",
+            "generation": null,
+            "idempotent": false,
+            "published": false,
+            "quarantined": [],
+            "retired_generation": null,
+            "surface": null,
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "complete_reconciliation",
+          "step_id": "complete_old"
+        },
+        {
+          "arguments": {
+            "attempt_id": "new"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_compatible",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "complete_reconciliation",
+          "step_id": "complete_new"
+        }
+      ],
+      "vector_id": "stale_verification_completion_is_ignored"
+    },
+    {
+      "requirements": [
+        "core_identity_agreement",
+        "core_identity_disagreement",
+        "structural_reads_only",
+        "semantic_capabilities_held"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "signed_core_ordinary_only",
+            "observation_id": "core_unknown_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "core.entity_registry_read",
+              "core.states_read"
+            ],
+            "disposition": "partial",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "core.helper_write",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "home_assistant_core",
+            "unavailable": [
+              {
+                "capability_id": "core.configuration_semantics",
+                "reason_code": "positive_authority_missing"
+              },
+              {
+                "capability_id": "core.template_semantics",
+                "reason_code": "positive_authority_missing"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "structural_only"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_core_ordinary_only",
+            "observation_id": "core_version_disagreement"
+          },
+          "expected": {
+            "admitted": [],
+            "disposition": "unavailable",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "core.helper_write",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": 1,
+            "surface": "home_assistant_core",
+            "unavailable": [
+              {
+                "capability_id": "core.configuration_semantics",
+                "reason_code": "core_version_disagreement"
+              },
+              {
+                "capability_id": "core.entity_registry_read",
+                "reason_code": "core_version_disagreement"
+              },
+              {
+                "capability_id": "core.states_read",
+                "reason_code": "core_version_disagreement"
+              },
+              {
+                "capability_id": "core.template_semantics",
+                "reason_code": "core_version_disagreement"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "identity_disagreement"
+        }
+      ],
+      "vector_id": "core_identity_and_semantic_separation"
+    },
+    {
+      "requirements": [
+        "proxy_interruption",
+        "proxy_restoration",
+        "transport_not_provider_authority"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_transport",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "transport_restored",
+                  "connected"
+                ],
+                "value": false
+              }
+            ],
+            "observation_id": "transport_restored"
+          },
+          "expected": {
+            "admitted": [],
+            "disposition": "unavailable",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [],
+            "retired_generation": null,
+            "surface": "configured_transport",
+            "unavailable": [
+              {
+                "capability_id": "transport.streamable_http",
+                "reason_code": "transport_unavailable"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "interrupted"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_transport",
+            "observation_id": "transport_restored"
+          },
+          "expected": {
+            "admitted": [
+              "transport.streamable_http"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [],
+            "retired_generation": 1,
+            "surface": "configured_transport",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "restored"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "provider",
+            "session_id": "synthetic-session-transport-1"
+          },
+          "expected": {
+            "generation": null,
+            "granted": false,
+            "surface": null
+          },
+          "operation": "acquire_lease",
+          "step_id": "provider_still_absent"
+        }
+      ],
+      "vector_id": "proxy_restoration_has_no_provider_authority"
+    },
+    {
+      "requirements": [
+        "exact_booleans",
+        "integers_reject_booleans",
+        "bounded_identifiers"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "access": {
+              "id": "ha_mcp_exact",
+              "kind": "observation"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "connected"
+                ],
+                "value": "false"
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_connected_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "connected_string"
+        },
+        {
+          "arguments": {
+            "access": {
+              "id": "ha_mcp_exact",
+              "kind": "observation"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "authenticated"
+                ],
+                "value": 1
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_authenticated_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "authenticated_integer"
+        },
+        {
+          "arguments": {
+            "access": {
+              "id": "ha_mcp_exact",
+              "kind": "observation"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "catalog_complete"
+                ],
+                "value": null
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_catalog_complete_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "catalog_null"
+        },
+        {
+          "arguments": {
+            "access": {
+              "kind": "coordinator"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "profiles",
+                  0,
+                  "profile_version"
+                ],
+                "value": true
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_profile_version_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "profile_version_boolean"
+        },
+        {
+          "arguments": {
+            "access": {
+              "id": "compiled_ha_mcp_exact",
+              "kind": "authority"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "compiled_ha_mcp_exact",
+                  "evaluated_at_epoch"
+                ],
+                "value": true
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_authority_time_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "authority_time_boolean"
+        }
+      ],
+      "vector_id": "malformed_boolean_and_integer_evidence"
+    },
+    {
+      "requirements": [
+        "catalog_page_bound",
+        "continuation_required",
+        "cursor_uniqueness",
+        "terminal_page_rules"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "access": {
+              "id": "ha_mcp_exact",
+              "kind": "observation"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages"
+                ],
+                "value": [
+                  {
+                    "next_cursor": null,
+                    "tools": []
+                  },
+                  {
+                    "next_cursor": null,
+                    "tools": []
+                  }
+                ]
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_catalog_page_terminal_early"
+          },
+          "operation": "validate_fixture",
+          "step_id": "terminal_before_last"
+        },
+        {
+          "arguments": {
+            "access": {
+              "id": "ha_mcp_exact",
+              "kind": "observation"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "next_cursor"
+                ],
+                "value": "cursor-1"
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_catalog_final_cursor_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "final_has_cursor"
+        },
+        {
+          "arguments": {
+            "access": {
+              "id": "ha_mcp_exact",
+              "kind": "observation"
+            },
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages"
+                ],
+                "value": [
+                  {
+                    "next_cursor": "cursor-1",
+                    "tools": []
+                  },
+                  {
+                    "next_cursor": "cursor-1",
+                    "tools": []
+                  },
+                  {
+                    "next_cursor": null,
+                    "tools": []
+                  }
+                ]
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_catalog_cursor_repeated"
+          },
+          "operation": "validate_fixture",
+          "step_id": "repeated_cursor"
+        },
+        {
+          "arguments": {
+            "access": {
+              "id": "ha_mcp_exact",
+              "kind": "observation"
+            },
+            "fixture_mutations": [
+              {
+                "count": 33,
+                "operation": "repeat",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages"
+                ],
+                "source_index": 0
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_catalog_pages_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "too_many_pages"
+        }
+      ],
+      "vector_id": "malformed_catalog_pagination_topology"
+    },
+    {
+      "requirements": [
+        "profile_bound",
+        "decision_bound",
+        "tool_bound",
+        "health_audit_bounds",
+        "sensitive_output_redaction"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "access": {
+              "kind": "coordinator"
+            },
+            "fixture_mutations": [
+              {
+                "count": 65,
+                "operation": "repeat",
+                "path": [
+                  "profiles"
+                ],
+                "source_index": 0
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_profiles_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "too_many_profiles"
+        },
+        {
+          "arguments": {
+            "access": {
+              "id": "compiled_ha_mcp_exact",
+              "kind": "authority"
+            },
+            "fixture_mutations": [
+              {
+                "count": 257,
+                "operation": "repeat",
+                "path": [
+                  "authority_sets",
+                  "compiled_ha_mcp_exact",
+                  "decisions"
+                ],
+                "source_index": 0
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "authority_decisions_oversized"
+          },
+          "operation": "validate_fixture",
+          "step_id": "too_many_decisions"
+        },
+        {
+          "arguments": {
+            "access": {
+              "id": "ha_mcp_exact",
+              "kind": "observation"
+            },
+            "fixture_mutations": [
+              {
+                "count": 513,
+                "operation": "repeat",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools"
+                ],
+                "source_index": 0
+              }
+            ]
+          },
+          "expected": {
+            "accepted": false,
+            "error_code": "harness_catalog_invalid"
+          },
+          "operation": "validate_fixture",
+          "step_id": "too_many_tools"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "admit_for_projection"
+        },
+        {
+          "arguments": {},
+          "expected": {
+            "admitted_count": 2,
+            "bounded": true,
+            "fallback_count": 0,
+            "model_version": 2,
+            "sensitive_material_present": false,
+            "surface_count": 3
+          },
+          "operation": "health",
+          "step_id": "bounded_projection"
+        }
+      ],
+      "vector_id": "bounded_accumulation_and_projection"
+    },
+    {
+      "requirements": [
+        "decision_order_independence",
+        "profile_order_independence",
+        "reconciliation_idempotence"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "fixture_mutations": [
+              {
+                "operation": "reverse",
+                "path": [
+                  "profiles"
+                ]
+              },
+              {
+                "operation": "reverse",
+                "path": [
+                  "authority_sets",
+                  "compiled_ha_mcp_exact",
+                  "decisions"
+                ]
+              },
+              {
+                "operation": "reverse",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools"
+                ]
+              }
+            ],
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "reordered_inputs"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": true,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "canonical_repeat"
+        }
+      ],
+      "vector_id": "semantically_equivalent_order_and_repeated_reconciliation"
+    }
+  ]
+}

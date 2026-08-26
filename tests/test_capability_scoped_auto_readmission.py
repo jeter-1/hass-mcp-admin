@@ -18,7 +18,7 @@ STABLE_RUNTIME = ROOT / "hass_mcp_admin"
 TESTS = ROOT / "tests"
 REFERENCE_MODEL = TESTS / "support" / "automatic_readmission"
 FIXTURE = TESTS / "fixtures" / "automatic_readmission" / "foundation_v1.json"
-VECTORS = TESTS / "fixtures" / "automatic_readmission" / "contract_vectors_v1.json"
+VECTORS = TESTS / "fixtures" / "automatic_readmission" / "contract_vectors_v2.json"
 sys.path.insert(0, str(TESTS))
 
 from support.automatic_readmission import (  # noqa: E402
@@ -32,14 +32,19 @@ from support.automatic_readmission import (  # noqa: E402
     CompatibilityModelError,
     ObservedCapability,
     OfflineUpdateHarness,
+    ReferenceContractAdapter,
     UpstreamSurface,
+    VECTOR_SCHEMA_VERSION,
     canonical_json,
     classify_registry_refresh,
+    run_contract_suite,
+    run_contract_vector,
 )
 from support.automatic_readmission.models import (  # noqa: E402
     MAX_AUTHORITY_DECISIONS,
     MAX_OBSERVED_CAPABILITIES,
     MAX_PROJECTION_BYTES,
+    MAX_SAFE_INTEGER,
 )
 
 
@@ -145,10 +150,64 @@ class HarnessContractTests(unittest.TestCase):
                 ),
             )
 
+    def test_harness_rejects_every_non_boolean_json_shape(self):
+        invalid_values = ("true", "false", 0, 1, None, [], {}, "other")
+        for field in ("connected", "authenticated", "catalog_complete"):
+            for value in invalid_values:
+                malformed = fixture_mapping()
+                malformed["scenarios"]["ha_mcp_exact"][field] = value
+                with self.subTest(field=field, value=repr(value)):
+                    with self.assertRaisesRegex(
+                        CompatibilityModelError, f"harness_{field}_invalid"
+                    ):
+                        OfflineUpdateHarness.from_mapping(malformed).observation(
+                            "ha_mcp_exact"
+                        )
+
+    def test_integer_and_non_finite_bounds_fail_before_reconciliation(self):
+        for value in (True, False, MAX_SAFE_INTEGER + 1, -1):
+            malformed = fixture_mapping()
+            malformed["authority_sets"]["compiled_ha_mcp_exact"][
+                "evaluated_at_epoch"
+            ] = value
+            with self.subTest(authority_time=repr(value)):
+                with self.assertRaisesRegex(
+                    CompatibilityModelError, "harness_authority_time_invalid"
+                ):
+                    OfflineUpdateHarness.from_mapping(malformed).authority(
+                        "compiled_ha_mcp_exact"
+                    )
+
+        for value in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(non_finite=repr(value)):
+                with self.assertRaisesRegex(
+                    CompatibilityModelError, "canonical_value_invalid"
+                ):
+                    canonical_json({"value": value})
+
+    def test_catalog_pagination_topology_rejects_contradictions(self):
+        invalid_pages = (
+            [{"tools": [], "next_cursor": None}, {"tools": [], "next_cursor": None}],
+            [{"tools": [], "next_cursor": "cursor"}],
+            [
+                {"tools": [], "next_cursor": "cursor"},
+                {"tools": [], "next_cursor": "cursor"},
+                {"tools": [], "next_cursor": None},
+            ],
+            [{"tools": [], "next_cursor": 1}, {"tools": [], "next_cursor": None}],
+        )
+        for pages in invalid_pages:
+            malformed = fixture_mapping()
+            malformed["scenarios"]["ha_mcp_exact"]["tools_list_pages"] = pages
+            with self.subTest(pages=repr(pages)):
+                with self.assertRaises(CompatibilityModelError):
+                    OfflineUpdateHarness.from_mapping(malformed).observation(
+                        "ha_mcp_exact"
+                    )
+
 
 class ImplementationNeutralVectorTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.harness = OfflineUpdateHarness.from_mapping(fixture_mapping())
         self.mapping = vector_mapping()
 
     def test_vectors_are_data_only_complete_and_implementation_neutral(self):
@@ -156,64 +215,24 @@ class ImplementationNeutralVectorTests(unittest.TestCase):
             set(self.mapping),
             {"schema_version", "foundation_fixture", "vectors"},
         )
-        self.assertEqual(self.mapping["schema_version"], 1)
+        self.assertEqual(self.mapping["schema_version"], VECTOR_SCHEMA_VERSION)
         self.assertEqual(self.mapping["foundation_fixture"], FIXTURE.name)
-        self.assertGreaterEqual(len(self.mapping["vectors"]), 5)
+        self.assertGreaterEqual(len(self.mapping["vectors"]), 16)
         ids = [item["vector_id"] for item in self.mapping["vectors"]]
         self.assertEqual(len(ids), len(set(ids)))
         for vector in self.mapping["vectors"]:
             self.assertEqual(
                 set(vector),
-                {
-                    "vector_id",
-                    "initial",
-                    "observation",
-                    "authority",
-                    "reconciliation_event",
-                    "expected",
-                },
+                {"vector_id", "requirements", "steps"},
             )
-            self.assertEqual(
-                set(vector["initial"]),
-                {
-                    "generation",
-                    "scenario_id",
-                    "authority_set_id",
-                    "lease_capability_id",
-                },
-            )
-            self.assertEqual(
-                set(vector["observation"]),
-                {"scenario_id", "surface", "identity", "capability_contracts"},
-            )
-            self.assertEqual(
-                set(vector["authority"]),
-                {
-                    "authority_set_id",
-                    "evaluated_at_epoch",
-                    "registry_disposition",
-                    "registry_sequence",
-                    "registry_digest",
-                    "expires_at_epoch",
-                },
-            )
-            self.assertEqual(
-                set(vector["expected"]),
-                {
-                    "admitted_capabilities",
-                    "quarantined_capabilities",
-                    "unavailable_capabilities",
-                    "generation",
-                    "lease_behavior",
-                    "write_action_reachability",
-                    "health_projection",
-                    "audit_projection",
-                },
-            )
-            self.assertEqual(vector["expected"]["write_action_reachability"], 0)
-            self.assertIsInstance(vector["reconciliation_event"], str)
-            self.assertGreater(len(vector["reconciliation_event"]), 0)
-            self.assertLessEqual(len(vector["reconciliation_event"]), 128)
+            self.assertTrue(vector["requirements"])
+            self.assertTrue(vector["steps"])
+            step_ids = [step["step_id"] for step in vector["steps"]]
+            self.assertEqual(len(step_ids), len(set(step_ids)))
+            for step in vector["steps"]:
+                self.assertEqual(
+                    set(step), {"step_id", "operation", "arguments", "expected"}
+                )
 
         raw = VECTORS.read_text(encoding="utf-8")
         for implementation_name in (
@@ -221,153 +240,150 @@ class ImplementationNeutralVectorTests(unittest.TestCase):
             "AdmissionDisposition",
             "OfflineUpdateHarness",
             "support.automatic_readmission",
+            "SurfaceState",
+            "ReferenceContractAdapter",
         ):
             self.assertNotIn(implementation_name, raw)
 
+    def test_vectors_cover_the_independently_stated_security_contract(self):
+        required = {
+            "independent_surfaces",
+            "surface_specific_retirement",
+            "transport_not_provider_authority",
+            "duplicate_capability_ownership",
+            "revocation",
+            "expiry_crossing",
+            "deny_only",
+            "lower_sequence_rollback",
+            "equal_sequence_replay",
+            "equal_sequence_content_conflict",
+            "idempotent_replay",
+            "partial_admission",
+            "missing_tool",
+            "duplicate_tool",
+            "incomplete_catalog",
+            "unknown_tool",
+            "write_tools_unreachable",
+            "contract_drift",
+            "begin_reconciliation",
+            "surface_bound_leases",
+            "precommit_generation_revalidation",
+            "committed_call_completion",
+            "stale_precommit_rejection",
+            "stale_verification_completion",
+            "core_identity_agreement",
+            "core_identity_disagreement",
+            "structural_reads_only",
+            "semantic_capabilities_held",
+            "proxy_interruption",
+            "proxy_restoration",
+            "exact_booleans",
+            "integers_reject_booleans",
+            "catalog_page_bound",
+            "continuation_required",
+            "cursor_uniqueness",
+            "terminal_page_rules",
+            "profile_bound",
+            "decision_bound",
+            "tool_bound",
+            "health_audit_bounds",
+            "sensitive_output_redaction",
+            "decision_order_independence",
+            "profile_order_independence",
+            "clock_stability",
+            "zero_write_authority",
+        }
+        represented = {
+            requirement
+            for vector in self.mapping["vectors"]
+            for requirement in vector["requirements"]
+        }
+        self.assertEqual(required - represented, set())
+
     def test_contract_vectors_replay_with_literal_expected_outcomes(self):
-        for vector in self.mapping["vectors"]:
-            with self.subTest(vector=vector["vector_id"]):
-                coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
-                initial = vector["initial"]
-                initial_lease = None
-                if initial["generation"]:
-                    initial_observation = self.harness.observation(
-                        initial["scenario_id"]
-                    )
-                    initial_result = coordinator.reconcile(
-                        initial_observation,
-                        self.harness.authority(initial["authority_set_id"]),
-                    )
-                    self.assertEqual(
-                        initial_result.generation.generation,
-                        initial["generation"],
-                    )
-                    initial_lease = coordinator.acquire_route(
-                        initial["lease_capability_id"],
-                        session_id=initial_observation.session_id,
-                    )
-                    self.assertIsNotNone(initial_lease)
+        report = run_contract_suite(
+            self.mapping,
+            lambda: ReferenceContractAdapter(fixture_mapping()),
+        )
+        self.assertTrue(report["matched"], report)
+        self.assertEqual(report["vector_count"], len(self.mapping["vectors"]))
+        self.assertEqual(report["step_count"], 61)
+        self.assertEqual(report["mismatch_count"], 0)
+        self.assertTrue(all(item["mismatches"] == [] for item in report["reports"]))
 
-                observed = self.harness.observation(
-                    vector["observation"]["scenario_id"]
-                )
-                observed_contracts = [
-                    item.to_mapping() for item in observed.capabilities
-                ]
-                self.assertEqual(observed.surface.value, vector["observation"]["surface"])
-                self.assertEqual(observed.identity, vector["observation"]["identity"])
-                self.assertEqual(
-                    observed_contracts,
-                    vector["observation"]["capability_contracts"],
-                )
+    def test_vector_suite_bounds_and_schema_fail_closed(self):
+        adapter = lambda: ReferenceContractAdapter(fixture_mapping())
+        malformed = deepcopy(self.mapping)
+        malformed["schema_version"] = True
+        with self.assertRaisesRegex(
+            CompatibilityModelError, "vector_schema_unsupported"
+        ):
+            run_contract_suite(malformed, adapter)
 
-                authority = self.harness.authority(
-                    vector["authority"]["authority_set_id"]
-                )
-                self.assertEqual(
-                    authority.evaluated_at_epoch,
-                    vector["authority"]["evaluated_at_epoch"],
-                )
-                registry_decisions = [
-                    item
-                    for item in authority.decisions
-                    if item.source is AuthoritySource.SIGNED_REGISTRY
-                ]
-                if vector["authority"]["registry_disposition"] == "positive":
-                    self.assertTrue(registry_decisions)
-                    self.assertEqual(
-                        {item.status.value for item in registry_decisions},
-                        {"positive"},
-                    )
-                    self.assertEqual(
-                        {item.registry_sequence for item in registry_decisions},
-                        {vector["authority"]["registry_sequence"]},
-                    )
-                    self.assertEqual(
-                        {item.registry_digest for item in registry_decisions},
-                        {vector["authority"]["registry_digest"]},
-                    )
-                    self.assertEqual(
-                        {item.expires_at_epoch for item in registry_decisions},
-                        {vector["authority"]["expires_at_epoch"]},
-                    )
-                else:
-                    self.assertEqual(registry_decisions, [])
+        duplicate = deepcopy(self.mapping)
+        duplicate["vectors"].append(deepcopy(duplicate["vectors"][0]))
+        with self.assertRaisesRegex(CompatibilityModelError, "vector_id_duplicate"):
+            run_contract_suite(duplicate, adapter)
 
-                if initial_lease is None:
-                    result = coordinator.reconcile(observed, authority)
-                    retired_initial_lease_valid = None
-                else:
-                    attempt = coordinator.begin_reconciliation(observed, authority)
-                    retired_initial_lease_valid = coordinator.validate_pre_dispatch(
-                        initial_lease,
-                        session_id=self.harness.observation(
-                            initial["scenario_id"]
-                        ).session_id,
-                    )
-                    result = coordinator.complete_reconciliation(attempt)
+    def test_defective_adapters_are_detected_by_literal_vectors(self):
+        cases = {
+            "shared_generation": (
+                "independent_surface_authority_lifecycles",
+                lambda operation, arguments: operation == "acquire_lease"
+                and arguments.get("lease_id") == "ha",
+                {"granted": False, "surface": None, "generation": None},
+            ),
+            "truthy_string": (
+                "malformed_boolean_and_integer_evidence",
+                lambda operation, arguments: operation == "validate_fixture"
+                and any(
+                    mutation.get("path", [])[-1:] == ["connected"]
+                    for mutation in arguments.get("fixture_mutations", [])
+                    if isinstance(mutation, dict)
+                ),
+                {"accepted": True, "error_code": None},
+            ),
+            "clock_sensitive": (
+                "signed_expiry_boundary_is_material",
+                lambda operation, arguments: operation == "reconcile"
+                and any(
+                    mutation.get("value") == 1800000001
+                    for mutation in arguments.get("fixture_mutations", [])
+                    if isinstance(mutation, dict)
+                ),
+                {"idempotent": False, "generation": 2, "retired_generation": 1},
+            ),
+            "write_admission": (
+                "per_capability_catalog_drift",
+                lambda operation, arguments: operation == "acquire_lease"
+                and arguments.get("lease_id") == "write",
+                {"granted": True, "surface": "ha_mcp", "generation": 1},
+            ),
+            "stale_generation": (
+                "surface_specific_update_and_lease_retirement",
+                lambda operation, arguments: operation == "validate_lease"
+                and arguments.get("lease_id") == "old_ha",
+                {"valid": True},
+            ),
+        }
 
-                expected = vector["expected"]
-                decisions = result.generation.decisions
-                admitted = sorted(
-                    item.capability_id
-                    for item in decisions
-                    if item.disposition.admitted
-                )
-                quarantined = [
-                    {
-                        "capability_id": item.capability_id,
-                        "reason_code": item.reason_code,
-                    }
-                    for item in decisions
-                    if item.disposition is AdmissionDisposition.QUARANTINED
-                ]
-                unavailable = [
-                    {
-                        "capability_id": item.capability_id,
-                        "reason_code": item.reason_code,
-                    }
-                    for item in decisions
-                    if item.disposition is AdmissionDisposition.UNAVAILABLE
-                ]
-                self.assertEqual(admitted, expected["admitted_capabilities"])
-                self.assertEqual(quarantined, expected["quarantined_capabilities"])
-                self.assertEqual(unavailable, expected["unavailable_capabilities"])
-                self.assertEqual(result.generation.generation, expected["generation"])
-                self.assertEqual(
-                    retired_initial_lease_valid,
-                    expected["lease_behavior"]["retired_initial_lease_valid"],
-                )
+        vectors = {item["vector_id"]: item for item in self.mapping["vectors"]}
+        for defect, (vector_id, predicate, override) in cases.items():
+            class DefectiveAdapter:
+                def __init__(self):
+                    self.delegate = ReferenceContractAdapter(fixture_mapping())
 
-                lease_capability = admitted[0] if admitted else "synthetic_unavailable"
-                new_lease = coordinator.acquire_route(
-                    lease_capability,
-                    session_id=observed.session_id,
-                )
-                self.assertEqual(
-                    new_lease is not None,
-                    expected["lease_behavior"]["new_read_lease_available"],
-                )
-                reachable_writes = sum(
-                    coordinator.acquire_route(
-                        item["capability_id"], session_id=observed.session_id
-                    )
-                    is not None
-                    for item in expected["quarantined_capabilities"]
-                    if item["reason_code"] == "write_capability_prohibited"
-                )
-                self.assertEqual(
-                    reachable_writes,
-                    expected["write_action_reachability"],
-                )
-                self.assertEqual(
-                    coordinator.health_projection(),
-                    expected["health_projection"],
-                )
-                self.assertEqual(
-                    coordinator.audit_projection(result),
-                    expected["audit_projection"],
-                )
+                def execute(self, current_operation, arguments):
+                    result = dict(self.delegate.execute(current_operation, arguments))
+                    if predicate(current_operation, arguments):
+                        result.update(override)
+                    return result
+
+            with self.subTest(defect=defect):
+                report = run_contract_vector(vectors[vector_id], DefectiveAdapter())
+                self.assertFalse(report["matched"])
+                self.assertGreaterEqual(report["mismatch_count"], 1)
+                self.assertLessEqual(len(canonical_json(report)), MAX_PROJECTION_BYTES)
 
     def test_fixture_rendering_is_byte_identical_across_two_generations(self):
         def render(value: dict) -> bytes:
@@ -387,6 +403,7 @@ class ImplementationNeutralVectorTests(unittest.TestCase):
                 first = render(json.loads(path.read_text(encoding="utf-8")))
                 second = render(json.loads(first.decode("utf-8")))
                 self.assertEqual(first, second)
+                self.assertEqual(path.read_bytes(), first)
 
 
 class AuthorityAndAdmissionTests(unittest.TestCase):
@@ -395,6 +412,82 @@ class AuthorityAndAdmissionTests(unittest.TestCase):
 
     def coordinator(self):
         return CapabilityAdmissionCoordinator(self.harness.profiles)
+
+    def test_ar_r1_reconciling_core_preserves_admitted_ha_mcp_route(self):
+        coordinator = self.coordinator()
+        coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"),
+            self.harness.authority("compiled_ha_mcp_exact"),
+        )
+        self.assertIsNotNone(
+            coordinator.acquire_route(
+                "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+
+        coordinator.reconcile(
+            self.harness.observation("core_unknown_compatible"),
+            self.harness.authority("signed_core_ordinary_only"),
+        )
+
+        self.assertIsNotNone(
+            coordinator.acquire_route(
+                "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+        self.assertIsNotNone(
+            coordinator.acquire_route(
+                "core.states_read", session_id="synthetic-session-core-1"
+            )
+        )
+
+    def test_ar_r2_truthy_boolean_strings_are_rejected_before_reconciliation(self):
+        for field in ("connected", "authenticated", "catalog_complete"):
+            malformed = fixture_mapping()
+            malformed["scenarios"]["ha_mcp_exact"][field] = "false"
+            with self.subTest(field=field):
+                with self.assertRaisesRegex(
+                    CompatibilityModelError,
+                    f"harness_{field}_invalid",
+                ):
+                    OfflineUpdateHarness.from_mapping(malformed).observation(
+                        "ha_mcp_exact"
+                    )
+
+    def test_ar_r3_time_progress_without_expiry_transition_is_idempotent(self):
+        coordinator = self.coordinator()
+        observation = self.harness.observation("ha_mcp_compatible")
+        authority = self.harness.authority("signed_ha_mcp_compatible")
+        first = coordinator.reconcile(observation, authority)
+        later = replace(authority, evaluated_at_epoch=authority.evaluated_at_epoch + 1)
+        second = coordinator.reconcile(observation, later)
+        self.assertTrue(second.idempotent)
+        self.assertEqual(first.generation.generation, second.generation.generation)
+
+    def test_ar_r3_authority_decision_order_is_not_material(self):
+        authority = self.harness.authority("compiled_ha_mcp_exact")
+        reordered = replace(authority, decisions=tuple(reversed(authority.decisions)))
+        self.assertEqual(authority.fingerprint, reordered.fingerprint)
+
+    def test_ar_r3_profile_order_is_not_material(self):
+        profiles = self.harness.profiles
+        first = CapabilityAdmissionCoordinator(profiles)
+        second = CapabilityAdmissionCoordinator(tuple(reversed(profiles)))
+        self.assertEqual(
+            first.profile_registry_fingerprint,
+            second.profile_registry_fingerprint,
+        )
+
+    def test_ar_r3_expiry_boundary_is_material_but_preexpiry_time_is_not(self):
+        authority = self.harness.authority("signed_ha_mcp_compatible")
+        preexpiry = replace(
+            authority, evaluated_at_epoch=authority.evaluated_at_epoch + 1
+        )
+        expires_at = authority.decisions[0].expires_at_epoch
+        self.assertIsNotNone(expires_at)
+        expired = replace(authority, evaluated_at_epoch=expires_at)
+        self.assertEqual(authority.fingerprint, preexpiry.fingerprint)
+        self.assertNotEqual(authority.fingerprint, expired.fingerprint)
 
     def test_identical_reconciliation_is_idempotent(self):
         coordinator = self.coordinator()

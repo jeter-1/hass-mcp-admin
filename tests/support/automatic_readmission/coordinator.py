@@ -23,6 +23,7 @@ from .models import (
     ReconciliationResult,
     RouteLease,
     UpstreamSurface,
+    canonical_json,
     evidence_fingerprint,
 )
 
@@ -47,6 +48,21 @@ class ReconciliationAttempt:
     events: tuple[str, ...]
 
 
+@dataclass
+class SurfaceState:
+    """Independent authority lifecycle for exactly one upstream surface."""
+
+    pending_generation: int | None = None
+    published: DecisionGeneration | None = None
+    published_material_fingerprint: str | None = None
+    retired_generations: set[int] | None = None
+    last_observation_fingerprint: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.retired_generations is None:
+            self.retired_generations = set()
+
+
 class CapabilityAdmissionCoordinator:
     """Executable specification with no production authority or dispatch I/O."""
 
@@ -64,26 +80,54 @@ class CapabilityAdmissionCoordinator:
         if len(capability_ids) != len(set(capability_ids)):
             raise CompatibilityModelError("profile_registry_capability_duplicate")
         self._profiles = tuple(
-            sorted(profiles, key=lambda item: (item.surface.value, item.profile_id))
+            sorted(profiles, key=lambda item: evidence_fingerprint(item.to_mapping()))
         )
         self._profile_registry_fingerprint = evidence_fingerprint(
             {
                 "profiles": [item.to_mapping() for item in self._profiles],
             }
         )
+        self._surface_profile_fingerprints = {
+            surface: evidence_fingerprint(
+                {
+                    "surface": surface.value,
+                    "profiles": [
+                        item.to_mapping()
+                        for item in self._profiles
+                        if item.surface is surface
+                    ],
+                }
+            )
+            for surface in UpstreamSurface
+        }
+        self._capability_surfaces = {
+            capability.capability_id: profile.surface
+            for profile in self._profiles
+            for capability in profile.capabilities
+        }
         self._lock = RLock()
         self._next_generation = 0
-        self._pending_generation: int | None = None
-        self._published: DecisionGeneration | None = None
-        self._published_material_fingerprint: str | None = None
-        self._retired_generations: set[int] = set()
+        self._surface_states = {
+            surface: SurfaceState() for surface in UpstreamSurface
+        }
         self._lease_counter = 0
         self._committed: set[str] = set()
 
     @property
     def current_generation(self) -> DecisionGeneration | None:
         with self._lock:
-            return self._published
+            published = tuple(
+                state.published
+                for state in self._surface_states.values()
+                if state.published is not None
+            )
+            return max(published, key=lambda item: item.generation, default=None)
+
+    def generation_for(self, surface: UpstreamSurface) -> DecisionGeneration | None:
+        if not isinstance(surface, UpstreamSurface):
+            raise CompatibilityModelError("surface_state_invalid")
+        with self._lock:
+            return self._surface_states[surface].published
 
     @property
     def profile_registry_fingerprint(self) -> str:
@@ -99,18 +143,21 @@ class CapabilityAdmissionCoordinator:
         material_fingerprint = evidence_fingerprint(
             {
                 "observation": observation.to_mapping(include_session=True),
-                "authority": authority.to_mapping(),
-                "profile_registry_fingerprint": self._profile_registry_fingerprint,
+                "authority": authority.material_mapping(),
+                "profile_registry_fingerprint": self._surface_profile_fingerprints[
+                    observation.surface
+                ],
             }
         )
         with self._lock:
+            state = self._surface_states[observation.surface]
             if (
-                self._published is not None
-                and self._published_material_fingerprint == material_fingerprint
-                and self._published.generation not in self._retired_generations
+                state.published is not None
+                and state.published_material_fingerprint == material_fingerprint
+                and state.published.generation not in state.retired_generations
             ):
                 return ReconciliationAttempt(
-                    generation=self._published.generation,
+                    generation=state.published.generation,
                     observation=observation,
                     authority=authority,
                     material_fingerprint=material_fingerprint,
@@ -120,14 +167,15 @@ class CapabilityAdmissionCoordinator:
                 )
 
             retired_generation = None
-            if self._published is not None:
-                retired_generation = self._published.generation
-                self._retired_generations.add(retired_generation)
-                self._published = None
-                self._published_material_fingerprint = None
+            if state.published is not None:
+                retired_generation = state.published.generation
+                state.retired_generations.add(retired_generation)
+                state.published = None
+                state.published_material_fingerprint = None
             self._next_generation += 1
             generation = self._next_generation
-            self._pending_generation = generation
+            state.pending_generation = generation
+            state.last_observation_fingerprint = observation.fingerprint
             events = (
                 (("generation_retired",) if retired_generation else ())
                 + ("generation_created", "verification_started")
@@ -149,8 +197,9 @@ class CapabilityAdmissionCoordinator:
         """Evaluate and atomically publish only the newest verification ticket."""
 
         with self._lock:
+            state = self._surface_states[attempt.observation.surface]
             if attempt.idempotent:
-                generation = self._published
+                generation = state.published
                 if generation is None or generation.generation != attempt.generation:
                     return ReconciliationResult(
                         generation=None,
@@ -170,7 +219,7 @@ class CapabilityAdmissionCoordinator:
                     reason_code="observation_unchanged",
                     events=attempt.events,
                 )
-            if self._pending_generation != attempt.generation:
+            if state.pending_generation != attempt.generation:
                 return ReconciliationResult(
                     generation=None,
                     disposition=AdmissionDisposition.UNAVAILABLE,
@@ -191,13 +240,16 @@ class CapabilityAdmissionCoordinator:
                 disposition=disposition,
                 observation_fingerprint=attempt.observation.fingerprint,
                 authority_fingerprint=attempt.authority.fingerprint,
-                profile_registry_fingerprint=self._profile_registry_fingerprint,
+                profile_registry_fingerprint=self._surface_profile_fingerprints[
+                    attempt.observation.surface
+                ],
                 session_fingerprint=attempt.observation.session_fingerprint,
                 decisions=decisions,
             )
-            self._published = generation
-            self._published_material_fingerprint = attempt.material_fingerprint
-            self._pending_generation = None
+            state.published = generation
+            state.published_material_fingerprint = attempt.material_fingerprint
+            state.pending_generation = None
+            state.last_observation_fingerprint = generation.observation_fingerprint
             return ReconciliationResult(
                 generation=generation,
                 disposition=disposition,
@@ -223,10 +275,14 @@ class CapabilityAdmissionCoordinator:
 
         session_fingerprint = evidence_fingerprint({"session_id": session_id})
         with self._lock:
-            generation = self._published
+            surface = self._capability_surfaces.get(capability_id)
+            if surface is None:
+                return None
+            state = self._surface_states[surface]
+            generation = state.published
             if (
                 generation is None
-                or generation.generation in self._retired_generations
+                or generation.generation in state.retired_generations
                 or generation.session_fingerprint != session_fingerprint
             ):
                 return None
@@ -241,6 +297,7 @@ class CapabilityAdmissionCoordinator:
             lease_id = evidence_fingerprint(
                 {
                     "generation": generation.generation,
+                    "surface": surface.value,
                     "capability_id": capability_id,
                     "adapter_id": decision.adapter_id,
                     "session_fingerprint": session_fingerprint,
@@ -250,6 +307,7 @@ class CapabilityAdmissionCoordinator:
             return RouteLease(
                 lease_id=lease_id,
                 generation=generation.generation,
+                surface=surface,
                 capability_id=capability_id,
                 adapter_id=decision.adapter_id,
                 session_fingerprint=session_fingerprint,
@@ -258,11 +316,13 @@ class CapabilityAdmissionCoordinator:
     def validate_pre_dispatch(self, lease: RouteLease, *, session_id: str) -> bool:
         session_fingerprint = evidence_fingerprint({"session_id": session_id})
         with self._lock:
-            generation = self._published
+            state = self._surface_states[lease.surface]
+            generation = state.published
             if (
                 generation is None
                 or generation.generation != lease.generation
-                or lease.generation in self._retired_generations
+                or generation.surface is not lease.surface
+                or lease.generation in state.retired_generations
                 or lease.session_fingerprint != session_fingerprint
                 or generation.session_fingerprint != session_fingerprint
             ):
@@ -289,6 +349,7 @@ class CapabilityAdmissionCoordinator:
                 {
                     "lease_id": lease.lease_id,
                     "generation": lease.generation,
+                    "surface": lease.surface.value,
                     "state": "committed_after_validation",
                 }
             )
@@ -308,48 +369,92 @@ class CapabilityAdmissionCoordinator:
         """Return only fingerprints, counts, dispositions, and reason codes."""
 
         with self._lock:
-            generation = self._published
-            if generation is None:
-                return {
-                    "model_version": 1,
-                    "disposition": AdmissionDisposition.VERIFYING.value
-                    if self._pending_generation is not None
-                    else AdmissionDisposition.UNAVAILABLE.value,
-                    "generation": self._pending_generation,
-                    "admitted_count": 0,
-                    "quarantined_count": 0,
-                    "unavailable_count": 0,
-                    "reason_counts": [],
-                    "fallback_count": 0,
-                }
-            reason_counts: dict[str, int] = {}
-            for decision in generation.decisions:
-                reason_counts[decision.reason_code] = (
-                    reason_counts.get(decision.reason_code, 0) + 1
+            surfaces: list[dict[str, Any]] = []
+            aggregate_reasons: dict[str, int] = {}
+            admitted_count = 0
+            quarantined_count = 0
+            unavailable_count = 0
+            dispositions: list[AdmissionDisposition] = []
+            for surface in sorted(UpstreamSurface, key=lambda item: item.value):
+                state = self._surface_states[surface]
+                generation = state.published
+                if generation is None:
+                    disposition = (
+                        AdmissionDisposition.VERIFYING
+                        if state.pending_generation is not None
+                        else AdmissionDisposition.UNAVAILABLE
+                    )
+                    surfaces.append(
+                        {
+                            "surface": surface.value,
+                            "disposition": disposition.value,
+                            "generation": state.pending_generation,
+                            "admitted_count": 0,
+                            "quarantined_count": 0,
+                            "unavailable_count": 0,
+                            "reason_counts": [],
+                        }
+                    )
+                    dispositions.append(disposition)
+                    continue
+                reason_counts: dict[str, int] = {}
+                for decision in generation.decisions:
+                    reason_counts[decision.reason_code] = (
+                        reason_counts.get(decision.reason_code, 0) + 1
+                    )
+                    aggregate_reasons[decision.reason_code] = (
+                        aggregate_reasons.get(decision.reason_code, 0) + 1
+                    )
+                admitted = sum(
+                    decision.disposition in _ADMITTED
+                    for decision in generation.decisions
                 )
-            projection = {
-                "model_version": 1,
-                "surface": generation.surface.value,
-                "disposition": generation.disposition.value,
-                "generation": generation.generation,
-                "decision_fingerprint": generation.decision_fingerprint,
-                "observation_fingerprint": generation.observation_fingerprint,
-                "authority_fingerprint": generation.authority_fingerprint,
-                "profile_registry_fingerprint": generation.profile_registry_fingerprint,
-                "admitted_count": sum(
-                    decision.disposition in _ADMITTED for decision in generation.decisions
-                ),
-                "quarantined_count": sum(
+                quarantined = sum(
                     decision.disposition is AdmissionDisposition.QUARANTINED
                     for decision in generation.decisions
-                ),
-                "unavailable_count": sum(
+                )
+                unavailable = sum(
                     decision.disposition is AdmissionDisposition.UNAVAILABLE
                     for decision in generation.decisions
-                ),
+                )
+                admitted_count += admitted
+                quarantined_count += quarantined
+                unavailable_count += unavailable
+                dispositions.append(generation.disposition)
+                surfaces.append(
+                    {
+                        "surface": surface.value,
+                        "disposition": generation.disposition.value,
+                        "generation": generation.generation,
+                        "decision_fingerprint": generation.decision_fingerprint,
+                        "observation_fingerprint": generation.observation_fingerprint,
+                        "authority_fingerprint": generation.authority_fingerprint,
+                        "profile_registry_fingerprint": generation.profile_registry_fingerprint,
+                        "admitted_count": admitted,
+                        "quarantined_count": quarantined,
+                        "unavailable_count": unavailable,
+                        "reason_counts": [
+                            {"reason_code": code, "count": count}
+                            for code, count in sorted(reason_counts.items())
+                        ],
+                    }
+                )
+            aggregate_disposition = (
+                dispositions[0]
+                if dispositions and len(set(dispositions)) == 1
+                else AdmissionDisposition.PARTIAL
+            )
+            projection = {
+                "model_version": 2,
+                "disposition": aggregate_disposition.value,
+                "surface_count": len(surfaces),
+                "surfaces": surfaces,
+                "admitted_count": admitted_count,
+                "quarantined_count": quarantined_count,
+                "unavailable_count": unavailable_count,
                 "reason_counts": [
                     {"reason_code": code, "count": count}
-                    for code, count in sorted(reason_counts.items())
+                    for code, count in sorted(aggregate_reasons.items())
                 ],
                 "fallback_count": 0,
             }
@@ -361,7 +466,7 @@ class CapabilityAdmissionCoordinator:
 
         generation = result.generation
         projection: dict[str, Any] = {
-            "model_version": 1,
+            "model_version": 2,
             "event": "capability_reconciliation",
             "disposition": result.disposition.value,
             "published": result.published,
@@ -604,7 +709,9 @@ class CapabilityAdmissionCoordinator:
         observation: CompatibilityObservation,
         authority: AuthorityBundle,
     ) -> AuthorityDecision | None:
-        for decision in authority.decisions:
+        candidates = [
+            decision
+            for decision in authority.decisions
             if (
                 decision.status in _DENYING
                 and self._authority_selects_profile(decision, profile)
@@ -613,9 +720,10 @@ class CapabilityAdmissionCoordinator:
                     not decision.capability_ids
                     or contract.capability_id in decision.capability_ids
                 )
-            ):
-                return decision
-        return None
+            )
+        ]
+        candidates.sort(key=lambda item: canonical_json(item.to_mapping()))
+        return candidates[0] if candidates else None
 
     def _positive_for(
         self,
@@ -652,6 +760,7 @@ class CapabilityAdmissionCoordinator:
             key=lambda item: (
                 0 if item.source is AuthoritySource.COMPILED_EXACT else 1,
                 -(item.registry_sequence or 0),
+                canonical_json(item.to_mapping()),
             )
         )
         return candidates[0] if candidates else None

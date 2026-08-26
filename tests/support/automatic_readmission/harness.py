@@ -15,6 +15,9 @@ from .models import (
     CapabilityProfile,
     CompatibilityModelError,
     CompatibilityObservation,
+    MAX_OBSERVED_CAPABILITIES,
+    MAX_PROFILES,
+    MAX_SAFE_INTEGER,
     ObservedCapability,
     UpstreamSurface,
 )
@@ -22,6 +25,8 @@ from .models import (
 
 HARNESS_SCHEMA_VERSION = 1
 MAX_SCENARIOS = 64
+MAX_CATALOG_PAGES = 32
+MAX_CURSOR_CHARS = 512
 
 
 @dataclass(frozen=True)
@@ -37,9 +42,16 @@ class OfflineUpdateHarness:
         root = _mapping(value, "harness_root_invalid")
         if set(root) != {"schema_version", "profiles", "scenarios", "authority_sets"}:
             raise CompatibilityModelError("harness_fields_invalid")
-        if root["schema_version"] != HARNESS_SCHEMA_VERSION:
+        if (
+            type(root["schema_version"]) is not int
+            or root["schema_version"] != HARNESS_SCHEMA_VERSION
+        ):
             raise CompatibilityModelError("harness_schema_unsupported")
-        raw_profiles = _list(root["profiles"], "harness_profiles_invalid")
+        raw_profiles = _list(
+            root["profiles"],
+            "harness_profiles_invalid",
+            maximum=MAX_PROFILES,
+        )
         profiles = tuple(_profile(item) for item in raw_profiles)
         scenarios = _named_mappings(root["scenarios"], "harness_scenarios_invalid")
         authorities = _named_mappings(
@@ -67,7 +79,10 @@ class OfflineUpdateHarness:
         if set(raw) != {"evaluated_at_epoch", "decisions"}:
             raise CompatibilityModelError("harness_authority_fields_invalid")
         return AuthorityBundle(
-            evaluated_at_epoch=raw["evaluated_at_epoch"],
+            evaluated_at_epoch=_int(
+                raw["evaluated_at_epoch"],
+                "harness_authority_time_invalid",
+            ),
             decisions=tuple(
                 _authority_decision(item)
                 for item in _list(raw["decisions"], "harness_decisions_invalid")
@@ -89,7 +104,11 @@ def _profile(value: Any) -> CapabilityProfile:
         raise CompatibilityModelError("harness_profile_fields_invalid")
     return CapabilityProfile(
         profile_id=raw["profile_id"],
-        profile_version=raw["profile_version"],
+        profile_version=_int(
+            raw["profile_version"],
+            "harness_profile_version_invalid",
+            minimum=1,
+        ),
         surface=_enum(UpstreamSurface, raw["surface"], "harness_surface_invalid"),
         adapter_id=raw["adapter_id"],
         expected_identity=raw["expected_identity"],
@@ -159,9 +178,13 @@ def _core_observation(raw: Mapping[str, Any]) -> CompatibilityObservation:
         protocol_version="ha-rest-websocket-v1",
         session_id=raw["session_id"],
         capabilities=_observed_capabilities(raw["capabilities"]),
-        connected=raw["connected"],
-        authenticated=raw["authenticated"],
-        catalog_complete=raw["catalog_complete"],
+        connected=_bool(raw["connected"], "harness_connected_invalid"),
+        authenticated=_bool(
+            raw["authenticated"], "harness_authenticated_invalid"
+        ),
+        catalog_complete=_bool(
+            raw["catalog_complete"], "harness_catalog_complete_invalid"
+        ),
         evidence_reason=raw["evidence_reason"],
         core_rest_version=rest["version"],
         core_websocket_auth_version=auth["ha_version"],
@@ -187,15 +210,52 @@ def _ha_mcp_observation(raw: Mapping[str, Any]) -> CompatibilityObservation:
         {"server_name", "server_version", "protocol_version"},
         "harness_initialize_invalid",
     )
-    pages = _list(raw["tools_list_pages"], "harness_catalog_pages_invalid")
+    pages = _list(
+        raw["tools_list_pages"],
+        "harness_catalog_pages_invalid",
+        maximum=MAX_CATALOG_PAGES,
+    )
+    if not pages:
+        raise CompatibilityModelError("harness_catalog_pages_invalid")
     catalog: list[Any] = []
-    for page in pages:
+    seen_cursors: set[str] = set()
+    terminal_seen = False
+    for index, page in enumerate(pages):
+        if terminal_seen:
+            raise CompatibilityModelError("harness_catalog_page_after_terminal")
         page_mapping = _exact_mapping(
             page,
             {"tools", "next_cursor"},
             "harness_catalog_page_invalid",
         )
-        catalog.extend(_list(page_mapping["tools"], "harness_catalog_invalid"))
+        tools = _list(
+            page_mapping["tools"],
+            "harness_catalog_invalid",
+            maximum=MAX_OBSERVED_CAPABILITIES,
+        )
+        if len(catalog) + len(tools) > MAX_OBSERVED_CAPABILITIES:
+            raise CompatibilityModelError("observed_catalog_oversized")
+        catalog.extend(tools)
+        cursor = page_mapping["next_cursor"]
+        final = index == len(pages) - 1
+        if cursor is None:
+            if not final:
+                raise CompatibilityModelError("harness_catalog_page_terminal_early")
+            terminal_seen = True
+        else:
+            cursor = _text(
+                cursor,
+                "harness_catalog_cursor_invalid",
+                maximum=MAX_CURSOR_CHARS,
+            )
+            if final:
+                raise CompatibilityModelError("harness_catalog_final_cursor_invalid")
+            if cursor in seen_cursors:
+                raise CompatibilityModelError("harness_catalog_cursor_repeated")
+            seen_cursors.add(cursor)
+    declared_complete = _bool(
+        raw["catalog_complete"], "harness_catalog_complete_invalid"
+    )
     return CompatibilityObservation(
         surface=UpstreamSurface.HA_MCP,
         identity=initialize["server_name"],
@@ -203,10 +263,11 @@ def _ha_mcp_observation(raw: Mapping[str, Any]) -> CompatibilityObservation:
         protocol_version=initialize["protocol_version"],
         session_id=raw["session_id"],
         capabilities=_observed_capabilities(catalog),
-        connected=raw["connected"],
-        authenticated=raw["authenticated"],
-        catalog_complete=raw["catalog_complete"]
-        and (not pages or pages[-1].get("next_cursor") is None),
+        connected=_bool(raw["connected"], "harness_connected_invalid"),
+        authenticated=_bool(
+            raw["authenticated"], "harness_authenticated_invalid"
+        ),
+        catalog_complete=declared_complete,
         evidence_reason=raw["evidence_reason"],
     )
 
@@ -234,8 +295,10 @@ def _transport_observation(raw: Mapping[str, Any]) -> CompatibilityObservation:
         protocol_version=contract["protocol_version"],
         session_id=raw["session_id"],
         capabilities=_observed_capabilities(contract["capabilities"]),
-        connected=raw["connected"],
-        authenticated=raw["authenticated"],
+        connected=_bool(raw["connected"], "harness_connected_invalid"),
+        authenticated=_bool(
+            raw["authenticated"], "harness_authenticated_invalid"
+        ),
         catalog_complete=True,
         evidence_reason=raw["evidence_reason"],
     )
@@ -265,7 +328,11 @@ def _authority_decision(value: Any) -> AuthorityDecision:
         source=_enum(AuthoritySource, raw["source"], "harness_authority_source_invalid"),
         status=_enum(AuthorityStatus, raw["status"], "harness_authority_status_invalid"),
         profile_id=raw["profile_id"],
-        profile_version=raw["profile_version"],
+        profile_version=_int(
+            raw["profile_version"],
+            "harness_authority_profile_version_invalid",
+            minimum=1,
+        ),
         adapter_id=raw["adapter_id"],
         subject_identity=raw["subject_identity"],
         subject_version=raw["subject_version"],
@@ -274,9 +341,24 @@ def _authority_decision(value: Any) -> AuthorityDecision:
             _list(raw["capability_ids"], "harness_authority_capabilities_invalid")
         ),
         reason_code=raw["reason_code"],
-        registry_sequence=raw["registry_sequence"],
+        registry_sequence=(
+            None
+            if raw["registry_sequence"] is None
+            else _int(
+                raw["registry_sequence"],
+                "harness_authority_sequence_invalid",
+                minimum=1,
+            )
+        ),
         registry_digest=raw["registry_digest"],
-        expires_at_epoch=raw["expires_at_epoch"],
+        expires_at_epoch=(
+            None
+            if raw["expires_at_epoch"] is None
+            else _int(
+                raw["expires_at_epoch"],
+                "harness_authority_expiry_invalid",
+            )
+        ),
     )
 
 
@@ -293,8 +375,37 @@ def _exact_mapping(value: Any, fields: set[str], code: str) -> Mapping[str, Any]
     return result
 
 
-def _list(value: Any, code: str) -> list[Any]:
-    if not isinstance(value, list):
+def _list(value: Any, code: str, *, maximum: int = MAX_OBSERVED_CAPABILITIES) -> list[Any]:
+    if not isinstance(value, list) or len(value) > maximum:
+        raise CompatibilityModelError(code)
+    return value
+
+
+def _bool(value: Any, code: str) -> bool:
+    if type(value) is not bool:
+        raise CompatibilityModelError(code)
+    return value
+
+
+def _int(
+    value: Any,
+    code: str,
+    *,
+    minimum: int = 0,
+    maximum: int = MAX_SAFE_INTEGER,
+) -> int:
+    if type(value) is not int or value < minimum or value > maximum:
+        raise CompatibilityModelError(code)
+    return value
+
+
+def _text(value: Any, code: str, *, maximum: int) -> str:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value) > maximum
+        or any(ord(character) < 32 or ord(character) == 127 for character in value)
+    ):
         raise CompatibilityModelError(code)
     return value
 

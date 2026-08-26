@@ -41,13 +41,15 @@ filesystem-write, provider-call, registry-fetch, MCP-client, registration, or
 dispatch behavior. The production package and image do not contain it.
 
 The vectors in
-`tests/fixtures/automatic_readmission/contract_vectors_v1.json` are data
-separate from the reference-model implementation. They
-state initial authority and generation, observations, capability contracts,
-registry disposition and time inputs, reconciliation events, admitted and
-quarantined outcomes, generation and lease behavior, sanitized health/audit
-projections, and zero write/action reachability. A later production adapter can
-replay the same vectors without importing or copying the reference model.
+`tests/fixtures/automatic_readmission/contract_vectors_v2.json` are versioned
+data separate from the reference-model implementation. Their multi-step
+scenarios state literal observations, authority and time inputs,
+reconciliation and lease operations, admitted and quarantined outcomes,
+sanitized health projections, and zero write/action reachability. The generic
+adapter/runner boundary compares literal expected results and emits only bounded
+mismatch fingerprints. A later production adapter can replay the same vectors
+without importing or copying reference-model classes, constants, or decision
+functions.
 
 ### Independently governed surfaces
 
@@ -75,6 +77,15 @@ evidence and WebSocket `get_config`. Compatible Core readmission will require
 all three version observations to agree. The Core REST and WebSocket channels
 remain separate from Home Assistant's MCP Server endpoint at `/api/mcp` and
 from the independently configured ha-mcp endpoint.
+
+Each surface owns an independent published decision, pending verification,
+effective-material fingerprint, retired-generation set, and bounded last
+observation status. Generation numbers may come from one global monotonic
+allocator, but authority is published and validated only within its owning
+surface. A Core change therefore cannot retire ha-mcp authority, a ha-mcp
+catalog change cannot retire Core authority, and transport restoration cannot
+create provider authority. Capability ownership across surfaces must be unique;
+duplicate or ambiguous ownership fails closed.
 
 ### Capability profiles
 
@@ -136,8 +147,9 @@ configuration semantics authoritative.
 
 ### Generation and race contract
 
-Any material identity, version, protocol, catalog, profile-registry, authority
-or session observation creates a new monotonic generation. The coordinator:
+Any material identity, version, protocol, catalog, surface profile-registry,
+authority or session observation creates a new monotonic generation for the
+affected surface. The coordinator:
 
 1. retires the published generation;
 2. prevents new route leases from that generation;
@@ -145,13 +157,19 @@ or session observation creates a new monotonic generation. The coordinator:
 4. evaluates only the newest verification ticket; and
 5. publishes one atomic capability decision set.
 
-Repeated identical reconciliation is idempotent. A route lease binds the
-capability, compiled adapter, decision generation and sanitized session
-fingerprint. Immediately before a logical commit, the coordinator requires the
-same current generation and same session. Retirement before commit prevents
-dispatch. A call committed after validation may finish, but completion has no
-authority to publish or revive a route. A late verification result cannot
-replace a newer generation.
+Repeated materially identical reconciliation is idempotent. Collection time is
+not fingerprint material while authority remains on the same side of an expiry
+boundary; crossing expiry, revocation, identity, catalog, contract, profile, or
+disposition boundaries remains material. Semantically identical decision and
+profile ordering is canonicalized by complete content.
+
+A route lease binds the exact surface, capability, compiled adapter, decision
+generation and sanitized session fingerprint. Immediately before a logical
+commit, the coordinator requires the same current generation and same session
+for that surface. Retirement before commit prevents dispatch. A call committed
+after validation may finish, but completion has no authority to publish or
+revive a route. A late verification result cannot replace a newer generation
+for its surface and cannot affect another surface's lease.
 
 The reference model specifies these transitions only. It contains no real call,
 provider dispatch, or production route-publication method.
@@ -219,11 +237,13 @@ belongs in this foundation.
 
 ## Consequences
 
-The architecture can tolerate harmless version movement without converting
-self-advertisement into authority. It preserves independent native Engineering
-tools and independent compatible capabilities while withholding unknown or
-changed contracts. It also creates an explicit verification gap during which
-the changed upstream surface has no route.
+The architecture is capability-scoped, not generally version-tolerant. It can
+model a harmless version movement only when trusted authority selects
+binary-known profiles and every admitted capability satisfies its reviewed
+contract. Self-advertisement never becomes authority. Independent native
+Engineering tools and compatible capabilities remain available while unknown
+or changed contracts are withheld. The affected surface has an explicit
+verification gap; unrelated surfaces retain their own authority.
 
 This PR provides an executable reference model, deterministic compatibility
 vectors, and contract evidence only. It provides no deployed capability. The
@@ -234,7 +254,8 @@ routing, providers, fallback and stable v1 remain unchanged.
 
 - a test-only executable specification;
 - synthetic implementation-neutral compatibility vectors;
-- a deterministic authority, generation, lease and reconciliation model;
+- a deterministic per-surface authority, generation, lease and reconciliation
+  model;
 - bounded sanitized reference health and audit projections; and
 - tests proving zero runtime import, packaging, provider, registration, write,
   action, fallback and dispatch reachability.

@@ -368,11 +368,21 @@ Operators must continue to use the exact runtime compatibility checks in this
 guide; there is no reference-model configuration to enable.
 
 The deterministic compatibility contract harness treats Core, ha-mcp and
-configured transport as independent
-surfaces. A successful reconnect restores only transport observation; it does
-not restore provider authority. Unknown Core versions may later regain only
-separately authorized structural read profiles, never template semantics,
-configuration semantics or governed writes by implication.
+configured transport as independent surfaces with separate published,
+verifying, and retired-generation lifecycles. Updating one surface cannot
+retire another surface's compatible route. Leases are surface-bound and a
+retired generation cannot start a new call. A successful reconnect restores
+only transport observation; it does not restore provider authority. Unknown
+Core versions may later regain only separately authorized structural read
+profiles, never template semantics, configuration semantics or governed writes
+by implication.
+
+The reference contract is capability-scoped, not version-tolerant. Signed data
+may select only binary-known profiles, adapters, and capability contracts.
+Unknown semantic behavior remains held, and action or write capabilities remain
+unreachable. Versioned multi-step vectors use literal inputs and expected
+results through an implementation-neutral adapter so a later production
+coordinator can replay them without importing the test implementation.
 
 Operational work is deferred: runtime coordination, observation wiring,
 signed-registry fetching/caching, ha-mcp and Core integration, proxy recovery,
