@@ -4,9 +4,14 @@
   "vectors": [
     {
       "requirements": [
+        "cross_surface_authority_projection",
         "independent_surfaces",
-        "unrelated_surface_continuity",
+        "provider_authority_preserves_transport",
         "surface_bound_leases",
+        "transport_restoration_no_provider_retirement",
+        "unrelated_core_authority_preserves_ha_mcp",
+        "unrelated_ha_mcp_authority_preserves_core",
+        "unrelated_surface_continuity",
         "zero_write_authority"
       ],
       "steps": [
@@ -137,14 +142,208 @@
           "step_id": "ha_route_survives_transport"
         },
         {
+          "arguments": {
+            "capability_id": "transport.streamable_http",
+            "lease_id": "transport",
+            "session_id": "synthetic-session-transport-1"
+          },
+          "expected": {
+            "generation": 3,
+            "granted": true,
+            "surface": "configured_transport"
+          },
+          "operation": "acquire_lease",
+          "step_id": "transport_route_available"
+        },
+        {
+          "arguments": {
+            "authority_ids": [
+              "compiled_ha_mcp_exact",
+              "signed_core_ordinary_only"
+            ],
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "signed_core_ordinary_only",
+                  "decisions",
+                  0,
+                  "reason_code"
+                ],
+                "value": "synthetic_core_only_change"
+              }
+            ],
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": true,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "core_authority_change_does_not_churn_ha"
+        },
+        {
+          "arguments": {
+            "lease_id": "ha",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "valid": true
+          },
+          "operation": "validate_lease",
+          "step_id": "ha_lease_survives_core_authority_change"
+        },
+        {
+          "arguments": {
+            "authority_ids": [
+              "signed_core_ordinary_only",
+              "compiled_ha_mcp_exact"
+            ],
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "compiled_ha_mcp_exact",
+                  "decisions",
+                  0,
+                  "reason_code"
+                ],
+                "value": "synthetic_ha_only_change"
+              }
+            ],
+            "observation_id": "core_unknown_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "core.entity_registry_read",
+              "core.states_read"
+            ],
+            "disposition": "partial",
+            "generation": 2,
+            "idempotent": true,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "core.helper_write",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "home_assistant_core",
+            "unavailable": [
+              {
+                "capability_id": "core.configuration_semantics",
+                "reason_code": "positive_authority_missing"
+              },
+              {
+                "capability_id": "core.template_semantics",
+                "reason_code": "positive_authority_missing"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "ha_authority_change_does_not_churn_core"
+        },
+        {
+          "arguments": {
+            "lease_id": "core",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "valid": true
+          },
+          "operation": "validate_lease",
+          "step_id": "core_lease_survives_ha_authority_change"
+        },
+        {
+          "arguments": {
+            "authority_ids": [
+              "compiled_transport",
+              "compiled_ha_mcp_exact"
+            ],
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "compiled_ha_mcp_exact",
+                  "decisions",
+                  0,
+                  "reason_code"
+                ],
+                "value": "synthetic_provider_only_change"
+              }
+            ],
+            "observation_id": "transport_restored"
+          },
+          "expected": {
+            "admitted": [
+              "transport.streamable_http"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 3,
+            "idempotent": true,
+            "published": true,
+            "quarantined": [],
+            "retired_generation": null,
+            "surface": "configured_transport",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "provider_authority_change_does_not_churn_transport"
+        },
+        {
+          "arguments": {
+            "lease_id": "transport",
+            "session_id": "synthetic-session-transport-1"
+          },
+          "expected": {
+            "valid": true
+          },
+          "operation": "validate_lease",
+          "step_id": "transport_lease_survives_provider_authority_change"
+        },
+        {
           "arguments": {},
           "expected": {
+            "active_commit_capacity": 8,
+            "active_commit_count": 0,
             "admitted_count": 5,
             "bounded": true,
+            "capacity_exhaustion_count": 0,
+            "capacity_exhaustion_reason": null,
             "fallback_count": 0,
+            "issued_lease_capacity": 8,
+            "issued_lease_count": 3,
             "model_version": 2,
+            "retained_retirement_diagnostic_count": 0,
             "sensitive_material_present": false,
-            "surface_count": 3
+            "surface_count": 3,
+            "surface_generations": {
+              "configured_transport": 3,
+              "ha_mcp": 1,
+              "home_assistant_core": 2
+            }
           },
           "operation": "health",
           "step_id": "health_is_bounded"
@@ -1010,10 +1209,63 @@
     },
     {
       "requirements": [
+        "newest_ticket_wins",
+        "stale_surface_isolation",
         "stale_verification_completion",
-        "newest_ticket_wins"
+        "unrelated_surface_lease_continuity"
       ],
       "steps": [
+        {
+          "arguments": {
+            "authority_id": "signed_core_ordinary_only",
+            "observation_id": "core_unknown_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "core.entity_registry_read",
+              "core.states_read"
+            ],
+            "disposition": "partial",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "core.helper_write",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "home_assistant_core",
+            "unavailable": [
+              {
+                "capability_id": "core.configuration_semantics",
+                "reason_code": "positive_authority_missing"
+              },
+              {
+                "capability_id": "core.template_semantics",
+                "reason_code": "positive_authority_missing"
+              }
+            ],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "admit_unrelated_core"
+        },
+        {
+          "arguments": {
+            "capability_id": "core.states_read",
+            "lease_id": "unrelated_core",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "home_assistant_core"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_unrelated_core"
+        },
         {
           "arguments": {
             "attempt_id": "old",
@@ -1021,7 +1273,7 @@
             "observation_id": "ha_mcp_exact"
           },
           "expected": {
-            "generation": 1,
+            "generation": 2,
             "idempotent": false,
             "retired_generation": null,
             "surface": "ha_mcp"
@@ -1036,7 +1288,7 @@
             "observation_id": "ha_mcp_compatible"
           },
           "expected": {
-            "generation": 2,
+            "generation": 3,
             "idempotent": false,
             "retired_generation": null,
             "surface": "ha_mcp"
@@ -1073,7 +1325,7 @@
               "ha_search"
             ],
             "disposition": "admitted_compatible",
-            "generation": 2,
+            "generation": 3,
             "idempotent": false,
             "published": true,
             "quarantined": [
@@ -1089,6 +1341,17 @@
           },
           "operation": "complete_reconciliation",
           "step_id": "complete_new"
+        },
+        {
+          "arguments": {
+            "lease_id": "unrelated_core",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "valid": true
+          },
+          "operation": "validate_lease",
+          "step_id": "stale_ha_completion_preserves_core_lease"
         }
       ],
       "vector_id": "stale_verification_completion_is_ignored"
@@ -1537,11 +1800,14 @@
     },
     {
       "requirements": [
-        "profile_bound",
+        "audit_lifecycle_bounds",
+        "audit_sensitive_output_redaction",
         "decision_bound",
-        "tool_bound",
         "health_audit_bounds",
-        "sensitive_output_redaction"
+        "profile_bound",
+        "real_audit_operation",
+        "sensitive_output_redaction",
+        "tool_bound"
       ],
       "steps": [
         {
@@ -1652,15 +1918,45 @@
         {
           "arguments": {},
           "expected": {
+            "active_commit_capacity": 8,
+            "active_commit_count": 0,
             "admitted_count": 2,
             "bounded": true,
+            "capacity_exhaustion_count": 0,
+            "capacity_exhaustion_reason": null,
             "fallback_count": 0,
+            "issued_lease_capacity": 8,
+            "issued_lease_count": 0,
             "model_version": 2,
+            "retained_retirement_diagnostic_count": 0,
             "sensitive_material_present": false,
-            "surface_count": 3
+            "surface_count": 3,
+            "surface_generations": {
+              "configured_transport": null,
+              "ha_mcp": 1,
+              "home_assistant_core": null
+            }
           },
           "operation": "health",
           "step_id": "bounded_projection"
+        },
+        {
+          "arguments": {},
+          "expected": {
+            "active_commit_count": 0,
+            "bounded": true,
+            "capacity_exhaustion_count": 0,
+            "capacity_exhaustion_reason": null,
+            "event": "capability_reconciliation",
+            "fallback_count": 0,
+            "issued_lease_count": 0,
+            "model_version": 2,
+            "reason_code": "verification_complete",
+            "retained_retirement_diagnostic_count": 0,
+            "sensitive_material_present": false
+          },
+          "operation": "audit",
+          "step_id": "bounded_audit_projection"
         }
       ],
       "vector_id": "bounded_accumulation_and_projection"
@@ -1756,6 +2052,1254 @@
         }
       ],
       "vector_id": "semantically_equivalent_order_and_repeated_reconciliation"
+    },
+    {
+      "requirements": [
+        "single_use_lease",
+        "sequential_duplicate_commit_rejection",
+        "concurrent_duplicate_commit_rejection",
+        "replay_after_finish_rejection",
+        "explicit_lease_release",
+        "committed_completion_after_retirement",
+        "uncommitted_retired_lease_rejection",
+        "finish_exactly_once"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "admit_ha_mcp"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "sequential",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_sequential"
+        },
+        {
+          "arguments": {
+            "lease_id": "sequential",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "first_commit"
+        },
+        {
+          "arguments": {
+            "lease_id": "sequential",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": false
+          },
+          "operation": "commit_lease",
+          "step_id": "duplicate_commit_rejected"
+        },
+        {
+          "arguments": {
+            "lease_id": "sequential"
+          },
+          "expected": {
+            "finished": true
+          },
+          "operation": "finish_commit",
+          "step_id": "finish_once"
+        },
+        {
+          "arguments": {
+            "lease_id": "sequential"
+          },
+          "expected": {
+            "finished": false
+          },
+          "operation": "finish_commit",
+          "step_id": "finish_replay_rejected"
+        },
+        {
+          "arguments": {
+            "lease_id": "sequential",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": false
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_replay_after_finish_rejected"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "concurrent",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_concurrent"
+        },
+        {
+          "arguments": {
+            "attempt_count": 2,
+            "lease_id": "concurrent",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "refused_count": 1,
+            "success_count": 1
+          },
+          "operation": "commit_lease_race",
+          "step_id": "concurrent_duplicate_has_one_winner"
+        },
+        {
+          "arguments": {
+            "lease_id": "concurrent"
+          },
+          "expected": {
+            "finished": true
+          },
+          "operation": "finish_commit",
+          "step_id": "finish_concurrent_winner"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "released",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_released"
+        },
+        {
+          "arguments": {
+            "lease_id": "released"
+          },
+          "expected": {
+            "released": true
+          },
+          "operation": "release_lease",
+          "step_id": "release_unused"
+        },
+        {
+          "arguments": {
+            "lease_id": "released",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "valid": false
+          },
+          "operation": "validate_lease",
+          "step_id": "released_lease_invalid"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "committed_old",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_committed_before_retirement"
+        },
+        {
+          "arguments": {
+            "lease_id": "committed_old",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_before_retirement"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "uncommitted_old",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_uncommitted_before_retirement"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "observation_id": "ha_mcp_compatible"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_compatible",
+            "generation": 2,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": 1,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "retire_old_generation"
+        },
+        {
+          "arguments": {
+            "lease_id": "committed_old"
+          },
+          "expected": {
+            "finished": true
+          },
+          "operation": "finish_commit",
+          "step_id": "committed_old_finishes"
+        },
+        {
+          "arguments": {
+            "lease_id": "uncommitted_old",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": false
+          },
+          "operation": "commit_lease",
+          "step_id": "uncommitted_old_rejected"
+        }
+      ],
+      "vector_id": "single_use_commit_lifecycle"
+    },
+    {
+      "requirements": [
+        "issued_lease_capacity",
+        "active_commit_capacity",
+        "capacity_exhaustion_fails_closed",
+        "bounded_retirement_history",
+        "prolonged_material_churn",
+        "bounded_lifecycle_counts"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "observation_id": "ha_mcp_exact"
+          },
+          "expected": {
+            "admitted": [
+              "ha_get_state",
+              "ha_search"
+            ],
+            "disposition": "admitted_exact",
+            "generation": 1,
+            "idempotent": false,
+            "published": true,
+            "quarantined": [
+              {
+                "capability_id": "ha_call_service",
+                "reason_code": "write_capability_prohibited"
+              }
+            ],
+            "retired_generation": null,
+            "surface": "ha_mcp",
+            "unavailable": [],
+            "write_action_reachability": 0
+          },
+          "operation": "reconcile",
+          "step_id": "admit_ha_mcp"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_0",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_capacity_0"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_1",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_capacity_1"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_2",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_capacity_2"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_3",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_capacity_3"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_4",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_capacity_4"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_5",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_capacity_5"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_6",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_capacity_6"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_7",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_capacity_7"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "issued_overflow",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": null,
+            "granted": false,
+            "surface": null
+          },
+          "operation": "acquire_lease",
+          "step_id": "issued_capacity_refusal"
+        },
+        {
+          "arguments": {},
+          "expected": {
+            "active_commit_capacity": 8,
+            "active_commit_count": 0,
+            "admitted_count": 2,
+            "bounded": true,
+            "capacity_exhaustion_count": 1,
+            "capacity_exhaustion_reason": "issued_lease_capacity_exhausted",
+            "fallback_count": 0,
+            "issued_lease_capacity": 8,
+            "issued_lease_count": 8,
+            "model_version": 2,
+            "retained_retirement_diagnostic_count": 0,
+            "sensitive_material_present": false,
+            "surface_count": 3,
+            "surface_generations": {
+              "configured_transport": null,
+              "ha_mcp": 1,
+              "home_assistant_core": null
+            }
+          },
+          "operation": "health",
+          "step_id": "issued_capacity_health"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_0"
+          },
+          "expected": {
+            "released": true
+          },
+          "operation": "release_lease",
+          "step_id": "release_capacity_zero"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "capacity_8",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "replace_released_capacity"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_1",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_capacity_1"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_2",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_capacity_2"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_3",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_capacity_3"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_4",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_capacity_4"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_5",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_capacity_5"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_6",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_capacity_6"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_7",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_capacity_7"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_8",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "commit_capacity_8"
+        },
+        {
+          "arguments": {
+            "capability_id": "ha_get_state",
+            "lease_id": "active_waiter",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "generation": 1,
+            "granted": true,
+            "surface": "ha_mcp"
+          },
+          "operation": "acquire_lease",
+          "step_id": "acquire_active_waiter"
+        },
+        {
+          "arguments": {
+            "lease_id": "active_waiter",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": false
+          },
+          "operation": "commit_lease",
+          "step_id": "active_capacity_refusal"
+        },
+        {
+          "arguments": {},
+          "expected": {
+            "active_commit_capacity": 8,
+            "active_commit_count": 8,
+            "admitted_count": 2,
+            "bounded": true,
+            "capacity_exhaustion_count": 2,
+            "capacity_exhaustion_reason": "active_commit_capacity_exhausted",
+            "fallback_count": 0,
+            "issued_lease_capacity": 8,
+            "issued_lease_count": 1,
+            "model_version": 2,
+            "retained_retirement_diagnostic_count": 0,
+            "sensitive_material_present": false,
+            "surface_count": 3,
+            "surface_generations": {
+              "configured_transport": null,
+              "ha_mcp": 1,
+              "home_assistant_core": null
+            }
+          },
+          "operation": "health",
+          "step_id": "active_capacity_health"
+        },
+        {
+          "arguments": {
+            "lease_id": "capacity_1"
+          },
+          "expected": {
+            "finished": true
+          },
+          "operation": "finish_commit",
+          "step_id": "finish_one_active_commit"
+        },
+        {
+          "arguments": {
+            "lease_id": "active_waiter",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "committed": true
+          },
+          "operation": "commit_lease",
+          "step_id": "waiting_commit_after_cleanup"
+        },
+        {
+          "arguments": {
+            "count": 32,
+            "cycles": [
+              {
+                "authority_id": "compiled_ha_mcp_exact",
+                "observation_id": "ha_mcp_exact"
+              },
+              {
+                "authority_id": "signed_ha_mcp_compatible",
+                "observation_id": "ha_mcp_compatible"
+              }
+            ]
+          },
+          "expected": {
+            "active_commit_count": 8,
+            "final_generation": 32,
+            "issued_lease_count": 0,
+            "iteration_count": 32,
+            "retained_retirement_diagnostic_count": 8,
+            "within_retirement_bound": true
+          },
+          "operation": "reconcile_churn",
+          "step_id": "bounded_prolonged_churn"
+        }
+      ],
+      "vector_id": "bounded_lifecycle_capacity_and_retirement"
+    },
+    {
+      "requirements": [
+        "action_kind_unreachable",
+        "governed_write_kind_unreachable",
+        "persistent_write_kind_unreachable",
+        "mixed_kind_unreachable",
+        "unknown_future_read_unreachable",
+        "unknown_signed_profile",
+        "unknown_signed_adapter",
+        "unknown_signed_capability",
+        "signed_scope_broadening_rejected",
+        "zero_fallback"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "capability_id": "ha_call_service",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools",
+                  2,
+                  "kind"
+                ],
+                "value": "action"
+              }
+            ],
+            "observation_id": "ha_mcp_exact",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "quarantined",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "write_capability_prohibited",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "action_unreachable"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "capability_id": "ha_call_service",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools",
+                  2,
+                  "kind"
+                ],
+                "value": "governed_write"
+              }
+            ],
+            "observation_id": "ha_mcp_exact",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "quarantined",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "write_capability_prohibited",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "governed_write_unreachable"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "capability_id": "ha_call_service",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools",
+                  2,
+                  "kind"
+                ],
+                "value": "persistent_write"
+              }
+            ],
+            "observation_id": "ha_mcp_exact",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "quarantined",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "write_capability_prohibited",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "persistent_write_unreachable"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "capability_id": "ha_call_service",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools",
+                  2,
+                  "kind"
+                ],
+                "value": "mixed"
+              }
+            ],
+            "observation_id": "ha_mcp_exact",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "quarantined",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "write_capability_prohibited",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "mixed_unreachable"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "capability_id": "synthetic_future_read",
+            "fixture_mutations": [
+              {
+                "operation": "append",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "tools_list_pages",
+                  0,
+                  "tools"
+                ],
+                "value": {
+                  "capability_id": "synthetic_future_read",
+                  "contract_fingerprint": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                  "kind": "ordinary_read"
+                }
+              }
+            ],
+            "observation_id": "ha_mcp_exact",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "quarantined",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "capability_not_compiled",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "unknown_future_read_unreachable"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "capability_id": "ha_get_state",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "signed_ha_mcp_compatible",
+                  "decisions",
+                  0,
+                  "profile_id"
+                ],
+                "value": "synthetic_unknown_profile"
+              }
+            ],
+            "observation_id": "ha_mcp_compatible",
+            "session_id": "synthetic-session-ha-mcp-2"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "positive_authority_missing",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "unknown_signed_profile"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "capability_id": "ha_get_state",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "signed_ha_mcp_compatible",
+                  "decisions",
+                  0,
+                  "adapter_id"
+                ],
+                "value": "synthetic_unknown_adapter"
+              }
+            ],
+            "observation_id": "ha_mcp_compatible",
+            "session_id": "synthetic-session-ha-mcp-2"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "identity_or_protocol_disagreement",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "unknown_signed_adapter"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "capability_id": "ha_get_state",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "signed_ha_mcp_compatible",
+                  "decisions",
+                  0,
+                  "capability_ids"
+                ],
+                "value": [
+                  "ha_get_state",
+                  "ha_search",
+                  "synthetic_unknown_capability"
+                ]
+              }
+            ],
+            "observation_id": "ha_mcp_compatible",
+            "session_id": "synthetic-session-ha-mcp-2"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "identity_or_protocol_disagreement",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "unknown_signed_capability"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_ha_mcp_compatible",
+            "capability_id": "ha_get_state",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "authority_sets",
+                  "signed_ha_mcp_compatible",
+                  "decisions",
+                  0,
+                  "capability_ids"
+                ],
+                "value": [
+                  "ha_get_state",
+                  "ha_search",
+                  "ha_call_service"
+                ]
+              }
+            ],
+            "observation_id": "ha_mcp_compatible",
+            "session_id": "synthetic-session-ha-mcp-2"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "identity_or_protocol_disagreement",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "signed_scope_broadening_rejected"
+        }
+      ],
+      "vector_id": "prohibited_capability_kinds_and_signed_scope"
+    },
+    {
+      "requirements": [
+        "ha_mcp_disconnect",
+        "ha_mcp_authentication_failure",
+        "ha_mcp_restoration",
+        "core_disconnect",
+        "core_authentication_failure",
+        "core_restoration",
+        "transport_disconnect",
+        "transport_authentication_failure",
+        "transport_restoration"
+      ],
+      "steps": [
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "capability_id": "ha_get_state",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "connected"
+                ],
+                "value": false
+              }
+            ],
+            "observation_id": "ha_mcp_exact",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "transport_unavailable",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "ha_connected_failure"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "capability_id": "ha_get_state",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "ha_mcp_exact",
+                  "authenticated"
+                ],
+                "value": false
+              }
+            ],
+            "observation_id": "ha_mcp_exact",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "authentication_failed",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "ha_authenticated_failure"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_ha_mcp_exact",
+            "capability_id": "ha_get_state",
+            "observation_id": "ha_mcp_exact",
+            "session_id": "synthetic-session-ha-mcp-1"
+          },
+          "expected": {
+            "adapter_present": true,
+            "committed": true,
+            "disposition": "admitted_exact",
+            "fallback_count": 0,
+            "lease_granted": true,
+            "reason_code": "compiled_exact_contract_matched",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "ha_restored"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_core_ordinary_only",
+            "capability_id": "core.states_read",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "core_unknown_compatible",
+                  "connected"
+                ],
+                "value": false
+              }
+            ],
+            "observation_id": "core_unknown_compatible",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "transport_unavailable",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "core_connected_failure"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_core_ordinary_only",
+            "capability_id": "core.states_read",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "core_unknown_compatible",
+                  "authenticated"
+                ],
+                "value": false
+              }
+            ],
+            "observation_id": "core_unknown_compatible",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "authentication_failed",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "core_authenticated_failure"
+        },
+        {
+          "arguments": {
+            "authority_id": "signed_core_ordinary_only",
+            "capability_id": "core.states_read",
+            "observation_id": "core_unknown_compatible",
+            "session_id": "synthetic-session-core-1"
+          },
+          "expected": {
+            "adapter_present": true,
+            "committed": true,
+            "disposition": "admitted_compatible",
+            "fallback_count": 0,
+            "lease_granted": true,
+            "reason_code": "signed_compatible_contract_matched",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "core_restored"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_transport",
+            "capability_id": "transport.streamable_http",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "transport_restored",
+                  "connected"
+                ],
+                "value": false
+              }
+            ],
+            "observation_id": "transport_restored",
+            "session_id": "synthetic-session-transport-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "transport_unavailable",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "transport_connected_failure"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_transport",
+            "capability_id": "transport.streamable_http",
+            "fixture_mutations": [
+              {
+                "operation": "set",
+                "path": [
+                  "scenarios",
+                  "transport_restored",
+                  "authenticated"
+                ],
+                "value": false
+              }
+            ],
+            "observation_id": "transport_restored",
+            "session_id": "synthetic-session-transport-1"
+          },
+          "expected": {
+            "adapter_present": false,
+            "committed": false,
+            "disposition": "unavailable",
+            "fallback_count": 0,
+            "lease_granted": false,
+            "reason_code": "authentication_failed",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "transport_authenticated_failure"
+        },
+        {
+          "arguments": {
+            "authority_id": "compiled_transport",
+            "capability_id": "transport.streamable_http",
+            "observation_id": "transport_restored",
+            "session_id": "synthetic-session-transport-1"
+          },
+          "expected": {
+            "adapter_present": true,
+            "committed": true,
+            "disposition": "admitted_exact",
+            "fallback_count": 0,
+            "lease_granted": true,
+            "reason_code": "compiled_exact_contract_matched",
+            "write_action_reachability": 0
+          },
+          "operation": "probe_capability",
+          "step_id": "transport_restored"
+        }
+      ],
+      "vector_id": "surface_disconnect_authentication_and_restoration"
     }
   ]
 }

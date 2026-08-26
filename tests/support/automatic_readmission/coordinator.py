@@ -19,7 +19,11 @@ from .models import (
     CompatibilityObservation,
     DecisionGeneration,
     DispatchCommit,
+    MAX_ACTIVE_COMMITS,
+    MAX_ISSUED_LEASES,
     MAX_PROFILES,
+    MAX_RETIREMENT_DIAGNOSTICS,
+    MAX_SAFE_INTEGER,
     ReconciliationResult,
     RouteLease,
     UpstreamSurface,
@@ -55,12 +59,12 @@ class SurfaceState:
     pending_generation: int | None = None
     published: DecisionGeneration | None = None
     published_material_fingerprint: str | None = None
-    retired_generations: set[int] | None = None
+    retired_generation_diagnostics: list[int] | None = None
     last_observation_fingerprint: str | None = None
 
     def __post_init__(self) -> None:
-        if self.retired_generations is None:
-            self.retired_generations = set()
+        if self.retired_generation_diagnostics is None:
+            self.retired_generation_diagnostics = []
 
 
 class CapabilityAdmissionCoordinator:
@@ -111,7 +115,10 @@ class CapabilityAdmissionCoordinator:
             surface: SurfaceState() for surface in UpstreamSurface
         }
         self._lease_counter = 0
-        self._committed: set[str] = set()
+        self._issued_leases: dict[str, RouteLease] = {}
+        self._active_commits: dict[str, DispatchCommit] = {}
+        self._capacity_exhaustion_count = 0
+        self._capacity_exhaustion_reason: str | None = None
 
     @property
     def current_generation(self) -> DecisionGeneration | None:
@@ -133,6 +140,64 @@ class CapabilityAdmissionCoordinator:
     def profile_registry_fingerprint(self) -> str:
         return self._profile_registry_fingerprint
 
+    def _authority_for_surface(
+        self,
+        authority: AuthorityBundle,
+        surface: UpstreamSurface,
+    ) -> AuthorityBundle:
+        """Project one bundle to decisions targeting binary-known surface profiles."""
+
+        profile_keys = {
+            (profile.profile_id, profile.profile_version)
+            for profile in self._profiles
+            if profile.surface is surface
+        }
+        return AuthorityBundle(
+            evaluated_at_epoch=authority.evaluated_at_epoch,
+            decisions=tuple(
+                decision
+                for decision in authority.decisions
+                if (decision.profile_id, decision.profile_version) in profile_keys
+            ),
+        )
+
+    def _retire_surface(
+        self,
+        surface: UpstreamSurface,
+        generation: int,
+    ) -> None:
+        state = self._surface_states[surface]
+        diagnostics = state.retired_generation_diagnostics
+        if diagnostics is None:
+            raise CompatibilityModelError("retirement_state_invalid")
+        diagnostics.append(generation)
+        if len(diagnostics) > MAX_RETIREMENT_DIAGNOSTICS:
+            del diagnostics[:-MAX_RETIREMENT_DIAGNOSTICS]
+        state.published = None
+        state.published_material_fingerprint = None
+        for lease_id, lease in tuple(self._issued_leases.items()):
+            if lease.surface is surface:
+                self._issued_leases.pop(lease_id)
+
+    def _record_capacity_exhaustion(self, reason_code: str) -> None:
+        self._capacity_exhaustion_count = min(
+            MAX_SAFE_INTEGER,
+            self._capacity_exhaustion_count + 1,
+        )
+        self._capacity_exhaustion_reason = reason_code
+
+    def _lifecycle_projection(self) -> dict[str, Any]:
+        return {
+            "issued_lease_count": len(self._issued_leases),
+            "active_commit_count": len(self._active_commits),
+            "retained_retirement_diagnostic_count": sum(
+                len(state.retired_generation_diagnostics or ())
+                for state in self._surface_states.values()
+            ),
+            "capacity_exhaustion_count": self._capacity_exhaustion_count,
+            "capacity_exhaustion_reason": self._capacity_exhaustion_reason,
+        }
+
     def begin_reconciliation(
         self,
         observation: CompatibilityObservation,
@@ -140,10 +205,14 @@ class CapabilityAdmissionCoordinator:
     ) -> ReconciliationAttempt:
         """Retire stale authority before any new verification can publish."""
 
+        surface_authority = self._authority_for_surface(
+            authority,
+            observation.surface,
+        )
         material_fingerprint = evidence_fingerprint(
             {
                 "observation": observation.to_mapping(include_session=True),
-                "authority": authority.material_mapping(),
+                "authority": surface_authority.material_mapping(),
                 "profile_registry_fingerprint": self._surface_profile_fingerprints[
                     observation.surface
                 ],
@@ -154,12 +223,11 @@ class CapabilityAdmissionCoordinator:
             if (
                 state.published is not None
                 and state.published_material_fingerprint == material_fingerprint
-                and state.published.generation not in state.retired_generations
             ):
                 return ReconciliationAttempt(
                     generation=state.published.generation,
                     observation=observation,
-                    authority=authority,
+                    authority=surface_authority,
                     material_fingerprint=material_fingerprint,
                     retired_generation=None,
                     idempotent=True,
@@ -168,10 +236,14 @@ class CapabilityAdmissionCoordinator:
 
             retired_generation = None
             if state.published is not None:
+                if self._next_generation >= MAX_SAFE_INTEGER:
+                    self._record_capacity_exhaustion("generation_capacity_exhausted")
+                    raise CompatibilityModelError("generation_capacity_exhausted")
                 retired_generation = state.published.generation
-                state.retired_generations.add(retired_generation)
-                state.published = None
-                state.published_material_fingerprint = None
+                self._retire_surface(observation.surface, retired_generation)
+            elif self._next_generation >= MAX_SAFE_INTEGER:
+                self._record_capacity_exhaustion("generation_capacity_exhausted")
+                raise CompatibilityModelError("generation_capacity_exhausted")
             self._next_generation += 1
             generation = self._next_generation
             state.pending_generation = generation
@@ -183,7 +255,7 @@ class CapabilityAdmissionCoordinator:
             return ReconciliationAttempt(
                 generation=generation,
                 observation=observation,
-                authority=authority,
+                authority=surface_authority,
                 material_fingerprint=material_fingerprint,
                 retired_generation=retired_generation,
                 idempotent=False,
@@ -282,7 +354,6 @@ class CapabilityAdmissionCoordinator:
             generation = state.published
             if (
                 generation is None
-                or generation.generation in state.retired_generations
                 or generation.session_fingerprint != session_fingerprint
             ):
                 return None
@@ -292,6 +363,12 @@ class CapabilityAdmissionCoordinator:
                 or decision.disposition not in _ADMITTED
                 or decision.adapter_id is None
             ):
+                return None
+            if len(self._issued_leases) >= MAX_ISSUED_LEASES:
+                self._record_capacity_exhaustion("issued_lease_capacity_exhausted")
+                return None
+            if self._lease_counter >= MAX_SAFE_INTEGER:
+                self._record_capacity_exhaustion("lease_sequence_exhausted")
                 return None
             self._lease_counter += 1
             lease_id = evidence_fingerprint(
@@ -304,7 +381,7 @@ class CapabilityAdmissionCoordinator:
                     "lease_ordinal": self._lease_counter,
                 }
             )
-            return RouteLease(
+            lease = RouteLease(
                 lease_id=lease_id,
                 generation=generation.generation,
                 surface=surface,
@@ -312,27 +389,36 @@ class CapabilityAdmissionCoordinator:
                 adapter_id=decision.adapter_id,
                 session_fingerprint=session_fingerprint,
             )
+            self._issued_leases[lease.lease_id] = lease
+            return lease
 
     def validate_pre_dispatch(self, lease: RouteLease, *, session_id: str) -> bool:
         session_fingerprint = evidence_fingerprint({"session_id": session_id})
         with self._lock:
+            stored = self._issued_leases.get(lease.lease_id)
+            if stored != lease:
+                return False
             state = self._surface_states[lease.surface]
             generation = state.published
-            if (
+            valid_generation = not (
                 generation is None
                 or generation.generation != lease.generation
                 or generation.surface is not lease.surface
-                or lease.generation in state.retired_generations
                 or lease.session_fingerprint != session_fingerprint
                 or generation.session_fingerprint != session_fingerprint
-            ):
+            )
+            if not valid_generation:
+                self._issued_leases.pop(lease.lease_id)
                 return False
             decision = generation.decision_for(lease.capability_id)
-            return bool(
+            valid_decision = bool(
                 decision
                 and decision.disposition in _ADMITTED
                 and decision.adapter_id == lease.adapter_id
             )
+            if not valid_decision:
+                self._issued_leases.pop(lease.lease_id)
+            return valid_decision
 
     def commit_route(
         self,
@@ -343,7 +429,14 @@ class CapabilityAdmissionCoordinator:
         """Atomically validate and mark a logical route committed; no I/O occurs."""
 
         with self._lock:
+            stored = self._issued_leases.get(lease.lease_id)
+            if stored != lease:
+                return None
             if not self.validate_pre_dispatch(lease, session_id=session_id):
+                self._issued_leases.pop(lease.lease_id, None)
+                return None
+            if len(self._active_commits) >= MAX_ACTIVE_COMMITS:
+                self._record_capacity_exhaustion("active_commit_capacity_exhausted")
                 return None
             commit_id = evidence_fingerprint(
                 {
@@ -353,16 +446,29 @@ class CapabilityAdmissionCoordinator:
                     "state": "committed_after_validation",
                 }
             )
-            self._committed.add(commit_id)
-            return DispatchCommit(lease=lease, commit_id=commit_id)
+            commit = DispatchCommit(lease=lease, commit_id=commit_id)
+            self._issued_leases.pop(lease.lease_id)
+            self._active_commits[commit_id] = commit
+            return commit
+
+    def release_route(self, lease: RouteLease) -> bool:
+        """Release one exact unused lease without changing surface authority."""
+
+        with self._lock:
+            stored = self._issued_leases.get(lease.lease_id)
+            if stored != lease:
+                return False
+            self._issued_leases.pop(lease.lease_id)
+            return True
 
     def finish_committed(self, commit: DispatchCommit) -> bool:
         """Allow completion without granting any route-publication authority."""
 
         with self._lock:
-            if commit.commit_id not in self._committed:
+            stored = self._active_commits.get(commit.commit_id)
+            if stored != commit:
                 return False
-            self._committed.remove(commit.commit_id)
+            self._active_commits.pop(commit.commit_id)
             return True
 
     def health_projection(self) -> dict[str, Any]:
@@ -378,6 +484,15 @@ class CapabilityAdmissionCoordinator:
             for surface in sorted(UpstreamSurface, key=lambda item: item.value):
                 state = self._surface_states[surface]
                 generation = state.published
+                surface_issued = sum(
+                    lease.surface is surface
+                    for lease in self._issued_leases.values()
+                )
+                surface_commits = sum(
+                    commit.lease.surface is surface
+                    for commit in self._active_commits.values()
+                )
+                retirement_count = len(state.retired_generation_diagnostics or ())
                 if generation is None:
                     disposition = (
                         AdmissionDisposition.VERIFYING
@@ -392,6 +507,9 @@ class CapabilityAdmissionCoordinator:
                             "admitted_count": 0,
                             "quarantined_count": 0,
                             "unavailable_count": 0,
+                            "issued_lease_count": surface_issued,
+                            "active_commit_count": surface_commits,
+                            "retained_retirement_diagnostic_count": retirement_count,
                             "reason_counts": [],
                         }
                     )
@@ -433,6 +551,9 @@ class CapabilityAdmissionCoordinator:
                         "admitted_count": admitted,
                         "quarantined_count": quarantined,
                         "unavailable_count": unavailable,
+                        "issued_lease_count": surface_issued,
+                        "active_commit_count": surface_commits,
+                        "retained_retirement_diagnostic_count": retirement_count,
                         "reason_counts": [
                             {"reason_code": code, "count": count}
                             for code, count in sorted(reason_counts.items())
@@ -456,6 +577,7 @@ class CapabilityAdmissionCoordinator:
                     {"reason_code": code, "count": count}
                     for code, count in sorted(aggregate_reasons.items())
                 ],
+                **self._lifecycle_projection(),
                 "fallback_count": 0,
             }
             evidence_fingerprint(projection)
@@ -464,30 +586,32 @@ class CapabilityAdmissionCoordinator:
     def audit_projection(self, result: ReconciliationResult) -> dict[str, Any]:
         """Return a bounded event projection without raw identities or catalogs."""
 
-        generation = result.generation
-        projection: dict[str, Any] = {
-            "model_version": 2,
-            "event": "capability_reconciliation",
-            "disposition": result.disposition.value,
-            "published": result.published,
-            "idempotent": result.idempotent,
-            "reason_code": result.reason_code,
-            "retired_generation": result.retired_generation,
-            "events": list(result.events),
-            "fallback_count": 0,
-        }
-        if generation is not None:
-            projection.update(
-                {
-                    "generation": generation.generation,
-                    "surface": generation.surface.value,
-                    "decision_fingerprint": generation.decision_fingerprint,
-                    "admitted_count": len(generation.admitted_capability_ids),
-                    "decision_count": len(generation.decisions),
-                }
-            )
-        evidence_fingerprint(projection)
-        return projection
+        with self._lock:
+            generation = result.generation
+            projection: dict[str, Any] = {
+                "model_version": 2,
+                "event": "capability_reconciliation",
+                "disposition": result.disposition.value,
+                "published": result.published,
+                "idempotent": result.idempotent,
+                "reason_code": result.reason_code,
+                "retired_generation": result.retired_generation,
+                "events": list(result.events),
+                **self._lifecycle_projection(),
+                "fallback_count": 0,
+            }
+            if generation is not None:
+                projection.update(
+                    {
+                        "generation": generation.generation,
+                        "surface": generation.surface.value,
+                        "decision_fingerprint": generation.decision_fingerprint,
+                        "admitted_count": len(generation.admitted_capability_ids),
+                        "decision_count": len(generation.decisions),
+                    }
+                )
+            evidence_fingerprint(projection)
+            return projection
 
     def _evaluate(
         self,
@@ -722,7 +846,13 @@ class CapabilityAdmissionCoordinator:
                 )
             )
         ]
-        candidates.sort(key=lambda item: canonical_json(item.to_mapping()))
+        candidates.sort(
+            key=lambda item: canonical_json(
+                item.material_mapping(
+                    evaluated_at_epoch=authority.evaluated_at_epoch,
+                )
+            )
+        )
         return candidates[0] if candidates else None
 
     def _positive_for(
@@ -759,8 +889,11 @@ class CapabilityAdmissionCoordinator:
         candidates.sort(
             key=lambda item: (
                 0 if item.source is AuthoritySource.COMPILED_EXACT else 1,
-                -(item.registry_sequence or 0),
-                canonical_json(item.to_mapping()),
+                canonical_json(
+                    item.material_mapping(
+                        evaluated_at_epoch=authority.evaluated_at_epoch,
+                    )
+                ),
             )
         )
         return candidates[0] if candidates else None

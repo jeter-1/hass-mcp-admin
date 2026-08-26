@@ -79,13 +79,18 @@ remain separate from Home Assistant's MCP Server endpoint at `/api/mcp` and
 from the independently configured ha-mcp endpoint.
 
 Each surface owns an independent published decision, pending verification,
-effective-material fingerprint, retired-generation set, and bounded last
-observation status. Generation numbers may come from one global monotonic
-allocator, but authority is published and validated only within its owning
-surface. A Core change therefore cannot retire ha-mcp authority, a ha-mcp
+surface-local effective-authority fingerprint, bounded retirement diagnostics,
+and bounded last-observation status. Generation numbers may come from one
+global monotonic allocator, but authority is published and validated only
+within its owning surface. A global signed-registry refresh can request
+reevaluation of several surfaces; it does not retire a surface unless that
+surface's effective authority changed. Decisions owned exclusively by Core are
+not material to ha-mcp, and provider decisions are not material to configured
+transport. A Core change therefore cannot retire ha-mcp authority, a ha-mcp
 catalog change cannot retire Core authority, and transport restoration cannot
 create provider authority. Capability ownership across surfaces must be unique;
-duplicate or ambiguous ownership fails closed.
+duplicate or ambiguous ownership fails closed. Unknown profiles cannot acquire
+surface ownership by naming an unknown adapter or capability.
 
 ### Capability profiles
 
@@ -164,12 +169,24 @@ disposition boundaries remains material. Semantically identical decision and
 profile ordering is canonicalized by complete content.
 
 A route lease binds the exact surface, capability, compiled adapter, decision
-generation and sanitized session fingerprint. Immediately before a logical
-commit, the coordinator requires the same current generation and same session
-for that surface. Retirement before commit prevents dispatch. A call committed
-after validation may finish, but completion has no authority to publish or
-revive a route. A late verification result cannot replace a newer generation
-for its surface and cannot affect another surface's lease.
+generation and sanitized session fingerprint. It is registered as an issued,
+single-use value. Immediately before a logical commit, the coordinator requires
+exact equality with that issued value, the same current generation, and the
+same session for that surface. Atomic commit consumes the lease, so sequential
+or concurrent replay cannot create a second logical commit. An unused lease has
+an explicit release path. Retirement before commit prevents dispatch; a call
+committed after validation may finish exactly once, but completion has no
+authority to publish or revive a route. A late verification result cannot
+replace a newer generation for its surface and cannot affect another surface's
+lease.
+
+Issued leases, active commits, generation and lease counters, and retained
+retirement diagnostics have explicit deterministic limits. Capacity exhaustion
+fails closed without retiring unrelated valid authority or partially creating a
+commit. Retirement removes issued leases for the affected surface, release and
+failed validation remove unused leases, and finish removes active commits.
+Only a small bounded diagnostic retirement history is retained; current
+generation equality, not an unbounded historical set, is the dispatch guard.
 
 The reference model specifies these transitions only. It contains no real call,
 provider dispatch, or production route-publication method.
@@ -196,7 +213,9 @@ The reference projections contain only:
 - surface and disposition;
 - bounded fingerprints;
 - admitted, quarantined and unavailable counts;
-- bounded reason-code counts; and
+- bounded reason-code and lifecycle counts;
+- issued-lease, active-commit, retained-retirement and capacity-exhaustion
+  summaries; and
 - an explicit zero fallback count.
 
 They exclude endpoints, sessions, raw identities, versions, catalogs, schemas,
@@ -256,6 +275,7 @@ routing, providers, fallback and stable v1 remain unchanged.
 - synthetic implementation-neutral compatibility vectors;
 - a deterministic per-surface authority, generation, lease and reconciliation
   model;
+- single-use route leases and explicitly bounded lifecycle state;
 - bounded sanitized reference health and audit projections; and
 - tests proving zero runtime import, packaging, provider, registration, write,
   action, fallback and dispatch reachability.

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
 import json
@@ -8,6 +9,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from threading import Barrier
 import unittest
 
 
@@ -41,9 +43,12 @@ from support.automatic_readmission import (  # noqa: E402
     run_contract_vector,
 )
 from support.automatic_readmission.models import (  # noqa: E402
+    MAX_ACTIVE_COMMITS,
     MAX_AUTHORITY_DECISIONS,
+    MAX_ISSUED_LEASES,
     MAX_OBSERVED_CAPABILITIES,
     MAX_PROJECTION_BYTES,
+    MAX_RETIREMENT_DIAGNOSTICS,
     MAX_SAFE_INTEGER,
 )
 
@@ -292,6 +297,39 @@ class ImplementationNeutralVectorTests(unittest.TestCase):
             "profile_order_independence",
             "clock_stability",
             "zero_write_authority",
+            "cross_surface_authority_projection",
+            "unrelated_core_authority_preserves_ha_mcp",
+            "unrelated_ha_mcp_authority_preserves_core",
+            "transport_restoration_no_provider_retirement",
+            "provider_authority_preserves_transport",
+            "stale_surface_isolation",
+            "single_use_lease",
+            "sequential_duplicate_commit_rejection",
+            "concurrent_duplicate_commit_rejection",
+            "replay_after_finish_rejection",
+            "finish_exactly_once",
+            "explicit_lease_release",
+            "uncommitted_retired_lease_rejection",
+            "committed_completion_after_retirement",
+            "issued_lease_capacity",
+            "active_commit_capacity",
+            "capacity_exhaustion_fails_closed",
+            "bounded_retirement_history",
+            "prolonged_material_churn",
+            "unknown_signed_profile",
+            "unknown_signed_adapter",
+            "unknown_signed_capability",
+            "signed_scope_broadening_rejected",
+            "action_kind_unreachable",
+            "governed_write_kind_unreachable",
+            "persistent_write_kind_unreachable",
+            "mixed_kind_unreachable",
+            "unknown_future_read_unreachable",
+            "real_audit_operation",
+            "audit_lifecycle_bounds",
+            "audit_sensitive_output_redaction",
+            "bounded_lifecycle_counts",
+            "zero_fallback",
         }
         represented = {
             requirement
@@ -307,7 +345,7 @@ class ImplementationNeutralVectorTests(unittest.TestCase):
         )
         self.assertTrue(report["matched"], report)
         self.assertEqual(report["vector_count"], len(self.mapping["vectors"]))
-        self.assertEqual(report["step_count"], 61)
+        self.assertEqual(report["step_count"], 136)
         self.assertEqual(report["mismatch_count"], 0)
         self.assertTrue(all(item["mismatches"] == [] for item in report["reports"]))
 
@@ -327,11 +365,18 @@ class ImplementationNeutralVectorTests(unittest.TestCase):
 
     def test_defective_adapters_are_detected_by_literal_vectors(self):
         cases = {
+            "global_authority_fingerprint": (
+                "independent_surface_authority_lifecycles",
+                lambda operation, arguments: operation == "reconcile"
+                and arguments.get("observation_id") == "ha_mcp_exact"
+                and bool(arguments.get("fixture_mutations")),
+                {"idempotent": False, "generation": 4, "retired_generation": 1},
+            ),
             "shared_generation": (
                 "independent_surface_authority_lifecycles",
-                lambda operation, arguments: operation == "acquire_lease"
+                lambda operation, arguments: operation == "validate_lease"
                 and arguments.get("lease_id") == "ha",
-                {"granted": False, "surface": None, "generation": None},
+                {"valid": False},
             ),
             "truthy_string": (
                 "malformed_boolean_and_integer_evidence",
@@ -353,17 +398,44 @@ class ImplementationNeutralVectorTests(unittest.TestCase):
                 ),
                 {"idempotent": False, "generation": 2, "retired_generation": 1},
             ),
-            "write_admission": (
-                "per_capability_catalog_drift",
-                lambda operation, arguments: operation == "acquire_lease"
-                and arguments.get("lease_id") == "write",
-                {"granted": True, "surface": "ha_mcp", "generation": 1},
+            "duplicate_lease_commit": (
+                "single_use_commit_lifecycle",
+                lambda operation, arguments: operation == "commit_lease"
+                and arguments.get("lease_id") == "sequential",
+                {"committed": True},
             ),
             "stale_generation": (
                 "surface_specific_update_and_lease_retirement",
                 lambda operation, arguments: operation == "validate_lease"
                 and arguments.get("lease_id") == "old_ha",
                 {"valid": True},
+            ),
+            "write_admission": (
+                "prohibited_capability_kinds_and_signed_scope",
+                lambda operation, arguments: operation == "probe_capability"
+                and arguments.get("capability_id") == "ha_call_service",
+                {
+                    "disposition": "admitted_exact",
+                    "reason_code": "exact_compiled_contract",
+                    "adapter_present": True,
+                    "lease_granted": True,
+                    "committed": True,
+                    "fallback_count": 0,
+                    "write_action_reachability": 1,
+                },
+            ),
+            "unsafe_audit_projection": (
+                "bounded_accumulation_and_projection",
+                lambda operation, arguments: operation == "audit",
+                {"bounded": False, "sensitive_material_present": True},
+            ),
+            "unbounded_lifecycle_retention": (
+                "bounded_lifecycle_capacity_and_retirement",
+                lambda operation, arguments: operation == "reconcile_churn",
+                {
+                    "retained_retirement_diagnostic_count": 31,
+                    "within_retirement_bound": False,
+                },
             ),
         }
 
@@ -488,6 +560,175 @@ class AuthorityAndAdmissionTests(unittest.TestCase):
         expired = replace(authority, evaluated_at_epoch=expires_at)
         self.assertEqual(authority.fingerprint, preexpiry.fingerprint)
         self.assertNotEqual(authority.fingerprint, expired.fingerprint)
+
+    def test_ar_r6_unrelated_authority_changes_are_surface_local(self):
+        cases = (
+            (
+                "ha_mcp_exact",
+                "compiled_ha_mcp_exact",
+                "signed_core_ordinary_only",
+                "ha_get_state",
+                "synthetic-session-ha-mcp-1",
+            ),
+            (
+                "core_unknown_compatible",
+                "signed_core_ordinary_only",
+                "compiled_ha_mcp_exact",
+                "core.states_read",
+                "synthetic-session-core-1",
+            ),
+            (
+                "transport_restored",
+                "compiled_transport",
+                "compiled_ha_mcp_exact",
+                "transport.streamable_http",
+                "synthetic-session-transport-1",
+            ),
+        )
+        for observation_id, primary_id, unrelated_id, capability_id, session_id in cases:
+            with self.subTest(surface=observation_id):
+                coordinator = self.coordinator()
+                primary = self.harness.authority(primary_id)
+                unrelated = self.harness.authority(unrelated_id)
+                observation = self.harness.observation(observation_id)
+                first = coordinator.reconcile(observation, primary)
+                lease = coordinator.acquire_route(capability_id, session_id=session_id)
+                self.assertIsNotNone(lease)
+                combined = AuthorityBundle(
+                    evaluated_at_epoch=max(
+                        primary.evaluated_at_epoch,
+                        unrelated.evaluated_at_epoch,
+                    ),
+                    decisions=primary.decisions + unrelated.decisions,
+                )
+
+                second = coordinator.reconcile(observation, combined)
+
+                self.assertTrue(second.idempotent)
+                self.assertIsNone(second.retired_generation)
+                self.assertEqual(
+                    second.generation.generation,
+                    first.generation.generation,
+                )
+                self.assertTrue(
+                    coordinator.validate_pre_dispatch(lease, session_id=session_id)
+                )
+
+    def test_ar_r6_applicable_authority_change_retires_only_owner_surface(self):
+        coordinator = self.coordinator()
+        ha_authority = self.harness.authority("compiled_ha_mcp_exact")
+        core_authority = self.harness.authority("signed_core_ordinary_only")
+        combined = AuthorityBundle(
+            evaluated_at_epoch=max(
+                ha_authority.evaluated_at_epoch,
+                core_authority.evaluated_at_epoch,
+            ),
+            decisions=ha_authority.decisions + core_authority.decisions,
+        )
+        ha_result = coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"), combined
+        )
+        core_result = coordinator.reconcile(
+            self.harness.observation("core_unknown_compatible"), combined
+        )
+        ha_lease = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        core_lease = coordinator.acquire_route(
+            "core.states_read", session_id="synthetic-session-core-1"
+        )
+        changed_ha = replace(
+            ha_authority.decisions[0],
+            status=AuthorityStatus.REVOKED,
+            reason_code="synthetic_ha_revocation",
+        )
+        changed = replace(
+            combined,
+            decisions=(changed_ha,) + ha_authority.decisions[1:] + core_authority.decisions,
+        )
+
+        retired = coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"), changed
+        )
+
+        self.assertFalse(retired.idempotent)
+        self.assertEqual(retired.retired_generation, ha_result.generation.generation)
+        self.assertFalse(
+            coordinator.validate_pre_dispatch(
+                ha_lease, session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+        self.assertEqual(
+            coordinator.generation_for(UpstreamSurface.HOME_ASSISTANT_CORE),
+            core_result.generation,
+        )
+        self.assertTrue(
+            coordinator.validate_pre_dispatch(
+                core_lease, session_id="synthetic-session-core-1"
+            )
+        )
+
+    def test_ar_r6_unknown_profile_is_irrelevant_but_unknown_adapter_is_material(self):
+        coordinator = self.coordinator()
+        observation = self.harness.observation("ha_mcp_compatible")
+        authority = self.harness.authority("signed_ha_mcp_compatible")
+        first = coordinator.reconcile(observation, authority)
+        lease = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-2"
+        )
+        unknown_profile = replace(
+            authority.decisions[0],
+            profile_id="synthetic_unknown_profile",
+            reason_code="synthetic_unknown_profile_attempt",
+        )
+        unrelated = replace(
+            authority,
+            decisions=authority.decisions + (unknown_profile,),
+        )
+        same = coordinator.reconcile(observation, unrelated)
+        self.assertTrue(same.idempotent)
+        self.assertEqual(same.generation.generation, first.generation.generation)
+        self.assertTrue(
+            coordinator.validate_pre_dispatch(
+                lease, session_id="synthetic-session-ha-mcp-2"
+            )
+        )
+
+        unknown_adapter = replace(
+            authority.decisions[0],
+            adapter_id="synthetic_unknown_adapter",
+            reason_code="synthetic_unknown_adapter_attempt",
+        )
+        material = replace(
+            authority,
+            decisions=(unknown_adapter,) + authority.decisions[1:],
+        )
+        changed = coordinator.reconcile(observation, material)
+        self.assertFalse(changed.idempotent)
+        self.assertEqual(changed.retired_generation, first.generation.generation)
+        self.assertFalse(
+            decision(changed, "ha_get_state").disposition.admitted
+        )
+
+    def test_registry_envelope_refresh_without_effective_change_does_not_churn(self):
+        coordinator = self.coordinator()
+        observation = self.harness.observation("ha_mcp_compatible")
+        authority = self.harness.authority("signed_ha_mcp_compatible")
+        first = coordinator.reconcile(observation, authority)
+        refreshed = replace(
+            authority,
+            decisions=tuple(
+                replace(
+                    item,
+                    registry_sequence=item.registry_sequence + 1,
+                    registry_digest="sha256:" + "c" * 64,
+                )
+                for item in authority.decisions
+            ),
+        )
+        second = coordinator.reconcile(observation, refreshed)
+        self.assertTrue(second.idempotent)
+        self.assertEqual(second.generation.generation, first.generation.generation)
 
     def test_identical_reconciliation_is_idempotent(self):
         coordinator = self.coordinator()
@@ -1051,6 +1292,281 @@ class GenerationLeaseTests(unittest.TestCase):
         self.assertTrue(current.published)
         self.assertEqual(coordinator.current_generation, current.generation)
 
+    def test_ar_r7_route_lease_is_consumed_by_one_sequential_commit(self):
+        coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"),
+            self.harness.authority("compiled_ha_mcp_exact"),
+        )
+        lease = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        first = coordinator.commit_route(
+            lease, session_id="synthetic-session-ha-mcp-1"
+        )
+        second = coordinator.commit_route(
+            lease, session_id="synthetic-session-ha-mcp-1"
+        )
+
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+
+    def test_ar_r7_concurrent_duplicate_commit_has_exactly_one_winner(self):
+        coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"),
+            self.harness.authority("compiled_ha_mcp_exact"),
+        )
+        lease = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        barrier = Barrier(2)
+
+        def attempt_commit():
+            barrier.wait()
+            return coordinator.commit_route(
+                lease, session_id="synthetic-session-ha-mcp-1"
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = tuple(executor.submit(attempt_commit) for _index in range(2))
+            results = tuple(item.result(timeout=5) for item in futures)
+
+        self.assertEqual(sum(item is not None for item in results), 1)
+
+    def test_ar_r9_retirement_and_lifecycle_state_are_bounded(self):
+        lifecycle_capacity = MAX_RETIREMENT_DIAGNOSTICS
+        coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        exact_observation = self.harness.observation("ha_mcp_exact")
+        exact_authority = self.harness.authority("compiled_ha_mcp_exact")
+        compatible_observation = self.harness.observation("ha_mcp_compatible")
+        compatible_authority = self.harness.authority("signed_ha_mcp_compatible")
+
+        for index in range(lifecycle_capacity * 4):
+            if index % 2:
+                coordinator.reconcile(compatible_observation, compatible_authority)
+            else:
+                coordinator.reconcile(exact_observation, exact_authority)
+
+        state = coordinator._surface_states[UpstreamSurface.HA_MCP]
+        retained = state.retired_generation_diagnostics
+        self.assertLessEqual(len(retained), lifecycle_capacity)
+        self.assertEqual(len(retained), lifecycle_capacity)
+
+        lease_coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        lease_coordinator.reconcile(exact_observation, exact_authority)
+        leases = tuple(
+            lease_coordinator.acquire_route(
+                "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+            )
+            for _index in range(MAX_ISSUED_LEASES + 1)
+        )
+        self.assertTrue(all(item is not None for item in leases[:MAX_ISSUED_LEASES]))
+        self.assertIsNone(leases[-1])
+
+        commit_coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        commit_coordinator.reconcile(exact_observation, exact_authority)
+        commits = []
+        for _index in range(MAX_ACTIVE_COMMITS + 1):
+            lease = commit_coordinator.acquire_route(
+                "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+            )
+            commits.append(
+                commit_coordinator.commit_route(
+                    lease, session_id="synthetic-session-ha-mcp-1"
+                )
+            )
+        self.assertTrue(all(item is not None for item in commits[:MAX_ACTIVE_COMMITS]))
+        self.assertIsNone(commits[-1])
+
+    def test_exact_stored_lease_release_replay_and_retirement_contract(self):
+        coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"),
+            self.harness.authority("compiled_ha_mcp_exact"),
+        )
+        released = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        forged = replace(released, adapter_id="synthetic_forged_adapter")
+        self.assertFalse(
+            coordinator.validate_pre_dispatch(
+                forged, session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+        self.assertIsNone(
+            coordinator.commit_route(
+                forged, session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+        self.assertTrue(coordinator.release_route(released))
+        self.assertFalse(coordinator.release_route(released))
+        self.assertIsNone(
+            coordinator.commit_route(
+                released, session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+
+        replayed = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        commit = coordinator.commit_route(
+            replayed, session_id="synthetic-session-ha-mcp-1"
+        )
+        self.assertTrue(coordinator.finish_committed(commit))
+        self.assertFalse(coordinator.finish_committed(commit))
+        self.assertIsNone(
+            coordinator.commit_route(
+                replayed, session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+
+        retired = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        coordinator.begin_reconciliation(
+            self.harness.observation("ha_mcp_compatible"),
+            self.harness.authority("signed_ha_mcp_compatible"),
+        )
+        self.assertFalse(coordinator.release_route(retired))
+        self.assertIsNone(
+            coordinator.commit_route(
+                retired, session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+
+    def test_failed_validation_releases_only_the_exact_presented_lease(self):
+        coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"),
+            self.harness.authority("compiled_ha_mcp_exact"),
+        )
+        first = coordinator.acquire_route(
+            "ha_get_state",
+            session_id="synthetic-session-ha-mcp-1",
+        )
+        second = coordinator.acquire_route(
+            "ha_search",
+            session_id="synthetic-session-ha-mcp-1",
+        )
+        self.assertIsNotNone(first)
+        self.assertIsNotNone(second)
+        self.assertNotEqual(first.lease_id, second.lease_id)
+
+        forged = replace(first, capability_id="ha_search")
+        self.assertFalse(
+            coordinator.validate_pre_dispatch(
+                forged,
+                session_id="synthetic-session-ha-mcp-1",
+            )
+        )
+        self.assertTrue(
+            coordinator.validate_pre_dispatch(
+                first,
+                session_id="synthetic-session-ha-mcp-1",
+            )
+        )
+        self.assertFalse(
+            coordinator.validate_pre_dispatch(
+                first,
+                session_id="synthetic-wrong-session",
+            )
+        )
+        self.assertFalse(
+            coordinator.validate_pre_dispatch(
+                first,
+                session_id="synthetic-session-ha-mcp-1",
+            )
+        )
+        self.assertTrue(
+            coordinator.validate_pre_dispatch(
+                second,
+                session_id="synthetic-session-ha-mcp-1",
+            )
+        )
+        self.assertEqual(
+            coordinator.health_projection()["issued_lease_count"],
+            1,
+        )
+
+    def test_lifecycle_capacity_refuses_cleanly_and_recovers_after_cleanup(self):
+        coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"),
+            self.harness.authority("compiled_ha_mcp_exact"),
+        )
+        leases = [
+            coordinator.acquire_route(
+                "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+            )
+            for _index in range(MAX_ISSUED_LEASES)
+        ]
+        self.assertIsNone(
+            coordinator.acquire_route(
+                "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+        health = coordinator.health_projection()
+        self.assertEqual(health["issued_lease_count"], MAX_ISSUED_LEASES)
+        self.assertEqual(
+            health["capacity_exhaustion_reason"],
+            "issued_lease_capacity_exhausted",
+        )
+        self.assertTrue(coordinator.release_route(leases[0]))
+        replacement = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        self.assertIsNotNone(replacement)
+
+        for lease in leases[1:] + [replacement]:
+            commit = coordinator.commit_route(
+                lease, session_id="synthetic-session-ha-mcp-1"
+            )
+            self.assertIsNotNone(commit)
+        waiting = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        self.assertIsNotNone(waiting)
+        self.assertIsNone(
+            coordinator.commit_route(
+                waiting, session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+        health = coordinator.health_projection()
+        self.assertEqual(health["active_commit_count"], MAX_ACTIVE_COMMITS)
+        self.assertEqual(
+            health["capacity_exhaustion_reason"],
+            "active_commit_capacity_exhausted",
+        )
+
+    def test_generation_capacity_exhaustion_preserves_published_authority(self):
+        coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+        first = coordinator.reconcile(
+            self.harness.observation("ha_mcp_exact"),
+            self.harness.authority("compiled_ha_mcp_exact"),
+        )
+        lease = coordinator.acquire_route(
+            "ha_get_state", session_id="synthetic-session-ha-mcp-1"
+        )
+        coordinator._next_generation = MAX_SAFE_INTEGER
+        with self.assertRaisesRegex(
+            CompatibilityModelError,
+            "generation_capacity_exhausted",
+        ):
+            coordinator.begin_reconciliation(
+                self.harness.observation("ha_mcp_compatible"),
+                self.harness.authority("signed_ha_mcp_compatible"),
+            )
+        self.assertEqual(
+            coordinator.generation_for(UpstreamSurface.HA_MCP),
+            first.generation,
+        )
+        self.assertTrue(
+            coordinator.validate_pre_dispatch(
+                lease, session_id="synthetic-session-ha-mcp-1"
+            )
+        )
+
 
 class BoundsProjectionAndInertnessTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1077,17 +1593,53 @@ class BoundsProjectionAndInertnessTests(unittest.TestCase):
             self.harness.observation("ha_mcp_exact"),
             self.harness.authority("compiled_ha_mcp_exact"),
         )
+        lease = coordinator.acquire_route(
+            "ha_get_state",
+            session_id="synthetic-session-ha-mcp-1",
+        )
+        self.assertIsNotNone(lease)
+        commit = coordinator.commit_route(
+            lease,
+            session_id="synthetic-session-ha-mcp-1",
+        )
+        self.assertIsNotNone(commit)
+        coordinator.reconcile(
+            self.harness.observation("ha_mcp_compatible"),
+            self.harness.authority("signed_ha_mcp_compatible"),
+        )
         health = coordinator.health_projection()
         audit = coordinator.audit_projection(result)
         for projection in (health, audit):
             encoded = canonical_json(projection)
             self.assertLessEqual(len(encoded), MAX_PROJECTION_BYTES)
             self.assertEqual(projection["fallback_count"], 0)
+            self.assertEqual(projection["issued_lease_count"], 0)
+            self.assertEqual(projection["active_commit_count"], 1)
+            self.assertLessEqual(
+                projection["retained_retirement_diagnostic_count"],
+                MAX_RETIREMENT_DIAGNOSTICS * len(UpstreamSurface),
+            )
+            self.assertEqual(projection["capacity_exhaustion_count"], 0)
+            self.assertIsNone(projection["capacity_exhaustion_reason"])
             text = encoded.decode("utf-8")
             self.assertNotIn("synthetic-session", text)
             self.assertNotIn("1.0.0-synthetic", text)
             self.assertNotIn("synthetic-ha-mcp", text)
             self.assertNotIn("ha_get_state", text)
+            for prohibited_key in (
+                '"catalog"',
+                '"credential"',
+                '"endpoint"',
+                '"exception"',
+                '"headers"',
+                '"identity"',
+                '"schema"',
+                '"session"',
+                '"signature"',
+                '"token"',
+            ):
+                self.assertNotIn(prohibited_key, text)
+        self.assertTrue(coordinator.finish_committed(commit))
 
     def test_reference_model_has_no_transport_subprocess_credentials_or_file_io(self):
         package = REFERENCE_MODEL
@@ -1234,12 +1786,16 @@ assert blocked == [], blocked
             "rollback",
             "replay",
             "tools.listchanged=true",
-            "same current generation and same session",
+            "same current generation",
+            "single-use",
+            "capacity exhaustion",
             "client/connector responsibility",
         ):
             self.assertIn(term, adr_lower)
         self.assertIn("executable reference model is intentionally non-authoritative", normalized_guide)
         self.assertIn("does not restore provider authority", normalized_guide)
+        self.assertIn("global registry refresh causes reevaluation", normalized_guide)
+        self.assertIn("duplicate commit is rejected", normalized_guide)
 
     def test_runtime_does_not_enable_tool_list_change_notifications(self):
         for path in RUNTIME.rglob("*.py"):

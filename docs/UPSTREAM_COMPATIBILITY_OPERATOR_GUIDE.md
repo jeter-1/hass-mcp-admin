@@ -369,20 +369,32 @@ guide; there is no reference-model configuration to enable.
 
 The deterministic compatibility contract harness treats Core, ha-mcp and
 configured transport as independent surfaces with separate published,
-verifying, and retired-generation lifecycles. Updating one surface cannot
-retire another surface's compatible route. Leases are surface-bound and a
-retired generation cannot start a new call. A successful reconnect restores
-only transport observation; it does not restore provider authority. Unknown
-Core versions may later regain only separately authorized structural read
-profiles, never template semantics, configuration semantics or governed writes
-by implication.
+verifying, and bounded retirement lifecycles. Effective authority is projected
+only to its owning surface. A global registry refresh causes reevaluation, not
+automatic retirement of every surface, and updating one surface cannot retire
+another surface's compatible route. Leases are surface-bound, exact,
+single-use values: one atomic commit consumes a lease, duplicate commit is
+rejected, and a retired generation cannot start a new call. Issued leases,
+active commits, counters, and retained retirement diagnostics have explicit
+bounds; exhaustion fails closed without changing unrelated authority. A
+successful reconnect restores only transport observation; it does not restore
+provider authority. Unknown Core versions may later regain only separately
+authorized structural read profiles, never template semantics, configuration
+semantics or governed writes by implication.
 
 The reference contract is capability-scoped, not version-tolerant. Signed data
 may select only binary-known profiles, adapters, and capability contracts.
 Unknown semantic behavior remains held, and action or write capabilities remain
 unreachable. Versioned multi-step vectors use literal inputs and expected
 results through an implementation-neutral adapter so a later production
-coordinator can replay them without importing the test implementation.
+coordinator can replay them without importing the test implementation. The
+shared vectors cover cross-surface authority isolation, disconnect and
+restoration, one-shot commit and retirement races, lifecycle capacity,
+registry limitations, every prohibited capability kind, and separate bounded
+sanitized health and audit projections. Those projections expose counts,
+dispositions, reason codes, generations, and fingerprints only; they do not
+expose leases, commits, sessions, endpoints, raw authority, catalogs, schemas,
+credentials, or exception text.
 
 Operational work is deferred: runtime coordination, observation wiring,
 signed-registry fetching/caching, ha-mcp and Core integration, proxy recovery,

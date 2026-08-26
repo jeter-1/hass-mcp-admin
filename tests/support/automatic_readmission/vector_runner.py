@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from threading import Barrier
 from typing import Any, Callable, Mapping, Protocol
 
 from .coordinator import CapabilityAdmissionCoordinator
 from .harness import OfflineUpdateHarness
 from .models import (
     AdmissionDisposition,
+    AuthorityBundle,
     CompatibilityModelError,
+    MAX_ACTIVE_COMMITS,
+    MAX_ISSUED_LEASES,
+    MAX_RETIREMENT_DIAGNOSTICS,
     UpstreamSurface,
     canonical_json,
     classify_registry_refresh,
@@ -126,6 +132,7 @@ class ReferenceContractAdapter:
         self._attempts: dict[str, Any] = {}
         self._leases: dict[str, Any] = {}
         self._commits: dict[str, Any] = {}
+        self._last_reconciliation: Any | None = None
 
     def execute(self, operation: str, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         handlers = {
@@ -135,10 +142,15 @@ class ReferenceContractAdapter:
             "acquire_lease": self._acquire,
             "validate_lease": self._validate,
             "commit_lease": self._commit,
+            "commit_lease_race": self._commit_race,
+            "release_lease": self._release,
             "finish_commit": self._finish,
             "registry_refresh": self._registry_refresh,
             "validate_fixture": self._validate_fixture,
             "health": self._health,
+            "audit": self._audit,
+            "reconcile_churn": self._reconcile_churn,
+            "probe_capability": self._probe_capability,
         }
         handler = handlers.get(operation)
         if handler is None:
@@ -150,12 +162,36 @@ class ReferenceContractAdapter:
         _apply_mutations(fixture, arguments.get("fixture_mutations", []))
         return OfflineUpdateHarness.from_mapping(fixture)
 
+    @staticmethod
+    def _authority(
+        harness: OfflineUpdateHarness,
+        arguments: Mapping[str, Any],
+    ) -> AuthorityBundle:
+        authority_ids = arguments.get("authority_ids")
+        if authority_ids is None:
+            return harness.authority(
+                _text(arguments.get("authority_id"), "vector_authority_invalid")
+            )
+        identifiers = _string_list(authority_ids, "vector_authorities_invalid")
+        if not identifiers:
+            raise CompatibilityModelError("vector_authorities_invalid")
+        bundles = tuple(harness.authority(identifier) for identifier in identifiers)
+        return AuthorityBundle(
+            evaluated_at_epoch=max(item.evaluated_at_epoch for item in bundles),
+            decisions=tuple(
+                decision
+                for bundle in bundles
+                for decision in bundle.decisions
+            ),
+        )
+
     def _reconcile(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         harness = self._harness(arguments)
         result = self._coordinator.reconcile(
             harness.observation(_text(arguments.get("observation_id"), "vector_observation_invalid")),
-            harness.authority(_text(arguments.get("authority_id"), "vector_authority_invalid")),
+            self._authority(harness, arguments),
         )
+        self._last_reconciliation = result
         return _normalized_reconciliation(result)
 
     def _begin(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -163,7 +199,7 @@ class ReferenceContractAdapter:
         attempt_id = _text(arguments.get("attempt_id"), "vector_attempt_invalid")
         attempt = self._coordinator.begin_reconciliation(
             harness.observation(_text(arguments.get("observation_id"), "vector_observation_invalid")),
-            harness.authority(_text(arguments.get("authority_id"), "vector_authority_invalid")),
+            self._authority(harness, arguments),
         )
         self._attempts[attempt_id] = attempt
         return {
@@ -179,9 +215,9 @@ class ReferenceContractAdapter:
         )
         if attempt is None:
             raise CompatibilityModelError("vector_attempt_unknown")
-        return _normalized_reconciliation(
-            self._coordinator.complete_reconciliation(attempt)
-        )
+        result = self._coordinator.complete_reconciliation(attempt)
+        self._last_reconciliation = result
+        return _normalized_reconciliation(result)
 
     def _acquire(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         lease_id = _text(arguments.get("lease_id"), "vector_lease_invalid")
@@ -224,6 +260,41 @@ class ReferenceContractAdapter:
             self._commits[lease_id] = commit
         return {"committed": commit is not None}
 
+    def _commit_race(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        lease_id = _text(arguments.get("lease_id"), "vector_lease_invalid")
+        lease = self._leases.get(lease_id)
+        session_id = _text(arguments.get("session_id"), "vector_session_invalid")
+        attempts = arguments.get("attempt_count", 2)
+        if type(attempts) is not int or attempts < 2 or attempts > 8:
+            raise CompatibilityModelError("vector_commit_race_count_invalid")
+        if lease is None:
+            return {"success_count": 0, "refused_count": attempts}
+        barrier = Barrier(attempts)
+
+        def commit_once():
+            barrier.wait()
+            return self._coordinator.commit_route(lease, session_id=session_id)
+
+        with ThreadPoolExecutor(max_workers=attempts) as executor:
+            futures = tuple(executor.submit(commit_once) for _index in range(attempts))
+            commits = tuple(item.result(timeout=5) for item in futures)
+        winner = next((item for item in commits if item is not None), None)
+        if winner is not None:
+            self._commits[lease_id] = winner
+        successes = sum(item is not None for item in commits)
+        return {
+            "success_count": successes,
+            "refused_count": attempts - successes,
+        }
+
+    def _release(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        lease = self._leases.get(
+            _text(arguments.get("lease_id"), "vector_lease_invalid")
+        )
+        return {
+            "released": bool(lease and self._coordinator.release_route(lease))
+        }
+
     def _finish(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
         lease_id = _text(arguments.get("lease_id"), "vector_lease_invalid")
         commit = self._commits.get(lease_id)
@@ -262,14 +333,173 @@ class ReferenceContractAdapter:
             raise CompatibilityModelError("vector_health_arguments_invalid")
         projection = self._coordinator.health_projection()
         encoded = canonical_json(projection)
-        sensitive_markers = (b"synthetic-session", b"Bearer", b"https://", b"token")
+        sensitive_markers = (
+            b"synthetic-session",
+            b"synthetic-ha-mcp",
+            b"1.0.0-synthetic",
+            b"Bearer",
+            b"https://",
+            b'"catalog"',
+            b'"credential"',
+            b'"endpoint"',
+            b'"exception"',
+            b'"headers"',
+            b'"identity"',
+            b'"registry"',
+            b'"schema"',
+            b'"session"',
+            b'"signature"',
+            b'"token"',
+        )
         return {
             "model_version": projection["model_version"],
             "surface_count": projection["surface_count"],
             "admitted_count": projection["admitted_count"],
             "fallback_count": projection["fallback_count"],
+            "issued_lease_count": projection["issued_lease_count"],
+            "active_commit_count": projection["active_commit_count"],
+            "retained_retirement_diagnostic_count": projection[
+                "retained_retirement_diagnostic_count"
+            ],
+            "capacity_exhaustion_count": projection["capacity_exhaustion_count"],
+            "capacity_exhaustion_reason": projection[
+                "capacity_exhaustion_reason"
+            ],
+            "issued_lease_capacity": MAX_ISSUED_LEASES,
+            "active_commit_capacity": MAX_ACTIVE_COMMITS,
+            "surface_generations": {
+                item["surface"]: item["generation"]
+                for item in projection["surfaces"]
+            },
             "bounded": len(encoded) <= 32_768,
-            "sensitive_material_present": any(item in encoded for item in sensitive_markers),
+            "sensitive_material_present": any(
+                item in encoded for item in sensitive_markers
+            ),
+        }
+
+    def _audit(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        if arguments:
+            raise CompatibilityModelError("vector_audit_arguments_invalid")
+        if self._last_reconciliation is None:
+            raise CompatibilityModelError("vector_audit_result_unavailable")
+        projection = self._coordinator.audit_projection(self._last_reconciliation)
+        encoded = canonical_json(projection)
+        sensitive_markers = (
+            b"synthetic-session",
+            b"synthetic-ha-mcp",
+            b"1.0.0-synthetic",
+            b"Bearer",
+            b"https://",
+            b'"catalog"',
+            b'"credential"',
+            b'"endpoint"',
+            b'"exception"',
+            b'"headers"',
+            b'"identity"',
+            b'"registry"',
+            b'"schema"',
+            b'"session"',
+            b'"signature"',
+            b'"token"',
+        )
+        return {
+            "model_version": projection["model_version"],
+            "event": projection["event"],
+            "reason_code": projection["reason_code"],
+            "fallback_count": projection["fallback_count"],
+            "issued_lease_count": projection["issued_lease_count"],
+            "active_commit_count": projection["active_commit_count"],
+            "retained_retirement_diagnostic_count": projection[
+                "retained_retirement_diagnostic_count"
+            ],
+            "capacity_exhaustion_count": projection["capacity_exhaustion_count"],
+            "capacity_exhaustion_reason": projection[
+                "capacity_exhaustion_reason"
+            ],
+            "bounded": len(encoded) <= 32_768,
+            "sensitive_material_present": any(
+                item in encoded for item in sensitive_markers
+            ),
+        }
+
+    def _reconcile_churn(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        cycles = _list(arguments.get("cycles"), "vector_churn_cycles_invalid", 8)
+        if not cycles:
+            raise CompatibilityModelError("vector_churn_cycles_invalid")
+        count = arguments.get("count")
+        if type(count) is not int or count < 1 or count > 128:
+            raise CompatibilityModelError("vector_churn_count_invalid")
+        final = None
+        for index in range(count):
+            cycle = _mapping(
+                cycles[index % len(cycles)],
+                "vector_churn_cycle_invalid",
+            )
+            harness = self._harness(cycle)
+            final = self._coordinator.reconcile(
+                harness.observation(
+                    _text(cycle.get("observation_id"), "vector_observation_invalid")
+                ),
+                self._authority(harness, cycle),
+            )
+        projection = self._coordinator.health_projection()
+        self._last_reconciliation = final
+        return {
+            "iteration_count": count,
+            "final_generation": (
+                final.generation.generation
+                if final is not None and final.generation is not None
+                else None
+            ),
+            "retained_retirement_diagnostic_count": projection[
+                "retained_retirement_diagnostic_count"
+            ],
+            "issued_lease_count": projection["issued_lease_count"],
+            "active_commit_count": projection["active_commit_count"],
+            "within_retirement_bound": projection[
+                "retained_retirement_diagnostic_count"
+            ] <= MAX_RETIREMENT_DIAGNOSTICS,
+        }
+
+    def _probe_capability(self, arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+        harness = self._harness(arguments)
+        observation = harness.observation(
+            _text(arguments.get("observation_id"), "vector_observation_invalid")
+        )
+        result = self._coordinator.reconcile(
+            observation,
+            self._authority(harness, arguments),
+        )
+        capability_id = _text(
+            arguments.get("capability_id"),
+            "vector_capability_invalid",
+        )
+        selected = (
+            result.generation.decision_for(capability_id)
+            if result.generation is not None
+            else None
+        )
+        lease = self._coordinator.acquire_route(
+            capability_id,
+            session_id=_text(arguments.get("session_id"), "vector_session_invalid"),
+        )
+        commit = (
+            self._coordinator.commit_route(
+                lease,
+                session_id=observation.session_id,
+            )
+            if lease is not None
+            else None
+        )
+        self._last_reconciliation = result
+        return {
+            "disposition": selected.disposition.value if selected else None,
+            "reason_code": selected.reason_code if selected else "decision_missing",
+            "adapter_present": bool(selected and selected.adapter_id),
+            "lease_granted": lease is not None,
+            "committed": commit is not None,
+            "fallback_count": 0,
+            "write_action_reachability": 0,
         }
 
 

@@ -19,6 +19,9 @@ MAX_OBSERVED_CAPABILITIES = 512
 MAX_AUTHORITY_DECISIONS = 256
 MAX_PROJECTION_BYTES = 32_768
 MAX_SAFE_INTEGER = (1 << 53) - 1
+MAX_ISSUED_LEASES = 8
+MAX_ACTIVE_COMMITS = 8
+MAX_RETIREMENT_DIAGNOSTICS = 8
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _REASON = re.compile(r"^[a-z][a-z0-9_]{0,95}$")
@@ -565,6 +568,31 @@ class AuthorityDecision:
             "expires_at_epoch": self.expires_at_epoch,
         }
 
+    def material_mapping(self, *, evaluated_at_epoch: int) -> dict[str, Any]:
+        """Return only fields capable of changing a capability decision."""
+
+        _bounded_int(evaluated_at_epoch, code="authority_time_invalid")
+        return {
+            "source": self.source.value,
+            "status": self.status.value,
+            "profile_id": self.profile_id,
+            "profile_version": self.profile_version,
+            "adapter_id": self.adapter_id,
+            "subject_identity": self.subject_identity,
+            "subject_version": self.subject_version,
+            "protocol_version": self.protocol_version,
+            "capability_ids": sorted(self.capability_ids),
+            "reason_code": self.reason_code,
+            "expired_at_evaluation": bool(
+                self.source is AuthoritySource.SIGNED_REGISTRY
+                and self.status is AuthorityStatus.POSITIVE
+                and (
+                    self.expires_at_epoch is None
+                    or self.expires_at_epoch <= evaluated_at_epoch
+                )
+            ),
+        }
+
 
 @dataclass(frozen=True)
 class AuthorityBundle:
@@ -589,18 +617,10 @@ class AuthorityBundle:
     def material_mapping(self) -> dict[str, Any]:
         """Return effective authority without non-material observation time."""
 
-        decisions = []
-        for item in self.decisions:
-            value = item.to_mapping()
-            value["expired_at_evaluation"] = bool(
-                item.source is AuthoritySource.SIGNED_REGISTRY
-                and item.status is AuthorityStatus.POSITIVE
-                and (
-                    item.expires_at_epoch is None
-                    or item.expires_at_epoch <= self.evaluated_at_epoch
-                )
-            )
-            decisions.append(value)
+        decisions = [
+            item.material_mapping(evaluated_at_epoch=self.evaluated_at_epoch)
+            for item in self.decisions
+        ]
         return {
             "model_version": MODEL_VERSION,
             "decisions": sorted(decisions, key=canonical_json),
