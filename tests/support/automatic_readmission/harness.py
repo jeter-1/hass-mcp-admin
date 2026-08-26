@@ -1,4 +1,4 @@
-"""Transport-free synthetic update harness for compatibility decisions."""
+"""Transport-free deterministic contract harness for the reference model."""
 
 from __future__ import annotations
 

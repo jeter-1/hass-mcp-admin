@@ -356,20 +356,28 @@ the only compiled generic release/profile authority. Other observed versions
 remain unavailable even when their self-advertised contracts match. Automatic
 no-rebuild admission for reviewed newer releases is deferred to Dev16.
 
-## Capability-scoped automatic-readmission foundation
+## Capability-scoped automatic-readmission reference model
 
 [ADR-020](architecture/ADR-020-CAPABILITY-SCOPED-AUTOMATIC-READMISSION.md)
-defines the offline decision and race model for a later capability-scoped
-readmission integration. The foundation is intentionally inert: production
-startup, routing, providers, health, tool registration and admission do not
-import it, so operators must continue to use the exact runtime compatibility
-checks in this guide.
+defines a test-only decision and race specification for a later
+capability-scoped readmission integration. The executable reference model is
+intentionally non-authoritative: production startup, routing, providers,
+health, tool registration and admission do not import or package it. It is not
+deployed functionality and cannot grant admission or execution authority.
+Operators must continue to use the exact runtime compatibility checks in this
+guide; there is no reference-model configuration to enable.
 
-The model treats Core, ha-mcp and configured transport as independent
+The deterministic compatibility contract harness treats Core, ha-mcp and
+configured transport as independent
 surfaces. A successful reconnect restores only transport observation; it does
 not restore provider authority. Unknown Core versions may later regain only
 separately authorized structural read profiles, never template semantics,
 configuration semantics or governed writes by implication.
+
+Operational work is deferred: runtime coordination, observation wiring,
+signed-registry fetching/caching, ha-mcp and Core integration, proxy recovery,
+dynamic client catalog refresh, release staging, deployment and runtime
+acceptance all require a new release and separate review.
 
 The current server does not advertise `tools.listChanged=true` and does not
 claim `notifications/tools/list_changed` delivery. Clients must reconnect or

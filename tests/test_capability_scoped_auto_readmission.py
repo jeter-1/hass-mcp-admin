@@ -4,7 +4,9 @@ import ast
 from copy import deepcopy
 from dataclasses import replace
 import json
+import os
 from pathlib import Path
+import subprocess
 import sys
 import unittest
 
@@ -12,10 +14,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 RUNTIME = BETA / "ha_mcp_engineering"
-FIXTURE = ROOT / "tests" / "fixtures" / "capability_readmission" / "foundation_v1.json"
-sys.path.insert(0, str(BETA))
+STABLE_RUNTIME = ROOT / "hass_mcp_admin"
+TESTS = ROOT / "tests"
+REFERENCE_MODEL = TESTS / "support" / "automatic_readmission"
+FIXTURE = TESTS / "fixtures" / "automatic_readmission" / "foundation_v1.json"
+VECTORS = TESTS / "fixtures" / "automatic_readmission" / "contract_vectors_v1.json"
+sys.path.insert(0, str(TESTS))
 
-from ha_mcp_engineering.compatibility import (  # noqa: E402
+from support.automatic_readmission import (  # noqa: E402
     AdmissionDisposition,
     AuthorityBundle,
     AuthorityDecision,
@@ -30,7 +36,7 @@ from ha_mcp_engineering.compatibility import (  # noqa: E402
     canonical_json,
     classify_registry_refresh,
 )
-from ha_mcp_engineering.compatibility.models import (  # noqa: E402
+from support.automatic_readmission.models import (  # noqa: E402
     MAX_AUTHORITY_DECISIONS,
     MAX_OBSERVED_CAPABILITIES,
     MAX_PROJECTION_BYTES,
@@ -39,6 +45,10 @@ from ha_mcp_engineering.compatibility.models import (  # noqa: E402
 
 def fixture_mapping() -> dict:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
+def vector_mapping() -> dict:
+    return json.loads(VECTORS.read_text(encoding="utf-8"))
 
 
 def decision(result, capability_id):
@@ -134,6 +144,249 @@ class HarnessContractTests(unittest.TestCase):
                     for index in range(MAX_OBSERVED_CAPABILITIES + 1)
                 ),
             )
+
+
+class ImplementationNeutralVectorTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.harness = OfflineUpdateHarness.from_mapping(fixture_mapping())
+        self.mapping = vector_mapping()
+
+    def test_vectors_are_data_only_complete_and_implementation_neutral(self):
+        self.assertEqual(
+            set(self.mapping),
+            {"schema_version", "foundation_fixture", "vectors"},
+        )
+        self.assertEqual(self.mapping["schema_version"], 1)
+        self.assertEqual(self.mapping["foundation_fixture"], FIXTURE.name)
+        self.assertGreaterEqual(len(self.mapping["vectors"]), 5)
+        ids = [item["vector_id"] for item in self.mapping["vectors"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        for vector in self.mapping["vectors"]:
+            self.assertEqual(
+                set(vector),
+                {
+                    "vector_id",
+                    "initial",
+                    "observation",
+                    "authority",
+                    "reconciliation_event",
+                    "expected",
+                },
+            )
+            self.assertEqual(
+                set(vector["initial"]),
+                {
+                    "generation",
+                    "scenario_id",
+                    "authority_set_id",
+                    "lease_capability_id",
+                },
+            )
+            self.assertEqual(
+                set(vector["observation"]),
+                {"scenario_id", "surface", "identity", "capability_contracts"},
+            )
+            self.assertEqual(
+                set(vector["authority"]),
+                {
+                    "authority_set_id",
+                    "evaluated_at_epoch",
+                    "registry_disposition",
+                    "registry_sequence",
+                    "registry_digest",
+                    "expires_at_epoch",
+                },
+            )
+            self.assertEqual(
+                set(vector["expected"]),
+                {
+                    "admitted_capabilities",
+                    "quarantined_capabilities",
+                    "unavailable_capabilities",
+                    "generation",
+                    "lease_behavior",
+                    "write_action_reachability",
+                    "health_projection",
+                    "audit_projection",
+                },
+            )
+            self.assertEqual(vector["expected"]["write_action_reachability"], 0)
+            self.assertIsInstance(vector["reconciliation_event"], str)
+            self.assertGreater(len(vector["reconciliation_event"]), 0)
+            self.assertLessEqual(len(vector["reconciliation_event"]), 128)
+
+        raw = VECTORS.read_text(encoding="utf-8")
+        for implementation_name in (
+            "CapabilityAdmissionCoordinator",
+            "AdmissionDisposition",
+            "OfflineUpdateHarness",
+            "support.automatic_readmission",
+        ):
+            self.assertNotIn(implementation_name, raw)
+
+    def test_contract_vectors_replay_with_literal_expected_outcomes(self):
+        for vector in self.mapping["vectors"]:
+            with self.subTest(vector=vector["vector_id"]):
+                coordinator = CapabilityAdmissionCoordinator(self.harness.profiles)
+                initial = vector["initial"]
+                initial_lease = None
+                if initial["generation"]:
+                    initial_observation = self.harness.observation(
+                        initial["scenario_id"]
+                    )
+                    initial_result = coordinator.reconcile(
+                        initial_observation,
+                        self.harness.authority(initial["authority_set_id"]),
+                    )
+                    self.assertEqual(
+                        initial_result.generation.generation,
+                        initial["generation"],
+                    )
+                    initial_lease = coordinator.acquire_route(
+                        initial["lease_capability_id"],
+                        session_id=initial_observation.session_id,
+                    )
+                    self.assertIsNotNone(initial_lease)
+
+                observed = self.harness.observation(
+                    vector["observation"]["scenario_id"]
+                )
+                observed_contracts = [
+                    item.to_mapping() for item in observed.capabilities
+                ]
+                self.assertEqual(observed.surface.value, vector["observation"]["surface"])
+                self.assertEqual(observed.identity, vector["observation"]["identity"])
+                self.assertEqual(
+                    observed_contracts,
+                    vector["observation"]["capability_contracts"],
+                )
+
+                authority = self.harness.authority(
+                    vector["authority"]["authority_set_id"]
+                )
+                self.assertEqual(
+                    authority.evaluated_at_epoch,
+                    vector["authority"]["evaluated_at_epoch"],
+                )
+                registry_decisions = [
+                    item
+                    for item in authority.decisions
+                    if item.source is AuthoritySource.SIGNED_REGISTRY
+                ]
+                if vector["authority"]["registry_disposition"] == "positive":
+                    self.assertTrue(registry_decisions)
+                    self.assertEqual(
+                        {item.status.value for item in registry_decisions},
+                        {"positive"},
+                    )
+                    self.assertEqual(
+                        {item.registry_sequence for item in registry_decisions},
+                        {vector["authority"]["registry_sequence"]},
+                    )
+                    self.assertEqual(
+                        {item.registry_digest for item in registry_decisions},
+                        {vector["authority"]["registry_digest"]},
+                    )
+                    self.assertEqual(
+                        {item.expires_at_epoch for item in registry_decisions},
+                        {vector["authority"]["expires_at_epoch"]},
+                    )
+                else:
+                    self.assertEqual(registry_decisions, [])
+
+                if initial_lease is None:
+                    result = coordinator.reconcile(observed, authority)
+                    retired_initial_lease_valid = None
+                else:
+                    attempt = coordinator.begin_reconciliation(observed, authority)
+                    retired_initial_lease_valid = coordinator.validate_pre_dispatch(
+                        initial_lease,
+                        session_id=self.harness.observation(
+                            initial["scenario_id"]
+                        ).session_id,
+                    )
+                    result = coordinator.complete_reconciliation(attempt)
+
+                expected = vector["expected"]
+                decisions = result.generation.decisions
+                admitted = sorted(
+                    item.capability_id
+                    for item in decisions
+                    if item.disposition.admitted
+                )
+                quarantined = [
+                    {
+                        "capability_id": item.capability_id,
+                        "reason_code": item.reason_code,
+                    }
+                    for item in decisions
+                    if item.disposition is AdmissionDisposition.QUARANTINED
+                ]
+                unavailable = [
+                    {
+                        "capability_id": item.capability_id,
+                        "reason_code": item.reason_code,
+                    }
+                    for item in decisions
+                    if item.disposition is AdmissionDisposition.UNAVAILABLE
+                ]
+                self.assertEqual(admitted, expected["admitted_capabilities"])
+                self.assertEqual(quarantined, expected["quarantined_capabilities"])
+                self.assertEqual(unavailable, expected["unavailable_capabilities"])
+                self.assertEqual(result.generation.generation, expected["generation"])
+                self.assertEqual(
+                    retired_initial_lease_valid,
+                    expected["lease_behavior"]["retired_initial_lease_valid"],
+                )
+
+                lease_capability = admitted[0] if admitted else "synthetic_unavailable"
+                new_lease = coordinator.acquire_route(
+                    lease_capability,
+                    session_id=observed.session_id,
+                )
+                self.assertEqual(
+                    new_lease is not None,
+                    expected["lease_behavior"]["new_read_lease_available"],
+                )
+                reachable_writes = sum(
+                    coordinator.acquire_route(
+                        item["capability_id"], session_id=observed.session_id
+                    )
+                    is not None
+                    for item in expected["quarantined_capabilities"]
+                    if item["reason_code"] == "write_capability_prohibited"
+                )
+                self.assertEqual(
+                    reachable_writes,
+                    expected["write_action_reachability"],
+                )
+                self.assertEqual(
+                    coordinator.health_projection(),
+                    expected["health_projection"],
+                )
+                self.assertEqual(
+                    coordinator.audit_projection(result),
+                    expected["audit_projection"],
+                )
+
+    def test_fixture_rendering_is_byte_identical_across_two_generations(self):
+        def render(value: dict) -> bytes:
+            return (
+                json.dumps(
+                    value,
+                    sort_keys=True,
+                    indent=2,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+
+        for path in (FIXTURE, VECTORS):
+            with self.subTest(path=path.name):
+                first = render(json.loads(path.read_text(encoding="utf-8")))
+                second = render(json.loads(first.decode("utf-8")))
+                self.assertEqual(first, second)
 
 
 class AuthorityAndAdmissionTests(unittest.TestCase):
@@ -743,17 +996,20 @@ class BoundsProjectionAndInertnessTests(unittest.TestCase):
             self.assertNotIn("synthetic-ha-mcp", text)
             self.assertNotIn("ha_get_state", text)
 
-    def test_new_package_has_no_transport_subprocess_credentials_or_file_io(self):
-        package = RUNTIME / "compatibility"
+    def test_reference_model_has_no_transport_subprocess_credentials_or_file_io(self):
+        package = REFERENCE_MODEL
         prohibited_imports = {
             "aiohttp",
             "httpx",
+            "mcp",
+            "os",
+            "pathlib",
             "requests",
+            "shutil",
             "socket",
             "subprocess",
             "urllib",
             "websockets",
-            "mcp",
         }
         for path in package.glob("*.py"):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -763,43 +1019,104 @@ class BoundsProjectionAndInertnessTests(unittest.TestCase):
                     self.assertFalse(roots & prohibited_imports, path)
                 elif isinstance(node, ast.ImportFrom) and node.module:
                     self.assertNotIn(node.module.split(".", 1)[0], prohibited_imports)
-                elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-                    self.assertNotIn(node.func.id, {"open", "exec", "eval", "compile"})
-
-    def test_new_package_is_unreferenced_by_production_runtime(self):
-        package = RUNTIME / "compatibility"
-        for path in RUNTIME.rglob("*.py"):
-            if package in path.parents:
-                continue
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            for node in ast.walk(tree):
-                if isinstance(node, ast.Import):
-                    for alias in node.names:
-                        self.assertFalse(
-                            alias.name == "ha_mcp_engineering.compatibility"
-                            or alias.name.startswith("ha_mcp_engineering.compatibility."),
+                elif isinstance(node, ast.Call):
+                    if isinstance(node.func, ast.Name):
+                        self.assertNotIn(
+                            node.func.id,
+                            {"open", "exec", "eval", "compile", "getenv"},
                             path,
                         )
-                elif isinstance(node, ast.ImportFrom):
-                    module = node.module or ""
-                    package_parts = ["ha_mcp_engineering"] + list(
-                        path.parent.relative_to(RUNTIME).parts
-                    )
-                    if node.level:
-                        keep = len(package_parts) - (node.level - 1)
-                        resolved_parts = package_parts[:keep]
-                        if module:
-                            resolved_parts.extend(module.split("."))
-                        resolved_module = ".".join(resolved_parts)
-                    else:
-                        resolved_module = module
-                    self.assertFalse(
-                        resolved_module == "ha_mcp_engineering.compatibility"
-                        or resolved_module.startswith(
-                            "ha_mcp_engineering.compatibility."
-                        ),
-                        path,
-                    )
+                    elif isinstance(node.func, ast.Attribute):
+                        self.assertNotIn(
+                            node.func.attr,
+                            {
+                                "connect",
+                                "dispatch",
+                                "getenv",
+                                "open",
+                                "register_tool",
+                                "run",
+                                "send",
+                                "write",
+                                "write_bytes",
+                                "write_text",
+                            },
+                            path,
+                        )
+
+    def test_reference_model_is_unreferenced_by_production_runtime(self):
+        forbidden_modules = (
+            "support.automatic_readmission",
+            "tests.support.automatic_readmission",
+        )
+        for production_root in (RUNTIME, STABLE_RUNTIME):
+            for path in production_root.rglob("*.py"):
+                tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for alias in node.names:
+                            self.assertFalse(any(
+                                alias.name == module
+                                or alias.name.startswith(module + ".")
+                                for module in forbidden_modules
+                            ), path)
+                    elif isinstance(node, ast.ImportFrom):
+                        module = node.module or ""
+                        self.assertFalse(any(
+                            module == forbidden
+                            or module.startswith(forbidden + ".")
+                            for forbidden in forbidden_modules
+                        ), path)
+                text = path.read_text(encoding="utf-8")
+                self.assertNotIn("automatic_readmission", text, path)
+                self.assertNotIn("OfflineUpdateHarness", text, path)
+                self.assertNotIn("CapabilityAdmissionCoordinator", text, path)
+
+    def test_runtime_export_and_import_surface_excludes_reference_model(self):
+        script = """
+import sys
+import ha_mcp_engineering
+assert not hasattr(ha_mcp_engineering, 'CapabilityAdmissionCoordinator')
+assert not hasattr(ha_mcp_engineering, 'OfflineUpdateHarness')
+blocked = [name for name in sys.modules if name.startswith(('support.automatic_readmission', 'tests.support.automatic_readmission'))]
+assert blocked == [], blocked
+"""
+        environment = {
+            "PATH": os.environ.get("PATH", ""),
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(BETA),
+        }
+        completed = subprocess.run(
+            [sys.executable, "-c", script],
+            cwd=ROOT,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        self.assertEqual(
+            completed.returncode,
+            0,
+            (completed.stdout + completed.stderr)[:1000],
+        )
+
+    def test_production_artifact_context_excludes_reference_model(self):
+        dockerfile = (BETA / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("COPY ha_mcp_engineering ./ha_mcp_engineering", dockerfile)
+        self.assertNotIn("tests", dockerfile)
+        self.assertNotIn("automatic_readmission", dockerfile)
+        self.assertFalse(any((RUNTIME / "compatibility").glob("*.py")))
+        dockerignore = (BETA / ".dockerignore").read_text(encoding="utf-8")
+        self.assertIn("__pycache__/", dockerignore)
+        self.assertIn("*.py[cod]", dockerignore)
+        self.assertTrue(REFERENCE_MODEL.is_dir())
+        runtime_paths = {
+            path.relative_to(BETA).as_posix()
+            for path in BETA.rglob("*")
+            if path.is_file()
+        }
+        self.assertFalse(any("automatic_readmission" in path for path in runtime_paths))
 
     def test_adr_and_operator_contract_cover_required_inert_boundaries(self):
         adr = (
@@ -828,7 +1145,7 @@ class BoundsProjectionAndInertnessTests(unittest.TestCase):
             "client/connector responsibility",
         ):
             self.assertIn(term, adr_lower)
-        self.assertIn("foundation is intentionally inert", normalized_guide)
+        self.assertIn("executable reference model is intentionally non-authoritative", normalized_guide)
         self.assertIn("does not restore provider authority", normalized_guide)
 
     def test_runtime_does_not_enable_tool_list_change_notifications(self):

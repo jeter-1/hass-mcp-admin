@@ -1,4 +1,4 @@
-"""Inert, two-phase coordinator for capability-scoped readmission decisions."""
+"""Non-authoritative state model for capability-scoped readmission decisions."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class ReconciliationAttempt:
 
 
 class CapabilityAdmissionCoordinator:
-    """Pure in-memory state machine; it performs no observation or dispatch I/O."""
+    """Executable specification with no production authority or dispatch I/O."""
 
     def __init__(self, profiles: tuple[CapabilityProfile, ...]):
         if not profiles or len(profiles) > MAX_PROFILES:

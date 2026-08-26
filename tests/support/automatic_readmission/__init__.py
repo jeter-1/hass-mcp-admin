@@ -1,7 +1,8 @@
-"""Inert capability-scoped automatic-readmission foundation.
+"""Non-authoritative capability-scoped automatic-readmission reference model.
 
-Nothing in this package is imported by production startup, routing, providers,
-tool registration, health publication, or admission code in this release.
+This test-support package is an executable compatibility specification. It is
+not imported by production startup, routing, providers, tool registration,
+health publication, or admission code and cannot grant runtime authority.
 """
 
 from .coordinator import CapabilityAdmissionCoordinator, ReconciliationAttempt

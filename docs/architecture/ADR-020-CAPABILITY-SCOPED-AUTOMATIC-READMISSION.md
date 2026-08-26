@@ -1,7 +1,7 @@
 # ADR-020: Capability-scoped automatic-readmission foundation
 
-Status: accepted as an inert architecture and test foundation; not integrated
-with production admission
+Status: accepted as a test-only executable specification; non-authoritative and
+not integrated with production admission
 
 ## Context
 
@@ -12,9 +12,12 @@ until another Engineering release is built. The long-term product requirement
 is to retire stale authority after an update and restore only capabilities that
 can be matched to trusted, binary-known contracts.
 
-This decision establishes the reusable decision model. It deliberately does
-not import the new package from startup, routing, providers, tool registration,
-health publication, or admission code. It changes no current runtime behavior.
+This decision establishes a reusable executable reference model and
+implementation-neutral compatibility vectors. The model lives only under
+`tests/support/automatic_readmission/`. It is excluded from the packaged
+Engineering runtime and is not imported from startup, routing, providers, tool
+registration, health publication, or admission code. It changes no current
+runtime behavior and cannot grant admission or execution authority.
 
 ADR-010 is already assigned to knowledge-source provenance, so this decision
 uses the next available architecture number, ADR-020.
@@ -31,10 +34,20 @@ observe change
   -> publish an atomic exact, compatible, partial, quarantined or unavailable set
 ```
 
-The first implementation is the inert
-`ha_mcp_engineering.compatibility` package and a transport-free synthetic
-harness. It has no network, credential, filesystem, provider-call, MCP-client,
-or dispatch behavior.
+The executable specification is the non-authoritative
+`tests.support.automatic_readmission` test-support package and a transport-free
+synthetic harness. It has no network, credential, environment-authority,
+filesystem-write, provider-call, registry-fetch, MCP-client, registration, or
+dispatch behavior. The production package and image do not contain it.
+
+The vectors in
+`tests/fixtures/automatic_readmission/contract_vectors_v1.json` are data
+separate from the reference-model implementation. They
+state initial authority and generation, observations, capability contracts,
+registry disposition and time inputs, reconciliation events, admitted and
+quarantined outcomes, generation and lease behavior, sanitized health/audit
+projections, and zero write/action reachability. A later production adapter can
+replay the same vectors without importing or copying the reference model.
 
 ### Independently governed surfaces
 
@@ -140,8 +153,8 @@ dispatch. A call committed after validation may finish, but completion has no
 authority to publish or revive a route. A late verification result cannot
 replace a newer generation.
 
-The foundation models these transitions only. It contains no real call or
-dispatch method.
+The reference model specifies these transitions only. It contains no real call,
+provider dispatch, or production route-publication method.
 
 ### Catalog publication and clients
 
@@ -159,7 +172,7 @@ after atomic publication.
 
 ### Health and audit evidence
 
-The inert projections contain only:
+The reference projections contain only:
 
 - model and generation numbers;
 - surface and disposition;
@@ -212,23 +225,51 @@ tools and independent compatible capabilities while withholding unknown or
 changed contracts. It also creates an explicit verification gap during which
 the changed upstream surface has no route.
 
-This PR provides design and deterministic evidence only. The advertised and
-staged Engineering versions, public schemas, tool registration, routing,
-providers, fallback and stable v1 remain unchanged.
+This PR provides an executable reference model, deterministic compatibility
+vectors, and contract evidence only. It provides no deployed capability. The
+advertised and staged Engineering versions, public schemas, tool registration,
+routing, providers, fallback and stable v1 remain unchanged.
 
-## Follow-on sequence
+## Implemented now
 
-1. Integrate ha-mcp read-only automatic readmission with the existing signed
-   registry and gateway, retaining per-tool quarantine and zero fallback.
-2. Integrate Core ordinary-read profiles separately from semantic and write
-   profiles.
-3. Implement only the transport-recovery behavior proven to belong inside
-   Engineering after topology review.
-4. Review tool-list notifications independently if pinned SDK, protocol and
-   client behavior are proven.
+- a test-only executable specification;
+- synthetic implementation-neutral compatibility vectors;
+- a deterministic authority, generation, lease and reconciliation model;
+- bounded sanitized reference health and audit projections; and
+- tests proving zero runtime import, packaging, provider, registration, write,
+  action, fallback and dispatch reachability.
 
-Each follow-on requires separate source review and must retain the generation,
-lease, revocation and bounded-evidence contracts defined here.
+None of this is initialized at startup or connected to a provider, gateway,
+MCP server, registry fetcher, credential source, live upstream, or runtime
+state.
+
+## Deferred operational work
+
+- a production runtime coordinator;
+- upstream identity and capability observation wiring;
+- signed-registry fetching, verification and caching;
+- ha-mcp gateway integration;
+- Home Assistant Core compatibility integration;
+- proxy transport recovery;
+- dynamic client catalog refresh and notification review;
+- release staging, deployment, and runtime acceptance.
+
+## First operational follow-on
+
+The first PR that implements operational readmission must:
+
+1. baseline against then-current `main`;
+2. implement or move the reviewed behavior into Engineering runtime rather than
+   importing test support;
+3. connect it to exactly one bounded production surface;
+4. replay these same implementation-neutral contract vectors through a
+   production adapter without rewriting expected outcomes;
+5. stage a new Engineering release; and
+6. receive separate security and provider-boundary review.
+
+Later Core, transport, registry, gateway and client-catalog work remains
+separate. Every operational follow-on must retain the generation, lease,
+revocation, zero-write and bounded-evidence contracts defined here.
 
 ## References
 

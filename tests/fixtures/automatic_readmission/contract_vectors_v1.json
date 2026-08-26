@@ -1,0 +1,401 @@
+{
+  "schema_version": 1,
+  "foundation_fixture": "foundation_v1.json",
+  "vectors": [
+    {
+      "vector_id": "compiled_exact_read_and_write_quarantine",
+      "initial": {
+        "generation": 0,
+        "scenario_id": null,
+        "authority_set_id": null,
+        "lease_capability_id": null
+      },
+      "observation": {
+        "scenario_id": "ha_mcp_exact",
+        "surface": "ha_mcp",
+        "identity": "synthetic-ha-mcp",
+        "capability_contracts": [
+          {
+            "capability_id": "ha_get_state",
+            "kind": "ordinary_read",
+            "contract_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "capability_id": "ha_search",
+            "kind": "ordinary_read",
+            "contract_fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "capability_id": "ha_call_service",
+            "kind": "governed_write",
+            "contract_fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        ]
+      },
+      "authority": {
+        "authority_set_id": "compiled_ha_mcp_exact",
+        "evaluated_at_epoch": 1800000000,
+        "registry_disposition": "not_applicable",
+        "registry_sequence": null,
+        "registry_digest": null,
+        "expires_at_epoch": null
+      },
+      "reconciliation_event": "observe_and_reconcile",
+      "expected": {
+        "admitted_capabilities": ["ha_get_state", "ha_search"],
+        "quarantined_capabilities": [
+          {
+            "capability_id": "ha_call_service",
+            "reason_code": "write_capability_prohibited"
+          }
+        ],
+        "unavailable_capabilities": [],
+        "generation": 1,
+        "lease_behavior": {
+          "retired_initial_lease_valid": null,
+          "new_read_lease_available": true
+        },
+        "write_action_reachability": 0,
+        "health_projection": {
+          "model_version": 1,
+          "surface": "ha_mcp",
+          "disposition": "admitted_exact",
+          "generation": 1,
+          "decision_fingerprint": "sha256:8b73a2e92d949678007cbd46f2535d98fe7f4a1b0128b90a7feba6f3578e42de",
+          "observation_fingerprint": "sha256:45db9226b593e92e77eddd0b4f8ce573e04ec468ac4e2be80fe39cc559f91ff8",
+          "authority_fingerprint": "sha256:88db07f8b995e5bdf7cfc982144554948d958a57745b642495c67b1acbe66fd3",
+          "profile_registry_fingerprint": "sha256:4e1b1923bd51c1a8807d548aedee4e1adf66e47f999bac62f38651ebe0650a6e",
+          "admitted_count": 2,
+          "quarantined_count": 1,
+          "unavailable_count": 0,
+          "reason_counts": [
+            {"reason_code": "compiled_exact_contract_matched", "count": 2},
+            {"reason_code": "write_capability_prohibited", "count": 1}
+          ],
+          "fallback_count": 0
+        },
+        "audit_projection": {
+          "model_version": 1,
+          "event": "capability_reconciliation",
+          "disposition": "admitted_exact",
+          "published": true,
+          "idempotent": false,
+          "reason_code": "verification_complete",
+          "retired_generation": null,
+          "events": [
+            "generation_created",
+            "verification_started",
+            "verification_completed",
+            "generation_published"
+          ],
+          "fallback_count": 0,
+          "generation": 1,
+          "surface": "ha_mcp",
+          "decision_fingerprint": "sha256:8b73a2e92d949678007cbd46f2535d98fe7f4a1b0128b90a7feba6f3578e42de",
+          "admitted_count": 2,
+          "decision_count": 3
+        }
+      }
+    },
+    {
+      "vector_id": "identity_change_retires_generation_and_uses_signed_read_authority",
+      "initial": {
+        "generation": 1,
+        "scenario_id": "ha_mcp_exact",
+        "authority_set_id": "compiled_ha_mcp_exact",
+        "lease_capability_id": "ha_get_state"
+      },
+      "observation": {
+        "scenario_id": "ha_mcp_compatible",
+        "surface": "ha_mcp",
+        "identity": "synthetic-ha-mcp",
+        "capability_contracts": [
+          {
+            "capability_id": "ha_get_state",
+            "kind": "ordinary_read",
+            "contract_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          {
+            "capability_id": "ha_search",
+            "kind": "ordinary_read",
+            "contract_fingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "capability_id": "ha_call_service",
+            "kind": "governed_write",
+            "contract_fingerprint": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+          }
+        ]
+      },
+      "authority": {
+        "authority_set_id": "signed_ha_mcp_compatible",
+        "evaluated_at_epoch": 1800000000,
+        "registry_disposition": "positive",
+        "registry_sequence": 12,
+        "registry_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expires_at_epoch": 1900000000
+      },
+      "reconciliation_event": "observed_identity_change",
+      "expected": {
+        "admitted_capabilities": ["ha_get_state", "ha_search"],
+        "quarantined_capabilities": [
+          {
+            "capability_id": "ha_call_service",
+            "reason_code": "write_capability_prohibited"
+          }
+        ],
+        "unavailable_capabilities": [],
+        "generation": 2,
+        "lease_behavior": {
+          "retired_initial_lease_valid": false,
+          "new_read_lease_available": true
+        },
+        "write_action_reachability": 0,
+        "health_projection": {
+          "model_version": 1,
+          "surface": "ha_mcp",
+          "disposition": "admitted_compatible",
+          "generation": 2,
+          "decision_fingerprint": "sha256:537cc44b588a8f74cade33564e6fff8648b1b5903bb2b6e66d6b44831493d4e1",
+          "observation_fingerprint": "sha256:bed5fc6d3b9bba4861380b9698f8b0840bc7676eb353e6b6c409936c4871dab1",
+          "authority_fingerprint": "sha256:5c9080627ae83b9ea436b212ed622ab5b934ef86886c12364959740e0ce95397",
+          "profile_registry_fingerprint": "sha256:4e1b1923bd51c1a8807d548aedee4e1adf66e47f999bac62f38651ebe0650a6e",
+          "admitted_count": 2,
+          "quarantined_count": 1,
+          "unavailable_count": 0,
+          "reason_counts": [
+            {"reason_code": "signed_compatible_contract_matched", "count": 2},
+            {"reason_code": "write_capability_prohibited", "count": 1}
+          ],
+          "fallback_count": 0
+        },
+        "audit_projection": {
+          "model_version": 1,
+          "event": "capability_reconciliation",
+          "disposition": "admitted_compatible",
+          "published": true,
+          "idempotent": false,
+          "reason_code": "verification_complete",
+          "retired_generation": 1,
+          "events": [
+            "generation_retired",
+            "generation_created",
+            "verification_started",
+            "verification_completed",
+            "generation_published"
+          ],
+          "fallback_count": 0,
+          "generation": 2,
+          "surface": "ha_mcp",
+          "decision_fingerprint": "sha256:537cc44b588a8f74cade33564e6fff8648b1b5903bb2b6e66d6b44831493d4e1",
+          "admitted_count": 2,
+          "decision_count": 3
+        }
+      }
+    },
+    {
+      "vector_id": "unknown_core_partially_admits_only_structural_reads",
+      "initial": {
+        "generation": 0,
+        "scenario_id": null,
+        "authority_set_id": null,
+        "lease_capability_id": null
+      },
+      "observation": {
+        "scenario_id": "core_unknown_compatible",
+        "surface": "home_assistant_core",
+        "identity": "home-assistant-core",
+        "capability_contracts": [
+          {"capability_id": "core.states_read", "kind": "ordinary_read", "contract_fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"},
+          {"capability_id": "core.entity_registry_read", "kind": "registry_read", "contract_fingerprint": "sha256:5555555555555555555555555555555555555555555555555555555555555555"},
+          {"capability_id": "core.template_semantics", "kind": "template_semantics", "contract_fingerprint": "sha256:6666666666666666666666666666666666666666666666666666666666666666"},
+          {"capability_id": "core.configuration_semantics", "kind": "configuration_semantics", "contract_fingerprint": "sha256:7777777777777777777777777777777777777777777777777777777777777777"},
+          {"capability_id": "core.helper_write", "kind": "governed_write", "contract_fingerprint": "sha256:8888888888888888888888888888888888888888888888888888888888888888"}
+        ]
+      },
+      "authority": {
+        "authority_set_id": "signed_core_ordinary_only",
+        "evaluated_at_epoch": 1800000000,
+        "registry_disposition": "positive",
+        "registry_sequence": 4,
+        "registry_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expires_at_epoch": 1900000000
+      },
+      "reconciliation_event": "observe_and_reconcile",
+      "expected": {
+        "admitted_capabilities": ["core.entity_registry_read", "core.states_read"],
+        "quarantined_capabilities": [{"capability_id": "core.helper_write", "reason_code": "write_capability_prohibited"}],
+        "unavailable_capabilities": [
+          {"capability_id": "core.configuration_semantics", "reason_code": "positive_authority_missing"},
+          {"capability_id": "core.template_semantics", "reason_code": "positive_authority_missing"}
+        ],
+        "generation": 1,
+        "lease_behavior": {"retired_initial_lease_valid": null, "new_read_lease_available": true},
+        "write_action_reachability": 0,
+        "health_projection": {
+          "model_version": 1,
+          "surface": "home_assistant_core",
+          "disposition": "partial",
+          "generation": 1,
+          "decision_fingerprint": "sha256:079e521326a79d5fc664f03cf66e7c6b8350d7b4de6d2aa117869527c912a9fd",
+          "observation_fingerprint": "sha256:6688b3763d538250e7b9529807766d3833e710cef207604c75e336ef9942e62a",
+          "authority_fingerprint": "sha256:8dac9831b82e1d9464ee6af39fb222dae4d15ca4f582dbec10c79f2c5dffbd03",
+          "profile_registry_fingerprint": "sha256:4e1b1923bd51c1a8807d548aedee4e1adf66e47f999bac62f38651ebe0650a6e",
+          "admitted_count": 2,
+          "quarantined_count": 1,
+          "unavailable_count": 2,
+          "reason_counts": [
+            {"reason_code": "positive_authority_missing", "count": 2},
+            {"reason_code": "signed_compatible_contract_matched", "count": 2},
+            {"reason_code": "write_capability_prohibited", "count": 1}
+          ],
+          "fallback_count": 0
+        },
+        "audit_projection": {
+          "model_version": 1,
+          "event": "capability_reconciliation",
+          "disposition": "partial",
+          "published": true,
+          "idempotent": false,
+          "reason_code": "verification_complete",
+          "retired_generation": null,
+          "events": ["generation_created", "verification_started", "verification_completed", "generation_published"],
+          "fallback_count": 0,
+          "generation": 1,
+          "surface": "home_assistant_core",
+          "decision_fingerprint": "sha256:079e521326a79d5fc664f03cf66e7c6b8350d7b4de6d2aa117869527c912a9fd",
+          "admitted_count": 2,
+          "decision_count": 5
+        }
+      }
+    },
+    {
+      "vector_id": "core_identity_channels_disagree_and_fail_closed",
+      "initial": {"generation": 0, "scenario_id": null, "authority_set_id": null, "lease_capability_id": null},
+      "observation": {
+        "scenario_id": "core_version_disagreement",
+        "surface": "home_assistant_core",
+        "identity": "home-assistant-core",
+        "capability_contracts": [
+          {"capability_id": "core.states_read", "kind": "ordinary_read", "contract_fingerprint": "sha256:4444444444444444444444444444444444444444444444444444444444444444"}
+        ]
+      },
+      "authority": {
+        "authority_set_id": "signed_core_ordinary_only",
+        "evaluated_at_epoch": 1800000000,
+        "registry_disposition": "positive",
+        "registry_sequence": 4,
+        "registry_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expires_at_epoch": 1900000000
+      },
+      "reconciliation_event": "identity_disagreement_observed",
+      "expected": {
+        "admitted_capabilities": [],
+        "quarantined_capabilities": [{"capability_id": "core.helper_write", "reason_code": "write_capability_prohibited"}],
+        "unavailable_capabilities": [
+          {"capability_id": "core.configuration_semantics", "reason_code": "core_version_disagreement"},
+          {"capability_id": "core.entity_registry_read", "reason_code": "core_version_disagreement"},
+          {"capability_id": "core.states_read", "reason_code": "core_version_disagreement"},
+          {"capability_id": "core.template_semantics", "reason_code": "core_version_disagreement"}
+        ],
+        "generation": 1,
+        "lease_behavior": {"retired_initial_lease_valid": null, "new_read_lease_available": false},
+        "write_action_reachability": 0,
+        "health_projection": {
+          "model_version": 1,
+          "surface": "home_assistant_core",
+          "disposition": "unavailable",
+          "generation": 1,
+          "decision_fingerprint": "sha256:3d6fc32a1da04c5ad0e372c09c7f37042fe2c1d85a9a0457ad0eb7248f50f7fd",
+          "observation_fingerprint": "sha256:d24cbe8f84429d8b686ce01a8d757111157976abecf8ad6bf4e3d8e705abb7c6",
+          "authority_fingerprint": "sha256:8dac9831b82e1d9464ee6af39fb222dae4d15ca4f582dbec10c79f2c5dffbd03",
+          "profile_registry_fingerprint": "sha256:4e1b1923bd51c1a8807d548aedee4e1adf66e47f999bac62f38651ebe0650a6e",
+          "admitted_count": 0,
+          "quarantined_count": 1,
+          "unavailable_count": 4,
+          "reason_counts": [
+            {"reason_code": "core_version_disagreement", "count": 4},
+            {"reason_code": "write_capability_prohibited", "count": 1}
+          ],
+          "fallback_count": 0
+        },
+        "audit_projection": {
+          "model_version": 1,
+          "event": "capability_reconciliation",
+          "disposition": "unavailable",
+          "published": true,
+          "idempotent": false,
+          "reason_code": "verification_complete",
+          "retired_generation": null,
+          "events": ["generation_created", "verification_started", "verification_completed", "generation_published"],
+          "fallback_count": 0,
+          "generation": 1,
+          "surface": "home_assistant_core",
+          "decision_fingerprint": "sha256:3d6fc32a1da04c5ad0e372c09c7f37042fe2c1d85a9a0457ad0eb7248f50f7fd",
+          "admitted_count": 0,
+          "decision_count": 5
+        }
+      }
+    },
+    {
+      "vector_id": "transport_recovery_does_not_create_provider_authority",
+      "initial": {"generation": 0, "scenario_id": null, "authority_set_id": null, "lease_capability_id": null},
+      "observation": {
+        "scenario_id": "transport_restored",
+        "surface": "configured_transport",
+        "identity": "configured-streamable-http",
+        "capability_contracts": [
+          {"capability_id": "transport.streamable_http", "kind": "transport", "contract_fingerprint": "sha256:9999999999999999999999999999999999999999999999999999999999999999"}
+        ]
+      },
+      "authority": {
+        "authority_set_id": "compiled_transport",
+        "evaluated_at_epoch": 1800000000,
+        "registry_disposition": "not_applicable",
+        "registry_sequence": null,
+        "registry_digest": null,
+        "expires_at_epoch": null
+      },
+      "reconciliation_event": "transport_restored",
+      "expected": {
+        "admitted_capabilities": ["transport.streamable_http"],
+        "quarantined_capabilities": [],
+        "unavailable_capabilities": [],
+        "generation": 1,
+        "lease_behavior": {"retired_initial_lease_valid": null, "new_read_lease_available": true},
+        "write_action_reachability": 0,
+        "health_projection": {
+          "model_version": 1,
+          "surface": "configured_transport",
+          "disposition": "admitted_exact",
+          "generation": 1,
+          "decision_fingerprint": "sha256:7b8b604b21264ecd8267f4e28e4b8c433db66e2bd74b54e8bb84846de1602b81",
+          "observation_fingerprint": "sha256:1e8e372e88d340251ed3ecaa4de102b876e4061116cfcac29deeeab54b225030",
+          "authority_fingerprint": "sha256:a361f5dfbae3d466e250fe217d42accf7a773e3831a8ec48a73359af9de4e8fb",
+          "profile_registry_fingerprint": "sha256:4e1b1923bd51c1a8807d548aedee4e1adf66e47f999bac62f38651ebe0650a6e",
+          "admitted_count": 1,
+          "quarantined_count": 0,
+          "unavailable_count": 0,
+          "reason_counts": [{"reason_code": "compiled_exact_contract_matched", "count": 1}],
+          "fallback_count": 0
+        },
+        "audit_projection": {
+          "model_version": 1,
+          "event": "capability_reconciliation",
+          "disposition": "admitted_exact",
+          "published": true,
+          "idempotent": false,
+          "reason_code": "verification_complete",
+          "retired_generation": null,
+          "events": ["generation_created", "verification_started", "verification_completed", "generation_published"],
+          "fallback_count": 0,
+          "generation": 1,
+          "surface": "configured_transport",
+          "decision_fingerprint": "sha256:7b8b604b21264ecd8267f4e28e4b8c433db66e2bd74b54e8bb84846de1602b81",
+          "admitted_count": 1,
+          "decision_count": 1
+        }
+      }
+    }
+  ]
+}

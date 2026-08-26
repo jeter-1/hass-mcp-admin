@@ -1,4 +1,4 @@
-"""Bounded data models for inert capability-scoped compatibility decisions."""
+"""Bounded data models for a non-authoritative compatibility specification."""
 
 from __future__ import annotations
 
