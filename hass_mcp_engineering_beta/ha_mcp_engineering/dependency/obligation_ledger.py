@@ -430,6 +430,26 @@ def _dynamic_scalar_value() -> _Value:
     )
 
 
+def _typed_runtime_value(kind: str) -> _Value:
+    """Return an unknown runtime value with a reviewed non-selector type.
+
+    ``unknown`` describes the value observed when Home Assistant renders the
+    template; ``complete`` describes the analyzer's semantic type coverage.
+    Keeping those facts separate prevents a timestamp from becoming an opaque
+    entity selector merely because its exact runtime value is unavailable.
+    Candidate completeness intentionally remains false, so feeding the result
+    into ``states(...)`` still fails closed.
+    """
+
+    return _Value(
+        runtime_kinds={kind},
+        ordinary=True,
+        unknown=True,
+        dynamic_scalar=True,
+        complete=True,
+    )
+
+
 def _callable_value(name: str) -> _Value:
     return _Value(callables={name}, complete=True)
 
@@ -1857,16 +1877,10 @@ class TemplateObligationAnalyzer:
                     self._neutral(
                         node, "datetime_arithmetic_dependency_neutral"
                     )
-                    return _Value(
-                        runtime_kinds={
-                            "timedelta"
-                            if right.runtime_kinds == {"datetime"}
-                            else "datetime"
-                        },
-                        ordinary=True,
-                        unknown=True,
-                        dynamic_scalar=True,
-                        complete=False,
+                    return _typed_runtime_value(
+                        "timedelta"
+                        if right.runtime_kinds == {"datetime"}
+                        else "datetime"
                     )
                 if (
                     left.runtime_kinds == {"timedelta"}
@@ -1875,13 +1889,7 @@ class TemplateObligationAnalyzer:
                     self._neutral(
                         node, "timedelta_arithmetic_dependency_neutral"
                     )
-                    return _Value(
-                        runtime_kinds={"timedelta"},
-                        ordinary=True,
-                        unknown=True,
-                        dynamic_scalar=True,
-                        complete=False,
-                    )
+                    return _typed_runtime_value("timedelta")
             return _dynamic_scalar_value()
         if isinstance(node, nodes.Not):
             self._eval(node.node, scope, depth=depth + 1)
@@ -2279,13 +2287,9 @@ class TemplateObligationAnalyzer:
                     node=node,
                 )
             if name in {"now", "utcnow", "today_at"}:
-                return _Value(
-                    runtime_kinds={"datetime"},
-                    ordinary=True,
-                    unknown=True,
-                    dynamic_scalar=True,
-                    complete=False,
-                )
+                return _typed_runtime_value("datetime")
+            if name == "as_timestamp":
+                return _typed_runtime_value("number")
             return _ordinary_value()
         if category == "provenance_preserving":
             self._neutral(node, f"canonical_{name}_operand_provenance_preserved")
@@ -2314,20 +2318,14 @@ class TemplateObligationAnalyzer:
                 node,
                 f"{runtime_kind}_{method}_dependency_neutral",
             )
-            return _dynamic_scalar_value()
+            return _typed_runtime_value("number")
         result_kind = _RUNTIME_TRANSFORM_METHODS[runtime_kind].get(method)
         if result_kind is not None:
             self._neutral(
                 node,
                 f"{runtime_kind}_{method}_dependency_neutral",
             )
-            return _Value(
-                runtime_kinds={result_kind},
-                ordinary=True,
-                unknown=True,
-                dynamic_scalar=True,
-                complete=False,
-            )
+            return _typed_runtime_value(result_kind)
         self._opaque(node, "unreviewed_runtime_method")
         return _unknown_value()
 
@@ -3493,12 +3491,15 @@ class TemplateObligationAnalyzer:
                     ),
                 )
             if attribute in {"last_changed", "last_updated"}:
+                return _typed_runtime_value("datetime")
+            if attribute == "context":
                 return _Value(
-                    runtime_kinds={"datetime"},
+                    runtime_kinds={"ha_context"},
+                    context_paths={
+                        f"{path}.context" for path in base.context_paths
+                    },
                     ordinary=True,
-                    unknown=True,
-                    dynamic_scalar=True,
-                    complete=False,
+                    complete=True,
                 )
             return _dynamic_scalar_value()
         if base.state_attribute_container:
@@ -3951,7 +3952,7 @@ class TemplateObligationAnalyzer:
             }.get(attribute_name, ())
             fallback_ids = (
                 self.context.wait_trigger_entity_ids
-                if attribute_name in {"entity_id", "from_state", "to_state"}
+                if attribute_name == "entity_id"
                 else ()
             )
             ids = set(specific_ids or fallback_ids)
@@ -3987,7 +3988,7 @@ class TemplateObligationAnalyzer:
             }.get(attribute_name, ())
             fallback_ids = (
                 self.context.trigger_entity_ids
-                if attribute_name in {"entity_id", "from_state", "to_state"}
+                if attribute_name == "entity_id"
                 else ()
             )
             ids = set(specific_ids or fallback_ids)

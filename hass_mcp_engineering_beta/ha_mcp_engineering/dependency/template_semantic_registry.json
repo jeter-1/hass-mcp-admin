@@ -116,6 +116,7 @@
       "abs": "dependency_neutral",
       "apply": "dynamic_filter_test_dispatch",
       "as_function": "provenance_preserving",
+      "as_timestamp": "dependency_neutral",
       "attr": "attribute_item_access",
       "batch": "provenance_preserving",
       "capitalize": "dependency_neutral",
@@ -181,6 +182,7 @@
       "area_id": "attribute_item_access",
       "area_name": "attribute_item_access",
       "areas": "entity_set_producer",
+      "as_timestamp": "dependency_neutral",
       "closest": "state_entity_access",
       "config_entry_attr": "attribute_item_access",
       "config_entry_id": "attribute_item_access",
@@ -223,6 +225,7 @@
     "home_assistant_filters": {
       "apply": "dynamic_filter_test_dispatch",
       "as_function": "provenance_preserving",
+      "as_timestamp": "dependency_neutral",
       "has_value": "state_entity_access",
       "state_attr": "state_entity_access",
       "state_attr_translated": "state_entity_access",

@@ -1924,8 +1924,10 @@ def _template_context_evidence(
     source_entity_id: str | None,
 ) -> tuple[TemplateContextEvidence, bool]:
     trigger_ids: set[str] = set()
+    trigger_state_ids: set[str] = set()
     trigger_zone_ids: set[str] = set()
     wait_trigger_ids: set[str] = set()
+    wait_trigger_state_ids: set[str] = set()
     wait_trigger_zone_ids: set[str] = set()
     provenance: set[str] = set()
     limit_exceeded = False
@@ -1997,6 +1999,34 @@ def _template_context_evidence(
                 if entity_id.startswith("zone.")
             )
 
+    def collect_state_object_trigger_entities(
+        value: Any, output: set[str], depth: int = 0
+    ) -> None:
+        """Collect finite entities whose trigger contract supplies States."""
+
+        nonlocal limit_exceeded
+        if not tick(depth):
+            return
+        if isinstance(value, list):
+            for item in value:
+                if work_units >= MAX_CONFIGURATION_NODES:
+                    break
+                collect_state_object_trigger_entities(
+                    item, output, depth + 1
+                )
+            return
+        if not isinstance(value, dict):
+            return
+        trigger_kind = value.get("platform", value.get("trigger"))
+        if trigger_kind not in {"state", "zone"}:
+            return
+        entities, entities_truncated = _bounded_literal_entities_deep(
+            value.get("entity_id")
+        )
+        if entities_truncated:
+            limit_exceeded = True
+        output.update(entities)
+
     for key in ("trigger", "triggers"):
         if key in config:
             before = len(trigger_ids)
@@ -2005,10 +2035,16 @@ def _template_context_evidence(
             collect_zone_trigger_entities(
                 config[key], trigger_zone_ids, 0
             )
+            before_state = len(trigger_state_ids)
+            collect_state_object_trigger_entities(
+                config[key], trigger_state_ids, 0
+            )
             if len(trigger_ids) > before:
                 provenance.add(f"automation.{key}.entity_id")
             if len(trigger_zone_ids) > before_zone:
                 provenance.add(f"automation.{key}.zone")
+            if len(trigger_state_ids) > before_state:
+                provenance.add(f"automation.{key}.state_object")
 
     def collect_wait_triggers(value: Any, depth: int = 0) -> None:
         if not tick(depth):
@@ -2028,8 +2064,16 @@ def _template_context_evidence(
                     collect_zone_trigger_entities(
                         item, wait_trigger_zone_ids, depth + 1
                     )
+                    before_state = len(wait_trigger_state_ids)
+                    collect_state_object_trigger_entities(
+                        item, wait_trigger_state_ids, depth + 1
+                    )
                     if len(wait_trigger_zone_ids) > before_zone:
                         provenance.add("automation.wait_for_trigger.zone")
+                    if len(wait_trigger_state_ids) > before_state:
+                        provenance.add(
+                            "automation.wait_for_trigger.state_object"
+                        )
                 collect_wait_triggers(item, depth + 1)
         elif isinstance(value, list):
             for item in value:
@@ -2048,19 +2092,29 @@ def _template_context_evidence(
         limit_exceeded = True
     if len(trigger_zone_ids) > MAX_CONTEXT_ENTITY_IDS:
         limit_exceeded = True
+    if len(trigger_state_ids) > MAX_CONTEXT_ENTITY_IDS:
+        limit_exceeded = True
     if len(wait_trigger_ids) > MAX_CONTEXT_ENTITY_IDS:
         limit_exceeded = True
     if len(wait_trigger_zone_ids) > MAX_CONTEXT_ENTITY_IDS:
         limit_exceeded = True
+    if len(wait_trigger_state_ids) > MAX_CONTEXT_ENTITY_IDS:
+        limit_exceeded = True
     trigger_ids = set(sorted(trigger_ids)[:MAX_CONTEXT_ENTITY_IDS])
     trigger_zone_ids = set(
         sorted(trigger_zone_ids)[:MAX_CONTEXT_ENTITY_IDS]
+    )
+    trigger_state_ids = set(
+        sorted(trigger_state_ids)[:MAX_CONTEXT_ENTITY_IDS]
     )
     wait_trigger_ids = set(
         sorted(wait_trigger_ids)[:MAX_CONTEXT_ENTITY_IDS]
     )
     wait_trigger_zone_ids = set(
         sorted(wait_trigger_zone_ids)[:MAX_CONTEXT_ENTITY_IDS]
+    )
+    wait_trigger_state_ids = set(
+        sorted(wait_trigger_state_ids)[:MAX_CONTEXT_ENTITY_IDS]
     )
     safe_this = (
         source_entity_id
@@ -2073,8 +2127,18 @@ def _template_context_evidence(
     return (
         TemplateContextEvidence(
             trigger_entity_ids=tuple(sorted(trigger_ids)),
+            trigger_from_state_entity_ids=tuple(
+                sorted(trigger_state_ids)
+            ),
+            trigger_to_state_entity_ids=tuple(sorted(trigger_state_ids)),
             trigger_zone_entity_ids=tuple(sorted(trigger_zone_ids)),
             wait_trigger_entity_ids=tuple(sorted(wait_trigger_ids)),
+            wait_trigger_from_state_entity_ids=tuple(
+                sorted(wait_trigger_state_ids)
+            ),
+            wait_trigger_to_state_entity_ids=tuple(
+                sorted(wait_trigger_state_ids)
+            ),
             wait_trigger_zone_entity_ids=tuple(
                 sorted(wait_trigger_zone_ids)
             ),
