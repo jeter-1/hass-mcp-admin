@@ -646,7 +646,7 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(next(iter(summary_result)), "canonical_summary")
         summary = summary_result["canonical_summary"]
         self.assertEqual(summary["plan_id"], plan_id)
-        self.assertEqual(summary["dependency_risk_binding_model"], "helper-dependency-risk-v4")
+        self.assertEqual(summary["dependency_risk_binding_model"], "helper-dependency-risk-v5")
         self.assertEqual(summary["exact_dependency_count"], 2)
         self.assertEqual(summary["retained_obligation_count"], 2)
         self.assertEqual(summary["total_obligation_count"], 2)
@@ -756,7 +756,14 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
                 for fragment in page["detail"]["fragments"]
             ],
         )
-        self.assertTrue(any(page["detail"]["fragments"] for page in pages))
+        blocking_fragments = [
+            fragment
+            for page in pages
+            for fragment in page["detail"]["fragments"]
+            if fragment["logical_record_index"] == 8
+        ]
+        self.assertGreaterEqual(len(blocking_fragments), 4)
+        self.assertTrue(blocking_fragments[-1]["is_final"])
 
     async def test_oversized_profile_positions_and_page_sizes_make_progress(self):
         first = [_production_profile(0), *[_profile(i) for i in range(1, 7)]]

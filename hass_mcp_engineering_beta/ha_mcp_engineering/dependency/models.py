@@ -301,6 +301,25 @@ class AutomationActionRiskProfile:
     effect_projection_fingerprint: str
     effect_projection_clipped: bool
     evidence_fingerprint: str
+    analysis_complete: bool = True
+    semantic_complete: bool = True
+    presentation_truncated: bool = False
+    processing_limit_exceeded: bool = False
+    processing_limit_reason: str | None = None
+    processing_observed_action_step_count: int = 0
+    processing_action_step_limit: int = 0
+    processing_action_depth_limit: int = 0
+    processing_overflow_fingerprint: str | None = None
+    action_domain_count: int = 0
+    action_domains_fingerprint: str = ""
+    service_count: int = 0
+    services_fingerprint: str = ""
+    reason_code_count: int = 0
+    reason_codes_fingerprint: str = ""
+    effect_target_count: int = 0
+    effect_targets_fingerprint: str = ""
+    effect_data_count: int = 0
+    effect_data_fingerprint: str = ""
 
 
 @dataclass

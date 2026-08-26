@@ -61,6 +61,43 @@ def _profile(source_id: str, config: dict) -> AutomationActionRiskProfile:
             projected["effect_projection_clipped"]
         ),
         evidence_fingerprint=str(projected["evidence_fingerprint"]),
+        analysis_complete=bool(projected["analysis_complete"]),
+        semantic_complete=bool(projected["semantic_complete"]),
+        presentation_truncated=bool(projected["presentation_truncated"]),
+        processing_limit_exceeded=bool(
+            projected["processing_limit_exceeded"]
+        ),
+        processing_limit_reason=projected["processing_limit_reason"],
+        processing_observed_action_step_count=int(
+            projected["processing_observed_action_step_count"]
+        ),
+        processing_action_step_limit=int(
+            projected["processing_action_step_limit"]
+        ),
+        processing_action_depth_limit=int(
+            projected["processing_action_depth_limit"]
+        ),
+        processing_overflow_fingerprint=projected[
+            "processing_overflow_fingerprint"
+        ],
+        action_domain_count=int(projected["action_domain_count"]),
+        action_domains_fingerprint=str(
+            projected["action_domains_fingerprint"]
+        ),
+        service_count=int(projected["service_count"]),
+        services_fingerprint=str(projected["services_fingerprint"]),
+        reason_code_count=int(projected["reason_code_count"]),
+        reason_codes_fingerprint=str(
+            projected["reason_codes_fingerprint"]
+        ),
+        effect_target_count=int(projected["effect_target_count"]),
+        effect_targets_fingerprint=str(
+            projected["effect_targets_fingerprint"]
+        ),
+        effect_data_count=int(projected["effect_data_count"]),
+        effect_data_fingerprint=str(
+            projected["effect_data_fingerprint"]
+        ),
     )
 
 

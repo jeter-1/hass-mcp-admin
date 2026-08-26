@@ -20,7 +20,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v4"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v5"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -28,6 +28,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
     {
         "helper-dependency-risk-v2",
         "helper-dependency-risk-v3",
+        "helper-dependency-risk-v4",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -517,13 +518,34 @@ def _project_downstream_profile(
                 "relationships": sorted(relationships),
                 "physical_consequence": "unknown",
                 "complete": False,
+                "analysis_complete": False,
+                "semantic_complete": False,
+                "presentation_truncated": False,
+                "processing_limit_exceeded": False,
+                "processing_limit_reason": "action_profile_unavailable",
+                "processing_observed_action_step_count": 0,
+                "processing_action_step_limit": 0,
+                "processing_action_depth_limit": 0,
+                "processing_overflow_fingerprint": None,
                 "truncated": False,
                 "action_domains": [],
+                "action_domain_count": 0,
+                "action_domains_fingerprint": stable_hash([]),
                 "services": [],
+                "service_count": 0,
+                "services_fingerprint": stable_hash([]),
                 "reason_codes": ["action_profile_unavailable"],
+                "reason_code_count": 1,
+                "reason_codes_fingerprint": stable_hash(
+                    ["action_profile_unavailable"]
+                ),
                 "effect_projection_model": "unavailable",
                 "effect_targets": [],
+                "effect_target_count": 0,
+                "effect_targets_fingerprint": stable_hash([]),
                 "effect_data": [],
+                "effect_data_count": 0,
+                "effect_data_fingerprint": stable_hash([]),
                 "effect_structure_fingerprint": stable_hash(
                     {"source_id": source_id, "structure": "unavailable"}
                 ),
@@ -543,13 +565,36 @@ def _project_downstream_profile(
         "relationships": sorted(relationships),
         "physical_consequence": profile.physical_consequence,
         "complete": profile.complete,
+        "analysis_complete": profile.analysis_complete,
+        "semantic_complete": profile.semantic_complete,
+        "presentation_truncated": profile.presentation_truncated,
+        "processing_limit_exceeded": profile.processing_limit_exceeded,
+        "processing_limit_reason": profile.processing_limit_reason,
+        "processing_observed_action_step_count": (
+            profile.processing_observed_action_step_count
+        ),
+        "processing_action_step_limit": profile.processing_action_step_limit,
+        "processing_action_depth_limit": profile.processing_action_depth_limit,
+        "processing_overflow_fingerprint": (
+            profile.processing_overflow_fingerprint
+        ),
         "truncated": profile.truncated,
         "action_domains": list(profile.action_domains),
+        "action_domain_count": profile.action_domain_count,
+        "action_domains_fingerprint": profile.action_domains_fingerprint,
         "services": list(profile.services),
+        "service_count": profile.service_count,
+        "services_fingerprint": profile.services_fingerprint,
         "reason_codes": list(profile.reason_codes),
+        "reason_code_count": profile.reason_code_count,
+        "reason_codes_fingerprint": profile.reason_codes_fingerprint,
         "effect_projection_model": profile.effect_projection_model,
         "effect_targets": list(profile.effect_targets),
+        "effect_target_count": profile.effect_target_count,
+        "effect_targets_fingerprint": profile.effect_targets_fingerprint,
         "effect_data": list(profile.effect_data),
+        "effect_data_count": profile.effect_data_count,
+        "effect_data_fingerprint": profile.effect_data_fingerprint,
         "effect_structure_fingerprint": (
             profile.effect_structure_fingerprint
         ),
@@ -561,8 +606,16 @@ def _project_downstream_profile(
     }
     if resource_id is None:
         return projected, "automation_lock_identity_unavailable"
-    if profile.truncated or profile.effect_projection_clipped:
-        return projected, "action_profile_truncated"
+    if profile.processing_limit_exceeded or not profile.analysis_complete:
+        return projected, "action_profile_processing_limit_exceeded"
+    if not profile.semantic_complete:
+        return projected, "action_profile_semantic_incomplete"
+    if not profile.complete:
+        return projected, (
+            "action_profile_truncated"
+            if profile.truncated
+            else "action_profile_incomplete"
+        )
     return projected, None
 
 

@@ -526,6 +526,68 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     evidence_fingerprint=str(
                         consequence["evidence_fingerprint"]
                     ),
+                    analysis_complete=bool(
+                        consequence["analysis_complete"]
+                    ),
+                    semantic_complete=bool(
+                        consequence["semantic_complete"]
+                    ),
+                    presentation_truncated=bool(
+                        consequence["presentation_truncated"]
+                    ),
+                    processing_limit_exceeded=bool(
+                        consequence["processing_limit_exceeded"]
+                    ),
+                    processing_limit_reason=(
+                        str(consequence["processing_limit_reason"])
+                        if consequence["processing_limit_reason"] is not None
+                        else None
+                    ),
+                    processing_observed_action_step_count=int(
+                        consequence[
+                            "processing_observed_action_step_count"
+                        ]
+                    ),
+                    processing_action_step_limit=int(
+                        consequence["processing_action_step_limit"]
+                    ),
+                    processing_action_depth_limit=int(
+                        consequence["processing_action_depth_limit"]
+                    ),
+                    processing_overflow_fingerprint=(
+                        str(consequence["processing_overflow_fingerprint"])
+                        if consequence["processing_overflow_fingerprint"]
+                        is not None
+                        else None
+                    ),
+                    action_domain_count=int(
+                        consequence["action_domain_count"]
+                    ),
+                    action_domains_fingerprint=str(
+                        consequence["action_domains_fingerprint"]
+                    ),
+                    service_count=int(consequence["service_count"]),
+                    services_fingerprint=str(
+                        consequence["services_fingerprint"]
+                    ),
+                    reason_code_count=int(
+                        consequence["reason_code_count"]
+                    ),
+                    reason_codes_fingerprint=str(
+                        consequence["reason_codes_fingerprint"]
+                    ),
+                    effect_target_count=int(
+                        consequence["effect_target_count"]
+                    ),
+                    effect_targets_fingerprint=str(
+                        consequence["effect_targets_fingerprint"]
+                    ),
+                    effect_data_count=int(
+                        consequence["effect_data_count"]
+                    ),
+                    effect_data_fingerprint=str(
+                        consequence["effect_data_fingerprint"]
+                    ),
                 )
             )
 
