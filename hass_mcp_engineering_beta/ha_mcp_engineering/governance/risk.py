@@ -1182,7 +1182,10 @@ def _notification_effect_semantics(
         prefix = ""
         for statement in parsed.body:
             if not isinstance(statement, nodes.Output):
-                continue
+                # Statements can render material before a later literal
+                # output.  This bounded proof does not interpret control flow,
+                # so any statement keeps the message effect conservative.
+                return False
             for item in statement.nodes:
                 if isinstance(item, nodes.TemplateData):
                     prefix += str(item.data)

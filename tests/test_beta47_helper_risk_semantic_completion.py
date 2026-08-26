@@ -408,6 +408,17 @@ class Beta47ActionEffectReproductions(unittest.TestCase):
         self.assertFalse(dynamic_profile["complete"])
         self.assertFalse(command_profile["complete"])
 
+    def test_executable_statement_before_literal_prefix_stays_conservative(self):
+        profile = automation_action_consequence_profile(
+            self._safety_critical_actions(
+                "{% if caller_supplied_condition %}"
+                "{{ caller_supplied_message }}"
+                "{% endif %}Status"
+            )
+        )
+        self.assertFalse(profile["semantic_complete"])
+        self.assertFalse(profile["complete"])
+
     def test_notification_template_proof_is_bounded(self):
         oversized = "Status: {{ value }}" + "x" * 4_096
         node_heavy = "Status: " + "".join("{{ value }}" for _ in range(600))
