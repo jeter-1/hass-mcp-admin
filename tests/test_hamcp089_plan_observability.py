@@ -646,7 +646,7 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(next(iter(summary_result)), "canonical_summary")
         summary = summary_result["canonical_summary"]
         self.assertEqual(summary["plan_id"], plan_id)
-        self.assertEqual(summary["dependency_risk_binding_model"], "helper-dependency-risk-v5")
+        self.assertEqual(summary["dependency_risk_binding_model"], "helper-dependency-risk-v6")
         self.assertEqual(summary["exact_dependency_count"], 2)
         self.assertEqual(summary["retained_obligation_count"], 2)
         self.assertEqual(summary["total_obligation_count"], 2)
@@ -1514,7 +1514,7 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             "persisted_authority_changed",
         )
 
-    async def test_expired_v3_and_v4_failure_summary_are_truthful(self):
+    async def test_expired_v3_v4_and_v5_failure_summary_are_truthful(self):
         self.reader.model = "helper-dependency-risk-v3"
         v3_plan_id = await self._create_plan(
             obligations=1,
@@ -1603,6 +1603,22 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
                 "stale_dependency_evidence",
             ],
         )
+
+        self.reader.model = "helper-dependency-risk-v5"
+        self.reader.coverage_failure_reason_codes = []
+        v5_plan_id = await self._create_plan(obligations=1)
+        v5 = self.service.get_plan_observability(v5_plan_id)
+        self.assertEqual(
+            v5["canonical_summary"]["dependency_risk_binding_model"],
+            "helper-dependency-risk-v5",
+        )
+        self.assertTrue(
+            v5["canonical_summary"]["helper_dependency_replan_required"]
+        )
+        self.assertFalse(v5["approval_actionable"])
+        self.assertFalse(v5["apply_allowed"])
+        self.assertEqual(v5["next_required_operation"], "create_change_plan")
+        self.assertEqual(self.helper.dispatch_count, 0)
         profile_page = self.service.get_plan_observability(
             v4_plan_id,
             detail_section="downstream_profiles",

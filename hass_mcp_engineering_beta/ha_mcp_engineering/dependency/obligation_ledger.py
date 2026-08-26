@@ -2592,48 +2592,68 @@ class TemplateObligationAnalyzer:
                 ),
             )
         if method == "keys":
-            return self._project_value(receiver, _Value(
-                literal_strings=set(receiver.fields),
-                items=[
-                    _ordinary_value(strings=(key,))
-                    for key in receiver.fields
-                ],
-                container_kinds={"sequence"},
-                ordinary=True,
-                unknown=receiver.unknown,
-                complete=receiver.complete,
-                limit_exceeded=receiver.limit_exceeded,
-                order_uncertain=receiver.order_uncertain,
-            ))
-        if method == "values":
-            return self._project_value(receiver, _Value(
-                items=[value.copy() for value in receiver.fields.values()],
-                container_kinds={"sequence"},
-                ordinary=all(value.ordinary for value in receiver.fields.values()),
-                unknown=receiver.unknown,
-                complete=receiver.complete,
-                limit_exceeded=receiver.limit_exceeded,
-                order_uncertain=receiver.order_uncertain,
-            ))
-        if method == "items":
-            pairs = [
+            keys = list(receiver.fields)
+            complete = bool(receiver.complete and not receiver.unknown)
+            return self._project_value(
+                receiver,
                 _Value(
-                    items=[_ordinary_value(strings=(key,)), value.copy()],
+                    entity_ids={
+                        key for key in keys if self.valid_entity_id(key)
+                    },
+                    literal_strings=set(keys),
+                    items=[
+                        _ordinary_value(strings=(key,)) for key in keys
+                    ],
                     container_kinds={"sequence"},
-                    ordinary=value.ordinary,
-                    complete=value.complete,
-                )
-                for key, value in receiver.fields.items()
-            ]
-            return self._project_value(receiver, _Value(
-                items=pairs,
-                container_kinds={"sequence"},
-                ordinary=all(value.ordinary for value in pairs),
-                unknown=receiver.unknown,
-                complete=receiver.complete,
-                limit_exceeded=receiver.limit_exceeded,
-                order_uncertain=receiver.order_uncertain,
-            ))
+                    ordinary=True,
+                    unknown=not complete,
+                    complete=complete,
+                    entity_candidate_evidence_complete=complete,
+                    non_selector_candidate_evidence_complete=complete,
+                    selector_provenance_complete=complete,
+                    limit_exceeded=receiver.limit_exceeded,
+                    order_uncertain=receiver.order_uncertain,
+                ),
+            )
+        if method == "values":
+            values = [value.copy() for value in receiver.fields.values()]
+            projected = self._merge(values, node=node)
+            projected.items = values
+            projected.container_kinds = {"sequence"}
+            projected.order_uncertain = receiver.order_uncertain
+            projected.limit_exceeded = bool(
+                projected.limit_exceeded or receiver.limit_exceeded
+            )
+            if receiver.unknown or not receiver.complete:
+                projected.unknown = True
+                projected.complete = False
+                projected.entity_candidate_evidence_complete = False
+                projected.non_selector_candidate_evidence_complete = False
+                projected.selector_provenance_complete = False
+            return self._project_value(receiver, projected)
+        if method == "items":
+            pairs: list[_Value] = []
+            for key, value in receiver.fields.items():
+                key_value = _ordinary_value(strings=(key,))
+                pair = self._merge((key_value, value), node=node)
+                pair.items = [key_value, value.copy()]
+                pair.container_kinds = {"sequence"}
+                pair.order_uncertain = False
+                pairs.append(pair)
+            projected = self._merge(pairs, node=node)
+            projected.items = pairs
+            projected.container_kinds = {"sequence"}
+            projected.order_uncertain = receiver.order_uncertain
+            projected.limit_exceeded = bool(
+                projected.limit_exceeded or receiver.limit_exceeded
+            )
+            if receiver.unknown or not receiver.complete:
+                projected.unknown = True
+                projected.complete = False
+                projected.entity_candidate_evidence_complete = False
+                projected.non_selector_candidate_evidence_complete = False
+                projected.selector_provenance_complete = False
+            return self._project_value(receiver, projected)
         self._opaque(node, "unknown_mapping_method")
         return _unknown_value()
 
@@ -2824,7 +2844,13 @@ class TemplateObligationAnalyzer:
             return _ordinary_value()
         if node.name in _DYNAMIC_DISPATCH_FILTERS:
             return self._dynamic_filter_dispatch(
-                node.name, operand, arguments, keywords, node=node
+                node.name,
+                operand,
+                arguments,
+                keywords,
+                node=node,
+                scope=scope,
+                depth=depth,
             )
         if node.name == "attr":
             if (
@@ -3017,6 +3043,8 @@ class TemplateObligationAnalyzer:
         keywords: dict[str, _Value],
         *,
         node: nodes.Node,
+        scope: _Scope,
+        depth: int,
     ) -> _Value:
         def selection_result() -> _Value:
             result = operand.copy()
@@ -3063,6 +3091,8 @@ class TemplateObligationAnalyzer:
                 attribute,
                 default=None,
                 node=node,
+                scope=scope,
+                depth=depth,
             )
             if category == "dependency_neutral":
                 self._neutral(
@@ -3094,6 +3124,8 @@ class TemplateObligationAnalyzer:
                     attribute_name,
                     default=keywords.get("default"),
                     node=node,
+                    scope=scope,
+                    depth=depth,
                 )
                 self._neutral(
                     node,
@@ -3129,6 +3161,13 @@ class TemplateObligationAnalyzer:
             return selection_result() if name != "map" else _unknown_value()
         if category in {"dependency_neutral", "provenance_preserving"}:
             self._neutral(node, f"{name}_{dispatched}_dependency_neutral")
+            if name == "map" and dispatched == "string":
+                # Jinja's string filter is identity-preserving for values
+                # already proven to be strings.  Retain their finite entity
+                # candidate and label provenance.  A dynamic scalar remains
+                # dynamically tainted, so consuming it later as an entity
+                # selector still fails closed.
+                return operand.copy()
             return selection_result() if name != "map" else _unknown_value()
         if name in {"select", "reject"}:
             self._opaque_from_value(
@@ -3148,6 +3187,8 @@ class TemplateObligationAnalyzer:
         *,
         default: _Value | None,
         node: nodes.Node,
+        scope: _Scope,
+        depth: int,
     ) -> _Value:
         """Project a finite collection member without losing provenance.
 
@@ -3224,34 +3265,51 @@ class TemplateObligationAnalyzer:
                 method = _callable_value(f"method:{part}")
                 method.method_receivers[part] = value.copy()
                 return self._project_value(value, method)
-            if value.state_object and part == "entity_id":
-                return _Value(
-                    entity_ids=set(value.entity_ids),
-                    literal_strings=set(value.entity_ids),
-                    possible_domains=set(value.possible_domains),
-                    domain_evidence_complete=(
-                        value.domain_evidence_complete
-                    ),
-                    unknown=value.unknown,
-                    complete=value.complete,
-                    limit_exceeded=value.limit_exceeded,
+            if value.state_object or value.context_paths or value.runtime_kinds:
+                return self._get_attribute(
+                    value,
+                    part,
+                    node=node,
+                    scope=scope,
+                    depth=depth + 1,
                 )
-            if (
-                value.state_collection
-                and part == "entity_id"
-                and value.possible_domains
-                and value.domain_evidence_complete
-            ):
-                return _Value(
-                    entity_ids=set(value.entity_ids),
-                    literal_strings=set(value.entity_ids),
-                    possible_domains=set(value.possible_domains),
-                    domain_evidence_complete=True,
-                    unknown=value.unknown,
-                    complete=value.complete,
-                    limit_exceeded=value.limit_exceeded,
+            if value.state_collection and value.domain_evidence_complete:
+                # ``map(attribute=...)`` projects each State in the domain
+                # collection.  It is not equivalent to ``states.domain.id``
+                # attribute lookup on the collection root.  Account for the
+                # complete domain edge, then return the reviewed attribute's
+                # scalar/type provenance without retaining a State receiver.
+                self._consume_entity_value(
+                    value,
+                    node=node,
+                    kind="state_collection_mapped_attribute",
+                    reason="state_collection_mapped_attribute_access",
                 )
-            if value.state_object or value.state_collection:
+                if part == "entity_id":
+                    return _Value(
+                        possible_domains=set(value.possible_domains),
+                        domain_evidence_complete=True,
+                        ordinary=True,
+                        unknown=True,
+                        dynamic_scalar=True,
+                        complete=True,
+                    )
+                if part in {"last_changed", "last_updated"}:
+                    return _typed_runtime_value("datetime")
+                if part == "context":
+                    return _Value(
+                        runtime_kinds={"ha_context"},
+                        ordinary=True,
+                        complete=True,
+                    )
+                if part == "attributes":
+                    return _Value(
+                        state_attribute_container=True,
+                        ordinary=True,
+                        complete=True,
+                    )
+                return _dynamic_scalar_value()
+            if value.state_collection:
                 # State attributes other than entity_id are runtime values.
                 # They may themselves contain an entity ID later consumed by
                 # a reviewed state helper; a map default applies only to an
