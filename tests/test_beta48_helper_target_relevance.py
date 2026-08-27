@@ -2,20 +2,29 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from dataclasses import replace
+from pathlib import Path
 import sys
 import time
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.dependency.models import (  # noqa: E402
+    AutomationActionRiskProfile,
     DependencyObligation,
     DependencyIndexSnapshot,
+    OBLIGATION_LEDGER_MODEL,
+    SourceCoverageItem,
     obligation_fingerprint,
+)
+from ha_mcp_engineering.dependency.obligation_ledger import (  # noqa: E402
+    MAX_TEMPLATE_CANDIDATES,
+    TemplateObligationAnalyzer,
 )
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     DirectHaDependencyProvider,
@@ -35,6 +44,7 @@ from ha_mcp_engineering.f3_configuration.locks import (  # noqa: E402
     operation_lock_requests,
     unconstrained_helper_dependency_lock_key,
 )
+from ha_mcp_engineering.f3_configuration import locks as locks_module  # noqa: E402
 from tests.f3_configuration_fixtures import (  # noqa: E402
     SyntheticConfigurationGateway,
     adapter_for,
@@ -43,6 +53,7 @@ from tests.f3_configuration_fixtures import (  # noqa: E402
 )
 from tests.test_beta46_helper_risk_semantic_completion import (  # noqa: E402
     _binding as _template_binding,
+    _profile as _action_profile,
 )
 
 
@@ -85,6 +96,66 @@ def _binding(snapshot: DependencyIndexSnapshot, entity_id: str) -> dict:
             "evidence_stale": False,
             "invalidated": False,
         },
+    )
+
+
+def _obligation(**overrides) -> DependencyObligation:
+    fields = {
+        "evidence_id": "ev_beta48_failure_precedence",
+        "source_type": "automation",
+        "source_id": "beta48_failure_precedence",
+        "source_entity_id": "automation.beta48_failure_precedence",
+        "config_path": "$.condition[0].value_template",
+        "relation": "condition",
+        "outcome": "exact_dependency",
+        "obligation_kind": "semantic_operation",
+        "reason_code": "synthetic_failure_precedence",
+        "semantic_category": "unknown",
+        "semantic_registry_version": "semantic-registry-fixture",
+        "semantic_registry_fingerprint": "a" * 64,
+        "expression_fingerprint": "b" * 64,
+        "configuration_fingerprint": "c" * 64,
+        "lock_projection": "exact",
+    }
+    fields.update(overrides)
+    return DependencyObligation(**fields)
+
+
+def _coverage_snapshot(
+    obligation: DependencyObligation,
+    *,
+    source_id: str = "beta48_failure_precedence",
+) -> DependencyIndexSnapshot:
+    config = {
+        "action": [
+            {
+                "service": "cover.open_cover",
+                "target": {"entity_id": "cover.synthetic_garage"},
+            }
+        ]
+    }
+    profile: AutomationActionRiskProfile = _action_profile(source_id, config)
+    return DependencyIndexSnapshot(
+        fingerprint="7" * 64,
+        generation=48,
+        built_at_monotonic=time.monotonic(),
+        built_at="2026-08-27T12:00:00+00:00",
+        findings=(),
+        dynamic_references=(),
+        target_metadata={},
+        coverage=(
+            SourceCoverageItem(
+                "automation", "direct_ha_api", "automation_config", "complete"
+            ),
+            SourceCoverageItem(
+                "blueprint", "direct_ha_api", "blueprint_source", "complete"
+            ),
+        ),
+        automation_action_profiles=(profile,),
+        obligations=(obligation,),
+        obligation_ledger_model=OBLIGATION_LEDGER_MODEL,
+        home_assistant_version=SUPPORTED_HA_VERSION,
+        home_assistant_version_status="observed",
     )
 
 
@@ -448,8 +519,238 @@ class Beta48TargetPolarityTests(unittest.TestCase):
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)
 
 
+class Beta48CoverageFailurePrecedenceTests(unittest.TestCase):
+    @staticmethod
+    def _analyzer(source_id: str) -> TemplateObligationAnalyzer:
+        return TemplateObligationAnalyzer(
+            source_type="automation",
+            source_id=source_id,
+            config_path="$.condition[0].value_template",
+            relation="condition",
+            source_entity_id=f"automation.{source_id}",
+            source_name="Synthetic Beta 48 overflow fixture",
+            source_state="on",
+            configuration_fingerprint="d" * 64,
+            entity_id_validator=lambda value: "." in value,
+        )
+
+    def test_emit_overflow_has_unconditional_failure_scope(self):
+        cases = (
+            {
+                "name": "exact_candidates",
+                "outcome": "exact_dependency",
+                "exact": tuple(
+                    f"input_boolean.overflow_{index:03d}"
+                    for index in range(MAX_TEMPLATE_CANDIDATES + 1)
+                ),
+                "lock": "exact",
+            },
+            {
+                "name": "domains",
+                "outcome": "exact_dependency",
+                "domains": tuple(
+                    f"synthetic_domain_{index:03d}"
+                    for index in range(MAX_TEMPLATE_CANDIDATES + 1)
+                ),
+                "lock": "exact",
+            },
+            {
+                "name": "selectors",
+                "outcome": "proven_dependency_neutral",
+                "selectors": tuple(
+                    f"selector_{index:03d}"
+                    for index in range(MAX_TEMPLATE_CANDIDATES + 1)
+                ),
+                "lock": "none",
+            },
+            {
+                "name": "context",
+                "outcome": "proven_dependency_neutral",
+                "context": tuple(
+                    f"context.path.{index:03d}" for index in range(33)
+                ),
+                "lock": "none",
+            },
+        )
+        for case in cases:
+            with self.subTest(case=case["name"]):
+                analyzer = self._analyzer(f"emit_{case['name']}")
+                analyzer._emit(  # noqa: SLF001 - exact construction boundary
+                    outcome=case["outcome"],
+                    kind="semantic_operation",
+                    reason="synthetic_emit_overflow",
+                    category="unknown",
+                    node=None,
+                    exact=case.get("exact", ()),
+                    domains=case.get("domains"),
+                    selectors=case.get("selectors", ()),
+                    context=case.get("context", ()),
+                    lock=case["lock"],
+                )
+                item = analyzer._finalize().obligations[0]  # noqa: SLF001
+                self.assertEqual("coverage_failure", item.outcome)
+                self.assertTrue(item.limit_exceeded)
+                self.assertEqual(
+                    "coverage_failure", item.target_selector_scope
+                )
+                self.assertEqual("coverage_failure", item.lock_projection)
+
+    def test_constructor_normalizes_contradictory_failure_authority(self):
+        cases = (
+            _obligation(
+                outcome="coverage_failure",
+                target_selector_scope="closed_finite_candidates",
+                lock_projection="exact",
+                exact_entity_ids=("input_boolean.retained",),
+            ),
+            _obligation(
+                outcome="proven_dependency_neutral",
+                limit_exceeded=True,
+                target_selector_scope="dependency_neutral",
+                lock_projection="none",
+            ),
+            _obligation(
+                outcome="exact_dependency",
+                target_selector_scope="closed_entity_domains",
+                possible_entity_domains=("sensor",),
+                lock_projection="coverage_failure",
+            ),
+        )
+        for item in cases:
+            with self.subTest(item=item):
+                self.assertEqual(
+                    "coverage_failure", item.target_selector_scope
+                )
+                self.assertEqual("coverage_failure", item.lock_projection)
+
+    def test_bounded_target_evidence_forces_failure_scope_and_lock(self):
+        cases = (
+            {
+                "exact_entity_ids": tuple(
+                    f"input_boolean.bound_{index:05d}" for index in range(1000)
+                )
+            },
+            {
+                "possible_entity_domains": tuple(
+                    f"synthetic_domain_{index:05d}" for index in range(400)
+                )
+            },
+            {
+                "literal_selectors": tuple(
+                    f"synthetic_selector_{index:05d}" for index in range(400)
+                )
+            },
+            {
+                "context_provenance": tuple(
+                    f"synthetic.context.{index:05d}" for index in range(400)
+                )
+            },
+            {
+                "literal_selectors": (
+                    "Authorization: Bearer synthetic_beta48_token_"
+                    "abcdefghijklmnopqrstuvwxyz",
+                )
+            },
+        )
+        for evidence in cases:
+            with self.subTest(evidence=next(iter(evidence))):
+                item = _obligation(**evidence)
+                self.assertTrue(item.evidence_bounded)
+                self.assertTrue(item.limit_exceeded)
+                self.assertEqual(
+                    "coverage_failure", item.target_selector_scope
+                )
+                self.assertEqual("coverage_failure", item.lock_projection)
+
+    def test_clipped_target_is_not_projected_as_an_exclusion(self):
+        retained_first = tuple(
+            f"input_boolean.a_{index:05d}" for index in range(1000)
+        )
+        item = _obligation(
+            exact_entity_ids=retained_first + (STANDARD_TARGET,),
+            target_selector_scope="closed_finite_candidates",
+        )
+        self.assertNotIn(STANDARD_TARGET, item.exact_entity_ids)
+
+        first = _binding(_coverage_snapshot(item), STANDARD_TARGET)
+        repeated_item = _obligation(
+            exact_entity_ids=retained_first + (STANDARD_TARGET,),
+            target_selector_scope="closed_finite_candidates",
+        )
+        repeated = _binding(_coverage_snapshot(repeated_item), STANDARD_TARGET)
+        risk = helper_dependency_risk_assessment(
+            {"binding": first, "provenance": {"generation": 48}}
+        )
+
+        self.assertEqual(0, first["exact_dependency_obligation_count"])
+        self.assertGreater(first["coverage_failure_count"], 0)
+        self.assertFalse(first["evidence_complete"])
+        self.assertFalse(first["execution_eligible"])
+        self.assertEqual("high", risk.level.value)
+        self.assertFalse(risk.apply_allowed)
+        self.assertEqual(
+            "coverage_failure",
+            first["obligation_evidence"][0]["target_outcome"],
+        )
+        self.assertEqual(
+            first["evidence_fingerprint"], repeated["evidence_fingerprint"]
+        )
+
+    def test_f3_defense_rejects_mutated_closed_failure_authority(self):
+        failure_signals = (
+            {
+                "outcome": "coverage_failure",
+                "limit_exceeded": False,
+                "lock_projection": "exact",
+                "target_selector_scope": "closed_finite_candidates",
+            },
+            {
+                "outcome": "exact_dependency",
+                "limit_exceeded": True,
+                "lock_projection": "exact",
+                "target_selector_scope": "dependency_neutral",
+            },
+            {
+                "outcome": "exact_dependency",
+                "limit_exceeded": False,
+                "lock_projection": "coverage_failure",
+                "target_selector_scope": "closed_entity_domains",
+            },
+        )
+        operation = SimpleNamespace(
+            resource_type="automation",
+            current_config=lambda: {},
+            proposed_config=lambda: None,
+        )
+        for failure_signal in failure_signals:
+            with self.subTest(failure_signal=failure_signal):
+                item = _obligation(exact_entity_ids=(STANDARD_TARGET,))
+                # Bypass frozen-constructor normalization deliberately. F3
+                # must not depend on every historical/internal producer being
+                # well behaved.
+                for field, value in failure_signal.items():
+                    object.__setattr__(item, field, value)
+                with patch.object(
+                    locks_module,
+                    "extract_document_with_obligations",
+                    return_value=((), (), (item,)),
+                ):
+                    requests = (
+                        locks_module._automation_helper_dependency_locks(  # noqa: SLF001
+                            operation
+                        )
+                    )
+                keys = {request.key for request in requests}
+                self.assertIn(
+                    helper_dependency_lock_key(STANDARD_TARGET), keys
+                )
+                self.assertIn(
+                    unconstrained_helper_dependency_lock_key(), keys
+                )
+
+
 class Beta48ConfigurationLockPolarityTests(unittest.IsolatedAsyncioTestCase):
-    async def _keys(self, template: str) -> set[str]:
+    async def _keys(self, template: str, *, action: str = "create") -> set[str]:
         proposed = valid_config("automation")
         proposed["trigger"] = [
             {
@@ -463,12 +764,14 @@ class Beta48ConfigurationLockPolarityTests(unittest.IsolatedAsyncioTestCase):
         ]
         gateway = SyntheticConfigurationGateway()
         operation = await adapter_for(
-            "automation", "create", gateway
+            "automation", action, gateway
         ).prepare(
             proposal_for(
                 "automation",
-                "create",
-                current_config=None,
+                action,
+                current_config=(
+                    valid_config("automation") if action == "update" else None
+                ),
                 proposed_config=proposed,
             )
         )
@@ -493,6 +796,33 @@ class Beta48ConfigurationLockPolarityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             any(key.startswith("helper_dependency:") for key in neutral)
         )
+
+    async def test_production_overflow_path_is_conservatively_locked(self):
+        candidates = [
+            f"input_boolean.beta48_overflow_{index:03d}"
+            for index in range(MAX_TEMPLATE_CANDIDATES)
+        ] + [STANDARD_TARGET]
+        rendered = ",".join(repr(item) for item in candidates)
+        template = (
+            "{% set candidates = ["
+            + rendered
+            + "] %}{% for entity_id in candidates %}"
+            "{{ states(entity_id) }}{% endfor %}"
+        )
+        for action in ("create", "update"):
+            with self.subTest(action=action):
+                keys = await self._keys(template, action=action)
+                self.assertIn(unconstrained_helper_dependency_lock_key(), keys)
+
+    async def test_below_limit_exact_candidates_remain_exact_only(self):
+        template = (
+            "{% for entity_id in "
+            "['input_boolean.beta48_standard', 'sensor.synthetic'] %}"
+            "{{ states(entity_id) }}{% endfor %}"
+        )
+        keys = await self._keys(template)
+        self.assertIn(helper_dependency_lock_key(STANDARD_TARGET), keys)
+        self.assertNotIn(unconstrained_helper_dependency_lock_key(), keys)
 
 
 if __name__ == "__main__":

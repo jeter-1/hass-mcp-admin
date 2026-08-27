@@ -161,10 +161,21 @@ class DependencyObligation:
         }:
             raise ValueError("dependency obligation lock projection is invalid")
         scope = self.target_selector_scope
-        if scope is None:
-            if self.outcome == "coverage_failure" or self.limit_exceeded:
-                scope = "coverage_failure"
-            elif self.outcome == "proven_dependency_neutral":
+        failure_authority = bool(
+            self.outcome == "coverage_failure"
+            or self.limit_exceeded
+            or self.lock_projection == "coverage_failure"
+        )
+        if failure_authority:
+            scope = "coverage_failure"
+            object.__setattr__(
+                self, "target_selector_scope", "coverage_failure"
+            )
+            object.__setattr__(
+                self, "lock_projection", "coverage_failure"
+            )
+        elif scope is None:
+            if self.outcome == "proven_dependency_neutral":
                 scope = "dependency_neutral"
             elif self.outcome == "proven_target_exclusion":
                 scope = (
@@ -244,8 +255,8 @@ class DependencyObligation:
             return
         object.__setattr__(self, "evidence_bounded", True)
         # Target-specific detail is what an exact terminal or a proven
-        # exclusion rests on.  Without it the obligation is opaque, and it
-        # must take a conservative lock rather than an exact one.
+        # exclusion rests on. Without it the obligation is coverage-failed;
+        # retained prefixes remain diagnostic and cannot narrow its lock.
         target_detail_lost = bool(
             exact_lost or selector_lost or domain_lost or context_lost
         )
@@ -262,8 +273,9 @@ class DependencyObligation:
                 object.__setattr__(
                     self, "outcome", "bounded_semantic_opaque"
                 )
-            if self.lock_projection in {"none", "exact"}:
-                object.__setattr__(self, "lock_projection", "conservative")
+            object.__setattr__(
+                self, "lock_projection", "coverage_failure"
+            )
 
 
 @dataclass(frozen=True)

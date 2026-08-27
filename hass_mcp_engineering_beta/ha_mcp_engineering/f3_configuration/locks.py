@@ -93,6 +93,21 @@ def _automation_helper_dependency_locks(
         )
         for item in obligations:
             if (
+                item.outcome == "coverage_failure"
+                or item.limit_exceeded
+                or item.lock_projection == "coverage_failure"
+            ):
+                # Failure authority precedes selector-scope narrowing. Any
+                # retained exact IDs receive locks too, but a clipped or
+                # contradictory record must also hold the global guard.
+                exact_helpers.update(
+                    entity_id
+                    for entity_id in item.exact_entity_ids
+                    if entity_id.startswith("input_boolean.")
+                )
+                unconstrained = True
+                continue
+            if (
                 item.obligation_kind == "structured_entity_reference"
                 and item.relation in _NON_CAUSAL_AUTOMATION_RELATIONS
             ):

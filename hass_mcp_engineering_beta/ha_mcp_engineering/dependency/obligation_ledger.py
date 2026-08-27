@@ -4900,6 +4900,7 @@ class TemplateObligationAnalyzer:
             category = "external_opaque"
             limit = True
             lock = "coverage_failure"
+            target_selector_scope = "coverage_failure"
         if isinstance(external, str) and len(external) > 256:
             external = "oversized_sha256:" + hashlib.sha256(
                 external.encode("utf-8", errors="replace")
