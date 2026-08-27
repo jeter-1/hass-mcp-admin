@@ -1,0 +1,154 @@
+# ADR-021: Production ha-mcp capability-scoped automatic readmission
+
+Status: implemented on an isolated operational branch; release staging and
+production registry publication are deferred until the Beta 48 integration
+boundary is complete
+
+## Context
+
+ADR-020 froze the implementation-neutral capability, generation, and lease
+contract. Its reference package remains test-only and non-authoritative. This
+decision implements the first operational surface: the configured read-only
+ha-mcp gateway. Home Assistant Core, configured proxy lifecycle, semantic
+readmission, actions, mixed tools, and writes remain outside this decision.
+
+The compiled reviewed release registry remains sufficient authority for exact
+known releases. A manual ha-mcp update otherwise remains unavailable until a
+current Ed25519-signed release entry selects an existing binary-owned profile.
+A version string and `tools/list` are observations, never authority.
+
+## Decision
+
+The production path is:
+
+```text
+observe ha-mcp identity, version, protocol, session and complete catalog
+  -> retire the prior ha-mcp generation on material change
+  -> verify compiled or signed release authority
+  -> select one binary-owned policy profile and adapter
+  -> compare each reviewed automatic-read contract independently
+  -> atomically publish that generation's delegated routes and accounting
+```
+
+The production coordinator is under `ha_mcp_readmission/`. It contains no
+transport or provider call. The gateway translates its already bounded MCP
+observation into that coordinator and publishes only decisions that pass both
+the existing five-part tool-contract comparison and the coordinator's exact
+authority decision. Production never imports `tests/support/automatic_readmission`.
+The implementation-neutral ADR-020 vectors are replayed through a test adapter
+using the production coordinator, with their literal expected outcomes
+unchanged.
+
+### Binary-owned authority
+
+A signed entry can select a profile only through an exact compiled
+`policy_resource` plus `policy_sha256` binding. The selected profile supplies
+the surface, profile version, adapter ID, identity, protocols, classifications,
+argument restrictions, and complete capability fingerprints. Signed content
+cannot define executable code, a tool, an adapter, a classification, arguments,
+a route, or fallback.
+
+For each automatic read, the signed entry must repeat the binary-known input,
+description, annotation, output, and runtime fingerprints and exact argument
+restrictions. One mismatch withholds that read only. Missing and duplicate
+reviewed descriptors withhold the selected target. Unknown additions remain
+unreviewed and unreachable without disabling compatible siblings. Every
+non-read classification remains unreachable.
+
+A signed revocation is denial-only and overrides compiled exact authority.
+Expired positive authority cannot admit. Retained authenticated revocations do
+not become positive authority after expiry or restart.
+
+### Signed registry operation
+
+The release registry has one repository-owned HTTPS location:
+
+`https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/main/upstream-trust/ha-mcp-release-registry.json`
+
+The fetcher rejects redirects and applies fixed connection, total-time, and
+byte bounds. ADR-009 strict envelope parsing, Ed25519 signature verification,
+registry ID, schema, sequence, digest, previous-digest chain, clock, expiry,
+duplicate, contradiction, and unknown-key checks run before positive authority
+is available.
+
+Accepted content is cached in
+`/data/ha-mcp-release-registry-cache.json` with a temporary write, file fsync,
+atomic replacement, and directory fsync. A cache write failure prevents the
+candidate from becoming accepted. The cache contains a bounded accepted
+envelope and bounded signed revocation-source envelopes. On restart each is
+strictly parsed and signature-verified. Positive use is re-evaluated against
+the current clock. Signed revocations remain denial-only when the accepted
+positive envelope expires or a later registry omits them; exhaustion of the
+bounded revocation-source history fails closed.
+
+This registry uses the distinct add-on options
+`ha_mcp_release_registry_enabled` and
+`ha_mcp_release_registry_public_key`. It does not reuse the dashboard
+attestation enable switch or trust key. The public key is not secret. No private
+key exists in production code, fixtures, configuration, logs, or documentation.
+Tests use ephemeral keys marked synthetic. Creating the production registry and
+protected signing workflow requires separate authorization and is not part of
+this implementation branch.
+
+### Generation and dispatch boundary
+
+Material identity, version, protocol, profile, authority, revocation, catalog,
+session, or contract movement retires the old ha-mcp generation and all unused
+leases. Ordering and collection time are not material. The coordinator accepts
+only the newest verification ticket and keeps generations, leases, commits,
+diagnostics, counters, and audit projections bounded.
+
+Immediately before `tools/call`, the same MCP exchange has already:
+
+1. rechecked initialize identity and negotiated protocol;
+2. retrieved the complete bounded paginated `tools/list`;
+3. reselected current compiled or signed authority;
+4. required the selected tool exactly once;
+5. revalidated its complete contract; and
+6. acquired and atomically consumed a registered lease bound to the surface,
+   capability, adapter, generation, and configured transport session.
+
+Sequential or concurrent reuse of a lease fails. Retirement invalidates unused
+leases. A call committed after final validation may finish once, but it cannot
+publish or revive authority. Validation, registry, capacity, or persistence
+failure occurs before logical dispatch. There is no semantic retry, generic
+forwarding, alternate provider, direct-HA path, or fallback.
+
+The configured transport session value is an opaque process-local fingerprint
+source. It is stable across the transport's short MCP connections and changes
+when the configured transport object is replaced. Raw session values are not
+published.
+
+### Catalog and evidence
+
+Gateway routing, delegated tool registration, and compatibility accounting use
+the same coordinator generation. Existing explicit reconnect or re-list client
+behavior remains required. This decision does not advertise
+`tools.listChanged=true` and does not emit list-change notifications.
+
+The new bounded health and internal audit projections expose only surface,
+disposition, decision generation, binary profile/adapter IDs, authority source,
+counts, fixed reason codes, registry freshness/sequence status, lifecycle
+capacity summaries, and fallback count zero. They exclude endpoints,
+credentials, raw identities, versions, catalogs, descriptors, schemas,
+descriptions, registry bodies, signatures, sessions, and exception text.
+
+## Consequences
+
+A compatible manually updated ha-mcp release can restore matching delegated
+reads without an Engineering restart or code release after trusted registry
+publication. Changed siblings remain quarantined. Unknown releases without a
+valid signed entry remain unavailable even when their catalog looks identical.
+Core changes cannot retire ha-mcp authority because this runtime coordinator is
+instantiated only for `ha_mcp` by the read gateway.
+
+Operational freshness is intentionally pull-based at the existing bounded
+gateway reconciliation cadence. Clients must reconnect or re-list to observe a
+published catalog change. Production signing, publication, release staging,
+deployment, and live acceptance are separate governed steps.
+
+## References
+
+- [ADR-009](ADR-009-SIGNED-COMPATIBILITY-REGISTRY-FOUNDATION.md)
+- [ADR-020](ADR-020-CAPABILITY-SCOPED-AUTOMATIC-READMISSION.md)
+- [ha-mcp automatic-readmission acceptance](../HA_MCP_CAPABILITY_AUTO_READMISSION_ACCEPTANCE.md)

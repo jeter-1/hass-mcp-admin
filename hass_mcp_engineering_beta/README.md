@@ -140,6 +140,13 @@ execution task, configuration write, service call, or Home Assistant mutation.
    been initialized; when enabled, configure only the non-secret Ed25519 public
    key in `upstream_trust_registry_public_key`. Never place the private signing
    seed in add-on options.
+   Capability-scoped ha-mcp readmission uses separate disabled-by-default
+   `ha_mcp_release_registry_enabled` and
+   `ha_mcp_release_registry_public_key` options. Enable them only after the
+   fixed ADR-021 release registry and its separately reviewed public trust
+   anchor exist. Signed data can select only binary-owned read profiles; it
+   cannot add tools, code, writes, or fallback. Never place a private release-
+   registry signing key in the add-on configuration.
 6. To receive advisory governed-approval pushes on one Companion App device,
    set `approval_notification_service` to that device's exact existing service
    in the form `notify.mobile_app_<device>`. Leave it empty to disable pushes.

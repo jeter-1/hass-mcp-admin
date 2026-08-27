@@ -282,6 +282,15 @@ input, safety, output/hash, and runtime contract.
    `upstream_trust_registry_enabled` in a later deployment window. Do not repeat
    the key or endpoint in tickets/logs.
 
+The dashboard-attestation trust options above do not authorize automatic
+readmission. ADR-021 uses the separate disabled-by-default
+`ha_mcp_release_registry_enabled` and
+`ha_mcp_release_registry_public_key` options. Its registry location is fixed in
+the binary, redirects are rejected, and signed data may select only an existing
+binary-owned read profile and adapter. Do not reuse either private signing key.
+Production release-registry signing and publication require a separately
+reviewed protected workflow; no private key belongs in add-on options.
+
 ## Review a dashboard release for provenance
 
 1. Open GitHub Actions on `main` and select
