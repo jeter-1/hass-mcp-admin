@@ -32,12 +32,18 @@ from ha_mcp_engineering.dependency.provider import (  # noqa: E402
 from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
     supported_home_assistant_versions,
 )
+from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ChangeOperation,
+)
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     HELPER_DEPENDENCY_RISK_MODEL,
     build_helper_dependency_risk_binding,
     helper_dependency_risk_assessment,
+)
+from ha_mcp_engineering.governance.service import (  # noqa: E402
+    ChangeGovernanceService,
 )
 from ha_mcp_engineering.f3_configuration.locks import (  # noqa: E402
     helper_dependency_lock_key,
@@ -521,6 +527,53 @@ class Beta48TargetPolarityTests(unittest.TestCase):
 
 class Beta48CoverageFailurePrecedenceTests(unittest.TestCase):
     @staticmethod
+    def _failure_signal_cases():
+        return (
+            (
+                "outcome",
+                {
+                    "outcome": "coverage_failure",
+                    "target_selector_scope": "closed_finite_candidates",
+                    "lock_projection": "exact",
+                },
+            ),
+            (
+                "limit",
+                {
+                    "outcome": "exact_dependency",
+                    "limit_exceeded": True,
+                    "target_selector_scope": "dependency_neutral",
+                    "lock_projection": "exact",
+                },
+            ),
+            (
+                "lock_projection",
+                {
+                    "outcome": "exact_dependency",
+                    "target_selector_scope": "closed_finite_candidates",
+                    "lock_projection": "coverage_failure",
+                },
+            ),
+            (
+                "selector_scope",
+                {
+                    "outcome": "exact_dependency",
+                    "target_selector_scope": "coverage_failure",
+                    "lock_projection": "exact",
+                },
+            ),
+            (
+                "combined",
+                {
+                    "outcome": "coverage_failure",
+                    "limit_exceeded": True,
+                    "target_selector_scope": "dependency_neutral",
+                    "lock_projection": "coverage_failure",
+                },
+            ),
+        )
+
+    @staticmethod
     def _analyzer(source_id: str) -> TemplateObligationAnalyzer:
         return TemplateObligationAnalyzer(
             source_type="automation",
@@ -622,6 +675,140 @@ class Beta48CoverageFailurePrecedenceTests(unittest.TestCase):
                     "coverage_failure", item.target_selector_scope
                 )
                 self.assertEqual("coverage_failure", item.lock_projection)
+
+    def test_each_failure_signal_remains_nonactionable_with_exact_target(self):
+        operation = SimpleNamespace(
+            resource_type="automation",
+            current_config=lambda: {},
+            proposed_config=lambda: None,
+        )
+        for name, failure_signal in self._failure_signal_cases():
+            with self.subTest(case=name):
+                item = _obligation(
+                    exact_entity_ids=(STANDARD_TARGET,),
+                    **failure_signal,
+                )
+                self.assertEqual((STANDARD_TARGET,), item.exact_entity_ids)
+
+                binding = _binding(
+                    _coverage_snapshot(item), STANDARD_TARGET
+                )
+                risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": binding,
+                        "provenance": {"generation": 48},
+                    }
+                )
+                projected = binding["obligation_evidence"][0]
+                self.assertEqual(
+                    "coverage_failure", projected["target_outcome"]
+                )
+                self.assertFalse(binding["coverage_complete"])
+                self.assertFalse(binding["evidence_complete"])
+                self.assertFalse(binding["execution_eligible"])
+                self.assertGreater(binding["coverage_failure_count"], 0)
+                self.assertFalse(risk.apply_allowed)
+
+                plan = SimpleNamespace(
+                    operation=ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+                    operational=SimpleNamespace(
+                        baseline={"dependency_risk": binding}
+                    ),
+                    risk=risk,
+                )
+                service = object.__new__(ChangeGovernanceService)
+                self.assertFalse(
+                    service._approval_is_actionable(plan)  # noqa: SLF001
+                )
+
+                with patch.object(
+                    locks_module,
+                    "extract_document_with_obligations",
+                    return_value=((), (), (item,)),
+                ):
+                    requests = (
+                        locks_module._automation_helper_dependency_locks(  # noqa: SLF001
+                            operation
+                        )
+                    )
+                keys = {request.key for request in requests}
+                self.assertIn(
+                    helper_dependency_lock_key(STANDARD_TARGET), keys
+                )
+                self.assertIn(
+                    unconstrained_helper_dependency_lock_key(), keys
+                )
+
+    def test_failure_signals_are_canonicalized_after_bounding(self):
+        for name, failure_signal in self._failure_signal_cases():
+            with self.subTest(case=name):
+                item = _obligation(
+                    exact_entity_ids=(STANDARD_TARGET,),
+                    **failure_signal,
+                )
+                self.assertTrue(item.coverage_failure_authority)
+                self.assertEqual("coverage_failure", item.outcome)
+                self.assertEqual(
+                    "coverage_failure", item.target_selector_scope
+                )
+                self.assertEqual("coverage_failure", item.lock_projection)
+                self.assertEqual((STANDARD_TARGET,), item.exact_entity_ids)
+
+    def test_ordinary_exact_target_remains_complete_and_exact_only(self):
+        item = _obligation(
+            exact_entity_ids=(STANDARD_TARGET,),
+            target_selector_scope="closed_finite_candidates",
+        )
+        binding = _binding(_coverage_snapshot(item), STANDARD_TARGET)
+        risk = helper_dependency_risk_assessment(
+            {"binding": binding, "provenance": {"generation": 48}}
+        )
+        self.assertFalse(item.coverage_failure_authority)
+        self.assertEqual("exact_dependency", item.outcome)
+        self.assertEqual(
+            "exact_dependency",
+            binding["obligation_evidence"][0]["target_outcome"],
+        )
+        self.assertTrue(binding["coverage_complete"])
+        self.assertTrue(binding["evidence_complete"])
+        self.assertTrue(binding["execution_eligible"])
+        self.assertTrue(risk.apply_allowed)
+
+        operation = SimpleNamespace(
+            resource_type="automation",
+            current_config=lambda: {},
+            proposed_config=lambda: None,
+        )
+        with patch.object(
+            locks_module,
+            "extract_document_with_obligations",
+            return_value=((), (), (item,)),
+        ):
+            requests = locks_module._automation_helper_dependency_locks(  # noqa: SLF001
+                operation
+            )
+        keys = {request.key for request in requests}
+        self.assertIn(helper_dependency_lock_key(STANDARD_TARGET), keys)
+        self.assertNotIn(unconstrained_helper_dependency_lock_key(), keys)
+
+    def test_failure_classification_changes_binding_fingerprint(self):
+        exact = _obligation(
+            exact_entity_ids=(STANDARD_TARGET,),
+            target_selector_scope="closed_finite_candidates",
+        )
+        failed = _obligation(
+            exact_entity_ids=(STANDARD_TARGET,),
+            target_selector_scope="closed_finite_candidates",
+            lock_projection="coverage_failure",
+        )
+        self.assertNotEqual(
+            _binding(_coverage_snapshot(exact), STANDARD_TARGET)[
+                "evidence_fingerprint"
+            ],
+            _binding(_coverage_snapshot(failed), STANDARD_TARGET)[
+                "evidence_fingerprint"
+            ],
+        )
 
     def test_bounded_target_evidence_forces_failure_scope_and_lock(self):
         cases = (

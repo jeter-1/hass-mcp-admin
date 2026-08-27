@@ -190,7 +190,7 @@ class ConservativeReclassificationTests(unittest.TestCase):
             exact_entity_ids=("input_boolean.example",),
             literal_selectors=("y" * (MAX_OBLIGATION_VALUE_BYTES + 1),),
         )
-        self.assertEqual("bounded_semantic_opaque", item.outcome)
+        self.assertEqual("coverage_failure", item.outcome)
         self.assertEqual("coverage_failure", item.lock_projection)
         self.assertEqual("coverage_failure", item.target_selector_scope)
         self.assertTrue(item.limit_exceeded)
@@ -204,7 +204,7 @@ class ConservativeReclassificationTests(unittest.TestCase):
                 f"light.item_{index:05d}" for index in range(1000)
             ),
         )
-        self.assertEqual("bounded_semantic_opaque", item.outcome)
+        self.assertEqual("coverage_failure", item.outcome)
         self.assertEqual("coverage_failure", item.lock_projection)
         self.assertEqual("coverage_failure", item.target_selector_scope)
 

@@ -150,6 +150,28 @@ class DependencyObligation:
     # reader can distinguish "no such value" from "value not retained".
     evidence_bounded: bool = False
 
+    @property
+    def coverage_failure_authority(self) -> bool:
+        """Return whether any terminal field carries failure authority."""
+
+        return bool(
+            self.outcome == "coverage_failure"
+            or self.limit_exceeded
+            or self.lock_projection == "coverage_failure"
+            or self.target_selector_scope == "coverage_failure"
+        )
+
+    def _normalize_coverage_failure_authority(self) -> None:
+        """Make failure authority monotonic across every projection field."""
+
+        if not self.coverage_failure_authority:
+            return
+        object.__setattr__(self, "outcome", "coverage_failure")
+        object.__setattr__(
+            self, "target_selector_scope", "coverage_failure"
+        )
+        object.__setattr__(self, "lock_projection", "coverage_failure")
+
     def __post_init__(self) -> None:
         if self.outcome not in OBLIGATION_OUTCOMES:
             raise ValueError("dependency obligation outcome is invalid")
@@ -160,21 +182,9 @@ class DependencyObligation:
             "coverage_failure",
         }:
             raise ValueError("dependency obligation lock projection is invalid")
+        self._normalize_coverage_failure_authority()
         scope = self.target_selector_scope
-        failure_authority = bool(
-            self.outcome == "coverage_failure"
-            or self.limit_exceeded
-            or self.lock_projection == "coverage_failure"
-        )
-        if failure_authority:
-            scope = "coverage_failure"
-            object.__setattr__(
-                self, "target_selector_scope", "coverage_failure"
-            )
-            object.__setattr__(
-                self, "lock_projection", "coverage_failure"
-            )
-        elif scope is None:
+        if scope is None:
             if self.outcome == "proven_dependency_neutral":
                 scope = "dependency_neutral"
             elif self.outcome == "proven_target_exclusion":
@@ -197,6 +207,10 @@ class DependencyObligation:
         if scope not in TARGET_SELECTOR_SCOPES:
             raise ValueError("dependency obligation target scope is invalid")
         self._bind_bounded_evidence()
+        # Bounding and sanitization can introduce failure authority after the
+        # initial constructor normalization. Reapply the same canonical rule
+        # so no retained exact prefix can restore actionability.
+        self._normalize_coverage_failure_authority()
 
     def _bind_bounded_evidence(self) -> None:
         """Bound and sanitize evidence, classifying conservatively on loss.
@@ -262,17 +276,10 @@ class DependencyObligation:
         )
         if target_detail_lost:
             object.__setattr__(self, "limit_exceeded", True)
+            object.__setattr__(self, "outcome", "coverage_failure")
             object.__setattr__(
                 self, "target_selector_scope", "coverage_failure"
             )
-            if self.outcome in {
-                "exact_dependency",
-                "proven_target_exclusion",
-                "proven_dependency_neutral",
-            }:
-                object.__setattr__(
-                    self, "outcome", "bounded_semantic_opaque"
-                )
             object.__setattr__(
                 self, "lock_projection", "coverage_failure"
             )

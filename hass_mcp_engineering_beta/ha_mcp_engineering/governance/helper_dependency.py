@@ -385,7 +385,7 @@ def _obligation_targets_helper(
 
     # Retained candidate material can accompany a failed or clipped analysis.
     # Such material is diagnostic only and can never restore target authority.
-    if item.outcome == "coverage_failure" or item.limit_exceeded:
+    if item.coverage_failure_authority:
         return "coverage_failure"
     if (
         item.obligation_kind == "structured_entity_reference"
@@ -405,8 +405,6 @@ def _obligation_targets_helper(
         # which independently retains exact helper locks from the same item.
         return "exact_dependency"
     scope = item.target_selector_scope or "target_capable"
-    if scope == "coverage_failure":
-        return "coverage_failure"
     if scope == "dependency_neutral":
         return "proven_dependency_neutral"
     if scope == "closed_finite_candidates":

@@ -92,11 +92,7 @@ def _automation_helper_dependency_locks(
             and item.relation not in _NON_CAUSAL_AUTOMATION_RELATIONS
         )
         for item in obligations:
-            if (
-                item.outcome == "coverage_failure"
-                or item.limit_exceeded
-                or item.lock_projection == "coverage_failure"
-            ):
+            if item.coverage_failure_authority:
                 # Failure authority precedes selector-scope narrowing. Any
                 # retained exact IDs receive locks too, but a clipped or
                 # contradictory record must also hold the global guard.
