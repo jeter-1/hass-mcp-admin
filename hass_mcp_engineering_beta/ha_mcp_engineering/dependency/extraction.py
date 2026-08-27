@@ -1529,8 +1529,14 @@ def resolve_literal_label_obligations(
             for value in context
             if value.startswith("entity_set_producer:")
         }
+        selector_transforms = {
+            value.removeprefix("entity_selector_transform:")
+            for value in context
+            if value.startswith("entity_selector_transform:")
+        }
         eligible = bool(
             producers == {"label_entities"}
+            and selector_transforms.issubset({"expand"})
             and "entity_selector_provenance:complete" in context
             and "entity_selector_provenance:incomplete" not in context
             and item.literal_selectors
@@ -1622,6 +1628,17 @@ def resolve_literal_label_obligations(
         composition_complete = bool(
             "entity_non_selector_evidence:complete" in context
             and "entity_non_selector_evidence:incomplete" not in context
+            # Home Assistant recursively expands group members.  A complete
+            # label registry proves which group entity was selected, but it
+            # does not prove that group's recursive membership.  Preserve the
+            # bounded inclusion while keeping target relevance conservative.
+            and not (
+                "expand" in selector_transforms
+                and any(
+                    candidate.startswith("group.")
+                    for candidate in candidates
+                )
+            )
         )
         if not composition_complete:
             # The label component is known, but another candidate-producing

@@ -280,6 +280,11 @@ class _Value:
     non_selector_candidate_evidence_complete: bool = False
     literal_selectors: set[str] = field(default_factory=set)
     selector_producers: set[str] = field(default_factory=set)
+    # Reviewed selector-preserving transforms applied after an entity-set
+    # producer.  This is kept separate from the producer identity so the
+    # registry resolver can distinguish a literal label membership from a
+    # recursively expanded membership without reconstructing the template.
+    selector_transforms: set[str] = field(default_factory=set)
     selector_provenance_complete: bool = False
     callables: set[str] = field(default_factory=set)
     fields: dict[str, "_Value"] = field(default_factory=dict)
@@ -341,6 +346,7 @@ class _Value:
             ),
             literal_selectors=set(self.literal_selectors),
             selector_producers=set(self.selector_producers),
+            selector_transforms=set(self.selector_transforms),
             selector_provenance_complete=(
                 self.selector_provenance_complete
             ),
@@ -498,6 +504,7 @@ def _values_equivalent(
             "non_selector_candidate_evidence_complete",
             "literal_selectors",
             "selector_producers",
+            "selector_transforms",
             "selector_provenance_complete",
             "callables",
             "container_kinds",
@@ -687,6 +694,7 @@ def _merge_values(
         result.possible_domains.update(value.possible_domains)
         result.literal_selectors.update(value.literal_selectors)
         result.selector_producers.update(value.selector_producers)
+        result.selector_transforms.update(value.selector_transforms)
         result.callables.update(value.callables)
         result.container_kinds.update(value.container_kinds)
         result.namespace_ids.update(value.namespace_ids)
@@ -766,6 +774,7 @@ def _merge_values(
         or len(result.possible_domains) > MAX_TEMPLATE_CANDIDATES
         or len(result.literal_selectors) > MAX_TEMPLATE_CANDIDATES
         or len(result.selector_producers) > MAX_TEMPLATE_CANDIDATES
+        or len(result.selector_transforms) > MAX_TEMPLATE_CANDIDATES
         or len(result.callables) > MAX_TEMPLATE_CANDIDATES
         or len(result.container_kinds) > MAX_TEMPLATE_CANDIDATES
         or len(result.namespace_ids) > MAX_TEMPLATE_CANDIDATES
@@ -792,6 +801,9 @@ def _merge_values(
         )
         result.selector_producers = set(
             sorted(result.selector_producers)[:MAX_TEMPLATE_CANDIDATES]
+        )
+        result.selector_transforms = set(
+            sorted(result.selector_transforms)[:MAX_TEMPLATE_CANDIDATES]
         )
         result.callables = set(
             sorted(result.callables)[:MAX_TEMPLATE_CANDIDATES]
@@ -1240,6 +1252,7 @@ class TemplateObligationAnalyzer:
             result.possible_domains.update(source.possible_domains)
             result.literal_selectors.update(source.literal_selectors)
             result.selector_producers.update(source.selector_producers)
+            result.selector_transforms.update(source.selector_transforms)
             result.callables.update(source.callables)
             result.context_paths.update(source.context_paths)
             result.runtime_kinds.update(source.runtime_kinds)
@@ -2165,6 +2178,12 @@ class TemplateObligationAnalyzer:
                 )
             if name in {"expand", "closest"}:
                 combined = self._merge(targets, node=node)
+                # ``expand`` preserves the bounded selector universe supplied
+                # by its inputs.  Registry-backed producers are resolved by
+                # the dependency provider after the template pass, so retain
+                # that producer identity instead of replacing it with a naked
+                # opaque State collection.
+                combined.selector_transforms.add(name)
                 exact = {
                     item
                     for item in (
@@ -2180,27 +2199,29 @@ class TemplateObligationAnalyzer:
                     or not exact
                 )
                 if membership_opaque:
-                    self._emit(
-                        outcome="bounded_semantic_opaque",
+                    self._opaque_from_value(
+                        node,
+                        combined,
+                        f"{name}_expanded_membership_opaque",
                         kind=f"global_{name}_result",
-                        reason=f"{name}_expanded_membership_opaque",
-                        category="state_entity_access",
-                        node=node,
-                        exact=tuple(sorted(exact)),
-                        lock="conservative",
                     )
-                return _Value(
-                    entity_ids=exact,
-                    state_collection=name == "expand",
-                    state_object=name == "closest",
-                    unknown=membership_opaque,
-                    complete=not membership_opaque,
-                    entity_candidate_evidence_complete=not membership_opaque,
-                    non_selector_candidate_evidence_complete=(
+                result = combined.copy()
+                result.entity_ids = exact
+                result.state_collection = name == "expand"
+                result.state_object = name == "closest"
+                result.unknown = membership_opaque
+                result.complete = not membership_opaque
+                if not result.selector_producers:
+                    result.entity_candidate_evidence_complete = bool(
                         not membership_opaque
-                    ),
-                    selector_provenance_complete=not membership_opaque,
-                )
+                    )
+                    result.non_selector_candidate_evidence_complete = bool(
+                        not membership_opaque
+                    )
+                    result.selector_provenance_complete = bool(
+                        not membership_opaque
+                    )
+                return result
             if name in _VALUE_RETURNING_STATE_HELPERS:
                 return _dynamic_scalar_value()
             return _ordinary_value()
@@ -3264,7 +3285,16 @@ class TemplateObligationAnalyzer:
                 kind=f"filter_{name}_{dispatched}",
                 reason=f"{name}_dispatches_{dispatched}",
             )
-            return selection_result() if name != "map" else _unknown_value()
+            # The reviewed state helper has consumed the selector here and
+            # returns a scalar value for each member.  Keep that scalar taint
+            # so a later entity-selector use still fails closed, but do not
+            # invent another unknown State-object relationship when it is
+            # merely rendered or projected.
+            return (
+                selection_result()
+                if name != "map"
+                else _dynamic_scalar_value()
+            )
         if category in {"dependency_neutral", "provenance_preserving"}:
             self._neutral(node, f"{name}_{dispatched}_dependency_neutral")
             if name == "map" and dispatched == "string":
@@ -3379,7 +3409,18 @@ class TemplateObligationAnalyzer:
                     scope=scope,
                     depth=depth + 1,
                 )
-            if value.state_collection and value.domain_evidence_complete:
+            pending_complete_selector = bool(
+                value.selector_producers
+                and value.selector_provenance_complete
+                and value.non_selector_candidate_evidence_complete
+                and not value.limit_exceeded
+            )
+            complete_state_universe = bool(
+                value.domain_evidence_complete
+                or value.entity_candidate_evidence_complete
+                or pending_complete_selector
+            )
+            if value.state_collection and complete_state_universe:
                 # ``map(attribute=...)`` projects each State in the domain
                 # collection.  It is not equivalent to ``states.domain.id``
                 # attribute lookup on the collection root.  Account for the
@@ -3393,12 +3434,31 @@ class TemplateObligationAnalyzer:
                 )
                 if part == "entity_id":
                     return _Value(
+                        entity_ids=set(value.entity_ids),
+                        literal_strings=set(value.literal_strings),
                         possible_domains=set(value.possible_domains),
-                        domain_evidence_complete=True,
+                        domain_evidence_complete=(
+                            value.domain_evidence_complete
+                        ),
+                        entity_candidate_evidence_complete=(
+                            value.entity_candidate_evidence_complete
+                        ),
+                        non_selector_candidate_evidence_complete=(
+                            value.non_selector_candidate_evidence_complete
+                        ),
+                        literal_selectors=set(value.literal_selectors),
+                        selector_producers=set(value.selector_producers),
+                        selector_transforms=set(value.selector_transforms),
+                        selector_provenance_complete=(
+                            value.selector_provenance_complete
+                        ),
                         ordinary=True,
                         unknown=True,
                         dynamic_scalar=True,
-                        complete=True,
+                        complete=bool(
+                            value.entity_candidate_evidence_complete
+                            or value.domain_evidence_complete
+                        ),
                     )
                 if part in {"last_changed", "last_updated"}:
                     return _typed_runtime_value("datetime")
@@ -4356,6 +4416,10 @@ class TemplateObligationAnalyzer:
                         f"entity_set_producer:{producer}"
                         for producer in value.selector_producers
                     },
+                    {
+                        f"entity_selector_transform:{transform}"
+                        for transform in value.selector_transforms
+                    },
                     (
                         {"entity_selector_provenance:complete"}
                         if value.selector_producers
@@ -4671,6 +4735,7 @@ class TemplateObligationAnalyzer:
                 + len(current.possible_domains)
                 + len(current.literal_selectors)
                 + len(current.selector_producers)
+                + len(current.selector_transforms)
                 + len(current.callables)
                 + len(current.container_kinds)
                 + len(current.namespace_ids)
@@ -4827,6 +4892,10 @@ class TemplateObligationAnalyzer:
                         {
                             f"entity_set_producer:{producer}"
                             for producer in value.selector_producers
+                        },
+                        {
+                            f"entity_selector_transform:{transform}"
+                            for transform in value.selector_transforms
                         },
                         (
                             {"entity_selector_provenance:complete"}

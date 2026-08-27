@@ -20,7 +20,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v7"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v8"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -31,6 +31,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v4",
         "helper-dependency-risk-v5",
         "helper-dependency-risk-v6",
+        "helper-dependency-risk-v7",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -1476,6 +1477,14 @@ class HelperDependencyRiskService:
             entity_id=entity_id,
             index_metadata=metadata,
         )
+        # Persist the exact immutable index identity used for this target
+        # classification.  Generation is operational provenance rather than
+        # approval material (a fenced refresh may reproduce identical
+        # semantics under a new generation), while the target-scoped evidence
+        # fingerprint remains the dispatch authority.
+        binding["dependency_index_generation"] = snapshot.generation
+        binding["dependency_index_fingerprint"] = snapshot.fingerprint
+        binding["dependency_index_source_epoch"] = snapshot.source_epoch
         return {
             "binding": binding,
             "provenance": {

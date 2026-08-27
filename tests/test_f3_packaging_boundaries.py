@@ -28,6 +28,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_beta34_automation_verification.py",
     "tests/test_beta39_execution_authority.py",
     "tests/test_beta39_obligation_governance.py",
+    "tests/test_beta49_helper_obligation_target_scope.py",
     "tests/test_f3_adapter_core.py",
     "tests/test_f3_contract.py",
     "tests/test_f3_dashboard_executor_conformance.py",
