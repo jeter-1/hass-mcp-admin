@@ -325,7 +325,13 @@ class SuspendedIdentityTransport(FakeTransport):
         self._suspend_next_call = True
 
     async def execute_read(
-        self, tool_name, arguments, *, timeout_seconds, catalog_validator
+        self,
+        tool_name,
+        arguments,
+        *,
+        timeout_seconds,
+        catalog_validator,
+        before_dispatch=None,
     ):
         self.attempts.append((tool_name, dict(arguments), timeout_seconds))
         if self._suspend_next_call:
@@ -333,6 +339,10 @@ class SuspendedIdentityTransport(FakeTransport):
             self.first_call_started.set()
             await self.release_first_call.wait()
         catalog_validator(self.catalog)
+        if before_dispatch is not None:
+            prepared = before_dispatch()
+            if inspect.isawaitable(prepared):
+                await prepared
         self.calls.append((tool_name, dict(arguments), timeout_seconds))
         return McpReadResult(
             protocol_version=self.catalog.protocol_version,
@@ -352,11 +362,21 @@ class CommittedSlowTransport(FakeTransport):
         self.release_slow_call = asyncio.Event()
 
     async def execute_read(
-        self, tool_name, arguments, *, timeout_seconds, catalog_validator
+        self,
+        tool_name,
+        arguments,
+        *,
+        timeout_seconds,
+        catalog_validator,
+        before_dispatch=None,
     ):
         self.attempts.append((tool_name, dict(arguments), timeout_seconds))
         captured_catalog = self.catalog
         catalog_validator(captured_catalog)
+        if before_dispatch is not None:
+            prepared = before_dispatch()
+            if inspect.isawaitable(prepared):
+                await prepared
         if tool_name == self.slow_tool:
             self.slow_call_committed.set()
             await self.release_slow_call.wait()

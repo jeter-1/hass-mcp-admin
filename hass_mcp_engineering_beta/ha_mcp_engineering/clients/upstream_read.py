@@ -9,6 +9,7 @@ import json
 import logging
 import inspect
 import time
+import uuid
 from typing import Any, Awaitable, Callable
 
 from mcp import types
@@ -33,6 +34,8 @@ class McpReadCatalog:
     server_version: str
     tools: tuple[dict[str, Any], ...]
     connection_latency_ms: float
+    session_id: str = ""
+    catalog_complete: bool = True
 
 
 @dataclass(frozen=True)
@@ -75,6 +78,12 @@ class McpReadGatewayTransport:
             name="hass-mcp-engineering-read-gateway",
             version=client_version,
         )
+        # This opaque process-local value identifies the configured upstream
+        # transport generation. It is never exposed and is stable across the
+        # short MCP sessions opened for discovery and calls.
+        self._session_id = (
+            "ha-mcp-transport-" + uuid.uuid4().hex
+        )
         for name in ("mcp.client.streamable_http", "httpx", "httpcore"):
             logger = logging.getLogger(name)
             logger.disabled = True
@@ -112,6 +121,8 @@ class McpReadGatewayTransport:
                         connection_latency_ms=round(
                             (time.perf_counter() - started) * 1_000, 3
                         ),
+                        session_id=self._session_id,
+                        catalog_complete=True,
                     )
         except DashboardTransportError:
             raise
@@ -159,6 +170,8 @@ class McpReadGatewayTransport:
                                 connection_latency_ms=round(
                                     (time.perf_counter() - started) * 1_000, 3
                                 ),
+                                session_id=self._session_id,
+                                catalog_complete=True,
                             )
                         )
                     except DashboardTransportError:
