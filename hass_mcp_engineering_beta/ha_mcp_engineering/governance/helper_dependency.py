@@ -20,7 +20,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v5"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v6"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -29,6 +29,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v2",
         "helper-dependency-risk-v3",
         "helper-dependency-risk-v4",
+        "helper-dependency-risk-v5",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )

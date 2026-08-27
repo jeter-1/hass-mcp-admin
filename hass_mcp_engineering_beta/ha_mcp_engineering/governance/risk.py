@@ -6,6 +6,8 @@ import hashlib
 import json
 from typing import Any, Iterable
 
+from jinja2 import Environment, TemplateSyntaxError, nodes
+
 from .models import ChangeOperation, ChangeRiskAssessment, RiskLevel
 
 
@@ -79,6 +81,7 @@ _HELPER_TRANSITIVE_EFFECT_DOMAINS = frozenset(
 )
 _HELPER_PROVEN_BENIGN_SERVICE_DOMAINS = frozenset({"notify"})
 _HELPER_NOTIFICATION_TEXT_BYTES = 4_096
+_HELPER_NOTIFICATION_TEMPLATE_NODE_LIMIT = 512
 _HELPER_NOTIFICATION_DATA_FIELDS = frozenset({"message", "title"})
 _HELPER_REVIEWED_NONPHYSICAL_NOTIFICATION_CONTROLS = frozenset(
     {
@@ -96,6 +99,9 @@ _HELPER_EFFECTFUL_NOTIFICATION_CONTROLS = frozenset(
         "request_location_update",
         "tts",
     }
+)
+_HELPER_DYNAMIC_NOTIFICATION_CONTROL_PREFIXES = frozenset(
+    {"command_", "kiosk_"}
 )
 _HELPER_GENERIC_EFFECT_SERVICES = frozenset(
     {
@@ -158,6 +164,7 @@ _HELPER_EFFECT_SENSITIVE_TERMS = frozenset(
         "webhook",
     }
 )
+_HELPER_TEMPLATE_PARSER = Environment(autoescape=False)
 
 
 def _walk(value: Any) -> Iterable[Any]:
@@ -1151,7 +1158,70 @@ def _notification_effect_semantics(
     blocking_reasons: set[str] = set()
     reason_codes: set[str] = set()
 
+    def template_proves_display_only(message: str) -> bool:
+        """Prove one bounded template cannot select a notification control.
+
+        Home Assistant notification controls occupy a closed reviewed set of
+        exact values plus the ``command_`` and ``kiosk_`` namespaces.  A
+        parsed literal prefix outside every such namespace proves display
+        behavior without interpreting or rendering the dynamic suffix.  A
+        template beginning with a dynamic value, a malformed template, or a
+        prefix that could still form a control remains conservative.
+        """
+
+        if len(message.encode("utf-8")) > _HELPER_NOTIFICATION_TEXT_BYTES:
+            return False
+        try:
+            parsed = _HELPER_TEMPLATE_PARSER.parse(message)
+            if 1 + sum(1 for _ in parsed.find_all(nodes.Node)) > (
+                _HELPER_NOTIFICATION_TEMPLATE_NODE_LIMIT
+            ):
+                return False
+        except (TemplateSyntaxError, TypeError, ValueError, RecursionError):
+            return False
+        prefix = ""
+        for statement in parsed.body:
+            if not isinstance(statement, nodes.Output):
+                # Statements can render material before a later literal
+                # output.  This bounded proof does not interpret control flow,
+                # so any statement keeps the message effect conservative.
+                return False
+            for item in statement.nodes:
+                if isinstance(item, nodes.TemplateData):
+                    prefix += str(item.data)
+                    normalized = prefix.strip().casefold()
+                    if not normalized:
+                        continue
+                    exact_controls = (
+                        _HELPER_REVIEWED_NONPHYSICAL_NOTIFICATION_CONTROLS
+                        | _HELPER_EFFECTFUL_NOTIFICATION_CONTROLS
+                    )
+                    if any(
+                        control.startswith(normalized)
+                        for control in exact_controls
+                    ):
+                        return False
+                    if any(
+                        marker.startswith(normalized)
+                        or normalized.startswith(marker)
+                        for marker in (
+                            _HELPER_DYNAMIC_NOTIFICATION_CONTROL_PREFIXES
+                        )
+                    ):
+                        return False
+                    return True
+                # The first material output is dynamic, so it can select any
+                # control value and cannot be certified as display-only.
+                return False
+        return False
+
     def classify_message(message: str) -> str:
+        if _has_template(message):
+            return (
+                "ordinary_display"
+                if template_proves_display_only(message)
+                else "dynamic_unresolved"
+            )
         normalized = message.strip().lower()
         if normalized in (
             _HELPER_REVIEWED_NONPHYSICAL_NOTIFICATION_CONTROLS
@@ -1203,6 +1273,9 @@ def _notification_effect_semantics(
             )
             blocking_reasons.add(code)
             reason_codes.add(code)
+        elif kind == "dynamic_unresolved":
+            blocking_reasons.add("dynamic_notification_content")
+            reason_codes.add("dynamic_notification_content")
         return kind
 
     for root_path, root in _action_roots(config):
@@ -1216,12 +1289,7 @@ def _notification_effect_semantics(
                 continue
             seen = True
             direct_message = step.get("message")
-            if isinstance(direct_message, str) and _has_template(
-                direct_message
-            ):
-                blocking_reasons.add("dynamic_notification_content")
-                reason_codes.add("dynamic_notification_content")
-            elif isinstance(direct_message, str):
+            if isinstance(direct_message, str):
                 note_message(direct_message)
             if "data_template" in step:
                 blocking_reasons.add("dynamic_notification_content")
@@ -1238,9 +1306,6 @@ def _notification_effect_semantics(
             if not isinstance(message, str) or not message:
                 blocking_reasons.add("notification_payload_unproven")
                 reason_codes.add("notification_payload_unproven")
-            elif _has_template(message):
-                blocking_reasons.add("dynamic_notification_content")
-                reason_codes.add("dynamic_notification_content")
             elif len(message.encode("utf-8")) > _HELPER_NOTIFICATION_TEXT_BYTES:
                 blocking_reasons.add("notification_payload_unproven")
                 reason_codes.add("notification_payload_unproven")
@@ -1276,6 +1341,36 @@ def _notification_effect_semantics(
     return seen, bool(seen and not blocking_reasons), tuple(
         sorted(reason_codes, key=lambda item: item.encode("utf-8"))
     )
+
+
+def _unresolved_consequential_action_target(config: dict[str, Any]) -> bool:
+    """Return whether a reviewed direct effect lacks bounded target scope.
+
+    Target requirements are assessed per service step.  A targetless notify
+    step must not make a separately exact lock or cover action incomplete,
+    while a targetless direct entity service remains potentially broad.
+    """
+
+    for root_path, root in _action_roots(config):
+        for _path, step in _action_steps(root, root_path):
+            service = step.get("service", step.get("action"))
+            if (
+                not isinstance(service, str)
+                or not service.strip()
+                or _has_template(service)
+                or "." not in service
+            ):
+                continue
+            normalized = service.strip().lower()
+            domain = normalized.split(".", 1)[0]
+            if (
+                domain not in _HELPER_DIRECT_EFFECT_DOMAINS
+                and normalized not in _HELPER_GENERIC_EFFECT_SERVICES
+            ):
+                continue
+            if not list(_target_selectors(step)):
+                return True
+    return False
 
 
 def _processing_failure_action_profile(
@@ -1508,10 +1603,7 @@ def automation_action_consequence_profile(
         or unrecognized
         or (notification_present and not notification_proven_benign)
         or warnings
-        or (
-            consequential
-            and "omitted_action_target" in triggers
-        )
+        or _unresolved_consequential_action_target(config)
     )
     analysis_complete = not processing_limit_exceeded
     semantic_complete = not unresolved_effect

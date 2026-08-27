@@ -77,6 +77,14 @@ opacity when consumed as entity selectors. Aggregate context conversion, lexical
 scope, macro capture, recursion, value depth, member count, and scalar size are
 bounded explicitly; a breached bound is coverage failure.
 
+Beta 47 extends this typed transport through finite collection projections.
+Fixed trigger state objects and complete non-helper domain collections retain
+their entity exclusion while `map(attribute=...)` projects reviewed scalar,
+timestamp and context attributes. Complete literal candidates also survive
+mapping values and reviewed string transport. A dynamic scalar remains tainted
+when later consumed as an entity selector, so the additional precision cannot
+turn arbitrary selection into absence of evidence.
+
 The reviewed semantic registry derives the complete standard Jinja 3.1.6 filter
 and test vocabulary from the pinned package itself, so every name Jinja binds -
 including the `d`/`default`, `e`/`escape`, `count`/`length`, and comparison-test
@@ -85,9 +93,9 @@ On top of that it declares Home Assistant state helpers, translated-state
 helpers, `expand`, `closest`, `distance`, area/device/floor/integration/label
 entity-set producers, dynamic filter/test dispatch, and state-bearing trigger,
 wait, and `this` context. A future or unknown helper becomes opaque until
-reviewed rather than being inferred harmless; Home Assistant's own template
-extensions beyond the reviewed set, such as `as_timestamp`, are in that opaque
-category today.
+reviewed rather than being inferred harmless. `as_timestamp` is reviewed as a
+dependency-neutral scalar conversion; its runtime value cannot become an entity
+selector without explicit opaque evidence.
 
 Source provenance is maintained in an independently reviewed declaration and
 generated deterministically offline. Generation verifies each referenced source
@@ -136,6 +144,17 @@ and the label identity plus membership fingerprint is retained in the ledger.
 Dynamic labels, incomplete registries, truncation and overflow remain opaque or
 fail coverage. Consequences and F3 locks consume those authoritative terminal
 outcomes rather than reconstructing discarded proofs downstream.
+
+Beta 47 advances helper plans to `helper-dependency-risk-v6`. Downstream action
+effects attach only to a surviving exact target edge or genuine target-capable
+opacity. Reviewed direct physical effects remain proportional and exact
+safety-critical effects remain approval-actionable through elevated approval
+when every effect is classified. Notification display templates are certified
+only when parse-only analysis proves a literal prefix cannot enter the reviewed
+exact controls or `command_`/`kiosk_` namespaces. Dynamic-first notification
+content, effect-bearing controls, custom/dynamic services and unresolved
+transitive actions remain conservative. Persisted v3, v4 and v5 evidence stays
+readable but requires replanning and has no current execution authority.
 
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned

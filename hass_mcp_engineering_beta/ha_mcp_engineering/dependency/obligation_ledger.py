@@ -90,6 +90,19 @@ _ORDINARY_STRING_METHODS = frozenset(
 _DYNAMIC_DISPATCH_FILTERS = frozenset(
     {"map", "select", "reject", "selectattr", "rejectattr"}
 )
+# Pinned Jinja 3.1.6 filters that perform an attribute/item lookup for every
+# collection member. ``map`` and the ``*attr`` filters have dedicated dynamic
+# dispatch handling below; these filters use their normal semantic category
+# after the member lookup has been accounted for.
+_ATTRIBUTE_MEMBER_FILTER_ARGUMENTS = {
+    "groupby": 0,
+    "join": 1,
+    "max": 1,
+    "min": 1,
+    "sort": 2,
+    "sum": 0,
+    "unique": 1,
+}
 _REORDERING_OR_RESHAPING_FILTERS = frozenset(
     {
         "batch",
@@ -2592,48 +2605,68 @@ class TemplateObligationAnalyzer:
                 ),
             )
         if method == "keys":
-            return self._project_value(receiver, _Value(
-                literal_strings=set(receiver.fields),
-                items=[
-                    _ordinary_value(strings=(key,))
-                    for key in receiver.fields
-                ],
-                container_kinds={"sequence"},
-                ordinary=True,
-                unknown=receiver.unknown,
-                complete=receiver.complete,
-                limit_exceeded=receiver.limit_exceeded,
-                order_uncertain=receiver.order_uncertain,
-            ))
-        if method == "values":
-            return self._project_value(receiver, _Value(
-                items=[value.copy() for value in receiver.fields.values()],
-                container_kinds={"sequence"},
-                ordinary=all(value.ordinary for value in receiver.fields.values()),
-                unknown=receiver.unknown,
-                complete=receiver.complete,
-                limit_exceeded=receiver.limit_exceeded,
-                order_uncertain=receiver.order_uncertain,
-            ))
-        if method == "items":
-            pairs = [
+            keys = list(receiver.fields)
+            complete = bool(receiver.complete and not receiver.unknown)
+            return self._project_value(
+                receiver,
                 _Value(
-                    items=[_ordinary_value(strings=(key,)), value.copy()],
+                    entity_ids={
+                        key for key in keys if self.valid_entity_id(key)
+                    },
+                    literal_strings=set(keys),
+                    items=[
+                        _ordinary_value(strings=(key,)) for key in keys
+                    ],
                     container_kinds={"sequence"},
-                    ordinary=value.ordinary,
-                    complete=value.complete,
-                )
-                for key, value in receiver.fields.items()
-            ]
-            return self._project_value(receiver, _Value(
-                items=pairs,
-                container_kinds={"sequence"},
-                ordinary=all(value.ordinary for value in pairs),
-                unknown=receiver.unknown,
-                complete=receiver.complete,
-                limit_exceeded=receiver.limit_exceeded,
-                order_uncertain=receiver.order_uncertain,
-            ))
+                    ordinary=True,
+                    unknown=not complete,
+                    complete=complete,
+                    entity_candidate_evidence_complete=complete,
+                    non_selector_candidate_evidence_complete=complete,
+                    selector_provenance_complete=complete,
+                    limit_exceeded=receiver.limit_exceeded,
+                    order_uncertain=receiver.order_uncertain,
+                ),
+            )
+        if method == "values":
+            values = [value.copy() for value in receiver.fields.values()]
+            projected = self._merge(values, node=node)
+            projected.items = values
+            projected.container_kinds = {"sequence"}
+            projected.order_uncertain = receiver.order_uncertain
+            projected.limit_exceeded = bool(
+                projected.limit_exceeded or receiver.limit_exceeded
+            )
+            if receiver.unknown or not receiver.complete:
+                projected.unknown = True
+                projected.complete = False
+                projected.entity_candidate_evidence_complete = False
+                projected.non_selector_candidate_evidence_complete = False
+                projected.selector_provenance_complete = False
+            return self._project_value(receiver, projected)
+        if method == "items":
+            pairs: list[_Value] = []
+            for key, value in receiver.fields.items():
+                key_value = _ordinary_value(strings=(key,))
+                pair = self._merge((key_value, value), node=node)
+                pair.items = [key_value, value.copy()]
+                pair.container_kinds = {"sequence"}
+                pair.order_uncertain = False
+                pairs.append(pair)
+            projected = self._merge(pairs, node=node)
+            projected.items = pairs
+            projected.container_kinds = {"sequence"}
+            projected.order_uncertain = receiver.order_uncertain
+            projected.limit_exceeded = bool(
+                projected.limit_exceeded or receiver.limit_exceeded
+            )
+            if receiver.unknown or not receiver.complete:
+                projected.unknown = True
+                projected.complete = False
+                projected.entity_candidate_evidence_complete = False
+                projected.non_selector_candidate_evidence_complete = False
+                projected.selector_provenance_complete = False
+            return self._project_value(receiver, projected)
         self._opaque(node, "unknown_mapping_method")
         return _unknown_value()
 
@@ -2824,7 +2857,23 @@ class TemplateObligationAnalyzer:
             return _ordinary_value()
         if node.name in _DYNAMIC_DISPATCH_FILTERS:
             return self._dynamic_filter_dispatch(
-                node.name, operand, arguments, keywords, node=node
+                node.name,
+                operand,
+                arguments,
+                keywords,
+                node=node,
+                scope=scope,
+                depth=depth,
+            )
+        if node.name in _ATTRIBUTE_MEMBER_FILTER_ARGUMENTS:
+            self._analyze_filter_member_attribute(
+                node.name,
+                operand,
+                arguments,
+                keywords,
+                node=node,
+                scope=scope,
+                depth=depth,
             )
         if node.name == "attr":
             if (
@@ -2935,6 +2984,17 @@ class TemplateObligationAnalyzer:
             self._neutral(node, f"filter_{node.name}_dependency_neutral")
             return _dynamic_scalar_value()
         if category == "attribute_item_access":
+            if node.name == "groupby":
+                # The member lookup above is the dependency-sensitive part.
+                # Group construction transports the bounded source members
+                # but does not itself introduce entity identity.
+                self._neutral(
+                    node,
+                    "groupby_member_provenance_preserved",
+                )
+                result = operand.copy()
+                result.projection_uncertain = True
+                return result
             self._opaque(node, f"filter_{node.name}_attribute_access_opaque")
             return _unknown_value()
         self._opaque(node, f"unknown_filter_{node.name}")
@@ -3009,6 +3069,78 @@ class TemplateObligationAnalyzer:
         )
         return self._project_value(value, result)
 
+    def _analyze_filter_member_attribute(
+        self,
+        name: str,
+        operand: _Value,
+        arguments: list[_Value],
+        keywords: dict[str, _Value],
+        *,
+        node: nodes.Filter,
+        scope: _Scope,
+        depth: int,
+    ) -> None:
+        """Account for pinned-Jinja member lookup performed by one filter."""
+
+        position = _ATTRIBUTE_MEMBER_FILTER_ARGUMENTS[name]
+        positional = arguments[position] if len(arguments) > position else None
+        keyword = keywords.get("attribute")
+        if positional is not None and keyword is not None:
+            self._opaque_from_value(
+                node,
+                operand,
+                f"{name}_duplicate_attribute_argument",
+                kind=f"filter_{name}",
+            )
+            return
+        attribute = keyword if keyword is not None else positional
+        if attribute is None:
+            if name == "groupby":
+                self._opaque_from_value(
+                    node,
+                    operand,
+                    "groupby_attribute_missing",
+                    kind="filter_groupby",
+                )
+            return
+
+        raw_keyword = next(
+            (item.value for item in node.kwargs if item.key == "attribute"),
+            None,
+        )
+        raw_positional = (
+            node.args[position] if len(node.args) > position else None
+        )
+        if (
+            (
+                isinstance(raw_keyword, nodes.Const)
+                and raw_keyword.value is None
+            )
+            or (
+                isinstance(raw_positional, nodes.Const)
+                and raw_positional.value is None
+            )
+        ) and name != "groupby":
+            # Explicit ``attribute=None`` has the same no-projection semantics
+            # as omitting the optional argument in pinned Jinja.
+            return
+        if len(attribute.literal_strings) != 1 or not attribute.complete:
+            self._opaque_from_value(
+                node,
+                operand,
+                f"{name}_dynamic_attribute_dispatch",
+                kind=f"filter_{name}",
+            )
+            return
+        self._project_collection_attribute(
+            operand,
+            next(iter(attribute.literal_strings)),
+            default=keywords.get("default") if name == "groupby" else None,
+            node=node,
+            scope=scope,
+            depth=depth,
+        )
+
     def _dynamic_filter_dispatch(
         self,
         name: str,
@@ -3017,6 +3149,8 @@ class TemplateObligationAnalyzer:
         keywords: dict[str, _Value],
         *,
         node: nodes.Node,
+        scope: _Scope,
+        depth: int,
     ) -> _Value:
         def selection_result() -> _Value:
             result = operand.copy()
@@ -3063,6 +3197,8 @@ class TemplateObligationAnalyzer:
                 attribute,
                 default=None,
                 node=node,
+                scope=scope,
+                depth=depth,
             )
             if category == "dependency_neutral":
                 self._neutral(
@@ -3094,6 +3230,8 @@ class TemplateObligationAnalyzer:
                     attribute_name,
                     default=keywords.get("default"),
                     node=node,
+                    scope=scope,
+                    depth=depth,
                 )
                 self._neutral(
                     node,
@@ -3129,6 +3267,13 @@ class TemplateObligationAnalyzer:
             return selection_result() if name != "map" else _unknown_value()
         if category in {"dependency_neutral", "provenance_preserving"}:
             self._neutral(node, f"{name}_{dispatched}_dependency_neutral")
+            if name == "map" and dispatched == "string":
+                # Jinja's string filter is identity-preserving for values
+                # already proven to be strings.  Retain their finite entity
+                # candidate and label provenance.  A dynamic scalar remains
+                # dynamically tainted, so consuming it later as an entity
+                # selector still fails closed.
+                return operand.copy()
             return selection_result() if name != "map" else _unknown_value()
         if name in {"select", "reject"}:
             self._opaque_from_value(
@@ -3148,6 +3293,8 @@ class TemplateObligationAnalyzer:
         *,
         default: _Value | None,
         node: nodes.Node,
+        scope: _Scope,
+        depth: int,
     ) -> _Value:
         """Project a finite collection member without losing provenance.
 
@@ -3224,34 +3371,51 @@ class TemplateObligationAnalyzer:
                 method = _callable_value(f"method:{part}")
                 method.method_receivers[part] = value.copy()
                 return self._project_value(value, method)
-            if value.state_object and part == "entity_id":
-                return _Value(
-                    entity_ids=set(value.entity_ids),
-                    literal_strings=set(value.entity_ids),
-                    possible_domains=set(value.possible_domains),
-                    domain_evidence_complete=(
-                        value.domain_evidence_complete
-                    ),
-                    unknown=value.unknown,
-                    complete=value.complete,
-                    limit_exceeded=value.limit_exceeded,
+            if value.state_object or value.context_paths or value.runtime_kinds:
+                return self._get_attribute(
+                    value,
+                    part,
+                    node=node,
+                    scope=scope,
+                    depth=depth + 1,
                 )
-            if (
-                value.state_collection
-                and part == "entity_id"
-                and value.possible_domains
-                and value.domain_evidence_complete
-            ):
-                return _Value(
-                    entity_ids=set(value.entity_ids),
-                    literal_strings=set(value.entity_ids),
-                    possible_domains=set(value.possible_domains),
-                    domain_evidence_complete=True,
-                    unknown=value.unknown,
-                    complete=value.complete,
-                    limit_exceeded=value.limit_exceeded,
+            if value.state_collection and value.domain_evidence_complete:
+                # ``map(attribute=...)`` projects each State in the domain
+                # collection.  It is not equivalent to ``states.domain.id``
+                # attribute lookup on the collection root.  Account for the
+                # complete domain edge, then return the reviewed attribute's
+                # scalar/type provenance without retaining a State receiver.
+                self._consume_entity_value(
+                    value,
+                    node=node,
+                    kind="state_collection_mapped_attribute",
+                    reason="state_collection_mapped_attribute_access",
                 )
-            if value.state_object or value.state_collection:
+                if part == "entity_id":
+                    return _Value(
+                        possible_domains=set(value.possible_domains),
+                        domain_evidence_complete=True,
+                        ordinary=True,
+                        unknown=True,
+                        dynamic_scalar=True,
+                        complete=True,
+                    )
+                if part in {"last_changed", "last_updated"}:
+                    return _typed_runtime_value("datetime")
+                if part == "context":
+                    return _Value(
+                        runtime_kinds={"ha_context"},
+                        ordinary=True,
+                        complete=True,
+                    )
+                if part == "attributes":
+                    return _Value(
+                        state_attribute_container=True,
+                        ordinary=True,
+                        complete=True,
+                    )
+                return _dynamic_scalar_value()
+            if value.state_collection:
                 # State attributes other than entity_id are runtime values.
                 # They may themselves contain an entity ID later consumed by
                 # a reviewed state helper; a map default applies only to an
@@ -3289,6 +3453,36 @@ class TemplateObligationAnalyzer:
                 method = _callable_value(f"ordinary_method:{part}")
                 method.method_receivers[part] = value.copy()
                 return method
+            proven_ordinary_receiver = bool(
+                value.ordinary
+                and not value.state_collection
+                and not value.state_object
+                and not value.callables
+                and not value.external
+                and not value.projection_uncertain
+                and not value.limit_exceeded
+                and (
+                    not value.unknown
+                    or value.dynamic_scalar
+                    or bool(value.runtime_kinds)
+                )
+            )
+            proven_complete_container = bool(
+                value.container_kinds.intersection(
+                    {"mapping", "namespace", "sequence"}
+                )
+                and value.complete
+                and not value.unknown
+                and not value.projection_uncertain
+                and not value.limit_exceeded
+            )
+            if not proven_ordinary_receiver and not proven_complete_container:
+                self._opaque_from_value(
+                    node,
+                    value,
+                    "filter_member_attribute_receiver_opaque",
+                    kind="filter_member_attribute",
+                )
             return missing_or_uncertain(value)
 
         def project_path(value: _Value) -> _Value:
