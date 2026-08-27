@@ -22,6 +22,7 @@ from .verification import (
     TrustAnchorStore,
     ValidationIssue,
     ValidationStatus,
+    parse_verified_registry_envelope,
     validate_registry_envelope,
 )
 
@@ -41,6 +42,7 @@ __all__ = [
     "ValidationIssue",
     "ValidationStatus",
     "canonical_json",
+    "parse_verified_registry_envelope",
     "sha256_digest",
     "validate_registry_envelope",
 ]

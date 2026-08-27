@@ -41,6 +41,7 @@ _PLATFORMS = frozenset({"linux/amd64", "linux/arm64", "linux/arm/v7"})
 _CLASSIFICATIONS = frozenset(
     {
         "automatic_read",
+        "held_for_canary",
         "mixed_or_requires_wrapper",
         "persistent_write",
         "physical_or_high_risk_action",

@@ -38,6 +38,11 @@ from .providers.operational_lifecycle import (
     UPSTREAM_OPERATIONAL_LIFECYCLE,
 )
 from .providers.upstream_registry import RegistryValidationError, UpstreamTrustRegistry
+from .ha_mcp_readmission.registry import TRUST_ANCHOR_KEY_ID
+from .signed_registry import (
+    RegistryValidationError as SignedRegistryValidationError,
+    TrustAnchorStore,
+)
 from .tools import get_registered_server
 
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
@@ -117,6 +122,19 @@ def validate_settings(settings: Settings) -> None:
         except RegistryValidationError:
             errors.append(
                 "upstream_trust_registry_public_key must be a base64 Ed25519 public key when the registry is enabled"
+            )
+    if settings.ha_mcp_release_registry_enabled:
+        try:
+            TrustAnchorStore.from_base64(
+                {
+                    TRUST_ANCHOR_KEY_ID: (
+                        settings.ha_mcp_release_registry_public_key
+                    )
+                }
+            )
+        except SignedRegistryValidationError:
+            errors.append(
+                "ha_mcp_release_registry_public_key must be a base64 Ed25519 public key when the registry is enabled"
             )
     if errors:
         raise ConfigurationError(
