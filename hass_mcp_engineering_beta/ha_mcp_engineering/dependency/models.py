@@ -22,6 +22,15 @@ OBLIGATION_OUTCOMES = frozenset(
     }
 )
 OBLIGATION_LEDGER_MODEL = "whole-template-obligation-ledger-v1"
+TARGET_SELECTOR_SCOPES = frozenset(
+    {
+        "closed_finite_candidates",
+        "closed_entity_domains",
+        "dependency_neutral",
+        "target_capable",
+        "coverage_failure",
+    }
+)
 # Selector evidence is derived from configuration and template literals, so a
 # single value can be arbitrarily long and can carry secret-bearing material.
 # Every obligation is bounded per value and in aggregate before it exists, and
@@ -131,6 +140,12 @@ class DependencyObligation:
     context_provenance: tuple[str, ...] = ()
     limit_exceeded: bool = False
     lock_projection: str = "none"
+    # Target-independent proof describing the complete selector universe for
+    # this obligation.  This is deliberately separate from ``outcome``:
+    # value/effect semantics can be opaque while the analyzer still proves
+    # that the operation cannot select a particular helper.  ``None`` exists
+    # only as a constructor compatibility default and is normalized here.
+    target_selector_scope: str | None = None
     # Set when bounding or sanitization replaced or dropped evidence, so a
     # reader can distinguish "no such value" from "value not retained".
     evidence_bounded: bool = False
@@ -145,6 +160,31 @@ class DependencyObligation:
             "coverage_failure",
         }:
             raise ValueError("dependency obligation lock projection is invalid")
+        scope = self.target_selector_scope
+        if scope is None:
+            if self.outcome == "coverage_failure" or self.limit_exceeded:
+                scope = "coverage_failure"
+            elif self.outcome == "proven_dependency_neutral":
+                scope = "dependency_neutral"
+            elif self.outcome == "proven_target_exclusion":
+                scope = (
+                    "closed_entity_domains"
+                    if self.possible_entity_domains is not None
+                    else "closed_finite_candidates"
+                )
+            elif self.outcome == "exact_dependency":
+                scope = (
+                    "closed_finite_candidates"
+                    if self.exact_entity_ids
+                    else "closed_entity_domains"
+                    if self.possible_entity_domains is not None
+                    else "target_capable"
+                )
+            else:
+                scope = "target_capable"
+            object.__setattr__(self, "target_selector_scope", scope)
+        if scope not in TARGET_SELECTOR_SCOPES:
+            raise ValueError("dependency obligation target scope is invalid")
         self._bind_bounded_evidence()
 
     def _bind_bounded_evidence(self) -> None:
@@ -207,10 +247,13 @@ class DependencyObligation:
         # exclusion rests on.  Without it the obligation is opaque, and it
         # must take a conservative lock rather than an exact one.
         target_detail_lost = bool(
-            exact_lost or selector_lost or domain_lost
+            exact_lost or selector_lost or domain_lost or context_lost
         )
         if target_detail_lost:
             object.__setattr__(self, "limit_exceeded", True)
+            object.__setattr__(
+                self, "target_selector_scope", "coverage_failure"
+            )
             if self.outcome in {
                 "exact_dependency",
                 "proven_target_exclusion",
@@ -476,6 +519,7 @@ def obligation_material(item: DependencyObligation) -> dict[str, Any]:
         "context_provenance": list(item.context_provenance),
         "limit_exceeded": item.limit_exceeded,
         "lock_projection": item.lock_projection,
+        "target_selector_scope": item.target_selector_scope,
         "evidence_bounded": item.evidence_bounded,
     }
 

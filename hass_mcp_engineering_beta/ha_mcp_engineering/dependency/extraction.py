@@ -1389,6 +1389,7 @@ def discharge_resolved_blueprint_source_obligation(
             )
         ),
         lock_projection="none",
+        target_selector_scope="dependency_neutral",
     )
     adjusted = [
         discharged if item.evidence_id == candidate.evidence_id else item
@@ -1614,6 +1615,7 @@ def resolve_literal_label_obligations(
                     context_provenance=bound_context,
                     limit_exceeded=True,
                     lock_projection="coverage_failure",
+                    target_selector_scope="coverage_failure",
                 )
             )
             continue
@@ -1642,6 +1644,7 @@ def resolve_literal_label_obligations(
                         else None
                     ),
                     context_provenance=bound_context,
+                    target_selector_scope="target_capable",
                 )
             )
             continue
@@ -1674,6 +1677,11 @@ def resolve_literal_label_obligations(
                 possible_entity_domains=domains if domains else None,
                 context_provenance=bound_context,
                 lock_projection="exact" if candidates else "none",
+                target_selector_scope=(
+                    "closed_finite_candidates"
+                    if candidates
+                    else "dependency_neutral"
+                ),
             )
         )
     return resolved

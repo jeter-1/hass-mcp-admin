@@ -4104,6 +4104,35 @@ class TemplateObligationAnalyzer:
                 runtime_kinds={"ha_event"},
                 complete=True,
             )
+        if paths in ({"trigger.context"}, {"wait.trigger.context"}):
+            # Trigger-context availability varies by trigger contract, but a
+            # context object can carry only audit identity metadata, never an
+            # entity selector.  Keep that semantic uncertainty explicit while
+            # binding its target relationship as dependency-neutral.
+            self._opaque(
+                node,
+                "trigger_context_contract_not_guaranteed",
+                target_selector_scope="dependency_neutral",
+            )
+            return _Value(
+                context_paths=paths,
+                runtime_kinds={"ha_context"},
+                ordinary=True,
+                complete=True,
+            )
+        if paths in ({"trigger.for"}, {"wait.trigger.for"}):
+            # The exact runtime shape is trigger-specific, but the configured
+            # duration is not an entity-selector carrier.  Preserve a typed
+            # duration for downstream arithmetic without turning the unknown
+            # runtime representation into helper relevance.
+            self._opaque(
+                node,
+                "trigger_duration_contract_not_guaranteed",
+                target_selector_scope="dependency_neutral",
+            )
+            value = _typed_runtime_value("timedelta")
+            value.context_paths = paths
+            return value
         if attribute in {
             "payload_json",
             "json",
@@ -4722,7 +4751,13 @@ class TemplateObligationAnalyzer:
             node=node,
         )
 
-    def _opaque(self, node: nodes.Node, reason: str) -> None:
+    def _opaque(
+        self,
+        node: nodes.Node,
+        reason: str,
+        *,
+        target_selector_scope: str | None = None,
+    ) -> None:
         self._emit(
             outcome="bounded_semantic_opaque",
             kind="semantic_operation",
@@ -4730,6 +4765,7 @@ class TemplateObligationAnalyzer:
             category="unknown",
             node=node,
             lock="conservative",
+            target_selector_scope=target_selector_scope,
         )
 
     def _opaque_from_value(
@@ -4824,9 +4860,30 @@ class TemplateObligationAnalyzer:
         context: tuple[str, ...] = (),
         limit: bool = False,
         lock: str = "none",
+        target_selector_scope: str | None = None,
     ) -> None:
         if outcome == "coverage_failure" or limit:
             lock = "coverage_failure"
+            target_selector_scope = "coverage_failure"
+        elif target_selector_scope is None:
+            if outcome == "proven_dependency_neutral":
+                target_selector_scope = "dependency_neutral"
+            elif outcome == "proven_target_exclusion":
+                target_selector_scope = (
+                    "closed_entity_domains"
+                    if domains is not None
+                    else "closed_finite_candidates"
+                )
+            elif outcome == "exact_dependency":
+                target_selector_scope = (
+                    "closed_finite_candidates"
+                    if exact
+                    else "closed_entity_domains"
+                    if domains is not None
+                    else "target_capable"
+                )
+            else:
+                target_selector_scope = "target_capable"
         overflow = bool(
             len(set(exact)) > MAX_TEMPLATE_CANDIDATES
             or (
@@ -4869,6 +4926,7 @@ class TemplateObligationAnalyzer:
                         "context": (),
                         "limit": True,
                         "lock": "coverage_failure",
+                        "target_selector_scope": "coverage_failure",
                         "node_fingerprint": hashlib.sha256(
                             b"template_obligation_limit_exceeded"
                         ).hexdigest(),
@@ -4902,6 +4960,7 @@ class TemplateObligationAnalyzer:
                 "context": tuple(sorted(set(context)))[:32],
                 "limit": limit,
                 "lock": lock,
+                "target_selector_scope": target_selector_scope,
                 "node_fingerprint": hashlib.sha256(
                     node_material.encode("utf-8", errors="replace")
                 ).hexdigest(),
@@ -4962,6 +5021,9 @@ class TemplateObligationAnalyzer:
                     context_provenance=tuple(item["context"]),
                     limit_exceeded=bool(item["limit"]),
                     lock_projection=str(item["lock"]),
+                    target_selector_scope=str(
+                        item["target_selector_scope"]
+                    ),
                 )
             )
         return TemplateLedgerResult(

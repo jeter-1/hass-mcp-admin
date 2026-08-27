@@ -20,7 +20,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v6"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v7"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -30,6 +30,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v3",
         "helper-dependency-risk-v4",
         "helper-dependency-risk-v5",
+        "helper-dependency-risk-v6",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -399,31 +400,33 @@ def _obligation_targets_helper(
         item.outcome == "exact_dependency"
         and entity_id in item.exact_entity_ids
     ):
+        # Exact inclusion is monotonic safety evidence.  A contradictory
+        # target-scope annotation must never erase it or diverge from F3,
+        # which independently retains exact helper locks from the same item.
         return "exact_dependency"
-    # ``exact_dependency`` with candidates represents a complete finite set.
-    # A non-member therefore has an attributable exclusion proof.  Candidates
-    # retained on an opaque obligation are only partial hints and cannot do so.
-    if item.outcome == "exact_dependency" and item.exact_entity_ids:
-        return "proven_target_exclusion"
-    if item.outcome == "proven_dependency_neutral":
-        return "proven_dependency_neutral"
-    if item.outcome == "proven_target_exclusion":
-        return "proven_target_exclusion"
-    if item.outcome == "exact_dependency":
-        domains = item.possible_entity_domains
-        if domains and "input_boolean" not in domains:
-            return "proven_target_exclusion"
-        # A proven domain that contains the target domain bounds the potential
-        # automation set but cannot prove membership for one exact helper.
-        # This is semantic opacity, not missing inventory coverage.
-        if domains and "input_boolean" in domains:
-            return "bounded_semantic_opaque"
-        # An alleged exact terminal without a candidate or domain proof is not
-        # exact evidence and cannot be made reviewable safely.
+    scope = item.target_selector_scope or "target_capable"
+    if scope == "coverage_failure":
         return "coverage_failure"
-    # Candidate IDs and domains retained on an opaque terminal are diagnostic
-    # hints only.  Authoritative exclusion must be produced by the analyzer;
-    # the risk layer never reconstructs a proof discarded upstream.
+    if scope == "dependency_neutral":
+        return "proven_dependency_neutral"
+    if scope == "closed_finite_candidates":
+        return (
+            "exact_dependency"
+            if entity_id in item.exact_entity_ids
+            else "proven_target_exclusion"
+        )
+    if scope == "closed_entity_domains":
+        if entity_id in item.exact_entity_ids:
+            return "exact_dependency"
+        domains = item.possible_entity_domains
+        target_domain = entity_id.split(".", 1)[0]
+        if domains is not None and target_domain not in domains:
+            return "proven_target_exclusion"
+        return "bounded_semantic_opaque"
+    # A target-capable scope remains opaque even when it retains finite hints.
+    # This is what keeps a known inclusion plus unresolved provenance, unknown
+    # extension, or incomplete registry evidence conservative.  The risk
+    # layer consumes the analyzer's scope; it never promotes hints into proof.
     return "bounded_semantic_opaque"
 
 
@@ -459,6 +462,7 @@ def _project_obligation(
         "context_provenance": list(item.context_provenance),
         "limit_exceeded": item.limit_exceeded,
         "lock_projection": item.lock_projection,
+        "target_selector_scope": item.target_selector_scope,
     }
     # Helper approvals bind semantic/configuration identity, not display labels
     # or the automation's enabled state.  The index-level ledger fingerprint
