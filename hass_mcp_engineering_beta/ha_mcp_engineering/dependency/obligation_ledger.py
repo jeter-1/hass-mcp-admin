@@ -90,6 +90,19 @@ _ORDINARY_STRING_METHODS = frozenset(
 _DYNAMIC_DISPATCH_FILTERS = frozenset(
     {"map", "select", "reject", "selectattr", "rejectattr"}
 )
+# Pinned Jinja 3.1.6 filters that perform an attribute/item lookup for every
+# collection member. ``map`` and the ``*attr`` filters have dedicated dynamic
+# dispatch handling below; these filters use their normal semantic category
+# after the member lookup has been accounted for.
+_ATTRIBUTE_MEMBER_FILTER_ARGUMENTS = {
+    "groupby": 0,
+    "join": 1,
+    "max": 1,
+    "min": 1,
+    "sort": 2,
+    "sum": 0,
+    "unique": 1,
+}
 _REORDERING_OR_RESHAPING_FILTERS = frozenset(
     {
         "batch",
@@ -2852,6 +2865,16 @@ class TemplateObligationAnalyzer:
                 scope=scope,
                 depth=depth,
             )
+        if node.name in _ATTRIBUTE_MEMBER_FILTER_ARGUMENTS:
+            self._analyze_filter_member_attribute(
+                node.name,
+                operand,
+                arguments,
+                keywords,
+                node=node,
+                scope=scope,
+                depth=depth,
+            )
         if node.name == "attr":
             if (
                 arguments
@@ -2961,6 +2984,17 @@ class TemplateObligationAnalyzer:
             self._neutral(node, f"filter_{node.name}_dependency_neutral")
             return _dynamic_scalar_value()
         if category == "attribute_item_access":
+            if node.name == "groupby":
+                # The member lookup above is the dependency-sensitive part.
+                # Group construction transports the bounded source members
+                # but does not itself introduce entity identity.
+                self._neutral(
+                    node,
+                    "groupby_member_provenance_preserved",
+                )
+                result = operand.copy()
+                result.projection_uncertain = True
+                return result
             self._opaque(node, f"filter_{node.name}_attribute_access_opaque")
             return _unknown_value()
         self._opaque(node, f"unknown_filter_{node.name}")
@@ -3034,6 +3068,78 @@ class TemplateObligationAnalyzer:
             order_uncertain=value.order_uncertain,
         )
         return self._project_value(value, result)
+
+    def _analyze_filter_member_attribute(
+        self,
+        name: str,
+        operand: _Value,
+        arguments: list[_Value],
+        keywords: dict[str, _Value],
+        *,
+        node: nodes.Filter,
+        scope: _Scope,
+        depth: int,
+    ) -> None:
+        """Account for pinned-Jinja member lookup performed by one filter."""
+
+        position = _ATTRIBUTE_MEMBER_FILTER_ARGUMENTS[name]
+        positional = arguments[position] if len(arguments) > position else None
+        keyword = keywords.get("attribute")
+        if positional is not None and keyword is not None:
+            self._opaque_from_value(
+                node,
+                operand,
+                f"{name}_duplicate_attribute_argument",
+                kind=f"filter_{name}",
+            )
+            return
+        attribute = keyword if keyword is not None else positional
+        if attribute is None:
+            if name == "groupby":
+                self._opaque_from_value(
+                    node,
+                    operand,
+                    "groupby_attribute_missing",
+                    kind="filter_groupby",
+                )
+            return
+
+        raw_keyword = next(
+            (item.value for item in node.kwargs if item.key == "attribute"),
+            None,
+        )
+        raw_positional = (
+            node.args[position] if len(node.args) > position else None
+        )
+        if (
+            (
+                isinstance(raw_keyword, nodes.Const)
+                and raw_keyword.value is None
+            )
+            or (
+                isinstance(raw_positional, nodes.Const)
+                and raw_positional.value is None
+            )
+        ) and name != "groupby":
+            # Explicit ``attribute=None`` has the same no-projection semantics
+            # as omitting the optional argument in pinned Jinja.
+            return
+        if len(attribute.literal_strings) != 1 or not attribute.complete:
+            self._opaque_from_value(
+                node,
+                operand,
+                f"{name}_dynamic_attribute_dispatch",
+                kind=f"filter_{name}",
+            )
+            return
+        self._project_collection_attribute(
+            operand,
+            next(iter(attribute.literal_strings)),
+            default=keywords.get("default") if name == "groupby" else None,
+            node=node,
+            scope=scope,
+            depth=depth,
+        )
 
     def _dynamic_filter_dispatch(
         self,
@@ -3347,6 +3453,36 @@ class TemplateObligationAnalyzer:
                 method = _callable_value(f"ordinary_method:{part}")
                 method.method_receivers[part] = value.copy()
                 return method
+            proven_ordinary_receiver = bool(
+                value.ordinary
+                and not value.state_collection
+                and not value.state_object
+                and not value.callables
+                and not value.external
+                and not value.projection_uncertain
+                and not value.limit_exceeded
+                and (
+                    not value.unknown
+                    or value.dynamic_scalar
+                    or bool(value.runtime_kinds)
+                )
+            )
+            proven_complete_container = bool(
+                value.container_kinds.intersection(
+                    {"mapping", "namespace", "sequence"}
+                )
+                and value.complete
+                and not value.unknown
+                and not value.projection_uncertain
+                and not value.limit_exceeded
+            )
+            if not proven_ordinary_receiver and not proven_complete_container:
+                self._opaque_from_value(
+                    node,
+                    value,
+                    "filter_member_attribute_receiver_opaque",
+                    kind="filter_member_attribute",
+                )
             return missing_or_uncertain(value)
 
         def project_path(value: _Value) -> _Value:

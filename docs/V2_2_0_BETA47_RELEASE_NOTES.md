@@ -21,6 +21,14 @@ remain registry-generation and fingerprint bound. Unknown domains, arbitrary
 selectors, incomplete label evidence, external templates, unknown callables and
 over-limit inputs remain opaque or coverage-failed.
 
+Collection-member lookup is accounted for before a filter's otherwise neutral
+selection, ordering, formatting or aggregation semantics. This covers pinned
+Jinja `map`, `selectattr`, `rejectattr`, `sort`, `join`, `sum`, `unique`, `min`,
+`max` and `groupby` attribute arguments. An unknown or incomplete member that
+could be a Home Assistant State remains bounded target-capable opacity; a known
+ordinary value, exact State or complete non-target State domain retains its
+proportional exact outcome.
+
 Only an exact target relationship or genuinely target-capable opacity now
 attaches a source's downstream consequence. Unrelated physical actions no
 longer elevate a helper after every relationship in their source has been

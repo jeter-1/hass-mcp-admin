@@ -35,6 +35,15 @@ formatting and comparison remain dependency-neutral. Feeding any resulting
 runtime scalar back into `states()`, `state_attr()` or another entity selector
 without complete finite identity remains target-capable opacity.
 
+Every pinned Jinja filter that accepts an attribute argument accounts for the
+member lookup before applying its selection, ordering, formatting or aggregation
+operation. The reviewed inventory is `map`, `selectattr`, `rejectattr`, `sort`,
+`join`, `sum`, `unique`, `min`, `max` and `groupby`. A complete ordinary
+receiver or complete missing mapping member remains dependency-neutral. An
+unknown, partial, overflowing, external or otherwise untyped receiver that may
+be a Home Assistant State emits bounded target-capable opacity and retains the
+source consequence and conservative dependency guard.
+
 Complete `states.sensor` and `states.binary_sensor` domains exclude an
 `input_boolean` target. `states.input_boolean`, a dynamic domain or an arbitrary
 state collection does not. Complete literal-label membership can prove inclusion

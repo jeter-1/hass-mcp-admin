@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from pathlib import Path
 import hashlib
+import inspect
 import json
 import sys
 import unittest
+
+from jinja2.filters import FILTERS
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +18,11 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.dependency.extraction import (  # noqa: E402
     extract_document_with_obligations,
     resolve_literal_label_obligations,
+)
+from ha_mcp_engineering.f3_configuration.locks import (  # noqa: E402
+    helper_dependency_lock_key,
+    operation_lock_requests,
+    unconstrained_helper_dependency_lock_key,
 )
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
@@ -32,9 +40,39 @@ from tests.test_beta45_helper_risk_exclusion_provenance import (  # noqa: E402
 from tests.test_beta46_helper_risk_semantic_completion import (  # noqa: E402
     _binding,
 )
+from tests.f3_configuration_fixtures import (  # noqa: E402
+    SyntheticConfigurationGateway,
+    adapter_for,
+    proposal_for,
+    valid_config,
+)
 
 
 TARGET = "input_boolean.beta46_target"
+
+UNKNOWN_MEMBER_ATTRIBUTE_FILTERS = {
+    "map": "{{ [caller_supplied] | map(attribute='state') | list }}",
+    "selectattr": "{{ [caller_supplied] | selectattr('state') | list }}",
+    "rejectattr": "{{ [caller_supplied] | rejectattr('state') | list }}",
+    "sort": "{{ [caller_supplied] | sort(attribute='state') | list }}",
+    "join": "{{ [caller_supplied] | join(',', attribute='state') }}",
+    "sum": "{{ [caller_supplied] | sum(attribute='state') }}",
+    "unique": "{{ [caller_supplied] | unique(attribute='state') | list }}",
+    "min": "{{ [caller_supplied] | min(attribute='state') }}",
+    "max": "{{ [caller_supplied] | max(attribute='state') }}",
+    "groupby": "{{ [caller_supplied] | groupby('state') | list }}",
+}
+
+
+def _consequential_config() -> dict:
+    return {
+        "action": [
+            {
+                "service": "cover.open_cover",
+                "target": {"entity_id": "cover.synthetic_garage"},
+            }
+        ]
+    }
 
 
 class Beta47BaselineProvenanceReproductions(unittest.TestCase):
@@ -265,8 +303,335 @@ class Beta47BaselineProvenanceReproductions(unittest.TestCase):
         self.assertFalse(helper_domain["evidence_complete"])
         self.assertGreater(helper_domain["opaque_obligation_count"], 0)
 
+    def test_exact_state_member_inclusion_and_exclusion_survive_filters(self):
+        for filter_name, template in UNKNOWN_MEMBER_ATTRIBUTE_FILTERS.items():
+            target_template = template.replace(
+                "caller_supplied", "states.input_boolean.beta46_target"
+            )
+            unrelated_template = template.replace(
+                "caller_supplied", "states.sensor.alpha"
+            )
+            with self.subTest(filter=filter_name, receiver="target"):
+                target = _binding(
+                    target_template,
+                    _consequential_config(),
+                    source_id=f"target_member_{filter_name}",
+                )
+                target_risk = helper_dependency_risk_assessment(
+                    {"binding": target, "provenance": {"generation": 47}}
+                )
+                self.assertGreater(
+                    target["exact_dependency_obligation_count"], 0
+                )
+                self.assertEqual(0, target["opaque_obligation_count"])
+                self.assertTrue(target["evidence_complete"])
+                self.assertTrue(target["execution_eligible"])
+                self.assertEqual(
+                    "safety_critical", target["physical_consequence"]
+                )
+                self.assertEqual("high", target_risk.level.value)
+                self.assertTrue(target_risk.apply_allowed)
+            with self.subTest(filter=filter_name, receiver="unrelated"):
+                unrelated = _binding(
+                    unrelated_template,
+                    _consequential_config(),
+                    source_id=f"unrelated_member_{filter_name}",
+                )
+                unrelated_risk = helper_dependency_risk_assessment(
+                    {
+                        "binding": unrelated,
+                        "provenance": {"generation": 47},
+                    }
+                )
+                self.assertEqual(0, unrelated["opaque_obligation_count"])
+                self.assertTrue(unrelated["evidence_complete"])
+                self.assertTrue(unrelated["execution_eligible"])
+                self.assertEqual(
+                    [], unrelated["relevant_downstream_object_ids"]
+                )
+                self.assertEqual("none", unrelated["physical_consequence"])
+                self.assertEqual("low", unrelated_risk.level.value)
+                self.assertTrue(unrelated_risk.apply_allowed)
+
+    def test_complete_state_domains_preserve_target_polarity(self):
+        for domain in ("sensor", "binary_sensor"):
+            with self.subTest(domain=domain):
+                excluded = _binding(
+                    "{{ states."
+                    + domain
+                    + " | map(attribute='state') | list }}",
+                    _consequential_config(),
+                    source_id=f"excluded_domain_{domain}",
+                )
+                self.assertTrue(excluded["evidence_complete"])
+                self.assertEqual(0, excluded["opaque_obligation_count"])
+                self.assertEqual(
+                    [], excluded["relevant_downstream_object_ids"]
+                )
+        target_capable = _binding(
+            "{{ states.input_boolean | map(attribute='state') | list }}",
+            _consequential_config(),
+            source_id="target_capable_domain",
+        )
+        self.assertFalse(target_capable["evidence_complete"])
+        self.assertGreater(target_capable["opaque_obligation_count"], 0)
+
+    def test_ordinary_member_receivers_remain_low_friction(self):
+        ordinary_templates = {
+            "map": "{{ [{'state': 'ok'}] | map(attribute='state') | list }}",
+            "selectattr": (
+                "{{ [{'state': 'ok'}] | selectattr('state') | list }}"
+            ),
+            "rejectattr": (
+                "{{ [{'state': 'ok'}] | rejectattr('state') | list }}"
+            ),
+            "sort": "{{ [{'state': 'ok'}] | sort(attribute='state') | list }}",
+            "join": "{{ [{'state': 'ok'}] | join(',', attribute='state') }}",
+            "sum": "{{ [{'state': 1}] | sum(attribute='state') }}",
+            "unique": (
+                "{{ [{'state': 'ok'}] | unique(attribute='state') | list }}"
+            ),
+            "min": "{{ [{'state': 'ok'}] | min(attribute='state') }}",
+            "max": "{{ [{'state': 'ok'}] | max(attribute='state') }}",
+            "groupby": "{{ [{'state': 'ok'}] | groupby('state') | list }}",
+            "missing_mapping_field": (
+                "{{ [{'name': 'ok'}] | map(attribute='state') | list }}"
+            ),
+            "ordinary_scalars": (
+                "{{ ['value', 7] | map(attribute='state') | list }}"
+            ),
+            "mapping_values": (
+                "{% set values = {'a': {'state': 'ok'}} %}"
+                "{{ values.values() | map(attribute='state') | list }}"
+            ),
+            "mapping_items": (
+                "{% set values = {'a': {'state': 'ok'}} %}"
+                "{{ values.items() | map(attribute='1.state') | list }}"
+            ),
+        }
+        for name, template in ordinary_templates.items():
+            with self.subTest(case=name):
+                binding = _binding(
+                    template,
+                    _consequential_config(),
+                    source_id=f"ordinary_member_{name}",
+                )
+                risk = helper_dependency_risk_assessment(
+                    {"binding": binding, "provenance": {"generation": 47}}
+                )
+                self.assertTrue(binding["evidence_complete"])
+                self.assertTrue(binding["execution_eligible"])
+                self.assertEqual(0, binding["opaque_obligation_count"])
+                self.assertEqual([], binding["relevant_downstream_object_ids"])
+                self.assertEqual("none", binding["physical_consequence"])
+                self.assertEqual("low", risk.level.value)
+                self.assertTrue(risk.apply_allowed)
+
+    def test_local_macro_preserves_exact_member_provenance(self):
+        macro = (
+            "{% macro project(values) %}"
+            "{{ values | map(attribute='state') | list }}"
+            "{% endmacro %}"
+        )
+        exact = _binding(
+            macro + "{{ project([states.input_boolean.beta46_target]) }}",
+            _consequential_config(),
+            source_id="macro_exact_member",
+        )
+        excluded = _binding(
+            macro + "{{ project([states.sensor.alpha]) }}",
+            _consequential_config(),
+            source_id="macro_excluded_member",
+        )
+        self.assertGreater(exact["exact_dependency_obligation_count"], 0)
+        self.assertEqual(0, exact["opaque_obligation_count"])
+        self.assertEqual("safety_critical", exact["physical_consequence"])
+        self.assertTrue(exact["execution_eligible"])
+        self.assertEqual(0, excluded["opaque_obligation_count"])
+        self.assertEqual([], excluded["relevant_downstream_object_ids"])
+        self.assertTrue(excluded["execution_eligible"])
+
 
 class Beta47ConservativeProvenanceControls(unittest.TestCase):
+    def test_pinned_jinja_attribute_filter_inventory_is_covered(self):
+        signature_filters = {
+            name
+            for name, function in FILTERS.items()
+            if "attribute" in inspect.signature(function).parameters
+        }
+        self.assertEqual(
+            {
+                "groupby",
+                "join",
+                "max",
+                "min",
+                "sort",
+                "sum",
+                "unique",
+            },
+            signature_filters,
+        )
+        self.assertEqual(
+            set(UNKNOWN_MEMBER_ATTRIBUTE_FILTERS),
+            signature_filters | {"map", "selectattr", "rejectattr"},
+        )
+
+    def test_unknown_collection_member_attribute_filters_fail_closed(self):
+        for filter_name, template in UNKNOWN_MEMBER_ATTRIBUTE_FILTERS.items():
+            with self.subTest(filter=filter_name):
+                source_id = f"unknown_member_{filter_name}"
+                binding = _binding(
+                    template,
+                    _consequential_config(),
+                    source_id=source_id,
+                )
+                risk = helper_dependency_risk_assessment(
+                    {"binding": binding, "provenance": {"generation": 47}}
+                )
+
+                self.assertGreater(binding["opaque_obligation_count"], 0)
+                self.assertFalse(binding["evidence_complete"])
+                self.assertFalse(binding["execution_eligible"])
+                self.assertIn(
+                    f"automation.{source_id}",
+                    binding["relevant_downstream_object_ids"],
+                )
+                self.assertEqual(
+                    "safety_critical", binding["physical_consequence"]
+                )
+                self.assertEqual("high", risk.level.value)
+                self.assertFalse(risk.apply_allowed)
+                self.assertIn(
+                    source_id,
+                    binding["dependency_lock_projection"][
+                        "automation_resource_ids"
+                    ],
+                )
+
+    def test_direct_and_collection_member_unknown_controls_agree(self):
+        direct = _binding(
+            "{{ caller_supplied.state }}",
+            _consequential_config(),
+            source_id="direct_unknown_member",
+        )
+        projected = _binding(
+            UNKNOWN_MEMBER_ATTRIBUTE_FILTERS["map"],
+            _consequential_config(),
+            source_id="projected_unknown_member",
+        )
+        for binding in (direct, projected):
+            self.assertGreater(binding["opaque_obligation_count"], 0)
+            self.assertFalse(binding["evidence_complete"])
+            self.assertFalse(binding["execution_eligible"])
+            self.assertEqual(
+                "safety_critical", binding["physical_consequence"]
+            )
+
+    def test_positional_attribute_arguments_fail_closed(self):
+        templates = {
+            "join": "{{ [caller_supplied] | join(',', 'state') }}",
+            "sum": "{{ [caller_supplied] | sum('state') }}",
+            "unique": (
+                "{{ [caller_supplied] | unique(false, 'state') | list }}"
+            ),
+            "min": "{{ [caller_supplied] | min(false, 'state') }}",
+            "max": "{{ [caller_supplied] | max(false, 'state') }}",
+            "sort": (
+                "{{ [caller_supplied] | sort(false, false, 'state') | list }}"
+            ),
+        }
+        for filter_name, template in templates.items():
+            with self.subTest(filter=filter_name):
+                binding = _binding(
+                    template,
+                    _consequential_config(),
+                    source_id=f"positional_member_{filter_name}",
+                )
+                self.assertGreater(binding["opaque_obligation_count"], 0)
+                self.assertFalse(binding["evidence_complete"])
+                self.assertFalse(binding["execution_eligible"])
+
+    def test_unknown_member_receiver_boundaries_fail_closed(self):
+        long_path = ".".join("state" for _ in range(9))
+        overflow = ", ".join("caller_supplied" for _ in range(129))
+        templates = {
+            "dynamic_attribute": (
+                "{{ [caller_supplied] | map(attribute=attribute_name) | list }}"
+            ),
+            "dynamic_attribute_test": (
+                "{{ [caller_supplied] "
+                "| selectattr('state', test_name) | list }}"
+            ),
+            "unknown_with_default": (
+                "{{ [caller_supplied] "
+                "| map(attribute='state', default='off') | list }}"
+            ),
+            "nested_attribute": (
+                "{{ [caller_supplied] "
+                "| map(attribute='context.user_id') | list }}"
+            ),
+            "malformed_attribute": (
+                "{{ [caller_supplied] "
+                "| map(attribute='context..user_id') | list }}"
+            ),
+            "deep_attribute": (
+                "{{ [caller_supplied] "
+                f"| map(attribute='{long_path}') | list }}}}"
+            ),
+            "candidate_overflow": (
+                "{{ [" + overflow + "] | map(attribute='state') | list }}"
+            ),
+            "external_template": (
+                "{% import 'external_helpers.jinja' as external %}"
+                "{{ external.values() | map(attribute='state') | list }}"
+            ),
+            "unknown_callable": (
+                "{{ [unknown_factory()] | map(attribute='state') | list }}"
+            ),
+            "mixed_receivers": (
+                "{{ [{'state': 'ok'}, caller_supplied] "
+                "| map(attribute='state') | list }}"
+            ),
+        }
+        for name, template in templates.items():
+            with self.subTest(case=name):
+                binding = _binding(
+                    template,
+                    _consequential_config(),
+                    source_id=f"member_boundary_{name}",
+                )
+                self.assertFalse(binding["evidence_complete"])
+                self.assertFalse(binding["execution_eligible"])
+                self.assertGreater(
+                    binding["opaque_obligation_count"]
+                    + binding["coverage_failure_count"],
+                    0,
+                )
+                self.assertIn(
+                    binding["physical_consequence"],
+                    {"safety_critical", "unknown"},
+                )
+
+    def test_member_attribute_material_changes_are_fingerprint_bound(self):
+        templates = (
+            "{{ [caller_supplied] | map(attribute='state') | list }}",
+            "{{ [caller_supplied] | map(attribute='name') | list }}",
+            "{{ [caller_supplied] | sort(attribute='state') | list }}",
+            "{{ [{'state': 'ok'}] | map(attribute='state') | list }}",
+            "{{ [{'state': 'ok'}] | map(attribute='name') | list }}",
+            "{{ states.sensor | map(attribute='state') | list }}",
+            "{{ states.binary_sensor | map(attribute='state') | list }}",
+        )
+        fingerprints = {
+            _binding(
+                template,
+                _consequential_config(),
+                source_id="member_attribute_drift",
+            )["evidence_fingerprint"]
+            for template in templates
+        }
+        self.assertEqual(len(templates), len(fingerprints))
+
     def test_target_capable_unknowns_remain_nonactionable(self):
         config = {
             "action": [
@@ -477,6 +842,137 @@ class Beta47RiskModelCompatibilityTests(unittest.TestCase):
         ):
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)
+
+
+class Beta47CollectionMemberConfigurationLockTests(
+    unittest.IsolatedAsyncioTestCase
+):
+    async def _lock_keys(self, template: str, *, action: str) -> set[str]:
+        proposed = valid_config("automation")
+        proposed["condition"] = [
+            {"condition": "template", "value_template": template}
+        ]
+        current = valid_config("automation") if action == "update" else None
+        gateway = SyntheticConfigurationGateway(
+            ({("automation", "porch_light"): current} if current else {})
+        )
+        prepared = await adapter_for(
+            "automation", action, gateway
+        ).prepare(
+            proposal_for(
+                "automation",
+                action,
+                current_config=current,
+                proposed_config=proposed,
+            )
+        )
+        return {item.key for item in operation_lock_requests(prepared)}
+
+    async def test_unknown_member_filters_use_conservative_configuration_lock(
+        self,
+    ):
+        expected = unconstrained_helper_dependency_lock_key()
+        for action in ("create", "update"):
+            for filter_name, template in UNKNOWN_MEMBER_ATTRIBUTE_FILTERS.items():
+                with self.subTest(action=action, filter=filter_name):
+                    self.assertIn(
+                        expected,
+                        await self._lock_keys(template, action=action),
+                    )
+
+    async def test_exact_and_ordinary_member_filters_preserve_lock_polarity(
+        self,
+    ):
+        exact = valid_config("automation")
+        exact["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{{ [states.input_boolean.beta46_target] "
+                    "| map(attribute='state') | list }}"
+                ),
+            }
+        ]
+        ordinary = valid_config("automation")
+        ordinary["condition"] = [
+            {
+                "condition": "template",
+                "value_template": (
+                    "{{ [{'state': 'ok'}] "
+                    "| map(attribute='state') | list }}"
+                ),
+            }
+        ]
+        for action in ("create", "update"):
+            with self.subTest(action=action, receiver="exact"):
+                current = valid_config("automation") if action == "update" else None
+                prepared = await adapter_for(
+                    "automation",
+                    action,
+                    SyntheticConfigurationGateway(
+                        ({("automation", "porch_light"): current} if current else {})
+                    ),
+                ).prepare(
+                    proposal_for(
+                        "automation",
+                        action,
+                        current_config=current,
+                        proposed_config=exact,
+                    )
+                )
+                keys = {item.key for item in operation_lock_requests(prepared)}
+                self.assertIn(helper_dependency_lock_key(TARGET), keys)
+                self.assertNotIn(
+                    unconstrained_helper_dependency_lock_key(), keys
+                )
+            with self.subTest(action=action, receiver="ordinary"):
+                current = valid_config("automation") if action == "update" else None
+                prepared = await adapter_for(
+                    "automation",
+                    action,
+                    SyntheticConfigurationGateway(
+                        ({("automation", "porch_light"): current} if current else {})
+                    ),
+                ).prepare(
+                    proposal_for(
+                        "automation",
+                        action,
+                        current_config=current,
+                        proposed_config=ordinary,
+                    )
+                )
+                keys = {item.key for item in operation_lock_requests(prepared)}
+                self.assertFalse(
+                    any(key.startswith("helper_dependency:") for key in keys)
+                )
+
+    async def test_removing_opaque_member_filter_keeps_conservative_guard(self):
+        opaque = valid_config("automation")
+        opaque["condition"] = [
+            {
+                "condition": "template",
+                "value_template": UNKNOWN_MEMBER_ATTRIBUTE_FILTERS["map"],
+            }
+        ]
+        ordinary = valid_config("automation")
+        prepared = await adapter_for(
+            "automation",
+            "update",
+            SyntheticConfigurationGateway(
+                {("automation", "porch_light"): opaque}
+            ),
+        ).prepare(
+            proposal_for(
+                "automation",
+                "update",
+                current_config=opaque,
+                proposed_config=ordinary,
+            )
+        )
+        self.assertIn(
+            unconstrained_helper_dependency_lock_key(),
+            {item.key for item in operation_lock_requests(prepared)},
+        )
 
 
 if __name__ == "__main__":
