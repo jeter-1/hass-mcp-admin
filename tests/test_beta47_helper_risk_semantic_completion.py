@@ -829,16 +829,17 @@ class Beta47ActionEffectReproductions(unittest.TestCase):
 
 
 class Beta47RiskModelCompatibilityTests(unittest.TestCase):
-    def test_v6_is_current_and_v3_through_v5_are_read_only(self):
-        self.assertEqual("helper-dependency-risk-v6", HELPER_DEPENDENCY_RISK_MODEL)
+    def test_v7_is_current_and_v3_through_v6_are_read_only(self):
+        self.assertEqual("helper-dependency-risk-v7", HELPER_DEPENDENCY_RISK_MODEL)
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v6"}),
+            frozenset({"helper-dependency-risk-v7"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
         for model in (
             "helper-dependency-risk-v3",
             "helper-dependency-risk-v4",
             "helper-dependency-risk-v5",
+            "helper-dependency-risk-v6",
         ):
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

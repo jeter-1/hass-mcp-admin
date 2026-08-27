@@ -92,6 +92,17 @@ def _automation_helper_dependency_locks(
             and item.relation not in _NON_CAUSAL_AUTOMATION_RELATIONS
         )
         for item in obligations:
+            if item.coverage_failure_authority:
+                # Failure authority precedes selector-scope narrowing. Any
+                # retained exact IDs receive locks too, but a clipped or
+                # contradictory record must also hold the global guard.
+                exact_helpers.update(
+                    entity_id
+                    for entity_id in item.exact_entity_ids
+                    if entity_id.startswith("input_boolean.")
+                )
+                unconstrained = True
+                continue
             if (
                 item.obligation_kind == "structured_entity_reference"
                 and item.relation in _NON_CAUSAL_AUTOMATION_RELATIONS
@@ -106,34 +117,22 @@ def _automation_helper_dependency_locks(
                 for entity_id in item.exact_entity_ids
                 if entity_id.startswith("input_boolean.")
             )
-            if item.outcome == "proven_dependency_neutral":
+            scope = item.target_selector_scope or "target_capable"
+            if scope == "dependency_neutral":
                 continue
-            if (
-                item.outcome == "proven_target_exclusion"
-                and not any(
-                    entity_id.startswith("input_boolean.")
-                    for entity_id in item.exact_entity_ids
-                )
-            ):
+            if scope == "closed_finite_candidates":
                 continue
             domains = item.possible_entity_domains
             could_select_helper = bool(
                 domains is None or "input_boolean" in domains
             )
-            unconstrained = bool(
-                unconstrained
-                or item.outcome == "coverage_failure"
-                or item.limit_exceeded
-                # An opaque callable/filter/test may introduce an entity read
-                # beyond the visible operand domain.  Domain hints can narrow
-                # exact terminals, but cannot discharge semantic opacity.
-                or item.outcome == "bounded_semantic_opaque"
-                or (
-                    item.outcome == "exact_dependency"
-                    and not item.exact_entity_ids
-                    and could_select_helper
-                )
-            )
+            if scope == "closed_entity_domains":
+                unconstrained = bool(unconstrained or could_select_helper)
+                continue
+            # A target-capable or failed scope remains conservative even when
+            # exact IDs survive as inclusion evidence.  Those IDs receive
+            # exact locks above; the unresolved remainder receives the guard.
+            unconstrained = True
     requests = [
         LockRequest(
             key=helper_dependency_lock_key(entity_id),

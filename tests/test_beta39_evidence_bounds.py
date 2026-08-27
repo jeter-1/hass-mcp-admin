@@ -183,15 +183,16 @@ class ObligationEvidenceBoundTests(unittest.TestCase):
 class ConservativeReclassificationTests(unittest.TestCase):
     """Losing target detail must reclassify, not silently truncate."""
 
-    def test_exact_dependency_becomes_opaque_and_conservative(self):
+    def test_exact_dependency_becomes_coverage_failed_when_detail_is_lost(self):
         item = _obligation(
             outcome="exact_dependency",
             lock_projection="exact",
             exact_entity_ids=("input_boolean.example",),
             literal_selectors=("y" * (MAX_OBLIGATION_VALUE_BYTES + 1),),
         )
-        self.assertEqual("bounded_semantic_opaque", item.outcome)
-        self.assertEqual("conservative", item.lock_projection)
+        self.assertEqual("coverage_failure", item.outcome)
+        self.assertEqual("coverage_failure", item.lock_projection)
+        self.assertEqual("coverage_failure", item.target_selector_scope)
         self.assertTrue(item.limit_exceeded)
         self.assertTrue(item.evidence_bounded)
 
@@ -203,8 +204,9 @@ class ConservativeReclassificationTests(unittest.TestCase):
                 f"light.item_{index:05d}" for index in range(1000)
             ),
         )
-        self.assertEqual("bounded_semantic_opaque", item.outcome)
-        self.assertEqual("conservative", item.lock_projection)
+        self.assertEqual("coverage_failure", item.outcome)
+        self.assertEqual("coverage_failure", item.lock_projection)
+        self.assertEqual("coverage_failure", item.target_selector_scope)
 
     def test_coverage_failure_stays_a_coverage_failure(self):
         item = _obligation(

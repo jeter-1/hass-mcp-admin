@@ -156,6 +156,15 @@ content, effect-bearing controls, custom/dynamic services and unresolved
 transitive actions remain conservative. Persisted v3, v4 and v5 evidence stays
 readable but requires replanning and has no current execution authority.
 
+Beta 48 advances new helper plans to `helper-dependency-risk-v7` and makes the
+target-independent selector scope an explicit part of every obligation.
+Complete finite candidates, complete domains and dependency-neutral operations
+are resolved against the requested helper before downstream profile selection;
+only exact inclusion, genuine target-capable opacity or target-relevant coverage
+failure can attach consequence. Candidate hints on unresolved evidence remain
+non-authoritative. Persisted v3-v6 evidence stays readable with its historical
+classification but requires replanning and has no current execution authority.
+
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned
 count, total, and cursor state; no detail level silently substitutes a lower cap.
