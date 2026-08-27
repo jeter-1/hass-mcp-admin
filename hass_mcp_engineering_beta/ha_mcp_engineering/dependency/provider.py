@@ -23,6 +23,11 @@ from ..providers import (
     ProviderResult,
 )
 from .extraction import (
+    EXPAND_LOOKUP_MODEL,
+    MAX_EXPAND_MEMBERS_PER_ENTITY,
+    MAX_EXPAND_SNAPSHOT_ENTITIES,
+    ExpandEntitySnapshotEvidence,
+    ExpandSnapshotEvidence,
     LABEL_LOOKUP_MODEL,
     discharge_resolved_blueprint_source_obligation,
     extract_document_with_obligations,
@@ -211,6 +216,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
 
         registry = []
         registry_warning = []
+        entity_registry_complete = False
         try:
             registry = await request(
                 "entity_registry_inventory",
@@ -219,6 +225,8 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             if not isinstance(registry, list):
                 registry = []
                 registry_warning.append("Entity registry returned an invalid response.")
+            else:
+                entity_registry_complete = True
             METRICS.record_provider_result(
                 self.provider_id,
                 "complete" if not registry_warning else "partial",
@@ -227,6 +235,12 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         except Exception:
             registry_warning.append("Entity registry could not be read; target metadata is partial.")
             METRICS.record_provider_result(self.provider_id, "failed", dispatched=True)
+
+        expand_snapshot_evidence = _build_expand_snapshot_evidence(
+            states=states,
+            entity_registry=registry,
+            entity_registry_complete=entity_registry_complete,
+        )
 
         for state in states:
             entity_id = str(state.get("entity_id", "")).lower()
@@ -675,6 +689,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             label_membership_truncated=label_membership_truncated,
             label_lookup_resolutions=label_lookup_resolutions,
             label_registry_complete=label_registry_complete,
+            expand_snapshot_evidence=expand_snapshot_evidence,
         )
         # Compatibility findings are a projection of the same post-registry
         # ledger consumed by helper risk and persisted in the index.  Retain
@@ -952,6 +967,192 @@ def _resolve_blueprint_inputs(
     return (
         resolved if isinstance(resolved, dict) else {},
         bool(complete and isinstance(resolved, dict)),
+    )
+
+
+def _build_expand_snapshot_evidence(
+    *,
+    states: list[Any],
+    entity_registry: list[Any],
+    entity_registry_complete: bool,
+) -> ExpandSnapshotEvidence:
+    """Project bounded Home Assistant group/zone expansion authority.
+
+    ``StateExtension.expand`` uses both state attributes and the live entity
+    source integration.  The entity registry's immutable ``platform`` field is
+    the admitted source evidence available to this provider scan.  Absence or
+    malformed evidence is retained as ``unknown`` and cannot prove exclusion.
+    """
+
+    state_inventory_complete = True
+    source_inventory_complete = bool(entity_registry_complete)
+    state_records: dict[str, dict[str, Any]] = {}
+    duplicate_states: set[str] = set()
+    if len(states) > MAX_EXPAND_SNAPSHOT_ENTITIES:
+        state_inventory_complete = False
+        bounded_states: list[Any] = []
+    else:
+        bounded_states = states
+    for raw in sorted(
+        bounded_states,
+        key=lambda value: (
+            str(value.get("entity_id", ""))
+            if isinstance(value, dict)
+            else ""
+        ),
+    ):
+        if not isinstance(raw, dict):
+            state_inventory_complete = False
+            continue
+        entity_id = raw.get("entity_id")
+        attributes = raw.get("attributes")
+        if (
+            not isinstance(entity_id, str)
+            or not valid_entity_id(entity_id)
+            or not isinstance(attributes, dict)
+        ):
+            state_inventory_complete = False
+            continue
+        if entity_id in state_records:
+            duplicate_states.add(entity_id)
+            state_inventory_complete = False
+            continue
+        state_records[entity_id] = attributes
+
+    source_domains: dict[str, str] = {}
+    invalid_sources: set[str] = set()
+    if len(entity_registry) > MAX_EXPAND_SNAPSHOT_ENTITIES:
+        source_inventory_complete = False
+        bounded_registry: list[Any] = []
+    else:
+        bounded_registry = entity_registry
+    for raw in sorted(
+        bounded_registry,
+        key=lambda value: (
+            str(value.get("entity_id", ""))
+            if isinstance(value, dict)
+            else ""
+        ),
+    ):
+        if not isinstance(raw, dict):
+            source_inventory_complete = False
+            continue
+        entity_id = raw.get("entity_id")
+        source_domain = raw.get("platform")
+        if not isinstance(entity_id, str) or not valid_entity_id(entity_id):
+            source_inventory_complete = False
+            continue
+        if (
+            not isinstance(source_domain, str)
+            or not source_domain
+            or entity_id in source_domains
+        ):
+            invalid_sources.add(entity_id)
+            source_inventory_complete = False
+            continue
+        source_domains[entity_id] = source_domain
+
+    projected: dict[str, ExpandEntitySnapshotEvidence] = {}
+    for entity_id, attributes in state_records.items():
+        domain = entity_id.split(".", 1)[0]
+        source_domain = source_domains.get(entity_id)
+        if entity_id in duplicate_states:
+            expandable_kind = "unknown"
+            member_attribute = None
+            failure_reason = "expand_state_identity_conflict"
+        elif domain == "group" or source_domain == "group":
+            expandable_kind = "group"
+            member_attribute = "entity_id"
+            failure_reason = None
+        elif domain == "zone":
+            expandable_kind = "zone"
+            member_attribute = "persons"
+            failure_reason = None
+        elif entity_id in invalid_sources:
+            expandable_kind = "unknown"
+            member_attribute = None
+            failure_reason = "expand_entity_source_malformed"
+        elif source_domain is None:
+            expandable_kind = "unknown"
+            member_attribute = None
+            failure_reason = (
+                "expand_entity_source_unavailable"
+                if source_inventory_complete
+                else "expand_source_inventory_unavailable"
+            )
+        else:
+            expandable_kind = "leaf"
+            member_attribute = None
+            failure_reason = None
+
+        members: tuple[str, ...] = ()
+        membership_complete = expandable_kind in {"leaf", "unknown"}
+        membership_count = 0
+        membership_material: list[str] = []
+        if member_attribute is not None:
+            raw_members = attributes.get(member_attribute)
+            if raw_members is None:
+                raw_members = []
+            if not isinstance(raw_members, (list, tuple)):
+                membership_complete = False
+                failure_reason = "expand_membership_malformed"
+                membership_material = [
+                    "invalid_type:" + type(raw_members).__name__
+                ]
+            else:
+                membership_count = len(raw_members)
+                bounded_raw_members = raw_members[
+                    : MAX_EXPAND_MEMBERS_PER_ENTITY + 1
+                ]
+                valid_members = {
+                    value
+                    for value in bounded_raw_members
+                    if isinstance(value, str) and valid_entity_id(value)
+                }
+                membership_material = sorted(valid_members)
+                if len(valid_members) != len(bounded_raw_members):
+                    membership_complete = False
+                    failure_reason = "expand_membership_malformed"
+                elif len(raw_members) > MAX_EXPAND_MEMBERS_PER_ENTITY:
+                    membership_complete = False
+                    failure_reason = "expand_membership_limit_exceeded"
+                else:
+                    membership_complete = True
+                members = tuple(
+                    membership_material[:MAX_EXPAND_MEMBERS_PER_ENTITY]
+                )
+        membership_fingerprint = hashlib.sha256(
+            json.dumps(
+                {
+                    "model": EXPAND_LOOKUP_MODEL,
+                    "entity_id": entity_id,
+                    "source_domain": source_domain,
+                    "expandable_kind": expandable_kind,
+                    "member_attribute": member_attribute,
+                    "members": membership_material,
+                    "membership_count": membership_count,
+                    "membership_complete": membership_complete,
+                    "failure_reason": failure_reason,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        projected[entity_id] = ExpandEntitySnapshotEvidence(
+            entity_id=entity_id,
+            source_domain=source_domain,
+            expandable_kind=expandable_kind,
+            member_entity_ids=members,
+            membership_complete=membership_complete,
+            membership_count=membership_count,
+            membership_fingerprint=membership_fingerprint,
+            failure_reason=failure_reason,
+        )
+    return ExpandSnapshotEvidence(
+        entities=projected,
+        state_inventory_complete=state_inventory_complete,
+        source_inventory_complete=source_inventory_complete,
     )
 
 

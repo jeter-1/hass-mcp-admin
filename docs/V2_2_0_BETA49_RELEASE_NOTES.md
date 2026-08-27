@@ -12,11 +12,13 @@ attribute projection and state-value filter transport. This allows an unrelated
 helper to be excluded before consequence, completeness, policy, actionability,
 fingerprint or lock aggregation.
 
-The correction is deliberately narrow. Recursive group expansion, dynamic
-selectors, incomplete registries, unknown entity-producing callables, malformed
-evidence, overflow and processing failure remain conservative. A scalar result
-becomes target-capable again if it is later consumed as an entity selector
-without finite identity proof.
+Recursive expansion now follows complete, immutable snapshot evidence instead
+of an entity-ID prefix: generic groups, entities sourced by Home Assistant's
+group integration, and zone person membership are resolved recursively and
+fingerprint-bound. Missing source/state evidence, cycles, partial or malformed
+membership, overflow, dynamic selectors and unknown entity-producing callables
+remain conservative. A scalar result becomes target-capable again if it is
+later consumed as an entity selector without finite identity proof.
 
 Plans now expose the exact dependency-index generation, fingerprint and source
 epoch used for classification. New plans use `helper-dependency-risk-v8`;

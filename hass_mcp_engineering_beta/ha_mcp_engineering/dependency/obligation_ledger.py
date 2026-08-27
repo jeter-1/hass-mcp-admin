@@ -2193,9 +2193,13 @@ class TemplateObligationAnalyzer:
                     if self.valid_entity_id(item)
                 }
                 membership_opaque = bool(
-                    combined.unknown
+                    # Recursive membership is Home Assistant runtime evidence,
+                    # not an entity-ID naming convention.  The direct provider
+                    # resolves this transform against the same immutable state
+                    # and entity-source snapshot used to build the index.
+                    name == "expand"
+                    or combined.unknown
                     or not combined.complete
-                    or any(item.startswith("group.") for item in exact)
                     or not exact
                 )
                 if membership_opaque:

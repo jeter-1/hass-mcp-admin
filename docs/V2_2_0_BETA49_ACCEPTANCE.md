@@ -42,11 +42,16 @@ filter consumes the selector once and returns a typed scalar; rendering that
 scalar does not invent a second entity relationship. Supplying it later to an
 entity selector remains conservative unless finite entity identity is proven.
 
-Literal-label expansion is closed only when the complete label membership is
-known and contains no recursively expandable group. Group membership,
-incomplete or failed registry evidence, dynamic selectors, unknown callables,
-malformed input, overflow and processing failure remain target-capable or
-coverage-failed. Retained candidate prefixes never prove exclusion.
+Literal-label expansion is closed only after the provider resolves the same
+bounded state and entity-source snapshot used for the index. The resolver
+matches Home Assistant's reviewed `expand()` contract: it recursively follows
+`group.*`, entities whose recorded source integration is `group`, and `zone.*`
+person membership. It binds the source kind, complete membership, membership
+count and membership fingerprint for every visited entity. Missing state or
+source evidence, malformed or partial membership, cycles, dynamic selectors,
+unknown callables, overflow and processing failure remain target-capable or
+coverage-failed. Retained candidate or membership prefixes never prove
+exclusion.
 
 Only an exact target inclusion, genuine target-capable opacity or
 target-relevant coverage failure may attach a downstream action profile.
@@ -84,8 +89,9 @@ projection. Require:
   approval and all seven exact automation locks;
 - an arbitrary selector remains opaque, incomplete, non-actionable and
   conservatively locked;
-- recursive group expansion and incomplete registry evidence stay
-  conservative; and
+- generic groups, domain-specific groups and zones resolve recursively from
+  complete snapshot evidence, while cycles and missing, malformed, partial or
+  over-limit evidence stay conservative;
 - obligation and downstream-profile traversal is deterministic across two
   complete reads and ends without provider dispatch.
 

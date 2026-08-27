@@ -23,14 +23,22 @@ from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
 from ha_mcp_engineering.dependency.service import (  # noqa: E402
     EntityDependencyAnalysisService,
 )
+from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.f3.operational_locks import (  # noqa: E402
     OperationalLockSetCalculator,
+)
+from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
+    F3RuntimeIntegration,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
 )
 from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
+)
+from ha_mcp_engineering.request_context import (  # noqa: E402
+    begin_request,
+    end_request,
 )
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
@@ -42,7 +50,9 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
 from tests.test_beta37_exact_helper_state import (  # noqa: E402
     Clock,
     FakeHelperStateGateway,
+    UnusedConfigurationGateway,
     UnusedLegacyGateway,
+    forbidden_upstream_identity,
 )
 
 
@@ -73,7 +83,13 @@ def _condition(template: str) -> dict:
 class SyntheticBeta49Rest:
     """Sanitized Home Assistant responses for the deployed-shape regression."""
 
-    def __init__(self, *, arbitrary_only: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        arbitrary_only: bool = False,
+        extra_states: tuple[dict, ...] = (),
+    ) -> None:
+        self.extra_states = extra_states
         residual_conditions = (
             [_condition(LABEL_EXPANSION) for _ in range(8)]
             + [_condition(FINITE_EXPANSION) for _ in range(9)]
@@ -166,6 +182,16 @@ class SyntheticBeta49Rest:
                     "state": "off",
                     "attributes": {},
                 },
+                {
+                    "entity_id": "sensor.synthetic_alpha",
+                    "state": "1",
+                    "attributes": {},
+                },
+                {
+                    "entity_id": "binary_sensor.synthetic_beta",
+                    "state": "off",
+                    "attributes": {},
+                },
             ]
             states.extend(
                 {
@@ -178,6 +204,7 @@ class SyntheticBeta49Rest:
                 }
                 for source_id, config in self.configs.items()
             )
+            states.extend(self.extra_states)
             return states
         prefix = "/config/automation/config/"
         if path.startswith(prefix):
@@ -187,22 +214,46 @@ class SyntheticBeta49Rest:
 
 class SyntheticBeta49WebSocket:
     def __init__(
-        self, *, member_entities: tuple[str, ...] | None = None
+        self,
+        *,
+        member_entities: tuple[str, ...] | None = None,
+        member_platform: str = "synthetic",
+        extra_registry_entries: tuple[dict, ...] = (),
     ) -> None:
-        self.member_entities = member_entities or (
-            "sensor.synthetic_alpha",
-            "binary_sensor.synthetic_beta",
+        self.member_entities = (
+            member_entities
+            if member_entities is not None
+            else (
+                "sensor.synthetic_alpha",
+                "binary_sensor.synthetic_beta",
+            )
         )
+        self.member_platform = member_platform
+        self.extra_registry_entries = extra_registry_entries
 
     async def command(self, payload: dict):
         if payload == {"type": "config/entity_registry/list"}:
-            return [
+            entries = [
                 {
                     "entity_id": entity_id,
                     "labels": ["reviewed_sensors"],
+                    "platform": self.member_platform,
                 }
                 for entity_id in self.member_entities
             ]
+            for entity_id, platform in (
+                ("sensor.synthetic_alpha", "sensor"),
+                ("binary_sensor.synthetic_beta", "binary_sensor"),
+            ):
+                if entity_id not in self.member_entities:
+                    entries.append(
+                        {
+                            "entity_id": entity_id,
+                            "labels": [],
+                            "platform": platform,
+                        }
+                    )
+            return entries + list(self.extra_registry_entries)
         if payload == {"type": "config/label_registry/list"}:
             return [
                 {
@@ -351,6 +402,284 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(binding["evidence_complete"])
         self.assertFalse(binding["execution_eligible"])
 
+    @staticmethod
+    async def _expanded_index(
+        *,
+        label_entity_id: str,
+        label_platform: str = "synthetic",
+        extra_states: tuple[dict, ...],
+        extra_registry_entries: tuple[dict, ...],
+    ) -> tuple[DependencyIndex, object]:
+        index = DependencyIndex(
+            DirectHaDependencyProvider(
+                SyntheticBeta49Rest(extra_states=extra_states),
+                SyntheticBeta49WebSocket(
+                    member_entities=(label_entity_id,),
+                    member_platform=label_platform,
+                    extra_registry_entries=extra_registry_entries,
+                ),
+            )
+        )
+        snapshot, _rebuilt, _lookup_ms = await index.get(refresh=True)
+        return index, snapshot
+
+    @staticmethod
+    def _expand_resolution_fingerprints(snapshot) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                value
+                for obligation in snapshot.obligations
+                for value in obligation.context_provenance
+                if value.startswith("expand_resolution_fingerprint:")
+            )
+        )
+
+    async def test_domain_group_and_zone_members_are_not_false_exclusions(self):
+        cases = (
+            (
+                "light.synthetic_group",
+                "light.synthetic_member",
+                {"entity_id": ["light.synthetic_member"]},
+                "group",
+            ),
+            (
+                "zone.synthetic_zone",
+                "person.synthetic_member",
+                {"persons": ["person.synthetic_member"]},
+                "zone",
+            ),
+        )
+        for container_id, member_id, attributes, platform in cases:
+            with self.subTest(container_id=container_id):
+                index, _snapshot = await self._expanded_index(
+                    label_entity_id=container_id,
+                    label_platform=platform,
+                    extra_states=(
+                        {
+                            "entity_id": container_id,
+                            "state": "on",
+                            "attributes": attributes,
+                        },
+                        {
+                            "entity_id": member_id,
+                            "state": "on",
+                            "attributes": {},
+                        },
+                    ),
+                    extra_registry_entries=(
+                        {
+                            "entity_id": member_id,
+                            "labels": [],
+                            "platform": member_id.split(".", 1)[0],
+                        },
+                    ),
+                )
+                analysis = await EntityDependencyAnalysisService(
+                    index
+                ).analyze(
+                    entity_id=member_id,
+                    detail_level="evidence",
+                    include_indirect=True,
+                    refresh_index=False,
+                )
+                self.assertGreater(
+                    analysis.data["overview"]["direct_reference_count"],
+                    0,
+                    (container_id, member_id, platform),
+                )
+                evidence = await HelperDependencyRiskService(index).assess(
+                    member_id, refresh=False
+                )
+                self.assertGreater(
+                    evidence["binding"][
+                        "exact_dependency_obligation_count"
+                    ],
+                    0,
+                )
+
+    async def test_nested_groups_resolve_and_cycles_remain_incomplete(self):
+        index, _snapshot = await self._expanded_index(
+            label_entity_id="group.synthetic_outer",
+            extra_states=(
+                {
+                    "entity_id": "group.synthetic_outer",
+                    "state": "on",
+                    "attributes": {"entity_id": ["light.synthetic_inner"]},
+                },
+                {
+                    "entity_id": "light.synthetic_inner",
+                    "state": "on",
+                    "attributes": {"entity_id": ["light.synthetic_leaf"]},
+                },
+                {
+                    "entity_id": "light.synthetic_leaf",
+                    "state": "on",
+                    "attributes": {},
+                },
+            ),
+            extra_registry_entries=(
+                {
+                    "entity_id": "light.synthetic_inner",
+                    "labels": [],
+                    "platform": "group",
+                },
+                {
+                    "entity_id": "light.synthetic_leaf",
+                    "labels": [],
+                    "platform": "light",
+                },
+            ),
+        )
+        exact = await HelperDependencyRiskService(index).assess(
+            "light.synthetic_leaf", refresh=False
+        )
+        self.assertGreater(
+            exact["binding"]["exact_dependency_obligation_count"], 0
+        )
+
+        cycle_index, _snapshot = await self._expanded_index(
+            label_entity_id="group.synthetic_cycle_a",
+            extra_states=(
+                {
+                    "entity_id": "group.synthetic_cycle_a",
+                    "state": "on",
+                    "attributes": {
+                        "entity_id": ["light.synthetic_cycle_b"]
+                    },
+                },
+                {
+                    "entity_id": "light.synthetic_cycle_b",
+                    "state": "on",
+                    "attributes": {
+                        "entity_id": ["group.synthetic_cycle_a"]
+                    },
+                },
+            ),
+            extra_registry_entries=(
+                {
+                    "entity_id": "light.synthetic_cycle_b",
+                    "labels": [],
+                    "platform": "group",
+                },
+            ),
+        )
+        cycle = await HelperDependencyRiskService(cycle_index).assess(
+            STANDARD_TARGET, refresh=False
+        )
+        self.assertGreater(cycle["binding"]["opaque_obligation_count"], 0)
+        self.assertFalse(cycle["binding"]["evidence_complete"])
+        self.assertFalse(cycle["binding"]["execution_eligible"])
+
+    async def test_missing_malformed_and_overflow_membership_fail_closed(self):
+        cases = (
+            (
+                "group.synthetic_missing",
+                {"entity_id": ["input_boolean.synthetic_missing"]},
+                (),
+            ),
+            (
+                "group.synthetic_malformed",
+                {"entity_id": "input_boolean.synthetic_malformed"},
+                (),
+            ),
+            (
+                "group.synthetic_overflow",
+                {
+                    "entity_id": [
+                        f"input_boolean.synthetic_{index}"
+                        for index in range(129)
+                    ]
+                },
+                tuple(
+                    {
+                        "entity_id": f"input_boolean.synthetic_{index}",
+                        "state": "off",
+                        "attributes": {},
+                    }
+                    for index in range(129)
+                ),
+            ),
+        )
+        for group_id, attributes, members in cases:
+            with self.subTest(group_id=group_id):
+                extra_states = (
+                    {
+                        "entity_id": group_id,
+                        "state": "on",
+                        "attributes": attributes,
+                    },
+                    *members,
+                )
+                extra_registry_entries = tuple(
+                    {
+                        "entity_id": item["entity_id"],
+                        "labels": [],
+                        "platform": "input_boolean",
+                    }
+                    for item in members
+                )
+                index, first = await self._expanded_index(
+                    label_entity_id=group_id,
+                    extra_states=extra_states,
+                    extra_registry_entries=extra_registry_entries,
+                )
+                binding = (
+                    await HelperDependencyRiskService(index).assess(
+                        STANDARD_TARGET, refresh=False
+                    )
+                )["binding"]
+                self.assertFalse(binding["evidence_complete"])
+                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(
+                    binding["dependency_lock_projection"][
+                        "conservative_helper_dependency"
+                    ]
+                )
+                _second_index, second = await self._expanded_index(
+                    label_entity_id=group_id,
+                    extra_states=extra_states,
+                    extra_registry_entries=extra_registry_entries,
+                )
+                first_fingerprints = self._expand_resolution_fingerprints(
+                    first
+                )
+                self.assertTrue(first_fingerprints)
+                self.assertEqual(
+                    first_fingerprints,
+                    self._expand_resolution_fingerprints(second),
+                )
+
+        partial_index, _snapshot = await self._expanded_index(
+            label_entity_id="group.synthetic_partial_source",
+            extra_states=(
+                {
+                    "entity_id": "group.synthetic_partial_source",
+                    "state": "on",
+                    "attributes": {
+                        "entity_id": ["sensor.synthetic_unregistered"]
+                    },
+                },
+                {
+                    "entity_id": "sensor.synthetic_unregistered",
+                    "state": "on",
+                    "attributes": {},
+                },
+            ),
+            extra_registry_entries=(),
+        )
+        partial = (
+            await HelperDependencyRiskService(partial_index).assess(
+                STANDARD_TARGET, refresh=False
+            )
+        )["binding"]
+        self.assertFalse(partial["evidence_complete"])
+        self.assertFalse(partial["execution_eligible"])
+        self.assertTrue(
+            partial["dependency_lock_projection"][
+                "conservative_helper_dependency"
+            ]
+        )
+
     async def test_label_membership_drift_changes_target_scope_and_binding(self):
         excluded = (
             await HelperDependencyRiskService(self.index).assess(
@@ -381,6 +710,54 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             "automation.residual_scope",
             included["relevant_downstream_object_ids"],
+        )
+        self.assertNotEqual(
+            excluded["evidence_fingerprint"],
+            included["evidence_fingerprint"],
+        )
+
+    async def test_expanded_membership_drift_changes_binding(self):
+        async def binding(member_id: str) -> dict:
+            member_states = (
+                ()
+                if member_id == STANDARD_TARGET
+                else (
+                    {
+                        "entity_id": member_id,
+                        "state": "off",
+                        "attributes": {},
+                    },
+                )
+            )
+            index, _snapshot = await self._expanded_index(
+                label_entity_id="group.synthetic_drift",
+                extra_states=(
+                    {
+                        "entity_id": "group.synthetic_drift",
+                        "state": "on",
+                        "attributes": {"entity_id": [member_id]},
+                    },
+                    *member_states,
+                ),
+                extra_registry_entries=(
+                    {
+                        "entity_id": member_id,
+                        "labels": [],
+                        "platform": member_id.split(".", 1)[0],
+                    },
+                ),
+            )
+            return (
+                await HelperDependencyRiskService(index).assess(
+                    STANDARD_TARGET, refresh=False
+                )
+            )["binding"]
+
+        excluded = await binding("sensor.synthetic_drift_member")
+        included = await binding(STANDARD_TARGET)
+        self.assertEqual(0, excluded["exact_dependency_obligation_count"])
+        self.assertGreater(
+            included["exact_dependency_obligation_count"], 0
         )
         self.assertNotEqual(
             excluded["evidence_fingerprint"],
@@ -554,6 +931,82 @@ class Beta49ProductionPathTests(unittest.IsolatedAsyncioTestCase):
                 second = self._traverse(plan_id, section)
                 self.assertEqual(first, second)
         self.assertEqual(0, self.helper.dispatch_count)
+
+    async def test_expanded_membership_drift_rejects_before_dispatch(self):
+        group_state = {
+            "entity_id": "group.synthetic_preflight",
+            "state": "on",
+            "attributes": {"entity_id": ["sensor.synthetic_alpha"]},
+        }
+        rest = SyntheticBeta49Rest(extra_states=(group_state,))
+        websocket = SyntheticBeta49WebSocket(
+            member_entities=("group.synthetic_preflight",),
+            extra_registry_entries=(
+                {
+                    "entity_id": STANDARD_TARGET,
+                    "labels": [],
+                    "platform": "input_boolean",
+                },
+            ),
+        )
+        index = DependencyIndex(
+            DirectHaDependencyProvider(rest, websocket, concurrency=4)
+        )
+        helper = FakeHelperStateGateway()
+        helper.entity_id = STANDARD_TARGET
+        root = Path(self.temp.name) / "preflight-drift"
+        service = ChangeGovernanceService(
+            ChangePlanRepository(root / "plans"),
+            UnusedLegacyGateway(),
+            AuditLogger(str(root / "audit.jsonl"), "beta49-drift-secret"),
+            now=Clock(),
+            helper_state_gateway=helper,
+            helper_dependency_risk_reader=(
+                HelperDependencyRiskService(index).assess
+            ),
+        )
+        telemetry, context = begin_request("beta49-expand-drift")
+        telemetry.caller_id = "mcp-requester"
+        try:
+            runtime = F3RuntimeIntegration(
+                service=service,
+                storage_root=str(root / "plans"),
+                configuration_gateway=UnusedConfigurationGateway(),
+                backup_gateway=None,
+                lifecycle_gateway=None,
+                helper_state_gateway=helper,
+                provider_identity_reader=forbidden_upstream_identity,
+                retention_days=90,
+            )
+            service.f3_runtime = runtime
+            await runtime.recover_once("startup")
+            created = await service.create_helper_state_plan(
+                entity_id=STANDARD_TARGET,
+                desired_state="on",
+            )
+            plan = created["plan"]
+            self.assertTrue(plan["approval_actionable"])
+            pending = service.approve(plan["plan_id"], plan["plan_hash"])
+            _review, csrf = await service.issue_external_csrf(
+                plan["plan_id"], pending["challenge_id"]
+            )
+            await service.decide_external_approval(
+                plan_id=plan["plan_id"],
+                challenge_id=pending["challenge_id"],
+                expected_plan_hash=plan["plan_hash"],
+                approval_kind="apply",
+                approval_action=pending["approval_action"],
+                csrf_nonce=csrf,
+                decision="approve",
+                approver_principal="home_assistant_admin_ingress:beta49",
+            )
+            group_state["attributes"]["entity_id"] = [STANDARD_TARGET]
+            result = await service.apply(plan["plan_id"], plan["plan_hash"])
+            self.assertEqual("failed_pre_dispatch", result["task_state"])
+            self.assertFalse(result["provider_dispatch_occurred"])
+            self.assertEqual(0, helper.dispatch_count)
+        finally:
+            end_request(context)
 
     def test_v3_through_v7_remain_read_only(self):
         self.assertEqual("helper-dependency-risk-v8", HELPER_DEPENDENCY_RISK_MODEL)
