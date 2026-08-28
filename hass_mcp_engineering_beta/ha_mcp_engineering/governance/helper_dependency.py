@@ -1450,6 +1450,13 @@ class HelperDependencyRiskService:
     ) -> dict[str, Any]:
         """Read target-specific risk, optionally behind a governed fence.
 
+        An ordinary ``refresh`` request means "use current evidence": a
+        committed, non-invalidated snapshot inside the soft TTL is reused.
+        This lets an explicit dependency refresh and the plans immediately
+        following it bind one immutable generation instead of silently
+        replacing the acceptance evidence for every target.  Missing, stale,
+        or invalidated evidence still forces a rebuild.
+
         ``fenced`` is used by the post-lock preflight, which runs only after
         the complete lock set is held.  It opens a source-read fence and
         accepts only evidence from a scan that started after it, so a build
@@ -1462,8 +1469,23 @@ class HelperDependencyRiskService:
                 fence = self.index.open_source_fence(
                     "governed_helper_preflight"
                 )
+            active_identity_reader = getattr(
+                self.index, "active_identity", None
+            )
+            current_snapshot = False
+            if callable(active_identity_reader) and not fenced:
+                try:
+                    current_snapshot = bool(
+                        active_identity_reader().get("current") is True
+                    )
+                except Exception:
+                    # Identity uncertainty cannot authorize cache reuse.
+                    current_snapshot = False
+            effective_refresh = bool(
+                refresh and (fenced or not current_snapshot)
+            )
             snapshot, rebuilt, lookup_duration_ms = await self.index.get(
-                refresh=refresh, min_source_epoch=fence
+                refresh=effective_refresh, min_source_epoch=fence
             )
             metadata = self.index.evidence_metadata(snapshot)
         except Exception as exc:

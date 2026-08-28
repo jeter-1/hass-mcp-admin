@@ -4606,6 +4606,9 @@ class TemplateObligationAnalyzer:
             context=selector_context,
             limit=False,
             lock="conservative",
+            target_selector_scope=(
+                self._target_selector_scope_for_value(value)
+            ),
         )
 
     def _external_template_boundary(
@@ -5002,7 +5005,29 @@ class TemplateObligationAnalyzer:
             lock=(
                 "coverage_failure" if value.limit_exceeded else "conservative"
             ),
+            target_selector_scope=(
+                self._target_selector_scope_for_value(value)
+            ),
         )
+
+    @staticmethod
+    def _target_selector_scope_for_value(value: _Value) -> str:
+        """Return target reachability independently from value semantics.
+
+        A filter, attribute dispatch, comparison, or rendering operation may
+        remain semantically opaque while its input's complete selector
+        universe is already proven.  That opacity can affect the value or
+        truth result, but it cannot introduce an entity outside the retained
+        finite candidates or complete domain set.  Coverage loss always wins.
+        """
+
+        if value.limit_exceeded:
+            return "coverage_failure"
+        if value.entity_candidate_evidence_complete:
+            return "closed_finite_candidates"
+        if value.possible_domains and value.domain_evidence_complete:
+            return "closed_entity_domains"
+        return "target_capable"
 
     def _emit(
         self,

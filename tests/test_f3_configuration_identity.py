@@ -817,7 +817,7 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 else:
                     self.assertIn(expected_key, keys)
 
-    async def test_dynamic_dispatch_domain_hint_remains_conservatively_locked(self):
+    async def test_dynamic_dispatch_domain_hint_remains_target_bounded(self):
         base = valid_config("automation")
         proposed = valid_config("automation")
         proposed["condition"] = [
@@ -837,7 +837,7 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
         )
         keys = {item.key for item in operation_lock_requests(prepared)}
 
-        self.assertIn(unconstrained_helper_dependency_lock_key(), keys)
+        self.assertNotIn(unconstrained_helper_dependency_lock_key(), keys)
 
     async def test_constructor_display_values_lock_only_when_selected(self):
         base = valid_config("automation")
@@ -1254,7 +1254,7 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             (
                 f'{{{{ ["{helper}"] '
                 '| select(test_name, "on") | list }}',
-                True,
+                False,
             ),
             (
                 f'{{{{ [{{"entity_id": "{helper}"}}] '
@@ -1577,11 +1577,33 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
             + reviewed_helper_operator
             + " if enabled else ( }}",
         )
+        finite_dynamic_test = (
+            f'{{{{ (["{helper}"] '
+            '| select(test_name, "on") | list) | count }}}}'
+        )
+        finite_dynamic = valid_config("automation")
+        finite_dynamic["condition"] = [
+            {
+                "condition": "template",
+                "value_template": finite_dynamic_test,
+            }
+        ]
+        finite_prepared = await self._prepared(
+            "automation",
+            "update",
+            operation_id="nested_finite_dynamic_test",
+            current_config=base,
+            proposed_config=finite_dynamic,
+        )
+        finite_locks = {
+            item.key for item in operation_lock_requests(finite_prepared)
+        }
+        self.assertIn(exact_key, finite_locks)
+        self.assertNotIn(dynamic_key, finite_locks)
+
         dynamic_forms = (
             '{{ (helper_entities '
             '| select("is_state", "on") | list) | count }}',
-            f'{{{{ (["{helper}"] '
-            '| select(test_name, "on") | list) | count }}}}',
             '{{ (helper_entities | map("states") | list) '
             'if enabled else [] }}',
             f'{{{{ (["{helper}"] | select("is_state", "on") '

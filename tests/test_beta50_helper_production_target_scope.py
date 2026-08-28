@@ -332,7 +332,7 @@ class Beta50ProductionScopeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.risk = HelperDependencyRiskService(self.index)
 
-    def test_sanitized_deployed_beta49_matrix_is_complete(self):
+    def test_sanitized_deployed_beta49_aggregate_is_internally_consistent(self):
         fixture = json.loads(
             (
                 ROOT
@@ -369,6 +369,13 @@ class Beta50ProductionScopeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             0, fixture["provenance"]["upstream_request_count"]
+        )
+        self.assertFalse(
+            fixture["provenance"]
+            ["record_level_obligation_evidence_retained"]
+        )
+        self.assertFalse(
+            fixture["provenance"]["source_semantic_replay_retained"]
         )
 
     async def test_residual_producer_terminals_precede_helper_aggregation(self):
@@ -557,6 +564,14 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         return items, fingerprint
 
     async def test_plans_bind_fresh_identity_and_persist_terminal_evidence(self):
+        self.snapshot, _rebuilt, _lookup_ms = await self.index.get(
+            refresh=True
+        )
+        refreshed_identity = (
+            self.snapshot.generation,
+            self.snapshot.fingerprint,
+            self.snapshot.source_epoch,
+        )
         standard, observed_standard = await self._create_plan(STANDARD_TARGET)
         standard_binding = standard["operational"]["baseline"][
             "dependency_risk"
@@ -590,14 +605,13 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             ["dependency_index_source_epoch"],
         )
         self.assertEqual(
-            first_identity,
+            refreshed_identity,
             (
                 standard_binding["dependency_index_generation"],
                 standard_binding["dependency_index_fingerprint"],
                 standard_binding["dependency_index_source_epoch"],
             ),
         )
-        await self.index.get(refresh=True)
         consequential, observed_consequential = await self._create_plan(
             CONSEQUENTIAL_TARGET
         )
@@ -613,14 +627,15 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             ["dependency_index_source_epoch"],
         )
         self.assertEqual(
-            second_identity,
+            refreshed_identity,
             (
                 consequential_binding["dependency_index_generation"],
                 consequential_binding["dependency_index_fingerprint"],
                 consequential_binding["dependency_index_source_epoch"],
             ),
         )
-        self.assertNotEqual(first_identity[0], second_identity[0])
+        self.assertEqual(refreshed_identity, first_identity)
+        self.assertEqual(refreshed_identity, second_identity)
         self.assertTrue(consequential["approval_actionable"])
         self.assertEqual("high", consequential["risk"]["level"])
         self.assertEqual(
@@ -768,6 +783,76 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             unconstrained_helper_dependency_lock_key(),
             self._lock_keys(STANDARD_TARGET, excluded_binding),
+        )
+
+    async def test_opaque_member_semantics_cannot_broaden_a_closed_selector_universe(
+        self,
+    ):
+        finite_template = (
+            "{{ [states.sensor.synthetic_alpha] "
+            "| selectattr(caller_supplied) | list }}"
+        )
+        finite_index = DependencyIndex(
+            DirectHaDependencyProvider(
+                SyntheticBeta50Rest(
+                    filter_without_attribute=finite_template
+                ),
+                SyntheticBeta50WebSocket(),
+            )
+        )
+        snapshot, _rebuilt, _lookup_ms = await finite_index.get(
+            refresh=True
+        )
+        dynamic_attribute = [
+            item
+            for item in snapshot.obligations
+            if item.reason_code
+            == "selectattr_dynamic_attribute_dispatch"
+        ]
+        self.assertEqual(1, len(dynamic_attribute))
+        self.assertEqual(
+            ("sensor.synthetic_alpha",),
+            dynamic_attribute[0].exact_entity_ids,
+        )
+        self.assertEqual(
+            "closed_finite_candidates",
+            dynamic_attribute[0].target_selector_scope,
+        )
+
+        risk = HelperDependencyRiskService(finite_index)
+        excluded = (await risk.assess(
+            STANDARD_TARGET, refresh=False
+        ))["binding"]
+        included = (await risk.assess(
+            "sensor.synthetic_alpha", refresh=False
+        ))["binding"]
+        self.assertEqual(0, excluded["opaque_obligation_count"])
+        self.assertEqual([], excluded["downstream_profiles"])
+        self.assertTrue(excluded["execution_eligible"])
+        self.assertGreater(
+            included["exact_dependency_obligation_count"], 0
+        )
+        self.assertEqual(0, included["opaque_obligation_count"])
+
+        arbitrary_index = DependencyIndex(
+            DirectHaDependencyProvider(
+                SyntheticBeta50Rest(
+                    filter_without_attribute=(
+                        "{{ caller_supplied "
+                        "| selectattr(caller_attribute) | list }}"
+                    )
+                ),
+                SyntheticBeta50WebSocket(),
+            )
+        )
+        arbitrary = (await HelperDependencyRiskService(
+            arbitrary_index
+        ).assess(STANDARD_TARGET, refresh=True))["binding"]
+        self.assertGreater(arbitrary["opaque_obligation_count"], 0)
+        self.assertFalse(arbitrary["execution_eligible"])
+        self.assertTrue(
+            arbitrary["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
         )
 
         exact_plan = await self._create_filter_plan(
