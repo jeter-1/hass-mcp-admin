@@ -2282,6 +2282,23 @@ class TemplateObligationAnalyzer:
                 ),
             )
         if category == "attribute_item_access":
+            if name == "entity_name" and len(arguments) == 1:
+                # ``entity_name`` consumes one entity/State selector and
+                # returns display text.  The registry lookup cannot introduce
+                # another selector: bind the input relationship here, then
+                # carry only scalar taint so a later states()/state_attr()
+                # consumption still fails closed.
+                self._consume_entity_value(
+                    arguments[0],
+                    node=node,
+                    kind="global_entity_name",
+                    reason="entity_name_entity_access",
+                )
+                self._neutral(
+                    node,
+                    "entity_name_result_dependency_neutral",
+                )
+                return _dynamic_scalar_value()
             self._emit(
                 outcome="bounded_semantic_opaque",
                 kind=f"global_{name}",
@@ -2862,7 +2879,14 @@ class TemplateObligationAnalyzer:
                 node=node,
                 lock="conservative",
             )
-        if operand.state_collection or operand.state_object:
+        member_attribute_lookup = bool(
+            node.name in {"selectattr", "rejectattr"}
+            or (node.name == "map" and "attribute" in keywords)
+            or node.name in _ATTRIBUTE_MEMBER_FILTER_ARGUMENTS
+        )
+        if (
+            operand.state_collection or operand.state_object
+        ) and not member_attribute_lookup:
             self._consume_entity_value(
                 operand,
                 node=node.node,
@@ -3565,7 +3589,41 @@ class TemplateObligationAnalyzer:
                 result.limit_exceeded = True
                 result.unknown = True
                 result.complete = False
-            return self._project_value(operand, result)
+            # Every materialized member was projected above.  In particular,
+            # State-member access already emitted its exact, excluded, or
+            # conservative relationship before returning a typed scalar.
+            # Re-projecting the collection root would reattach the consumed
+            # State receiver and turn reviewed scalar operations back into
+            # target-capable opacity.  A hidden member cannot be ignored:
+            # bounded construction represents it as an unknown item, while a
+            # hard bound is retained as terminal coverage failure.
+            # Selection/reordering uncertainty is still material to later
+            # first/last/subscript operations even though the member's State
+            # receiver has been consumed.  Carry those structural flags, not
+            # the receiver itself, so every possible surviving scalar remains
+            # in the candidate union.
+            result.projection_uncertain = bool(
+                result.projection_uncertain
+                or operand.projection_uncertain
+            )
+            result.order_uncertain = bool(
+                result.order_uncertain or operand.order_uncertain
+            )
+            if (
+                operand.unknown
+                or not operand.complete
+                or operand.projection_uncertain
+            ):
+                result.unknown = True
+                result.complete = False
+            if operand.limit_exceeded:
+                result.limit_exceeded = True
+                result.unknown = True
+                result.complete = False
+                result.entity_candidate_evidence_complete = False
+                result.non_selector_candidate_evidence_complete = False
+                result.selector_provenance_complete = False
+            return result
 
         return project_path(operand)
 
@@ -4041,6 +4099,16 @@ class TemplateObligationAnalyzer:
                 state_object=True,
                 unknown=True,
                 complete=False,
+                literal_selectors=set(key.literal_selectors),
+                selector_producers=set(key.selector_producers),
+                selector_transforms=set(key.selector_transforms),
+                selector_provenance_complete=bool(
+                    key.selector_provenance_complete
+                ),
+                non_selector_candidate_evidence_complete=bool(
+                    key.non_selector_candidate_evidence_complete
+                ),
+                context_paths=set(key.context_paths),
                 limit_exceeded=bool(
                     base.limit_exceeded or key.limit_exceeded
                 ),

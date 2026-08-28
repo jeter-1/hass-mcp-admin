@@ -1,0 +1,125 @@
+{
+  "schema": "beta50-sanitized-deployed-residual-matrix-v1",
+  "provenance": {
+    "source_plan_id": "4f8c780072d744c2895b97f4834d41a7",
+    "deployed_release": "2.2.0-beta.49",
+    "capture_mode": "bounded read-only persisted-plan traversal",
+    "traversals": 2,
+    "logical_results_byte_identical": true,
+    "raw_configuration_retained": false,
+    "identity_sanitization": "deterministic source, selector, and entity-domain pseudonyms",
+    "home_assistant_request_count": 0,
+    "upstream_request_count": 0
+  },
+  "obligation_collection": {
+    "total_count": 59,
+    "pages_per_traversal": 4,
+    "full_set_fingerprint": "d8153205b2998fbcd9317a4748004091819bdf8b69f14eb03ec095da838c2b1b",
+    "source_count": 6,
+    "source_obligation_counts": {
+      "source_1": 2,
+      "source_2": 6,
+      "source_3": 25,
+      "source_4": 10,
+      "source_5": 11,
+      "source_6": 5
+    },
+    "configuration_path_class_counts": {
+      "condition": 2,
+      "action": 22,
+      "variable": 35
+    },
+    "reason_counts": {
+      "entity_name_registry_lookup_opaque": 2,
+      "is_state_entity_access_target_opaque": 1,
+      "label_entities_entity_set_membership_unavailable": 6,
+      "membership_iterates_state_value_target_opaque": 3,
+      "state_attr_entity_access_target_opaque": 2,
+      "state_bearing_context_rendered_target_opaque": 2,
+      "state_collection_iterated_target_opaque": 3,
+      "state_object_last_changed_access_target_opaque": 2,
+      "state_value_consumed_by_filter_target_opaque": 13,
+      "states_domain_object_entity_access_target_opaque": 8,
+      "states_entity_access_target_opaque": 7,
+      "states_item_entity_access_target_opaque": 4,
+      "trigger_context_entity_opaque": 2,
+      "unknown_attribute_receiver": 1,
+      "unknown_callable_binding": 1,
+      "unknown_context_attribute": 2
+    },
+    "target_selector_scope_counts": {
+      "target_capable": 59
+    },
+    "lock_projection_counts": {
+      "conservative": 59
+    },
+    "candidate_projection": {
+      "sanitized_unique_entity_count": 13,
+      "sanitized_unique_entity_domain_counts": {
+        "binary_sensor": 7,
+        "group": 1,
+        "sensor": 5
+      },
+      "sanitized_unique_selector_count": 3,
+      "records_with_candidates": 35,
+      "records_with_possible_domains": 0,
+      "records_with_literal_selectors": 27
+    },
+    "provenance_complete_counts": {
+      "candidate": 0,
+      "non_selector": 23,
+      "selector": 23,
+      "domain": 0
+    },
+    "limit_exceeded_count": 0
+  },
+  "downstream_profile_collection": {
+    "total_count": 6,
+    "pages_per_traversal": 2,
+    "full_set_fingerprint": "9a42cf3e29870cf1107ed3c7084e896a695ecbab653719c66c98366d255ec981",
+    "records": [
+      {
+        "source": "source_1",
+        "analysis_complete": true,
+        "semantic_complete": false,
+        "presentation_truncated": false,
+        "processing_limit_exceeded": false
+      },
+      {
+        "source": "source_2",
+        "analysis_complete": true,
+        "semantic_complete": false,
+        "presentation_truncated": false,
+        "processing_limit_exceeded": false
+      },
+      {
+        "source": "source_3",
+        "analysis_complete": true,
+        "semantic_complete": false,
+        "presentation_truncated": false,
+        "processing_limit_exceeded": false
+      },
+      {
+        "source": "source_4",
+        "analysis_complete": true,
+        "semantic_complete": false,
+        "presentation_truncated": false,
+        "processing_limit_exceeded": false
+      },
+      {
+        "source": "source_5",
+        "analysis_complete": true,
+        "semantic_complete": false,
+        "presentation_truncated": false,
+        "processing_limit_exceeded": false
+      },
+      {
+        "source": "source_6",
+        "analysis_complete": true,
+        "semantic_complete": false,
+        "presentation_truncated": false,
+        "processing_limit_exceeded": false
+      }
+    ]
+  }
+}
