@@ -4741,6 +4741,15 @@ class ChangeGovernanceService:
                 "next_required_operation"
             ),
             "dependency_risk_binding_model": binding.get("model"),
+            "dependency_index_generation": binding.get(
+                "dependency_index_generation"
+            ),
+            "dependency_index_fingerprint": binding.get(
+                "dependency_index_fingerprint"
+            ),
+            "dependency_index_source_epoch": binding.get(
+                "dependency_index_source_epoch"
+            ),
             "helper_dependency_replan_required": bool(
                 public.get("helper_dependency_replan_required")
             ),

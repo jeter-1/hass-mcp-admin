@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import ast
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import re
@@ -89,6 +89,11 @@ MAX_CONTEXT_VALUE_DEPTH = 8
 MAX_CONTEXT_SCALAR_CHARS = 1_024
 MAX_DOCUMENT_OBLIGATIONS = 2_000
 LABEL_LOOKUP_MODEL = "home-assistant-label-id-first-normalized-name-v1"
+EXPAND_LOOKUP_MODEL = "home-assistant-state-extension-expand-v1"
+MAX_EXPAND_SNAPSHOT_ENTITIES = 10_000
+MAX_EXPAND_MEMBERS_PER_ENTITY = MAX_TEMPLATE_CANDIDATES
+MAX_EXPAND_RESOLUTION_ENTITIES = 1_024
+MAX_EXPAND_RESOLUTION_DEPTH = 32
 MAX_CONFIGURATION_NODES = 10_000
 MAX_CONFIGURATION_DEPTH = 64
 MAX_EVENT_SELECTOR_VALUES = 128
@@ -96,6 +101,29 @@ ACTION_SEQUENCE_KEYS = frozenset(
     {"action", "actions", "sequence", "then", "else", "default"}
 )
 ACTION_POSITION_KEYS = ACTION_SEQUENCE_KEYS.union({"parallel"})
+
+
+@dataclass(frozen=True)
+class ExpandEntitySnapshotEvidence:
+    """Bounded immutable state/source evidence for one expand candidate."""
+
+    entity_id: str
+    source_domain: str | None
+    expandable_kind: str
+    member_entity_ids: tuple[str, ...]
+    membership_complete: bool
+    membership_count: int
+    membership_fingerprint: str
+    failure_reason: str | None = None
+
+
+@dataclass(frozen=True)
+class ExpandSnapshotEvidence:
+    """One scan's bounded Home Assistant ``expand`` authority snapshot."""
+
+    entities: dict[str, ExpandEntitySnapshotEvidence]
+    state_inventory_complete: bool
+    source_inventory_complete: bool
 
 
 def _blueprint_source_obligation_fingerprint(
@@ -1501,6 +1529,263 @@ def project_obligations(
     return _project_obligations(list(obligations), secret=secret)
 
 
+def _resolve_expand_candidates(
+    candidates: tuple[str, ...],
+    evidence: ExpandSnapshotEvidence,
+) -> tuple[tuple[str, ...], dict[str, Any], bool, bool]:
+    """Resolve one bounded ``StateExtension.expand`` candidate universe.
+
+    Home Assistant recursively expands generic groups, entities whose source
+    integration is ``group``, and zones through their ``persons`` attribute.
+    The provider supplies only the immutable state/source snapshot used for
+    this dependency-index build.  Missing or contradictory records therefore
+    remain incomplete instead of being reconstructed later from live state.
+    """
+
+    leaves: set[str] = set()
+    visited: set[str] = set()
+    active: set[str] = set()
+    records: dict[str, dict[str, Any]] = {}
+    failure_reasons: set[str] = set()
+    limit_exceeded = False
+    work_units = 0
+
+    def fail(reason: str, *, limit: bool = False) -> None:
+        nonlocal limit_exceeded
+        failure_reasons.add(reason)
+        limit_exceeded = bool(limit_exceeded or limit)
+
+    def visit(entity_id: str, depth: int) -> None:
+        nonlocal work_units
+        work_units += 1
+        if work_units > MAX_EXPAND_RESOLUTION_ENTITIES:
+            fail("expand_resolution_entity_limit_exceeded", limit=True)
+            return
+        if depth > MAX_EXPAND_RESOLUTION_DEPTH:
+            fail("expand_resolution_depth_limit_exceeded", limit=True)
+            return
+        if entity_id in active:
+            fail("expand_membership_cycle")
+            return
+        if entity_id in visited:
+            return
+        record = evidence.entities.get(entity_id)
+        if record is None:
+            fail(
+                "expand_state_inventory_limit_exceeded"
+                if not evidence.state_inventory_complete
+                else "expand_member_state_missing",
+                limit=not evidence.state_inventory_complete,
+            )
+            return
+        records[entity_id] = {
+            "entity_id": record.entity_id,
+            "source_domain": record.source_domain,
+            "expandable_kind": record.expandable_kind,
+            "membership_complete": record.membership_complete,
+            "membership_count": record.membership_count,
+            "membership_fingerprint": record.membership_fingerprint,
+            "failure_reason": record.failure_reason,
+        }
+        if record.expandable_kind == "unknown":
+            fail(
+                record.failure_reason
+                or (
+                    "expand_source_inventory_limit_exceeded"
+                    if not evidence.source_inventory_complete
+                    else "expand_entity_source_unavailable"
+                ),
+                limit=(
+                    record.failure_reason == "expand_snapshot_limit_exceeded"
+                    or not evidence.source_inventory_complete
+                ),
+            )
+            return
+        if record.expandable_kind == "leaf":
+            leaves.add(entity_id)
+            visited.add(entity_id)
+            return
+        if not record.membership_complete:
+            fail(
+                record.failure_reason or "expand_membership_malformed",
+                limit=record.failure_reason
+                in {
+                    "expand_membership_limit_exceeded",
+                    "expand_snapshot_limit_exceeded",
+                },
+            )
+            return
+        active.add(entity_id)
+        for member_id in record.member_entity_ids:
+            visit(member_id, depth + 1)
+        active.remove(entity_id)
+        visited.add(entity_id)
+
+    for candidate in candidates:
+        visit(candidate, 0)
+
+    ordered_leaves = tuple(
+        sorted(leaves, key=lambda value: value.encode("utf-8"))
+    )
+    if len(ordered_leaves) > MAX_TEMPLATE_CANDIDATES:
+        fail("expand_candidate_limit_exceeded", limit=True)
+        retained_leaves = ordered_leaves[:MAX_TEMPLATE_CANDIDATES]
+    else:
+        retained_leaves = ordered_leaves
+    material = {
+        "model": EXPAND_LOOKUP_MODEL,
+        "input_candidates": list(candidates),
+        "expanded_entity_ids": list(ordered_leaves),
+        "records": [records[key] for key in sorted(records)],
+        "failure_reasons": sorted(failure_reasons),
+        "state_inventory_complete": evidence.state_inventory_complete,
+        "source_inventory_complete": evidence.source_inventory_complete,
+        "complete": not failure_reasons,
+        "limit_exceeded": limit_exceeded,
+    }
+    return retained_leaves, material, not failure_reasons, limit_exceeded
+
+
+def resolve_expand_obligations(
+    obligations: Iterable[DependencyObligation],
+    *,
+    expand_snapshot_evidence: ExpandSnapshotEvidence,
+) -> list[DependencyObligation]:
+    """Bind reviewed Home Assistant recursive expansion to ledger terminals."""
+
+    resolved: list[DependencyObligation] = []
+    for item in obligations:
+        context = set(item.context_provenance)
+        if (
+            "entity_selector_transform:expand" not in context
+            or item.coverage_failure_authority
+        ):
+            resolved.append(item)
+            continue
+        producers = {
+            value.removeprefix("entity_set_producer:")
+            for value in context
+            if value.startswith("entity_set_producer:")
+        }
+        label_resolution_bound = any(
+            value.startswith("label_resolution_fingerprint:")
+            for value in context
+        )
+        if "label_entities" in producers and not label_resolution_bound:
+            # A label selector cannot become an empty complete expansion when
+            # its registry lookup was not authoritatively resolved first.
+            resolved.append(item)
+            continue
+        candidates = tuple(
+            sorted(
+                {
+                    value
+                    for value in item.exact_entity_ids
+                    if valid_entity_id(value)
+                },
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
+        leaves, material, complete, limit_exceeded = (
+            _resolve_expand_candidates(
+                candidates,
+                expand_snapshot_evidence,
+            )
+        )
+        retained_incomplete_candidates = tuple(
+            sorted(
+                set(candidates).union(leaves),
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
+        if len(retained_incomplete_candidates) > MAX_TEMPLATE_CANDIDATES:
+            retained_incomplete_candidates = retained_incomplete_candidates[
+                :MAX_TEMPLATE_CANDIDATES
+            ]
+            complete = False
+            limit_exceeded = True
+            material["complete"] = False
+            material["limit_exceeded"] = True
+            material["failure_reasons"] = sorted(
+                set(material["failure_reasons"]).union(
+                    {"expand_candidate_limit_exceeded"}
+                )
+            )
+        resolution_fingerprint = hashlib.sha256(
+            json.dumps(
+                material,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        bound_context = tuple(
+            sorted(
+                context.union(
+                    {
+                        "expand_lookup_model:" + EXPAND_LOOKUP_MODEL,
+                        "expand_resolution_fingerprint:"
+                        + resolution_fingerprint,
+                    }
+                )
+            )
+        )
+        domains = tuple(
+            sorted({value.split(".", 1)[0] for value in leaves})
+        )
+        if complete:
+            resolved.append(
+                replace(
+                    item,
+                    outcome=(
+                        "exact_dependency"
+                        if leaves
+                        else "proven_dependency_neutral"
+                    ),
+                    exact_entity_ids=leaves,
+                    possible_entity_domains=domains if domains else None,
+                    context_provenance=bound_context,
+                    lock_projection="exact" if leaves else "none",
+                    target_selector_scope=(
+                        "closed_finite_candidates"
+                        if leaves
+                        else "dependency_neutral"
+                    ),
+                )
+            )
+            continue
+        reasons = material["failure_reasons"]
+        reason = (
+            reasons[0] if reasons else "expand_membership_unavailable"
+        )
+        resolved.append(
+            replace(
+                item,
+                outcome=(
+                    "coverage_failure"
+                    if limit_exceeded
+                    else "bounded_semantic_opaque"
+                ),
+                reason_code=reason,
+                exact_entity_ids=retained_incomplete_candidates,
+                possible_entity_domains=domains if domains else None,
+                context_provenance=bound_context,
+                limit_exceeded=bool(item.limit_exceeded or limit_exceeded),
+                lock_projection=(
+                    "coverage_failure"
+                    if limit_exceeded
+                    else "conservative"
+                ),
+                target_selector_scope=(
+                    "coverage_failure"
+                    if limit_exceeded
+                    else "target_capable"
+                ),
+            )
+        )
+    return resolved
+
+
 def resolve_literal_label_obligations(
     obligations: Iterable[DependencyObligation],
     *,
@@ -1509,6 +1794,7 @@ def resolve_literal_label_obligations(
     label_membership_truncated: Iterable[str],
     label_lookup_resolutions: dict[str, tuple[str, str | None]],
     label_registry_complete: bool,
+    expand_snapshot_evidence: ExpandSnapshotEvidence | None = None,
 ) -> list[DependencyObligation]:
     """Discharge literal ``label_entities`` opacity from one scan snapshot.
 
@@ -1529,8 +1815,14 @@ def resolve_literal_label_obligations(
             for value in context
             if value.startswith("entity_set_producer:")
         }
+        selector_transforms = {
+            value.removeprefix("entity_selector_transform:")
+            for value in context
+            if value.startswith("entity_selector_transform:")
+        }
         eligible = bool(
             producers == {"label_entities"}
+            and selector_transforms.issubset({"expand"})
             and "entity_selector_provenance:complete" in context
             and "entity_selector_provenance:incomplete" not in context
             and item.literal_selectors
@@ -1684,7 +1976,12 @@ def resolve_literal_label_obligations(
                 ),
             )
         )
-    return resolved
+    if expand_snapshot_evidence is None:
+        return resolved
+    return resolve_expand_obligations(
+        resolved,
+        expand_snapshot_evidence=expand_snapshot_evidence,
+    )
 
 
 def _deduplicate_obligations(

@@ -165,6 +165,16 @@ failure can attach consequence. Candidate hints on unresolved evidence remain
 non-authoritative. Persisted v3-v6 evidence stays readable with its historical
 classification but requires replanning and has no current execution authority.
 
+Beta 49 advances new helper plans to `helper-dependency-risk-v8`. Reviewed
+finite and registry-backed selector provenance is retained through `expand()`,
+State-member projection and state-value filter transport, so target exclusion
+is decided before downstream-profile aggregation. Recursive group expansion,
+incomplete registry evidence and arbitrary entity selectors remain
+conservative. Planning records and exposes the exact dependency-index
+generation, fingerprint and source epoch used for classification. Persisted
+v3-v7 evidence remains readable but requires replanning and has no current
+execution authority.
+
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned
 count, total, and cursor state; no detail level silently substitutes a lower cap.
