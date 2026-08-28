@@ -1021,6 +1021,7 @@ def _build_expand_snapshot_evidence(
 
     source_domains: dict[str, str] = {}
     invalid_sources: set[str] = set()
+    seen_source_ids: set[str] = set()
     if len(entity_registry) > MAX_EXPAND_SNAPSHOT_ENTITIES:
         source_inventory_complete = False
         bounded_registry: list[Any] = []
@@ -1042,12 +1043,18 @@ def _build_expand_snapshot_evidence(
         if not isinstance(entity_id, str) or not valid_entity_id(entity_id):
             source_inventory_complete = False
             continue
-        if (
-            not isinstance(source_domain, str)
-            or not source_domain
-            or entity_id in source_domains
-        ):
+        if entity_id in seen_source_ids:
             invalid_sources.add(entity_id)
+            source_domains.pop(entity_id, None)
+            source_inventory_complete = False
+            continue
+        seen_source_ids.add(entity_id)
+        if not isinstance(source_domain, str) or not source_domain:
+            invalid_sources.add(entity_id)
+            source_domains.pop(entity_id, None)
+            source_inventory_complete = False
+            continue
+        if entity_id in invalid_sources:
             source_inventory_complete = False
             continue
         source_domains[entity_id] = source_domain
@@ -1060,7 +1067,7 @@ def _build_expand_snapshot_evidence(
             expandable_kind = "unknown"
             member_attribute = None
             failure_reason = "expand_state_identity_conflict"
-        elif domain == "group" or source_domain == "group":
+        elif domain == "group":
             expandable_kind = "group"
             member_attribute = "entity_id"
             failure_reason = None
@@ -1072,6 +1079,10 @@ def _build_expand_snapshot_evidence(
             expandable_kind = "unknown"
             member_attribute = None
             failure_reason = "expand_entity_source_malformed"
+        elif source_domain == "group":
+            expandable_kind = "group"
+            member_attribute = "entity_id"
+            failure_reason = None
         elif source_domain is None:
             expandable_kind = "unknown"
             member_attribute = None
@@ -1100,7 +1111,6 @@ def _build_expand_snapshot_evidence(
                     "invalid_type:" + type(raw_members).__name__
                 ]
             else:
-                membership_count = len(raw_members)
                 bounded_raw_members = raw_members[
                     : MAX_EXPAND_MEMBERS_PER_ENTITY + 1
                 ]
@@ -1110,7 +1120,12 @@ def _build_expand_snapshot_evidence(
                     if isinstance(value, str) and valid_entity_id(value)
                 }
                 membership_material = sorted(valid_members)
-                if len(valid_members) != len(bounded_raw_members):
+                membership_count = len(membership_material)
+                if any(
+                    not isinstance(value, str)
+                    or not valid_entity_id(value)
+                    for value in bounded_raw_members
+                ):
                     membership_complete = False
                     failure_reason = "expand_membership_malformed"
                 elif len(raw_members) > MAX_EXPAND_MEMBERS_PER_ENTITY:

@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     DirectHaDependencyProvider,
+    _build_expand_snapshot_evidence,
 )
 from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
     supported_home_assistant_versions,
@@ -29,6 +30,9 @@ from ha_mcp_engineering.f3.operational_locks import (  # noqa: E402
 )
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3RuntimeIntegration,
+)
+from ha_mcp_engineering.f3_configuration.locks import (  # noqa: E402
+    unconstrained_helper_dependency_lock_key,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
@@ -433,6 +437,258 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
                 if value.startswith("expand_resolution_fingerprint:")
             )
         )
+
+    def test_duplicate_registry_sources_fail_closed_order_independently(self):
+        states = [
+            {
+                "entity_id": "light.synthetic_group",
+                "state": "on",
+                "attributes": {"entity_id": ["light.synthetic_member"]},
+            },
+            {
+                "entity_id": "light.synthetic_member",
+                "state": "on",
+                "attributes": {},
+            },
+        ]
+        member_entry = {
+            "entity_id": "light.synthetic_member",
+            "platform": "light",
+        }
+        duplicate_cases = (
+            (
+                {
+                    "entity_id": "light.synthetic_group",
+                    "platform": "group",
+                },
+                {
+                    "entity_id": "light.synthetic_group",
+                    "platform": "light",
+                },
+            ),
+            (
+                {
+                    "entity_id": "light.synthetic_group",
+                    "platform": "group",
+                },
+                {
+                    "entity_id": "light.synthetic_group",
+                    "platform": "group",
+                },
+            ),
+            (
+                {
+                    "entity_id": "light.synthetic_group",
+                    "platform": "group",
+                },
+                {
+                    "entity_id": "light.synthetic_group",
+                    "platform": None,
+                },
+            ),
+        )
+        for duplicates in duplicate_cases:
+            with self.subTest(duplicates=duplicates):
+                projections = []
+                for ordered in (duplicates, tuple(reversed(duplicates))):
+                    snapshot = _build_expand_snapshot_evidence(
+                        states=states,
+                        entity_registry=[*ordered, member_entry],
+                        entity_registry_complete=True,
+                    )
+                    evidence = snapshot.entities["light.synthetic_group"]
+                    self.assertEqual("unknown", evidence.expandable_kind)
+                    self.assertIsNone(evidence.source_domain)
+                    self.assertEqual(
+                        "expand_entity_source_malformed",
+                        evidence.failure_reason,
+                    )
+                    projections.append(evidence)
+                self.assertEqual(projections[0], projections[1])
+
+    def test_generic_groups_and_zones_ignore_unneeded_source_conflicts(self):
+        cases = (
+            (
+                "group.synthetic_container",
+                "entity_id",
+                "light.synthetic_member",
+                "group",
+            ),
+            (
+                "zone.synthetic_container",
+                "persons",
+                "person.synthetic_member",
+                "zone",
+            ),
+        )
+        for container_id, attribute, member_id, expected_kind in cases:
+            with self.subTest(container_id=container_id):
+                snapshot = _build_expand_snapshot_evidence(
+                    states=[
+                        {
+                            "entity_id": container_id,
+                            "state": "on",
+                            "attributes": {attribute: [member_id]},
+                        },
+                        {
+                            "entity_id": member_id,
+                            "state": "on",
+                            "attributes": {},
+                        },
+                    ],
+                    entity_registry=[
+                        {"entity_id": container_id, "platform": "group"},
+                        {"entity_id": container_id, "platform": "synthetic"},
+                        {
+                            "entity_id": member_id,
+                            "platform": member_id.split(".", 1)[0],
+                        },
+                    ],
+                    entity_registry_complete=True,
+                )
+                evidence = snapshot.entities[container_id]
+                self.assertEqual(expected_kind, evidence.expandable_kind)
+                self.assertIsNone(evidence.source_domain)
+                self.assertEqual((member_id,), evidence.member_entity_ids)
+                self.assertTrue(evidence.membership_complete)
+                self.assertIsNone(evidence.failure_reason)
+
+    def test_duplicate_valid_members_are_semantically_idempotent(self):
+        member_id = "light.synthetic_member"
+
+        def project(raw_members: list[str]):
+            return _build_expand_snapshot_evidence(
+                states=[
+                    {
+                        "entity_id": "group.synthetic_container",
+                        "state": "on",
+                        "attributes": {"entity_id": raw_members},
+                    },
+                    {
+                        "entity_id": member_id,
+                        "state": "on",
+                        "attributes": {},
+                    },
+                ],
+                entity_registry=[
+                    {"entity_id": member_id, "platform": "light"}
+                ],
+                entity_registry_complete=True,
+            ).entities["group.synthetic_container"]
+
+        single = project([member_id])
+        duplicate = project([member_id, member_id])
+        self.assertTrue(single.membership_complete)
+        self.assertTrue(duplicate.membership_complete)
+        self.assertEqual((member_id,), duplicate.member_entity_ids)
+        self.assertEqual(1, duplicate.membership_count)
+        self.assertEqual(
+            single.membership_fingerprint,
+            duplicate.membership_fingerprint,
+        )
+
+    async def test_conflicted_domain_group_is_incomplete_and_locked(self):
+        rest = SyntheticBeta49Rest(
+            extra_states=(
+                {
+                    "entity_id": "light.synthetic_conflicted_group",
+                    "state": "on",
+                    "attributes": {"entity_id": [STANDARD_TARGET]},
+                },
+            )
+        )
+        rest.configs = {
+            "conflicted_expand": {
+                "alias": "Synthetic conflicted finite expand",
+                "trigger": [],
+                "condition": [
+                    _condition(
+                        "{{ expand(['light.synthetic_conflicted_group']) "
+                        "| map(attribute='state') | list }}"
+                    )
+                ],
+                "action": [
+                    {
+                        "service": "cover.open_cover",
+                        "target": {"entity_id": "cover.synthetic_garage"},
+                    }
+                ],
+            }
+        }
+        index = DependencyIndex(
+            DirectHaDependencyProvider(
+                rest,
+                SyntheticBeta49WebSocket(
+                    member_entities=(),
+                    extra_registry_entries=(
+                        {
+                            "entity_id": "light.synthetic_conflicted_group",
+                            "labels": [],
+                            "platform": "group",
+                        },
+                        {
+                            "entity_id": "light.synthetic_conflicted_group",
+                            "labels": [],
+                            "platform": "light",
+                        },
+                        {
+                            "entity_id": STANDARD_TARGET,
+                            "labels": [],
+                            "platform": "input_boolean",
+                        },
+                    ),
+                ),
+            )
+        )
+        await index.get(refresh=True)
+        risk_service = HelperDependencyRiskService(index)
+        evidence = await risk_service.assess(STANDARD_TARGET, refresh=False)
+        binding = evidence["binding"]
+        risk = helper_dependency_risk_assessment(evidence)
+        self.assertEqual(0, binding["exact_dependency_obligation_count"])
+        self.assertGreater(
+            binding["opaque_obligation_count"]
+            + binding["coverage_failure_count"],
+            0,
+        )
+        self.assertFalse(binding["evidence_complete"])
+        self.assertFalse(binding["execution_eligible"])
+        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(
+            binding["dependency_lock_projection"][
+                "conservative_helper_dependency"
+            ]
+        )
+        operation = SimpleNamespace(
+            validate=lambda: None,
+            operation="set_input_boolean_state",
+            target=SimpleNamespace(target_id=STANDARD_TARGET),
+            authoritative_provider_slug="direct_home_assistant_state",
+            baseline={"dependency_risk": binding},
+        )
+        lock_keys = {
+            request.key
+            for request in OperationalLockSetCalculator().calculate(operation)
+        }
+        self.assertIn(unconstrained_helper_dependency_lock_key(), lock_keys)
+
+        with tempfile.TemporaryDirectory() as root:
+            helper = FakeHelperStateGateway()
+            helper.entity_id = STANDARD_TARGET
+            governance = ChangeGovernanceService(
+                ChangePlanRepository(Path(root) / "plans"),
+                UnusedLegacyGateway(),
+                now=Clock(),
+                helper_state_gateway=helper,
+                helper_dependency_risk_reader=risk_service.assess,
+            )
+            created = await governance.create_helper_state_plan(
+                entity_id=STANDARD_TARGET,
+                desired_state="on",
+            )
+            self.assertFalse(created["provider_dispatch_occurred"])
+            self.assertFalse(created["plan"]["approval_actionable"])
+            self.assertEqual(0, helper.dispatch_count)
 
     async def test_domain_group_and_zone_members_are_not_false_exclusions(self):
         cases = (
