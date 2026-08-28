@@ -175,6 +175,28 @@ generation, fingerprint and source epoch used for classification. Persisted
 v3-v7 evidence remains readable but requires replanning and has no current
 execution authority.
 
+Beta 50 advances new helper plans to `helper-dependency-risk-v9`. Fixed
+numeric-state trigger State provenance, literal-label selector transport,
+reviewed collection-member scalar projection and `entity_name()` input binding
+now preserve their target relationship through the production obligation
+producer. Complete exclusions and dependency-neutral operations terminate
+before downstream-profile aggregation; unknown selectors and incomplete or
+coverage-failed evidence remain conservative. Each plan exposes the exact
+dependency-index generation, fingerprint and source epoch used for its own
+classification. Persisted v3-v8 evidence remains readable but requires
+replanning and has no current execution authority.
+
+Pinned collection filters that accept an optional member `attribute` consume a
+State receiver directly when that argument is omitted or explicitly null. The
+filter's later formatting, comparison, ordering or aggregation may be neutral,
+but it cannot erase the input State relationship. Automation configuration
+mutations therefore use target-specific locks for exact terminals, no helper
+lock for excluded or neutral terminals, and the unconstrained dependency key
+exclusively for surviving opacity or coverage failure. Independently, every
+executable helper-state operation holds that unconstrained key in shared mode
+as a stability fence through final refresh, dispatch and readback; the fence is
+serialization authority and does not imply opaque plan evidence.
+
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned
 count, total, and cursor state; no detail level silently substitutes a lower cap.

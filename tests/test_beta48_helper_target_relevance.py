@@ -294,7 +294,9 @@ class Beta48FullIndexTargetScopingTests(unittest.IsolatedAsyncioTestCase):
             {"binding": binding, "provenance": {"generation": 48}}
         )
 
-        self.assertEqual("helper-dependency-risk-v8", HELPER_DEPENDENCY_RISK_MODEL)
+        self.assertEqual(
+            "helper-dependency-risk-v9", HELPER_DEPENDENCY_RISK_MODEL
+        )
         self.assertEqual(0, binding["exact_dependency_obligation_count"])
         self.assertEqual(0, binding["opaque_obligation_count"])
         self.assertEqual([], binding["relevant_downstream_object_ids"])
@@ -513,13 +515,15 @@ class Beta48TargetPolarityTests(unittest.TestCase):
         self.assertEqual(1, projected["exact_dependency_obligation_count"])
         self.assertFalse(projected["execution_eligible"])
 
-    def test_v3_through_v7_are_readable_but_only_v8_executes(self):
-        self.assertEqual("helper-dependency-risk-v8", HELPER_DEPENDENCY_RISK_MODEL)
+    def test_v3_through_v8_are_readable_but_only_v9_executes(self):
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v8"}),
+            "helper-dependency-risk-v9", HELPER_DEPENDENCY_RISK_MODEL
+        )
+        self.assertEqual(
+            frozenset({"helper-dependency-risk-v9"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 8):
+        for version in range(3, 9):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

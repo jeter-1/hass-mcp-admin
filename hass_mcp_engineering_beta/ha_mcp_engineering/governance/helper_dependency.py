@@ -20,7 +20,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v8"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v9"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -32,6 +32,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v5",
         "helper-dependency-risk-v6",
         "helper-dependency-risk-v7",
+        "helper-dependency-risk-v8",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -852,10 +853,14 @@ def _build_obligation_binding(
     )
     lock_projection = {
         "exact_helper_dependency": True,
-        # Every helper execution holds this shared guard so an automation
-        # mutation that newly introduces opaque dependency semantics cannot
-        # race final preflight and dispatch.
-        "conservative_helper_dependency": True,
+        # This field describes conservative evidence, not the unconditional
+        # shared execution stability fence.  Exact/excluded terminals remain
+        # semantically clean, while operational helper execution separately
+        # holds the unconstrained key so an uncertain configuration mutation
+        # cannot race the final refresh and dispatch boundary.
+        "conservative_helper_dependency": bool(
+            opaque_count or not coverage_complete
+        ),
         "automation_resource_ids": resource_ids,
         "custom_template_reload": bool(external_template_opacity_count),
     }

@@ -2323,7 +2323,12 @@ def _template_context_evidence(
         if not isinstance(value, dict):
             return
         trigger_kind = value.get("platform", value.get("trigger"))
-        if trigger_kind not in {"state", "zone"}:
+        # Home Assistant's state, numeric-state, and zone trigger contracts
+        # expose ``trigger.from_state`` and ``trigger.to_state`` as State
+        # objects for the configured finite entity set.  Preserve that
+        # immutable configuration provenance so scalar/context reads from
+        # those objects cannot become target-capable opacity later.
+        if trigger_kind not in {"state", "numeric_state", "zone"}:
             return
         entities, entities_truncated = _bounded_literal_entities_deep(
             value.get("entity_id")

@@ -53,7 +53,9 @@ def _bound_downstream_automation_resources(
         raise ValueError("helper dependency lock projection is invalid")
     if (
         projection.get("exact_helper_dependency") is not True
-        or projection.get("conservative_helper_dependency") is not True
+        or not isinstance(
+            projection.get("conservative_helper_dependency"), bool
+        )
         or projection.get("automation_resource_ids") != values
         or not isinstance(projection.get("custom_template_reload"), bool)
     ):
@@ -218,6 +220,12 @@ class OperationalLockSetCalculator:
                             "exact_helper_dependency_stability",
                         ),
                     ),
+                    # This shared key is an unconditional execution stability
+                    # fence, not a claim that the plan contains opaque or
+                    # coverage-failed evidence.  An unresolved automation
+                    # mutation takes the same key exclusively, preventing it
+                    # from introducing a helper dependency after the final
+                    # fenced refresh and before dispatch/readback completes.
                     LockRequest(
                         key=unconstrained_helper_dependency_lock_key(),
                         scopes=(LockScope.RESOURCE,),

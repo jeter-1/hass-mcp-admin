@@ -1460,7 +1460,7 @@ class LockSetTests(unittest.IsolatedAsyncioTestCase):
                 + "','ok':true}] | selectattr('ok') "
                 "| map(attribute='id') | first) }}",
                 True,
-                True,
+                False,
             ),
             (
                 "{{ states(('%s.%s' | format('input_boolean',"
