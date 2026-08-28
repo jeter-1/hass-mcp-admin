@@ -8,6 +8,7 @@ from collections import Counter, defaultdict
 import hashlib
 import json
 from pathlib import Path
+import re
 import time
 from typing import Any
 
@@ -57,6 +58,20 @@ MAX_ENTITY_LABELS = 64
 MAX_BLUEPRINT_RESOLUTION_NODES = 10_000
 MAX_BLUEPRINT_RESOLUTION_DEPTH = 64
 MAX_BLUEPRINT_SOURCE_BYTES = 1_048_576
+MAX_EXPAND_SOURCE_DOMAIN_LENGTH = 64
+CANONICAL_EXPAND_SOURCE_DOMAIN = re.compile(
+    r"(?=.*[a-z])[a-z0-9_]+", re.ASCII
+)
+
+
+def _valid_expand_source_domain(value: Any) -> bool:
+    """Return whether registry source authority is already canonical."""
+
+    return bool(
+        isinstance(value, str)
+        and 0 < len(value) <= MAX_EXPAND_SOURCE_DOMAIN_LENGTH
+        and CANONICAL_EXPAND_SOURCE_DOMAIN.fullmatch(value)
+    )
 
 
 def _bounded_provider_identity(
@@ -1049,7 +1064,7 @@ def _build_expand_snapshot_evidence(
             source_inventory_complete = False
             continue
         seen_source_ids.add(entity_id)
-        if not isinstance(source_domain, str) or not source_domain:
+        if not _valid_expand_source_domain(source_domain):
             invalid_sources.add(entity_id)
             source_domains.pop(entity_id, None)
             source_inventory_complete = False

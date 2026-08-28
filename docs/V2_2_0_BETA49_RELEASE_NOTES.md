@@ -15,10 +15,13 @@ fingerprint or lock aggregation.
 Recursive expansion now follows complete, immutable snapshot evidence instead
 of an entity-ID prefix: generic groups, entities sourced by Home Assistant's
 group integration, and zone person membership are resolved recursively and
-fingerprint-bound. Missing source/state evidence, cycles, partial or malformed
-membership, overflow, dynamic selectors and unknown entity-producing callables
-remain conservative. A scalar result becomes target-capable again if it is
-later consumed as an entity selector without finite identity proof.
+fingerprint-bound. Source-integration authority requires an already canonical,
+lowercase ASCII Home Assistant domain of at most 64 characters; malformed
+values are not normalized. Missing source/state evidence, cycles, partial or
+malformed membership, overflow, dynamic selectors and unknown
+entity-producing callables remain conservative. A scalar result becomes
+target-capable again if it is later consumed as an entity selector without
+finite identity proof.
 
 Plans now expose the exact dependency-index generation, fingerprint and source
 epoch used for classification. New plans use `helper-dependency-risk-v8`;

@@ -18,6 +18,9 @@ from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     DirectHaDependencyProvider,
     _build_expand_snapshot_evidence,
 )
+from ha_mcp_engineering.dependency.extraction import (  # noqa: E402
+    _resolve_expand_candidates,
+)
 from ha_mcp_engineering.dependency.semantic_registry import (  # noqa: E402
     supported_home_assistant_versions,
 )
@@ -438,6 +441,130 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
 
+    def test_source_domains_require_canonical_bounded_home_assistant_domain(
+        self,
+    ):
+        cases = (
+            ("group", True, "group"),
+            ("mqtt", True, "leaf"),
+            ("integration_2", True, "leaf"),
+            (" group ", False, "unknown"),
+            ("Group", False, "unknown"),
+            ("group\n", False, "unknown"),
+            ("group.example", False, "unknown"),
+            ("group-name", False, "unknown"),
+            ("gro up", False, "unknown"),
+            (" ", False, "unknown"),
+            ("", False, "unknown"),
+            (None, False, "unknown"),
+            (1, False, "unknown"),
+            (["group"], False, "unknown"),
+            ("a" * 65, False, "unknown"),
+            ("group\x00", False, "unknown"),
+            ("gr\u043eup", False, "unknown"),
+            ("123_456", False, "unknown"),
+            ("___", False, "unknown"),
+        )
+        for platform, valid, expected_kind in cases:
+            with self.subTest(platform=platform):
+                snapshot = _build_expand_snapshot_evidence(
+                    states=[
+                        {
+                            "entity_id": "light.synthetic_source",
+                            "state": "on",
+                            "attributes": {
+                                "entity_id": ["light.synthetic_member"]
+                            },
+                        },
+                        {
+                            "entity_id": "light.synthetic_member",
+                            "state": "on",
+                            "attributes": {},
+                        },
+                    ],
+                    entity_registry=[
+                        {
+                            "entity_id": "light.synthetic_source",
+                            "platform": platform,
+                        },
+                        {
+                            "entity_id": "light.synthetic_member",
+                            "platform": "light",
+                        },
+                    ],
+                    entity_registry_complete=True,
+                )
+                evidence = snapshot.entities["light.synthetic_source"]
+                self.assertEqual(expected_kind, evidence.expandable_kind)
+                if valid:
+                    self.assertTrue(snapshot.source_inventory_complete)
+                    self.assertEqual(platform, evidence.source_domain)
+                    self.assertIsNone(evidence.failure_reason)
+                else:
+                    self.assertFalse(snapshot.source_inventory_complete)
+                    self.assertIsNone(evidence.source_domain)
+                    self.assertEqual(
+                        "expand_entity_source_malformed",
+                        evidence.failure_reason,
+                    )
+
+    def test_source_invalidation_is_monotonic_across_order_and_repetition(
+        self,
+    ):
+        state = {
+            "entity_id": "light.synthetic_group",
+            "state": "on",
+            "attributes": {"entity_id": ["light.synthetic_member"]},
+        }
+        valid = {
+            "entity_id": "light.synthetic_group",
+            "platform": "group",
+        }
+        invalid = {
+            "entity_id": "light.synthetic_group",
+            "platform": " group ",
+        }
+        other = {
+            "entity_id": "light.synthetic_group",
+            "platform": "mqtt",
+        }
+        member = {
+            "entity_id": "light.synthetic_member",
+            "platform": "light",
+        }
+        cases = (
+            (valid, invalid),
+            (invalid, valid),
+            (valid, invalid, valid),
+            (invalid, valid, other),
+            (other, invalid, valid),
+        )
+        fingerprints = set()
+        for entries in cases:
+            with self.subTest(entries=entries):
+                snapshot = _build_expand_snapshot_evidence(
+                    states=[
+                        state,
+                        {
+                            "entity_id": "light.synthetic_member",
+                            "state": "on",
+                            "attributes": {},
+                        },
+                    ],
+                    entity_registry=[*entries, member],
+                    entity_registry_complete=True,
+                )
+                evidence = snapshot.entities["light.synthetic_group"]
+                self.assertFalse(snapshot.source_inventory_complete)
+                self.assertIsNone(evidence.source_domain)
+                self.assertEqual("unknown", evidence.expandable_kind)
+                self.assertEqual(
+                    "expand_entity_source_malformed",
+                    evidence.failure_reason,
+                )
+                fingerprints.add(evidence.membership_fingerprint)
+        self.assertEqual(1, len(fingerprints))
+
     def test_duplicate_registry_sources_fail_closed_order_independently(self):
         states = [
             {
@@ -523,35 +650,52 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
         )
         for container_id, attribute, member_id, expected_kind in cases:
             with self.subTest(container_id=container_id):
-                snapshot = _build_expand_snapshot_evidence(
-                    states=[
+                registry_variants = (
+                    (
+                        {"entity_id": container_id, "platform": "group"},
                         {
                             "entity_id": container_id,
-                            "state": "on",
-                            "attributes": {attribute: [member_id]},
+                            "platform": "synthetic",
                         },
+                    ),
+                    (
                         {
-                            "entity_id": member_id,
-                            "state": "on",
-                            "attributes": {},
+                            "entity_id": container_id,
+                            "platform": " Group ",
                         },
-                    ],
-                    entity_registry=[
-                        {"entity_id": container_id, "platform": "group"},
-                        {"entity_id": container_id, "platform": "synthetic"},
-                        {
-                            "entity_id": member_id,
-                            "platform": member_id.split(".", 1)[0],
-                        },
-                    ],
-                    entity_registry_complete=True,
+                    ),
                 )
-                evidence = snapshot.entities[container_id]
-                self.assertEqual(expected_kind, evidence.expandable_kind)
-                self.assertIsNone(evidence.source_domain)
-                self.assertEqual((member_id,), evidence.member_entity_ids)
-                self.assertTrue(evidence.membership_complete)
-                self.assertIsNone(evidence.failure_reason)
+                for container_entries in registry_variants:
+                    snapshot = _build_expand_snapshot_evidence(
+                        states=[
+                            {
+                                "entity_id": container_id,
+                                "state": "on",
+                                "attributes": {attribute: [member_id]},
+                            },
+                            {
+                                "entity_id": member_id,
+                                "state": "on",
+                                "attributes": {},
+                            },
+                        ],
+                        entity_registry=[
+                            *container_entries,
+                            {
+                                "entity_id": member_id,
+                                "platform": member_id.split(".", 1)[0],
+                            },
+                        ],
+                        entity_registry_complete=True,
+                    )
+                    evidence = snapshot.entities[container_id]
+                    self.assertEqual(expected_kind, evidence.expandable_kind)
+                    self.assertIsNone(evidence.source_domain)
+                    self.assertEqual(
+                        (member_id,), evidence.member_entity_ids
+                    )
+                    self.assertTrue(evidence.membership_complete)
+                    self.assertIsNone(evidence.failure_reason)
 
     def test_duplicate_valid_members_are_semantically_idempotent(self):
         member_id = "light.synthetic_member"
@@ -689,6 +833,210 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(created["provider_dispatch_occurred"])
             self.assertFalse(created["plan"]["approval_actionable"])
             self.assertEqual(0, helper.dispatch_count)
+
+    async def test_malformed_source_is_deterministically_incomplete_and_locked(
+        self,
+    ):
+        rest = SyntheticBeta49Rest(
+            extra_states=(
+                {
+                    "entity_id": "light.synthetic_malformed_group",
+                    "state": "on",
+                    "attributes": {"entity_id": [STANDARD_TARGET]},
+                },
+            )
+        )
+        rest.configs = {
+            "malformed_expand": {
+                "alias": "Synthetic malformed source expand",
+                "trigger": [],
+                "condition": [
+                    _condition(
+                        "{{ expand(['light.synthetic_malformed_group']) "
+                        "| map(attribute='state') | list }}"
+                    )
+                ],
+                "action": [
+                    {
+                        "service": "cover.open_cover",
+                        "target": {"entity_id": "cover.synthetic_garage"},
+                    }
+                ],
+            }
+        }
+        index = DependencyIndex(
+            DirectHaDependencyProvider(
+                rest,
+                SyntheticBeta49WebSocket(
+                    member_entities=(),
+                    extra_registry_entries=(
+                        {
+                            "entity_id": "light.synthetic_malformed_group",
+                            "labels": [],
+                            "platform": " group ",
+                        },
+                        {
+                            "entity_id": STANDARD_TARGET,
+                            "labels": [],
+                            "platform": "input_boolean",
+                        },
+                    ),
+                ),
+            )
+        )
+        await index.get(refresh=True)
+        risk_service = HelperDependencyRiskService(index)
+        first = await risk_service.assess(STANDARD_TARGET, refresh=False)
+        second = await risk_service.assess(STANDARD_TARGET, refresh=False)
+        binding = first["binding"]
+        risk = helper_dependency_risk_assessment(first)
+        self.assertEqual(0, binding["exact_dependency_obligation_count"])
+        self.assertGreater(
+            binding["opaque_obligation_count"]
+            + binding["coverage_failure_count"],
+            0,
+        )
+        self.assertFalse(binding["evidence_complete"])
+        self.assertFalse(binding["execution_eligible"])
+        self.assertFalse(risk.apply_allowed)
+        self.assertEqual(
+            binding["evidence_fingerprint"],
+            second["binding"]["evidence_fingerprint"],
+        )
+        self.assertTrue(
+            binding["dependency_lock_projection"][
+                "conservative_helper_dependency"
+            ]
+        )
+        operation = SimpleNamespace(
+            validate=lambda: None,
+            operation="set_input_boolean_state",
+            target=SimpleNamespace(target_id=STANDARD_TARGET),
+            authoritative_provider_slug="direct_home_assistant_state",
+            baseline={"dependency_risk": binding},
+        )
+        lock_keys = {
+            request.key
+            for request in OperationalLockSetCalculator().calculate(operation)
+        }
+        self.assertIn(unconstrained_helper_dependency_lock_key(), lock_keys)
+
+        with tempfile.TemporaryDirectory() as root:
+            helper = FakeHelperStateGateway()
+            helper.entity_id = STANDARD_TARGET
+            governance = ChangeGovernanceService(
+                ChangePlanRepository(Path(root) / "plans"),
+                UnusedLegacyGateway(),
+                now=Clock(),
+                helper_state_gateway=helper,
+                helper_dependency_risk_reader=risk_service.assess,
+            )
+            created = await governance.create_helper_state_plan(
+                entity_id=STANDARD_TARGET,
+                desired_state="on",
+            )
+            self.assertFalse(created["provider_dispatch_occurred"])
+            self.assertFalse(created["plan"]["approval_actionable"])
+            self.assertEqual(0, helper.dispatch_count)
+
+    def test_recursive_expansion_depth_and_work_limits_remain_conservative(
+        self,
+    ):
+        depth_states = []
+        for index in range(35):
+            member = (
+                f"group.synthetic_depth_{index + 1}"
+                if index < 34
+                else "sensor.synthetic_depth_leaf"
+            )
+            depth_states.append(
+                {
+                    "entity_id": f"group.synthetic_depth_{index}",
+                    "state": "on",
+                    "attributes": {"entity_id": [member]},
+                }
+            )
+        depth_states.append(
+            {
+                "entity_id": "sensor.synthetic_depth_leaf",
+                "state": "on",
+                "attributes": {},
+            }
+        )
+        depth_evidence = _build_expand_snapshot_evidence(
+            states=depth_states,
+            entity_registry=[
+                {
+                    "entity_id": "sensor.synthetic_depth_leaf",
+                    "platform": "sensor",
+                }
+            ],
+            entity_registry_complete=True,
+        )
+        _leaves, material, complete, limit_exceeded = (
+            _resolve_expand_candidates(
+                ("group.synthetic_depth_0",), depth_evidence
+            )
+        )
+        self.assertFalse(complete)
+        self.assertTrue(limit_exceeded)
+        self.assertIn(
+            "expand_resolution_depth_limit_exceeded",
+            material["failure_reasons"],
+        )
+
+        work_states = [
+            {
+                "entity_id": "group.synthetic_work_root",
+                "state": "on",
+                "attributes": {
+                    "entity_id": [
+                        f"group.synthetic_work_{index}"
+                        for index in range(9)
+                    ]
+                },
+            }
+        ]
+        work_registry = []
+        for group_index in range(9):
+            members = [
+                f"sensor.synthetic_work_{group_index}_{member_index}"
+                for member_index in range(128)
+            ]
+            work_states.append(
+                {
+                    "entity_id": f"group.synthetic_work_{group_index}",
+                    "state": "on",
+                    "attributes": {"entity_id": members},
+                }
+            )
+            for member_id in members:
+                work_states.append(
+                    {
+                        "entity_id": member_id,
+                        "state": "on",
+                        "attributes": {},
+                    }
+                )
+                work_registry.append(
+                    {"entity_id": member_id, "platform": "sensor"}
+                )
+        work_evidence = _build_expand_snapshot_evidence(
+            states=work_states,
+            entity_registry=work_registry,
+            entity_registry_complete=True,
+        )
+        _leaves, material, complete, limit_exceeded = (
+            _resolve_expand_candidates(
+                ("group.synthetic_work_root",), work_evidence
+            )
+        )
+        self.assertFalse(complete)
+        self.assertTrue(limit_exceeded)
+        self.assertIn(
+            "expand_resolution_entity_limit_exceeded",
+            material["failure_reasons"],
+        )
 
     async def test_domain_group_and_zone_members_are_not_false_exclusions(self):
         cases = (

@@ -46,12 +46,14 @@ Literal-label expansion is closed only after the provider resolves the same
 bounded state and entity-source snapshot used for the index. The resolver
 matches Home Assistant's reviewed `expand()` contract: it recursively follows
 `group.*`, entities whose recorded source integration is `group`, and `zone.*`
-person membership. It binds the source kind, complete membership, membership
-count and membership fingerprint for every visited entity. Missing state or
-source evidence, malformed or partial membership, cycles, dynamic selectors,
-unknown callables, overflow and processing failure remain target-capable or
-coverage-failed. Retained candidate or membership prefixes never prove
-exclusion.
+person membership. Registry source authority is admitted only from an already
+canonical, lowercase ASCII Home Assistant domain of at most 64 characters;
+malformed values are never normalized. It binds the source kind, complete
+membership, membership count and membership fingerprint for every visited
+entity. Missing state or source evidence, malformed or partial membership,
+cycles, dynamic selectors, unknown callables, overflow and processing failure
+remain target-capable or coverage-failed. Retained candidate or membership
+prefixes never prove exclusion.
 
 Only an exact target inclusion, genuine target-capable opacity or
 target-relevant coverage failure may attach a downstream action profile.
