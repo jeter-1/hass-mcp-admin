@@ -11,6 +11,9 @@ finite `states[entity]` transport and reviewed collection-member projections now
 retain their bounded target evidence until the provider resolves the immutable
 dependency snapshot. `entity_name(entity)` binds the input entity relationship
 and returns a tainted scalar rather than inventing unrelated registry opacity.
+Optional-attribute collection filters also bind direct State-member consumption
+when `attribute` is omitted or explicitly null; their later comparison,
+formatting, ordering or aggregation cannot erase the receiver relationship.
 
 Complete exclusions and dependency-neutral scalar/context operations terminate
 before downstream consequences are selected. Exact inclusions remain exact.
@@ -18,6 +21,10 @@ Unknown selectors, incomplete labels, mixed provenance, external templates,
 unknown callables, malformed/cyclic expansion, overflow and coverage failure
 remain conservative. A neutral scalar later reused as an entity selector fails
 closed unless finite identity is proven.
+
+Exact and completely excluded evidence uses target-specific dependency locks.
+Only surviving target-capable opacity or coverage failure requests the
+unconstrained helper-dependency guard.
 
 New plans use `helper-dependency-risk-v9`; persisted v3-v8 plans remain readable
 but require replanning and cannot authorize approval or execution. Every new

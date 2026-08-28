@@ -853,10 +853,13 @@ def _build_obligation_binding(
     )
     lock_projection = {
         "exact_helper_dependency": True,
-        # Every helper execution holds this shared guard so an automation
-        # mutation that newly introduces opaque dependency semantics cannot
-        # race final preflight and dispatch.
-        "conservative_helper_dependency": True,
+        # Exact/excluded terminals use the target-specific helper lock.  The
+        # shared guard is reserved for evidence that is genuinely opaque or
+        # coverage-failed, so proven-unrelated configuration work remains
+        # concurrent while uncertain configuration still fails closed.
+        "conservative_helper_dependency": bool(
+            opaque_count or not coverage_complete
+        ),
         "automation_resource_ids": resource_ids,
         "custom_template_reload": bool(external_template_opacity_count),
     }

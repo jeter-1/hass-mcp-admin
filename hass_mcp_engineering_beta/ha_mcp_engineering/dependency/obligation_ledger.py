@@ -3151,6 +3151,17 @@ class TemplateObligationAnalyzer:
                     "groupby_attribute_missing",
                     kind="filter_groupby",
                 )
+            elif operand.state_collection or operand.state_object:
+                # Optional member projection was omitted, so pinned Jinja
+                # consumes each collection member directly.  A State receiver
+                # remains dependency-sensitive even when the filter's later
+                # comparison, ordering, formatting, or aggregation is neutral.
+                self._consume_entity_value(
+                    operand,
+                    node=node.node,
+                    kind="filter_state_operand",
+                    reason="state_value_consumed_by_filter",
+                )
             return
 
         raw_keyword = next(
@@ -3172,6 +3183,13 @@ class TemplateObligationAnalyzer:
         ) and name != "groupby":
             # Explicit ``attribute=None`` has the same no-projection semantics
             # as omitting the optional argument in pinned Jinja.
+            if operand.state_collection or operand.state_object:
+                self._consume_entity_value(
+                    operand,
+                    node=node.node,
+                    kind="filter_state_operand",
+                    reason="state_value_consumed_by_filter",
+                )
             return
         if len(attribute.literal_strings) != 1 or not attribute.complete:
             self._opaque_from_value(

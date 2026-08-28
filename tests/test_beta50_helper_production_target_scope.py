@@ -138,7 +138,12 @@ def _residual_source(
 class SyntheticBeta50Rest(SyntheticBeta49Rest):
     """Sanitized full-index fixture for the six residual source classes."""
 
-    def __init__(self, *, arbitrary_only: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        arbitrary_only: bool = False,
+        filter_without_attribute: str | None = None,
+    ) -> None:
         super().__init__(arbitrary_only=False)
         if arbitrary_only:
             self.configs = {
@@ -155,6 +160,14 @@ class SyntheticBeta50Rest(SyntheticBeta49Rest):
                         }
                     ],
                 }
+            }
+            return
+        if filter_without_attribute is not None:
+            self.configs = {
+                "member_filter_no_attribute": _residual_source(
+                    99,
+                    variables={"rendered": filter_without_attribute},
+                )
             }
             return
 
@@ -475,6 +488,30 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         plan = created["plan"]
         return plan, self.governance.get_plan_observability(plan["plan_id"])
 
+    async def _create_filter_plan(self, template: str) -> dict:
+        index = DependencyIndex(
+            DirectHaDependencyProvider(
+                SyntheticBeta50Rest(filter_without_attribute=template),
+                SyntheticBeta50WebSocket(),
+            )
+        )
+        risk = HelperDependencyRiskService(index)
+        governance = ChangeGovernanceService(
+            ChangePlanRepository(Path(self.temp.name) / "filter-plans"),
+            UnusedLegacyGateway(),
+            now=Clock(),
+            helper_state_gateway=self.helper,
+            helper_dependency_risk_reader=risk.assess,
+            plan_observability_cursor_key=b"beta50-filter-key" * 2,
+        )
+        self.helper.entity_id = STANDARD_TARGET
+        created = await governance.create_helper_state_plan(
+            entity_id=STANDARD_TARGET,
+            desired_state="on",
+        )
+        self.assertFalse(created["provider_dispatch_occurred"])
+        return created["plan"]
+
     def _traverse(self, plan_id: str, section: str) -> tuple[list[dict], str]:
         items: list[dict] = []
         cursor = ""
@@ -586,6 +623,58 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
                     self._traverse(plan["plan_id"], section),
                     self._traverse(plan["plan_id"], section),
                 )
+        self.assertEqual(0, self.helper.dispatch_count)
+
+    async def test_collection_filters_without_attribute_consume_state_scope(self):
+        global_plan = await self._create_filter_plan(
+            "{{ states | join(',') }}"
+        )
+        global_binding = global_plan["operational"]["baseline"][
+            "dependency_risk"
+        ]
+        self.assertGreater(global_binding["opaque_obligation_count"], 0)
+        self.assertEqual(1, len(global_binding["downstream_profiles"]))
+        self.assertFalse(global_binding["evidence_complete"])
+        self.assertFalse(global_binding["execution_eligible"])
+        self.assertFalse(global_plan["approval_actionable"])
+        self.assertIn(
+            unconstrained_helper_dependency_lock_key(),
+            self._lock_keys(STANDARD_TARGET, global_binding),
+        )
+
+        excluded_plan = await self._create_filter_plan(
+            "{{ states.sensor | join(',') }}"
+        )
+        excluded_binding = excluded_plan["operational"]["baseline"][
+            "dependency_risk"
+        ]
+        self.assertEqual(0, excluded_binding["opaque_obligation_count"])
+        self.assertEqual([], excluded_binding["downstream_profiles"])
+        self.assertTrue(excluded_binding["evidence_complete"])
+        self.assertTrue(excluded_binding["execution_eligible"])
+        self.assertTrue(excluded_plan["approval_actionable"])
+        self.assertNotIn(
+            unconstrained_helper_dependency_lock_key(),
+            self._lock_keys(STANDARD_TARGET, excluded_binding),
+        )
+
+        exact_plan = await self._create_filter_plan(
+            "{{ [states.input_boolean.beta50_standard] | join(',') }}"
+        )
+        exact_binding = exact_plan["operational"]["baseline"][
+            "dependency_risk"
+        ]
+        self.assertGreater(
+            exact_binding["exact_dependency_obligation_count"], 0
+        )
+        self.assertEqual(1, len(exact_binding["downstream_profiles"]))
+        self.assertTrue(exact_binding["evidence_complete"])
+        self.assertTrue(exact_binding["execution_eligible"])
+        self.assertTrue(exact_plan["approval_actionable"])
+        self.assertNotIn(
+            unconstrained_helper_dependency_lock_key(),
+            self._lock_keys(STANDARD_TARGET, exact_binding),
+        )
         self.assertEqual(0, self.helper.dispatch_count)
 
     def test_v3_through_v8_are_readable_but_non_authoritative(self):

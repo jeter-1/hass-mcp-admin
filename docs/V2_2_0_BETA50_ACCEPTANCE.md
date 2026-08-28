@@ -62,6 +62,9 @@ proof before that boundary:
 - reviewed collection-member attribute projection consumed an exact State
   relationship and then reattached the uncertain collection receiver to its
   scalar result; and
+- admitted collection filters with an omitted or explicit-null optional
+  `attribute` argument could consume State members without emitting the input
+  relationship; and
 - `entity_name(entity)` emitted a new unbound registry opacity instead of
   consuming its bounded entity input and returning a tainted scalar.
 
@@ -83,7 +86,9 @@ Risk, consequence, approval actionability, downstream-profile selection,
 evidence fingerprints, final-preflight drift and F3 locking consume the same
 immutable terminal set. Candidate, label, domain, source, selector or
 completeness drift changes the approval-bound evidence and rejects before
-dispatch.
+dispatch. Exact and completely excluded evidence uses target-specific locks;
+the unconstrained helper-dependency guard is retained only for surviving
+opacity or coverage failure.
 
 ## Risk-model and snapshot identity
 
@@ -106,13 +111,16 @@ observability and operational lock projection. Require:
 
 - the standard target has zero exact obligations, zero target-relevant opacity,
   zero downstream profiles, complete evidence, no physical consequence, low
-  risk, `standard_admin`, actionable approval and no downstream automation
-  lock;
+  risk, `standard_admin`, actionable approval and no downstream automation or
+  unconstrained helper-dependency lock;
 - the exact consequential target retains seven synthetic safety-critical
   automations, complete evidence, high risk, `elevated_admin`, actionable
   approval and all seven exact automation locks;
 - an arbitrary selector remains opaque, incomplete, non-actionable and
   conservatively locked;
+- a State collection consumed by an optional-attribute filter without an
+  `attribute` argument remains exact, excluded or conservative according to
+  its input scope and can never disappear as neutral output;
 - coverage failure remains monotonic and fail-closed;
 - two complete obligation/profile traversals are deterministic, terminate with
   a null cursor and perform no provider dispatch.

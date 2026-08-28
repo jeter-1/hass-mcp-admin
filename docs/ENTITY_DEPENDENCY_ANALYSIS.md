@@ -186,6 +186,13 @@ dependency-index generation, fingerprint and source epoch used for its own
 classification. Persisted v3-v8 evidence remains readable but requires
 replanning and has no current execution authority.
 
+Pinned collection filters that accept an optional member `attribute` consume a
+State receiver directly when that argument is omitted or explicitly null. The
+filter's later formatting, comparison, ordering or aggregation may be neutral,
+but it cannot erase the input State relationship. Exact and excluded terminals
+therefore use target-specific dependency locks, while only surviving opacity or
+coverage failure adds the unconstrained helper-dependency guard.
+
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned
 count, total, and cursor state; no detail level silently substitutes a lower cap.
