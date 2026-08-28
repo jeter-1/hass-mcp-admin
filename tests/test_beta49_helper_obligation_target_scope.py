@@ -448,6 +448,18 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             ("group", True, "group"),
             ("mqtt", True, "leaf"),
             ("integration_2", True, "leaf"),
+            ("a", True, "leaf"),
+            ("a1", True, "leaf"),
+            ("1a", True, "leaf"),
+            ("a" * 64, True, "leaf"),
+            ("_group", False, "unknown"),
+            ("group_", False, "unknown"),
+            ("gr__oup", False, "unknown"),
+            ("_a", False, "unknown"),
+            ("a_", False, "unknown"),
+            ("a__b", False, "unknown"),
+            ("__a", False, "unknown"),
+            ("a__", False, "unknown"),
             (" group ", False, "unknown"),
             ("Group", False, "unknown"),
             ("group\n", False, "unknown"),
@@ -462,6 +474,7 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             ("a" * 65, False, "unknown"),
             ("group\x00", False, "unknown"),
             ("gr\u043eup", False, "unknown"),
+            ("a\u0661", False, "unknown"),
             ("123_456", False, "unknown"),
             ("___", False, "unknown"),
         )
@@ -507,6 +520,56 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
                         "expand_entity_source_malformed",
                         evidence.failure_reason,
                     )
+
+    def test_core_incompatible_source_domains_cannot_become_false_leaves(self):
+        container_id = "light.synthetic_source"
+        member_id = "input_boolean.beta49_standard"
+        for platform in ("_group", "group_", "gr__oup"):
+            with self.subTest(platform=platform):
+                snapshot = _build_expand_snapshot_evidence(
+                    states=[
+                        {
+                            "entity_id": container_id,
+                            "state": "on",
+                            "attributes": {"entity_id": [member_id]},
+                        },
+                        {
+                            "entity_id": member_id,
+                            "state": "off",
+                            "attributes": {},
+                        },
+                    ],
+                    entity_registry=[
+                        {
+                            "entity_id": container_id,
+                            "platform": platform,
+                        },
+                        {
+                            "entity_id": member_id,
+                            "platform": "input_boolean",
+                        },
+                    ],
+                    entity_registry_complete=True,
+                )
+                evidence = snapshot.entities[container_id]
+                self.assertFalse(snapshot.source_inventory_complete)
+                self.assertIsNone(evidence.source_domain)
+                self.assertEqual("unknown", evidence.expandable_kind)
+                self.assertEqual(
+                    "expand_entity_source_malformed",
+                    evidence.failure_reason,
+                )
+                leaves, material, complete, limit_exceeded = (
+                    _resolve_expand_candidates((container_id,), snapshot)
+                )
+                self.assertEqual((), leaves)
+                self.assertFalse(complete)
+                self.assertTrue(limit_exceeded)
+                self.assertIn(
+                    "expand_entity_source_malformed",
+                    material["failure_reasons"],
+                )
+                self.assertFalse(material["source_inventory_complete"])
 
     def test_source_invalidation_is_monotonic_across_order_and_repetition(
         self,
@@ -938,6 +1001,131 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(created["provider_dispatch_occurred"])
             self.assertFalse(created["plan"]["approval_actionable"])
             self.assertEqual(0, helper.dispatch_count)
+
+    async def test_core_incompatible_underscore_sources_fail_closed_end_to_end(
+        self,
+    ):
+        for platform in ("_group", "group_", "gr__oup"):
+            with self.subTest(platform=platform):
+                rest = SyntheticBeta49Rest(
+                    extra_states=(
+                        {
+                            "entity_id": "light.synthetic_malformed_group",
+                            "state": "on",
+                            "attributes": {"entity_id": [STANDARD_TARGET]},
+                        },
+                    )
+                )
+                rest.configs = {
+                    "malformed_expand": {
+                        "alias": "Synthetic malformed source expand",
+                        "trigger": [],
+                        "condition": [
+                            _condition(
+                                "{{ expand(['light.synthetic_malformed_group']) "
+                                "| map(attribute='state') | list }}"
+                            )
+                        ],
+                        "action": [
+                            {
+                                "service": "cover.open_cover",
+                                "target": {
+                                    "entity_id": "cover.synthetic_garage"
+                                },
+                            }
+                        ],
+                    }
+                }
+                index = DependencyIndex(
+                    DirectHaDependencyProvider(
+                        rest,
+                        SyntheticBeta49WebSocket(
+                            member_entities=(),
+                            extra_registry_entries=(
+                                {
+                                    "entity_id": (
+                                        "light.synthetic_malformed_group"
+                                    ),
+                                    "labels": [],
+                                    "platform": platform,
+                                },
+                                {
+                                    "entity_id": STANDARD_TARGET,
+                                    "labels": [],
+                                    "platform": "input_boolean",
+                                },
+                            ),
+                        ),
+                    )
+                )
+                await index.get(refresh=True)
+                risk_service = HelperDependencyRiskService(index)
+                first = await risk_service.assess(
+                    STANDARD_TARGET, refresh=False
+                )
+                second = await risk_service.assess(
+                    STANDARD_TARGET, refresh=False
+                )
+                binding = first["binding"]
+                risk = helper_dependency_risk_assessment(first)
+                self.assertEqual(
+                    0, binding["exact_dependency_obligation_count"]
+                )
+                self.assertGreater(
+                    binding["opaque_obligation_count"]
+                    + binding["coverage_failure_count"],
+                    0,
+                )
+                self.assertFalse(binding["evidence_complete"])
+                self.assertFalse(binding["execution_eligible"])
+                self.assertFalse(risk.apply_allowed)
+                self.assertEqual(
+                    binding["evidence_fingerprint"],
+                    second["binding"]["evidence_fingerprint"],
+                )
+                self.assertTrue(
+                    binding["dependency_lock_projection"][
+                        "conservative_helper_dependency"
+                    ]
+                )
+                operation = SimpleNamespace(
+                    validate=lambda: None,
+                    operation="set_input_boolean_state",
+                    target=SimpleNamespace(target_id=STANDARD_TARGET),
+                    authoritative_provider_slug=(
+                        "direct_home_assistant_state"
+                    ),
+                    baseline={"dependency_risk": binding},
+                )
+                lock_keys = {
+                    request.key
+                    for request in OperationalLockSetCalculator().calculate(
+                        operation
+                    )
+                }
+                self.assertIn(
+                    unconstrained_helper_dependency_lock_key(), lock_keys
+                )
+
+                with tempfile.TemporaryDirectory() as root:
+                    helper = FakeHelperStateGateway()
+                    helper.entity_id = STANDARD_TARGET
+                    governance = ChangeGovernanceService(
+                        ChangePlanRepository(Path(root) / "plans"),
+                        UnusedLegacyGateway(),
+                        now=Clock(),
+                        helper_state_gateway=helper,
+                        helper_dependency_risk_reader=risk_service.assess,
+                    )
+                    created = await governance.create_helper_state_plan(
+                        entity_id=STANDARD_TARGET,
+                        desired_state="on",
+                    )
+                    self.assertFalse(created["provider_dispatch_occurred"])
+                    self.assertFalse(
+                        created["plan"]["approval_actionable"]
+                    )
+                    self.assertEqual(0, helper.dispatch_count)
 
     def test_recursive_expansion_depth_and_work_limits_remain_conservative(
         self,

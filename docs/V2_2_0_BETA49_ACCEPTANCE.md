@@ -48,12 +48,24 @@ matches Home Assistant's reviewed `expand()` contract: it recursively follows
 `group.*`, entities whose recorded source integration is `group`, and `zone.*`
 person membership. Registry source authority is admitted only from an already
 canonical, lowercase ASCII Home Assistant domain of at most 64 characters;
-malformed values are never normalized. It binds the source kind, complete
-membership, membership count and membership fingerprint for every visited
-entity. Missing state or source evidence, malformed or partial membership,
-cycles, dynamic selectors, unknown callables, overflow and processing failure
-remain target-capable or coverage-failed. Retained candidate or membership
-prefixes never prove exclusion.
+the domain cannot begin or end with an underscore or contain consecutive
+underscores, and must contain at least one ASCII letter. Malformed values are
+never normalized. It binds the source kind, complete membership, membership
+count and membership fingerprint for every visited entity. Missing state or
+source evidence, malformed or partial membership, cycles, dynamic selectors,
+unknown callables, overflow and processing failure remain target-capable or
+coverage-failed. Retained candidate or membership prefixes never prove
+exclusion.
+
+This grammar is grounded in the identical `valid_domain` definitions shipped
+by every supported Home Assistant lane: [2026.7.2
+`homeassistant/core.py`](https://github.com/home-assistant/core/blob/2026.7.2/homeassistant/core.py#L166-L175),
+[2026.8.0
+`homeassistant/core.py`](https://github.com/home-assistant/core/blob/2026.8.0/homeassistant/core.py#L168-L177),
+and [2026.8.1
+`homeassistant/core.py`](https://github.com/home-assistant/core/blob/2026.8.1/homeassistant/core.py#L168-L177).
+Engineering deliberately applies the stricter ASCII-only, at-least-one-letter
+subset, so numeric-only source values remain fail-closed.
 
 Only an exact target inclusion, genuine target-capable opacity or
 target-relevant coverage failure may attach a downstream action profile.

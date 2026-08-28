@@ -60,7 +60,7 @@ MAX_BLUEPRINT_RESOLUTION_DEPTH = 64
 MAX_BLUEPRINT_SOURCE_BYTES = 1_048_576
 MAX_EXPAND_SOURCE_DOMAIN_LENGTH = 64
 CANONICAL_EXPAND_SOURCE_DOMAIN = re.compile(
-    r"(?=.*[a-z])[a-z0-9_]+", re.ASCII
+    r"(?=.*[a-z])[a-z0-9]+(?:_[a-z0-9]+)*", re.ASCII
 )
 
 
