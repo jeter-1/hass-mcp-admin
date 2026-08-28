@@ -202,6 +202,7 @@ def baseline_for(
     dependency_automation_ids: tuple[str, ...] = (),
     dependency_risk_model: str | None = None,
     dependency_lock_projection: bool = True,
+    conservative_helper_dependency: bool = True,
 ) -> dict[str, Any]:
     """Build one prepared operational baseline.
 
@@ -273,7 +274,9 @@ def baseline_for(
         if dependency_lock_projection:
             material["dependency_lock_projection"] = {
                 "exact_helper_dependency": True,
-                "conservative_helper_dependency": True,
+                "conservative_helper_dependency": (
+                    conservative_helper_dependency
+                ),
                 "automation_resource_ids": list(dependency_automation_ids),
                 "custom_template_reload": False,
             }
@@ -415,6 +418,7 @@ def make_plan(
     dependency_automation_ids: tuple[str, ...] = (),
     dependency_risk_model: str | None = None,
     dependency_lock_projection: bool = True,
+    conservative_helper_dependency: bool = True,
 ) -> ChangePlan:
     target_id = target_id or {
         CREATE_FULL_BACKUP: "local_full_backup",
@@ -438,6 +442,7 @@ def make_plan(
         dependency_automation_ids=dependency_automation_ids,
         dependency_risk_model=dependency_risk_model,
         dependency_lock_projection=dependency_lock_projection,
+        conservative_helper_dependency=conservative_helper_dependency,
     )
     provider = provider_evidence(operation, version=version)
     elevated = operation in {RESTART_ADDON, RESTART_HOME_ASSISTANT}
@@ -955,6 +960,7 @@ def make_context(
     dependency_drift_on_fenced_read: bool = False,
     dependency_risk_model: str | None = None,
     dependency_lock_projection: bool = True,
+    conservative_helper_dependency: bool = True,
 ) -> FixtureContext:
     """Build one deterministic operational fixture context.
 
@@ -972,6 +978,7 @@ def make_context(
         dependency_automation_ids=dependency_automation_ids,
         dependency_risk_model=dependency_risk_model,
         dependency_lock_projection=dependency_lock_projection,
+        conservative_helper_dependency=conservative_helper_dependency,
     )
     trace: list[str] = []
     backup = FakeBackupGateway(
@@ -1024,6 +1031,9 @@ def make_context(
                     target_id=entity_id,
                     version=version,
                     dependency_automation_ids=observed_automations,
+                    conservative_helper_dependency=(
+                        conservative_helper_dependency
+                    ),
                 )["dependency_risk"]
             ),
             "provenance": {

@@ -27,6 +27,10 @@ from ha_mcp_engineering.f3.operational_models import (
     CREATE_FULL_BACKUP,
     RESTART_ADDON,
     RESTART_HOME_ASSISTANT,
+    SET_INPUT_BOOLEAN_STATE,
+)
+from ha_mcp_engineering.f3_configuration.locks import (
+    unconstrained_helper_dependency_lock_key,
 )
 from ha_mcp_engineering.f3.persistence import DurableExecutionRepository
 
@@ -767,6 +771,81 @@ class OperationalProcessLossTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(context.backup.provider_dispatches, 1)
         self.assertEqual(context.backup.simulated_effects, 1)
+
+    async def test_clean_helper_recovery_restores_exact_stability_fence_once(self):
+        clock = MutableClock()
+        context = make_context(
+            self.root,
+            SET_INPUT_BOOLEAN_STATE,
+            conservative_helper_dependency=False,
+        )
+        prepared = await prepare_context(context)
+        first_executor = make_executor(
+            self.root,
+            prepared=prepared,
+            now=clock,
+            executor_fault_hook=RaiseAt(
+                "after_provider_response_before_observation"
+            ),
+        )
+        with self.assertRaises(SimulatedProcessLoss):
+            await execute_operational(
+                first_executor,
+                adapter=context.adapter,
+                prepared=prepared,
+                identity=execution_identity(),
+                approval_consumption=context.approval.consume,
+            )
+
+        fence_key = unconstrained_helper_dependency_lock_key()
+        before = DurableExecutionRepository(self.root).get(TASK_ID)
+        before_fence = next(
+            token for token in before.lock_tokens if token["key"] == fence_key
+        )
+        self.assertEqual("shared", before_fence["mode"])
+        self.assertEqual(1, context.adapter.strategies[
+            SET_INPUT_BOOLEAN_STATE
+        ].gateway.provider_dispatches)
+
+        clock.advance(61)
+        restarted = make_executor(self.root, prepared=prepared, now=clock)
+        result = await execute_until_terminal(
+            restarted,
+            context,
+            prepared,
+            owner_id="owner-2",
+        )
+        after = DurableExecutionRepository(self.root).get(TASK_ID)
+        after_fences = [
+            token for token in after.lock_tokens if token["key"] == fence_key
+        ]
+        self.assertEqual(1, len(after_fences))
+        self.assertEqual("shared", after_fences[0]["mode"])
+        self.assertGreater(
+            after_fences[0]["generation"], before_fence["generation"]
+        )
+        self.assertEqual(
+            after.lock_tokens,
+            after.dispatch_intent["lock_tokens"],
+        )
+        self.assertEqual("succeeded_verified", result.outcome)
+        self.assertEqual((), restarted.lock_store.records())
+        self.assertEqual(1, context.adapter.strategies[
+            SET_INPUT_BOOLEAN_STATE
+        ].gateway.provider_dispatches)
+
+        duplicate = await execute_operational(
+            restarted,
+            adapter=context.adapter,
+            prepared=prepared,
+            identity=execution_identity(owner_id="owner-2"),
+            approval_consumption=context.approval.consume,
+        )
+        self.assertEqual("succeeded_verified", duplicate.outcome)
+        self.assertEqual((), restarted.lock_store.records())
+        self.assertEqual(1, context.adapter.strategies[
+            SET_INPUT_BOOLEAN_STATE
+        ].gateway.provider_dispatches)
 
     async def test_process_loss_after_observation_resumes_verification_only(self):
         clock = MutableClock()

@@ -735,6 +735,7 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             self.root / "state",
             SET_INPUT_BOOLEAN_STATE,
             target_id="input_boolean.vacation_mode",
+            conservative_helper_dependency=False,
         )
         state = await prepare_context(operational_context)
         state_locks = operational_context.adapter.lock_requests(state)
@@ -980,6 +981,7 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             self.root / "helper-unrelated",
             SET_INPUT_BOOLEAN_STATE,
             dependency_automation_ids=("other_automation",),
+            conservative_helper_dependency=False,
         )
         helper = await prepare_context(helper_context)
         helper_locks = helper_context.adapter.lock_requests(helper)
@@ -1021,6 +1023,7 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             self.root / "content-derived-helper",
             SET_INPUT_BOOLEAN_STATE,
             target_id="input_boolean.synthetic_exact",
+            conservative_helper_dependency=False,
         )
         helper = await prepare_context(helper_context)
         helper_locks = helper_context.adapter.lock_requests(helper)
@@ -1063,6 +1066,14 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                     "{% for entity in ['sensor.a', 'sensor.b'] %}"
                     "{{ states(entity) }}{% endfor %}"
                 ),
+            }
+        ]
+        exact_other_helper = configuration_valid_config("automation")
+        exact_other_helper["condition"] = [
+            {
+                "condition": "state",
+                "entity_id": "input_boolean.synthetic_other",
+                "state": "on",
             }
         ]
         unresolved_blueprint = configuration_valid_config("automation")
@@ -1137,12 +1148,21 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
                 base,
                 bounded_unrelated,
             )
-            unrelated_handle = store.acquire_once(
-                unrelated_locks,
-                owner=self._lock_owner("unrelated-content"),
-                timing=timing,
+            exact_other_locks = await configuration_locks(
+                "update",
+                base,
+                exact_other_helper,
             )
-            store.release(unrelated_handle)
+            for name, locks in (
+                ("sensor-only-content", unrelated_locks),
+                ("exact-other-helper", exact_other_locks),
+            ):
+                unrelated_handle = store.acquire_once(
+                    locks,
+                    owner=self._lock_owner(name),
+                    timing=timing,
+                )
+                store.release(unrelated_handle)
             store.release(helper_handle)
 
     async def test_dependency_refresh_occurs_only_after_exact_locks_are_held(self):
@@ -1150,12 +1170,23 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             self.root / "refresh-after-locks",
             SET_INPUT_BOOLEAN_STATE,
             dependency_automation_ids=("porch_light",),
+            conservative_helper_dependency=False,
         )
         prepared = await prepare_context(context)
         locks = context.adapter.lock_requests(prepared)
+        fence_key = unconstrained_helper_dependency_lock_key()
+        self.assertFalse(
+            prepared.baseline["dependency_risk"]
+            ["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
+        )
+        self.assertIn(fence_key, {item.key for item in locks})
 
         missing = await context.adapter.preflight(
-            prepared, acquired_locks=locks[:-1]
+            prepared,
+            acquired_locks=tuple(
+                item for item in locks if item.key != fence_key
+            ),
         )
 
         self.assertFalse(missing.eligible)
@@ -1369,8 +1400,14 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
             self.root / "executor-dependency-race",
             SET_INPUT_BOOLEAN_STATE,
             target_id="input_boolean.synthetic_exact",
+            conservative_helper_dependency=False,
         )
         prepared = await prepare_context(context)
+        self.assertFalse(
+            prepared.baseline["dependency_risk"]
+            ["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
+        )
         unrelated = configuration_valid_config("automation")
         relevant = configuration_valid_config("automation", updated=True)
         relevant["condition"] = [
@@ -1384,6 +1421,13 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
             **relevant,
             "action": [{"service": "light.turn_off"}],
         }
+        unresolved = configuration_valid_config("automation")
+        unresolved["condition"] = [
+            {
+                "condition": "template",
+                "value_template": "{{ states(caller_supplied) }}",
+            }
+        ]
 
         async def configuration_locks(
             action, current, proposed, *, target="porch_light"
@@ -1426,6 +1470,9 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
             "update_alters": await configuration_locks(
                 "update", relevant, altered
             ),
+            "update_unresolved": await configuration_locks(
+                "update", unrelated, unresolved
+            ),
         }
         unrelated_locks = await configuration_locks(
             "update",
@@ -1443,10 +1490,42 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
         blocked: set[str] = set()
         conflict_keys: dict[str, tuple[str, ...]] = {}
         concurrent: set[str] = set()
+        fence_stages: list[str] = []
         executor = None
 
         def attempt_race(stage):
+            lifecycle_stages = {
+                "after_preflight_before_durable_intent",
+                "after_durable_intent_before_provider_invocation",
+                "after_provider_response_before_observation",
+                "after_observation_before_verification",
+            }
+            if stage not in lifecycle_stages:
+                return
             if stage != "after_preflight_before_durable_intent":
+                try:
+                    executor.lock_store.acquire_once(
+                        conflicting["update_unresolved"],
+                        owner=LockOwner(
+                            f"owner-{stage}",
+                            f"task-{stage}",
+                            f"plan-{stage}",
+                            f"operation-{stage}",
+                            f"attempt-{stage}",
+                        ),
+                        timing=LockTiming(60, 10, 0),
+                        now=executor.now(),
+                    )
+                except LockConflict as exc:
+                    self.assertEqual(
+                        (unconstrained_helper_dependency_lock_key(),),
+                        exc.keys,
+                    )
+                    fence_stages.append(stage)
+                else:
+                    self.fail(
+                        "unresolved automation acquired before helper terminal"
+                    )
                 return
             candidates = {
                 # Exercise the compatible reader before the conflicting
@@ -1496,11 +1575,20 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "update_adds",
                 "update_removes",
                 "update_alters",
+                "update_unresolved",
                 "reload",
             },
             conflict_keys,
         )
         self.assertEqual(concurrent, {"unrelated"})
+        self.assertEqual(
+            fence_stages,
+            [
+                "after_durable_intent_before_provider_invocation",
+                "after_provider_response_before_observation",
+                "after_observation_before_verification",
+            ],
+        )
         self.assertEqual(result.outcome, "succeeded_verified")
         self.assertEqual(
             context.adapter.strategies[
@@ -1508,6 +1596,19 @@ class OperationalExecutorIntegrationTests(unittest.IsolatedAsyncioTestCase):
             ].gateway.provider_dispatches,
             1,
         )
+        after_terminal = executor.lock_store.acquire_once(
+            conflicting["update_unresolved"],
+            owner=LockOwner(
+                "owner-after-terminal",
+                "task-after-terminal",
+                "plan-after-terminal",
+                "operation-after-terminal",
+                "attempt-after-terminal",
+            ),
+            timing=LockTiming(60, 10, 0),
+            now=executor.now(),
+        )
+        executor.lock_store.release(after_terminal)
 
     async def test_home_assistant_restart_recovers_outage_then_verifies(self):
         context = make_context(self.root, RESTART_HOME_ASSISTANT)

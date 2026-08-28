@@ -853,10 +853,11 @@ def _build_obligation_binding(
     )
     lock_projection = {
         "exact_helper_dependency": True,
-        # Exact/excluded terminals use the target-specific helper lock.  The
-        # shared guard is reserved for evidence that is genuinely opaque or
-        # coverage-failed, so proven-unrelated configuration work remains
-        # concurrent while uncertain configuration still fails closed.
+        # This field describes conservative evidence, not the unconditional
+        # shared execution stability fence.  Exact/excluded terminals remain
+        # semantically clean, while operational helper execution separately
+        # holds the unconstrained key so an uncertain configuration mutation
+        # cannot race the final refresh and dispatch boundary.
         "conservative_helper_dependency": bool(
             opaque_count or not coverage_complete
         ),

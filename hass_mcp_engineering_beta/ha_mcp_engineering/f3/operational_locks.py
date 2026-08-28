@@ -63,22 +63,6 @@ def _bound_downstream_automation_resources(
     return tuple(values)
 
 
-def _requires_conservative_helper_dependency_lock(
-    operation: PreparedOperationalOperation,
-) -> bool:
-    binding = operation.baseline.get("dependency_risk")
-    if not isinstance(binding, dict) or (
-        binding.get("model") not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
-    ):
-        raise ValueError("helper dependency lock evidence is not executable")
-    projection = binding.get("dependency_lock_projection")
-    if not isinstance(projection, dict) or not isinstance(
-        projection.get("conservative_helper_dependency"), bool
-    ):
-        raise ValueError("helper dependency lock projection is invalid")
-    return projection["conservative_helper_dependency"]
-
-
 def _requires_custom_template_reload_lock(
     operation: PreparedOperationalOperation,
 ) -> bool:
@@ -236,10 +220,12 @@ class OperationalLockSetCalculator:
                             "exact_helper_dependency_stability",
                         ),
                     ),
-                )
-            )
-            if _requires_conservative_helper_dependency_lock(operation):
-                requests.append(
+                    # This shared key is an unconditional execution stability
+                    # fence, not a claim that the plan contains opaque or
+                    # coverage-failed evidence.  An unresolved automation
+                    # mutation takes the same key exclusively, preventing it
+                    # from introducing a helper dependency after the final
+                    # fenced refresh and before dispatch/readback completes.
                     LockRequest(
                         key=unconstrained_helper_dependency_lock_key(),
                         scopes=(LockScope.RESOURCE,),
@@ -247,8 +233,9 @@ class OperationalLockSetCalculator:
                         reason_codes=(
                             "unconstrained_helper_dependency_stability",
                         ),
-                    )
+                    ),
                 )
+            )
             requests.extend(
                 LockRequest(
                     key=resource_lock_key("automation", resource_id),

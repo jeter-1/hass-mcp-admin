@@ -22,9 +22,13 @@ unknown callables, malformed/cyclic expansion, overflow and coverage failure
 remain conservative. A neutral scalar later reused as an entity selector fails
 closed unless finite identity is proven.
 
-Exact and completely excluded evidence uses target-specific dependency locks.
-Only surviving target-capable opacity or coverage failure requests the
-unconstrained helper-dependency guard.
+Configuration mutations use exact dependency locks for exact helper
+relationships, remain lock-free for proven exclusions or neutral operations,
+and use the unconstrained dependency key exclusively for surviving opacity or
+coverage failure. Separately, every executable helper-state operation holds
+that key in shared mode as an unconditional stability fence through final
+dependency refresh, durable intent, provider dispatch and authoritative
+readback. The execution fence does not make clean evidence opaque.
 
 New plans use `helper-dependency-risk-v9`; persisted v3-v8 plans remain readable
 but require replanning and cannot authorize approval or execution. Every new

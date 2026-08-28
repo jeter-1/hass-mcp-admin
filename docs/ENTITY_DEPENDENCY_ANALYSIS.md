@@ -189,9 +189,13 @@ replanning and has no current execution authority.
 Pinned collection filters that accept an optional member `attribute` consume a
 State receiver directly when that argument is omitted or explicitly null. The
 filter's later formatting, comparison, ordering or aggregation may be neutral,
-but it cannot erase the input State relationship. Exact and excluded terminals
-therefore use target-specific dependency locks, while only surviving opacity or
-coverage failure adds the unconstrained helper-dependency guard.
+but it cannot erase the input State relationship. Automation configuration
+mutations therefore use target-specific locks for exact terminals, no helper
+lock for excluded or neutral terminals, and the unconstrained dependency key
+exclusively for surviving opacity or coverage failure. Independently, every
+executable helper-state operation holds that unconstrained key in shared mode
+as a stability fence through final refresh, dispatch and readback; the fence is
+serialization authority and does not imply opaque plan evidence.
 
 Every detail level honors `limit` from 1 through 100. Pagination reports
 `requested_limit`, `effective_limit`, `maximum_limit`, clamping state/reason, returned

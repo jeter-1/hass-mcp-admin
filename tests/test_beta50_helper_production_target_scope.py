@@ -28,7 +28,10 @@ from ha_mcp_engineering.dependency.semantic_registry import (
 from ha_mcp_engineering.f3.operational_locks import (
     OperationalLockSetCalculator,
 )
+from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict
+from ha_mcp_engineering.f3.models import LockOwner, LockTiming
 from ha_mcp_engineering.f3_configuration.locks import (
+    operation_lock_requests,
     unconstrained_helper_dependency_lock_key,
 )
 from ha_mcp_engineering.governance.helper_dependency import (
@@ -44,6 +47,12 @@ from tests.test_beta37_exact_helper_state import (
     Clock,
     FakeHelperStateGateway,
     UnusedLegacyGateway,
+)
+from tests.f3_configuration_fixtures import (
+    SyntheticConfigurationGateway,
+    adapter_for as configuration_adapter_for,
+    proposal_for as configuration_proposal_for,
+    valid_config as configuration_valid_config,
 )
 from tests.test_beta49_helper_obligation_target_scope import (
     SyntheticBeta49Rest,
@@ -465,7 +474,7 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     @staticmethod
-    def _lock_keys(target: str, binding: dict) -> set[str]:
+    def _lock_requests(target: str, binding: dict):
         operation = SimpleNamespace(
             validate=lambda: None,
             operation="set_input_boolean_state",
@@ -473,10 +482,24 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             authoritative_provider_slug="direct_home_assistant_state",
             baseline={"dependency_risk": binding},
         )
+        return OperationalLockSetCalculator().calculate(operation)
+
+    @classmethod
+    def _lock_keys(cls, target: str, binding: dict) -> set[str]:
         return {
             item.key
-            for item in OperationalLockSetCalculator().calculate(operation)
+            for item in cls._lock_requests(target, binding)
         }
+
+    @staticmethod
+    def _lock_owner(name: str) -> LockOwner:
+        return LockOwner(
+            owner_id=f"owner-{name}",
+            task_id=f"task-{name}",
+            plan_id=f"plan-{name}",
+            operation_id=f"operation-{name}",
+            attempt_id=f"attempt-{name}",
+        )
 
     async def _create_plan(self, target: str) -> tuple[dict, dict]:
         self.helper.entity_id = target
@@ -554,6 +577,9 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(
             f"helper_dependency:{STANDARD_TARGET}", standard_keys
         )
+        self.assertIn(
+            unconstrained_helper_dependency_lock_key(), standard_keys
+        )
 
         first_identity = (
             observed_standard["canonical_summary"]
@@ -625,6 +651,88 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
                 )
         self.assertEqual(0, self.helper.dispatch_count)
 
+    async def test_clean_helper_stability_fence_conflicts_with_unresolved_automation_both_orders(
+        self,
+    ):
+        standard, _observed = await self._create_plan(STANDARD_TARGET)
+        binding = standard["operational"]["baseline"]["dependency_risk"]
+        self.assertFalse(
+            binding["dependency_lock_projection"][
+                "conservative_helper_dependency"
+            ]
+        )
+        helper_locks = self._lock_requests(STANDARD_TARGET, binding)
+        fence_key = unconstrained_helper_dependency_lock_key()
+        self.assertEqual(
+            "shared",
+            next(item.mode.value for item in helper_locks if item.key == fence_key),
+        )
+
+        dynamic = configuration_valid_config("automation")
+        dynamic["condition"] = [
+            {
+                "condition": "template",
+                "value_template": "{{ states(caller_supplied) }}",
+            }
+        ]
+        timing = LockTiming(60, 10, 0)
+        for action in ("create", "update"):
+            current = (
+                None
+                if action == "create"
+                else configuration_valid_config("automation")
+            )
+            gateway = SyntheticConfigurationGateway()
+            if current is not None:
+                gateway.states[("automation", "porch_light")] = current
+            adapter = configuration_adapter_for("automation", action, gateway)
+            prepared = await adapter.prepare(
+                configuration_proposal_for(
+                    "automation",
+                    action,
+                    current_config=current,
+                    proposed_config=dynamic,
+                )
+            )
+            configuration_locks = operation_lock_requests(prepared)
+            self.assertEqual(
+                "exclusive",
+                next(
+                    item.mode.value
+                    for item in configuration_locks
+                    if item.key == fence_key
+                ),
+            )
+            for first, second, names in (
+                (
+                    helper_locks,
+                    configuration_locks,
+                    ("helper", "configuration"),
+                ),
+                (
+                    configuration_locks,
+                    helper_locks,
+                    ("configuration", "helper"),
+                ),
+            ):
+                with self.subTest(action=action, first=names[0]):
+                    with tempfile.TemporaryDirectory() as temporary:
+                        store = DurableLockStore(temporary)
+                        handle = store.acquire_once(
+                            first,
+                            owner=self._lock_owner(names[0]),
+                            timing=timing,
+                        )
+                        with self.assertRaises(LockConflict) as caught:
+                            store.acquire_once(
+                                second,
+                                owner=self._lock_owner(names[1]),
+                                timing=timing,
+                            )
+                        self.assertEqual((fence_key,), caught.exception.keys)
+                        store.release(handle)
+            self.assertEqual(0, gateway.counters.dispatches)
+
     async def test_collection_filters_without_attribute_consume_state_scope(self):
         global_plan = await self._create_filter_plan(
             "{{ states | join(',') }}"
@@ -653,7 +761,11 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(excluded_binding["evidence_complete"])
         self.assertTrue(excluded_binding["execution_eligible"])
         self.assertTrue(excluded_plan["approval_actionable"])
-        self.assertNotIn(
+        self.assertFalse(
+            excluded_binding["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
+        )
+        self.assertIn(
             unconstrained_helper_dependency_lock_key(),
             self._lock_keys(STANDARD_TARGET, excluded_binding),
         )
@@ -671,7 +783,11 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(exact_binding["evidence_complete"])
         self.assertTrue(exact_binding["execution_eligible"])
         self.assertTrue(exact_plan["approval_actionable"])
-        self.assertNotIn(
+        self.assertFalse(
+            exact_binding["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
+        )
+        self.assertIn(
             unconstrained_helper_dependency_lock_key(),
             self._lock_keys(STANDARD_TARGET, exact_binding),
         )

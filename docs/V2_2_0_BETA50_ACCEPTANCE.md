@@ -86,9 +86,18 @@ Risk, consequence, approval actionability, downstream-profile selection,
 evidence fingerprints, final-preflight drift and F3 locking consume the same
 immutable terminal set. Candidate, label, domain, source, selector or
 completeness drift changes the approval-bound evidence and rejects before
-dispatch. Exact and completely excluded evidence uses target-specific locks;
-the unconstrained helper-dependency guard is retained only for surviving
-opacity or coverage failure.
+dispatch. Configuration mutations use exact dependency locks for exact helper
+relationships, no helper lock for complete exclusions or neutral operations,
+and the unconstrained dependency key exclusively for surviving opacity or
+coverage failure.
+
+Every executable governed input-boolean state operation separately holds its
+exact helper-dependency key and the unconstrained dependency key in shared mode.
+The latter is an unconditional execution stability fence: it serializes the
+final dependency refresh, approval/evidence drift validation, durable intent,
+provider dispatch and authoritative readback against a configuration mutation
+that could introduce an arbitrary helper dependency. Holding that shared fence
+does not classify clean plan evidence as opaque or conservative.
 
 ## Risk-model and snapshot identity
 
@@ -112,7 +121,8 @@ observability and operational lock projection. Require:
 - the standard target has zero exact obligations, zero target-relevant opacity,
   zero downstream profiles, complete evidence, no physical consequence, low
   risk, `standard_admin`, actionable approval and no downstream automation or
-  unconstrained helper-dependency lock;
+  target-specific automation lock; its execution lock set still contains the
+  shared unconstrained helper-dependency stability fence;
 - the exact consequential target retains seven synthetic safety-critical
   automations, complete evidence, high risk, `elevated_admin`, actionable
   approval and all seven exact automation locks;
@@ -124,6 +134,10 @@ observability and operational lock projection. Require:
 - coverage failure remains monotonic and fail-closed;
 - two complete obligation/profile traversals are deterministic, terminate with
   a null cursor and perform no provider dispatch.
+- unresolved and coverage-failed automation mutations conflict bidirectionally
+  with a clean helper execution on the shared/exclusive unconstrained
+  dependency key, while exact dependencies on another helper and proven
+  sensor-only or dependency-neutral configuration remain concurrent.
 
 ## Validation and release boundary
 
