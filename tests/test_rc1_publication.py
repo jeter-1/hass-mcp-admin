@@ -207,8 +207,14 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             "hass_mcp_admin/requirements-dev.txt",
             release_install["run"],
         )
+
     def test_pull_request_ci_requires_materialized_release_state(self):
         validate_steps = self.ci["jobs"]["validate"]["steps"]
+        transition_validation = next(
+            step
+            for step in validate_steps
+            if step.get("name") == "Validate exact materialized release transition"
+        )
         candidate_validation = next(
             step
             for step in validate_steps
@@ -218,6 +224,16 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             candidate_validation["run"],
             "python scripts/validate_promotion_candidate.py --repo-root . "
             "--require-materialized",
+        )
+        transition_script = str(transition_validation["run"])
+        self.assertIn(
+            "git show origin/main:hass_mcp_engineering_beta/config.yaml",
+            transition_script,
+        )
+        self.assertIn("--validate-transition", transition_script)
+        self.assertLess(
+            validate_steps.index(transition_validation),
+            validate_steps.index(candidate_validation),
         )
         declaration = ROOT / PROMOTION_MODULE.NEXT_VERSION_PATH
         if not declaration.exists():
@@ -244,6 +260,91 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             "release declaration is not final review state",
             result.stderr,
         )
+
+    def test_pull_request_ci_rejects_skipped_and_cross_channel_materialization(self):
+        validate_steps = self.ci["jobs"]["validate"]["steps"]
+        transition_script = str(
+            next(
+                step["run"]
+                for step in validate_steps
+                if step.get("name")
+                == "Validate exact materialized release transition"
+            )
+        )
+        cases = (
+            ("2.2.0-beta.50", True),
+            ("2.2.0-beta.51", True),
+            ("2.2.0-beta.52", False),
+            ("2.2.0-rc2-dev51", False),
+        )
+        for candidate, succeeds in cases:
+            with (
+                self.subTest(candidate=candidate),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                repo = Path(directory)
+                config = repo / "hass_mcp_engineering_beta" / "config.yaml"
+                script = repo / "scripts" / "promote_next_release.py"
+                config.parent.mkdir(parents=True)
+                script.parent.mkdir(parents=True)
+                config.write_text('version: "2.2.0-beta.50"\n', encoding="utf-8")
+                shutil.copy2(PROMOTION_PATH, script)
+                subprocess.run(
+                    ["git", "init", "-b", "main"],
+                    cwd=repo,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.name", "CI transition test"],
+                    cwd=repo,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.email", "ci-transition@example.invalid"],
+                    cwd=repo,
+                    check=True,
+                )
+                subprocess.run(["git", "add", "."], cwd=repo, check=True)
+                subprocess.run(
+                    ["git", "commit", "-m", "base"],
+                    cwd=repo,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+                base_sha = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                ).stdout.strip()
+                subprocess.run(
+                    ["git", "update-ref", "refs/remotes/origin/main", base_sha],
+                    cwd=repo,
+                    check=True,
+                )
+                config.write_text(f'version: "{candidate}"\n', encoding="utf-8")
+
+                bin_dir = repo / "test-bin"
+                bin_dir.mkdir()
+                python_wrapper = bin_dir / "python"
+                python_wrapper.write_text(
+                    f'#!/usr/bin/env bash\nexec "{sys.executable}" "$@"\n',
+                    encoding="utf-8",
+                )
+                python_wrapper.chmod(0o700)
+                result = subprocess.run(
+                    ["bash", "-c", transition_script],
+                    cwd=repo,
+                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode == 0, succeeds, result.stderr)
 
     def test_reviewed_release_transition_is_detected_and_validated(self):
         detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
