@@ -131,28 +131,42 @@ promotion pull request is neither created nor required.
 
 ## Ready-for-review automation
 
-Activation requires an `OPENAI_API_KEY` repository Actions secret and a main
-ruleset that requires the `validate` and `codex-independent-review` checks plus
-one current approval. Never place the key in repository content, workflow text,
-pull-request discussion, logs, or evidence; add it only through GitHub's Actions
-secret settings.
+Activation requires Codex cloud repository access and native Code review enabled
+for this repository in
+[Codex settings](https://chatgpt.com/codex/settings/code-review). It does not use
+an OpenAI API key or API billing. Automatic reviews run when a pull request is
+opened for review or marked ready; Josh can request a fresh exact-head review by
+commenting `@codex review` when needed.
+
+The main ruleset requires `validate`, the native Codex receipt check, and review
+thread resolution. The receipt check verifies GitHub evidence produced by the
+native Codex GitHub integration for the exact pull-request head; it does not run
+a model, parse untrusted review prose as executable data, or accept a stale
+review. Its `pull_request_target` observer and validator load only from the
+protected base commit, never from candidate code, and publish the result as the
+`codex-review-receipt` status on the candidate head. CodeRabbit remains an
+additional reviewer, but its service-side eligibility policy can require a
+manual review trigger for low-activity public repositories and therefore is not
+represented as a false required approval.
 
 Josh's `Ready for review` action on a `jeter-1` branch in this repository,
 targeting `main`, is the single human authorization checkpoint for this bounded
 sequence:
 
-1. CodeRabbit reviews the non-draft pull request and each subsequent head. Its
-   Request Changes review blocks, and it changes to Approve only after its
-   blocking findings are resolved.
-2. The read-only `codex-independent-review` job reviews the exact current head
-   against its base with a strict structured-output contract. Critical and High
-   findings fail; Medium and Low findings are advisory.
-3. The required `validate` and `codex-independent-review` checks and the current
-   CodeRabbit approval must all apply to the final head. A push dismisses stale
-   approval and reruns the checks.
-4. GitHub native auto-merge merges through the protected path. The automation
+1. Native Codex reviews the pull request in Codex cloud and records its status
+   and reviewed commit on GitHub. Repository `AGENTS.md` supplies the durable
+   review rules; actionable findings are ordinary GitHub review threads.
+2. The `codex-review-receipt` job requires the native review to have completed
+   for the exact current head. A push makes the prior receipt stale and reruns
+   the gate.
+3. CodeRabbit reviews automatically when its repository eligibility permits.
+   Any Request Changes state or unresolved actionable thread still blocks the
+   protected merge path.
+4. The required `validate` and `codex-review-receipt` checks and review-thread
+   resolution requirements must all apply to the final head.
+5. GitHub native auto-merge merges through the protected path. The automation
    has no administrative bypass and never force-pushes.
-5. If the reviewed merge includes a final Engineering version transition, the
+6. If the reviewed merge includes a final Engineering version transition, the
    protected-main publication workflow validates and publishes that exact merge
    commit. It does not deploy the add-on or modify Home Assistant.
 
@@ -288,8 +302,8 @@ A release declaration is an authoring aid on the feature branch, not mergeable
 release state. Before Ready, `promote_next_release.py --apply` updates the three
 authoritative version locations and consumes `.release/next-version` in the
 original pull request. The exact implementation, tests, acceptance documents,
-release notes, and final version state therefore receive the same CodeRabbit,
-Codex, and CI review.
+release notes, and final version state therefore receive the same native Codex,
+applicable CodeRabbit, and CI review.
 
 After that pull request is merged through the protected path, the publication
 workflow compares the exact new `main` commit with its prior protected commit,

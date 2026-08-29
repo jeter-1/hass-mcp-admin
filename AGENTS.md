@@ -48,8 +48,10 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - A `Ready for review` action performed by Josh (`jeter-1`) on a same-repository
   pull request targeting `main` is explicit standing authorization for GitHub
   native auto-merge after the exact current head passes all required validation,
-  CodeRabbit approval, and Codex independent-review gates. Automation and agents
-  must not mark a draft ready on Josh's behalf.
+  the native Codex review receipt gate, and all applicable review-thread
+  resolution requirements. CodeRabbit remains an additional reviewer when its
+  repository eligibility permits a review. Automation and agents must not mark
+  a draft ready on Josh's behalf.
 - If that authorized pull request contains a fully materialized Engineering
   version transition, the same Ready action authorizes publication of the exact
   protected `main` merge commit as the version image, immutable commit image,
@@ -153,7 +155,7 @@ gate.
 ## Frozen or Protected Paths
 
 - `.coderabbit.yaml` - automated-review scope, retention, trigger, and write-adjacent controls
-- `.github/codex/` - independent-review prompt and structured verdict contract
+- `.github/codex/` - native Codex review policy or integration contracts
 - `hass_mcp_admin/` - stable v1.1.2 source and packaging
 - `hass_mcp_engineering_beta/ha_mcp_engineering/` - Engineering runtime, schemas, registration, routing, providers, and policy
 - `.github/workflows/*.yml` and `*.yaml` - CI, publication, signing, and deployment authority

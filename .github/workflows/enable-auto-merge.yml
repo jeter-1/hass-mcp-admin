@@ -34,5 +34,9 @@ jobs:
             echo "::error::The pull-request head moved after Ready for review was authorized."
             exit 1
           fi
-          gh pr merge "$PR_NUMBER" --repo "$REPOSITORY" --auto --merge
+          gh pr merge "$PR_NUMBER" \
+            --repo "$REPOSITORY" \
+            --auto \
+            --merge \
+            --match-head-commit "$AUTHORIZED_HEAD_SHA"
           echo "Auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"
