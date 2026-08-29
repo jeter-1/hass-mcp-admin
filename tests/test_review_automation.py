@@ -611,6 +611,29 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
         self.assertIsNone(payload)
         self.assertIn("operational notice instead of a code review", result.stderr)
 
+    def test_actionable_feedback_about_failure_paths_remains_review_evidence(self):
+        result, payload = self.run_validator(
+            comments=[],
+            reviews=[
+                {
+                    "id": 4242,
+                    "user": {"login": "chatgpt-codex-connector[bot]"},
+                    "commit_id": self.HEAD,
+                    "state": "COMMENTED",
+                }
+            ],
+            review_comments=[
+                {
+                    "pull_request_review_id": 4242,
+                    "commit_id": self.HEAD,
+                    "user": {"login": "chatgpt-codex-connector[bot]"},
+                    "body": "The Codex review failed path needs a bounded retry.",
+                }
+            ],
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["evidence_kind"], "submitted_review")
+
 
 if __name__ == "__main__":
     unittest.main()

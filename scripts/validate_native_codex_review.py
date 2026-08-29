@@ -22,11 +22,7 @@ FAILURE_MARKERS = ("Failed", "Error", "Cancelled", "Canceled", "Timed out")
 SUBMITTED_REVIEW_STATES = {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
 NON_REVIEW_MARKERS = (
     "chatgpt.com/codex/cloud/settings/environments",
-    "to use codex here",
-    "codex review could not",
-    "codex couldn't review",
-    "codex was unable to review",
-    "codex review failed",
+    "to use codex here, [create an environment for this repo]",
 )
 
 
