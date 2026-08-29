@@ -1,10 +1,12 @@
 # Engineering 2.2.0-beta.51 acceptance
 
-Beta 51 stages the HAMCP-089 production-path agreement correction reviewed at
-source head `3aa1d8833369220216ac3c0fd2e55c7cd35133c6`, based on
-`66448fc8ece110a73900909ba113eab504db20f6`. Engineering 2.2.0-beta.50
-remains advertised until a separately authorized protected promotion. Stable
-v1.1.2 and the 51-tool Engineering registration remain unchanged.
+Beta 51 stages the HAMCP-089 production-path agreement correction at source
+head `1ebe53c16fb7a603d87498d56a9ca2af258368fe`, based on
+`66448fc8ece110a73900909ba113eab504db20f6`. That source head contains the
+complete runtime and test correction; fresh exact-head review remains required
+before merge. Engineering 2.2.0-beta.50 remains advertised until a separately
+authorized protected promotion. Stable v1.1.2 and the 51-tool Engineering
+registration remain unchanged.
 
 Beta 50 remained fail-closed: the affected standard-helper plan was incomplete
 and non-actionable, and no approval, apply, provider dispatch or Home Assistant
