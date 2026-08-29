@@ -6,6 +6,8 @@ on:
       - created
   pull_request_target:
     types:
+      - converted_to_draft
+      - edited
       - ready_for_review
       - synchronize
 
@@ -17,17 +19,23 @@ concurrency:
 
 jobs:
   revoke-auto-merge-on-head-change:
-    name: revoke-auto-merge-on-head-change
+    name: revoke-auto-merge-on-authorization-change
     if: >-
-      github.event.action == 'synchronize' &&
-      github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      ((github.event.action == 'synchronize' &&
+        github.event.pull_request.base.ref == 'main') ||
+       (github.event.action == 'converted_to_draft' &&
+        github.event.pull_request.base.ref == 'main') ||
+       (github.event.action == 'edited' &&
+        github.event.changes.base != null &&
+        (github.event.pull_request.base.ref == 'main' ||
+         github.event.changes.base.ref.from == 'main')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       pull-requests: write
     steps:
-      - name: Withdraw Ready authorization from the changed head
+      - name: Withdraw stale Ready authorization
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -45,9 +53,9 @@ jobs:
             gh pr merge "$PR_NUMBER" \
               --repo "$REPOSITORY" \
               --disable-auto
-            echo "Auto-merge was disarmed because the pull-request head changed." >> "$GITHUB_STEP_SUMMARY"
+            echo "Auto-merge was disarmed because the pull-request authorization changed." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Auto-merge was already disarmed for the changed pull-request head." >> "$GITHUB_STEP_SUMMARY"
+            echo "Auto-merge was already disarmed after the pull-request authorization changed." >> "$GITHUB_STEP_SUMMARY"
           fi
 
   authorize-auto-merge:

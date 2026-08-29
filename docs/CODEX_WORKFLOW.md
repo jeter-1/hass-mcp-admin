@@ -141,8 +141,9 @@ retriggers the protected-base receipt observer and auto-merge authorization for
 the unchanged eligible head when its latest lifecycle action is Josh's Ready
 action, so a prior timeout or transient API failure can recover without rerunning
 candidate code or accepting stale evidence. A later push remains unauthorized
-until Josh marks that revised head Ready again; the review comment cannot replace
-that checkpoint.
+until Josh marks that revised head Ready again; draft conversion, force-push,
+head restoration, or a base-branch change also withdraws authority. The review
+comment cannot replace that checkpoint.
 
 The intended main ruleset requires `validate`, the native Codex receipt check,
 and review-thread resolution. For this bootstrap pull request, the ruleset still

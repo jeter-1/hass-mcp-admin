@@ -123,7 +123,12 @@ class ReviewWorkflowTests(unittest.TestCase):
             {
                 "issue_comment": {"types": ["created"]},
                 "pull_request_target": {
-                    "types": ["ready_for_review", "synchronize"]
+                    "types": [
+                        "converted_to_draft",
+                        "edited",
+                        "ready_for_review",
+                        "synchronize",
+                    ]
                 }
             },
         )
@@ -408,8 +413,12 @@ fi
 
     def test_head_change_withdraws_ready_authorization_and_disarms_auto_merge(self):
         job = self.auto_merge["jobs"]["revoke-auto-merge-on-head-change"]
-        self.assertEqual(job["name"], "revoke-auto-merge-on-head-change")
+        self.assertEqual(job["name"], "revoke-auto-merge-on-authorization-change")
         self.assertIn("github.event.action == 'synchronize'", job["if"])
+        self.assertIn("github.event.action == 'converted_to_draft'", job["if"])
+        self.assertIn("github.event.action == 'edited'", job["if"])
+        self.assertIn("github.event.changes.base != null", job["if"])
+        self.assertIn("github.event.changes.base.ref.from == 'main'", job["if"])
         self.assertIn("base.ref == 'main'", job["if"])
         self.assertIn("head.repo.full_name == github.repository", job["if"])
         self.assertEqual(job["permissions"], {"pull-requests": "write"})
@@ -714,6 +723,8 @@ class ReadyAuthorizationValidationTests(unittest.TestCase):
         cases = (
             [self.committed("a" * 40), self.ready(), {"event": "head_ref_force_pushed"}],
             [self.committed("a" * 40), self.ready(), {"event": "convert_to_draft"}],
+            [self.committed("a" * 40), self.ready(), {"event": "base_ref_changed"}],
+            [self.committed("a" * 40), self.ready(), {"event": "head_ref_restored"}],
             [self.committed("a" * 40), self.ready(actor="untrusted-contributor")],
             [],
         )
