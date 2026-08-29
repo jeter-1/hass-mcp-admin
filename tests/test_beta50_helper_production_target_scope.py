@@ -25,6 +25,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.dependency.index import DependencyIndex
+from ha_mcp_engineering.dependency.obligation_ledger import (
+    MAX_TEMPLATE_OBLIGATIONS,
+    TemplateContextEvidence,
+    TemplateObligationAnalyzer,
+)
 from ha_mcp_engineering.dependency.provider import DirectHaDependencyProvider
 from ha_mcp_engineering.dependency.semantic_registry import (
     supported_home_assistant_versions,
@@ -322,6 +327,191 @@ class SyntheticBeta50Rest(SyntheticBeta49Rest):
         if path.startswith(prefix):
             return self.configs[path.removeprefix(prefix)]
         raise AssertionError(path)
+
+
+class Beta51StateConcatenationAccountingTests(unittest.TestCase):
+    """One State evaluation contributes one relationship to concatenation."""
+
+    @staticmethod
+    def _analyze(
+        source: str,
+        *,
+        context: TemplateContextEvidence | None = None,
+    ):
+        return TemplateObligationAnalyzer(
+            source_type="automation",
+            source_id="state_concatenation",
+            config_path="$.condition[0].value_template",
+            relation="condition",
+            source_entity_id="automation.state_concatenation",
+            source_name="Synthetic State concatenation",
+            source_state="on",
+            configuration_fingerprint="c" * 64,
+            entity_id_validator=lambda value: bool(
+                isinstance(value, str)
+                and value.count(".") == 1
+                and all(part for part in value.split("."))
+            ),
+            context=context,
+        ).analyze(source)
+
+    @staticmethod
+    def _exact(result):
+        return [
+            item
+            for item in result.obligations
+            if item.outcome == "exact_dependency"
+        ]
+
+    def test_direct_state_concatenation_is_accounted_exactly_once(self):
+        cases = (
+            (
+                '{{ states.sensor.foo ~ "" }}',
+                "states_domain_object_entity_access",
+            ),
+            (
+                '{{ "" ~ states.sensor.foo }}',
+                "states_domain_object_entity_access",
+            ),
+            (
+                '{{ states["sensor.foo"] ~ "" }}',
+                "states_item_entity_access",
+            ),
+        )
+        for source, reason in cases:
+            with self.subTest(source=source):
+                exact = self._exact(self._analyze(source))
+                self.assertEqual(1, len(exact), exact)
+                self.assertEqual(("sensor.foo",), exact[0].exact_entity_ids)
+                self.assertEqual(reason, exact[0].reason_code)
+
+    def test_fixed_trigger_state_concatenation_retains_each_read_once(self):
+        result = self._analyze(
+            "{{ trigger.from_state ~ '' }}"
+            "{{ '' ~ trigger.to_state }}",
+            context=TemplateContextEvidence(
+                trigger_entity_ids=("person.synthetic",),
+                trigger_from_state_entity_ids=("person.synthetic",),
+                trigger_to_state_entity_ids=("person.synthetic",),
+                provenance=("trigger:state",),
+            ),
+        )
+        exact = self._exact(result)
+        self.assertEqual(2, len(exact), exact)
+        self.assertEqual(
+            ["trigger_exact_configuration_provenance"] * 2,
+            [item.reason_code for item in exact],
+        )
+        self.assertTrue(
+            all(
+                item.exact_entity_ids == ("person.synthetic",)
+                for item in exact
+            )
+        )
+
+    def test_unaccounted_state_operand_is_still_consumed_once(self):
+        result = self._analyze(
+            "{{ this ~ '' }}",
+            context=TemplateContextEvidence(
+                this_entity_id="automation.state_concatenation",
+            ),
+        )
+        exact = self._exact(result)
+        self.assertEqual(1, len(exact), exact)
+        self.assertEqual(
+            "state_value_rendered_by_concatenation",
+            exact[0].reason_code,
+        )
+        self.assertEqual(
+            ("automation.state_concatenation",),
+            exact[0].exact_entity_ids,
+        )
+
+    def test_independent_state_reads_are_not_globally_deduplicated(self):
+        result = self._analyze(
+            "{{ states.sensor.foo ~ '' }}"
+            "{{ states.sensor.foo ~ '' }}"
+        )
+        exact = self._exact(result)
+        self.assertEqual(2, len(exact), exact)
+        self.assertTrue(
+            all(item.exact_entity_ids == ("sensor.foo",) for item in exact)
+        )
+        self.assertEqual(2, len({item.evidence_id for item in exact}))
+
+    def test_mixed_accounted_and_pending_conditional_branches_emit_once(self):
+        result = self._analyze(
+            "{{ (states.sensor.foo if enabled else this) ~ '' }}",
+            context=TemplateContextEvidence(
+                this_entity_id="automation.state_concatenation",
+            ),
+        )
+        exact = self._exact(result)
+        self.assertEqual(2, len(exact), exact)
+        by_entity = {
+            entity_id: sum(
+                entity_id in item.exact_entity_ids for item in exact
+            )
+            for entity_id in (
+                "sensor.foo",
+                "automation.state_concatenation",
+            )
+        }
+        self.assertEqual(
+            {
+                "sensor.foo": 1,
+                "automation.state_concatenation": 1,
+            },
+            by_entity,
+        )
+
+    def test_rendered_state_scalar_reuse_by_selectors_stays_conservative(self):
+        selectors = (
+            "states(states.sensor.foo ~ '')",
+            "is_state(states.sensor.foo ~ '', 'on')",
+            "state_attr(states.sensor.foo ~ '', 'name')",
+            "states[states.sensor.foo ~ '']",
+        )
+        for selector in selectors:
+            with self.subTest(selector=selector):
+                result = self._analyze("{{ " + selector + " }}")
+                exact = self._exact(result)
+                opaque = [
+                    item
+                    for item in result.obligations
+                    if item.outcome == "bounded_semantic_opaque"
+                ]
+                self.assertEqual(1, len(exact), exact)
+                self.assertEqual(("sensor.foo",), exact[0].exact_entity_ids)
+                self.assertTrue(opaque, result.obligations)
+                self.assertTrue(
+                    any(
+                        item.lock_projection == "conservative"
+                        for item in opaque
+                    )
+                )
+
+    def test_state_concatenation_obligation_budget_is_proportional(self):
+        below_count = (MAX_TEMPLATE_OBLIGATIONS - 2) // 2
+        below_source = "".join(
+            f"{{{{ states.sensor.item_{index:03d} ~ '' }}}}"
+            for index in range(below_count)
+        )
+        below = self._analyze(below_source)
+        self.assertFalse(below.coverage_failed)
+        self.assertEqual(below_count, len(self._exact(below)))
+
+        above_source = below_source + (
+            f"{{{{ states.sensor.item_{below_count:03d} ~ '' }}}}"
+        )
+        above = self._analyze(above_source)
+        self.assertTrue(above.coverage_failed)
+        self.assertTrue(
+            any(
+                item.reason_code == "template_obligation_limit_exceeded"
+                for item in above.obligations
+            )
+        )
 
 
 class SyntheticBeta50WebSocket(SyntheticBeta49WebSocket):
@@ -856,6 +1046,86 @@ class Beta50CapturedProductionReplayTests(
             binding["dependency_lock_projection"]
             ["conservative_helper_dependency"]
         )
+
+    async def test_rendered_state_scalar_selector_reuse_blocks_planning(self):
+        scalar_reuse = {
+            "id": "source_scalar_reuse",
+            "alias": "automation.source_scalar_reuse",
+            "triggers": [],
+            "conditions": [
+                {
+                    "condition": "template",
+                    "value_template": (
+                        "{% set rendered = "
+                        "states.sensor.entity_001 ~ '' %}"
+                        "{{ states(rendered) }}"
+                    ),
+                }
+            ],
+            "actions": [
+                {
+                    "action": "cover.open_cover",
+                    "target": {"entity_id": "cover.synthetic_scalar_reuse"},
+                }
+            ],
+        }
+        rest = CapturedBeta50ReplayRest(
+            self.fixture,
+            extra_configs=(scalar_reuse,),
+        )
+        index = DependencyIndex(
+            DirectHaDependencyProvider(
+                rest,
+                CapturedBeta50ReplayWebSocket(self.fixture, rest.ids),
+            )
+        )
+        snapshot, _rebuilt, _lookup_ms = await index.get(refresh=True)
+        source_exact = [
+            item
+            for item in snapshot.obligations
+            if item.source_id == "source_scalar_reuse"
+            and item.outcome == "exact_dependency"
+            and "sensor.entity_001" in item.exact_entity_ids
+        ]
+        self.assertEqual(1, len(source_exact), source_exact)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            helper = FakeHelperStateGateway()
+            helper.entity_id = self.target
+            governance = ChangeGovernanceService(
+                ChangePlanRepository(Path(temporary) / "plans"),
+                UnusedLegacyGateway(),
+                now=Clock(),
+                helper_state_gateway=helper,
+                helper_dependency_risk_reader=(
+                    HelperDependencyRiskService(index).assess
+                ),
+                plan_observability_cursor_key=b"scalar-reuse-key" * 2,
+            )
+            result = await governance.create_helper_state_plan(
+                entity_id=self.target,
+                desired_state="on",
+            )
+
+        plan = result["plan"]
+        binding = plan["operational"]["baseline"]["dependency_risk"]
+        self.assertGreater(binding["opaque_obligation_count"], 0)
+        self.assertFalse(binding["evidence_complete"])
+        self.assertFalse(binding["execution_eligible"])
+        self.assertFalse(plan["approval_actionable"])
+        self.assertTrue(
+            binding["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
+        )
+        self.assertIn(
+            "source_scalar_reuse",
+            {
+                item["automation_resource_id"]
+                for item in binding["downstream_profiles"]
+            },
+        )
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertEqual(0, helper.dispatch_count)
 
     async def test_governance_plan_reuses_explicit_fresh_snapshot(self):
         initial_identity = (

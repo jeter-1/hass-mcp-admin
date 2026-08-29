@@ -260,6 +260,25 @@ class TemplateLedgerResult:
     semantic_registry_sha256: str
 
 
+@dataclass(frozen=True)
+class _StateDependencyEvidence:
+    """Bounded State relationship that still needs one terminal emission."""
+
+    entity_ids: tuple[str, ...]
+    literal_strings: tuple[str, ...]
+    possible_domains: tuple[str, ...]
+    domain_evidence_complete: bool
+    entity_candidate_evidence_complete: bool
+    non_selector_candidate_evidence_complete: bool
+    literal_selectors: tuple[str, ...]
+    selector_producers: tuple[str, ...]
+    selector_transforms: tuple[str, ...]
+    selector_provenance_complete: bool
+    context_paths: tuple[str, ...]
+    contained_semantic_uncertainty: bool
+    limit_exceeded: bool
+
+
 @dataclass
 class _Value:
     entity_ids: set[str] = field(default_factory=set)
@@ -307,6 +326,17 @@ class _Value:
     unknown: bool = False
     state_collection: bool = False
     state_object: bool = False
+    # Per-evaluation accounting marker. A State-shaped abstract value may be
+    # transported after the relationship that produced it has already emitted
+    # exact, opaque, or coverage-failed evidence. Concatenation consults this
+    # marker so rendering that same value does not emit a second relationship;
+    # independently evaluated State values carry independent markers.
+    state_dependency_accounted: bool = False
+    # A merged alternative can contain both already-accounted and pending
+    # State relationships. Retain only the pending bounded evidence so the
+    # later concatenation does not have to re-consume the merged candidate
+    # universe and duplicate relationships from accounted branches.
+    pending_state_dependencies: tuple[_StateDependencyEvidence, ...] = ()
     state_attribute_container: bool = False
     projection_uncertain: bool = False
     # A finite container may have a fully known shape while one of its
@@ -362,6 +392,10 @@ class _Value:
             unknown=self.unknown,
             state_collection=self.state_collection,
             state_object=self.state_object,
+            state_dependency_accounted=(
+                self.state_dependency_accounted
+            ),
+            pending_state_dependencies=self.pending_state_dependencies,
             state_attribute_container=self.state_attribute_container,
             projection_uncertain=self.projection_uncertain,
             contained_semantic_uncertainty=(
@@ -373,6 +407,65 @@ class _Value:
             complete=self.complete,
             limit_exceeded=self.limit_exceeded,
         )
+
+
+def _state_dependency_evidence(value: _Value) -> _StateDependencyEvidence:
+    """Snapshot the bounded material needed to emit one State relationship."""
+
+    return _StateDependencyEvidence(
+        entity_ids=tuple(sorted(value.entity_ids)),
+        literal_strings=tuple(sorted(value.literal_strings)),
+        possible_domains=tuple(sorted(value.possible_domains)),
+        domain_evidence_complete=value.domain_evidence_complete,
+        entity_candidate_evidence_complete=(
+            value.entity_candidate_evidence_complete
+        ),
+        non_selector_candidate_evidence_complete=(
+            value.non_selector_candidate_evidence_complete
+        ),
+        literal_selectors=tuple(sorted(value.literal_selectors)),
+        selector_producers=tuple(sorted(value.selector_producers)),
+        selector_transforms=tuple(sorted(value.selector_transforms)),
+        selector_provenance_complete=(
+            value.selector_provenance_complete
+        ),
+        context_paths=tuple(sorted(value.context_paths)),
+        contained_semantic_uncertainty=(
+            value.contained_semantic_uncertainty
+        ),
+        limit_exceeded=value.limit_exceeded,
+    )
+
+
+def _state_value_from_evidence(
+    evidence: _StateDependencyEvidence,
+) -> _Value:
+    """Restore pending bounded State evidence without runtime value shape."""
+
+    return _Value(
+        entity_ids=set(evidence.entity_ids),
+        literal_strings=set(evidence.literal_strings),
+        possible_domains=set(evidence.possible_domains),
+        domain_evidence_complete=evidence.domain_evidence_complete,
+        entity_candidate_evidence_complete=(
+            evidence.entity_candidate_evidence_complete
+        ),
+        non_selector_candidate_evidence_complete=(
+            evidence.non_selector_candidate_evidence_complete
+        ),
+        literal_selectors=set(evidence.literal_selectors),
+        selector_producers=set(evidence.selector_producers),
+        selector_transforms=set(evidence.selector_transforms),
+        selector_provenance_complete=(
+            evidence.selector_provenance_complete
+        ),
+        context_paths=set(evidence.context_paths),
+        contained_semantic_uncertainty=(
+            evidence.contained_semantic_uncertainty
+        ),
+        state_object=True,
+        limit_exceeded=evidence.limit_exceeded,
+    )
 
 
 @dataclass(eq=False)
@@ -515,6 +608,8 @@ def _values_equivalent(
             "unknown",
             "state_collection",
             "state_object",
+            "state_dependency_accounted",
+            "pending_state_dependencies",
             "state_attribute_container",
             "external",
             "complete",
@@ -637,11 +732,31 @@ def _merge_values(
             merge_overflow = True
     if not candidates:
         return _ordinary_value()
+    state_values = [
+        value
+        for value in candidates
+        if value.state_collection or value.state_object
+    ]
+    pending_state_dependencies: list[_StateDependencyEvidence] = []
+    for value in state_values:
+        if value.state_dependency_accounted:
+            continue
+        pending = value.pending_state_dependencies or (
+            _state_dependency_evidence(value),
+        )
+        for item in pending:
+            if len(pending_state_dependencies) >= MAX_TEMPLATE_CANDIDATES:
+                merge_overflow = True
+                break
+            pending_state_dependencies.append(item)
     result = _Value(
         ordinary=all(value.ordinary for value in candidates),
         unknown=any(value.unknown for value in candidates),
         state_collection=any(value.state_collection for value in candidates),
         state_object=any(value.state_object for value in candidates),
+        state_dependency_accounted=bool(state_values)
+        and not pending_state_dependencies,
+        pending_state_dependencies=tuple(pending_state_dependencies),
         state_attribute_container=any(
             value.state_attribute_container for value in candidates
         ),
@@ -1775,13 +1890,29 @@ class TemplateObligationAnalyzer:
             # all other concatenations remain a tainted scalar so a later
             # entity-selector use still fails closed.
             for item_node, value in zip(node.nodes, values):
-                if value.state_collection or value.state_object:
-                    self._consume_entity_value(
-                        value,
-                        node=item_node,
-                        kind="concatenated_state_value",
-                        reason="state_value_rendered_by_concatenation",
-                    )
+                if (
+                    value.state_collection or value.state_object
+                ) and not value.state_dependency_accounted:
+                    pending = value.pending_state_dependencies
+                    if pending:
+                        for evidence in pending:
+                            self._consume_entity_value(
+                                _state_value_from_evidence(evidence),
+                                node=item_node,
+                                kind="concatenated_state_value",
+                                reason=(
+                                    "state_value_rendered_by_concatenation"
+                                ),
+                            )
+                        value.state_dependency_accounted = True
+                        value.pending_state_dependencies = ()
+                    else:
+                        self._consume_entity_value(
+                            value,
+                            node=item_node,
+                            kind="concatenated_state_value",
+                            reason="state_value_rendered_by_concatenation",
+                        )
             self._neutral(node, "string_concatenation_dependency_neutral")
             return _dynamic_scalar_value()
         if isinstance(node, nodes.Getattr):
@@ -4506,6 +4637,12 @@ class TemplateObligationAnalyzer:
         kind: str,
         reason: str,
     ) -> None:
+        if value.state_collection or value.state_object:
+            # This marks only this abstract evaluation. It is not a global
+            # obligation deduplication key: a second State read produces a
+            # different _Value and remains independently accountable.
+            value.state_dependency_accounted = True
+            value.pending_state_dependencies = ()
         exact = sorted(
             {
                 item
