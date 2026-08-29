@@ -94,14 +94,21 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("EXPECTED_HEAD_SHA", script)
         self.assertIn("scripts/validate_native_codex_review.py", script)
         self.assertIn("context=\"codex-review-receipt\"", script)
+        self.assertEqual(script.count("gh api --paginate"), 2)
+        self.assertEqual(script.count("jq -s 'add'"), 2)
 
     def test_ready_event_arms_native_auto_merge_without_checkout_or_merge_bypass(self):
         events = workflow_events(self.auto_merge)
         self.assertEqual(
             events,
-            {"pull_request_target": {"types": ["ready_for_review"]}},
+            {
+                "pull_request_target": {
+                    "types": ["ready_for_review", "synchronize"]
+                }
+            },
         )
         job = self.auto_merge["jobs"]["authorize-auto-merge"]
+        self.assertIn("github.event.action == 'ready_for_review'", job["if"])
         self.assertIn("github.actor == 'jeter-1'", job["if"])
         self.assertIn("base.ref == 'main'", job["if"])
         self.assertEqual(
@@ -116,6 +123,20 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("--auto", script)
         self.assertIn("--merge", script)
         self.assertIn("--match-head-commit", script)
+        self.assertNotIn("--admin", script)
+        self.assertNotIn("--force", script)
+
+    def test_head_change_withdraws_ready_authorization_and_disarms_auto_merge(self):
+        job = self.auto_merge["jobs"]["revoke-auto-merge-on-head-change"]
+        self.assertEqual(job["name"], "revoke-auto-merge-on-head-change")
+        self.assertIn("github.event.action == 'synchronize'", job["if"])
+        self.assertIn("base.ref == 'main'", job["if"])
+        self.assertIn("head.repo.full_name == github.repository", job["if"])
+        self.assertEqual(job["permissions"], {"pull-requests": "write"})
+        self.assertFalse(any("uses" in step for step in job["steps"]))
+        script = str(job["steps"][0]["run"])
+        self.assertIn("autoMergeRequest", script)
+        self.assertIn("--disable-auto", script)
         self.assertNotIn("--admin", script)
         self.assertNotIn("--force", script)
 
@@ -207,6 +228,36 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
         self.assertEqual(payload["evidence_kind"], "completed_summary")
         self.assertEqual(payload["commit_ref"], "4deb1d3")
         self.assertFalse(payload["exact"])
+
+    def test_receipt_after_first_hundred_records_is_recognized(self):
+        filler = [{"user": {"login": "unrelated-bot"}, "body": "filler"}]
+        cases = (
+            {
+                "comments": filler * 100
+                + [self.summary(status="✅ **Completed** 2 minutes ago")],
+                "reviews": [],
+                "evidence_kind": "completed_summary",
+            },
+            {
+                "comments": [],
+                "reviews": filler * 100
+                + [
+                    {
+                        "user": {"login": "chatgpt-codex-connector[bot]"},
+                        "commit_id": self.HEAD,
+                        "state": "COMMENTED",
+                    }
+                ],
+                "evidence_kind": "submitted_review",
+            },
+        )
+        for case in cases:
+            with self.subTest(evidence_kind=case["evidence_kind"]):
+                result, payload = self.run_validator(
+                    comments=case["comments"], reviews=case["reviews"]
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(payload["evidence_kind"], case["evidence_kind"])
 
     def test_running_or_missing_current_head_is_pending(self):
         cases = (

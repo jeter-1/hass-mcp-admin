@@ -51,7 +51,9 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   the native Codex review receipt gate, and all applicable review-thread
   resolution requirements. CodeRabbit remains an additional reviewer when its
   repository eligibility permits a review. Automation and agents must not mark
-  a draft ready on Josh's behalf.
+  a draft ready on Josh's behalf. Any later head change withdraws that Ready
+  authorization and disarms stored auto-merge; Josh must mark the revised pull
+  request Ready again.
 - If that authorized pull request contains a fully materialized Engineering
   version transition, the same Ready action authorizes publication of the exact
   protected `main` merge commit as the version image, immutable commit image,

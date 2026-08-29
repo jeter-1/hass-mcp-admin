@@ -170,9 +170,11 @@ sequence:
    protected-main publication workflow validates and publishes that exact merge
    commit. It does not deploy the add-on or modify Home Assistant.
 
-Only Josh may mark the draft ready. Converting the pull request back to draft or
-closing it withdraws the immediate merge path. A new Ready action is required to
-arm it again.
+Only Josh may mark the draft ready. Converting the pull request back to draft,
+closing it, or pushing a new head withdraws the immediate merge path. The
+protected-base workflow disarms any stored auto-merge request on every
+`synchronize` event. Josh must mark the revised pull request Ready again so the
+new exact head receives fresh authorization and review.
 
 If `python` is not on PATH, pass the trusted interpreter explicitly to
 `check.ps1` with `-PythonExecutable` and use that same interpreter for the Python

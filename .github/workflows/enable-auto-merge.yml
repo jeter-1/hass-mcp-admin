@@ -4,13 +4,49 @@ on:
   pull_request_target:
     types:
       - ready_for_review
+      - synchronize
 
 permissions: {}
 
 jobs:
+  revoke-auto-merge-on-head-change:
+    name: revoke-auto-merge-on-head-change
+    if: >-
+      github.event.action == 'synchronize' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Withdraw Ready authorization from the changed head
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          auto_merge_enabled="$(
+            gh pr view "$PR_NUMBER" \
+              --repo "$REPOSITORY" \
+              --json autoMergeRequest \
+              --jq '.autoMergeRequest != null'
+          )"
+          if [[ "$auto_merge_enabled" == "true" ]]; then
+            gh pr merge "$PR_NUMBER" \
+              --repo "$REPOSITORY" \
+              --disable-auto
+            echo "Auto-merge was disarmed because the pull-request head changed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Auto-merge was already disarmed for the changed pull-request head." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   authorize-auto-merge:
     name: authorize-auto-merge
     if: >-
+      github.event.action == 'ready_for_review' &&
       github.actor == 'jeter-1' &&
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository

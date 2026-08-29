@@ -64,13 +64,15 @@ jobs:
           post_status pending "Waiting for native Codex review of the exact PR head"
 
           for attempt in $(seq 1 90); do
-            if ! gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
-              > /tmp/codex-review-comments.json; then
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              | jq -s 'add' > /tmp/codex-review-comments.json; then
               post_status failure "Could not read native Codex review comments"
               exit 1
             fi
-            if ! gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" \
-              > /tmp/codex-reviews.json; then
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" \
+              | jq -s 'add' > /tmp/codex-reviews.json; then
               post_status failure "Could not read native Codex reviews"
               exit 1
             fi
