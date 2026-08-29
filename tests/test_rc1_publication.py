@@ -271,6 +271,10 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("HTTP 404", prepare)
         self.assertIn('--deployed-version "$deployed_version"', prepare)
         self.assertIn('--base-ref "$validation_base"', prepare)
+        self.assertIn(
+            '--validate-transition "$deployed_version" "$version"',
+            prepare,
+        )
         self.assertIn("--require-materialized", prepare)
         self.assertIn("actual-release-paths", prepare)
         self.assertIn('git status --porcelain', prepare)
@@ -900,6 +904,46 @@ class PromotionScriptTests(unittest.TestCase):
                 self.make_repo(directory, candidate=candidate)
                 with self.assertRaises(self.module.PromotionError):
                     self.module.validate_candidate(Path(directory))
+
+    def test_materialized_transition_must_be_exact_next_in_same_channel(self):
+        self.module.validate_sequenced_transition(
+            "2.2.0-beta.50", "2.2.0-beta.51"
+        )
+        for candidate in (
+            "2.2.0-beta.50",
+            "2.2.0-beta.52",
+            "2.2.0-rc2-dev51",
+            "2.3.0-beta.51",
+            "not-a-version",
+        ):
+            with self.subTest(candidate=candidate):
+                with self.assertRaises(self.module.PromotionError):
+                    self.module.validate_sequenced_transition(
+                        "2.2.0-beta.50", candidate
+                    )
+
+    def test_materialized_transition_cli_rejects_skip_and_cross_channel(self):
+        cases = (
+            ("2.2.0-beta.50", "2.2.0-beta.51", True),
+            ("2.2.0-beta.50", "2.2.0-beta.52", False),
+            ("2.2.0-beta.50", "2.2.0-rc2-dev51", False),
+        )
+        for current, candidate, succeeds in cases:
+            with self.subTest(current=current, candidate=candidate):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(PROMOTION_PATH),
+                        "--validate-transition",
+                        current,
+                        candidate,
+                    ],
+                    cwd=ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode == 0, succeeds, result.stderr)
 
     def test_authoritative_version_disagreement_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -134,6 +134,8 @@ jobs:
             exit 1
           fi
 
+          python scripts/promote_next_release.py \
+            --validate-transition "$deployed_version" "$version"
           actual_paths="$RUNNER_TEMP/actual-release-paths"
           git diff --name-only "$validation_base..HEAD" | LC_ALL=C sort > "$actual_paths"
           for required_path in \
