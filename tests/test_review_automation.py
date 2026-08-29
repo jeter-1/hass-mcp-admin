@@ -627,7 +627,11 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
                     "pull_request_review_id": 4242,
                     "commit_id": self.HEAD,
                     "user": {"login": "chatgpt-codex-connector[bot]"},
-                    "body": "The Codex review failed path needs a bounded retry.",
+                    "body": (
+                        "The Codex review failed path and "
+                        "https://chatgpt.com/codex/cloud/settings/environments "
+                        "marker both need bounded handling."
+                    ),
                 }
             ],
         )

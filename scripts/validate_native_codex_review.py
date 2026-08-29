@@ -20,14 +20,19 @@ TERMINAL_SUCCESS = "✅ **Completed**"
 PENDING_MARKERS = ("🔄 **Running**", "Queued", "Pending")
 FAILURE_MARKERS = ("Failed", "Error", "Cancelled", "Canceled", "Timed out")
 SUBMITTED_REVIEW_STATES = {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
-NON_REVIEW_MARKERS = (
-    "chatgpt.com/codex/cloud/settings/environments",
-    "to use codex here, [create an environment for this repo]",
-)
+ENVIRONMENT_NOTICE_PREFIX = "to use codex here, [create an environment for this repo]("
+ENVIRONMENT_NOTICE_URL = "https://chatgpt.com/codex/cloud/settings/environments"
 
 
 class EvidenceError(ValueError):
     """The connector evidence is malformed or reports a failed review."""
+
+
+def _is_operational_notice(body: str) -> bool:
+    normalized = " ".join(body.strip().lower().split())
+    return normalized.startswith(ENVIRONMENT_NOTICE_PREFIX) and (
+        ENVIRONMENT_NOTICE_URL in normalized
+    )
 
 
 def _load_array(path: Path, label: str) -> list[dict[str, Any]]:
@@ -69,10 +74,8 @@ def inspect_evidence(
                 and isinstance(item.get("user"), dict)
                 and item["user"].get("login") == CODEX_LOGIN
             ]
-            evidence_text = "\n".join(
-                [str(review.get("body", "")), *attached_bodies]
-            ).lower()
-            if any(marker in evidence_text for marker in NON_REVIEW_MARKERS):
+            evidence_bodies = [str(review.get("body", "")), *attached_bodies]
+            if any(_is_operational_notice(body) for body in evidence_bodies):
                 raise EvidenceError(
                     "native Codex submitted an operational notice instead of a code review"
                 )
