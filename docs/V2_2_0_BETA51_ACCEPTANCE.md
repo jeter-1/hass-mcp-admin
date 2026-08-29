@@ -1,18 +1,21 @@
 # Engineering 2.2.0-beta.51 acceptance
 
-Beta 51 stages the HAMCP-089 production-path agreement correction at source
-head `1ebe53c16fb7a603d87498d56a9ca2af258368fe`, based on
-`66448fc8ece110a73900909ba113eab504db20f6`. That source head contains the
-complete runtime and test correction; fresh exact-head review remains required
-before merge. Engineering 2.2.0-beta.50 remains advertised until a separately
-authorized protected promotion. Stable v1.1.2 and the 51-tool Engineering
-registration remain unchanged.
+Beta 51 materializes the HAMCP-089 production-path agreement correction. The
+complete runtime, test and replay-provenance correction is source head
+`552be8f8fbc3a0ae4e6b9736befe430b9ed25408`, integrated against protected
+`main` at `ff719b3dfa0ef9bba74244ca0204ca538f2ef4ab`; the shipped Beta 50
+baseline is `66448fc8ece110a73900909ba113eab504db20f6`. Fresh exact-head review
+of the final release-state commit remains required before merge. This unmerged
+branch advertises Engineering 2.2.0-beta.51 for protected review, while the
+published and deployed release remains Beta 50 until separately authorized
+merge and publication. Stable v1.1.2 and the 51-tool Engineering registration
+remain unchanged.
 
 Beta 50 remained fail-closed: the affected standard-helper plan was incomplete
 and non-actionable, and no approval, apply, provider dispatch or Home Assistant
-mutation occurred. This document is source acceptance for a staged candidate;
-it is not deployed acceptance; authorization for HAMCP-089 execution is outside
-this task.
+mutation occurred. This document is source acceptance for an unmerged,
+materialized candidate; it is not deployed acceptance; authorization for
+HAMCP-089 execution is outside this task.
 
 ## Sanitized production replay
 
@@ -26,6 +29,17 @@ Sanitization occurred before the derivative's hash-bearing material was
 computed. The committed fixture contains five pseudonymized configurations and
 bounded label/group membership evidence while preserving template syntax,
 control flow, dataflow, ordering and scalar types.
+
+The annotated `v2.2.0-beta.50` release tag resolves to exact source commit
+`66448fc8ece110a73900909ba113eab504db20f6`. The capture records the advertised
+Beta 50 version but does not independently attest the deployed image digest.
+The fixture records its bounded derivative procedure: verify the supplied
+capture hash and self-fingerprint; select only the five pseudonymized
+configurations and required bounded membership evidence; remove capture-only
+plan, audit, internal-automation and runtime-accounting identities; preserve
+Jinja/dataflow/order/scalar semantics; then compute the committed section hashes
+from canonical JSON after sanitization. No live-system read or invented evidence
+is part of that procedure.
 
 The capture explicitly does not prove that the current configuration bodies
 were cryptographically identical to the original planning snapshot: the
@@ -102,9 +116,11 @@ dependency consistency, strict vulnerability audit, secret/whitespace checks,
 stable-v1 comparison and exact tool/task-schema/approval-authority accounting.
 
 There is no public-schema, provider admission, routing, fallback, workflow,
-container, deployment, add-on metadata or stable-v1 change. This staging task
-performs no merge, promotion, publication, deployment, live access, approval,
-apply, dispatch or Home Assistant mutation.
+container, deployment-behavior or stable-v1 change. The materialized release
+state changes only the three authoritative Engineering version declarations and
+consumes `.release/next-version` under the protected one-PR release contract.
+This correction performs no merge, promotion, publication, deployment, live
+access, approval, apply, dispatch or Home Assistant mutation.
 
 ## Post-deployment acceptance — separate authorization
 

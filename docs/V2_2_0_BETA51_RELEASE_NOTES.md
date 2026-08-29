@@ -1,8 +1,9 @@
 # Engineering 2.2.0-beta.51 release notes
 
-Beta 51 stages the replay-backed production-path agreement correction for
-HAMCP-089. Engineering 2.2.0-beta.50 remains advertised until protected
-promotion. Stable v1.1.2 and the 51-tool Engineering catalog are unchanged.
+Beta 51 materializes the replay-backed production-path agreement correction for
+HAMCP-089 in the unmerged source pull request. The published and deployed
+release remains Beta 50 until separately authorized protected merge and
+publication. Stable v1.1.2 and the 51-tool Engineering catalog are unchanged.
 
 ## Replay-backed helper dependency evidence
 
@@ -45,11 +46,13 @@ current approval or execution.
 
 No Jinja template rendering or execution was introduced. Public MCP schemas,
 tool registration, provider admission and routing, fallback, write authority,
-approval authority, task schema, workflows, containers, deployment metadata and
-stable v1 are unchanged.
+approval authority, task schema, workflows, containers, deployment behavior and
+stable v1 are unchanged. Release materialization changes only the three
+authoritative Engineering version declarations and consumes the staged
+declaration.
 
-HAMCP-089 is not accepted by source staging. Post-deployment artifact identity
-and two planning-only controls must pass under separate authorization before a
-separately authorized reversible helper canary may be considered. This task
-performs no merge, publication, promotion, deployment, live access, approval,
-apply, dispatch or Home Assistant mutation.
+HAMCP-089 is not accepted by source materialization. Post-deployment artifact
+identity and two planning-only controls must pass under separate authorization
+before a separately authorized reversible helper canary may be considered. This
+task performs no merge, publication, promotion, deployment, live access,
+approval, apply, dispatch or Home Assistant mutation.
