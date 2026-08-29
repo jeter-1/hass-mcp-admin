@@ -147,12 +147,19 @@ jobs:
               echo "::error::Could not read native Codex reviews."
               exit 1
             fi
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" \
+              | jq -s 'add' > /tmp/auto-merge-codex-review-comments.json; then
+              echo "::error::Could not read native Codex review comments."
+              exit 1
+            fi
 
             set +e
             python3 scripts/validate_native_codex_review.py \
               --head "$AUTHORIZED_HEAD_SHA" \
               --comments /tmp/auto-merge-codex-comments.json \
               --reviews /tmp/auto-merge-codex-reviews.json \
+              --review-comments /tmp/auto-merge-codex-review-comments.json \
               --output /tmp/auto-merge-codex-receipt.json
             validation_exit=$?
             set -e

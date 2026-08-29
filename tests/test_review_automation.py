@@ -112,8 +112,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("EXPECTED_HEAD_SHA", script)
         self.assertIn("scripts/validate_native_codex_review.py", script)
         self.assertIn("context=\"codex-review-receipt\"", script)
-        self.assertEqual(script.count("gh api --paginate"), 2)
-        self.assertEqual(script.count("jq -s 'add'"), 2)
+        self.assertEqual(script.count("gh api --paginate"), 3)
+        self.assertEqual(script.count("jq -s 'add'"), 3)
 
     def test_ready_event_arms_native_auto_merge_from_protected_base_policy(self):
         events = workflow_events(self.auto_merge)
@@ -164,8 +164,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("current_head_sha", script)
         self.assertIn("AUTHORIZED_HEAD_SHA", script)
         self.assertIn("scripts/validate_native_codex_review.py", script)
-        self.assertEqual(script.count("gh api --paginate"), 2)
-        self.assertEqual(script.count("jq -s 'add'"), 2)
+        self.assertEqual(script.count("gh api --paginate"), 3)
+        self.assertEqual(script.count("jq -s 'add'"), 3)
         self.assertIn("gh pr merge", script)
         self.assertIn("--auto", script)
         self.assertIn("--merge", script)
@@ -196,11 +196,13 @@ class ReviewWorkflowTests(unittest.TestCase):
             root = Path(directory)
             comments = root / "comments.json"
             gh_log = root / "gh.log"
+            review_comments = root / "review-comments.json"
             reviews = root / "reviews.json"
             status_payload = root / "status.json"
             summary = root / "summary.md"
             fake_gh = root / "gh"
             comments.write_text("[]", encoding="utf-8")
+            review_comments.write_text("[]", encoding="utf-8")
             status_payload.write_text(
                 json.dumps(
                     {
@@ -232,6 +234,8 @@ elif [[ "$1" == "api" && "$2" == "--paginate" && "$3" == *"/issues/"*"/comments?
   cat "$MOCK_COMMENTS_FILE"
 elif [[ "$1" == "api" && "$2" == "--paginate" && "$3" == *"/pulls/"*"/reviews?"* ]]; then
   cat "$MOCK_REVIEWS_FILE"
+elif [[ "$1" == "api" && "$2" == "--paginate" && "$3" == *"/pulls/"*"/comments?"* ]]; then
+  cat "$MOCK_REVIEW_COMMENTS_FILE"
 elif [[ "$1" == "api" && "$2" == *"/commits/"*"/status" ]]; then
   cat "$MOCK_STATUS_FILE"
 elif [[ "$1" == "pr" && "$2" == "merge" ]]; then
@@ -245,23 +249,43 @@ fi
             )
             fake_gh.chmod(0o700)
 
-            for evidence_kind, review_payload, expected_returncode in (
-                ("timed-out-before-review", [], 1),
+            operational_notice = {
+                "pull_request_review_id": 5058935360,
+                "commit_id": head,
+                "user": {"login": "chatgpt-codex-connector[bot]"},
+                "body": (
+                    "To use Codex here, [create an environment for this repo]"
+                    "(https://chatgpt.com/codex/cloud/settings/environments)."
+                ),
+            }
+            submitted_review = {
+                "id": 5058935360,
+                "user": {"login": "chatgpt-codex-connector[bot]"},
+                "commit_id": head,
+                "state": "COMMENTED",
+            }
+
+            for (
+                evidence_kind,
+                review_payload,
+                inline_payload,
+                expected_returncode,
+            ) in (
+                ("timed-out-before-review", [], [], 1),
+                ("operational-notice", [submitted_review], [operational_notice], 1),
                 (
                     "retriggered-after-exact-review",
-                    [
-                        {
-                            "user": {"login": "chatgpt-codex-connector[bot]"},
-                            "commit_id": head,
-                            "state": "COMMENTED",
-                        }
-                    ],
+                    [submitted_review],
+                    [],
                     0,
                 ),
             ):
                 with self.subTest(evidence_kind=evidence_kind):
                     gh_log.write_text("", encoding="utf-8")
                     reviews.write_text(json.dumps(review_payload), encoding="utf-8")
+                    review_comments.write_text(
+                        json.dumps(inline_payload), encoding="utf-8"
+                    )
                     result = subprocess.run(
                         ["bash", "-c", script],
                         cwd=ROOT,
@@ -273,6 +297,7 @@ fi
                             "GITHUB_STEP_SUMMARY": str(summary),
                             "MOCK_COMMENTS_FILE": str(comments),
                             "MOCK_GH_LOG": str(gh_log),
+                            "MOCK_REVIEW_COMMENTS_FILE": str(review_comments),
                             "MOCK_REVIEWS_FILE": str(reviews),
                             "MOCK_STATUS_FILE": str(status_payload),
                             "PATH": f"{root}:{os.environ['PATH']}",
@@ -306,17 +331,25 @@ fi
             receipt_script = str(
                 self.receipt["jobs"]["codex-review-receipt"]["steps"][-1]["run"]
             )
-            for evidence_kind, review_payload, expected_returncode, status_state in (
-                ("timed-out-before-review", [], 1, "failure"),
+            for (
+                evidence_kind,
+                review_payload,
+                inline_payload,
+                expected_returncode,
+                status_state,
+            ) in (
+                ("timed-out-before-review", [], [], 1, "failure"),
+                (
+                    "operational-notice",
+                    [submitted_review],
+                    [operational_notice],
+                    1,
+                    "failure",
+                ),
                 (
                     "retriggered-after-exact-review",
-                    [
-                        {
-                            "user": {"login": "chatgpt-codex-connector[bot]"},
-                            "commit_id": head,
-                            "state": "COMMENTED",
-                        }
-                    ],
+                    [submitted_review],
+                    [],
                     0,
                     "success",
                 ),
@@ -324,6 +357,9 @@ fi
                 with self.subTest(receipt_recovery=evidence_kind):
                     gh_log.write_text("", encoding="utf-8")
                     reviews.write_text(json.dumps(review_payload), encoding="utf-8")
+                    review_comments.write_text(
+                        json.dumps(inline_payload), encoding="utf-8"
+                    )
                     result = subprocess.run(
                         ["bash", "-c", receipt_script],
                         cwd=ROOT,
@@ -336,6 +372,7 @@ fi
                             "GITHUB_STEP_SUMMARY": str(summary),
                             "MOCK_COMMENTS_FILE": str(comments),
                             "MOCK_GH_LOG": str(gh_log),
+                            "MOCK_REVIEW_COMMENTS_FILE": str(review_comments),
                             "MOCK_REVIEWS_FILE": str(reviews),
                             "MOCK_STATUS_FILE": str(status_payload),
                             "PATH": f"{root}:{os.environ['PATH']}",
@@ -399,14 +436,24 @@ fi
 class NativeCodexReceiptValidationTests(unittest.TestCase):
     HEAD = "4deb1d30edc7ccb8ced7c8438930ca1310c3775b"
 
-    def run_validator(self, *, comments: list[dict], reviews: list[dict]):
+    def run_validator(
+        self,
+        *,
+        comments: list[dict],
+        reviews: list[dict],
+        review_comments: list[dict] | None = None,
+    ):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             comments_path = root / "comments.json"
             reviews_path = root / "reviews.json"
+            review_comments_path = root / "review-comments.json"
             output_path = root / "receipt.json"
             comments_path.write_text(json.dumps(comments), encoding="utf-8")
             reviews_path.write_text(json.dumps(reviews), encoding="utf-8")
+            review_comments_path.write_text(
+                json.dumps(review_comments or []), encoding="utf-8"
+            )
             result = subprocess.run(
                 [
                     sys.executable,
@@ -417,6 +464,8 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
                     str(comments_path),
                     "--reviews",
                     str(reviews_path),
+                    "--review-comments",
+                    str(review_comments_path),
                     "--output",
                     str(output_path),
                 ],
@@ -448,6 +497,7 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
             comments=[],
             reviews=[
                 {
+                    "id": 4242,
                     "user": {"login": "chatgpt-codex-connector[bot]"},
                     "commit_id": self.HEAD,
                     "state": "COMMENTED",
@@ -482,6 +532,7 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
                 "reviews": filler * 100
                 + [
                     {
+                        "id": 4242,
                         "user": {"login": "chatgpt-codex-connector[bot]"},
                         "commit_id": self.HEAD,
                         "state": "COMMENTED",
@@ -531,6 +582,34 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertIsNone(payload)
                 self.assertIn("evidence is invalid", result.stderr)
+
+    def test_operational_notice_cannot_satisfy_submitted_review_gate(self):
+        result, payload = self.run_validator(
+            comments=[],
+            reviews=[
+                {
+                    "id": 5058935360,
+                    "user": {"login": "chatgpt-codex-connector[bot]"},
+                    "commit_id": self.HEAD,
+                    "state": "COMMENTED",
+                    "body": "",
+                }
+            ],
+            review_comments=[
+                {
+                    "pull_request_review_id": 5058935360,
+                    "commit_id": self.HEAD,
+                    "user": {"login": "chatgpt-codex-connector[bot]"},
+                    "body": (
+                        "To use Codex here, [create an environment for this repo]"
+                        "(https://chatgpt.com/codex/cloud/settings/environments)."
+                    ),
+                }
+            ],
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertIsNone(payload)
+        self.assertIn("operational notice instead of a code review", result.stderr)
 
 
 if __name__ == "__main__":

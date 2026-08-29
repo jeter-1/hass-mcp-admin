@@ -20,6 +20,14 @@ TERMINAL_SUCCESS = "✅ **Completed**"
 PENDING_MARKERS = ("🔄 **Running**", "Queued", "Pending")
 FAILURE_MARKERS = ("Failed", "Error", "Cancelled", "Canceled", "Timed out")
 SUBMITTED_REVIEW_STATES = {"APPROVED", "CHANGES_REQUESTED", "COMMENTED"}
+NON_REVIEW_MARKERS = (
+    "chatgpt.com/codex/cloud/settings/environments",
+    "to use codex here",
+    "codex review could not",
+    "codex couldn't review",
+    "codex was unable to review",
+    "codex review failed",
+)
 
 
 class EvidenceError(ValueError):
@@ -38,6 +46,7 @@ def inspect_evidence(
     head_sha: str,
     comments: list[dict[str, Any]],
     reviews: list[dict[str, Any]],
+    review_comments: list[dict[str, Any]],
 ) -> dict[str, Any]:
     expected = head_sha.lower()
     if not re.fullmatch(r"[0-9a-f]{40}", expected):
@@ -53,6 +62,24 @@ def inspect_evidence(
             and commit_id == expected
             and state in SUBMITTED_REVIEW_STATES
         ):
+            review_id = review.get("id")
+            if not isinstance(review_id, int) or review_id <= 0:
+                raise EvidenceError("native Codex submitted review has no valid review id")
+            attached_bodies = [
+                str(item.get("body", ""))
+                for item in review_comments
+                if item.get("pull_request_review_id") == review_id
+                and item.get("commit_id") == expected
+                and isinstance(item.get("user"), dict)
+                and item["user"].get("login") == CODEX_LOGIN
+            ]
+            evidence_text = "\n".join(
+                [str(review.get("body", "")), *attached_bodies]
+            ).lower()
+            if any(marker in evidence_text for marker in NON_REVIEW_MARKERS):
+                raise EvidenceError(
+                    "native Codex submitted an operational notice instead of a code review"
+                )
             return {
                 "status": "complete",
                 "evidence_kind": "submitted_review",
@@ -108,6 +135,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--head", required=True)
     parser.add_argument("--comments", type=Path, required=True)
     parser.add_argument("--reviews", type=Path, required=True)
+    parser.add_argument("--review-comments", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -119,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
             head_sha=args.head,
             comments=_load_array(args.comments, "comments"),
             reviews=_load_array(args.reviews, "reviews"),
+            review_comments=_load_array(args.review_comments, "review comments"),
         )
     except (EvidenceError, OSError, json.JSONDecodeError) as exc:
         print(f"Native Codex review evidence is invalid: {exc}", file=sys.stderr)

@@ -150,7 +150,8 @@ describe the receipt as ruleset-enforced.
 
 The receipt check verifies GitHub evidence produced by the native Codex GitHub
 integration for the exact pull-request head; it does not run a model, parse
-untrusted review prose as executable data, or accept a stale review. Its
+untrusted review prose as executable data, accept a stale review, or count a
+Codex setup/operational notice as a completed code review. Its
 `pull_request_target` observer and validator load only from the protected base
 commit, never from candidate code, and publish the result as the
 `codex-review-receipt` status on the candidate head. The auto-merge authorization
