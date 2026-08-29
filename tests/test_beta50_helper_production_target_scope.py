@@ -28,6 +28,7 @@ from ha_mcp_engineering.dependency.index import DependencyIndex
 from ha_mcp_engineering.dependency.extraction import (
     MAX_CONTEXT_ENTITY_IDS,
     _context_with_variables,
+    _finite_template_entity_output_values,
     _join_template_contexts,
 )
 from ha_mcp_engineering.dependency.obligation_ledger import (
@@ -606,6 +607,50 @@ class Beta51JoinedVariableCandidateBoundTests(
         self.assertFalse(limit_exceeded)
         self.assertEqual(MAX_CONTEXT_ENTITY_IDS, len(candidates))
         self.assertNotIn("selected", context.incomplete_variable_names)
+
+    def test_string_addition_is_not_a_finite_output_choice(self):
+        concatenated = "{{ 'sensor.add_left' + 'sensor.add_right' }}"
+        self.assertIsNone(
+            _finite_template_entity_output_values(concatenated)
+        )
+
+        conditional = _finite_template_entity_output_values(
+            "{{ 'sensor.add_left' if enabled else "
+            "'sensor.add_right' }}"
+        )
+        self.assertIsNotNone(conditional)
+        self.assertEqual(
+            ("sensor.add_left", "sensor.add_right"),
+            tuple(item.literal_string for item in conditional or ()),
+        )
+
+        context, limit_exceeded = _context_with_variables(
+            TemplateContextEvidence(),
+            {"selected": concatenated},
+            path="$.action[0]",
+            context_value_budget=[MAX_CONTEXT_ENTITY_IDS],
+            join_existing=False,
+        )
+        self.assertFalse(limit_exceeded)
+        self.assertIn("selected", context.incomplete_variable_names)
+        self.assertNotIn("selected", dict(context.variable_entity_ids))
+
+        selected = self._analyze("{{ states(selected) }}", context)
+        self.assertFalse(
+            any(
+                item.outcome == "exact_dependency"
+                for item in selected.obligations
+            ),
+            selected.obligations,
+        )
+        self.assertTrue(
+            any(
+                item.target_selector_scope == "target_capable"
+                and item.lock_projection == "conservative"
+                for item in selected.obligations
+            ),
+            selected.obligations,
+        )
 
     def test_129_candidates_across_joined_branches_are_bounded(self):
         expressions = [

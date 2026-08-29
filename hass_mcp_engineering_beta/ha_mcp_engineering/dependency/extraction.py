@@ -2251,8 +2251,38 @@ def _finite_template_entity_output_values(
     match = _EXACT_TEMPLATE_OUTPUT.fullmatch(value)
     if match is None:
         return None
+    expression = match.group("expression")
+    try:
+        output_node = ast.parse(expression.strip(), mode="eval").body
+    except (RecursionError, SyntaxError, ValueError):
+        return None
+
+    def is_entity_output_choice(node: ast.AST, *, depth: int = 0) -> bool:
+        """Return whether one expression result is one exact entity string."""
+
+        if depth > MAX_CONTEXT_VALUE_DEPTH:
+            return False
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return valid_entity_id(node.value)
+        if isinstance(node, ast.IfExp):
+            return is_entity_output_choice(
+                node.body, depth=depth + 1
+            ) and is_entity_output_choice(
+                node.orelse, depth=depth + 1
+            )
+        if isinstance(node, ast.Subscript) and isinstance(
+            node.value, ast.Dict
+        ):
+            return bool(node.value.values) and all(
+                is_entity_output_choice(item, depth=depth + 1)
+                for item in node.value.values
+            )
+        return False
+
+    if not is_entity_output_choice(output_node):
+        return None
     resolution = BoundedTemplateContext(valid_entity_id).resolve(
-        match.group("expression")
+        expression
     )
     if (
         not resolution.complete
