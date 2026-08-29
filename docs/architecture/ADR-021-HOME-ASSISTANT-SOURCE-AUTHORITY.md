@@ -22,6 +22,7 @@ Select authority by the boundary being evaluated:
 | --- | --- | --- |
 | Home Assistant entities, services, templates, registries, automations, WebSocket/REST behavior, and integration semantics | Exact supported revision of [Home Assistant Core](https://github.com/home-assistant/core) | Inspect the applicable implementation and upstream tests. Prove material integration behavior in the corresponding exact-version disposable Home Assistant lane. |
 | Delegated MCP server identity, protocol, advertised tools, input/output schemas, descriptions, annotations, and tool behavior | Exact reviewed revision and immutable image of [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) | Inspect the applicable source and tests, then capture the real initialized identity and complete paginated `tools/list` from the exact image. Apply the Engineering-owned admission and safety classifications in [`ADR-006`](ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md); upstream declarations cannot authorize themselves. |
+| Home Assistant Cloud client behavior, including authentication/account state, Remote UI, cloudhooks, ACME certificates, cloud storage, and cloud voice or assistant clients | Exact [`NabuCasa/hass-nabucasa`](https://github.com/NabuCasa/hass-nabucasa) revision selected by the exact supported Core release, plus the exact [SniTun](https://github.com/NabuCasa/snitun) dependency when tunnel protocol behavior matters | Review the corresponding Core `cloud` integration and library tests together. The client library does not establish hosted-service internals, proxy source networks, availability, or forwarding-header trust. |
 | App/add-on configuration validation, ingress, authentication, permissions, installed identity, lifecycle, watchdog, backups, Supervisor API behavior, and container construction | Exact applicable revision of [Home Assistant Supervisor](https://github.com/home-assistant/supervisor) | Inspect the validator, API, security, app/container, and test paths relevant to the claim. Treat Supervisor's endpoint-bound installed inventory as lifecycle identity where the existing architecture requires it. |
 | Host architecture support, Docker/kernel behavior, AppArmor, filesystem constraints, networking, shutdown, operating-system updates, boot, and recovery | Exact applicable revision or release of [Home Assistant Operating System](https://github.com/home-assistant/operating-system) | Consult it when packaging, native dependencies, architectures, writable paths, security profiles, update behavior, or deployment recovery can be affected. Do not use HAOS evidence to infer Core or Supervisor application semantics. |
 | User-facing documentation, supported configuration guidance, examples, and documentation drift | Pinned revision of [home-assistant.io](https://github.com/home-assistant/home-assistant.io) | Use as documentation evidence and to check user-facing claims. When documentation conflicts with executable exact-version source, report the conflict and use the executable source for behavioral conclusions. |
@@ -43,6 +44,16 @@ as defined by `ADR-006` and the
 [upstream compatibility operator guide](../UPSTREAM_COMPATIBILITY_OPERATOR_GUIDE.md).
 Never use `latest`, the moving default branch, bundled skills, or upstream tool
 security settings to broaden Engineering authority.
+
+For Home Assistant Cloud, resolve the `hass-nabucasa` package and its pinned
+transport dependencies from the exact supported Core environment. The open
+source client can establish how Home Assistant constructs and handles cloud
+connections; it cannot establish how Nabu Casa's hosted services are deployed.
+Do not infer trusted proxy CIDRs, forwarded-header authenticity, public endpoint
+reachability, tenant identity, or service availability from the library. Those
+claims require separately authorized deployed-path evidence. In particular,
+Nabu Casa or tunnel use alone must not enable forwarding trust; retain the
+fail-closed rules in the [rate-limiting policy](../RATE_LIMITING.md).
 
 ## Evidence procedure
 
@@ -88,10 +99,11 @@ security settings to broaden Engineering authority.
 
 Core is the default executable reference for Home Assistant semantics; the
 exact reviewed `ha-mcp` source and image define the observed delegated MCP
-contract; Supervisor is the default executable reference for the managed app
-boundary; HAOS is consulted for platform-sensitive work; and
-`home-assistant.io` and the best-practices skill improve guidance without
-becoming behavioral authority.
+contract; exact Core-selected `hass-nabucasa` and SniTun source define the
+open-source Home Assistant Cloud client boundary; Supervisor is the default
+executable reference for the managed app boundary; HAOS is consulted for
+platform-sensitive work; and `home-assistant.io` and the best-practices skill
+improve guidance without becoming behavioral authority.
 
 This hierarchy is task-specific rather than one universal ordering. A Core
 source citation cannot answer a Supervisor container-permission question, and a

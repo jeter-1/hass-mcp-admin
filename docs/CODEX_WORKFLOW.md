@@ -31,8 +31,8 @@ when the environment starts at the repository root.
 ## Home Assistant source authority
 
 Before making or reviewing a claim about Home Assistant semantics, a delegated
-`ha-mcp` contract, Supervisor behavior, or the HAOS platform, use the
-boundary-specific hierarchy in
+`ha-mcp` contract, Home Assistant Cloud client behavior, Supervisor behavior,
+or the HAOS platform, use the boundary-specific hierarchy in
 [`ADR-021`](architecture/ADR-021-HOME-ASSISTANT-SOURCE-AUTHORITY.md). Record the
 exact upstream repository, tag or commit, relevant paths, and supported-version
 relationship in review evidence. Moving branches, documentation examples, and
