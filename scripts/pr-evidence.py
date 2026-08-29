@@ -264,8 +264,12 @@ def path_impact(paths: list[str]) -> dict[str, bool]:
             for path in paths
         ),
         "workflow": any(
-            path.startswith(".github/workflows/")
-            and path.lower().endswith((".yml", ".yaml"))
+            (
+                path.startswith(".github/workflows/")
+                and path.lower().endswith((".yml", ".yaml"))
+            )
+            or path.startswith(".github/codex/")
+            or path == ".coderabbit.yaml"
             for path in paths
         ),
         "release": any(

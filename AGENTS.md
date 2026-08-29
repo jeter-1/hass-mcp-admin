@@ -45,8 +45,19 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Make the smallest coherent change and add regression coverage for defects.
 - Prepare draft pull requests by default. Review the complete final diff before
   declaring completion.
+- A `Ready for review` action performed by Josh (`jeter-1`) on a same-repository
+  pull request targeting `main` is explicit standing authorization for GitHub
+  native auto-merge after the exact current head passes all required validation,
+  CodeRabbit approval, and Codex independent-review gates. Automation and agents
+  must not mark a draft ready on Josh's behalf.
+- If that authorized pull request contains a fully materialized Engineering
+  version transition, the same Ready action authorizes publication of the exact
+  protected `main` merge commit as the version image, immutable commit image,
+  annotated tag, and GitHub Release. It does not authorize deployment or any
+  live Home Assistant change.
 - Do not merge, release, publish, promote, deploy, or change live systems without
-  explicit authorization for that distinct action.
+  explicit authorization for that distinct action or the bounded Ready action
+  above.
 
 ## Stable and Engineering Boundaries
 
@@ -116,6 +127,8 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Protected-path gate for an explicitly scoped file:
   `.\scripts\check.ps1 -Tier Full -AuthorizedProtectedPath 'hass_mcp_admin/example.py'`
 - Generate a PR draft: `python scripts/pr-evidence.py --base origin/main --head HEAD --output .artifacts/pr-evidence.md`
+- Materialize a staged release in its original pull request before Ready:
+  `python scripts/promote_next_release.py --apply`
 - For deployment of the currently advertised version, run the context command
   and read `documents.active_acceptance_document`. Continue only when its
   `resolution_status` is `exact` and that field is known.
@@ -140,6 +153,7 @@ gate.
 ## Frozen or Protected Paths
 
 - `.coderabbit.yaml` - automated-review scope, retention, trigger, and write-adjacent controls
+- `.github/codex/` - independent-review prompt and structured verdict contract
 - `hass_mcp_admin/` - stable v1.1.2 source and packaging
 - `hass_mcp_engineering_beta/ha_mcp_engineering/` - Engineering runtime, schemas, registration, routing, providers, and policy
 - `.github/workflows/*.yml` and `*.yaml` - CI, publication, signing, and deployment authority
@@ -162,7 +176,8 @@ authorization for that exact change.
 
 - Access live Home Assistant or a deployed MCP environment during ordinary development
 - Read, print, store, or transmit production credentials or secrets
-- Merge, approve, or mark a draft pull request ready without explicit authorization
+- Merge, approve, or mark a draft pull request ready without explicit authorization;
+  only Josh's bounded Ready action may arm the standing automation above
 - Create or move a release, tag, image, attestation, provenance record, or promotion
 - Deploy an add-on or change production or beta deployment configuration
 - Change GitHub secrets, variables, environments, permissions, or repository settings

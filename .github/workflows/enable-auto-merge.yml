@@ -1,0 +1,38 @@
+name: Arm authorized pull request auto-merge
+
+on:
+  pull_request_target:
+    types:
+      - ready_for_review
+
+permissions: {}
+
+jobs:
+  authorize-auto-merge:
+    name: authorize-auto-merge
+    if: >-
+      github.actor == 'jeter-1' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Arm GitHub native auto-merge for the authorized exact head
+        shell: bash
+        env:
+          AUTHORIZED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
+            echo "::error::The pull-request head moved after Ready for review was authorized."
+            exit 1
+          fi
+          gh pr merge "$PR_NUMBER" --repo "$REPOSITORY" --auto --merge
+          echo "Auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"

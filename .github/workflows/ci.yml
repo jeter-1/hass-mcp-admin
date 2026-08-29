@@ -1,10 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - "**"
   pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
   workflow_call:
 
 permissions:
@@ -14,10 +16,10 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
           python-version: "3.12"
           cache: pip
@@ -61,7 +63,10 @@ jobs:
       - name: Validate deployment metadata
         run: python scripts/validate_addon_metadata.py --repo-root . --base-ref origin/main
       - name: Validate staged promotion candidate
-        run: python scripts/validate_promotion_candidate.py --repo-root .
+        run: >-
+          python scripts/validate_promotion_candidate.py
+          --repo-root .
+          --require-materialized
       - name: Validate reviewed upstream registry evidence
         shell: bash
         run: |
@@ -149,8 +154,8 @@ jobs:
       HA_WRITER_CONTAINER: beta25-real-ha-writer-${{ matrix.lane }}
       HA_CONTRACT_CONTAINER: beta25-real-ha-${{ matrix.lane }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
           python-version: "3.12"
           cache: pip
@@ -270,7 +275,7 @@ jobs:
     outputs:
       matrix: ${{ steps.reviewed-registry.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Derive exact-image matrix from reviewed registry
         id: reviewed-registry
         shell: bash
@@ -296,8 +301,8 @@ jobs:
       EXPECTED_ARCHITECTURE_IMAGE_DIGESTS: ${{ toJSON(matrix.architecture_image_digests) }}
       ENGINEERING_ACCESS_SECRET: synthetic-engineering-access-secret
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
           python-version: "3.12"
           cache: pip

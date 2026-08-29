@@ -111,8 +111,54 @@ when the environment starts at the repository root.
    stale or foreign reuse; the local JSON is not cryptographically signed and can
    still be forged by someone who can edit it.
 
-8. Push only the named task branch and open a draft pull request. Stop before
-   merge, release, publication, promotion, or deployment.
+8. Push only the named task branch and open a draft pull request. Agents stop
+   before marking it ready, merging, publication, or deployment. Josh may mark
+   the same-repository pull request ready after its final state is reviewable;
+   that action arms the bounded review and auto-merge contract described below.
+
+For a pull request that declares `.release/next-version`, materialize the release
+state in that same branch before the pull request is marked ready:
+
+```powershell
+python scripts/promote_next_release.py
+python scripts/promote_next_release.py --apply
+```
+
+Review and commit the resulting authoritative version updates and deletion of
+`.release/next-version`, rerun Full/Evidence, and update the draft. Pull-request
+CI fails closed while an unmaterialized declaration remains, so a second
+promotion pull request is neither created nor required.
+
+## Ready-for-review automation
+
+Activation requires an `OPENAI_API_KEY` repository Actions secret and a main
+ruleset that requires the `validate` and `codex-independent-review` checks plus
+one current approval. Never place the key in repository content, workflow text,
+pull-request discussion, logs, or evidence; add it only through GitHub's Actions
+secret settings.
+
+Josh's `Ready for review` action on a `jeter-1` branch in this repository,
+targeting `main`, is the single human authorization checkpoint for this bounded
+sequence:
+
+1. CodeRabbit reviews the non-draft pull request and each subsequent head. Its
+   Request Changes review blocks, and it changes to Approve only after its
+   blocking findings are resolved.
+2. The read-only `codex-independent-review` job reviews the exact current head
+   against its base with a strict structured-output contract. Critical and High
+   findings fail; Medium and Low findings are advisory.
+3. The required `validate` and `codex-independent-review` checks and the current
+   CodeRabbit approval must all apply to the final head. A push dismisses stale
+   approval and reruns the checks.
+4. GitHub native auto-merge merges through the protected path. The automation
+   has no administrative bypass and never force-pushes.
+5. If the reviewed merge includes a final Engineering version transition, the
+   protected-main publication workflow validates and publishes that exact merge
+   commit. It does not deploy the add-on or modify Home Assistant.
+
+Only Josh may mark the draft ready. Converting the pull request back to draft or
+closing it withdraws the immediate merge path. A new Ready action is required to
+arm it again.
 
 If `python` is not on PATH, pass the trusted interpreter explicitly to
 `check.ps1` with `-PythonExecutable` and use that same interpreter for the Python
@@ -171,9 +217,10 @@ this repository.
   known. Missing exact acceptance authority is a stop condition. Historical
   references cannot authorize current acceptance, and release notes are not
   acceptance instructions.
-- Preauthorize only the named branch push and draft-PR creation. Do not
-  preauthorize merge, release, image publication, deployment, secret changes, or
-  live-Home-Assistant access.
+- Preauthorize only the named branch push and draft-PR creation. Agents do not
+  mark pull requests ready. Josh's later Ready action may authorize bounded
+  merge and source publication under the repository contract; it never
+  authorizes deployment, secret changes, or live-Home-Assistant access.
 - Stop when the base moved unexpectedly, the environment is incomplete,
   unrelated failures appear, or the requested work would cross a provider,
   permission, runtime, release, or deployment trust boundary.
@@ -235,18 +282,19 @@ These are distinct profiles; “Codex access” is not one universal permission.
 > rollback, report CI-only checks accurately, and stop for a separate human
 > publication/deployment decision.
 
-### Protected Release Promotion
+### One-pull-request protected release
 
-After a staged declaration reaches `main`, the promotion workflow creates a
-deterministic release branch and draft pull request containing only the bounded
-version-authority updates and removal of `.release/next-version`. That
-preparation phase cannot publish an image or tag and cannot update `main`.
-GitHub may require a repository writer to approve CI for the bot-created pull
-request; starting those checks does not authorize merge or publication.
+A release declaration is an authoring aid on the feature branch, not mergeable
+release state. Before Ready, `promote_next_release.py --apply` updates the three
+authoritative version locations and consumes `.release/next-version` in the
+original pull request. The exact implementation, tests, acceptance documents,
+release notes, and final version state therefore receive the same CodeRabbit,
+Codex, and CI review.
 
-Publication begins only after the exact marker-consuming promotion state is
-merged through the normal protected path. The workflow binds that state to the
-prior `main` declaration, rejects extra changed paths, and builds from the
-current protected `main` commit. It may then create the immutable image,
-annotated tag, and GitHub Release, but it never pushes a release commit directly
-to `main`. Merge, publication, and deployment remain separate decisions.
+After that pull request is merged through the protected path, the publication
+workflow compares the exact new `main` commit with its prior protected commit,
+requires the bounded version transition and exact document authority, reruns
+complete validation, and publishes from the current `main` commit. It may create
+the immutable image, annotated tag, and GitHub Release, but it never writes a
+promotion commit or branch to `main`, opens a second pull request, deploys the
+add-on, or changes live Home Assistant.

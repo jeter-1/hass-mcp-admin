@@ -240,6 +240,12 @@ function Get-ProtectedPathLabel {
     if ($Path -match '^\.github/workflows/.+\.ya?ml$') {
         return "workflow authority"
     }
+    if ($Path.StartsWith(".github/codex/", [StringComparison]::Ordinal)) {
+        return "independent-review authority"
+    }
+    if ($Path -eq ".coderabbit.yaml") {
+        return "CodeRabbit review authority"
+    }
     if ($Path.StartsWith(".release/", [StringComparison]::Ordinal)) {
         return "release declaration"
     }
@@ -259,6 +265,7 @@ function Test-DirectoryAuthorizationIsProtected {
         $Path.StartsWith("hass_mcp_admin/", [StringComparison]::Ordinal) -or
         $Path.StartsWith("hass_mcp_engineering_beta/ha_mcp_engineering/", [StringComparison]::Ordinal) -or
         $Path.StartsWith(".github/workflows/", [StringComparison]::Ordinal) -or
+        $Path.StartsWith(".github/codex/", [StringComparison]::Ordinal) -or
         $Path.StartsWith(".release/", [StringComparison]::Ordinal)
     )
 }

@@ -1326,17 +1326,20 @@ class CheckScriptExecutionTests(unittest.TestCase):
         protected_paths = (
             "hass_mcp_admin/example.py",
             ".github/workflows/ci.yml",
+            ".github/codex/review-schema.json",
+            ".coderabbit.yaml",
         )
         self.fixture.write(protected_paths[0], "VALUE = 2\n")
         self.fixture.write(
             protected_paths[1],
-            """name: Updated fixture CI
-on: [push]
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-""",
+            "name: Updated fixture CI\n"
+            "on: [push]\n"
+            "jobs:\n"
+            "  validate:\n"
+            "    runs-on: ubuntu-latest\n",
         )
+        self.fixture.write(protected_paths[2], "{}\n")
+        self.fixture.write(protected_paths[3], "reviews: {}\n")
         self.fixture.commit("fixture multiple protected changes")
         result = self.fixture.run_check(
             self.powershell,

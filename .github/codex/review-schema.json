@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdict", "summary", "findings"],
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": ["pass", "fail"]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "severity",
+          "title",
+          "path",
+          "line",
+          "evidence",
+          "impact",
+          "cause",
+          "correction",
+          "verification"
+        ],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["Critical", "High", "Medium", "Low"]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "path": {
+            "type": "string",
+            "maxLength": 500
+          },
+          "line": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "evidence": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "impact": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "cause": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "correction": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "verification": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      }
+    }
+  }
+}

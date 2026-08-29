@@ -1,0 +1,77 @@
+name: Codex independent review
+
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions: {}
+
+concurrency:
+  group: codex-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  codex-independent-review:
+    name: codex-independent-review
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Enforce trusted review trigger
+        shell: bash
+        env:
+          EVENT_ACTOR: ${{ github.actor }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          TARGET_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_ACTOR" != "jeter-1" || "$HEAD_REPOSITORY" != "$TARGET_REPOSITORY" ]]; then
+            echo "::error::Codex review is restricted to jeter-1 branches in this repository."
+            exit 1
+          fi
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact review head and base
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$PR_HEAD_SHA" ]]; then
+            echo "::error::The Codex checkout does not match the exact pull-request head."
+            exit 1
+          fi
+          git cat-file -e "${PR_BASE_SHA}^{commit}"
+          git diff --check "$PR_BASE_SHA...$PR_HEAD_SHA"
+
+      - name: Run bounded read-only Codex review
+        id: codex
+        uses: openai/codex-action@5c3f4ccdb2b8790f73d6b21751ac00e602aa0c02 # v1.7
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: .github/codex/prompts/independent-review.md
+          output-schema-file: .github/codex/review-schema.json
+          output-file: codex-independent-review.json
+          codex-args: '["--ephemeral"]'
+          effort: high
+          safety-strategy: drop-sudo
+          sandbox: read-only
+
+      - name: Enforce and summarize Codex verdict
+        if: always()
+        run: python3 scripts/validate_codex_review.py codex-independent-review.json
