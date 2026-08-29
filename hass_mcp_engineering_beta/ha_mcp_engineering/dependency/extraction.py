@@ -2236,7 +2236,9 @@ def _bounded_context_value(
 
 def _finite_template_entity_output_values(
     value: Any,
-) -> tuple[TemplateContextValueEvidence, ...] | None:
+    *,
+    budget: list[int] | None = None,
+) -> tuple[tuple[TemplateContextValueEvidence, ...] | None, bool]:
     """Return exact finite entity-string outputs for one expression template.
 
     This is deliberately narrower than rendering Jinja.  The existing bounded
@@ -2246,16 +2248,18 @@ def _finite_template_entity_output_values(
     remain unresolved.
     """
 
+    if budget is None:
+        budget = [MAX_CONFIGURATION_NODES]
     if not isinstance(value, str) or len(value) > MAX_TEMPLATE_SEGMENT_CHARS:
-        return None
+        return None, False
     match = _EXACT_TEMPLATE_OUTPUT.fullmatch(value)
     if match is None:
-        return None
+        return None, False
     expression = match.group("expression")
     try:
         output_node = ast.parse(expression.strip(), mode="eval").body
     except (RecursionError, SyntaxError, ValueError):
-        return None
+        return None, False
 
     def is_entity_output_choice(node: ast.AST, *, depth: int = 0) -> bool:
         """Return whether one expression result is one exact entity string."""
@@ -2280,7 +2284,7 @@ def _finite_template_entity_output_values(
         return False
 
     if not is_entity_output_choice(output_node):
-        return None
+        return None, False
     resolution = BoundedTemplateContext(valid_entity_id).resolve(
         expression
     )
@@ -2291,18 +2295,20 @@ def _finite_template_entity_output_values(
         or not resolution.entity_ids
         or len(resolution.entity_ids) > MAX_CONTEXT_ENTITY_IDS
     ):
-        return None
+        return None, False
 
     values: list[TemplateContextValueEvidence] = []
     for entity_id in resolution.entity_ids:
         evidence, limit_exceeded = _bounded_context_value(
             entity_id,
-            budget=[1],
+            budget=budget,
         )
-        if limit_exceeded or not evidence.complete:
-            return None
+        if limit_exceeded:
+            return tuple(values), True
+        if not evidence.complete:
+            return None, False
         values.append(evidence)
-    return tuple(values)
+    return tuple(values), False
 
 
 def _template_context_evidence(
@@ -2649,10 +2655,20 @@ def _context_with_variables(
             budget=context_value_budget,
         )
         variable_limit = bool(evidence_limit)
-        finite_entity_outputs = _finite_template_entity_output_values(
-            raw_value
+        if evidence_limit or context_value_budget[0] < 0:
+            finite_entity_outputs = None
+            finite_output_limit = True
+        else:
+            finite_entity_outputs, finite_output_limit = (
+                _finite_template_entity_output_values(
+                    raw_value,
+                    budget=context_value_budget,
+                )
+            )
+        variable_limit = bool(variable_limit or finite_output_limit)
+        limit_exceeded = bool(
+            limit_exceeded or evidence_limit or finite_output_limit
         )
-        limit_exceeded = bool(limit_exceeded or evidence_limit)
         if not join_existing:
             values[name] = {}
             candidates.pop(name, None)
@@ -2686,7 +2702,11 @@ def _context_with_variables(
                 repeat_values = {}
                 repeat_values_join_variable = False
         alternatives = values.setdefault(name, {})
-        retained_values = finite_entity_outputs or (evidence,)
+        retained_values = (
+            finite_entity_outputs
+            if finite_entity_outputs is not None
+            else (evidence,)
+        )
         for retained in retained_values:
             fingerprint = retained.fingerprint
             if fingerprint in alternatives:
@@ -2700,7 +2720,7 @@ def _context_with_variables(
                     continue
                 alternatives.pop(largest)
             alternatives[fingerprint] = retained
-        if finite_entity_outputs:
+        if finite_entity_outputs is not None:
             retained_candidates, candidate_limit = (
                 _bounded_context_entity_id_union(
                     candidates.get(name, ()),
@@ -2718,7 +2738,10 @@ def _context_with_variables(
                 incomplete.add(name)
         elif evidence.kind in {"dynamic_scalar", "opaque"}:
             incomplete.add(name)
-        exact, exact_limit = _bounded_literal_entities_deep(raw_value)
+        if context_value_budget[0] < 0:
+            exact, exact_limit = (), True
+        else:
+            exact, exact_limit = _bounded_literal_entities_deep(raw_value)
         limit_exceeded = bool(limit_exceeded or exact_limit)
         variable_limit = bool(variable_limit or exact_limit)
         if exact:

@@ -738,6 +738,7 @@ def _merge_values(
         if value.state_collection or value.state_object
     ]
     pending_state_dependencies: list[_StateDependencyEvidence] = []
+    seen_pending_state_dependencies: set[_StateDependencyEvidence] = set()
     for value in state_values:
         if value.state_dependency_accounted:
             continue
@@ -745,9 +746,19 @@ def _merge_values(
             _state_dependency_evidence(value),
         )
         for item in pending:
+            # Branch joins may carry the same unevaluated State binding down
+            # more than one mutually exclusive path.  That is one possible
+            # relationship, not one relationship per copied branch value.
+            # Deduplicate the complete immutable snapshot before applying the
+            # candidate bound.  Independently evaluated State reads have
+            # already emitted at their distinct source nodes and never reach
+            # this pending-alternative collection as one shared binding.
+            if item in seen_pending_state_dependencies:
+                continue
             if len(pending_state_dependencies) >= MAX_TEMPLATE_CANDIDATES:
                 merge_overflow = True
                 break
+            seen_pending_state_dependencies.add(item)
             pending_state_dependencies.append(item)
     result = _Value(
         ordinary=all(value.ordinary for value in candidates),

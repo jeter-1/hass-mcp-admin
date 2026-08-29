@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.dependency.index import DependencyIndex
 from ha_mcp_engineering.dependency.extraction import (
+    MAX_CONFIGURATION_NODES,
     MAX_CONTEXT_ENTITY_IDS,
     _context_with_variables,
     _finite_template_entity_output_values,
@@ -473,6 +474,33 @@ class Beta51StateConcatenationAccountingTests(unittest.TestCase):
             by_entity,
         )
 
+    def test_shared_pending_state_binding_is_deduplicated_across_branches(self):
+        result = self._analyze(
+            "{% set shared = this %}"
+            "{% if first %}"
+            "{% set selected = shared %}"
+            "{% elif second %}"
+            "{% set selected = shared %}"
+            "{% else %}"
+            "{% set selected = shared %}"
+            "{% endif %}"
+            "{{ selected ~ '' }}",
+            context=TemplateContextEvidence(
+                this_entity_id="automation.state_concatenation",
+            ),
+        )
+        exact = self._exact(result)
+        self.assertFalse(result.coverage_failed, result.obligations)
+        self.assertEqual(1, len(exact), exact)
+        self.assertEqual(
+            ("automation.state_concatenation",),
+            exact[0].exact_entity_ids,
+        )
+        self.assertEqual(
+            "state_value_rendered_by_concatenation",
+            exact[0].reason_code,
+        )
+
     def test_rendered_state_scalar_reuse_by_selectors_stays_conservative(self):
         selectors = (
             "states(states.sensor.foo ~ '')",
@@ -612,14 +640,17 @@ class Beta51JoinedVariableCandidateBoundTests(
 
     def test_string_addition_is_not_a_finite_output_choice(self):
         concatenated = "{{ 'sensor.add_left' + 'sensor.add_right' }}"
-        self.assertIsNone(
+        concatenated_values, concatenated_limit = (
             _finite_template_entity_output_values(concatenated)
         )
+        self.assertIsNone(concatenated_values)
+        self.assertFalse(concatenated_limit)
 
-        conditional = _finite_template_entity_output_values(
+        conditional, conditional_limit = _finite_template_entity_output_values(
             "{{ 'sensor.add_left' if enabled else "
             "'sensor.add_right' }}"
         )
+        self.assertFalse(conditional_limit)
         self.assertIsNotNone(conditional)
         self.assertEqual(
             ("sensor.add_left", "sensor.add_right"),
@@ -649,6 +680,57 @@ class Beta51JoinedVariableCandidateBoundTests(
             any(
                 item.target_selector_scope == "target_capable"
                 and item.lock_projection == "conservative"
+                for item in selected.obligations
+            ),
+            selected.obligations,
+        )
+
+    def test_finite_outputs_debit_one_shared_configuration_budget(self):
+        choices = ",".join(
+            f"'{index:03d}':'sensor.budget_{index:03d}'"
+            for index in range(MAX_CONTEXT_ENTITY_IDS)
+        )
+        expression = "{{ {" + choices + "}[selected_key] }}"
+        variables = {
+            f"selected_{index:03d}": expression
+            for index in range(MAX_CONTEXT_ENTITY_IDS)
+        }
+        budget = [MAX_CONFIGURATION_NODES]
+
+        context, limit_exceeded = _context_with_variables(
+            TemplateContextEvidence(),
+            variables,
+            path="$.action[0]",
+            context_value_budget=budget,
+            join_existing=False,
+        )
+
+        retained_values = sum(
+            len(alternatives)
+            for alternatives in context.variable_values.values()
+        )
+        retained_candidates = sum(
+            len(entity_ids)
+            for entity_ids in context.variable_entity_ids.values()
+        )
+        self.assertTrue(limit_exceeded)
+        self.assertLess(budget[0], 0)
+        self.assertLessEqual(retained_values, MAX_CONFIGURATION_NODES)
+        self.assertLessEqual(retained_candidates, MAX_CONFIGURATION_NODES)
+        self.assertIn(
+            f"selected_{MAX_CONTEXT_ENTITY_IDS - 1:03d}",
+            context.incomplete_variable_names,
+        )
+
+        selected = self._analyze(
+            f"{{{{ states(selected_{MAX_CONTEXT_ENTITY_IDS - 1:03d}) }}}}",
+            context,
+        )
+        self.assertTrue(
+            any(
+                item.outcome == "coverage_failure"
+                and item.target_selector_scope == "coverage_failure"
+                and item.lock_projection == "coverage_failure"
                 for item in selected.obligations
             ),
             selected.obligations,
