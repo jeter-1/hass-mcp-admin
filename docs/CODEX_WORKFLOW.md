@@ -136,7 +136,10 @@ for this repository in
 [Codex settings](https://chatgpt.com/codex/settings/code-review). It does not use
 an OpenAI API key or API billing. Automatic reviews run when a pull request is
 opened for review or marked ready; Josh can request a fresh exact-head review by
-commenting `@codex review` when needed.
+commenting `@codex review` when needed. That exact Josh-authored comment also
+retriggers the protected-base receipt observer and auto-merge authorization for
+the current eligible head, so a prior timeout or transient API failure can
+recover without rerunning candidate code or accepting stale evidence.
 
 The intended main ruleset requires `validate`, the native Codex receipt check,
 and review-thread resolution. For this bootstrap pull request, the ruleset still
@@ -326,3 +329,10 @@ complete validation, and publishes from the current `main` commit. It may create
 the immutable image, annotated tag, and GitHub Release, but it never writes a
 promotion commit or branch to `main`, opens a second pull request, deploys the
 add-on, or changes live Home Assistant.
+
+Publication remains bound to the reviewed triggering commit. If an ordinary
+pull request merges while that release is being validated or published, the
+release continues only when the triggering commit remains an ancestor of current
+protected `main`; a divergent or removed commit fails closed. The publication
+concurrency group serializes release runs, so a later release transition cannot
+overtake an earlier one.

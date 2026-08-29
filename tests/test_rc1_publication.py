@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
+ANCESTOR_GUARD_PATH = ROOT / "scripts" / "assert_protected_release_ancestor.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 remains the immutable failed full-host-reboot candidate. The
@@ -477,6 +478,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         *,
         existing_release=False,
         main_sha=None,
+        main_is_descendant=True,
         tag_sha=None,
     ):
         bash = shutil.which("bash")
@@ -505,8 +507,14 @@ import os
 import sys
 
 args = sys.argv[1:]
-if args == ["ls-remote", "origin", "refs/heads/main"]:
-    print(os.environ["MOCK_MAIN_SHA"], "refs/heads/main")
+if args == ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"]:
+    pass
+elif args == ["rev-parse", "refs/remotes/origin/main"]:
+    print(os.environ["MOCK_MAIN_SHA"])
+elif args[:2] == ["cat-file", "-e"]:
+    pass
+elif args[:2] == ["merge-base", "--is-ancestor"]:
+    raise SystemExit(0 if os.environ["MOCK_MAIN_IS_DESCENDANT"] == "true" else 1)
 elif args[:2] == ["ls-remote", "origin"] and args[2].startswith("refs/tags/"):
     print(os.environ["MOCK_TAG_SHA"], args[2])
 else:
@@ -515,6 +523,9 @@ else:
                 encoding="utf-8",
             )
             fake_git.chmod(0o755)
+            helper = root / "scripts" / ANCESTOR_GUARD_PATH.name
+            helper.parent.mkdir()
+            shutil.copy2(ANCESTOR_GUARD_PATH, helper)
             (root / "python").symlink_to(sys.executable)
             fake_gh = root / "gh"
             fake_gh.write_text(
@@ -583,6 +594,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                     "MOCK_RELEASE_STATE": str(state),
                     "MOCK_EXISTING_RELEASE": str(existing_release).lower(),
                     "MOCK_MAIN_SHA": main_sha or release_sha,
+                    "MOCK_MAIN_IS_DESCENDANT": str(main_is_descendant).lower(),
                     "MOCK_TAG_SHA": tag_sha or release_sha,
                 }
             )
@@ -674,7 +686,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
     def test_github_release_finalization_fails_closed_on_drift(self):
         cases = (
             {"existing_release": True},
-            {"main_sha": "a" * 40},
+            {"main_sha": "a" * 40, "main_is_descendant": False},
             {"tag_sha": "b" * 40},
         )
         for values in cases:
@@ -742,10 +754,11 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertLess(login_index, build_index)
         prepare = str(self.steps[prepare_index]["run"])
         for value in (
-            "git ls-remote origin refs/heads/main",
+            "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
             "actual-release-paths",
             "--require-materialized",
             "git ls-remote --exit-code --tags",
+            "scripts/assert_protected_release_ancestor.sh",
             "scripts/assert_registry_tags_absent.sh",
             "python scripts/validate_addon_metadata.py",
             "python -m unittest discover -s tests -v",
@@ -757,6 +770,86 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertNotIn("promote_next_release.py --apply", prepare)
         self.assertNotIn("git commit", prepare)
         self.assertNotIn("expected-release-paths", prepare)
+
+    def test_later_nonrelease_merge_preserves_release_ancestor(self):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute the release ancestry guard")
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Release ancestry test"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "release-ancestry@example.invalid"],
+                cwd=repo,
+                check=True,
+            )
+            marker = repo / "state.txt"
+            marker.write_text("release A\n", encoding="utf-8")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "merge release PR A"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            release_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            marker.write_text("release A\nordinary PR B\n", encoding="utf-8")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "merge ordinary PR B"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            later_main_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+
+            preserved = subprocess.run(
+                [bash, str(ANCESTOR_GUARD_PATH), release_sha, later_main_sha],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(preserved.returncode, 0, preserved.stderr)
+            reversed_history = subprocess.run(
+                [bash, str(ANCESTOR_GUARD_PATH), later_main_sha, release_sha],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(reversed_history.returncode, 0)
+
+        publication_scripts = "\n".join(run_steps(self.promote))
+        self.assertGreaterEqual(
+            publication_scripts.count("scripts/assert_protected_release_ancestor.sh"),
+            4,
+        )
 
     def test_one_build_publishes_exact_multiarch_and_provenance_tags(self):
         builds = action_steps(self.promote, "docker/build-push-action")
@@ -820,7 +913,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertNotIn("HEAD:refs/heads/main", push)
         self.assertNotIn("git push --atomic", push)
         self.assertNotIn("--force", push)
-        self.assertIn('"$remote_main_sha" != "$SOURCE_MAIN_SHA"', push)
+        self.assertIn("scripts/assert_protected_release_ancestor.sh", push)
+        self.assertNotIn('"$remote_main_sha" != "$SOURCE_MAIN_SHA"', push)
         self.assertIn('git config user.name "github-actions[bot]"', push)
         self.assertIn('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"', push)
         self.assertIn('git rev-parse "${RELEASE_TAG}^{commit}"', push)
@@ -838,7 +932,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "Immutable publication identity",
             "OCI manifest digest",
             "SLSA provenance and SBOM attestations: verified",
-            '"$promoted_main" != "$RELEASE_SHA"',
+            "scripts/assert_protected_release_ancestor.sh",
             '"$promoted_tag" != "$RELEASE_SHA"',
             "github_release_created=true",
             "github_release_verified=true",

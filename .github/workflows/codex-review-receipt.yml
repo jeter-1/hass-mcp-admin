@@ -1,6 +1,9 @@
 name: Native Codex review receipt
 
 on:
+  issue_comment:
+    types:
+      - created
   pull_request_target:
     types:
       - opened
@@ -11,16 +14,21 @@ on:
 permissions: {}
 
 concurrency:
-  group: codex-review-receipt-${{ github.event.pull_request.number }}
+  group: codex-review-receipt-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: true
 
 jobs:
   codex-review-receipt:
     name: codex-review-receipt-observer
     if: >-
-      github.event.pull_request.draft == false &&
-      github.event.pull_request.base.ref == 'main' &&
-      github.event.pull_request.head.repo.full_name == github.repository
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.draft == false &&
+       github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.actor == 'jeter-1' &&
+       github.event.issue.pull_request != null &&
+       github.event.comment.body == '@codex review')
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -29,18 +37,50 @@ jobs:
       pull-requests: read
       statuses: write
     steps:
+      - name: Resolve trusted pull-request context
+        id: context
+        shell: bash
+        env:
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          if ! jq -e --arg repository "$REPOSITORY" \
+            '.state == "open" and .draft == false and .base.ref == "main" and .head.repo.full_name == $repository' \
+            <<< "$pr_json" >/dev/null; then
+            echo "::error::The review-receipt request is not an eligible open pull request."
+            exit 1
+          fi
+          head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
+          base_sha="$(jq -r '.base.sha' <<< "$pr_json")"
+          if [[ "$EVENT_NAME" == "pull_request_target" && "$head_sha" != "$EVENT_HEAD_SHA" ]]; then
+            echo "::error::The pull-request head moved beyond the triggering lifecycle event."
+            exit 1
+          fi
+          {
+            echo "head_sha=$head_sha"
+            echo "base_sha=$base_sha"
+            echo "pr_number=$PR_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ steps.context.outputs.base_sha }}
           persist-credentials: false
 
       - name: Publish trusted exact-head native Codex receipt
         shell: bash
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ steps.context.outputs.base_sha }}
+          EXPECTED_HEAD_SHA: ${{ steps.context.outputs.head_sha }}
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          RECEIPT_MAX_ATTEMPTS: "90"
+          RECEIPT_POLL_SECONDS: "20"
           REPOSITORY: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -63,7 +103,7 @@ jobs:
 
           post_status pending "Waiting for native Codex review of the exact PR head"
 
-          for attempt in $(seq 1 90); do
+          for attempt in $(seq 1 "$RECEIPT_MAX_ATTEMPTS"); do
             if ! gh api --paginate \
               "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
               | jq -s 'add' > /tmp/codex-review-comments.json; then
@@ -109,9 +149,9 @@ jobs:
               post_status failure "Native Codex review evidence was invalid or failed"
               exit 1
             fi
-            if [[ "$attempt" -eq 90 ]]; then
+            if [[ "$attempt" -eq "$RECEIPT_MAX_ATTEMPTS" ]]; then
               post_status failure "Native Codex did not finish review within 30 minutes"
               exit 1
             fi
-            sleep 20
+            sleep "$RECEIPT_POLL_SECONDS"
           done

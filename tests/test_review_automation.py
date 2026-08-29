@@ -67,6 +67,7 @@ class ReviewWorkflowTests(unittest.TestCase):
             set(events["pull_request_target"]["types"]),
             {"opened", "reopened", "synchronize", "ready_for_review"},
         )
+        self.assertEqual(events["issue_comment"]["types"], ["created"])
         job = self.receipt["jobs"]["codex-review-receipt"]
         self.assertEqual(job["name"], "codex-review-receipt-observer")
         self.assertEqual(self.receipt["permissions"], {})
@@ -82,15 +83,31 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("draft == false", job["if"])
         self.assertIn("base.ref == 'main'", job["if"])
         self.assertIn("head.repo.full_name == github.repository", job["if"])
+        self.assertIn("github.event.comment.body == '@codex review'", job["if"])
+        self.assertIn("github.actor == 'jeter-1'", job["if"])
+
+        context = next(step for step in job["steps"] if step.get("id") == "context")
+        context_script = str(context["run"])
+        self.assertIn('.state == "open"', context_script)
+        self.assertIn("EVENT_HEAD_SHA", context_script)
+        self.assertIn(
+            "${{ github.event.pull_request.number || github.event.issue.number }}",
+            context["env"]["PR_NUMBER"],
+        )
 
         checkout = next(
             step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")
         )
         self.assertRegex(checkout["uses"], r"^actions/checkout@[0-9a-f]{40}$")
-        self.assertEqual(checkout["with"]["ref"], "${{ github.event.pull_request.base.sha }}")
+        self.assertEqual(checkout["with"]["ref"], "${{ steps.context.outputs.base_sha }}")
         self.assertFalse(checkout["with"]["persist-credentials"])
 
         script = str(job["steps"][-1]["run"])
+        self.assertEqual(
+            job["steps"][-1]["env"]["RECEIPT_MAX_ATTEMPTS"],
+            "90",
+        )
+        self.assertEqual(job["steps"][-1]["env"]["RECEIPT_POLL_SECONDS"], "20")
         self.assertIn("BASE_SHA", script)
         self.assertIn("EXPECTED_HEAD_SHA", script)
         self.assertIn("scripts/validate_native_codex_review.py", script)
@@ -103,6 +120,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(
             events,
             {
+                "issue_comment": {"types": ["created"]},
                 "pull_request_target": {
                     "types": ["ready_for_review", "synchronize"]
                 }
@@ -112,6 +130,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("github.event.action == 'ready_for_review'", job["if"])
         self.assertIn("github.actor == 'jeter-1'", job["if"])
         self.assertIn("base.ref == 'main'", job["if"])
+        self.assertIn("github.event.comment.body == '@codex review'", job["if"])
         self.assertEqual(
             job["permissions"],
             {
@@ -120,9 +139,21 @@ class ReviewWorkflowTests(unittest.TestCase):
                 "pull-requests": "write",
             },
         )
-        checkout = job["steps"][0]
+        context = next(step for step in job["steps"] if step.get("id") == "context")
+        context_script = str(context["run"])
+        self.assertIn('.state == "open"', context_script)
+        self.assertIn("EVENT_HEAD_SHA", context_script)
+        self.assertIn(
+            "${{ github.event.pull_request.number || github.event.issue.number }}",
+            context["env"]["PR_NUMBER"],
+        )
+        checkout = next(
+            step
+            for step in job["steps"]
+            if str(step.get("uses", "")).startswith("actions/checkout@")
+        )
         self.assertRegex(checkout["uses"], r"^actions/checkout@[0-9a-f]{40}$")
-        self.assertEqual(checkout["with"]["ref"], "${{ github.event.pull_request.base.sha }}")
+        self.assertEqual(checkout["with"]["ref"], "${{ steps.context.outputs.base_sha }}")
         self.assertFalse(checkout["with"]["persist-credentials"])
 
         step = job["steps"][-1]
@@ -195,6 +226,8 @@ set -euo pipefail
 printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
 if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
   printf '%s\\n' "$AUTHORIZED_HEAD_SHA"
+elif [[ "$1" == "api" && "$2" == "--method" && "$3" == "POST" && "$4" == *"/statuses/"* ]]; then
+  exit 0
 elif [[ "$1" == "api" && "$2" == "--paginate" && "$3" == *"/issues/"*"/comments?"* ]]; then
   cat "$MOCK_COMMENTS_FILE"
 elif [[ "$1" == "api" && "$2" == "--paginate" && "$3" == *"/pulls/"*"/reviews?"* ]]; then
@@ -213,8 +246,9 @@ fi
             fake_gh.chmod(0o700)
 
             for evidence_kind, review_payload, expected_returncode in (
+                ("timed-out-before-review", [], 1),
                 (
-                    "trusted-exact-review",
+                    "retriggered-after-exact-review",
                     [
                         {
                             "user": {"login": "chatgpt-codex-connector[bot]"},
@@ -224,7 +258,6 @@ fi
                     ],
                     0,
                 ),
-                ("untrusted-success-status-only", [], 1),
             ):
                 with self.subTest(evidence_kind=evidence_kind):
                     gh_log.write_text("", encoding="utf-8")
@@ -263,10 +296,66 @@ fi
                     )
                     self.assertEqual(
                         merge_was_reached,
-                        evidence_kind == "trusted-exact-review",
+                        evidence_kind == "retriggered-after-exact-review",
                     )
                     self.assertNotIn(
                         "/status",
+                        gh_log.read_text(encoding="utf-8"),
+                    )
+
+            receipt_script = str(
+                self.receipt["jobs"]["codex-review-receipt"]["steps"][-1]["run"]
+            )
+            for evidence_kind, review_payload, expected_returncode, status_state in (
+                ("timed-out-before-review", [], 1, "failure"),
+                (
+                    "retriggered-after-exact-review",
+                    [
+                        {
+                            "user": {"login": "chatgpt-codex-connector[bot]"},
+                            "commit_id": head,
+                            "state": "COMMENTED",
+                        }
+                    ],
+                    0,
+                    "success",
+                ),
+            ):
+                with self.subTest(receipt_recovery=evidence_kind):
+                    gh_log.write_text("", encoding="utf-8")
+                    reviews.write_text(json.dumps(review_payload), encoding="utf-8")
+                    result = subprocess.run(
+                        ["bash", "-c", receipt_script],
+                        cwd=ROOT,
+                        env={
+                            **os.environ,
+                            "AUTHORIZED_HEAD_SHA": head,
+                            "BASE_SHA": base_sha,
+                            "EXPECTED_HEAD_SHA": head,
+                            "GH_TOKEN": "test-token",
+                            "GITHUB_STEP_SUMMARY": str(summary),
+                            "MOCK_COMMENTS_FILE": str(comments),
+                            "MOCK_GH_LOG": str(gh_log),
+                            "MOCK_REVIEWS_FILE": str(reviews),
+                            "MOCK_STATUS_FILE": str(status_payload),
+                            "PATH": f"{root}:{os.environ['PATH']}",
+                            "PR_NUMBER": "164",
+                            "RECEIPT_MAX_ATTEMPTS": "1",
+                            "RECEIPT_POLL_SECONDS": "0",
+                            "REPOSITORY": "jeter-1/hass-mcp-admin",
+                            "RUN_URL": "https://github.example/trusted-run",
+                        },
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        expected_returncode,
+                        result.stderr,
+                    )
+                    self.assertIn(
+                        f"state={status_state}",
                         gh_log.read_text(encoding="utf-8"),
                     )
 

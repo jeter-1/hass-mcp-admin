@@ -110,9 +110,15 @@ jobs:
           set -euo pipefail
 
           source_main_sha="$(git rev-parse HEAD)"
-          remote_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ "$source_main_sha" != "$GITHUB_SHA" || "$remote_main_sha" != "$source_main_sha" ]]; then
-            echo "::error::The workflow checkout is not the exact current main commit."
+          if [[ "$source_main_sha" != "$GITHUB_SHA" ]]; then
+            echo "::error::The workflow checkout is not the exact triggering main commit."
+            exit 1
+          fi
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if ! bash scripts/assert_protected_release_ancestor.sh \
+            "$source_main_sha" "$protected_main_sha"; then
+            echo "::error::The triggering release commit is not retained in protected-main history."
             exit 1
           fi
 
@@ -352,22 +358,20 @@ jobs:
         env:
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
-          SOURCE_MAIN_SHA: ${{ steps.prepare.outputs.source_main_sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
 
-          remote_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ "$remote_main_sha" != "$SOURCE_MAIN_SHA" ]]; then
-            echo "::error::Main changed after publication; refusing tag finalization."
+          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" ]]; then
+            echo "::error::The published checkout moved from the reviewed release commit."
             exit 1
           fi
-          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" || "$remote_main_sha" != "$RELEASE_SHA" ]]; then
-            echo "::error::The published release commit is not the exact current main commit."
-            exit 1
-          fi
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$protected_main_sha"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -389,12 +393,15 @@ jobs:
 
           git push origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
-          promoted_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          promoted_main="$(git rev-parse refs/remotes/origin/main)"
           promoted_tag="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')"
-          if [[ "$promoted_main" != "$RELEASE_SHA" || "$promoted_tag" != "$RELEASE_SHA" ]]; then
-            echo "::error::Remote main and the annotated release tag do not resolve to the release commit."
+          if [[ "$promoted_tag" != "$RELEASE_SHA" ]]; then
+            echo "::error::The annotated release tag does not resolve to the release commit."
             exit 1
           fi
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$promoted_main"
           echo "tag_verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Create and verify GitHub Release
@@ -412,12 +419,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          promoted_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          promoted_main="$(git rev-parse refs/remotes/origin/main)"
           promoted_tag="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')"
-          if [[ "$promoted_main" != "$RELEASE_SHA" || "$promoted_tag" != "$RELEASE_SHA" ]]; then
-            echo "::error::The GitHub Release cannot be created because main or its annotated tag moved."
+          if [[ "$promoted_tag" != "$RELEASE_SHA" ]]; then
+            echo "::error::The GitHub Release cannot be created because its annotated tag moved."
             exit 1
           fi
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$promoted_main"
 
           release_probe_error="$RUNNER_TEMP/github-release-final-probe-error"
           if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
