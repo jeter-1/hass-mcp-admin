@@ -36,8 +36,9 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   behavior. Resolve conflicts from current source, tests, executable validation,
   manifests, workflows, and current architecture or acceptance documents.
 - For Home Assistant behavior, browser frontend and dashboard behavior,
-  delegated `ha-mcp` contracts, Home Assistant Cloud client behavior, add-on
-  lifecycle, or host-platform claims, follow
+  delegated `ha-mcp` contracts, MCP protocol or pinned-SDK behavior, webhook and
+  Home Assistant Cloud transport ownership, add-on lifecycle, Engineering
+  container construction or provenance, or host-platform claims, follow
   [`ADR-021`](docs/architecture/ADR-021-HOME-ASSISTANT-SOURCE-AUTHORITY.md).
   Select the exact upstream authority for the boundary under review; do not use
   a moving branch, documentation example, installed skill, or remembered value
