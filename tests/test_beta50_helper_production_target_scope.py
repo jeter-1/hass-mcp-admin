@@ -1,16 +1,20 @@
-"""Beta 50 production-path helper target-scope regression coverage.
+"""Production-path helper target-scope regression coverage.
 
-The fixture is a synthetic reconstruction of the bounded semantic classes
-observed in deployed Beta 49 plan 4f8c780072d744c2895b97f4834d41a7.
-It contains no household source identity, entity inventory, label identity, or
-configuration body.  The released implementation retained 59 target-capable
-obligations across six sources for this equivalent shape.
+The original aggregate fixture is a synthetic reconstruction of the bounded
+classes observed in deployed Beta 49.  The HAMCP-089 replay fixture is the
+later, source/dataflow-preserving sanitized capture from deployed Beta 50.  It
+contains only pseudonymized configurations and bounded membership evidence;
+its provenance explicitly does not claim current-source/plan-snapshot byte
+equivalence.
 """
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 from pathlib import Path
+import re
 from types import SimpleNamespace
 import sys
 import tempfile
@@ -65,6 +69,29 @@ CONSEQUENTIAL_TARGET = "input_boolean.beta50_consequential"
 SUPPORTED_HA_VERSION = supported_home_assistant_versions()[-1]
 RELEASED_BETA49_RESIDUAL_COUNT = 59
 RELEASED_BETA49_PROFILE_COUNT = 6
+CAPTURED_REPLAY_FIXTURE = (
+    ROOT
+    / "tests"
+    / "fixtures"
+    / "dependency"
+    / "hamcp089_beta50_standard_helper_replay_v1.json"
+)
+
+
+_REPLAY_ENTITY_ID = re.compile(
+    r"(?<![A-Za-z0-9_.])([a-z0-9_]+\.[a-z0-9_]+)"
+    r"(?![A-Za-z0-9_.])"
+)
+_NON_STATE_DOMAINS = {
+    "logbook",
+    "notify",
+    "persistent_notification",
+    "repeat",
+    "states",
+    "this",
+    "trigger",
+    "wait",
+}
 
 
 NUMERIC_TRIGGER_CONTEXT = (
@@ -317,6 +344,129 @@ class SyntheticBeta50WebSocket(SyntheticBeta49WebSocket):
         return await super().command(payload)
 
 
+def _replay_entity_ids(value) -> set[str]:
+    """Collect only sanitized HA entity literals from one replay config."""
+
+    found: set[str] = set()
+    if isinstance(value, dict):
+        for nested in value.values():
+            found.update(_replay_entity_ids(nested))
+    elif isinstance(value, list):
+        for nested in value:
+            found.update(_replay_entity_ids(nested))
+    elif isinstance(value, str):
+        for candidate in _REPLAY_ENTITY_ID.findall(value):
+            if candidate.partition(".")[0] not in _NON_STATE_DOMAINS:
+                found.add(candidate)
+    return found
+
+
+class CapturedBeta50ReplayRest:
+    """Production-path adapter over the sanitized read-only capture."""
+
+    def __init__(self, fixture: dict, *, extra_configs=()) -> None:
+        self.fixture = fixture
+        self.configs = {
+            item["configuration"]["id"]: copy.deepcopy(
+                item["configuration"]
+            )
+            for item in fixture["configurations"]
+        }
+        for config in extra_configs:
+            self.configs[config["id"]] = copy.deepcopy(config)
+        ids: set[str] = set()
+        for config in self.configs.values():
+            ids.update(_replay_entity_ids(config))
+        evidence = fixture["membership_evidence"]
+        for label in evidence["labels"]:
+            ids.update(label["members"])
+        for group in evidence["groups"]:
+            ids.add(group["group_id"])
+            ids.update(group["members"])
+        ids.add(evidence["target_helper"]["entity_id"])
+        self.ids = ids
+        self.calls: list[tuple[str, str]] = []
+
+    async def request(self, method: str, path: str):
+        self.calls.append((method, path))
+        if path == "/config":
+            return {
+                "version": self.fixture["provenance"][
+                    "home_assistant_version"
+                ]
+            }
+        if path == "/states":
+            groups = {
+                item["group_id"]: item["members"]
+                for item in self.fixture["membership_evidence"]["groups"]
+            }
+            states = []
+            for entity_id in sorted(self.ids):
+                if entity_id.startswith("automation."):
+                    continue
+                attributes = {"friendly_name": entity_id}
+                if entity_id in groups:
+                    attributes["entity_id"] = list(groups[entity_id])
+                states.append(
+                    {
+                        "entity_id": entity_id,
+                        "state": "off",
+                        "attributes": attributes,
+                    }
+                )
+            states.extend(
+                {
+                    "entity_id": f"automation.{source_id}",
+                    "state": "on",
+                    "attributes": {
+                        "id": source_id,
+                        "friendly_name": config["alias"],
+                    },
+                }
+                for source_id, config in self.configs.items()
+            )
+            return states
+        prefix = "/config/automation/config/"
+        if path.startswith(prefix):
+            return copy.deepcopy(
+                self.configs[path.removeprefix(prefix)]
+            )
+        raise AssertionError((method, path))
+
+
+class CapturedBeta50ReplayWebSocket:
+    def __init__(self, fixture: dict, entity_ids: set[str]) -> None:
+        self.fixture = fixture
+        self.entity_ids = entity_ids
+        self.calls: list[dict] = []
+
+    async def command(self, payload: dict):
+        self.calls.append(copy.deepcopy(payload))
+        if payload == {"type": "config/label_registry/list"}:
+            return [
+                {"label_id": item["label_id"], "name": item["label_id"]}
+                for item in self.fixture["membership_evidence"]["labels"]
+            ]
+        if payload == {"type": "config/entity_registry/list"}:
+            memberships: dict[str, list[str]] = {}
+            for label in self.fixture["membership_evidence"]["labels"]:
+                for entity_id in label["members"]:
+                    memberships.setdefault(entity_id, []).append(
+                        label["label_id"]
+                    )
+            target = self.fixture["membership_evidence"]["target_helper"]
+            memberships[target["entity_id"]] = list(target["labels"])
+            return [
+                {
+                    "entity_id": entity_id,
+                    "labels": sorted(memberships.get(entity_id, [])),
+                    "platform": entity_id.partition(".")[0],
+                }
+                for entity_id in sorted(self.entity_ids)
+            ]
+        raise AssertionError(payload)
+
+
 class Beta50ProductionScopeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.rest = SyntheticBeta50Rest()
@@ -456,6 +606,392 @@ class Beta50ProductionScopeTests(unittest.IsolatedAsyncioTestCase):
         )
 
 
+class Beta50CapturedProductionReplayTests(
+    unittest.IsolatedAsyncioTestCase
+):
+    """Replay the exact sanitized source families captured from Beta 50."""
+
+    async def asyncSetUp(self) -> None:
+        self.fixture = json.loads(
+            CAPTURED_REPLAY_FIXTURE.read_text(encoding="utf-8")
+        )
+        self.rest = CapturedBeta50ReplayRest(self.fixture)
+        self.websocket = CapturedBeta50ReplayWebSocket(
+            self.fixture, self.rest.ids
+        )
+        self.index = DependencyIndex(
+            DirectHaDependencyProvider(
+                self.rest,
+                self.websocket,
+                concurrency=4,
+            )
+        )
+        self.snapshot, rebuilt, _lookup_ms = await self.index.get(
+            refresh=True
+        )
+        self.assertTrue(rebuilt)
+        self.target = self.fixture["target_entity_id"]
+
+    def test_capture_provenance_and_sanitized_payload_are_bound(self):
+        provenance = self.fixture["provenance"]
+        canonical = lambda value: json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        self.assertEqual(
+            provenance["configuration_set_sha256"],
+            hashlib.sha256(
+                canonical(self.fixture["configurations"])
+            ).hexdigest(),
+        )
+        self.assertEqual(
+            provenance["membership_evidence_sha256"],
+            hashlib.sha256(
+                canonical(self.fixture["membership_evidence"])
+            ).hexdigest(),
+        )
+        self.assertTrue(provenance["sanitized_before_hashing"])
+        self.assertEqual("READY_FOR_OFFLINE_REPLAY", provenance["capture_status"])
+        self.assertFalse(provenance["snapshot_equivalence_proven"])
+
+    async def test_standard_helper_closes_every_captured_source_before_risk_aggregation(
+        self,
+    ):
+        target_capable = [
+            item
+            for item in self.snapshot.obligations
+            if item.target_selector_scope == "target_capable"
+        ]
+        coverage_failures = [
+            item
+            for item in self.snapshot.obligations
+            if item.coverage_failure_authority
+        ]
+        self.assertEqual([], target_capable)
+        self.assertEqual([], coverage_failures)
+        self.assertNotIn(
+            self.target,
+            {
+                entity_id
+                for item in self.snapshot.obligations
+                for entity_id in item.exact_entity_ids
+            },
+        )
+        fake_state_members = {
+            "binary_sensor.entity_id",
+            "binary_sensor.name",
+            "binary_sensor.state",
+            "sensor.entity_id",
+            "sensor.name",
+            "sensor.state",
+        }
+        self.assertTrue(
+            fake_state_members.isdisjoint(
+                {
+                    entity_id
+                    for item in self.snapshot.obligations
+                    for entity_id in item.exact_entity_ids
+                }
+            )
+        )
+
+        evidence = await HelperDependencyRiskService(self.index).assess(
+            self.target, refresh=False
+        )
+        binding = evidence["binding"]
+        assessment = helper_dependency_risk_assessment(evidence)
+        self.assertEqual(0, binding["exact_dependency_obligation_count"])
+        self.assertEqual(0, binding["opaque_obligation_count"])
+        self.assertEqual([], binding["downstream_profiles"])
+        self.assertTrue(binding["coverage_complete"])
+        self.assertTrue(binding["evidence_complete"])
+        self.assertTrue(binding["execution_eligible"])
+        self.assertEqual("none", binding["physical_consequence"])
+        self.assertEqual("low", assessment.level.value)
+        self.assertTrue(assessment.apply_allowed)
+        self.assertFalse(
+            binding["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
+        )
+        self.assertEqual(
+            [],
+            binding["dependency_lock_projection"]
+            ["automation_resource_ids"],
+        )
+
+    async def test_finite_label_and_cross_action_candidates_are_not_erased(
+        self,
+    ):
+        label_target = "input_boolean.entity_001"
+        finite_action_target = "sensor.entity_025"
+        label_binding = (
+            await HelperDependencyRiskService(self.index).assess(
+                label_target, refresh=False
+            )
+        )["binding"]
+        self.assertGreater(
+            label_binding["exact_dependency_obligation_count"], 0
+        )
+        self.assertEqual(0, label_binding["opaque_obligation_count"])
+        self.assertEqual(
+            {"source_02", "source_03"},
+            {
+                item["automation_resource_id"]
+                for item in label_binding["downstream_profiles"]
+            },
+        )
+
+        finite_sources = {
+            item.source_id
+            for item in self.snapshot.obligations
+            if finite_action_target in item.exact_entity_ids
+        }
+        self.assertIn("source_05", finite_sources)
+
+    async def test_unbounded_selector_and_dynamic_concat_remain_conservative(
+        self,
+    ):
+        arbitrary = {
+            "id": "source_arbitrary",
+            "alias": "automation.source_arbitrary",
+            "triggers": [],
+            "conditions": [
+                {
+                    "condition": "template",
+                    "value_template": (
+                        "{{ states('input_boolean.' ~ caller_supplied) }}"
+                    ),
+                }
+            ],
+            "actions": [
+                {
+                    "action": "persistent_notification.create",
+                    "data": {"message": "arbitrary selector"},
+                }
+            ],
+        }
+        statement_prefixed = {
+            "id": "source_statement_prefixed",
+            "alias": "automation.source_statement_prefixed",
+            "triggers": [],
+            "conditions": [],
+            "actions": [
+                {
+                    "variables": {
+                        "selected": (
+                            "{% set candidate = 'sensor.entity_001' %}"
+                            "{{ candidate }}"
+                        )
+                    }
+                },
+                {
+                    "condition": "template",
+                    "value_template": "{{ states(selected) }}",
+                },
+            ],
+        }
+        incomplete_conditional = {
+            "id": "source_incomplete_conditional",
+            "alias": "automation.source_incomplete_conditional",
+            "triggers": [],
+            "conditions": [],
+            "actions": [
+                {
+                    "variables": {
+                        "selected": (
+                            "{{ 'sensor.entity_001' if enabled "
+                            "else caller_supplied }}"
+                        )
+                    }
+                },
+                {
+                    "condition": "template",
+                    "value_template": "{{ states(selected) }}",
+                },
+            ],
+        }
+        rest = CapturedBeta50ReplayRest(
+            self.fixture,
+            extra_configs=(
+                arbitrary,
+                statement_prefixed,
+                incomplete_conditional,
+            ),
+        )
+        index = DependencyIndex(
+            DirectHaDependencyProvider(
+                rest,
+                CapturedBeta50ReplayWebSocket(self.fixture, rest.ids),
+            )
+        )
+        evidence = await HelperDependencyRiskService(index).assess(
+            self.target, refresh=True
+        )
+        binding = evidence["binding"]
+        target_capable_sources = {
+            item.source_id
+            for item in index.snapshot.obligations
+            if item.target_selector_scope == "target_capable"
+        }
+        self.assertTrue(
+            {
+                "source_statement_prefixed",
+                "source_incomplete_conditional",
+            }.issubset(target_capable_sources),
+            target_capable_sources,
+        )
+        arbitrary_scopes = {
+            item.target_selector_scope
+            for item in index.snapshot.obligations
+            if item.source_id == "source_arbitrary"
+            and item.outcome != "proven_dependency_neutral"
+        }
+        self.assertIn("closed_entity_domains", arbitrary_scopes)
+        self.assertGreater(binding["opaque_obligation_count"], 0)
+        self.assertFalse(binding["evidence_complete"])
+        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(
+            binding["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
+        )
+
+    async def test_governance_plan_reuses_explicit_fresh_snapshot(self):
+        initial_identity = (
+            self.snapshot.generation,
+            self.snapshot.fingerprint,
+            self.snapshot.source_epoch,
+        )
+        calls_after_refresh = (
+            len(self.rest.calls),
+            len(self.websocket.calls),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            helper = FakeHelperStateGateway()
+            helper.entity_id = self.target
+            risk = HelperDependencyRiskService(self.index)
+            governance = ChangeGovernanceService(
+                ChangePlanRepository(Path(temporary) / "plans"),
+                UnusedLegacyGateway(),
+                now=Clock(),
+                helper_state_gateway=helper,
+                helper_dependency_risk_reader=risk.assess,
+                plan_observability_cursor_key=b"captured-replay-key" * 2,
+            )
+            result = await governance.create_helper_state_plan(
+                entity_id=self.target,
+                desired_state="on",
+            )
+
+        self.assertEqual(
+            calls_after_refresh,
+            (len(self.rest.calls), len(self.websocket.calls)),
+        )
+        self.assertFalse(result["provider_dispatch_occurred"])
+        plan = result["plan"]
+        binding = plan["operational"]["baseline"]["dependency_risk"]
+        self.assertEqual(
+            initial_identity,
+            (
+                binding["dependency_index_generation"],
+                binding["dependency_index_fingerprint"],
+                binding["dependency_index_source_epoch"],
+            ),
+        )
+        self.assertTrue(plan["approval_actionable"])
+        self.assertEqual("low", plan["risk"]["level"])
+        self.assertEqual(
+            "standard_admin",
+            plan["policy_decision"]["policy_class"],
+        )
+        lock_keys = {
+            item.key
+            for item in Beta50PlanningPathTests._lock_requests(
+                self.target, binding
+            )
+        }
+        self.assertFalse(
+            any(key.startswith("automation:") for key in lock_keys)
+        )
+        self.assertIn(f"helper_dependency:{self.target}", lock_keys)
+        self.assertIn(
+            unconstrained_helper_dependency_lock_key(), lock_keys
+        )
+        self.assertEqual(0, helper.dispatch_count)
+
+    async def test_governance_plan_waits_for_refresh_when_shared_snapshot_is_stale(
+        self,
+    ):
+        prior_generation = self.snapshot.generation
+        self.snapshot.built_at_monotonic -= (
+            self.index.soft_ttl_seconds + 1.0
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            helper = FakeHelperStateGateway()
+            helper.entity_id = self.target
+            risk = HelperDependencyRiskService(self.index)
+            governance = ChangeGovernanceService(
+                ChangePlanRepository(Path(temporary) / "plans"),
+                UnusedLegacyGateway(),
+                now=Clock(),
+                helper_state_gateway=helper,
+                helper_dependency_risk_reader=risk.assess,
+                plan_observability_cursor_key=b"stale-replay-key" * 2,
+            )
+            result = await governance.create_helper_state_plan(
+                entity_id=self.target,
+                desired_state="on",
+            )
+
+        binding = result["plan"]["operational"]["baseline"][
+            "dependency_risk"
+        ]
+        self.assertGreater(
+            binding["dependency_index_generation"], prior_generation
+        )
+        self.assertEqual(
+            "current",
+            self.index.evidence_metadata(self.index.snapshot)["freshness"],
+        )
+        self.assertTrue(result["plan"]["approval_actionable"])
+        self.assertEqual(0, helper.dispatch_count)
+
+    async def test_risk_read_closes_current_identity_ttl_race(self):
+        snapshot = self.snapshot
+
+        class RacingIndex:
+            def __init__(self):
+                self.calls: list[bool] = []
+
+            @staticmethod
+            def active_identity():
+                return {"current": True}
+
+            async def get(self, *, refresh=False, min_source_epoch=None):
+                self.calls.append(refresh)
+                return snapshot, refresh, 1.0
+
+            def evidence_metadata(self, _snapshot):
+                return {
+                    "freshness": (
+                        "stale_within_hard_ttl"
+                        if len(self.calls) == 1
+                        else "current"
+                    ),
+                    "evidence_age_seconds": 0.0,
+                }
+
+        racing = RacingIndex()
+        evidence = await HelperDependencyRiskService(racing).assess(
+            self.target, refresh=True
+        )
+        self.assertEqual([False, True], racing.calls)
+        self.assertEqual("current", evidence["provenance"]["freshness"])
+        self.assertTrue(evidence["provenance"]["refreshed"])
+        self.assertTrue(evidence["binding"]["execution_eligible"])
+
+
 class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self) -> None:
         self.index = DependencyIndex(
@@ -577,7 +1113,7 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             "dependency_risk"
         ]
         self.assertEqual(
-            "helper-dependency-risk-v9", standard_binding["model"]
+            "helper-dependency-risk-v10", standard_binding["model"]
         )
         self.assertTrue(standard["approval_actionable"])
         self.assertEqual("low", standard["risk"]["level"])
@@ -785,76 +1321,6 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             self._lock_keys(STANDARD_TARGET, excluded_binding),
         )
 
-    async def test_opaque_member_semantics_cannot_broaden_a_closed_selector_universe(
-        self,
-    ):
-        finite_template = (
-            "{{ [states.sensor.synthetic_alpha] "
-            "| selectattr(caller_supplied) | list }}"
-        )
-        finite_index = DependencyIndex(
-            DirectHaDependencyProvider(
-                SyntheticBeta50Rest(
-                    filter_without_attribute=finite_template
-                ),
-                SyntheticBeta50WebSocket(),
-            )
-        )
-        snapshot, _rebuilt, _lookup_ms = await finite_index.get(
-            refresh=True
-        )
-        dynamic_attribute = [
-            item
-            for item in snapshot.obligations
-            if item.reason_code
-            == "selectattr_dynamic_attribute_dispatch"
-        ]
-        self.assertEqual(1, len(dynamic_attribute))
-        self.assertEqual(
-            ("sensor.synthetic_alpha",),
-            dynamic_attribute[0].exact_entity_ids,
-        )
-        self.assertEqual(
-            "closed_finite_candidates",
-            dynamic_attribute[0].target_selector_scope,
-        )
-
-        risk = HelperDependencyRiskService(finite_index)
-        excluded = (await risk.assess(
-            STANDARD_TARGET, refresh=False
-        ))["binding"]
-        included = (await risk.assess(
-            "sensor.synthetic_alpha", refresh=False
-        ))["binding"]
-        self.assertEqual(0, excluded["opaque_obligation_count"])
-        self.assertEqual([], excluded["downstream_profiles"])
-        self.assertTrue(excluded["execution_eligible"])
-        self.assertGreater(
-            included["exact_dependency_obligation_count"], 0
-        )
-        self.assertEqual(0, included["opaque_obligation_count"])
-
-        arbitrary_index = DependencyIndex(
-            DirectHaDependencyProvider(
-                SyntheticBeta50Rest(
-                    filter_without_attribute=(
-                        "{{ caller_supplied "
-                        "| selectattr(caller_attribute) | list }}"
-                    )
-                ),
-                SyntheticBeta50WebSocket(),
-            )
-        )
-        arbitrary = (await HelperDependencyRiskService(
-            arbitrary_index
-        ).assess(STANDARD_TARGET, refresh=True))["binding"]
-        self.assertGreater(arbitrary["opaque_obligation_count"], 0)
-        self.assertFalse(arbitrary["execution_eligible"])
-        self.assertTrue(
-            arbitrary["dependency_lock_projection"]
-            ["conservative_helper_dependency"]
-        )
-
         exact_plan = await self._create_filter_plan(
             "{{ [states.input_boolean.beta50_standard] | join(',') }}"
         )
@@ -878,15 +1344,15 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, self.helper.dispatch_count)
 
-    def test_v3_through_v8_are_readable_but_non_authoritative(self):
+    def test_v3_through_v9_are_readable_but_non_authoritative(self):
         self.assertEqual(
-            "helper-dependency-risk-v9", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v10", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v9"}),
+            frozenset({"helper-dependency-risk-v10"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 9):
+        for version in range(3, 10):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

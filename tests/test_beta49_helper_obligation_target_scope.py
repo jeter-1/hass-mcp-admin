@@ -1652,7 +1652,7 @@ class Beta49ProductionPathTests(unittest.IsolatedAsyncioTestCase):
         ]
         standard_summary = standard_observed["canonical_summary"]
         self.assertEqual(
-            "helper-dependency-risk-v9", standard_binding["model"]
+            "helper-dependency-risk-v10", standard_binding["model"]
         )
         self.assertEqual(0, standard_binding["opaque_obligation_count"])
         self.assertEqual([], standard_binding["downstream_profiles"])
@@ -1802,15 +1802,15 @@ class Beta49ProductionPathTests(unittest.IsolatedAsyncioTestCase):
         finally:
             end_request(context)
 
-    def test_v3_through_v8_remain_read_only(self):
+    def test_v3_through_v9_remain_read_only(self):
         self.assertEqual(
-            "helper-dependency-risk-v9", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v10", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v9"}),
+            frozenset({"helper-dependency-risk-v10"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 9):
+        for version in range(3, 10):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

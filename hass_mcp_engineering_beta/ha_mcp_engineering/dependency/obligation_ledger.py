@@ -1764,7 +1764,26 @@ class TemplateObligationAnalyzer:
                             unknown=True,
                             complete=False,
                         )
-            return self._merge(values, node=node)
+            # Concatenation renders its operands to one scalar string.  The
+            # operand evaluations above have already accounted for every
+            # dependency-sensitive State access.  Retaining State-object or
+            # collection shape on the rendered result makes a later neutral
+            # consumer (for example ``join`` or notification formatting)
+            # appear to select the original entities a second time.
+            #
+            # Keep the exact literal and reviewed domain-prefix cases above;
+            # all other concatenations remain a tainted scalar so a later
+            # entity-selector use still fails closed.
+            for item_node, value in zip(node.nodes, values):
+                if value.state_collection or value.state_object:
+                    self._consume_entity_value(
+                        value,
+                        node=item_node,
+                        kind="concatenated_state_value",
+                        reason="state_value_rendered_by_concatenation",
+                    )
+            self._neutral(node, "string_concatenation_dependency_neutral")
+            return _dynamic_scalar_value()
         if isinstance(node, nodes.Getattr):
             base = self._eval(node.node, scope, depth=depth + 1)
             return self._get_attribute(
@@ -3803,6 +3822,9 @@ class TemplateObligationAnalyzer:
             if attribute == "attributes":
                 return _Value(
                     state_attribute_container=True,
+                    context_paths={
+                        f"{path}.attributes" for path in base.context_paths
+                    },
                     ordinary=True,
                     complete=base.complete,
                 )
@@ -3840,6 +3862,18 @@ class TemplateObligationAnalyzer:
             if attribute in _MAPPING_METHODS:
                 value = _callable_value(f"ordinary_method:{attribute}")
                 value.method_receivers[attribute] = base.copy()
+                return value
+            if (
+                attribute == "last_triggered"
+                and base.context_paths == {"this.attributes"}
+            ):
+                # Home Assistant exposes automation ``this`` as a State and
+                # its ``last_triggered`` attribute as a datetime (or None
+                # before the first run).  A template must guard the None case
+                # before datetime arithmetic; either value is incapable of
+                # introducing an entity selector.
+                value = _typed_runtime_value("datetime")
+                value.context_paths = {"this.attributes.last_triggered"}
                 return value
             return _dynamic_scalar_value()
         if base.context_paths:
@@ -4035,6 +4069,8 @@ class TemplateObligationAnalyzer:
             if exact:
                 value = _Value(
                     entity_ids=exact,
+                    possible_domains=set(key.possible_domains),
+                    domain_evidence_complete=key.domain_evidence_complete,
                     state_object=True,
                     unknown=bool(
                         base.unknown
@@ -4056,21 +4092,18 @@ class TemplateObligationAnalyzer:
                         and not base.projection_uncertain
                         and key.complete
                         and not key.unknown
+                        and key.entity_candidate_evidence_complete
                     ),
                     non_selector_candidate_evidence_complete=bool(
-                        base.complete
-                        and not base.unknown
-                        and not base.projection_uncertain
-                        and key.complete
-                        and not key.unknown
+                        key.non_selector_candidate_evidence_complete
                     ),
                     selector_provenance_complete=bool(
-                        base.complete
-                        and not base.unknown
-                        and not base.projection_uncertain
-                        and key.complete
-                        and not key.unknown
+                        key.selector_provenance_complete
                     ),
+                    literal_selectors=set(key.literal_selectors),
+                    selector_producers=set(key.selector_producers),
+                    selector_transforms=set(key.selector_transforms),
+                    context_paths=set(key.context_paths),
                     limit_exceeded=bool(
                         base.limit_exceeded or key.limit_exceeded
                     ),
@@ -4606,9 +4639,6 @@ class TemplateObligationAnalyzer:
             context=selector_context,
             limit=False,
             lock="conservative",
-            target_selector_scope=(
-                self._target_selector_scope_for_value(value)
-            ),
         )
 
     def _external_template_boundary(
@@ -4712,6 +4742,41 @@ class TemplateObligationAnalyzer:
     def _iteration_value(self, value: _Value) -> _Value:
         if value.namespace_ids:
             value = self._resolve_namespace_history(value, node=None)
+        if value.state_collection:
+            if (
+                value.selector_producers
+                and "expand" not in value.selector_transforms
+            ):
+                # HA entity-set helpers such as ``label_entities`` return
+                # entity-id strings, while ``states.<domain>`` and
+                # ``expand(...)`` iterate State objects.  They intentionally
+                # share candidate-set provenance, but their member value
+                # shapes are different.  Treating a label-derived loop value
+                # as a State taints later string/list transport and creates a
+                # duplicate opaque dependency after the actual ``states(e)``
+                # access was already accounted for.
+                result = value.copy()
+                result.state_collection = False
+                result.state_object = False
+                result.items = []
+                result.container_kinds = set()
+                result.order_uncertain = False
+                result.ordinary = True
+                return result
+            # Iterating a State collection yields one State, not another
+            # collection.  Selection and ordering filters may make the
+            # runtime member uncertain, but they cannot broaden the complete
+            # finite/domain/registry-backed universe carried by the
+            # collection.  Preserve that universe on the yielded State so
+            # ``s.entity_id``, ``s.state`` and later state-helper use cannot be
+            # misread as synthetic ``sensor.entity_id``-style entities.
+            result = value.copy()
+            result.state_collection = False
+            result.state_object = True
+            result.items = []
+            result.container_kinds = set()
+            result.order_uncertain = False
+            return result
         if value.items:
             structured = [item for item in value.items if item.items]
             if structured:
@@ -5005,29 +5070,7 @@ class TemplateObligationAnalyzer:
             lock=(
                 "coverage_failure" if value.limit_exceeded else "conservative"
             ),
-            target_selector_scope=(
-                self._target_selector_scope_for_value(value)
-            ),
         )
-
-    @staticmethod
-    def _target_selector_scope_for_value(value: _Value) -> str:
-        """Return target reachability independently from value semantics.
-
-        A filter, attribute dispatch, comparison, or rendering operation may
-        remain semantically opaque while its input's complete selector
-        universe is already proven.  That opacity can affect the value or
-        truth result, but it cannot introduce an entity outside the retained
-        finite candidates or complete domain set.  Coverage loss always wins.
-        """
-
-        if value.limit_exceeded:
-            return "coverage_failure"
-        if value.entity_candidate_evidence_complete:
-            return "closed_finite_candidates"
-        if value.possible_domains and value.domain_evidence_complete:
-            return "closed_entity_domains"
-        return "target_capable"
 
     def _emit(
         self,

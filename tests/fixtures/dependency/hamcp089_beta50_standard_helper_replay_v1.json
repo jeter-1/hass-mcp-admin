@@ -1,0 +1,1371 @@
+{
+  "configurations": [
+    {
+      "configuration": {
+        "actions": [
+          {
+            "action": "logbook.log",
+            "data": {
+              "entity_id": "binary_sensor.entity_004",
+              "message": "Person detection unavailable for 30 minutes. Starting graceful camera reboot.",
+              "name": "Location 01 Camera Auto Recovery"
+            }
+          },
+          {
+            "action": "button.press",
+            "continue_on_error": true,
+            "target": {
+              "entity_id": "button.entity_001"
+            }
+          },
+          {
+            "continue_on_timeout": true,
+            "timeout": {
+              "hours": 0,
+              "minutes": 5,
+              "seconds": 0
+            },
+            "wait_template": "{{ states('binary_sensor.entity_004') not in ['unavailable', 'unknown'] }}"
+          },
+          {
+            "choose": [
+              {
+                "conditions": [
+                  {
+                    "condition": "template",
+                    "value_template": "{{ states('binary_sensor.entity_004') not in ['unavailable', 'unknown'] }}"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "entity_id": "binary_sensor.entity_004",
+                      "message": "Graceful reboot succeeded; person detection recovered.",
+                      "name": "Location 01 Camera Auto Recovery"
+                    }
+                  }
+                ]
+              }
+            ],
+            "default": [
+              {
+                "action": "logbook.log",
+                "data": {
+                  "entity_id": "binary_sensor.entity_004",
+                  "message": "Graceful reboot failed; escalating to independent smart-plug power cycle.",
+                  "name": "Location 01 Camera Auto Recovery"
+                }
+              },
+              {
+                "action": "switch.turn_off",
+                "continue_on_error": true,
+                "target": {
+                  "entity_id": "switch.entity_001"
+                }
+              },
+              {
+                "delay": {
+                  "hours": 0,
+                  "minutes": 0,
+                  "seconds": 15
+                }
+              },
+              {
+                "action": "switch.turn_on",
+                "continue_on_error": true,
+                "target": {
+                  "entity_id": "switch.entity_001"
+                }
+              },
+              {
+                "continue_on_timeout": true,
+                "timeout": {
+                  "hours": 0,
+                  "minutes": 0,
+                  "seconds": 10
+                },
+                "wait_template": "{{ is_state('switch.entity_001', 'on') }}"
+              },
+              {
+                "repeat": {
+                  "count": 3,
+                  "sequence": [
+                    {
+                      "choose": [
+                        {
+                          "conditions": [
+                            {
+                              "condition": "template",
+                              "value_template": "{{ not is_state('switch.entity_001', 'on') }}"
+                            }
+                          ],
+                          "sequence": [
+                            {
+                              "delay": {
+                                "hours": 0,
+                                "minutes": 0,
+                                "seconds": 10
+                              }
+                            },
+                            {
+                              "action": "switch.turn_on",
+                              "continue_on_error": true,
+                              "target": {
+                                "entity_id": "switch.entity_001"
+                              }
+                            },
+                            {
+                              "continue_on_timeout": true,
+                              "timeout": {
+                                "hours": 0,
+                                "minutes": 0,
+                                "seconds": 10
+                              },
+                              "wait_template": "{{ is_state('switch.entity_001', 'on') }}"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "choose": [
+                  {
+                    "conditions": [
+                      {
+                        "condition": "template",
+                        "value_template": "{{ not is_state('switch.entity_001', 'on') }}"
+                      }
+                    ],
+                    "sequence": [
+                      {
+                        "action": "logbook.log",
+                        "data": {
+                          "entity_id": "switch.entity_001",
+                          "message": "Dedicated camera outlet did not re-energize after the initial turn-on attempt and three restoration retries. Camera verification stopped.",
+                          "name": "Location 01 Camera Auto Recovery"
+                        }
+                      },
+                      {
+                        "action": "persistent_notification.create",
+                        "data": {
+                          "message": "Location 01 camera recovery failed because the dedicated outlet did not re-energize. The camera may currently be without power.",
+                          "notification_id": "back_porch_camera_power_restoration_failed",
+                          "title": "Location 01 Camera Power Restoration Failed"
+                        }
+                      },
+                      {
+                        "stop": "Location 01 camera outlet did not re-energize; camera verification was not attempted."
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "action": "logbook.log",
+                "data": {
+                  "entity_id": "switch.entity_001",
+                  "message": "Dedicated camera outlet reports on. Waiting up to five minutes for person detection to recover.",
+                  "name": "Location 01 Camera Auto Recovery"
+                }
+              },
+              {
+                "variables": {
+                  "power_restored_at": "{{ now() }}"
+                }
+              },
+              {
+                "continue_on_timeout": true,
+                "timeout": {
+                  "hours": 0,
+                  "minutes": 5,
+                  "seconds": 0
+                },
+                "wait_template": "{{ states('binary_sensor.entity_004') not in ['unavailable', 'unknown'] }}"
+              },
+              {
+                "choose": [
+                  {
+                    "conditions": [
+                      {
+                        "condition": "template",
+                        "value_template": "{{ states('binary_sensor.entity_004') not in ['unavailable', 'unknown'] }}"
+                      }
+                    ],
+                    "sequence": [
+                      {
+                        "action": "logbook.log",
+                        "data": {
+                          "entity_id": "binary_sensor.entity_004",
+                          "message": "Smart-plug power cycle restored person detection after {{ (as_timestamp(now()) - as_timestamp(power_restored_at)) | round(0) }} seconds.",
+                          "name": "Location 01 Camera Auto Recovery"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "default": [
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "entity_id": "binary_sensor.entity_004",
+                      "message": "Outlet power was restored, but person detection did not recover within five minutes. Manual intervention required.",
+                      "name": "Location 01 Camera Auto Recovery"
+                    }
+                  },
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "Location 01 camera person detection is still unavailable after an automatic reboot AND an independent smart-plug power cycle. The outlet reports on, but the sensor did not recover within five minutes. Manual investigation required.",
+                      "notification_id": "back_porch_camera_recovery_failed",
+                      "title": "Location 01 Camera Recovery Failed"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "alias": "automation.source_01",
+        "conditions": [
+          {
+            "condition": "template",
+            "value_template": "{{ this.attributes.last_triggered is none or (now() - this.attributes.last_triggered).total_seconds() >= 21600 }}"
+          },
+          {
+            "condition": "template",
+            "value_template": "{{ state_attr('update.entity_001', 'in_progress') is not true }}"
+          }
+        ],
+        "description": "Sanitized replay configuration for automation.source_01.",
+        "id": "source_01",
+        "mode": "single",
+        "triggers": [
+          {
+            "entity_id": "binary_sensor.entity_004",
+            "for": {
+              "hours": 0,
+              "minutes": 30,
+              "seconds": 0
+            },
+            "to": "unavailable",
+            "trigger": "state"
+          }
+        ]
+      },
+      "source": "automation.source_01"
+    },
+    {
+      "configuration": {
+        "actions": [
+          {
+            "choose": [
+              {
+                "conditions": [
+                  {
+                    "condition": "template",
+                    "value_template": "{{ issue_signature | length > 0 }}"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "if": [
+                      {
+                        "condition": "state",
+                        "entity_id": "timer.entity_001",
+                        "state": "idle"
+                      }
+                    ],
+                    "then": [
+                      {
+                        "action": "notify.mobile_app_device_001",
+                        "data": {
+                          "data": {
+                            "actions": [
+                              {
+                                "action": "SNOOZE_HA_HEALTH_1H",
+                                "title": "Snooze 1h"
+                              },
+                              {
+                                "action": "SNOOZE_HA_HEALTH_4H",
+                                "title": "Snooze 4h"
+                              },
+                              {
+                                "action": "ACK_HA_HEALTH",
+                                "title": "Acknowledge"
+                              }
+                            ],
+                            "channel": "HA Critical",
+                            "priority": "high",
+                            "tag": "ha-tier1-monitor",
+                            "ttl": 0
+                          },
+                          "message": "{{ issue_message }}",
+                          "title": "HA Tier 1 Issue"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "{{ issue_message }}",
+                      "notification_id": "label_001_issue",
+                      "title": "HA Tier 1 Issue"
+                    }
+                  },
+                  {
+                    "action": "input_text.set_value",
+                    "data": {
+                      "value": "{{ issue_signature[:255] }}"
+                    },
+                    "target": {
+                      "entity_id": "input_text.entity_001"
+                    }
+                  }
+                ]
+              }
+            ],
+            "default": [
+              {
+                "action": "persistent_notification.dismiss",
+                "data": {
+                  "notification_id": "label_001_issue"
+                }
+              },
+              {
+                "action": "input_text.set_value",
+                "data": {
+                  "value": ""
+                },
+                "target": {
+                  "entity_id": "input_text.entity_001"
+                }
+              }
+            ]
+          }
+        ],
+        "alias": "automation.source_02",
+        "conditions": [
+          {
+            "condition": "template",
+            "value_template": "{{ issue_signature != states('input_text.entity_001') }}"
+          }
+        ],
+        "description": "Sanitized replay configuration for automation.source_02.",
+        "id": "source_02",
+        "mode": "single",
+        "triggers": [
+          {
+            "minutes": "/5",
+            "trigger": "time_pattern"
+          },
+          {
+            "event": "start",
+            "trigger": "homeassistant"
+          }
+        ],
+        "variables": {
+          "issue_message": "{% set grace = {'climate.entity_001': 1200, 'binary_sensor.entity_015': 900, 'binary_sensor.entity_017': 900, 'binary_sensor.entity_016': 900} %}\n{% set explicit = ['binary_sensor.entity_012','binary_sensor.entity_015','binary_sensor.entity_017','binary_sensor.entity_016'] %}\n{% set monitored = (label_entities('label_001') + explicit) | unique | list %}\n{% set unavailable = label_entities('label_003') %}\n{% set ns = namespace(lines=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set age = (now() - states[e].last_changed).total_seconds() if states[e] is not none else 999999 %}\n    {% if age >= grace.get(e, 0) %}\n      {% set ns.lines = ns.lines + ['- ' ~ entity_name(e) ~ ' is ' ~ states(e) ~ ' for ' ~ ((age/60)|round(0)|int) ~ 'm (' ~ e ~ ')'] %}\n    {% endif %}\n  {% endif %}\n{% endfor %}\n{% if states('group.object_001') in ['unavailable','unknown'] %}\n  {% set ns.lines = ns.lines + ['- Household group is ' ~ states('group.object_001') ~ ' (group.object_001)'] %}\n{% endif %}\n{{ ns.lines | join('\\n') }}",
+          "issue_signature": "{% set grace = {'climate.entity_001': 1200, 'binary_sensor.entity_015': 900, 'binary_sensor.entity_017': 900, 'binary_sensor.entity_016': 900} %}\n{% set explicit = ['binary_sensor.entity_012','binary_sensor.entity_015','binary_sensor.entity_017','binary_sensor.entity_016'] %}\n{% set monitored = (label_entities('label_001') + explicit) | unique | list %}\n{% set unavailable = label_entities('label_003') %}\n{% set ns = namespace(bad=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set age = (now() - states[e].last_changed).total_seconds() if states[e] is not none else 999999 %}\n    {% if age >= grace.get(e, 0) %}\n      {% set ns.bad = ns.bad + [e] %}\n    {% endif %}\n  {% endif %}\n{% endfor %}\n{% if states('group.object_001') in ['unavailable','unknown'] %}\n  {% set ns.bad = ns.bad + ['group.object_001'] %}\n{% endif %}\n{{ ns.bad | sort | join(',') }}"
+        }
+      },
+      "source": "automation.source_02"
+    },
+    {
+      "configuration": {
+        "actions": [
+          {
+            "choose": [
+              {
+                "conditions": [
+                  {
+                    "condition": "template",
+                    "value_template": "{{ issue_message | trim | length > 0 }}"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "{{ issue_message }}",
+                      "notification_id": "label_002_digest",
+                      "title": "HA Tier 2 Digest"
+                    }
+                  }
+                ]
+              }
+            ],
+            "default": [
+              {
+                "action": "persistent_notification.dismiss",
+                "data": {
+                  "notification_id": "label_002_digest"
+                }
+              }
+            ]
+          }
+        ],
+        "alias": "automation.source_03",
+        "description": "Sanitized replay configuration for automation.source_03.",
+        "id": "source_03",
+        "mode": "single",
+        "triggers": [
+          {
+            "at": "07:10:00",
+            "trigger": "time"
+          },
+          {
+            "event": "start",
+            "trigger": "homeassistant"
+          }
+        ],
+        "variables": {
+          "issue_message": "{% set explicit = ['sensor.entity_003','sensor.entity_019'] %}\n{% set monitored = (label_entities('label_002') + explicit) | unique | list %}\n{% set unavailable = label_entities('label_003') %}\n{% set ns = namespace(lines=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set ns.lines = ns.lines + ['- ' ~ entity_name(e) ~ ' is ' ~ states(e) ~ ' (' ~ e ~ ')'] %}\n  {% endif %}\n{% endfor %}\n{{ ns.lines | join('\\n') }}"
+        }
+      },
+      "source": "automation.source_03"
+    },
+    {
+      "configuration": {
+        "actions": [
+          {
+            "variables": {
+              "low_batteries": "{% set excluded = ['sensor.entity_020','sensor.entity_018','sensor.entity_002','sensor.entity_021','sensor.entity_017','sensor.entity_022','sensor.entity_004','sensor.entity_001'] %}\n{% set ns = namespace(items=[]) %}\n{% for s in states.sensor | selectattr('attributes.device_class','defined') | selectattr('attributes.device_class','eq','battery') %}\n  {% if s.entity_id not in excluded and s.state not in ['unknown','unavailable'] and (s.state | float(101)) <= 20 %}\n    {% set ns.items = ns.items + [s.name ~ ' @ ' ~ s.state ~ '%'] %}\n  {% endif %}\n{% endfor %}\n{% for s in states.binary_sensor | selectattr('attributes.device_class','defined') | selectattr('attributes.device_class','eq','battery') %}\n  {% if s.entity_id not in excluded and s.state in ['on','low'] %}\n    {% set ns.items = ns.items + [s.name ~ ' is low'] %}\n  {% endif %}\n{% endfor %}\n{{ ns.items | sort | join('\\n') }}"
+            }
+          },
+          {
+            "choose": [
+              {
+                "conditions": [
+                  "{{ low_batteries | trim != '' }}"
+                ],
+                "sequence": [
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "{{ low_batteries }}",
+                      "notification_id": "battery_digest",
+                      "title": "Battery Digest"
+                    }
+                  }
+                ]
+              }
+            ],
+            "default": [
+              {
+                "action": "persistent_notification.dismiss",
+                "data": {
+                  "notification_id": "battery_digest"
+                }
+              }
+            ]
+          }
+        ],
+        "alias": "automation.source_04",
+        "conditions": [],
+        "description": "Sanitized replay configuration for automation.source_04.",
+        "id": "source_04",
+        "mode": "single",
+        "triggers": [
+          {
+            "at": "07:00:00",
+            "trigger": "time"
+          }
+        ]
+      },
+      "source": "automation.source_04"
+    },
+    {
+      "configuration": {
+        "actions": [
+          {
+            "choose": [
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": [
+                      "storage_warning",
+                      "storage_critical",
+                      "storage_emergency"
+                    ]
+                  }
+                ],
+                "sequence": [
+                  {
+                    "variables": {
+                      "free_gib": "{{ states('sensor.entity_013') }}",
+                      "free_percent": "{{ states('sensor.entity_014') }}",
+                      "severity": "{{ trigger.id | replace('storage_', '') }}"
+                    }
+                  },
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "PVE-020 recording storage is {{ severity }} with {{ free_gib }} GiB ({{ free_percent }}%) free. Warning requires 30 minutes below 20% or 200 GiB; critical requires 10 minutes below 10% or 100 GiB; emergency is immediate below 5% or 50 GiB.",
+                      "notification_id": "pve020_storage_health",
+                      "title": "Frigate recording storage {{ severity }}"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "Recording storage {{ severity }}: {{ free_gib }} GiB / {{ free_percent }}% free.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "choose": [
+                      {
+                        "conditions": [
+                          {
+                            "condition": "template",
+                            "value_template": "{{ severity in ['critical', 'emergency'] or not is_state('timer.entity_001', 'active') }}"
+                          }
+                        ],
+                        "sequence": [
+                          {
+                            "action": "notify.mobile_app_device_001",
+                            "data": {
+                              "data": {
+                                "group": "infrastructure",
+                                "tag": "pve020-storage"
+                              },
+                              "message": "{{ free_gib }} GiB ({{ free_percent }}%) recording space remains.",
+                              "title": "Frigate storage {{ severity }}"
+                            },
+                            "target": {}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": "storage_recovered"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "action": "persistent_notification.dismiss",
+                    "data": {
+                      "notification_id": "pve020_storage_health"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "Recording storage recovered to the healthy tier.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": [
+                      "fps_low",
+                      "skipped_warning",
+                      "skipped_critical"
+                    ]
+                  }
+                ],
+                "sequence": [
+                  {
+                    "variables": {
+                      "camera": "{% if 'c120' in trigger.entity_id %}c120{% elif 'c210' in trigger.entity_id %}c210{% else %}nest_doorbell{% endif %}",
+                      "camera_name": "{% if 'c120' in trigger.entity_id %}C120{% elif 'c210' in trigger.entity_id %}C210{% else %}Nest Doorbell{% endif %}",
+                      "current_value": "{{ trigger.to_state.state }}",
+                      "metric": "{{ 'camera FPS' if trigger.id == 'fps_low' else 'skipped FPS' }}",
+                      "severity": "{{ 'critical' if trigger.id == 'skipped_critical' else 'warning' }}"
+                    }
+                  },
+                  {
+                    "condition": "template",
+                    "value_template": "{{ (trigger.id != 'fps_low' or current_value | float(0) >= 1) and (trigger.id != 'skipped_warning' or current_value | float(0) <= 2) }}"
+                  },
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "PVE-020 detected {{ metric }}={{ current_value }} on {{ camera_name }}. Critical stream loss remains covered independently by PVE-019.",
+                      "notification_id": "pve020_camera_{{ camera }}",
+                      "title": "{{ camera_name }} performance {{ severity }}"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "{{ camera_name }} {{ severity }}: {{ metric }}={{ current_value }}.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "choose": [
+                      {
+                        "conditions": [
+                          {
+                            "condition": "state",
+                            "entity_id": "timer.entity_001",
+                            "state": "idle"
+                          }
+                        ],
+                        "sequence": [
+                          {
+                            "action": "notify.mobile_app_device_001",
+                            "data": {
+                              "data": {
+                                "group": "infrastructure",
+                                "tag": "pve020-camera-{{ camera }}"
+                              },
+                              "message": "{{ metric }} is {{ current_value }}.",
+                              "title": "{{ camera_name }} performance {{ severity }}"
+                            },
+                            "target": {}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": "camera_recovered"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "variables": {
+                      "camera": "{% if 'c120' in trigger.entity_id %}c120{% elif 'c210' in trigger.entity_id %}c210{% else %}nest_doorbell{% endif %}",
+                      "camera_name": "{% if 'c120' in trigger.entity_id %}C120{% elif 'c210' in trigger.entity_id %}C210{% else %}Nest Doorbell{% endif %}"
+                    }
+                  },
+                  {
+                    "action": "persistent_notification.dismiss",
+                    "data": {
+                      "notification_id": "pve020_camera_{{ camera }}"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "{{ camera_name }} FPS and skipped-FPS telemetry recovered.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": [
+                      "restart_once",
+                      "restart_repeated"
+                    ]
+                  }
+                ],
+                "sequence": [
+                  {
+                    "variables": {
+                      "restart_count": "{{ trigger.to_state.state }}",
+                      "severity": "{{ 'critical' if trigger.id == 'restart_repeated' else 'warning' }}",
+                      "source": "{% if 'frigate_vm' in trigger.entity_id %}frigate_vm{% elif 'frigate_restart' in trigger.entity_id %}frigate{% else %}proxmox{% endif %}",
+                      "source_name": "{% if 'frigate_vm' in trigger.entity_id %}Frigate VM{% elif 'frigate_restart' in trigger.entity_id %}Frigate{% else %}Proxmox host{% endif %}"
+                    }
+                  },
+                  {
+                    "condition": "template",
+                    "value_template": "{{ trigger.id != 'restart_once' or restart_count | int(0) <= 1 }}"
+                  },
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "PVE-020 observed {{ restart_count }} {{ source_name }} restart(s) inside ten minutes. This is recovery-time boot-ID/start-time evidence; no restart was dispatched by monitoring.",
+                      "notification_id": "pve020_restart_{{ source }}",
+                      "title": "{{ source_name }} restart {{ severity }}"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "{{ source_name }} restart count is {{ restart_count }} in ten minutes ({{ severity }}).",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "choose": [
+                      {
+                        "conditions": [
+                          {
+                            "condition": "state",
+                            "entity_id": "timer.entity_001",
+                            "state": "idle"
+                          }
+                        ],
+                        "sequence": [
+                          {
+                            "action": "notify.mobile_app_device_001",
+                            "data": {
+                              "data": {
+                                "group": "infrastructure",
+                                "tag": "pve020-restart-{{ source }}"
+                              },
+                              "message": "{{ restart_count }} restart(s) detected inside ten minutes.",
+                              "title": "{{ source_name }} restart {{ severity }}"
+                            },
+                            "target": {}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": "restart_recovered"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "variables": {
+                      "source": "{% if 'frigate_vm' in trigger.entity_id %}frigate_vm{% elif 'frigate_restart' in trigger.entity_id %}frigate{% else %}proxmox{% endif %}"
+                    }
+                  },
+                  {
+                    "action": "persistent_notification.dismiss",
+                    "data": {
+                      "notification_id": "pve020_restart_{{ source }}"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "Restart count window closed for {{ source }}.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": [
+                      "disk_temperature_warning",
+                      "disk_temperature_critical",
+                      "disk_temperature_emergency"
+                    ]
+                  }
+                ],
+                "sequence": [
+                  {
+                    "variables": {
+                      "disk": "{{ 'recording_hdd' if 'recording_hdd' in trigger.entity_id else 'system_ssd' }}",
+                      "disk_name": "{{ 'Recording HDD' if 'recording_hdd' in trigger.entity_id else 'System SSD' }}",
+                      "severity": "{{ trigger.to_state.state }}",
+                      "smart_entity": "{{ 'sensor.entity_025' if 'recording_hdd' in trigger.entity_id else 'sensor.entity_028' }}",
+                      "temperature_entity": "{{ 'sensor.entity_026' if 'recording_hdd' in trigger.entity_id else 'sensor.entity_029' }}"
+                    }
+                  },
+                  {
+                    "condition": "template",
+                    "value_template": "{{ is_state(smart_entity, 'ok') }}"
+                  },
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "PVE-020 classified {{ disk_name }} temperature as {{ severity }}. Home Assistant currently displays {{ states(temperature_entity) }} {{ state_attr(temperature_entity, 'unit_of_measurement') }}; policy is evaluated from the exact Celsius SMART reading.",
+                      "notification_id": "pve020_disk_{{ disk }}",
+                      "title": "{{ disk_name }} temperature {{ severity }}"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "{{ disk_name }} temperature entered {{ severity }}.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "choose": [
+                      {
+                        "conditions": [
+                          {
+                            "condition": "template",
+                            "value_template": "{{ severity in ['critical', 'emergency'] or not is_state('timer.entity_001', 'active') }}"
+                          }
+                        ],
+                        "sequence": [
+                          {
+                            "action": "notify.mobile_app_device_001",
+                            "data": {
+                              "data": {
+                                "group": "infrastructure",
+                                "tag": "pve020-disk-{{ disk }}"
+                              },
+                              "message": "Current HA display: {{ states(temperature_entity) }} {{ state_attr(temperature_entity, 'unit_of_measurement') }}.",
+                              "title": "{{ disk_name }} temperature {{ severity }}"
+                            },
+                            "target": {}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": [
+                      "smart_warning",
+                      "smart_critical"
+                    ]
+                  }
+                ],
+                "sequence": [
+                  {
+                    "variables": {
+                      "disk": "{{ 'recording_hdd' if 'recording_hdd' in trigger.entity_id else 'system_ssd' }}",
+                      "disk_name": "{{ 'Recording HDD' if 'recording_hdd' in trigger.entity_id else 'System SSD' }}",
+                      "problems": "{{ state_attr(trigger.entity_id, 'problems') | default([], true) | join('; ') }}",
+                      "severity": "{{ trigger.to_state.state }}"
+                    }
+                  },
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "PVE-020 SMART evidence: {{ problems if problems else 'details unavailable' }}.",
+                      "notification_id": "pve020_disk_{{ disk }}",
+                      "title": "{{ disk_name }} SMART {{ severity }}"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "{{ disk_name }} SMART {{ severity }}: {{ problems if problems else 'details unavailable' }}.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "choose": [
+                      {
+                        "conditions": [
+                          {
+                            "condition": "template",
+                            "value_template": "{{ severity == 'critical' or not is_state('timer.entity_001', 'active') }}"
+                          }
+                        ],
+                        "sequence": [
+                          {
+                            "action": "notify.mobile_app_device_001",
+                            "data": {
+                              "data": {
+                                "group": "infrastructure",
+                                "tag": "pve020-disk-{{ disk }}"
+                              },
+                              "message": "{{ problems if problems else 'SMART health problem detected.' }}",
+                              "title": "{{ disk_name }} SMART {{ severity }}"
+                            },
+                            "target": {}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": "disk_recovered"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "variables": {
+                      "disk": "{{ 'recording_hdd' if 'recording_hdd' in trigger.entity_id else 'system_ssd' }}",
+                      "disk_name": "{{ 'Recording HDD' if 'recording_hdd' in trigger.entity_id else 'System SSD' }}"
+                    }
+                  },
+                  {
+                    "action": "persistent_notification.dismiss",
+                    "data": {
+                      "notification_id": "pve020_disk_{{ disk }}"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "{{ disk_name }} returned to healthy SMART and temperature state.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": "pve_collector_lost"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "action": "persistent_notification.create",
+                    "data": {
+                      "message": "Home Assistant has not received the Proxmox SMART/restart heartbeat. Check the pve-health-monitor timer, Proxmox availability, MQTT, and Home Assistant MQTT integration.",
+                      "notification_id": "pve020_pve_collector",
+                      "title": "PVE-020 collector unavailable"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "Proxmox health collector entity remained unavailable for five minutes.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "choose": [
+                      {
+                        "conditions": [
+                          {
+                            "condition": "state",
+                            "entity_id": "timer.entity_001",
+                            "state": "idle"
+                          }
+                        ],
+                        "sequence": [
+                          {
+                            "action": "notify.mobile_app_device_001",
+                            "data": {
+                              "data": {
+                                "group": "infrastructure",
+                                "tag": "pve020-pve-collector"
+                              },
+                              "message": "No Proxmox SMART/restart heartbeat is reaching Home Assistant.",
+                              "title": "PVE-020 collector unavailable"
+                            },
+                            "target": {}
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "conditions": [
+                  {
+                    "condition": "trigger",
+                    "id": "pve_collector_recovered"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "action": "persistent_notification.dismiss",
+                    "data": {
+                      "notification_id": "pve020_pve_collector"
+                    },
+                    "target": {}
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "message": "Proxmox health collector heartbeat recovered.",
+                      "name": "PVE-020 Infrastructure Health"
+                    },
+                    "target": {}
+                  }
+                ]
+              }
+            ]
+          }
+        ],
+        "alias": "automation.source_05",
+        "conditions": [],
+        "description": "Sanitized replay configuration for automation.source_05.",
+        "id": "source_05",
+        "max": 20,
+        "mode": "queued",
+        "triggers": [
+          {
+            "entity_id": "binary_sensor.entity_011",
+            "for": "00:30:00",
+            "id": "storage_warning",
+            "to": "on",
+            "trigger": "state"
+          },
+          {
+            "entity_id": "binary_sensor.entity_009",
+            "for": "00:10:00",
+            "id": "storage_critical",
+            "to": "on",
+            "trigger": "state"
+          },
+          {
+            "entity_id": "binary_sensor.entity_010",
+            "id": "storage_emergency",
+            "to": "on",
+            "trigger": "state"
+          },
+          {
+            "entity_id": "sensor.entity_015",
+            "for": "00:00:30",
+            "id": "storage_recovered",
+            "to": "ok",
+            "trigger": "state"
+          },
+          {
+            "below": 4,
+            "entity_id": [
+              "sensor.entity_005",
+              "sensor.entity_007",
+              "sensor.entity_011"
+            ],
+            "for": "00:02:00",
+            "id": "fps_low",
+            "trigger": "numeric_state"
+          },
+          {
+            "above": 0.5,
+            "entity_id": [
+              "sensor.entity_006",
+              "sensor.entity_008",
+              "sensor.entity_012"
+            ],
+            "for": "00:05:00",
+            "id": "skipped_warning",
+            "trigger": "numeric_state"
+          },
+          {
+            "above": 2,
+            "entity_id": [
+              "sensor.entity_006",
+              "sensor.entity_008",
+              "sensor.entity_012"
+            ],
+            "for": "00:02:00",
+            "id": "skipped_critical",
+            "trigger": "numeric_state"
+          },
+          {
+            "entity_id": [
+              "binary_sensor.entity_006",
+              "binary_sensor.entity_007",
+              "binary_sensor.entity_008"
+            ],
+            "for": "00:00:30",
+            "id": "camera_recovered",
+            "to": "off",
+            "trigger": "state"
+          },
+          {
+            "above": 0,
+            "entity_id": [
+              "sensor.entity_010",
+              "sensor.entity_009",
+              "sensor.entity_023"
+            ],
+            "id": "restart_once",
+            "trigger": "numeric_state"
+          },
+          {
+            "above": 1,
+            "entity_id": [
+              "sensor.entity_010",
+              "sensor.entity_009",
+              "sensor.entity_023"
+            ],
+            "id": "restart_repeated",
+            "trigger": "numeric_state"
+          },
+          {
+            "entity_id": [
+              "sensor.entity_010",
+              "sensor.entity_009",
+              "sensor.entity_023"
+            ],
+            "for": "00:00:30",
+            "id": "restart_recovered",
+            "to": "0",
+            "trigger": "state"
+          },
+          {
+            "entity_id": [
+              "sensor.entity_024",
+              "sensor.entity_027"
+            ],
+            "for": "00:15:00",
+            "id": "disk_temperature_warning",
+            "to": "warning",
+            "trigger": "state"
+          },
+          {
+            "entity_id": [
+              "sensor.entity_024",
+              "sensor.entity_027"
+            ],
+            "for": "00:05:00",
+            "id": "disk_temperature_critical",
+            "to": "critical",
+            "trigger": "state"
+          },
+          {
+            "entity_id": [
+              "sensor.entity_024",
+              "sensor.entity_027"
+            ],
+            "id": "disk_temperature_emergency",
+            "to": "emergency",
+            "trigger": "state"
+          },
+          {
+            "entity_id": [
+              "sensor.entity_025",
+              "sensor.entity_028"
+            ],
+            "id": "smart_warning",
+            "to": "warning",
+            "trigger": "state"
+          },
+          {
+            "entity_id": [
+              "sensor.entity_025",
+              "sensor.entity_028"
+            ],
+            "id": "smart_critical",
+            "to": "critical",
+            "trigger": "state"
+          },
+          {
+            "entity_id": [
+              "sensor.entity_024",
+              "sensor.entity_027"
+            ],
+            "for": "00:00:30",
+            "id": "disk_recovered",
+            "to": "ok",
+            "trigger": "state"
+          },
+          {
+            "entity_id": "binary_sensor.entity_018",
+            "for": "00:05:00",
+            "id": "pve_collector_lost",
+            "to": "unavailable",
+            "trigger": "state"
+          },
+          {
+            "entity_id": "binary_sensor.entity_018",
+            "for": "00:00:30",
+            "from": "unavailable",
+            "id": "pve_collector_recovered",
+            "to": "off",
+            "trigger": "state"
+          }
+        ]
+      },
+      "source": "automation.source_05"
+    }
+  ],
+  "expected_beta50_falsification": {
+    "coverage_complete": false,
+    "downstream_profile_count": 5,
+    "exact_dependency_count": 0,
+    "execution_eligible": false,
+    "target_capable_opaque_obligation_count": 28
+  },
+  "expected_corrected_projection": {
+    "coverage_complete": true,
+    "downstream_profile_count": 0,
+    "evidence_complete": true,
+    "exact_dependency_count": 0,
+    "execution_eligible": true,
+    "physical_consequence": "none",
+    "policy_tier": "standard_admin",
+    "risk_level": "low",
+    "target_capable_opaque_obligation_count": 0
+  },
+  "membership_evidence": {
+    "domain_evidence": {
+      "automation.source_02": {
+        "finite_selector_domains": [
+          "binary_sensor",
+          "climate",
+          "cover",
+          "input_boolean",
+          "input_select",
+          "lock",
+          "sensor"
+        ],
+        "group_member_domain": "person"
+      },
+      "automation.source_03": {
+        "finite_selector_domains": [
+          "binary_sensor",
+          "camera",
+          "sensor"
+        ]
+      },
+      "automation.source_04": {
+        "iterated_state_domains": [
+          "sensor",
+          "binary_sensor"
+        ],
+        "reason": "Replay requires domain-collection semantics, not household-wide membership.",
+        "whole_domain_membership_captured": false
+      }
+    },
+    "groups": [
+      {
+        "group_id": "group.object_001",
+        "members": [
+          "person.person_001",
+          "person.person_002",
+          "person.person_003"
+        ],
+        "membership_complete": true,
+        "source": "exact group state attribute read"
+      }
+    ],
+    "labels": [
+      {
+        "label_id": "label_001",
+        "member_domains": [
+          "binary_sensor",
+          "climate",
+          "cover",
+          "input_boolean",
+          "input_select",
+          "lock",
+          "sensor"
+        ],
+        "members": [
+          "binary_sensor.entity_001",
+          "binary_sensor.entity_002",
+          "binary_sensor.entity_003",
+          "binary_sensor.entity_013",
+          "binary_sensor.entity_014",
+          "climate.entity_001",
+          "cover.entity_001",
+          "input_boolean.entity_001",
+          "input_select.entity_001",
+          "lock.entity_001",
+          "sensor.entity_016"
+        ],
+        "membership_complete": true,
+        "source": "Home Assistant label_entities() exact literal selector evaluation"
+      },
+      {
+        "label_id": "label_002",
+        "member_domains": [
+          "binary_sensor",
+          "camera"
+        ],
+        "members": [
+          "binary_sensor.entity_004",
+          "binary_sensor.entity_005",
+          "camera.entity_001",
+          "camera.entity_002",
+          "camera.entity_003"
+        ],
+        "membership_complete": true,
+        "source": "Home Assistant label_entities() exact literal selector evaluation"
+      },
+      {
+        "label_id": "label_003",
+        "member_domains": [
+          "binary_sensor",
+          "camera",
+          "climate",
+          "cover",
+          "input_boolean",
+          "input_select",
+          "lock",
+          "sensor"
+        ],
+        "members": [
+          "binary_sensor.entity_001",
+          "binary_sensor.entity_002",
+          "binary_sensor.entity_003",
+          "binary_sensor.entity_004",
+          "binary_sensor.entity_005",
+          "binary_sensor.entity_013",
+          "binary_sensor.entity_014",
+          "camera.entity_001",
+          "camera.entity_002",
+          "camera.entity_003",
+          "climate.entity_001",
+          "cover.entity_001",
+          "input_boolean.entity_001",
+          "input_select.entity_001",
+          "lock.entity_001",
+          "sensor.entity_016"
+        ],
+        "membership_complete": true,
+        "source": "Home Assistant label_entities() exact literal selector evaluation"
+      }
+    ],
+    "target_helper": {
+      "entity_id": "input_boolean.target_standard",
+      "labels": [],
+      "membership_complete": true,
+      "source": "exact entity-registry read"
+    },
+    "zones": []
+  },
+  "provenance": {
+    "capture_status": "READY_FOR_OFFLINE_REPLAY",
+    "configuration_set_sha256": "bdd92f6eb9d221a544b3fd95dd3cd1b694eda9309d4c130e0b1d1ee19894861f",
+    "engineering_version": "2.2.0-beta.50",
+    "home_assistant_version": "2026.8.1",
+    "membership_evidence_sha256": "d62e3a7c59f83260a4c5b42a08d9b1367c3fbc3aee468eb1c2b950be0bf4a33b",
+    "sanitized_before_hashing": true,
+    "snapshot_equivalence_limitation": "get_automation_config returned current source bodies but did not expose an authoritative current configuration fingerprint comparable to the persisted planning snapshot fingerprints.",
+    "snapshot_equivalence_proven": false,
+    "source_capture_file_sha256": "7e92cd703d97cfb32651da278c48bff6a8b3c24df44ee9e723185cdd4952d1de",
+    "source_capture_schema": "hamcp089-beta50-sanitized-replay-v2",
+    "source_capture_self_fingerprint": "b1989ed5e8fdbf22ce29b611ccb83f35ae5ca69a9ba0d2c7d8f48f5a52473817"
+  },
+  "schema": "hamcp089-helper-production-replay-v1",
+  "target_entity_id": "input_boolean.target_standard"
+}

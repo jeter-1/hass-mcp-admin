@@ -20,7 +20,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v9"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v10"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -33,6 +33,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v6",
         "helper-dependency-risk-v7",
         "helper-dependency-risk-v8",
+        "helper-dependency-risk-v9",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -1450,7 +1451,7 @@ class HelperDependencyRiskService:
     ) -> dict[str, Any]:
         """Read target-specific risk, optionally behind a governed fence.
 
-        An ordinary ``refresh`` request means "use current evidence": a
+        An ordinary ``refresh`` request means "ensure current evidence": a
         committed, non-invalidated snapshot inside the soft TTL is reused.
         This lets an explicit dependency refresh and the plans immediately
         following it bind one immutable generation instead of silently
@@ -1488,6 +1489,24 @@ class HelperDependencyRiskService:
                 refresh=effective_refresh, min_source_epoch=fence
             )
             metadata = self.index.evidence_metadata(snapshot)
+            if (
+                refresh
+                and not fenced
+                and current_snapshot
+                and metadata.get("freshness") != "current"
+            ):
+                # The soft TTL or invalidation boundary may race the identity
+                # check above.  Reusing a previously current generation is
+                # allowed; binding a generation that became stale during that
+                # decision is not.
+                (
+                    snapshot,
+                    followup_rebuilt,
+                    followup_lookup_ms,
+                ) = await self.index.get(refresh=True)
+                rebuilt = bool(rebuilt or followup_rebuilt)
+                lookup_duration_ms += followup_lookup_ms
+                metadata = self.index.evidence_metadata(snapshot)
         except Exception as exc:
             return {
                 "binding": _failed_binding(entity_id, "failed"),
