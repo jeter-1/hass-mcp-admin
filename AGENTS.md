@@ -35,6 +35,11 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   remembered hard-coded values are not proof of current source or runtime
   behavior. Resolve conflicts from current source, tests, executable validation,
   manifests, workflows, and current architecture or acceptance documents.
+- For Home Assistant behavior, add-on lifecycle, or host-platform claims, follow
+  [`ADR-021`](docs/architecture/ADR-021-HOME-ASSISTANT-SOURCE-AUTHORITY.md).
+  Select the exact upstream authority for the boundary under review; do not use
+  a moving branch, documentation example, installed skill, or remembered value
+  as a substitute for exact-version source and executable evidence.
 
 ## Default Workflow
 
