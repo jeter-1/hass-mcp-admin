@@ -51,10 +51,11 @@ jobs:
       github.event.pull_request.base.ref == 'main' &&
       github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 40
     permissions:
       contents: write
       pull-requests: write
+      statuses: read
     steps:
       - name: Arm GitHub native auto-merge for the authorized exact head
         shell: bash
@@ -62,6 +63,8 @@ jobs:
           AUTHORIZED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          RECEIPT_MAX_ATTEMPTS: "105"
+          RECEIPT_POLL_SECONDS: "20"
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -70,9 +73,43 @@ jobs:
             echo "::error::The pull-request head moved after Ready for review was authorized."
             exit 1
           fi
+
+          for attempt in $(seq 1 "$RECEIPT_MAX_ATTEMPTS"); do
+            current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+            if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
+              echo "::error::The pull-request head moved while review authorization was pending."
+              exit 1
+            fi
+
+            receipt_state="$(
+              gh api "repos/${REPOSITORY}/commits/${AUTHORIZED_HEAD_SHA}/status" \
+                --jq '[.statuses[] | select(.context == "codex-review-receipt")][0].state // "missing"'
+            )"
+            case "$receipt_state" in
+              success)
+                break
+                ;;
+              missing|pending)
+                if [[ "$attempt" -eq "$RECEIPT_MAX_ATTEMPTS" ]]; then
+                  echo "::error::The exact-head Codex review receipt did not succeed within 35 minutes."
+                  exit 1
+                fi
+                sleep "$RECEIPT_POLL_SECONDS"
+                ;;
+              failure|error)
+                echo "::error::The exact-head Codex review receipt failed."
+                exit 1
+                ;;
+              *)
+                echo "::error::The exact-head Codex review receipt returned an unknown state."
+                exit 1
+                ;;
+            esac
+          done
+
           gh pr merge "$PR_NUMBER" \
             --repo "$REPOSITORY" \
             --auto \
             --merge \
             --match-head-commit "$AUTHORIZED_HEAD_SHA"
-          echo "Auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Exact-head Codex receipt succeeded; auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"

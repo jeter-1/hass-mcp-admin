@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -113,18 +114,102 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("base.ref == 'main'", job["if"])
         self.assertEqual(
             job["permissions"],
-            {"contents": "write", "pull-requests": "write"},
+            {
+                "contents": "write",
+                "pull-requests": "write",
+                "statuses": "read",
+            },
         )
         self.assertFalse(any("uses" in step for step in job["steps"]))
-        script = str(job["steps"][0]["run"])
+        step = job["steps"][0]
+        self.assertEqual(step["env"]["RECEIPT_MAX_ATTEMPTS"], "105")
+        self.assertEqual(step["env"]["RECEIPT_POLL_SECONDS"], "20")
+        script = str(step["run"])
         self.assertIn("current_head_sha", script)
         self.assertIn("AUTHORIZED_HEAD_SHA", script)
         self.assertIn("gh pr merge", script)
         self.assertIn("--auto", script)
         self.assertIn("--merge", script)
         self.assertIn("--match-head-commit", script)
+        self.assertIn("codex-review-receipt", script)
+        self.assertIn("receipt_state", script)
+        self.assertIn("missing|pending", script)
+        self.assertIn("failure|error", script)
+        self.assertIn("unknown state", script)
+        self.assertLess(script.index("receipt_state"), script.index("gh pr merge"))
         self.assertNotIn("--admin", script)
         self.assertNotIn("--force", script)
+
+    def test_auto_merge_is_blocked_until_exact_head_receipt_succeeds(self):
+        job = self.auto_merge["jobs"]["authorize-auto-merge"]
+        step = job["steps"][0]
+        script = str(step["run"])
+        head = "4deb1d30edc7ccb8ced7c8438930ca1310c3775b"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gh_log = root / "gh.log"
+            summary = root / "summary.md"
+            fake_gh = root / "gh"
+            fake_gh.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
+if [[ "$1" == "api" && "$2" == *"/pulls/"* ]]; then
+  printf '%s\\n' "$AUTHORIZED_HEAD_SHA"
+elif [[ "$1" == "api" && "$2" == *"/commits/"*"/status" ]]; then
+  printf '%s\\n' "$MOCK_RECEIPT_STATE"
+elif [[ "$1" == "pr" && "$2" == "merge" ]]; then
+  exit 0
+else
+  printf 'unexpected gh invocation: %s\\n' "$*" >&2
+  exit 2
+fi
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o700)
+
+            for state, expected_returncode in (
+                ("success", 0),
+                ("missing", 1),
+                ("pending", 1),
+                ("failure", 1),
+                ("error", 1),
+                ("unexpected", 1),
+            ):
+                with self.subTest(receipt_state=state):
+                    gh_log.write_text("", encoding="utf-8")
+                    result = subprocess.run(
+                        ["bash", "-c", script],
+                        cwd=ROOT,
+                        env={
+                            **os.environ,
+                            "AUTHORIZED_HEAD_SHA": head,
+                            "GH_TOKEN": "test-token",
+                            "GITHUB_STEP_SUMMARY": str(summary),
+                            "MOCK_GH_LOG": str(gh_log),
+                            "MOCK_RECEIPT_STATE": state,
+                            "PATH": f"{root}:{os.environ['PATH']}",
+                            "PR_NUMBER": "164",
+                            "RECEIPT_MAX_ATTEMPTS": "1",
+                            "RECEIPT_POLL_SECONDS": "0",
+                            "REPOSITORY": "jeter-1/hass-mcp-admin",
+                        },
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        result.returncode,
+                        expected_returncode,
+                        result.stderr,
+                    )
+                    merge_was_reached = any(
+                        line.startswith("pr merge ")
+                        for line in gh_log.read_text(encoding="utf-8").splitlines()
+                    )
+                    self.assertEqual(merge_was_reached, state == "success")
 
     def test_head_change_withdraws_ready_authorization_and_disarms_auto_merge(self):
         job = self.auto_merge["jobs"]["revoke-auto-merge-on-head-change"]

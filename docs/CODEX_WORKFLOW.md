@@ -164,8 +164,10 @@ sequence:
    protected merge path.
 4. The required `validate` and `codex-review-receipt` checks and review-thread
    resolution requirements must all apply to the final head.
-5. GitHub native auto-merge merges through the protected path. The automation
-   has no administrative bypass and never force-pushes.
+5. The protected-base authorization workflow independently waits for a successful
+   `codex-review-receipt` on the authorized exact head before it arms GitHub
+   native auto-merge. The ruleset enforces the same receipt at merge time. The
+   automation has no administrative bypass and never force-pushes.
 6. If the reviewed merge includes a final Engineering version transition, the
    protected-main publication workflow validates and publishes that exact merge
    commit. It does not deploy the add-on or modify Home Assistant.
