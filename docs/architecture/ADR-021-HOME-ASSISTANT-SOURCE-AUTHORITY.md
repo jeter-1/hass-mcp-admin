@@ -21,6 +21,7 @@ Select authority by the boundary being evaluated:
 | Boundary | Primary authority | Required use |
 | --- | --- | --- |
 | Home Assistant entities, services, templates, registries, automations, WebSocket/REST behavior, and integration semantics | Exact supported revision of [Home Assistant Core](https://github.com/home-assistant/core) | Inspect the applicable implementation and upstream tests. Prove material integration behavior in the corresponding exact-version disposable Home Assistant lane. |
+| Delegated MCP server identity, protocol, advertised tools, input/output schemas, descriptions, annotations, and tool behavior | Exact reviewed revision and immutable image of [`homeassistant-ai/ha-mcp`](https://github.com/homeassistant-ai/ha-mcp) | Inspect the applicable source and tests, then capture the real initialized identity and complete paginated `tools/list` from the exact image. Apply the Engineering-owned admission and safety classifications in [`ADR-006`](ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md); upstream declarations cannot authorize themselves. |
 | App/add-on configuration validation, ingress, authentication, permissions, installed identity, lifecycle, watchdog, backups, Supervisor API behavior, and container construction | Exact applicable revision of [Home Assistant Supervisor](https://github.com/home-assistant/supervisor) | Inspect the validator, API, security, app/container, and test paths relevant to the claim. Treat Supervisor's endpoint-bound installed inventory as lifecycle identity where the existing architecture requires it. |
 | Host architecture support, Docker/kernel behavior, AppArmor, filesystem constraints, networking, shutdown, operating-system updates, boot, and recovery | Exact applicable revision or release of [Home Assistant Operating System](https://github.com/home-assistant/operating-system) | Consult it when packaging, native dependencies, architectures, writable paths, security profiles, update behavior, or deployment recovery can be affected. Do not use HAOS evidence to infer Core or Supervisor application semantics. |
 | User-facing documentation, supported configuration guidance, examples, and documentation drift | Pinned revision of [home-assistant.io](https://github.com/home-assistant/home-assistant.io) | Use as documentation evidence and to check user-facing claims. When documentation conflicts with executable exact-version source, report the conflict and use the executable source for behavioral conclusions. |
@@ -30,6 +31,18 @@ Repository governance remains authoritative for what Engineering is allowed to
 expose or execute. Upstream source can demonstrate behavior, but it cannot grant
 a tool, provider, fallback, write path, approval, or deployment authority that
 this repository does not already authorize.
+
+For `ha-mcp`, a source tag, README tool count, release description, safety
+annotation, server version string, or matching self-advertised schema is
+observation only. Review evidence must bind the source commit, immutable image
+digest and architectures, MCP server identity and protocol, complete catalog
+fingerprint, and each admitted tool's complete dispatch-relevant contract. The
+compiled registry and policy select the reviewed subset. New, mixed, action,
+write, malformed, missing, or changed tools remain unavailable or quarantined
+as defined by `ADR-006` and the
+[upstream compatibility operator guide](../UPSTREAM_COMPATIBILITY_OPERATOR_GUIDE.md).
+Never use `latest`, the moving default branch, bundled skills, or upstream tool
+security settings to broaden Engineering authority.
 
 ## Evidence procedure
 
@@ -73,10 +86,12 @@ this repository does not already authorize.
 
 ## Consequences
 
-Core is the default executable reference for Home Assistant semantics;
-Supervisor is the default executable reference for the managed app boundary;
-HAOS is consulted for platform-sensitive work; and `home-assistant.io` and the
-best-practices skill improve guidance without becoming behavioral authority.
+Core is the default executable reference for Home Assistant semantics; the
+exact reviewed `ha-mcp` source and image define the observed delegated MCP
+contract; Supervisor is the default executable reference for the managed app
+boundary; HAOS is consulted for platform-sensitive work; and
+`home-assistant.io` and the best-practices skill improve guidance without
+becoming behavioral authority.
 
 This hierarchy is task-specific rather than one universal ordering. A Core
 source citation cannot answer a Supervisor container-permission question, and a
