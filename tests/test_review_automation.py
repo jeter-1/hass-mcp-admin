@@ -19,6 +19,7 @@ CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 WORKFLOW_GUIDE = ROOT / "docs" / "CODEX_WORKFLOW.md"
 ROOT_INSTRUCTIONS = ROOT / "AGENTS.md"
 RECEIPT_VALIDATOR = ROOT / "scripts" / "validate_native_codex_review.py"
+READY_AUTH_VALIDATOR = ROOT / "scripts" / "validate_ready_authorization.py"
 
 
 def load_yaml(path: Path) -> dict:
@@ -155,6 +156,15 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertRegex(checkout["uses"], r"^actions/checkout@[0-9a-f]{40}$")
         self.assertEqual(checkout["with"]["ref"], "${{ steps.context.outputs.base_sha }}")
         self.assertFalse(checkout["with"]["persist-credentials"])
+
+        ready_guard = next(
+            candidate
+            for candidate in job["steps"]
+            if candidate.get("name") == "Verify current-head Ready authorization for retry"
+        )
+        self.assertEqual(ready_guard["if"], "github.event_name == 'issue_comment'")
+        self.assertIn("issues/${PR_NUMBER}/timeline?per_page=100", ready_guard["run"])
+        self.assertIn("scripts/validate_ready_authorization.py", ready_guard["run"])
 
         step = job["steps"][-1]
         self.assertEqual(step["env"]["RECEIPT_MAX_ATTEMPTS"], "105")
@@ -637,6 +647,81 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(payload["evidence_kind"], "submitted_review")
+
+
+class ReadyAuthorizationValidationTests(unittest.TestCase):
+    def run_validator(self, timeline: list[dict]):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            timeline_path = root / "timeline.json"
+            output_path = root / "authorization.json"
+            timeline_path.write_text(json.dumps(timeline), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(READY_AUTH_VALIDATOR),
+                    "--timeline",
+                    str(timeline_path),
+                    "--output",
+                    str(output_path),
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            payload = (
+                json.loads(output_path.read_text(encoding="utf-8"))
+                if output_path.exists()
+                else None
+            )
+            return result, payload
+
+    @staticmethod
+    def committed(sha: str) -> dict:
+        return {"event": "committed", "sha": sha}
+
+    @staticmethod
+    def ready(*, actor: str = "jeter-1", event_id: int = 1) -> dict:
+        return {
+            "id": event_id,
+            "event": "ready_for_review",
+            "actor": {"login": actor},
+        }
+
+    def test_unchanged_ready_head_allows_comment_retry(self):
+        result, payload = self.run_validator(
+            [self.committed("a" * 40), self.ready(event_id=22)]
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(payload["status"], "authorized")
+        self.assertEqual(payload["event_id"], 22)
+
+    def test_synchronized_head_requires_another_ready_action(self):
+        head_a = self.committed("a" * 40)
+        head_b = self.committed("b" * 40)
+        result, payload = self.run_validator([head_a, self.ready(), head_b])
+        self.assertEqual(result.returncode, 1)
+        self.assertIsNone(payload)
+
+        recovered, recovered_payload = self.run_validator(
+            [head_a, self.ready(), head_b, self.ready(event_id=2)]
+        )
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual(recovered_payload["event_id"], 2)
+
+    def test_force_push_draft_or_nonowner_ready_fails_closed(self):
+        cases = (
+            [self.committed("a" * 40), self.ready(), {"event": "head_ref_force_pushed"}],
+            [self.committed("a" * 40), self.ready(), {"event": "convert_to_draft"}],
+            [self.committed("a" * 40), self.ready(actor="untrusted-contributor")],
+            [],
+        )
+        for timeline in cases:
+            with self.subTest(timeline=timeline):
+                result, payload = self.run_validator(timeline)
+                self.assertEqual(result.returncode, 1)
+                self.assertIsNone(payload)
 
 
 if __name__ == "__main__":

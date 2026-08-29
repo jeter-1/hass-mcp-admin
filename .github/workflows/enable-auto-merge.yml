@@ -104,6 +104,25 @@ jobs:
           ref: ${{ steps.context.outputs.base_sha }}
           persist-credentials: false
 
+      - name: Verify current-head Ready authorization for retry
+        if: github.event_name == 'issue_comment'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if ! gh api --paginate \
+            "repos/${REPOSITORY}/issues/${PR_NUMBER}/timeline?per_page=100" \
+            | jq -s 'add' > /tmp/ready-authorization-timeline.json; then
+            echo "::error::Could not read pull-request Ready lifecycle evidence."
+            exit 1
+          fi
+          python3 scripts/validate_ready_authorization.py \
+            --timeline /tmp/ready-authorization-timeline.json \
+            --output /tmp/ready-authorization.json
+
       - name: Arm GitHub native auto-merge for the authorized exact head
         shell: bash
         env:
