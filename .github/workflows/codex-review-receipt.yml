@@ -1,0 +1,164 @@
+name: Native Codex review receipt
+
+on:
+  issue_comment:
+    types:
+      - created
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+permissions: {}
+
+concurrency:
+  group: codex-review-receipt-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  codex-review-receipt:
+    name: codex-review-receipt-observer
+    if: >-
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.draft == false &&
+       github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.actor == 'jeter-1' &&
+       github.event.issue.pull_request != null &&
+       github.event.comment.body == '@codex review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      statuses: write
+    steps:
+      - name: Resolve trusted pull-request context
+        id: context
+        shell: bash
+        env:
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          if ! jq -e --arg repository "$REPOSITORY" \
+            '.state == "open" and .draft == false and .base.ref == "main" and .head.repo.full_name == $repository' \
+            <<< "$pr_json" >/dev/null; then
+            echo "::error::The review-receipt request is not an eligible open pull request."
+            exit 1
+          fi
+          head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
+          base_sha="$(jq -r '.base.sha' <<< "$pr_json")"
+          if [[ "$EVENT_NAME" == "pull_request_target" && "$head_sha" != "$EVENT_HEAD_SHA" ]]; then
+            echo "::error::The pull-request head moved beyond the triggering lifecycle event."
+            exit 1
+          fi
+          {
+            echo "head_sha=$head_sha"
+            echo "base_sha=$base_sha"
+            echo "pr_number=$PR_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.context.outputs.base_sha }}
+          persist-credentials: false
+
+      - name: Publish trusted exact-head native Codex receipt
+        shell: bash
+        env:
+          BASE_SHA: ${{ steps.context.outputs.base_sha }}
+          EXPECTED_HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          RECEIPT_MAX_ATTEMPTS: "90"
+          RECEIPT_POLL_SECONDS: "20"
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          post_status() {
+            local state="$1"
+            local description="$2"
+            gh api --method POST "repos/${REPOSITORY}/statuses/${EXPECTED_HEAD_SHA}" \
+              -f state="$state" \
+              -f context="codex-review-receipt" \
+              -f description="$description" \
+              -f target_url="$RUN_URL" >/dev/null
+          }
+
+          if [[ "$(git rev-parse HEAD)" != "$BASE_SHA" ]]; then
+            post_status failure "Trusted Codex receipt policy did not match the PR base"
+            exit 1
+          fi
+
+          post_status pending "Waiting for native Codex review of the exact PR head"
+
+          for attempt in $(seq 1 "$RECEIPT_MAX_ATTEMPTS"); do
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              | jq -s 'add' > /tmp/codex-review-comments.json; then
+              post_status failure "Could not read native Codex review comments"
+              exit 1
+            fi
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" \
+              | jq -s 'add' > /tmp/codex-reviews.json; then
+              post_status failure "Could not read native Codex reviews"
+              exit 1
+            fi
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" \
+              | jq -s 'add' > /tmp/codex-inline-review-comments.json; then
+              post_status failure "Could not read native Codex review comments"
+              exit 1
+            fi
+
+            set +e
+            python3 scripts/validate_native_codex_review.py \
+              --head "$EXPECTED_HEAD_SHA" \
+              --comments /tmp/codex-review-comments.json \
+              --reviews /tmp/codex-reviews.json \
+              --review-comments /tmp/codex-inline-review-comments.json \
+              --output /tmp/codex-review-receipt.json
+            validation_exit=$?
+            set -e
+
+            if [[ "$validation_exit" -eq 0 ]]; then
+              exact="$(python3 -c 'import json; print(str(json.load(open("/tmp/codex-review-receipt.json", encoding="utf-8"))["exact"]).lower())')"
+              if [[ "$exact" != "true" ]]; then
+                commit_ref="$(python3 -c 'import json; print(json.load(open("/tmp/codex-review-receipt.json", encoding="utf-8"))["commit_ref"])')"
+                resolved_sha="$(gh api "repos/${REPOSITORY}/commits/${commit_ref}" --jq '.sha')"
+                if [[ "$resolved_sha" != "$EXPECTED_HEAD_SHA" ]]; then
+                  post_status failure "Native Codex receipt resolved to a different commit"
+                  exit 1
+                fi
+              fi
+              post_status success "Native Codex completed review of the exact PR head"
+              {
+                echo "## Native Codex review receipt"
+                echo
+                echo "Verified native Codex review evidence for \`${EXPECTED_HEAD_SHA}\`."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            if [[ "$validation_exit" -ne 75 ]]; then
+              post_status failure "Native Codex review evidence was invalid or failed"
+              exit 1
+            fi
+            if [[ "$attempt" -eq "$RECEIPT_MAX_ATTEMPTS" ]]; then
+              post_status failure "Native Codex did not finish review within 30 minutes"
+              exit 1
+            fi
+            sleep "$RECEIPT_POLL_SECONDS"
+          done

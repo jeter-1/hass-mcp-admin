@@ -1,0 +1,223 @@
+name: Arm authorized pull request auto-merge
+
+on:
+  issue_comment:
+    types:
+      - created
+  pull_request_target:
+    types:
+      - converted_to_draft
+      - edited
+      - ready_for_review
+      - synchronize
+
+permissions: {}
+
+concurrency:
+  group: authorized-auto-merge-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: true
+
+jobs:
+  revoke-auto-merge-on-head-change:
+    name: revoke-auto-merge-on-authorization-change
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      ((github.event.action == 'synchronize' &&
+        github.event.pull_request.base.ref == 'main') ||
+       (github.event.action == 'converted_to_draft' &&
+        github.event.pull_request.base.ref == 'main') ||
+       (github.event.action == 'edited' &&
+        github.event.changes.base != null &&
+        (github.event.pull_request.base.ref == 'main' ||
+         github.event.changes.base.ref.from == 'main')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Withdraw stale Ready authorization
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          auto_merge_enabled="$(
+            gh pr view "$PR_NUMBER" \
+              --repo "$REPOSITORY" \
+              --json autoMergeRequest \
+              --jq '.autoMergeRequest != null'
+          )"
+          if [[ "$auto_merge_enabled" == "true" ]]; then
+            gh pr merge "$PR_NUMBER" \
+              --repo "$REPOSITORY" \
+              --disable-auto
+            echo "Auto-merge was disarmed because the pull-request authorization changed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Auto-merge was already disarmed after the pull-request authorization changed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  authorize-auto-merge:
+    name: authorize-auto-merge
+    if: >-
+      (github.event_name == 'pull_request_target' &&
+       github.event.action == 'ready_for_review' &&
+       github.actor == 'jeter-1' &&
+       github.event.pull_request.base.ref == 'main' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.actor == 'jeter-1' &&
+       github.event.issue.pull_request != null &&
+       github.event.comment.body == '@codex review')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+      issues: read
+      pull-requests: write
+    steps:
+      - name: Resolve trusted pull-request context
+        id: context
+        shell: bash
+        env:
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_NAME: ${{ github.event_name }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          if ! jq -e --arg repository "$REPOSITORY" \
+            '.state == "open" and .draft == false and .base.ref == "main" and .head.repo.full_name == $repository' \
+            <<< "$pr_json" >/dev/null; then
+            echo "::error::The auto-merge request is not an eligible open pull request."
+            exit 1
+          fi
+          head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
+          base_sha="$(jq -r '.base.sha' <<< "$pr_json")"
+          if [[ "$EVENT_NAME" == "pull_request_target" && "$head_sha" != "$EVENT_HEAD_SHA" ]]; then
+            echo "::error::The pull-request head moved beyond the authorized Ready event."
+            exit 1
+          fi
+          {
+            echo "head_sha=$head_sha"
+            echo "base_sha=$base_sha"
+            echo "pr_number=$PR_NUMBER"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.context.outputs.base_sha }}
+          persist-credentials: false
+
+      - name: Verify current-head Ready authorization for retry
+        if: github.event_name == 'issue_comment'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if ! gh api --paginate \
+            "repos/${REPOSITORY}/issues/${PR_NUMBER}/timeline?per_page=100" \
+            | jq -s 'add' > /tmp/ready-authorization-timeline.json; then
+            echo "::error::Could not read pull-request Ready lifecycle evidence."
+            exit 1
+          fi
+          python3 scripts/validate_ready_authorization.py \
+            --timeline /tmp/ready-authorization-timeline.json \
+            --output /tmp/ready-authorization.json
+
+      - name: Arm GitHub native auto-merge for the authorized exact head
+        shell: bash
+        env:
+          AUTHORIZED_HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+          BASE_SHA: ${{ steps.context.outputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          RECEIPT_MAX_ATTEMPTS: "105"
+          RECEIPT_POLL_SECONDS: "20"
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$(git rev-parse HEAD)" != "$BASE_SHA" ]]; then
+            echo "::error::Trusted auto-merge policy did not match the PR base."
+            exit 1
+          fi
+
+          current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+          if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
+            echo "::error::The pull-request head moved after Ready for review was authorized."
+            exit 1
+          fi
+
+          for attempt in $(seq 1 "$RECEIPT_MAX_ATTEMPTS"); do
+            current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
+            if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
+              echo "::error::The pull-request head moved while review authorization was pending."
+              exit 1
+            fi
+
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              | jq -s 'add' > /tmp/auto-merge-codex-comments.json; then
+              echo "::error::Could not read native Codex review comments."
+              exit 1
+            fi
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" \
+              | jq -s 'add' > /tmp/auto-merge-codex-reviews.json; then
+              echo "::error::Could not read native Codex reviews."
+              exit 1
+            fi
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" \
+              | jq -s 'add' > /tmp/auto-merge-codex-review-comments.json; then
+              echo "::error::Could not read native Codex review comments."
+              exit 1
+            fi
+
+            set +e
+            python3 scripts/validate_native_codex_review.py \
+              --head "$AUTHORIZED_HEAD_SHA" \
+              --comments /tmp/auto-merge-codex-comments.json \
+              --reviews /tmp/auto-merge-codex-reviews.json \
+              --review-comments /tmp/auto-merge-codex-review-comments.json \
+              --output /tmp/auto-merge-codex-receipt.json
+            validation_exit=$?
+            set -e
+
+            if [[ "$validation_exit" -eq 0 ]]; then
+              exact="$(python3 -c 'import json; print(str(json.load(open("/tmp/auto-merge-codex-receipt.json", encoding="utf-8"))["exact"]).lower())')"
+              if [[ "$exact" != "true" ]]; then
+                commit_ref="$(python3 -c 'import json; print(json.load(open("/tmp/auto-merge-codex-receipt.json", encoding="utf-8"))["commit_ref"])')"
+                resolved_sha="$(gh api "repos/${REPOSITORY}/commits/${commit_ref}" --jq '.sha')"
+                if [[ "$resolved_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
+                  echo "::error::Native Codex evidence resolved to a different commit."
+                  exit 1
+                fi
+              fi
+              break
+            fi
+
+            if [[ "$validation_exit" -ne 75 ]]; then
+              echo "::error::Native Codex review evidence was invalid or failed."
+              exit 1
+            fi
+            if [[ "$attempt" -eq "$RECEIPT_MAX_ATTEMPTS" ]]; then
+              echo "::error::Native Codex did not finish review within 35 minutes."
+              exit 1
+            fi
+            sleep "$RECEIPT_POLL_SECONDS"
+          done
+
+          gh pr merge "$PR_NUMBER" \
+            --repo "$REPOSITORY" \
+            --auto \
+            --merge \
+            --match-head-commit "$AUTHORIZED_HEAD_SHA"
+          echo "Trusted exact-head Codex evidence succeeded; auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"

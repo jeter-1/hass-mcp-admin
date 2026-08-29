@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
+ANCESTOR_GUARD_PATH = ROOT / "scripts" / "assert_protected_release_ancestor.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 remains the immutable failed full-host-reboot candidate. The
@@ -88,12 +89,11 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         cls.ci = load_workflow(CI_PATH)
         cls.workflow = load_workflow(PUBLISH_PATH)
         cls.jobs = cls.workflow["jobs"]
-        cls.prepare_pr = cls.jobs["prepare-promotion-pr"]
         cls.promote = cls.jobs["promote"]
         cls.steps = cls.promote["steps"]
         cls.text = PUBLISH_PATH.read_text(encoding="utf-8")
 
-    def test_only_main_push_can_prepare_or_publish_a_release(self):
+    def test_only_main_push_can_publish_a_release(self):
         events = workflow_events(self.workflow)
         self.assertEqual(events, {"push": {"branches": ["main"]}})
         self.assertEqual(self.workflow["permissions"], {})
@@ -102,7 +102,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertEqual(
             self.workflow["concurrency"],
             {
-                "group": "hass-mcp-engineering-release-promotion",
+                "group": "hass-mcp-engineering-release-publication",
                 "cancel-in-progress": False,
             },
         )
@@ -163,7 +163,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             )
             self.assertGreater(maintenance_version, AwesomeVersion("2.0.0"))
 
-    def test_complete_validation_precedes_release_preparation_or_publication(self):
+    def test_complete_validation_precedes_release_publication(self):
         self.assertEqual(
             self.jobs["validate"]["uses"],
             "./.github/workflows/ci.yml",
@@ -174,17 +174,10 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             {"validate", "detect-release"},
         )
         self.assertEqual(
-            set(self.prepare_pr["needs"]),
-            {"validate", "detect-release"},
-        )
-        self.assertEqual(
-            self.prepare_pr["if"],
-            "needs.detect-release.outputs.release_action == 'prepare'",
-        )
-        self.assertEqual(
             self.promote["if"],
             "needs.detect-release.outputs.release_action == 'publish'",
         )
+        self.assertNotIn("prepare-promotion-pr", self.jobs)
         self.assertIn("workflow_call", workflow_events(self.ci))
 
     def test_dependency_audit_is_a_required_release_validation_gate(self):
@@ -215,18 +208,14 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             "hass_mcp_admin/requirements-dev.txt",
             release_install["run"],
         )
-        preparation_install = next(
-            step
-            for step in self.prepare_pr["steps"]
-            if step.get("name") == "Install release preparation dependencies"
-        )
-        self.assertNotIn(
-            "hass_mcp_admin/requirements-dev.txt",
-            preparation_install["run"],
-        )
 
-    def test_pull_request_ci_validates_materialized_promotion_candidate(self):
+    def test_pull_request_ci_requires_materialized_release_state(self):
         validate_steps = self.ci["jobs"]["validate"]["steps"]
+        transition_validation = next(
+            step
+            for step in validate_steps
+            if step.get("name") == "Validate exact materialized release transition"
+        )
         candidate_validation = next(
             step
             for step in validate_steps
@@ -234,7 +223,18 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(
             candidate_validation["run"],
-            "python scripts/validate_promotion_candidate.py --repo-root .",
+            "python scripts/validate_promotion_candidate.py --repo-root . "
+            "--require-materialized",
+        )
+        transition_script = str(transition_validation["run"])
+        self.assertIn(
+            "git show origin/main:hass_mcp_engineering_beta/config.yaml",
+            transition_script,
+        )
+        self.assertIn("--validate-transition", transition_script)
+        self.assertLess(
+            validate_steps.index(transition_validation),
+            validate_steps.index(candidate_validation),
         )
         declaration = ROOT / PROMOTION_MODULE.NEXT_VERSION_PATH
         if not declaration.exists():
@@ -249,17 +249,103 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 "scripts/validate_promotion_candidate.py",
                 "--repo-root",
                 ".",
+                "--require-materialized",
             ],
             cwd=ROOT,
             text=True,
             capture_output=True,
             check=False,
         )
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotEqual(result.returncode, 0)
         self.assertIn(
-            f"Validated isolated promotion candidate {CURRENT_STAGED_VERSION}",
-            result.stdout,
+            "release declaration is not final review state",
+            result.stderr,
         )
+
+    def test_pull_request_ci_rejects_skipped_and_cross_channel_materialization(self):
+        validate_steps = self.ci["jobs"]["validate"]["steps"]
+        transition_script = str(
+            next(
+                step["run"]
+                for step in validate_steps
+                if step.get("name")
+                == "Validate exact materialized release transition"
+            )
+        )
+        cases = (
+            ("2.2.0-beta.50", True),
+            ("2.2.0-beta.51", True),
+            ("2.2.0-beta.52", False),
+            ("2.2.0-rc2-dev51", False),
+        )
+        for candidate, succeeds in cases:
+            with (
+                self.subTest(candidate=candidate),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                repo = Path(directory)
+                config = repo / "hass_mcp_engineering_beta" / "config.yaml"
+                script = repo / "scripts" / "promote_next_release.py"
+                config.parent.mkdir(parents=True)
+                script.parent.mkdir(parents=True)
+                config.write_text('version: "2.2.0-beta.50"\n', encoding="utf-8")
+                shutil.copy2(PROMOTION_PATH, script)
+                subprocess.run(
+                    ["git", "init", "-b", "main"],
+                    cwd=repo,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.name", "CI transition test"],
+                    cwd=repo,
+                    check=True,
+                )
+                subprocess.run(
+                    ["git", "config", "user.email", "ci-transition@example.invalid"],
+                    cwd=repo,
+                    check=True,
+                )
+                subprocess.run(["git", "add", "."], cwd=repo, check=True)
+                subprocess.run(
+                    ["git", "commit", "-m", "base"],
+                    cwd=repo,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+                base_sha = subprocess.run(
+                    ["git", "rev-parse", "HEAD"],
+                    cwd=repo,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                ).stdout.strip()
+                subprocess.run(
+                    ["git", "update-ref", "refs/remotes/origin/main", base_sha],
+                    cwd=repo,
+                    check=True,
+                )
+                config.write_text(f'version: "{candidate}"\n', encoding="utf-8")
+
+                bin_dir = repo / "test-bin"
+                bin_dir.mkdir()
+                python_wrapper = bin_dir / "python"
+                python_wrapper.write_text(
+                    f'#!/usr/bin/env bash\nexec "{sys.executable}" "$@"\n',
+                    encoding="utf-8",
+                )
+                python_wrapper.chmod(0o700)
+                result = subprocess.run(
+                    ["bash", "-c", transition_script],
+                    cwd=repo,
+                    env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"},
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode == 0, succeeds, result.stderr)
 
     def test_reviewed_release_transition_is_detected_and_validated(self):
         detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
@@ -269,10 +355,11 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             if step.get("name") == "Validate protected release commit"
         ))
         self.assertIn("github.event.before", detect)
-        self.assertIn("previous_staged_version", detect)
+        self.assertIn("current_version", detect)
+        self.assertIn("previous_version", detect)
         self.assertIn("release_action=publish", detect)
         self.assertIn(".release/next-version", prepare)
-        self.assertIn("staged_version", prepare)
+        self.assertNotIn("staged_version", prepare)
         self.assertIn('version="$current_version"', prepare)
         self.assertIn(
             'python scripts/promote_next_release.py --validate-authority "$version"',
@@ -286,6 +373,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("HTTP 404", prepare)
         self.assertIn('--deployed-version "$deployed_version"', prepare)
         self.assertIn('--base-ref "$validation_base"', prepare)
+        self.assertIn(
+            '--validate-transition "$deployed_version" "$version"',
+            prepare,
+        )
+        self.assertIn("--require-materialized", prepare)
+        self.assertIn("actual-release-paths", prepare)
         self.assertIn('git status --porcelain', prepare)
         self.assertNotIn("promote_next_release.py --apply", prepare)
         self.assertNotIn("git commit", prepare)
@@ -385,6 +478,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         *,
         existing_release=False,
         main_sha=None,
+        main_is_descendant=True,
         tag_sha=None,
     ):
         bash = shutil.which("bash")
@@ -413,8 +507,14 @@ import os
 import sys
 
 args = sys.argv[1:]
-if args == ["ls-remote", "origin", "refs/heads/main"]:
-    print(os.environ["MOCK_MAIN_SHA"], "refs/heads/main")
+if args == ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"]:
+    pass
+elif args == ["rev-parse", "refs/remotes/origin/main"]:
+    print(os.environ["MOCK_MAIN_SHA"])
+elif args[:2] == ["cat-file", "-e"]:
+    pass
+elif args[:2] == ["merge-base", "--is-ancestor"]:
+    raise SystemExit(0 if os.environ["MOCK_MAIN_IS_DESCENDANT"] == "true" else 1)
 elif args[:2] == ["ls-remote", "origin"] and args[2].startswith("refs/tags/"):
     print(os.environ["MOCK_TAG_SHA"], args[2])
 else:
@@ -423,6 +523,9 @@ else:
                 encoding="utf-8",
             )
             fake_git.chmod(0o755)
+            helper = root / "scripts" / ANCESTOR_GUARD_PATH.name
+            helper.parent.mkdir()
+            shutil.copy2(ANCESTOR_GUARD_PATH, helper)
             (root / "python").symlink_to(sys.executable)
             fake_gh = root / "gh"
             fake_gh.write_text(
@@ -491,6 +594,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                     "MOCK_RELEASE_STATE": str(state),
                     "MOCK_EXISTING_RELEASE": str(existing_release).lower(),
                     "MOCK_MAIN_SHA": main_sha or release_sha,
+                    "MOCK_MAIN_IS_DESCENDANT": str(main_is_descendant).lower(),
                     "MOCK_TAG_SHA": tag_sha or release_sha,
                 }
             )
@@ -516,21 +620,11 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 ),
             }
 
-    def test_release_detector_routes_only_the_exact_staged_lifecycle(self):
-        staged_values, staged_summary, _ = self.run_release_detector(
-            subject="Stage reviewed Engineering correction",
-            current_version="2.0.0-rc2-dev15",
-            previous_version="2.0.0-rc2-dev15",
-            current_staged_version="2.0.0-rc2-dev16",
-        )
-        self.assertEqual(staged_values, {"release_action": "prepare"})
-        self.assertIn("protected promotion pull request", staged_summary)
-
+    def test_release_detector_routes_only_final_reviewed_version_state(self):
         publish_values, publish_summary, _ = self.run_release_detector(
-            subject="Merge protected promotion pull request",
+            subject="Merge reviewed release pull request",
             current_version="2.0.0-rc2-dev16",
             previous_version="2.0.0-rc2-dev15",
-            previous_staged_version="2.0.0-rc2-dev16",
         )
         self.assertEqual(publish_values, {"release_action": "publish"})
         self.assertIn("eligible for publication", publish_summary)
@@ -541,24 +635,19 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             previous_version="2.0.0-rc2-dev16",
         )
         self.assertEqual(none_values, {"release_action": "none"})
-        self.assertIn("No staged declaration", none_summary)
+        self.assertIn("No reviewed Engineering version transition", none_summary)
 
-    def test_release_detector_rejects_unbound_version_or_marker_changes(self):
+    def test_release_detector_rejects_unmaterialized_or_legacy_markers(self):
         cases = (
             {
-                "subject": "Change version without staging authority",
-                "current_version": "2.0.0-rc2-dev16",
+                "subject": "Merge unmaterialized declaration",
                 "previous_version": "2.0.0-rc2-dev15",
-            },
-            {
-                "subject": "Consume the wrong staged declaration",
-                "current_version": "2.0.0-rc2-dev16",
-                "previous_version": "2.0.0-rc2-dev15",
-                "previous_staged_version": "2.0.0-rc2-dev17",
-            },
-            {
-                "subject": "Delete staging marker without promotion",
                 "current_version": "2.0.0-rc2-dev15",
+                "current_staged_version": "2.0.0-rc2-dev16",
+            },
+            {
+                "subject": "Consume a legacy staged declaration",
+                "current_version": "2.0.0-rc2-dev16",
                 "previous_version": "2.0.0-rc2-dev15",
                 "previous_staged_version": "2.0.0-rc2-dev16",
             },
@@ -597,7 +686,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
     def test_github_release_finalization_fails_closed_on_drift(self):
         cases = (
             {"existing_release": True},
-            {"main_sha": "a" * 40},
+            {"main_sha": "a" * 40, "main_is_descendant": False},
             {"tag_sha": "b" * 40},
         )
         for values in cases:
@@ -606,65 +695,20 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 self.assertNotEqual(outcome["result"].returncode, 0)
                 self.assertEqual(outcome["outputs"], {})
 
-    def test_staged_release_materializes_an_exact_protected_draft_pr(self):
+    def test_publication_has_no_second_pull_request_or_branch_write(self):
         detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
-        materialize = str(next(
-            step["run"]
-            for step in self.prepare_pr["steps"]
-            if step.get("name") == "Materialize exact promotion commit"
-        ))
-        publish_pr = str(next(
-            step["run"]
-            for step in self.prepare_pr["steps"]
-            if step.get("name")
-            == "Push exact branch and open draft promotion pull request"
-        ))
-        self.assertIn(
-            "release_action=prepare",
-            detect,
+        scripts = "\n".join(
+            script for job in self.jobs.values() for script in run_steps(job)
         )
+        self.assertNotIn("release_action=prepare", detect)
         self.assertNotIn("docker", detect)
         self.assertNotIn("git tag", detect)
         self.assertNotIn("git push", detect)
-        for path in (
-            ".release/next-version",
-            "hass_mcp_engineering_beta/config.yaml",
-            "hass_mcp_engineering_beta/ha_mcp_engineering/version.py",
-            "scripts/validate_addon_metadata.py",
-        ):
-            self.assertIn(path, materialize)
-        self.assertIn("promote_next_release.py --apply", materialize)
-        self.assertIn(
-            'git commit -m "Promote HA MCP Engineering Server ${version}"',
-            materialize,
-        )
-        self.assertIn('promotion_branch="release/engineering-${version}"', materialize)
-        self.assertIn('git push origin "HEAD:refs/heads/${PROMOTION_BRANCH}"', publish_pr)
-        self.assertIn("gh pr create --draft --base main", publish_pr)
-        self.assertIn("headRefOid", publish_pr)
-        self.assertNotIn("refs/heads/main", publish_pr.split("git push", 1)[-1])
-        self.assertNotIn("docker", publish_pr)
-        self.assertNotIn("git tag", publish_pr)
-
-    def test_staged_preparation_has_no_publication_or_main_write_reachability(self):
-        actions = [
-            str(step.get("uses", ""))
-            for step in self.prepare_pr["steps"]
-        ]
-        scripts = "\n".join(run_steps(self.prepare_pr))
-        self.assertFalse(
-            any(value.startswith("docker/login-action") for value in actions)
-        )
-        self.assertFalse(
-            any(value.startswith("docker/build-push-action") for value in actions)
-        )
-        self.assertNotIn("gh release create", scripts)
-        self.assertNotIn("git tag", scripts)
-        self.assertNotIn("packages", self.prepare_pr["permissions"])
+        self.assertNotIn("gh pr create", scripts)
+        self.assertNotIn("git switch -c", scripts)
         self.assertNotIn("HEAD:refs/heads/main", scripts)
-        self.assertNotIn("refs/tags/", scripts)
 
-    def test_preparation_and_publication_have_separate_minimum_permissions(self):
+    def test_only_publication_has_write_permissions(self):
         writers = {
             name: job.get("permissions", {})
             for name, job in self.jobs.items()
@@ -673,10 +717,6 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertEqual(
             writers,
             {
-                "prepare-promotion-pr": {
-                    "contents": "write",
-                    "pull-requests": "write",
-                },
                 "promote": {"contents": "write", "packages": "write"},
             },
         )
@@ -714,9 +754,11 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertLess(login_index, build_index)
         prepare = str(self.steps[prepare_index]["run"])
         for value in (
-            "git ls-remote origin refs/heads/main",
-            "${validation_base}:.release/next-version",
+            "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
+            "actual-release-paths",
+            "--require-materialized",
             "git ls-remote --exit-code --tags",
+            "scripts/assert_protected_release_ancestor.sh",
             "scripts/assert_registry_tags_absent.sh",
             "python scripts/validate_addon_metadata.py",
             "python -m unittest discover -s tests -v",
@@ -727,7 +769,87 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertNotIn("git push", prepare)
         self.assertNotIn("promote_next_release.py --apply", prepare)
         self.assertNotIn("git commit", prepare)
-        self.assertIn("expected-release-paths", prepare)
+        self.assertNotIn("expected-release-paths", prepare)
+
+    def test_later_nonrelease_merge_preserves_release_ancestor(self):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute the release ancestry guard")
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            subprocess.run(
+                ["git", "init", "-b", "main"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.name", "Release ancestry test"],
+                cwd=repo,
+                check=True,
+            )
+            subprocess.run(
+                ["git", "config", "user.email", "release-ancestry@example.invalid"],
+                cwd=repo,
+                check=True,
+            )
+            marker = repo / "state.txt"
+            marker.write_text("release A\n", encoding="utf-8")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "merge release PR A"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            release_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+            marker.write_text("release A\nordinary PR B\n", encoding="utf-8")
+            subprocess.run(["git", "add", "state.txt"], cwd=repo, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", "merge ordinary PR B"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            later_main_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout.strip()
+
+            preserved = subprocess.run(
+                [bash, str(ANCESTOR_GUARD_PATH), release_sha, later_main_sha],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(preserved.returncode, 0, preserved.stderr)
+            reversed_history = subprocess.run(
+                [bash, str(ANCESTOR_GUARD_PATH), later_main_sha, release_sha],
+                cwd=repo,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(reversed_history.returncode, 0)
+
+        publication_scripts = "\n".join(run_steps(self.promote))
+        self.assertGreaterEqual(
+            publication_scripts.count("scripts/assert_protected_release_ancestor.sh"),
+            4,
+        )
 
     def test_one_build_publishes_exact_multiarch_and_provenance_tags(self):
         builds = action_steps(self.promote, "docker/build-push-action")
@@ -791,7 +913,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertNotIn("HEAD:refs/heads/main", push)
         self.assertNotIn("git push --atomic", push)
         self.assertNotIn("--force", push)
-        self.assertIn('"$remote_main_sha" != "$SOURCE_MAIN_SHA"', push)
+        self.assertIn("scripts/assert_protected_release_ancestor.sh", push)
+        self.assertNotIn('"$remote_main_sha" != "$SOURCE_MAIN_SHA"', push)
         self.assertIn('git config user.name "github-actions[bot]"', push)
         self.assertIn('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"', push)
         self.assertIn('git rev-parse "${RELEASE_TAG}^{commit}"', push)
@@ -809,7 +932,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "Immutable publication identity",
             "OCI manifest digest",
             "SLSA provenance and SBOM attestations: verified",
-            '"$promoted_main" != "$RELEASE_SHA"',
+            "scripts/assert_protected_release_ancestor.sh",
             '"$promoted_tag" != "$RELEASE_SHA"',
             "github_release_created=true",
             "github_release_verified=true",
@@ -928,6 +1051,44 @@ class PromotionScriptTests(unittest.TestCase):
                 {NEXT_VERSION},
             )
 
+    def test_ready_validation_requires_the_release_to_be_materialized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self.make_repo(root)
+            scripts = root / "scripts"
+            shutil.copy2(PROMOTION_PATH, scripts / "promote_next_release.py")
+            shutil.copy2(ROOT / "scripts" / "codex-context.py", scripts / "codex-context.py")
+            command = [
+                sys.executable,
+                str(ROOT / "scripts" / "validate_promotion_candidate.py"),
+                "--repo-root",
+                str(root),
+                "--require-materialized",
+            ]
+
+            staged = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertNotEqual(staged.returncode, 0)
+            self.assertIn("release declaration is not final review state", staged.stderr)
+
+            self.module.apply_candidate(root)
+            materialized = subprocess.run(
+                command,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(
+                materialized.returncode,
+                0,
+                materialized.stdout + materialized.stderr,
+            )
+            self.assertIn("Validated exact advertised release", materialized.stdout)
+
     def test_candidate_must_be_newer_and_below_final_rc3(self):
         for candidate in (
             PROMOTION_FIXTURE_CURRENT_VERSION,
@@ -938,6 +1099,46 @@ class PromotionScriptTests(unittest.TestCase):
                 self.make_repo(directory, candidate=candidate)
                 with self.assertRaises(self.module.PromotionError):
                     self.module.validate_candidate(Path(directory))
+
+    def test_materialized_transition_must_be_exact_next_in_same_channel(self):
+        self.module.validate_sequenced_transition(
+            "2.2.0-beta.50", "2.2.0-beta.51"
+        )
+        for candidate in (
+            "2.2.0-beta.50",
+            "2.2.0-beta.52",
+            "2.2.0-rc2-dev51",
+            "2.3.0-beta.51",
+            "not-a-version",
+        ):
+            with self.subTest(candidate=candidate):
+                with self.assertRaises(self.module.PromotionError):
+                    self.module.validate_sequenced_transition(
+                        "2.2.0-beta.50", candidate
+                    )
+
+    def test_materialized_transition_cli_rejects_skip_and_cross_channel(self):
+        cases = (
+            ("2.2.0-beta.50", "2.2.0-beta.51", True),
+            ("2.2.0-beta.50", "2.2.0-beta.52", False),
+            ("2.2.0-beta.50", "2.2.0-rc2-dev51", False),
+        )
+        for current, candidate, succeeds in cases:
+            with self.subTest(current=current, candidate=candidate):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        str(PROMOTION_PATH),
+                        "--validate-transition",
+                        current,
+                        candidate,
+                    ],
+                    cwd=ROOT,
+                    text=True,
+                    capture_output=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode == 0, succeeds, result.stderr)
 
     def test_authoritative_version_disagreement_fails_closed(self):
         with tempfile.TemporaryDirectory() as directory:

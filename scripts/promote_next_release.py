@@ -76,15 +76,15 @@ def advertised_version(repo_root: Path) -> str:
     return advertised.pop()
 
 
-def validate_candidate(repo_root: Path) -> tuple[str, str]:
-    candidate = read_next_version(repo_root)
-    current = advertised_version(repo_root)
+def validate_sequenced_transition(current: str, candidate: str) -> None:
+    """Require the exact next version in one active development sequence."""
+
     try:
         current_version = AwesomeVersion(current)
         candidate_version = AwesomeVersion(candidate)
         if not candidate_version > current_version:
             raise PromotionError(
-                "The staged release version must be newer than advertised"
+                "The release candidate must be newer than the current version"
             )
         current_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(current)
         candidate_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(candidate)
@@ -97,13 +97,19 @@ def validate_candidate(repo_root: Path) -> tuple[str, str]:
             != int(current_match["sequence"]) + 1
         ):
             raise PromotionError(
-                "The staged release must be the next version in the active "
+                "The release candidate must be the next version in the active "
                 "development sequence"
             )
     except PromotionError:
         raise
     except Exception as exc:
         raise PromotionError("A release version is not AwesomeVersion-compatible") from exc
+
+
+def validate_candidate(repo_root: Path) -> tuple[str, str]:
+    candidate = read_next_version(repo_root)
+    current = advertised_version(repo_root)
+    validate_sequenced_transition(current, candidate)
     validate_document_authority(repo_root, candidate)
     return current, candidate
 
@@ -175,12 +181,24 @@ def parse_args(argv: list[str] | None = None):
     action.add_argument("--apply", action="store_true")
     action.add_argument("--validate-authority", metavar="VERSION")
     action.add_argument("--resolve-release-notes", metavar="VERSION")
+    action.add_argument(
+        "--validate-transition",
+        nargs=2,
+        metavar=("CURRENT", "CANDIDATE"),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     repo_root = args.repo_root.resolve()
+    if args.validate_transition:
+        current, candidate = args.validate_transition
+        validate_sequenced_transition(current, candidate)
+        print(
+            f"Validated exact Engineering release sequence {current} -> {candidate}."
+        )
+        return 0
     if args.validate_authority:
         validate_document_authority(repo_root, args.validate_authority)
         print(
