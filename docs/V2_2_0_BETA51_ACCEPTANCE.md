@@ -45,9 +45,10 @@ evidence and a non-actionable plan. At the reviewed correction head it produces:
 - execution eligibility and approval actionability.
 
 The consequential control retains every genuine exact dependency and seven
-safety-critical downstream profiles. It is complete, high risk,
-`elevated_admin` and approval-actionable. The arbitrary-selector control remains
-incomplete, non-actionable and conservatively locked.
+safety-critical downstream profiles. It has complete evidence, a high risk
+level, the `elevated_admin` policy, and approval actionability. The
+arbitrary-selector control remains incomplete, non-actionable and conservatively
+locked.
 
 ## Corrected production-path contract
 

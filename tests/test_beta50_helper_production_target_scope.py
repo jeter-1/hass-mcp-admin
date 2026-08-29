@@ -25,6 +25,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.dependency.index import DependencyIndex
+from ha_mcp_engineering.dependency.extraction import (
+    MAX_CONTEXT_ENTITY_IDS,
+    _context_with_variables,
+    _join_template_contexts,
+)
 from ha_mcp_engineering.dependency.obligation_ledger import (
     MAX_TEMPLATE_OBLIGATIONS,
     TemplateContextEvidence,
@@ -87,16 +92,16 @@ _REPLAY_ENTITY_ID = re.compile(
     r"(?<![A-Za-z0-9_.])([a-z0-9_]+\.[a-z0-9_]+)"
     r"(?![A-Za-z0-9_.])"
 )
-_NON_STATE_DOMAINS = {
-    "logbook",
-    "notify",
-    "persistent_notification",
-    "repeat",
-    "states",
-    "this",
-    "trigger",
-    "wait",
-}
+_REPLAY_LITERAL_SELECTOR_ENTITY_ID = re.compile(
+    r"(?:states|is_state|state_attr|is_state_attr|entity_name)"
+    r"\(\s*['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]"
+)
+_REPLAY_STATES_ITEM_ENTITY_ID = re.compile(
+    r"states\[\s*['\"]([a-z0-9_]+\.[a-z0-9_]+)['\"]\s*\]"
+)
+_REPLAY_STRUCTURED_ENTITY_KEYS = frozenset(
+    {"entity_id", "person", "source", "zone"}
+)
 
 
 NUMERIC_TRIGGER_CONTEXT = (
@@ -499,19 +504,265 @@ class Beta51StateConcatenationAccountingTests(unittest.TestCase):
         )
         below = self._analyze(below_source)
         self.assertFalse(below.coverage_failed)
+        self.assertEqual(254, len(below.obligations))
         self.assertEqual(below_count, len(self._exact(below)))
+        self.assertEqual(
+            127,
+            sum(
+                item.outcome == "proven_dependency_neutral"
+                for item in below.obligations
+            ),
+        )
 
         above_source = below_source + (
             f"{{{{ states.sensor.item_{below_count:03d} ~ '' }}}}"
         )
         above = self._analyze(above_source)
         self.assertTrue(above.coverage_failed)
+        self.assertEqual(256, len(above.obligations))
+        self.assertEqual(128, len(self._exact(above)))
+        self.assertEqual(
+            127,
+            sum(
+                item.outcome == "proven_dependency_neutral"
+                for item in above.obligations
+            ),
+        )
+        self.assertEqual(
+            1,
+            sum(
+                item.reason_code == "template_obligation_limit_exceeded"
+                and item.outcome == "coverage_failure"
+                for item in above.obligations
+            ),
+        )
+
+
+class Beta51JoinedVariableCandidateBoundTests(
+    unittest.IsolatedAsyncioTestCase
+):
+    """Joined finite outputs remain deterministic and fail closed at 128."""
+
+    @staticmethod
+    def _entity(index: int) -> str:
+        return f"sensor.joined_{index:03d}"
+
+    @classmethod
+    def _conditional(cls, left: int, right: int) -> str:
+        return (
+            "{{ '"
+            + cls._entity(left)
+            + "' if enabled else '"
+            + cls._entity(right)
+            + "' }}"
+        )
+
+    @classmethod
+    def _literal(cls, index: int) -> str:
+        return "{{ '" + cls._entity(index) + "' }}"
+
+    @classmethod
+    def _join(cls, expressions: list[str]):
+        context = TemplateContextEvidence()
+        limit_exceeded = False
+        budget = [MAX_CONTEXT_ENTITY_IDS * 16]
+        for index, expression in enumerate(expressions):
+            context, item_limit = _context_with_variables(
+                context,
+                {"selected": expression},
+                path=f"$.action[{index}]",
+                context_value_budget=budget,
+                join_existing=index > 0,
+            )
+            limit_exceeded = bool(limit_exceeded or item_limit)
+        return context, limit_exceeded
+
+    @staticmethod
+    def _analyze(source: str, context: TemplateContextEvidence):
+        return TemplateObligationAnalyzer(
+            source_type="automation",
+            source_id="joined_candidates",
+            config_path="$.condition[0].value_template",
+            relation="condition",
+            source_entity_id="automation.joined_candidates",
+            source_name="Synthetic joined candidates",
+            source_state="on",
+            configuration_fingerprint="d" * 64,
+            entity_id_validator=lambda value: bool(
+                isinstance(value, str)
+                and value.count(".") == 1
+                and all(part for part in value.split("."))
+            ),
+            context=context,
+        ).analyze(source)
+
+    def test_exactly_128_cumulative_candidates_remain_complete(self):
+        expressions = [
+            self._conditional(index, index + 1)
+            for index in range(0, MAX_CONTEXT_ENTITY_IDS, 2)
+        ]
+        context, limit_exceeded = self._join(expressions)
+        candidates = dict(context.variable_entity_ids)["selected"]
+        self.assertFalse(limit_exceeded)
+        self.assertEqual(MAX_CONTEXT_ENTITY_IDS, len(candidates))
+        self.assertNotIn("selected", context.incomplete_variable_names)
+
+    def test_129_candidates_across_joined_branches_are_bounded(self):
+        expressions = [
+            self._conditional(index, index + 1)
+            for index in range(0, MAX_CONTEXT_ENTITY_IDS, 2)
+        ] + [self._literal(MAX_CONTEXT_ENTITY_IDS)]
+        context, limit_exceeded = self._join(expressions)
+        candidates = dict(context.variable_entity_ids)["selected"]
+        self.assertTrue(limit_exceeded)
+        self.assertEqual(MAX_CONTEXT_ENTITY_IDS, len(candidates))
+        self.assertEqual(
+            tuple(self._entity(index) for index in range(128)),
+            candidates,
+        )
+        self.assertIn("selected", context.incomplete_variable_names)
+
+    def test_repeated_joined_assignments_and_duplicates_are_proportional(self):
+        unique_context, unique_limit = self._join(
+            [self._literal(index) for index in range(129)]
+        )
+        self.assertTrue(unique_limit)
+        self.assertEqual(
+            MAX_CONTEXT_ENTITY_IDS,
+            len(dict(unique_context.variable_entity_ids)["selected"]),
+        )
+
+        duplicate_context, duplicate_limit = self._join(
+            [self._literal(0)] * (MAX_CONTEXT_ENTITY_IDS + 16)
+        )
+        self.assertFalse(duplicate_limit)
+        self.assertEqual(
+            (self._entity(0),),
+            dict(duplicate_context.variable_entity_ids)["selected"],
+        )
+
+    def test_candidate_retention_is_deterministic_across_branch_order(self):
+        expressions = [
+            self._conditional(index, index + 1)
+            for index in range(0, 130, 2)
+        ]
+        forward, forward_limit = self._join(expressions)
+        reverse, reverse_limit = self._join(list(reversed(expressions)))
+        self.assertTrue(forward_limit)
+        self.assertTrue(reverse_limit)
+        self.assertEqual(
+            dict(forward.variable_entity_ids),
+            dict(reverse.variable_entity_ids),
+        )
+        self.assertEqual(
+            MAX_CONTEXT_ENTITY_IDS,
+            len(dict(forward.variable_entity_ids)["selected"]),
+        )
+
+    def test_post_branch_candidate_join_is_bounded_and_incomplete(self):
+        skipped = TemplateContextEvidence(
+            variable_entity_ids={
+                "selected": tuple(self._entity(index) for index in range(80))
+            }
+        )
+        executed = TemplateContextEvidence(
+            variable_entity_ids={
+                "selected": tuple(
+                    self._entity(index) for index in range(80, 129)
+                )
+            }
+        )
+        joined, limit_exceeded = _join_template_contexts(
+            skipped, executed
+        )
+        candidates = dict(joined.variable_entity_ids)["selected"]
+        self.assertTrue(limit_exceeded)
+        self.assertEqual(MAX_CONTEXT_ENTITY_IDS, len(candidates))
+        self.assertEqual(
+            tuple(self._entity(index) for index in range(128)),
+            candidates,
+        )
+        self.assertIn("selected", joined.incomplete_variable_names)
+
+    def test_truncated_target_is_not_excluded_and_scalar_render_is_neutral(self):
+        expressions = [
+            self._conditional(index, index + 1)
+            for index in range(0, MAX_CONTEXT_ENTITY_IDS, 2)
+        ] + [self._literal(MAX_CONTEXT_ENTITY_IDS)]
+        context, limit_exceeded = self._join(expressions)
+        self.assertTrue(limit_exceeded)
+        candidates = dict(context.variable_entity_ids)["selected"]
+        self.assertIn(self._entity(0), candidates)
+        self.assertNotIn(self._entity(MAX_CONTEXT_ENTITY_IDS), candidates)
+
+        rendered = self._analyze("{{ selected }}", context)
+        self.assertFalse(
+            any(
+                item.target_selector_scope == "target_capable"
+                for item in rendered.obligations
+            ),
+            rendered.obligations,
+        )
+
+        selected = self._analyze("{{ states(selected) }}", context)
+        exact = [
+            item
+            for item in selected.obligations
+            if item.outcome == "exact_dependency"
+        ]
+        self.assertTrue(exact, selected.obligations)
+        retained = {
+            entity_id
+            for item in exact
+            for entity_id in item.exact_entity_ids
+        }
+        self.assertIn(self._entity(0), retained)
+        self.assertNotIn(self._entity(MAX_CONTEXT_ENTITY_IDS), retained)
         self.assertTrue(
             any(
-                item.reason_code == "template_obligation_limit_exceeded"
-                for item in above.obligations
+                item.target_selector_scope == "target_capable"
+                and item.lock_projection == "conservative"
+                for item in selected.obligations
+            ),
+            selected.obligations,
+        )
+
+    async def test_overflowed_production_configuration_gets_global_f3_guard(
+        self,
+    ):
+        proposed = configuration_valid_config("automation")
+        proposed["action"] = [
+            {
+                "enabled": "{{ branch_enabled }}",
+                "variables": {
+                    "selected": self._conditional(index, index + 1)
+                },
+            }
+            for index in range(0, 130, 2)
+        ]
+        proposed["action"].append(
+            {
+                "condition": "template",
+                "value_template": "{{ states(selected) }}",
+            }
+        )
+        gateway = SyntheticConfigurationGateway()
+        adapter = configuration_adapter_for(
+            "automation", "create", gateway
+        )
+        prepared = await adapter.prepare(
+            configuration_proposal_for(
+                "automation",
+                "create",
+                proposed_config=proposed,
             )
         )
+        locks = operation_lock_requests(prepared)
+        self.assertIn(
+            unconstrained_helper_dependency_lock_key(),
+            {item.key for item in locks},
+        )
+        self.assertEqual(0, gateway.counters.dispatches)
 
 
 class SyntheticBeta50WebSocket(SyntheticBeta49WebSocket):
@@ -534,21 +785,174 @@ class SyntheticBeta50WebSocket(SyntheticBeta49WebSocket):
         return await super().command(payload)
 
 
-def _replay_entity_ids(value) -> set[str]:
-    """Collect only sanitized HA entity literals from one replay config."""
+def _entity_domain(value: object) -> str | None:
+    if not isinstance(value, str) or _REPLAY_ENTITY_ID.fullmatch(value) is None:
+        return None
+    return value.partition(".")[0]
+
+
+def _captured_replay_domains(fixture: dict) -> frozenset[str]:
+    """Derive admitted HA domains only from exact captured fixture evidence."""
+
+    domains: set[str] = set()
+    evidence = fixture["membership_evidence"]
+    for source in evidence["domain_evidence"].values():
+        for key in (
+            "finite_selector_domains",
+            "iterated_state_domains",
+        ):
+            values = source.get(key, ())
+            if isinstance(values, list):
+                domains.update(
+                    item
+                    for item in values
+                    if isinstance(item, str) and item
+                )
+        group_member_domain = source.get("group_member_domain")
+        if isinstance(group_member_domain, str) and group_member_domain:
+            domains.add(group_member_domain)
+    for label in evidence["labels"]:
+        domains.update(
+            item
+            for item in label.get("member_domains", ())
+            if isinstance(item, str) and item
+        )
+    for collection, identity_key in (("groups", "group_id"), ("zones", "zone_id")):
+        for item in evidence[collection]:
+            for entity_id in (item.get(identity_key), *item.get("members", ())):
+                domain = _entity_domain(entity_id)
+                if domain is not None:
+                    domains.add(domain)
+    target_domain = _entity_domain(evidence["target_helper"]["entity_id"])
+    if target_domain is not None:
+        domains.add(target_domain)
+
+    def collect_explicit(value, *, parent_key: str = "") -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                collect_explicit(nested, parent_key=key)
+            return
+        if isinstance(value, list):
+            for nested in value:
+                collect_explicit(nested, parent_key=parent_key)
+            return
+        if not isinstance(value, str):
+            return
+        if parent_key in _REPLAY_STRUCTURED_ENTITY_KEYS:
+            domain = _entity_domain(value)
+            if domain is not None:
+                domains.add(domain)
+        if "{{" in value or "{%" in value:
+            for expression in (
+                _REPLAY_LITERAL_SELECTOR_ENTITY_ID,
+                _REPLAY_STATES_ITEM_ENTITY_ID,
+            ):
+                domains.update(
+                    candidate.partition(".")[0]
+                    for candidate in expression.findall(value)
+                )
+
+    for item in fixture["configurations"]:
+        source_domain = _entity_domain(item.get("source"))
+        if source_domain is not None:
+            domains.add(source_domain)
+        collect_explicit(item["configuration"])
+    return frozenset(sorted(domains))
+
+
+def _replay_entity_ids(
+    value,
+    *,
+    allowed_domains: frozenset[str],
+    parent_key: str = "",
+) -> set[str]:
+    """Collect captured state identities without promoting dotted Jinja names."""
 
     found: set[str] = set()
     if isinstance(value, dict):
-        for nested in value.values():
-            found.update(_replay_entity_ids(nested))
+        for key, nested in value.items():
+            found.update(
+                _replay_entity_ids(
+                    nested,
+                    allowed_domains=allowed_domains,
+                    parent_key=key,
+                )
+            )
     elif isinstance(value, list):
         for nested in value:
-            found.update(_replay_entity_ids(nested))
+            found.update(
+                _replay_entity_ids(
+                    nested,
+                    allowed_domains=allowed_domains,
+                    parent_key=parent_key,
+                )
+            )
     elif isinstance(value, str):
-        for candidate in _REPLAY_ENTITY_ID.findall(value):
-            if candidate.partition(".")[0] not in _NON_STATE_DOMAINS:
-                found.add(candidate)
+        if parent_key in _REPLAY_STRUCTURED_ENTITY_KEYS:
+            candidates = (
+                (value,) if _REPLAY_ENTITY_ID.fullmatch(value) else ()
+            )
+        elif "{{" in value or "{%" in value:
+            candidates = _REPLAY_ENTITY_ID.findall(value)
+        else:
+            candidates = ()
+        found.update(
+            candidate
+            for candidate in candidates
+            if candidate.partition(".")[0] in allowed_domains
+        )
     return found
+
+
+_REPLAY_EXPECTATION_FIELDS = {
+    "expected_beta50_falsification": {
+        "coverage_complete": bool,
+        "downstream_profile_count": int,
+        "exact_dependency_count": int,
+        "execution_eligible": bool,
+        "target_capable_opaque_obligation_count": int,
+    },
+    "expected_corrected_projection": {
+        "coverage_complete": bool,
+        "downstream_profile_count": int,
+        "evidence_complete": bool,
+        "exact_dependency_count": int,
+        "execution_eligible": bool,
+        "physical_consequence": str,
+        "policy_tier": str,
+        "risk_level": str,
+        "target_capable_opaque_obligation_count": int,
+    },
+}
+
+
+def _validated_replay_expectations(fixture: dict) -> dict[str, dict]:
+    """Validate bounded replay expectations before tests consume them."""
+
+    validated: dict[str, dict] = {}
+    for section, fields in _REPLAY_EXPECTATION_FIELDS.items():
+        raw = fixture.get(section)
+        if not isinstance(raw, dict):
+            raise AssertionError(f"{section} must be a mapping")
+        missing = set(fields).difference(raw)
+        if missing:
+            raise AssertionError(f"{section} missing {sorted(missing)}")
+        for name, expected_type in fields.items():
+            value = raw[name]
+            if type(value) is not expected_type:
+                raise AssertionError(
+                    f"{section}.{name} must be {expected_type.__name__}"
+                )
+            if expected_type is int and not (
+                0 <= value <= MAX_TEMPLATE_OBLIGATIONS
+            ):
+                raise AssertionError(f"{section}.{name} is out of bounds")
+            if expected_type is str and not (0 < len(value) <= 64):
+                raise AssertionError(f"{section}.{name} is out of bounds")
+        validated[section] = {
+            name: raw[name] for name in sorted(fields)
+        }
+    return validated
 
 
 class CapturedBeta50ReplayRest:
@@ -556,6 +960,7 @@ class CapturedBeta50ReplayRest:
 
     def __init__(self, fixture: dict, *, extra_configs=()) -> None:
         self.fixture = fixture
+        allowed_domains = _captured_replay_domains(fixture)
         self.configs = {
             item["configuration"]["id"]: copy.deepcopy(
                 item["configuration"]
@@ -566,7 +971,17 @@ class CapturedBeta50ReplayRest:
             self.configs[config["id"]] = copy.deepcopy(config)
         ids: set[str] = set()
         for config in self.configs.values():
-            ids.update(_replay_entity_ids(config))
+            ids.update(
+                _replay_entity_ids(
+                    config,
+                    allowed_domains=allowed_domains,
+                )
+            )
+        ids.update(
+            item["source"]
+            for item in fixture["configurations"]
+            if _entity_domain(item.get("source")) in allowed_domains
+        )
         evidence = fixture["membership_evidence"]
         for label in evidence["labels"]:
             ids.update(label["members"])
@@ -805,6 +1220,7 @@ class Beta50CapturedProductionReplayTests(
         self.fixture = json.loads(
             CAPTURED_REPLAY_FIXTURE.read_text(encoding="utf-8")
         )
+        self.expectations = _validated_replay_expectations(self.fixture)
         self.rest = CapturedBeta50ReplayRest(self.fixture)
         self.websocket = CapturedBeta50ReplayWebSocket(
             self.fixture, self.rest.ids
@@ -822,14 +1238,89 @@ class Beta50CapturedProductionReplayTests(
         self.assertTrue(rebuilt)
         self.target = self.fixture["target_entity_id"]
 
+    def test_replay_entity_discovery_excludes_non_state_jinja_tokens(self):
+        allowed_domains = _captured_replay_domains(self.fixture)
+        self.assertTrue(
+            {"automation", "input_boolean", "sensor", "update"}.issubset(
+                allowed_domains
+            )
+        )
+        self.assertTrue(
+            {"attributes", "grace", "ns", "s"}.isdisjoint(
+                allowed_domains
+            )
+        )
+        actual_entities = {
+            "automation.source_01",
+            "binary_sensor.entity_004",
+            "button.entity_001",
+            "group.object_001",
+            "input_text.entity_001",
+            "sensor.entity_025",
+            "switch.entity_001",
+            "timer.entity_001",
+            "update.entity_001",
+            self.target,
+        }
+        self.assertTrue(actual_entities.issubset(self.rest.ids))
+        self.assertTrue(
+            {
+                "attributes.device_class",
+                "button.press",
+                "grace.get",
+                "ns.lines",
+                "s.entity_id",
+                "s.name",
+                "s.state",
+                "switch.turn_on",
+            }.isdisjoint(self.rest.ids),
+            sorted(
+                {
+                    "attributes.device_class",
+                    "button.press",
+                    "grace.get",
+                    "ns.lines",
+                    "s.entity_id",
+                    "s.name",
+                    "s.state",
+                    "switch.turn_on",
+                }.intersection(self.rest.ids)
+            ),
+        )
+
+    def test_replay_expectation_schema_rejects_drift_and_coercion(self):
+        mutations = (
+            ("expected_beta50_falsification", "exact_dependency_count", True),
+            (
+                "expected_beta50_falsification",
+                "downstream_profile_count",
+                MAX_TEMPLATE_OBLIGATIONS + 1,
+            ),
+            ("expected_corrected_projection", "risk_level", ""),
+        )
+        for section, name, value in mutations:
+            with self.subTest(section=section, name=name):
+                fixture = copy.deepcopy(self.fixture)
+                fixture[section][name] = value
+                with self.assertRaises(AssertionError):
+                    _validated_replay_expectations(fixture)
+
+        missing = copy.deepcopy(self.fixture)
+        missing["expected_corrected_projection"].pop("policy_tier")
+        with self.assertRaises(AssertionError):
+            _validated_replay_expectations(missing)
+
     def test_capture_provenance_and_sanitized_payload_are_bound(self):
         provenance = self.fixture["provenance"]
-        canonical = lambda value: json.dumps(
-            value,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode("utf-8")
+
+        def canonical(value):
+            return json.dumps(
+                value,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8")
+
         self.assertEqual(
             provenance["configuration_set_sha256"],
             hashlib.sha256(
@@ -845,6 +1336,21 @@ class Beta50CapturedProductionReplayTests(
         self.assertTrue(provenance["sanitized_before_hashing"])
         self.assertEqual("READY_FOR_OFFLINE_REPLAY", provenance["capture_status"])
         self.assertFalse(provenance["snapshot_equivalence_proven"])
+        baseline = self.expectations["expected_beta50_falsification"]
+        corrected = self.expectations["expected_corrected_projection"]
+        self.assertGreater(
+            baseline["target_capable_opaque_obligation_count"], 0
+        )
+        self.assertGreater(baseline["downstream_profile_count"], 0)
+        self.assertFalse(baseline["coverage_complete"])
+        self.assertFalse(baseline["execution_eligible"])
+        self.assertEqual(
+            0, corrected["target_capable_opaque_obligation_count"]
+        )
+        self.assertEqual(0, corrected["downstream_profile_count"])
+        self.assertTrue(corrected["coverage_complete"])
+        self.assertTrue(corrected["evidence_complete"])
+        self.assertTrue(corrected["execution_eligible"])
 
     async def test_standard_helper_closes_every_captured_source_before_risk_aggregation(
         self,
@@ -892,14 +1398,33 @@ class Beta50CapturedProductionReplayTests(
         )
         binding = evidence["binding"]
         assessment = helper_dependency_risk_assessment(evidence)
-        self.assertEqual(0, binding["exact_dependency_obligation_count"])
-        self.assertEqual(0, binding["opaque_obligation_count"])
-        self.assertEqual([], binding["downstream_profiles"])
-        self.assertTrue(binding["coverage_complete"])
-        self.assertTrue(binding["evidence_complete"])
-        self.assertTrue(binding["execution_eligible"])
-        self.assertEqual("none", binding["physical_consequence"])
-        self.assertEqual("low", assessment.level.value)
+        expected = self.expectations["expected_corrected_projection"]
+        self.assertEqual(
+            expected["exact_dependency_count"],
+            binding["exact_dependency_obligation_count"],
+        )
+        self.assertEqual(
+            expected["target_capable_opaque_obligation_count"],
+            binding["opaque_obligation_count"],
+        )
+        self.assertEqual(
+            expected["downstream_profile_count"],
+            len(binding["downstream_profiles"]),
+        )
+        self.assertEqual(
+            expected["coverage_complete"], binding["coverage_complete"]
+        )
+        self.assertEqual(
+            expected["evidence_complete"], binding["evidence_complete"]
+        )
+        self.assertEqual(
+            expected["execution_eligible"], binding["execution_eligible"]
+        )
+        self.assertEqual(
+            expected["physical_consequence"],
+            binding["physical_consequence"],
+        )
+        self.assertEqual(expected["risk_level"], assessment.level.value)
         self.assertTrue(assessment.apply_allowed)
         self.assertFalse(
             binding["dependency_lock_projection"]
@@ -1172,7 +1697,9 @@ class Beta50CapturedProductionReplayTests(
         self.assertTrue(plan["approval_actionable"])
         self.assertEqual("low", plan["risk"]["level"])
         self.assertEqual(
-            "standard_admin",
+            self.expectations["expected_corrected_projection"][
+                "policy_tier"
+            ],
             plan["policy_decision"]["policy_class"],
         )
         lock_keys = {
