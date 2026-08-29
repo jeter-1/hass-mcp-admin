@@ -602,7 +602,7 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
                 self.assertIsNone(payload)
                 self.assertIn("evidence is invalid", result.stderr)
 
-    def test_operational_notice_cannot_satisfy_submitted_review_gate(self):
+    def test_linked_operational_notice_with_mismatched_commit_fails_gate(self):
         result, payload = self.run_validator(
             comments=[],
             reviews=[
@@ -617,7 +617,7 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
             review_comments=[
                 {
                     "pull_request_review_id": 5058935360,
-                    "commit_id": self.HEAD,
+                    "commit_id": "0" * 40,
                     "user": {"login": "chatgpt-codex-connector[bot]"},
                     "body": (
                         "To use Codex here, [create an environment for this repo]"

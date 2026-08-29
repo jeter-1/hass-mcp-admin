@@ -70,7 +70,6 @@ def inspect_evidence(
                 str(item.get("body", ""))
                 for item in review_comments
                 if item.get("pull_request_review_id") == review_id
-                and item.get("commit_id") == expected
                 and isinstance(item.get("user"), dict)
                 and item["user"].get("login") == CODEX_LOGIN
             ]
