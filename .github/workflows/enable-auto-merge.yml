@@ -54,13 +54,19 @@ jobs:
     timeout-minutes: 40
     permissions:
       contents: write
+      issues: read
       pull-requests: write
-      statuses: read
     steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
       - name: Arm GitHub native auto-merge for the authorized exact head
         shell: bash
         env:
           AUTHORIZED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RECEIPT_MAX_ATTEMPTS: "105"
@@ -68,6 +74,12 @@ jobs:
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
+
+          if [[ "$(git rev-parse HEAD)" != "$BASE_SHA" ]]; then
+            echo "::error::Trusted auto-merge policy did not match the PR base."
+            exit 1
+          fi
+
           current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
           if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
             echo "::error::The pull-request head moved after Ready for review was authorized."
@@ -81,30 +93,50 @@ jobs:
               exit 1
             fi
 
-            receipt_state="$(
-              gh api "repos/${REPOSITORY}/commits/${AUTHORIZED_HEAD_SHA}/status" \
-                --jq '[.statuses[] | select(.context == "codex-review-receipt")][0].state // "missing"'
-            )"
-            case "$receipt_state" in
-              success)
-                break
-                ;;
-              missing|pending)
-                if [[ "$attempt" -eq "$RECEIPT_MAX_ATTEMPTS" ]]; then
-                  echo "::error::The exact-head Codex review receipt did not succeed within 35 minutes."
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
+              | jq -s 'add' > /tmp/auto-merge-codex-comments.json; then
+              echo "::error::Could not read native Codex review comments."
+              exit 1
+            fi
+            if ! gh api --paginate \
+              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" \
+              | jq -s 'add' > /tmp/auto-merge-codex-reviews.json; then
+              echo "::error::Could not read native Codex reviews."
+              exit 1
+            fi
+
+            set +e
+            python3 scripts/validate_native_codex_review.py \
+              --head "$AUTHORIZED_HEAD_SHA" \
+              --comments /tmp/auto-merge-codex-comments.json \
+              --reviews /tmp/auto-merge-codex-reviews.json \
+              --output /tmp/auto-merge-codex-receipt.json
+            validation_exit=$?
+            set -e
+
+            if [[ "$validation_exit" -eq 0 ]]; then
+              exact="$(python3 -c 'import json; print(str(json.load(open("/tmp/auto-merge-codex-receipt.json", encoding="utf-8"))["exact"]).lower())')"
+              if [[ "$exact" != "true" ]]; then
+                commit_ref="$(python3 -c 'import json; print(json.load(open("/tmp/auto-merge-codex-receipt.json", encoding="utf-8"))["commit_ref"])')"
+                resolved_sha="$(gh api "repos/${REPOSITORY}/commits/${commit_ref}" --jq '.sha')"
+                if [[ "$resolved_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
+                  echo "::error::Native Codex evidence resolved to a different commit."
                   exit 1
                 fi
-                sleep "$RECEIPT_POLL_SECONDS"
-                ;;
-              failure|error)
-                echo "::error::The exact-head Codex review receipt failed."
-                exit 1
-                ;;
-              *)
-                echo "::error::The exact-head Codex review receipt returned an unknown state."
-                exit 1
-                ;;
-            esac
+              fi
+              break
+            fi
+
+            if [[ "$validation_exit" -ne 75 ]]; then
+              echo "::error::Native Codex review evidence was invalid or failed."
+              exit 1
+            fi
+            if [[ "$attempt" -eq "$RECEIPT_MAX_ATTEMPTS" ]]; then
+              echo "::error::Native Codex did not finish review within 35 minutes."
+              exit 1
+            fi
+            sleep "$RECEIPT_POLL_SECONDS"
           done
 
           gh pr merge "$PR_NUMBER" \
@@ -112,4 +144,4 @@ jobs:
             --auto \
             --merge \
             --match-head-commit "$AUTHORIZED_HEAD_SHA"
-          echo "Exact-head Codex receipt succeeded; auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Trusted exact-head Codex evidence succeeded; auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"

@@ -138,16 +138,24 @@ an OpenAI API key or API billing. Automatic reviews run when a pull request is
 opened for review or marked ready; Josh can request a fresh exact-head review by
 commenting `@codex review` when needed.
 
-The main ruleset requires `validate`, the native Codex receipt check, and review
-thread resolution. The receipt check verifies GitHub evidence produced by the
-native Codex GitHub integration for the exact pull-request head; it does not run
-a model, parse untrusted review prose as executable data, or accept a stale
-review. Its `pull_request_target` observer and validator load only from the
-protected base commit, never from candidate code, and publish the result as the
-`codex-review-receipt` status on the candidate head. CodeRabbit remains an
-additional reviewer, but its service-side eligibility policy can require a
-manual review trigger for low-activity public repositories and therefore is not
-represented as a false required approval.
+The intended main ruleset requires `validate`, the native Codex receipt check,
+and review-thread resolution. For this bootstrap pull request, the ruleset still
+requires only `validate`; `codex-review-receipt` becomes active only after the
+pull request is merged, the approved ruleset update is applied, and a bounded
+audit verifies the exact required context. Until that audit passes, do not
+describe the receipt as ruleset-enforced.
+
+The receipt check verifies GitHub evidence produced by the native Codex GitHub
+integration for the exact pull-request head; it does not run a model, parse
+untrusted review prose as executable data, or accept a stale review. Its
+`pull_request_target` observer and validator load only from the protected base
+commit, never from candidate code, and publish the result as the
+`codex-review-receipt` status on the candidate head. The auto-merge authorization
+workflow independently loads the same protected-base validator and validates the
+native evidence directly; it does not trust a candidate-head commit status as
+authorization. CodeRabbit remains an additional reviewer, but its service-side
+eligibility policy can require a manual review trigger for low-activity public
+repositories and therefore is not represented as a false required approval.
 
 Josh's `Ready for review` action on a `jeter-1` branch in this repository,
 targeting `main`, is the single human authorization checkpoint for this bounded
@@ -162,12 +170,14 @@ sequence:
 3. CodeRabbit reviews automatically when its repository eligibility permits.
    Any Request Changes state or unresolved actionable thread still blocks the
    protected merge path.
-4. The required `validate` and `codex-review-receipt` checks and review-thread
-   resolution requirements must all apply to the final head.
-5. The protected-base authorization workflow independently waits for a successful
-   `codex-review-receipt` on the authorized exact head before it arms GitHub
-   native auto-merge. The ruleset enforces the same receipt at merge time. The
-   automation has no administrative bypass and never force-pushes.
+4. `validate` and review-thread resolution must apply to the final head. After
+   the post-merge ruleset bootstrap is audited, `codex-review-receipt` must also
+   apply to the final head as a required status context.
+5. The protected-base authorization workflow independently validates native
+   Codex evidence for the authorized exact head before it arms GitHub native
+   auto-merge. It does not accept the status context itself as proof. After the
+   bootstrap audit, the ruleset separately requires the receipt at merge time.
+   The automation has no administrative bypass and never force-pushes.
 6. If the reviewed merge includes a final Engineering version transition, the
    protected-main publication workflow validates and publishes that exact merge
    commit. It does not deploy the add-on or modify Home Assistant.
