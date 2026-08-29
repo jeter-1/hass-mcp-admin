@@ -13,23 +13,32 @@ class CodeRabbitConfigurationTests(unittest.TestCase):
         with (REPOSITORY_ROOT / ".coderabbit.yaml").open(encoding="utf-8") as stream:
             cls.configuration = yaml.safe_load(stream)
 
-    def test_reviews_are_low_noise_and_advisory(self) -> None:
+    def test_reviews_are_low_noise_and_merge_gating(self) -> None:
         reviews = self.configuration["reviews"]
 
-        self.assertEqual("chill", reviews["profile"])
-        self.assertFalse(reviews["request_changes_workflow"])
+        self.assertEqual("quiet", reviews["profile"])
+        self.assertTrue(reviews["request_changes_workflow"])
         self.assertFalse(reviews["high_level_summary"])
         self.assertFalse(reviews["poem"])
         self.assertTrue(reviews["review_status"])
         self.assertFalse(reviews["review_details"])
 
-    def test_automatic_review_runs_once_only_after_a_pull_request_is_ready(self) -> None:
+    def test_automatic_review_tracks_the_ready_pull_request_head(self) -> None:
         automatic_review = self.configuration["reviews"]["auto_review"]
 
         self.assertTrue(automatic_review["enabled"])
         self.assertFalse(automatic_review["drafts"])
-        self.assertFalse(automatic_review["auto_incremental_review"])
-        self.assertEqual(1, automatic_review["auto_pause_after_reviewed_commits"])
+        self.assertTrue(automatic_review["auto_incremental_review"])
+        self.assertEqual(0, automatic_review["auto_pause_after_reviewed_commits"])
+
+    def test_actionable_threads_are_reserved_for_blockers(self) -> None:
+        instructions = self.configuration["reviews"]["path_instructions"]
+
+        self.assertEqual(1, len(instructions))
+        self.assertEqual("**", instructions[0]["path"])
+        text = instructions[0]["instructions"]
+        self.assertIn("Critical or High", text)
+        self.assertIn("Medium and Low observations advisory", text)
 
     def test_cache_external_knowledge_and_unsolicited_chat_are_disabled(self) -> None:
         self.assertTrue(self.configuration["reviews"]["disable_cache"])

@@ -111,8 +111,90 @@ when the environment starts at the repository root.
    stale or foreign reuse; the local JSON is not cryptographically signed and can
    still be forged by someone who can edit it.
 
-8. Push only the named task branch and open a draft pull request. Stop before
-   merge, release, publication, promotion, or deployment.
+8. Push only the named task branch and open a draft pull request. Agents stop
+   before marking it ready, merging, publication, or deployment. Josh may mark
+   the same-repository pull request ready after its final state is reviewable;
+   that action arms the bounded review and auto-merge contract described below.
+
+For a pull request that declares `.release/next-version`, materialize the release
+state in that same branch before the pull request is marked ready:
+
+```powershell
+python scripts/promote_next_release.py
+python scripts/promote_next_release.py --apply
+```
+
+Review and commit the resulting authoritative version updates and deletion of
+`.release/next-version`, rerun Full/Evidence, and update the draft. Pull-request
+CI fails closed while an unmaterialized declaration remains, so a second
+promotion pull request is neither created nor required.
+
+## Ready-for-review automation
+
+Activation requires Codex cloud repository access and native Code review enabled
+for this repository in
+[Codex settings](https://chatgpt.com/codex/settings/code-review). It does not use
+an OpenAI API key or API billing. Automatic reviews run when a pull request is
+opened for review or marked ready; Josh can request a fresh exact-head review by
+commenting `@codex review` when needed. That exact Josh-authored comment also
+retriggers the protected-base receipt observer and auto-merge authorization for
+the unchanged eligible head when its latest lifecycle action is Josh's Ready
+action, so a prior timeout or transient API failure can recover without rerunning
+candidate code or accepting stale evidence. A later push remains unauthorized
+until Josh marks that revised head Ready again; draft conversion, force-push,
+head restoration, or a base-branch change also withdraws authority. The review
+comment cannot replace that checkpoint.
+
+The intended main ruleset requires `validate`, the native Codex receipt check,
+and review-thread resolution. For this bootstrap pull request, the ruleset still
+requires only `validate`; `codex-review-receipt` becomes active only after the
+pull request is merged, the approved ruleset update is applied, and a bounded
+audit verifies the exact required context. Until that audit passes, do not
+describe the receipt as ruleset-enforced.
+
+The receipt check verifies GitHub evidence produced by the native Codex GitHub
+integration for the exact pull-request head; it does not run a model, parse
+untrusted review prose as executable data, accept a stale review, or count a
+Codex setup/operational notice as a completed code review. Its
+`pull_request_target` observer and validator load only from the protected base
+commit, never from candidate code, and publish the result as the
+`codex-review-receipt` status on the candidate head. The auto-merge authorization
+workflow independently loads the same protected-base validator and validates the
+native evidence directly; it does not trust a candidate-head commit status as
+authorization. CodeRabbit remains an additional reviewer, but its service-side
+eligibility policy can require a manual review trigger for low-activity public
+repositories and therefore is not represented as a false required approval.
+
+Josh's `Ready for review` action on a `jeter-1` branch in this repository,
+targeting `main`, is the single human authorization checkpoint for this bounded
+sequence:
+
+1. Native Codex reviews the pull request in Codex cloud and records its status
+   and reviewed commit on GitHub. Repository `AGENTS.md` supplies the durable
+   review rules; actionable findings are ordinary GitHub review threads.
+2. The `codex-review-receipt` job requires the native review to have completed
+   for the exact current head. A push makes the prior receipt stale and reruns
+   the gate.
+3. CodeRabbit reviews automatically when its repository eligibility permits.
+   Any Request Changes state or unresolved actionable thread still blocks the
+   protected merge path.
+4. `validate` and review-thread resolution must apply to the final head. After
+   the post-merge ruleset bootstrap is audited, `codex-review-receipt` must also
+   apply to the final head as a required status context.
+5. The protected-base authorization workflow independently validates native
+   Codex evidence for the authorized exact head before it arms GitHub native
+   auto-merge. It does not accept the status context itself as proof. After the
+   bootstrap audit, the ruleset separately requires the receipt at merge time.
+   The automation has no administrative bypass and never force-pushes.
+6. If the reviewed merge includes a final Engineering version transition, the
+   protected-main publication workflow validates and publishes that exact merge
+   commit. It does not deploy the add-on or modify Home Assistant.
+
+Only Josh may mark the draft ready. Converting the pull request back to draft,
+closing it, or pushing a new head withdraws the immediate merge path. The
+protected-base workflow disarms any stored auto-merge request on every
+`synchronize` event. Josh must mark the revised pull request Ready again so the
+new exact head receives fresh authorization and review.
 
 If `python` is not on PATH, pass the trusted interpreter explicitly to
 `check.ps1` with `-PythonExecutable` and use that same interpreter for the Python
@@ -171,9 +253,10 @@ this repository.
   known. Missing exact acceptance authority is a stop condition. Historical
   references cannot authorize current acceptance, and release notes are not
   acceptance instructions.
-- Preauthorize only the named branch push and draft-PR creation. Do not
-  preauthorize merge, release, image publication, deployment, secret changes, or
-  live-Home-Assistant access.
+- Preauthorize only the named branch push and draft-PR creation. Agents do not
+  mark pull requests ready. Josh's later Ready action may authorize bounded
+  merge and source publication under the repository contract; it never
+  authorizes deployment, secret changes, or live-Home-Assistant access.
 - Stop when the base moved unexpectedly, the environment is incomplete,
   unrelated failures appear, or the requested work would cross a provider,
   permission, runtime, release, or deployment trust boundary.
@@ -235,18 +318,26 @@ These are distinct profiles; “Codex access” is not one universal permission.
 > rollback, report CI-only checks accurately, and stop for a separate human
 > publication/deployment decision.
 
-### Protected Release Promotion
+### One-pull-request protected release
 
-After a staged declaration reaches `main`, the promotion workflow creates a
-deterministic release branch and draft pull request containing only the bounded
-version-authority updates and removal of `.release/next-version`. That
-preparation phase cannot publish an image or tag and cannot update `main`.
-GitHub may require a repository writer to approve CI for the bot-created pull
-request; starting those checks does not authorize merge or publication.
+A release declaration is an authoring aid on the feature branch, not mergeable
+release state. Before Ready, `promote_next_release.py --apply` updates the three
+authoritative version locations and consumes `.release/next-version` in the
+original pull request. The exact implementation, tests, acceptance documents,
+release notes, and final version state therefore receive the same native Codex,
+applicable CodeRabbit, and CI review.
 
-Publication begins only after the exact marker-consuming promotion state is
-merged through the normal protected path. The workflow binds that state to the
-prior `main` declaration, rejects extra changed paths, and builds from the
-current protected `main` commit. It may then create the immutable image,
-annotated tag, and GitHub Release, but it never pushes a release commit directly
-to `main`. Merge, publication, and deployment remain separate decisions.
+After that pull request is merged through the protected path, the publication
+workflow compares the exact new `main` commit with its prior protected commit,
+requires the bounded version transition and exact document authority, reruns
+complete validation, and publishes from the current `main` commit. It may create
+the immutable image, annotated tag, and GitHub Release, but it never writes a
+promotion commit or branch to `main`, opens a second pull request, deploys the
+add-on, or changes live Home Assistant.
+
+Publication remains bound to the reviewed triggering commit. If an ordinary
+pull request merges while that release is being validated or published, the
+release continues only when the triggering commit remains an ancestor of current
+protected `main`; a divergent or removed commit fails closed. The publication
+concurrency group serializes release runs, so a later release transition cannot
+overtake an earlier one.

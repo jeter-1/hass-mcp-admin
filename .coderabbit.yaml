@@ -4,8 +4,8 @@ language: "en-US"
 early_access: false
 
 reviews:
-  profile: "chill"
-  request_changes_workflow: false
+  profile: "quiet"
+  request_changes_workflow: true
   high_level_summary: false
   poem: false
   review_status: true
@@ -16,8 +16,8 @@ reviews:
   auto_review:
     enabled: true
     drafts: false
-    auto_incremental_review: false
-    auto_pause_after_reviewed_commits: 1
+    auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
     base_branches: []
     labels:
       - "!do-not-review"
@@ -30,6 +30,15 @@ reviews:
       - "github-actions[bot]"
       - "renovate[bot]"
     description_keyword: ""
+  path_instructions:
+    - path: "**"
+      instructions: |
+        Treat inline actionable comments as merge-blocking review findings.
+        Open them only for Critical or High severity correctness, security,
+        compatibility, data-loss, release-integrity, or test-validity defects.
+        Keep Medium and Low observations advisory in the review summary rather
+        than opening actionable threads. Follow the repository AGENTS.md Code
+        Review Rules and include concrete evidence and a proving verification.
   finishing_touches:
     docstrings:
       enabled: false

@@ -1,4 +1,4 @@
-name: Prepare or publish staged Engineering release
+name: Publish reviewed Engineering release
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: hass-mcp-engineering-release-promotion
+  group: hass-mcp-engineering-release-publication
   cancel-in-progress: false
 
 env:
@@ -41,241 +41,25 @@ jobs:
           current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
           before="${{ github.event.before }}"
           previous_version=""
-          previous_staged_version=""
           if [[ "$before" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
             previous_version="$(git show "${before}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
-            if git cat-file -e "${before}:.release/next-version" 2>/dev/null; then
-              previous_staged_version="$(git show "${before}:.release/next-version" | tr -d '\r\n')"
-            fi
           fi
           if [[ -f .release/next-version ]]; then
-            echo "release_action=prepare" >> "$GITHUB_OUTPUT"
-            echo "A staged declaration requires a protected promotion pull request." >> "$GITHUB_STEP_SUMMARY"
-          elif [[ -n "$current_version" && -n "$previous_version" && "$current_version" != "$previous_version" ]]; then
-            if [[ "$previous_staged_version" != "$current_version" ]]; then
-              echo "::error::The Engineering version changed without consuming the exact prior staged declaration."
-              exit 1
-            fi
-            echo "release_action=publish" >> "$GITHUB_OUTPUT"
-            echo "A reviewed pre-versioned promotion reached main and is eligible for publication." >> "$GITHUB_STEP_SUMMARY"
-          elif [[ -n "$previous_staged_version" ]]; then
-            echo "::error::The staged declaration was removed without the matching Engineering version transition."
+            echo "::error::Main contains an unmaterialized release declaration. Release state must be finalized in the reviewed pull request."
             exit 1
+          elif git cat-file -e "${before}:.release/next-version" 2>/dev/null; then
+            echo "::error::A legacy staged declaration reached main. Finalize the release state in one reviewed pull request."
+            exit 1
+          elif [[ -n "$current_version" && -n "$previous_version" && "$current_version" != "$previous_version" ]]; then
+            echo "release_action=publish" >> "$GITHUB_OUTPUT"
+            echo "A reviewed final-version pull request reached protected main and is eligible for publication." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "release_action=none" >> "$GITHUB_OUTPUT"
-            echo "No staged declaration or reviewed Engineering version transition is present." >> "$GITHUB_STEP_SUMMARY"
+            echo "No reviewed Engineering version transition is present." >> "$GITHUB_STEP_SUMMARY"
           fi
-
-  prepare-promotion-pr:
-    name: Create protected promotion pull request
-    needs:
-      - validate
-      - detect-release
-    if: needs.detect-release.outputs.release_action == 'prepare'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    outputs:
-      version: ${{ steps.candidate.outputs.version }}
-      source_main_sha: ${{ steps.candidate.outputs.source_main_sha }}
-      promotion_sha: ${{ steps.publish-pr.outputs.promotion_sha }}
-      promotion_branch: ${{ steps.candidate.outputs.promotion_branch }}
-      promotion_pr_url: ${{ steps.publish-pr.outputs.promotion_pr_url }}
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            hass_mcp_engineering_beta/requirements.txt
-            tests/requirements.txt
-
-      - name: Install release preparation dependencies
-        run: >-
-          python -m pip install
-          -r hass_mcp_engineering_beta/requirements.txt
-          -r tests/requirements.txt
-
-      - name: Materialize exact promotion commit
-        id: candidate
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          source_main_sha="$(git rev-parse HEAD)"
-          remote_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ "$source_main_sha" != "$GITHUB_SHA" || "$remote_main_sha" != "$source_main_sha" ]]; then
-            echo "::error::Promotion preparation is not based on the exact current main commit."
-            exit 1
-          fi
-
-          current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
-          python scripts/promote_next_release.py
-          version="$(tr -d '\r\n' < .release/next-version)"
-          python scripts/promote_next_release.py --validate-authority "$version"
-          python scripts/promote_next_release.py --apply
-
-          expected_paths="$RUNNER_TEMP/expected-promotion-paths"
-          actual_paths="$RUNNER_TEMP/actual-promotion-paths"
-          printf '%s\n' \
-            .release/next-version \
-            hass_mcp_engineering_beta/config.yaml \
-            hass_mcp_engineering_beta/ha_mcp_engineering/version.py \
-            scripts/validate_addon_metadata.py \
-            > "$expected_paths"
-          git diff --name-only | LC_ALL=C sort > "$actual_paths"
-          if ! cmp -s "$expected_paths" "$actual_paths"; then
-            echo "::error::Promotion materialization changed paths outside the exact release-state set."
-            diff -u "$expected_paths" "$actual_paths" || true
-            exit 1
-          fi
-
-          python scripts/validate_addon_metadata.py \
-            --repo-root . \
-            --base-ref "$source_main_sha" \
-            --expected-version "$version" \
-            --deployed-version "$current_version"
-          git diff --check
-
-          promotion_branch="release/engineering-${version}"
-          git switch -c "$promotion_branch"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- \
-            hass_mcp_engineering_beta/config.yaml \
-            hass_mcp_engineering_beta/ha_mcp_engineering/version.py \
-            scripts/validate_addon_metadata.py
-          git add -A -- .release/next-version
-          git commit -m "Promote HA MCP Engineering Server ${version}"
-          promotion_sha="$(git rev-parse HEAD)"
-          if [[ -n "$(git status --porcelain)" ]]; then
-            echo "::error::The generated promotion commit left a dirty checkout."
-            exit 1
-          fi
-
-          {
-            echo "source_main_sha=$source_main_sha"
-            echo "current_version=$current_version"
-            echo "version=$version"
-            echo "promotion_branch=$promotion_branch"
-            echo "promotion_sha=$promotion_sha"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Push exact branch and open draft promotion pull request
-        id: publish-pr
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PROMOTION_BRANCH: ${{ steps.candidate.outputs.promotion_branch }}
-          CANDIDATE_SHA: ${{ steps.candidate.outputs.promotion_sha }}
-          SOURCE_MAIN_SHA: ${{ steps.candidate.outputs.source_main_sha }}
-          VERSION: ${{ steps.candidate.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          remote_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ "$remote_main_sha" != "$SOURCE_MAIN_SHA" ]]; then
-            echo "::error::Main changed before the protected promotion branch could be published."
-            exit 1
-          fi
-
-          remote_branch_sha="$(git ls-remote --heads origin "refs/heads/${PROMOTION_BRANCH}" | awk '{print $1}')"
-          if [[ -z "$remote_branch_sha" ]]; then
-            git push origin "HEAD:refs/heads/${PROMOTION_BRANCH}"
-            promotion_sha="$CANDIDATE_SHA"
-          else
-            git fetch --no-tags origin "refs/heads/${PROMOTION_BRANCH}:refs/remotes/origin/existing-promotion"
-            existing_parent="$(git rev-parse "${remote_branch_sha}^")"
-            existing_tree="$(git rev-parse "${remote_branch_sha}^{tree}")"
-            candidate_tree="$(git rev-parse "${CANDIDATE_SHA}^{tree}")"
-            existing_subject="$(git log -1 --pretty=%s "$remote_branch_sha")"
-            expected_subject="Promote HA MCP Engineering Server ${VERSION}"
-            if [[ "$existing_parent" != "$SOURCE_MAIN_SHA" || "$existing_tree" != "$candidate_tree" || "$existing_subject" != "$expected_subject" ]]; then
-              echo "::error::The deterministic promotion branch exists with different authority or content."
-              exit 1
-            fi
-            promotion_sha="$remote_branch_sha"
-          fi
-
-          pr_json="$RUNNER_TEMP/promotion-prs.json"
-          gh pr list --state open --base main --head "$PROMOTION_BRANCH" \
-            --json number,url,headRefOid > "$pr_json"
-          pr_count="$(python - "$pr_json" <<'PY'
-          import json
-          from pathlib import Path
-          import sys
-
-          payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-          if not isinstance(payload, list):
-              raise SystemExit("promotion pull-request query was not a list")
-          print(len(payload))
-          PY
-          )"
-          if [[ "$pr_count" == "0" ]]; then
-            pr_body="$RUNNER_TEMP/promotion-pr-body.md"
-            {
-              echo "Materializes the reviewed staged Engineering release through the protected pull-request path."
-              echo
-              echo "- Staged version: \`${VERSION}\`"
-              echo "- Source main: \`${SOURCE_MAIN_SHA}\`"
-              echo "- Promotion commit: \`${promotion_sha}\`"
-              echo "- Image publication: deferred until this exact promotion state is merged to \`main\`"
-              echo
-              echo "No image, tag, GitHub Release, deployment, or live mutation is performed by this pull request preparation."
-            } > "$pr_body"
-            promotion_pr_url="$(gh pr create --draft --base main --head "$PROMOTION_BRANCH" \
-              --title "Promote HA MCP Engineering Server ${VERSION}" \
-              --body-file "$pr_body")"
-          elif [[ "$pr_count" == "1" ]]; then
-            readarray -t pr_values < <(python - "$pr_json" <<'PY'
-          import json
-          from pathlib import Path
-          import sys
-
-          item = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))[0]
-          print(item.get("headRefOid", ""))
-          print(item.get("url", ""))
-          PY
-            )
-            if [[ "${pr_values[0]}" != "$promotion_sha" || -z "${pr_values[1]}" ]]; then
-              echo "::error::The existing promotion pull request is not bound to the exact promotion commit."
-              exit 1
-            fi
-            promotion_pr_url="${pr_values[1]}"
-          else
-            echo "::error::Multiple open promotion pull requests exist for the deterministic branch."
-            exit 1
-          fi
-
-          {
-            echo "promotion_sha=$promotion_sha"
-            echo "promotion_pr_url=$promotion_pr_url"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Write protected promotion pull-request summary
-        shell: bash
-        run: |
-          {
-            echo "### Engineering promotion requires protected review"
-            echo "- Version: ${{ steps.candidate.outputs.version }}"
-            echo "- Source main: ${{ steps.candidate.outputs.source_main_sha }}"
-            echo "- Promotion commit: ${{ steps.publish-pr.outputs.promotion_sha }}"
-            echo "- Promotion branch: ${{ steps.candidate.outputs.promotion_branch }}"
-            echo "- Draft pull request: ${{ steps.publish-pr.outputs.promotion_pr_url }}"
-            echo "- Image published: false"
-            echo "- Tag created: false"
-            echo "- GitHub Release created: false"
-            echo "- Main modified by this job: false"
-            echo "- Operator action: approve the bot-created pull-request checks if GitHub requires it, review the exact promotion delta, and merge only through the normal protected path."
-          } >> "$GITHUB_STEP_SUMMARY"
 
   promote:
-    name: Publish and verify reviewed promotion
+    name: Publish and verify reviewed release
     needs:
       - validate
       - detect-release
@@ -326,9 +110,15 @@ jobs:
           set -euo pipefail
 
           source_main_sha="$(git rev-parse HEAD)"
-          remote_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ "$source_main_sha" != "$GITHUB_SHA" || "$remote_main_sha" != "$source_main_sha" ]]; then
-            echo "::error::The workflow checkout is not the exact current main commit."
+          if [[ "$source_main_sha" != "$GITHUB_SHA" ]]; then
+            echo "::error::The workflow checkout is not the exact triggering main commit."
+            exit 1
+          fi
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if ! bash scripts/assert_protected_release_ancestor.sh \
+            "$source_main_sha" "$protected_main_sha"; then
+            echo "::error::The triggering release commit is not retained in protected-main history."
             exit 1
           fi
 
@@ -344,33 +134,33 @@ jobs:
 
           current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
           deployed_version="$(git show "${validation_base}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
-          if ! git cat-file -e "${validation_base}:.release/next-version" 2>/dev/null; then
-            echo "::error::The prior main commit has no staged declaration authorizing this publication."
-            exit 1
-          fi
-          staged_version="$(git show "${validation_base}:.release/next-version" | tr -d '\r\n')"
           version="$current_version"
-          if [[ "$staged_version" != "$version" || "$deployed_version" == "$version" ]]; then
-            echo "::error::The protected release commit does not exactly consume the prior staged version."
+          if [[ -z "$version" || -z "$deployed_version" || "$deployed_version" == "$version" ]]; then
+            echo "::error::The protected release commit does not contain a bounded version transition."
             exit 1
           fi
 
-          expected_paths="$RUNNER_TEMP/expected-release-paths"
+          python scripts/promote_next_release.py \
+            --validate-transition "$deployed_version" "$version"
           actual_paths="$RUNNER_TEMP/actual-release-paths"
-          printf '%s\n' \
-            .release/next-version \
+          git diff --name-only "$validation_base..HEAD" | LC_ALL=C sort > "$actual_paths"
+          for required_path in \
             hass_mcp_engineering_beta/config.yaml \
             hass_mcp_engineering_beta/ha_mcp_engineering/version.py \
-            scripts/validate_addon_metadata.py \
-            > "$expected_paths"
-          git diff --name-only "$validation_base..HEAD" | LC_ALL=C sort > "$actual_paths"
-          if ! cmp -s "$expected_paths" "$actual_paths"; then
-            echo "::error::The protected promotion contains paths outside the exact release-state set."
-            diff -u "$expected_paths" "$actual_paths" || true
+            scripts/validate_addon_metadata.py
+          do
+            if ! grep -Fxq "$required_path" "$actual_paths"; then
+              echo "::error::The reviewed release did not update ${required_path}."
+              exit 1
+            fi
+          done
+          if grep -Fxq .release/next-version "$actual_paths"; then
+            echo "::error::The reviewed release transition includes an unmaterialized declaration."
             exit 1
           fi
 
           python scripts/promote_next_release.py --validate-authority "$version"
+          python scripts/validate_promotion_candidate.py --repo-root . --require-materialized
           release_notes_path="$(python scripts/promote_next_release.py --resolve-release-notes "$version")"
           if [[ ! "$release_notes_path" =~ ^docs/[A-Za-z0-9._/-]+_RELEASE_NOTES\.md$ || ! -f "$release_notes_path" ]]; then
             echo "::error::The resolved release-notes authority is not a bounded existing repository path."
@@ -568,22 +358,20 @@ jobs:
         env:
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
-          SOURCE_MAIN_SHA: ${{ steps.prepare.outputs.source_main_sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
         run: |
           set -euo pipefail
 
-          remote_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if [[ "$remote_main_sha" != "$SOURCE_MAIN_SHA" ]]; then
-            echo "::error::Main changed after publication; refusing tag finalization."
+          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" ]]; then
+            echo "::error::The published checkout moved from the reviewed release commit."
             exit 1
           fi
-          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" || "$remote_main_sha" != "$RELEASE_SHA" ]]; then
-            echo "::error::The published release commit is not the exact current main commit."
-            exit 1
-          fi
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$protected_main_sha"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -605,12 +393,15 @@ jobs:
 
           git push origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
 
-          promoted_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          promoted_main="$(git rev-parse refs/remotes/origin/main)"
           promoted_tag="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')"
-          if [[ "$promoted_main" != "$RELEASE_SHA" || "$promoted_tag" != "$RELEASE_SHA" ]]; then
-            echo "::error::Remote main and the annotated release tag do not resolve to the release commit."
+          if [[ "$promoted_tag" != "$RELEASE_SHA" ]]; then
+            echo "::error::The annotated release tag does not resolve to the release commit."
             exit 1
           fi
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$promoted_main"
           echo "tag_verified=true" >> "$GITHUB_OUTPUT"
 
       - name: Create and verify GitHub Release
@@ -628,12 +419,15 @@ jobs:
         run: |
           set -euo pipefail
 
-          promoted_main="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          promoted_main="$(git rev-parse refs/remotes/origin/main)"
           promoted_tag="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')"
-          if [[ "$promoted_main" != "$RELEASE_SHA" || "$promoted_tag" != "$RELEASE_SHA" ]]; then
-            echo "::error::The GitHub Release cannot be created because main or its annotated tag moved."
+          if [[ "$promoted_tag" != "$RELEASE_SHA" ]]; then
+            echo "::error::The GitHub Release cannot be created because its annotated tag moved."
             exit 1
           fi
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$promoted_main"
 
           release_probe_error="$RUNNER_TEMP/github-release-final-probe-error"
           if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then

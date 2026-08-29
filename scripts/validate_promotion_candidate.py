@@ -103,13 +103,25 @@ def copy_tracked_source(repo_root: Path, destination: Path) -> None:
         shutil.copy2(source, target, follow_symlinks=False)
 
 
-def validate(repo_root: Path, python_executable: str) -> tuple[str, bool]:
+def validate(
+    repo_root: Path,
+    python_executable: str,
+    *,
+    require_materialized: bool = False,
+) -> tuple[str, bool]:
     promotion = load_promotion_module(repo_root)
     if not (repo_root / promotion.NEXT_VERSION_PATH).exists():
         advertised = promotion.advertised_version(repo_root)
         promotion.validate_document_authority(repo_root, advertised)
         return advertised, False
     current, candidate = promotion.validate_candidate(repo_root)
+    if require_materialized:
+        raise CandidateValidationError(
+            "The release declaration is not final review state. Run "
+            "'python scripts/promote_next_release.py --apply', review and commit "
+            "the bounded version updates, and remove .release/next-version before "
+            "marking the pull request ready."
+        )
     environment = os.environ.copy()
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
 
@@ -213,6 +225,11 @@ def parse_args(argv: list[str] | None = None):
         default=Path(__file__).resolve().parents[1],
     )
     parser.add_argument("--python-executable", default=sys.executable)
+    parser.add_argument(
+        "--require-materialized",
+        action="store_true",
+        help="Reject a staged declaration; final reviewed release state is required.",
+    )
     return parser.parse_args(argv)
 
 
@@ -222,6 +239,7 @@ def main(argv: list[str] | None = None) -> int:
         version, materialized = validate(
             args.repo_root.resolve(),
             args.python_executable,
+            require_materialized=args.require_materialized,
         )
     except Exception as exc:
         print(f"Promotion candidate validation failed: {exc}", file=sys.stderr)
