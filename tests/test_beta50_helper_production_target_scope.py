@@ -87,6 +87,8 @@ CAPTURED_REPLAY_FIXTURE = (
     / "dependency"
     / "hamcp089_beta50_standard_helper_replay_v1.json"
 )
+BETA50_RELEASE_COMMIT = "66448fc8ece110a73900909ba113eab504db20f6"
+BETA50_RELEASE_TAG = "v2.2.0-beta.50"
 
 
 _REPLAY_ENTITY_ID = re.compile(
@@ -1381,6 +1383,42 @@ class Beta50CapturedProductionReplayTests(
         self.assertTrue(provenance["sanitized_before_hashing"])
         self.assertEqual("READY_FOR_OFFLINE_REPLAY", provenance["capture_status"])
         self.assertFalse(provenance["snapshot_equivalence_proven"])
+        self.assertEqual(
+            BETA50_RELEASE_COMMIT,
+            provenance["source_release_commit"],
+        )
+        self.assertEqual(BETA50_RELEASE_TAG, provenance["source_release_tag"])
+        self.assertRegex(
+            provenance["source_release_commit"],
+            r"\A[0-9a-f]{40}\Z",
+        )
+        self.assertIn(
+            "does not independently attest the deployed image digest",
+            provenance["source_release_commit_binding"],
+        )
+        procedure = provenance["derivative_generation_procedure"]
+        self.assertEqual(
+            {"input_contract", "operations", "output_contract"},
+            set(procedure),
+        )
+        self.assertIsInstance(procedure["input_contract"], str)
+        self.assertIn("no live-system read", procedure["input_contract"])
+        self.assertIsInstance(procedure["output_contract"], str)
+        self.assertIn("exclude credentials", procedure["output_contract"])
+        operations = procedure["operations"]
+        self.assertIsInstance(operations, list)
+        self.assertGreaterEqual(len(operations), 3)
+        self.assertLessEqual(len(operations), 8)
+        for operation in operations:
+            self.assertIsInstance(operation, str)
+            self.assertGreater(len(operation), 0)
+            self.assertLessEqual(len(operation), 512)
+        self.assertTrue(
+            any("do not invent missing evidence" in item for item in operations)
+        )
+        self.assertTrue(
+            any("after sanitization" in item for item in operations)
+        )
         baseline = self.expectations["expected_beta50_falsification"]
         corrected = self.expectations["expected_corrected_projection"]
         self.assertGreater(

@@ -1356,6 +1356,17 @@
   "provenance": {
     "capture_status": "READY_FOR_OFFLINE_REPLAY",
     "configuration_set_sha256": "bdd92f6eb9d221a544b3fd95dd3cd1b694eda9309d4c130e0b1d1ee19894861f",
+    "derivative_generation_procedure": {
+      "input_contract": "Use only the already-sanitized bounded capture identified by source_capture_file_sha256 and source_capture_self_fingerprint; perform no live-system read.",
+      "operations": [
+        "Verify the supplied capture SHA-256 and self-fingerprint before selecting replay material.",
+        "Select exactly the five pseudonymized configuration bodies and bounded label, group, zone, domain, and target membership evidence required by the replay.",
+        "Discard capture-only plan, audit, internal automation, and runtime-accounting identities; do not invent missing evidence or claim planning-snapshot equivalence.",
+        "Preserve Jinja syntax, whitespace, control flow, dataflow, list and mapping order, repeated relationships, and scalar types.",
+        "Compute configuration_set_sha256 and membership_evidence_sha256 from UTF-8 canonical JSON with sorted object keys and compact separators after sanitization."
+      ],
+      "output_contract": "Commit only the pseudonymized replay projection and its bounded provenance; exclude credentials, endpoints, secrets, raw household identities, and raw production records."
+    },
     "engineering_version": "2.2.0-beta.50",
     "home_assistant_version": "2026.8.1",
     "membership_evidence_sha256": "d62e3a7c59f83260a4c5b42a08d9b1367c3fbc3aee468eb1c2b950be0bf4a33b",
@@ -1364,7 +1375,10 @@
     "snapshot_equivalence_proven": false,
     "source_capture_file_sha256": "7e92cd703d97cfb32651da278c48bff6a8b3c24df44ee9e723185cdd4952d1de",
     "source_capture_schema": "hamcp089-beta50-sanitized-replay-v2",
-    "source_capture_self_fingerprint": "b1989ed5e8fdbf22ce29b611ccb83f35ae5ca69a9ba0d2c7d8f48f5a52473817"
+    "source_capture_self_fingerprint": "b1989ed5e8fdbf22ce29b611ccb83f35ae5ca69a9ba0d2c7d8f48f5a52473817",
+    "source_release_commit": "66448fc8ece110a73900909ba113eab504db20f6",
+    "source_release_commit_binding": "The annotated v2.2.0-beta.50 release tag resolves to this commit; the capture records the advertised version but does not independently attest the deployed image digest.",
+    "source_release_tag": "v2.2.0-beta.50"
   },
   "schema": "hamcp089-helper-production-replay-v1",
   "target_entity_id": "input_boolean.target_standard"
