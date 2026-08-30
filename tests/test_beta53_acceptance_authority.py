@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import unittest
@@ -21,21 +22,58 @@ RELEASE_NOTES = ROOT / "docs" / "V2_2_0_BETA53_RELEASE_NOTES.md"
 
 
 class Beta53AcceptanceAuthorityTests(unittest.TestCase):
-    def test_staged_documents_resolve_exact_beta53(self):
-        self.assertEqual(
-            "2.2.0-beta.53",
-            (ROOT / ".release" / "next-version")
-            .read_text(encoding="utf-8")
-            .strip(),
+    def test_documents_resolve_exact_beta53_in_staged_or_materialized_state(self):
+        context_path = ROOT / "scripts" / "codex-context.py"
+        spec = importlib.util.spec_from_file_location(
+            "_beta53_context_authority", context_path
         )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        context = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(context)
+        resolution = context.resolve_documents(ROOT, "2.2.0-beta.53")
+        self.assertEqual("exact", resolution["resolution_status"])
+        self.assertEqual(
+            "docs/V2_2_0_BETA53_ACCEPTANCE.md",
+            resolution["active_acceptance_document"],
+        )
+        self.assertEqual(
+            "docs/V2_2_0_BETA53_RELEASE_NOTES.md",
+            resolution["active_release_notes"],
+        )
+
         for path in (ACCEPTANCE, RELEASE_NOTES):
             self.assertIn(
                 "2.2.0-beta.53", path.read_text(encoding="utf-8")
             )
+
+        next_version = ROOT / ".release" / "next-version"
+        config = (
+            ROOT / "hass_mcp_engineering_beta" / "config.yaml"
+        ).read_text(encoding="utf-8")
+        if next_version.exists():
+            self.assertEqual(
+                "2.2.0-beta.53",
+                next_version.read_text(encoding="utf-8").strip(),
+            )
+            self.assertIn('version: "2.2.0-beta.52"', config)
+            return
+
+        self.assertIn('version: "2.2.0-beta.53"', config)
         self.assertIn(
-            'version: "2.2.0-beta.52"',
-            (ROOT / "hass_mcp_engineering_beta" / "config.yaml")
-            .read_text(encoding="utf-8"),
+            'SERVER_VERSION = "2.2.0-beta.53"',
+            (
+                ROOT
+                / "hass_mcp_engineering_beta"
+                / "ha_mcp_engineering"
+                / "version.py"
+            ).read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            'BETA_VERSION = "2.2.0-beta.53"',
+            (ROOT / "scripts" / "validate_addon_metadata.py").read_text(
+                encoding="utf-8"
+            ),
         )
 
     def test_fixture_hash_self_fingerprint_and_provenance_are_exact(self):
