@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.dependency.index import DependencyIndex
 from ha_mcp_engineering.dependency.extraction import (
+    MAX_EXPAND_SNAPSHOT_ENTITIES,
     extract_document_with_obligations,
     resolve_literal_label_obligations,
 )
@@ -363,6 +364,42 @@ class Beta52LabelMembershipEvidenceTests(unittest.TestCase):
         self.assertEqual(("reviewed_label",), forward.truncated)
         self.assertFalse(forward.selector_complete["reviewed_label"])
         self.assertFalse(forward.complete)
+
+    def test_oversized_registry_is_canonical_before_bounded_retention(self):
+        members = [
+            {
+                "entity_id": f"sensor.member_{index:05d}",
+                "labels": ["reviewed_label"]
+                if index < MAX_LABEL_MEMBERSHIP
+                else [],
+            }
+            for index in range(MAX_EXPAND_SNAPSHOT_ENTITIES + 1)
+        ]
+        label_registry = [
+            {"label_id": "reviewed_label", "name": "Reviewed"}
+        ]
+
+        forward = _build_label_membership_evidence(
+            ["reviewed_label"],
+            label_registry=label_registry,
+            entity_registry=members,
+        )
+        reverse = _build_label_membership_evidence(
+            ["reviewed_label"],
+            label_registry=label_registry,
+            entity_registry=list(reversed(members)),
+        )
+
+        self.assertEqual(forward.memberships, reverse.memberships)
+        self.assertEqual(forward.fingerprints, reverse.fingerprints)
+        self.assertEqual(
+            MAX_LABEL_MEMBERSHIP,
+            len(forward.memberships["reviewed_label"]),
+        )
+        self.assertFalse(forward.selector_complete["reviewed_label"])
+        self.assertFalse(reverse.selector_complete["reviewed_label"])
+        self.assertFalse(forward.complete)
+        self.assertFalse(reverse.complete)
 
     def test_duplicate_membership_labels_are_semantically_deduplicated(self):
         single = _build_label_membership_evidence(

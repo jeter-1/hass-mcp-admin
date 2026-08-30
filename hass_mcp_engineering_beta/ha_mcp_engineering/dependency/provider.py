@@ -7,6 +7,7 @@ import asyncio
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 import hashlib
+import heapq
 import json
 from pathlib import Path
 import re
@@ -1353,9 +1354,42 @@ def _build_label_membership_evidence(
     if len(entity_registry) > MAX_EXPAND_SNAPSHOT_ENTITIES:
         for selector in selector_complete:
             selector_complete[selector] = False
-        retained_entity_registry = entity_registry[
-            :MAX_EXPAND_SNAPSHOT_ENTITIES
-        ]
+
+        def canonical_registry_key(value: Any) -> tuple[Any, ...]:
+            """Order bounded label evidence by complete used semantics."""
+
+            if not isinstance(value, dict):
+                return (1, b"", ())
+            raw_entity_id = value.get("entity_id")
+            raw_labels = value.get("labels", [])
+            if (
+                not isinstance(raw_entity_id, str)
+                or not valid_entity_id(raw_entity_id)
+                or not isinstance(raw_labels, list)
+                or len(raw_labels) > MAX_ENTITY_LABELS
+                or any(
+                    not isinstance(label, str)
+                    or not label
+                    or len(label) > 255
+                    for label in raw_labels
+                )
+            ):
+                return (1, b"", ())
+            labels = tuple(
+                sorted(
+                    {label.encode("utf-8") for label in raw_labels}
+                )
+            )
+            return (0, raw_entity_id.encode("utf-8"), labels)
+
+        # ``nsmallest`` traverses the supplied snapshot while retaining only
+        # the admitted prefix.  Equivalent oversized registries therefore
+        # bind the same evidence without allocating another unbounded list.
+        retained_entity_registry = heapq.nsmallest(
+            MAX_EXPAND_SNAPSHOT_ENTITIES,
+            entity_registry,
+            key=canonical_registry_key,
+        )
     else:
         retained_entity_registry = entity_registry
 
