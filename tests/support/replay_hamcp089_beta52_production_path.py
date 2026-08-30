@@ -20,6 +20,79 @@ import tempfile
 from types import SimpleNamespace
 
 
+_OBLIGATION_NORMALIZED_FIELDS = (
+    "candidate_entity_ids",
+    "configuration_path",
+    "context_provenance",
+    "external_template_name",
+    "ledger_outcome",
+    "limit_exceeded",
+    "literal_selectors",
+    "lock_projection",
+    "obligation_kind",
+    "possible_entity_domains",
+    "reason_code",
+    "relation",
+    "semantic_category",
+    "semantic_registry_version",
+    "source_object_id",
+    "target_outcome",
+    "target_selector_scope",
+)
+
+_PROFILE_NORMALIZED_FIELDS = (
+    "action_domain_count",
+    "action_domains",
+    "analysis_complete",
+    "automation_id",
+    "automation_resource_id",
+    "complete",
+    "effect_data_count",
+    "effect_projection_clipped",
+    "effect_projection_model",
+    "effect_target_count",
+    "effect_targets",
+    "physical_consequence",
+    "presentation_truncated",
+    "processing_action_depth_limit",
+    "processing_action_step_limit",
+    "processing_effect_depth_limit",
+    "processing_effect_node_limit",
+    "processing_limit_exceeded",
+    "processing_limit_reason",
+    "processing_observed_action_step_count",
+    "processing_observed_effect_node_count",
+    "reason_code_count",
+    "reason_codes",
+    "relationships",
+    "semantic_complete",
+    "service_count",
+    "services",
+    "truncated",
+)
+
+
+def _normalized_semantic_rows(
+    values: list[dict], fields: tuple[str, ...]
+) -> list[dict]:
+    """Return the complete semantic row multiset without hash identities."""
+
+    rows = [
+        {field: copy.deepcopy(value.get(field)) for field in fields}
+        for value in values
+    ]
+    return sorted(
+        rows,
+        key=lambda row: json.dumps(
+            row,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ),
+    )
+
+
 def _source_commit(source_root: Path) -> str:
     completed = subprocess.run(
         ["git", "-C", str(source_root), "rev-parse", "HEAD"],
@@ -72,6 +145,7 @@ def _transport_fixture(fixture: dict) -> dict:
         configurations.append(
             {
                 "source": source,
+                "resource_id": resource_id,
                 "configuration": copy.deepcopy(item["configuration"]),
             }
         )
@@ -278,6 +352,52 @@ async def _replay(
     ]
 
     obligations = binding["obligation_evidence"]
+    source_aliases: dict[str, str] = {}
+    resource_aliases: dict[str, str] = {}
+    source_identity_projection = []
+    for item in transport_fixture["configurations"]:
+        configuration_id = item["configuration"].get("id")
+        if not isinstance(configuration_id, str) or not configuration_id:
+            raise AssertionError(
+                "captured configuration ID is unavailable for normalization"
+            )
+        runtime_source = f"automation.{configuration_id}"
+        captured_source = item["source"]
+        resource_id = item["resource_id"]
+        source_aliases[runtime_source] = captured_source
+        resource_aliases[configuration_id] = resource_id
+        source_identity_projection.append(
+            {
+                "runtime_source_object_id": runtime_source,
+                "captured_source_object_id": captured_source,
+                "captured_resource_id": resource_id,
+            }
+        )
+
+    normalized_obligations = copy.deepcopy(obligations)
+    for item in normalized_obligations:
+        source = item.get("source_object_id")
+        if source not in source_aliases:
+            raise AssertionError(
+                f"unmapped replay obligation source identity: {source}"
+            )
+        item["source_object_id"] = source_aliases[source]
+
+    normalized_profiles = copy.deepcopy(binding["downstream_profiles"])
+    for item in normalized_profiles:
+        automation_id = item.get("automation_id")
+        resource_id = item.get("automation_resource_id")
+        if automation_id not in source_aliases:
+            raise AssertionError(
+                f"unmapped replay profile source identity: {automation_id}"
+            )
+        if resource_id not in resource_aliases:
+            raise AssertionError(
+                f"unmapped replay profile resource identity: {resource_id}"
+            )
+        item["automation_id"] = source_aliases[automation_id]
+        item["automation_resource_id"] = resource_aliases[resource_id]
+
     source_counts = Counter(
         item["source_object_id"] for item in obligations
     )
@@ -324,6 +444,16 @@ async def _replay(
         "target_selector_scope_counts": dict(sorted(scope_counts.items())),
         "lock_projection_counts": dict(
             sorted(lock_projection_counts.items())
+        ),
+        "normalized_obligation_rows": _normalized_semantic_rows(
+            normalized_obligations, _OBLIGATION_NORMALIZED_FIELDS
+        ),
+        "normalized_downstream_profile_rows": _normalized_semantic_rows(
+            normalized_profiles, _PROFILE_NORMALIZED_FIELDS
+        ),
+        "source_identity_projection": sorted(
+            source_identity_projection,
+            key=lambda item: item["captured_resource_id"],
         ),
         "coverage_failure_reason_codes": binding.get(
             "coverage_failure_reason_codes", []

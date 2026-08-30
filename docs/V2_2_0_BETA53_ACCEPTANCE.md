@@ -30,6 +30,53 @@ release 2.2.0-beta.52, and source build
 `1b23baab38715ff9958e544d61ca8ac5dd208812`. No raw production capture,
 household identity, endpoint or credential is committed.
 
+### Artifact derivation and independent verification
+
+The shareable capture report has SHA-256
+`87c70bf0a38fa5201a728043cc4303a98499979e8d96911cbafa3993ff1ac912`.
+It attests that the private source-capture artifact had SHA-256
+`b7c3e7d951f0956b94e6b18541b028bfe53eb3227209b035fa54e69778ea94b3`;
+that hash is report evidence only. No private artifact was opened, copied or
+committed for this change.
+
+The report records the following generation sequence. Beta 52 returned both
+automation configurations twice, 24 persisted obligation rows in two complete
+pagination passes, two downstream profiles in two complete passes, and
+duplicate-identical bounded membership reads. The
+`deterministic-token-and-jinja-literal-pseudonymizer-v1` transformation mapped
+57 household identity/text tokens to deterministic pseudonyms while preserving
+Jinja syntax, whitespace, control flow, list and mapping order, scalar types,
+relationship cardinality, and pagination order. Pseudonymization preceded all
+shareable configuration, membership, row, fixture, and self hashes; the report
+records zero residual raw tokens and zero pending hash markers. The resulting
+shareable artifact was then copied byte-for-byte into this repository. The
+private raw inputs and the raw-to-sanitized executable are deliberately not
+shareable, so raw capture regeneration is not claimed as a repository
+capability.
+
+The reproducible repository procedure begins at that hash-identified shareable
+artifact: verify its file SHA-256 and self-fingerprint, byte-copy it to the
+fixture path, verify both values again, then run the offline production-path
+replay. The replay runner is
+`tests/support/replay_hamcp089_beta52_production_path.py`, SHA-256
+`419306121cf12cceef9fc64c73e448457581b557cffaaf2198d2c845794adfe7`.
+The historical command is:
+
+```text
+python tests/support/replay_hamcp089_beta52_production_path.py --source-root <detached-Beta-52-worktree> --fixture tests/fixtures/dependency/hamcp089_beta52_standard_helper_replay_v1.json --entity-registry-mode identical_duplicate
+```
+
+`Beta53HistoricalFalsificationTests` creates the detached checkout at the
+fixture's exact source commit and executes that command. It compares the full
+order-independent normalized obligation-row multiset and downstream-profile
+rows, including every non-fingerprint semantic field retained by the replay,
+as well as the exact top-level 0/24/2 result, failure reason, risk, policy,
+actionability, locks and zero dispatch. Runtime source pseudonyms are projected
+to captured source/resource pseudonyms only through each captured
+configuration's explicit ID-to-resource relationship, and that projection is
+emitted by the runner. Hash identities are excluded from row equality because
+the contract permits their recomputation over pseudonymized inputs.
+
 The offline runner imports Engineering runtime and replay transports only from
 its supplied source root and rejects writes. Against exact Beta 52, the
 complete control remains exact 0, opaque 0, profiles 0, complete/exact,

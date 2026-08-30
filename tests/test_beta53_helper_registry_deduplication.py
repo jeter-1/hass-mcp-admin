@@ -48,6 +48,9 @@ from ha_mcp_engineering.governance.normalize import stable_hash
 
 from tests.f3_operational_fixtures import make_context, prepare_context
 from tests.support.replay_hamcp089_beta52_production_path import (
+    _OBLIGATION_NORMALIZED_FIELDS,
+    _PROFILE_NORMALIZED_FIELDS,
+    _normalized_semantic_rows,
     _transport_fixture,
 )
 from tests.test_beta37_exact_helper_state import (
@@ -964,6 +967,20 @@ class Beta53HistoricalFalsificationTests(unittest.TestCase):
                 "states_item_entity_access_target_opaque": 4,
             },
             duplicate["reason_code_counts"],
+        )
+        self.assertEqual(
+            _normalized_semantic_rows(
+                self.capture["obligations"],
+                _OBLIGATION_NORMALIZED_FIELDS,
+            ),
+            duplicate["normalized_obligation_rows"],
+        )
+        self.assertEqual(
+            _normalized_semantic_rows(
+                self.capture["downstream_profiles"],
+                _PROFILE_NORMALIZED_FIELDS,
+            ),
+            duplicate["normalized_downstream_profile_rows"],
         )
         self.assertEqual(
             ["action_profile_semantic_incomplete"],

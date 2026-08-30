@@ -17,6 +17,12 @@ FIXTURE = (
     / "dependency"
     / "hamcp089_beta52_standard_helper_replay_v1.json"
 )
+RUNNER = (
+    ROOT
+    / "tests"
+    / "support"
+    / "replay_hamcp089_beta52_production_path.py"
+)
 ACCEPTANCE = ROOT / "docs" / "V2_2_0_BETA53_ACCEPTANCE.md"
 RELEASE_NOTES = ROOT / "docs" / "V2_2_0_BETA53_RELEASE_NOTES.md"
 
@@ -121,6 +127,36 @@ class Beta53AcceptanceAuthorityTests(unittest.TestCase):
             "1b23baab38715ff9958e544d61ca8ac5dd208812",
             value["provenance"]["source_build_sha"],
         )
+
+    def test_shareable_derivation_and_replay_authority_is_bound(self):
+        text = ACCEPTANCE.read_text(encoding="utf-8")
+        normalized_text = " ".join(text.split())
+        self.assertIn(
+            "87c70bf0a38fa5201a728043cc4303a98499979e8d96911cbafa3993ff1ac912",
+            text,
+        )
+        self.assertIn(
+            "b7c3e7d951f0956b94e6b18541b028bfe53eb3227209b035fa54e69778ea94b3",
+            text,
+        )
+        self.assertIn(
+            "deterministic-token-and-jinja-literal-pseudonymizer-v1",
+            text,
+        )
+        self.assertIn(
+            "raw-to-sanitized executable are deliberately not shareable",
+            normalized_text,
+        )
+        self.assertIn(
+            "--entity-registry-mode identical_duplicate",
+            text,
+        )
+        runner_hash = hashlib.sha256(RUNNER.read_bytes()).hexdigest()
+        self.assertEqual(
+            "419306121cf12cceef9fc64c73e448457581b557cffaaf2198d2c845794adfe7",
+            runner_hash,
+        )
+        self.assertIn(runner_hash, text)
 
     def test_upstream_tag_and_file_authority_is_pinned(self):
         text = ACCEPTANCE.read_text(encoding="utf-8")

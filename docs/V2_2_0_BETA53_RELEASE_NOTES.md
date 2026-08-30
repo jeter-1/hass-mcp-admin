@@ -32,6 +32,15 @@ membership, target outcome, risk, actionability, approval/preflight evidence
 fingerprint and F3 locks as the single-record control. This does not establish
 that the input historically occurred for plan c990.
 
+Fixture provenance now binds the shareable capture/report hashes, the
+report-attested private source-capture hash without accessing that artifact,
+the recorded sanitization operations, and the exact offline replay command and
+runner hash. Exact Beta 52 must reproduce the complete normalized obligation
+and downstream-profile row multisets—not only aggregate counts—before the
+historical falsification control passes. The intentionally private raw capture
+and raw-to-sanitized executable are not repository inputs, so the release does
+not claim raw capture regeneration.
+
 ## Persisted selector diagnostics
 
 Fresh `helper-dependency-risk-v12` plans persist bounded hash-safe diagnostics
