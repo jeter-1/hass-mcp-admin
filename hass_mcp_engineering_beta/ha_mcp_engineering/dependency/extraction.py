@@ -1805,6 +1805,7 @@ def resolve_literal_label_obligations(
     label_membership_truncated: Iterable[str],
     label_lookup_resolutions: dict[str, tuple[str, str | None]],
     label_registry_complete: bool,
+    label_membership_complete: dict[str, bool] | None = None,
     expand_snapshot_evidence: ExpandSnapshotEvidence | None = None,
 ) -> list[DependencyObligation]:
     """Discharge literal ``label_entities`` opacity from one scan snapshot.
@@ -1831,23 +1832,31 @@ def resolve_literal_label_obligations(
             for value in context
             if value.startswith("entity_selector_transform:")
         }
+        selectors = tuple(sorted(set(item.literal_selectors)))
+        completion = (
+            label_membership_complete
+            if label_membership_complete is not None
+            else {
+                selector: bool(label_registry_complete)
+                for selector in selectors
+            }
+        )
         eligible = bool(
             producers == {"label_entities"}
             and selector_transforms.issubset({"expand"})
             and "entity_selector_provenance:complete" in context
             and "entity_selector_provenance:incomplete" not in context
-            and item.literal_selectors
-            and label_registry_complete
+            and selectors
         )
         if not eligible:
             resolved.append(item)
             continue
-        selectors = tuple(sorted(set(item.literal_selectors)))
         if any(
             selector in truncated
             or selector not in label_memberships
             or selector not in label_membership_fingerprints
             or selector not in label_lookup_resolutions
+            or completion.get(selector) is not True
             for selector in selectors
         ):
             resolved.append(item)
@@ -1867,9 +1876,21 @@ def resolve_literal_label_obligations(
             for selector in selectors
             for entity_id in label_memberships[selector]
         }
+        independent_candidates = tuple(
+            sorted(
+                set(item.exact_entity_ids),
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
+        label_only_candidates = tuple(
+            sorted(
+                label_candidates.difference(independent_candidates),
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
         candidates = tuple(
             sorted(
-                set(item.exact_entity_ids).union(label_candidates),
+                set(independent_candidates).union(label_only_candidates),
                 key=lambda value: value.encode("utf-8"),
             )
         )
@@ -1907,14 +1928,29 @@ def resolve_literal_label_obligations(
             )
         )
         if len(candidates) > MAX_TEMPLATE_CANDIDATES:
+            # Bounding the completed label union must never erase an exact
+            # inclusion proved independently of label expansion.  Reserve
+            # capacity for that evidence first, then fill the remaining
+            # bounded projection deterministically with label-only members.
+            retained_candidates = tuple(
+                sorted(
+                    independent_candidates
+                    + label_only_candidates[
+                        : max(
+                            0,
+                            MAX_TEMPLATE_CANDIDATES
+                            - len(independent_candidates),
+                        )
+                    ],
+                    key=lambda value: value.encode("utf-8"),
+                )
+            )[:MAX_TEMPLATE_CANDIDATES]
             resolved.append(
                 replace(
                     item,
                     outcome="coverage_failure",
                     reason_code="literal_label_candidate_union_limit_exceeded",
-                    exact_entity_ids=tuple(
-                        candidates[:MAX_TEMPLATE_CANDIDATES]
-                    ),
+                    exact_entity_ids=retained_candidates,
                     context_provenance=bound_context,
                     limit_exceeded=True,
                     lock_projection="coverage_failure",

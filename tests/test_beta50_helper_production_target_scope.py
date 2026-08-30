@@ -1518,7 +1518,7 @@ class Beta50CapturedProductionReplayTests(
         self.assertTrue(corrected["evidence_complete"])
         self.assertTrue(corrected["execution_eligible"])
 
-    def test_acceptance_correction_head_binds_runtime_and_replay_tree(self):
+    def test_beta51_acceptance_head_and_historical_replay_remain_bound(self):
         acceptance = (
             ROOT / "docs" / "V2_2_0_BETA51_ACCEPTANCE.md"
         ).read_text(encoding="utf-8")
@@ -1529,20 +1529,27 @@ class Beta50CapturedProductionReplayTests(
         )
         self.assertIsNotNone(match, acceptance[:500])
         correction_head = match.group(1) if match is not None else ""
-        correction_paths = (
-            "hass_mcp_engineering_beta/ha_mcp_engineering/"
-            "dependency/extraction.py",
-            "hass_mcp_engineering_beta/ha_mcp_engineering/"
-            "dependency/obligation_ledger.py",
-            "hass_mcp_engineering_beta/ha_mcp_engineering/"
-            "governance/helper_dependency.py",
+        ancestor = subprocess.run(
+            (
+                "git",
+                "merge-base",
+                "--is-ancestor",
+                correction_head,
+                "HEAD",
+            ),
+            cwd=ROOT,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(
+            0,
+            ancestor.returncode,
+            "Beta 51 accepted source is not an ancestor of this head",
+        )
+        historical_paths = (
             "tests/fixtures/dependency/"
             "hamcp089_beta50_standard_helper_replay_v1.json",
-            "tests/test_beta47_helper_risk_semantic_completion.py",
-            "tests/test_beta48_helper_target_relevance.py",
-            "tests/test_beta49_helper_obligation_target_scope.py",
-            "tests/test_beta50_helper_production_target_scope.py",
-            "tests/test_hamcp089_plan_observability.py",
         )
         changed = subprocess.run(
             (
@@ -1551,7 +1558,7 @@ class Beta50CapturedProductionReplayTests(
                 "--name-only",
                 f"{correction_head}..HEAD",
                 "--",
-                *correction_paths,
+                *historical_paths,
             ),
             cwd=ROOT,
             check=True,
@@ -1561,7 +1568,8 @@ class Beta50CapturedProductionReplayTests(
         self.assertEqual(
             [],
             changed,
-            "Beta 51 correction paths changed after the acceptance-bound "
+            "Beta 51 hash-bearing historical evidence changed after the "
+            "acceptance-bound "
             f"source head {correction_head}",
         )
 
@@ -2123,7 +2131,7 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             "dependency_risk"
         ]
         self.assertEqual(
-            "helper-dependency-risk-v10", standard_binding["model"]
+            "helper-dependency-risk-v11", standard_binding["model"]
         )
         self.assertTrue(standard["approval_actionable"])
         self.assertEqual("low", standard["risk"]["level"])
@@ -2354,15 +2362,15 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, self.helper.dispatch_count)
 
-    def test_v3_through_v9_are_readable_but_non_authoritative(self):
+    def test_v3_through_v10_are_readable_but_non_authoritative(self):
         self.assertEqual(
-            "helper-dependency-risk-v10", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v11", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v10"}),
+            frozenset({"helper-dependency-risk-v11"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 10):
+        for version in range(3, 11):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

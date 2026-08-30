@@ -5,7 +5,9 @@ from __future__ import annotations
 from abc import abstractmethod
 import asyncio
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 import hashlib
+import heapq
 import json
 from pathlib import Path
 import re
@@ -62,6 +64,42 @@ MAX_EXPAND_SOURCE_DOMAIN_LENGTH = 64
 CANONICAL_EXPAND_SOURCE_DOMAIN = re.compile(
     r"(?=.*[a-z])[a-z0-9]+(?:_[a-z0-9]+)*", re.ASCII
 )
+
+
+@dataclass(frozen=True)
+class LabelMembershipEvidence:
+    """Bounded selector-local label lookup and membership evidence.
+
+    Iteration preserves the historical five-value internal test contract.
+    New production code consumes ``selector_complete`` explicitly so one
+    malformed but provably unrelated entity-registry record cannot poison
+    every literal label selector.
+    """
+
+    memberships: dict[str, tuple[str, ...]]
+    fingerprints: dict[str, str]
+    truncated: tuple[str, ...]
+    lookup_resolutions: dict[str, tuple[str, str | None]]
+    selector_complete: dict[str, bool]
+    complete: bool
+
+    def _legacy_values(self) -> tuple[Any, ...]:
+        return (
+            self.memberships,
+            self.fingerprints,
+            self.truncated,
+            self.lookup_resolutions,
+            self.complete,
+        )
+
+    def __iter__(self):
+        return iter(self._legacy_values())
+
+    def __len__(self) -> int:
+        return 5
+
+    def __getitem__(self, index):
+        return self._legacy_values()[index]
 
 
 def _valid_expand_source_domain(value: Any) -> bool:
@@ -162,6 +200,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         metadata: dict[str, dict[str, Any]] = {}
         label_memberships: dict[str, tuple[str, ...]] = {}
         label_membership_fingerprints: dict[str, str] = {}
+        label_membership_complete: dict[str, bool] = {}
         label_lookup_resolutions: dict[
             str, tuple[str, str | None]
         ] = {}
@@ -651,6 +690,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     "Literal label selectors exceeded the bounded dependency payload."
                 )
             label_registry: list[Any] = []
+            label_inventory_available = False
             try:
                 label_registry = await request(
                     "label_registry_inventory",
@@ -673,20 +713,28 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     label_warning.append(
                         "Label registry exceeded the bounded dependency payload."
                     )
+                else:
+                    label_inventory_available = True
             except Exception:
                 label_warning.append(
                     "Label registry could not be read for dynamic dependency resolution."
                 )
+            label_evidence = _build_label_membership_evidence(
+                literal_label_selectors,
+                entity_registry=registry,
+                label_registry=label_registry,
+                entity_inventory_available=entity_registry_complete,
+                label_inventory_available=label_inventory_available,
+            )
             (
                 label_memberships,
                 label_membership_fingerprints,
                 label_membership_truncated,
                 label_lookup_resolutions,
                 membership_complete,
-            ) = _build_label_membership_evidence(
-                literal_label_selectors,
-                entity_registry=registry,
-                label_registry=label_registry,
+            ) = label_evidence
+            label_membership_complete = dict(
+                label_evidence.selector_complete
             )
             label_registry_complete = bool(
                 membership_complete
@@ -704,6 +752,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             label_membership_truncated=label_membership_truncated,
             label_lookup_resolutions=label_lookup_resolutions,
             label_registry_complete=label_registry_complete,
+            label_membership_complete=label_membership_complete,
             expand_snapshot_evidence=expand_snapshot_evidence,
         )
         # Compatibility findings are a projection of the same post-registry
@@ -871,6 +920,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             label_membership_fingerprints=(
                 label_membership_fingerprints
             ),
+            label_membership_complete=label_membership_complete,
             label_membership_truncated=(
                 label_membership_truncated
             ),
@@ -1191,13 +1241,9 @@ def _build_label_membership_evidence(
     *,
     entity_registry: list[Any],
     label_registry: list[Any],
-) -> tuple[
-    dict[str, tuple[str, ...]],
-    dict[str, str],
-    tuple[str, ...],
-    dict[str, tuple[str, str | None]],
-    bool,
-]:
+    entity_inventory_available: bool = True,
+    label_inventory_available: bool = True,
+) -> LabelMembershipEvidence:
     """Resolve literal labels with admitted Home Assistant lookup semantics.
 
     Home Assistant 2026.7.2, 2026.8.0, and 2026.8.1 all use an exact label-ID
@@ -1207,91 +1253,214 @@ def _build_label_membership_evidence(
     called.
     """
 
-    complete = True
-    labels_by_id: dict[str, str] = {}
-    label_ids_by_normalized_name: dict[str, str] = {}
-    for item in label_registry:
+    ordered_selectors = tuple(
+        sorted(set(selectors), key=lambda item: item.encode("utf-8"))
+    )
+    label_inventory_bounded = bool(
+        label_inventory_available
+        and len(label_registry) <= MAX_LABEL_REGISTRY_ENTRIES
+    )
+    retained_label_registry = label_registry[:MAX_LABEL_REGISTRY_ENTRIES]
+    parsed_labels: list[tuple[Any, Any, bool]] = []
+    label_id_counts: Counter[str] = Counter()
+    normalized_name_counts: Counter[str] = Counter()
+    label_inventory_canonical = label_inventory_bounded
+    for item in retained_label_registry:
         if not isinstance(item, dict):
-            complete = False
+            parsed_labels.append((None, None, False))
+            label_inventory_canonical = False
             continue
         label_id = item.get("label_id")
         name = item.get("name")
-        if (
-            not isinstance(label_id, str)
-            or not label_id
-            or not isinstance(name, str)
-            or not name
-        ):
-            complete = False
+        valid = bool(
+            isinstance(label_id, str)
+            and 0 < len(label_id) <= 255
+            and isinstance(name, str)
+            and 0 < len(name) <= 255
+        )
+        parsed_labels.append((label_id, name, valid))
+        if not valid:
+            label_inventory_canonical = False
             continue
         normalized_name = name.casefold().replace(" ", "")
-        if (
-            label_id in labels_by_id
-            or normalized_name in label_ids_by_normalized_name
-        ):
-            # Home Assistant's registry enforces unique IDs and normalized
-            # names.  A snapshot that violates either invariant cannot prove
-            # absence or membership.
-            complete = False
-            continue
-        labels_by_id[label_id] = name
-        label_ids_by_normalized_name[normalized_name] = label_id
+        label_id_counts[label_id] += 1
+        normalized_name_counts[normalized_name] += 1
+    if any(count != 1 for count in label_id_counts.values()) or any(
+        count != 1 for count in normalized_name_counts.values()
+    ):
+        label_inventory_canonical = False
 
     label_lookup_resolutions: dict[str, tuple[str, str | None]] = {}
     label_ids_by_selector: dict[str, str | None] = {}
-    for selector in selectors:
-        if selector in labels_by_id:
+    selector_complete: dict[str, bool] = {}
+    for selector in ordered_selectors:
+        exact_matches = [
+            (label_id, name, valid)
+            for label_id, name, valid in parsed_labels
+            if label_id == selector
+        ]
+        if exact_matches:
             label_ids_by_selector[selector] = selector
             label_lookup_resolutions[selector] = ("label_id", selector)
+            selector_complete[selector] = bool(
+                label_inventory_bounded
+                and len(exact_matches) == 1
+                and exact_matches[0][2]
+                and label_id_counts[selector] == 1
+            )
             continue
-        resolved_label_id = label_ids_by_normalized_name.get(
-            selector.casefold().replace(" ", "")
-        )
-        label_ids_by_selector[selector] = resolved_label_id
-        label_lookup_resolutions[selector] = (
-            "normalized_name" if resolved_label_id is not None else "missing",
-            resolved_label_id,
-        )
+
+        normalized_selector = selector.casefold().replace(" ", "")
+        name_matches = [
+            (label_id, name, valid)
+            for label_id, name, valid in parsed_labels
+            if isinstance(name, str)
+            and name.casefold().replace(" ", "") == normalized_selector
+        ]
+        if name_matches:
+            resolved_label_id = (
+                name_matches[0][0]
+                if len(name_matches) == 1
+                and isinstance(name_matches[0][0], str)
+                else None
+            )
+            label_ids_by_selector[selector] = resolved_label_id
+            label_lookup_resolutions[selector] = (
+                "normalized_name",
+                resolved_label_id,
+            )
+            selector_complete[selector] = bool(
+                label_inventory_canonical
+                and len(name_matches) == 1
+                and name_matches[0][2]
+                and resolved_label_id is not None
+            )
+            continue
+
+        label_ids_by_selector[selector] = None
+        label_lookup_resolutions[selector] = ("missing", None)
+        # Missing-label exclusion depends on the complete registry.  Exact-ID
+        # selection above is the only lookup whose precedence can isolate it
+        # from a malformed unrelated label record.
+        selector_complete[selector] = label_inventory_canonical
+
+    if not entity_inventory_available:
+        for selector in selector_complete:
+            selector_complete[selector] = False
 
     memberships: dict[str, set[str]] = {
-        selector: set() for selector in selectors
+        selector: set() for selector in ordered_selectors
     }
-    seen_entity_ids: set[str] = set()
-    for item in entity_registry:
+    if len(entity_registry) > MAX_EXPAND_SNAPSHOT_ENTITIES:
+        for selector in selector_complete:
+            selector_complete[selector] = False
+
+        def canonical_registry_key(value: Any) -> tuple[Any, ...]:
+            """Order bounded label evidence by complete used semantics."""
+
+            if not isinstance(value, dict):
+                return (1, b"", ())
+            raw_entity_id = value.get("entity_id")
+            raw_labels = value.get("labels", [])
+            if (
+                not isinstance(raw_entity_id, str)
+                or not valid_entity_id(raw_entity_id)
+                or not isinstance(raw_labels, list)
+                or len(raw_labels) > MAX_ENTITY_LABELS
+                or any(
+                    not isinstance(label, str)
+                    or not label
+                    or len(label) > 255
+                    for label in raw_labels
+                )
+            ):
+                return (1, b"", ())
+            labels = tuple(
+                sorted(
+                    {label.encode("utf-8") for label in raw_labels}
+                )
+            )
+            return (0, raw_entity_id.encode("utf-8"), labels)
+
+        # ``nsmallest`` traverses the supplied snapshot while retaining only
+        # the admitted prefix.  Equivalent oversized registries therefore
+        # bind the same evidence without allocating another unbounded list.
+        retained_entity_registry = heapq.nsmallest(
+            MAX_EXPAND_SNAPSHOT_ENTITIES,
+            entity_registry,
+            key=canonical_registry_key,
+        )
+    else:
+        retained_entity_registry = entity_registry
+
+    parsed_entities: list[tuple[str | None, set[str] | None]] = []
+    entity_id_counts: Counter[str] = Counter()
+    for item in retained_entity_registry:
         if not isinstance(item, dict):
-            complete = False
+            parsed_entities.append((None, None))
+            for selector in selector_complete:
+                selector_complete[selector] = False
             continue
-        entity_id = item.get("entity_id")
-        labels = item.get("labels", [])
-        if not isinstance(labels, list):
-            complete = False
+        raw_labels = item.get("labels", [])
+        if (
+            not isinstance(raw_labels, list)
+            or len(raw_labels) > MAX_ENTITY_LABELS
+            or any(
+                not isinstance(label, str)
+                or not label
+                or len(label) > 255
+                for label in raw_labels
+            )
+        ):
+            parsed_entities.append((None, None))
+            # An unreadable label collection could contain any admitted label.
+            for selector in selector_complete:
+                selector_complete[selector] = False
             continue
-        if len(labels) > MAX_ENTITY_LABELS:
-            complete = False
+        labels = set(raw_labels)
+        raw_entity_id = item.get("entity_id")
+        entity_id = (
+            raw_entity_id
+            if isinstance(raw_entity_id, str)
+            and valid_entity_id(raw_entity_id)
+            else None
+        )
+        parsed_entities.append((entity_id, labels))
+        if entity_id is not None:
+            entity_id_counts[entity_id] += 1
+
+    for entity_id, labels in parsed_entities:
+        if labels is None:
             continue
-        if not isinstance(entity_id, str) or not valid_entity_id(entity_id):
-            complete = False
+        relevant_selectors = [
+            selector
+            for selector, label_id in label_ids_by_selector.items()
+            if label_id is not None and label_id in labels
+        ]
+        if not relevant_selectors:
+            # A canonical bounded empty/nonmatching label set proves this
+            # malformed identity cannot be a member of the selected label.
             continue
-        if entity_id in seen_entity_ids:
-            complete = False
+        if entity_id is None:
+            for selector in relevant_selectors:
+                selector_complete[selector] = False
             continue
-        seen_entity_ids.add(entity_id)
-        exact_labels = {
-            label for label in labels if isinstance(label, str)
-        }
-        if any(not isinstance(label, str) for label in labels):
-            complete = False
-        for selector, label_id in label_ids_by_selector.items():
-            if label_id is not None and label_id in exact_labels:
-                memberships[selector].add(entity_id)
+        for selector in relevant_selectors:
+            memberships[selector].add(entity_id)
+            if entity_id_counts[entity_id] != 1:
+                # Duplicate registry identities are internally inconsistent
+                # whenever they claim membership in this selector.
+                selector_complete[selector] = False
 
     retained: dict[str, tuple[str, ...]] = {}
     fingerprints: dict[str, str] = {}
     truncated: list[str] = []
-    for selector in selectors:
+    for selector in ordered_selectors:
         ordered = sorted(
             memberships[selector], key=lambda item: item.encode("utf-8")
         )
+        if len(ordered) > MAX_LABEL_MEMBERSHIP:
+            selector_complete[selector] = False
         encoded = json.dumps(
             {
                 "model": LABEL_LOOKUP_MODEL,
@@ -1299,6 +1468,7 @@ def _build_label_membership_evidence(
                 "lookup_mode": label_lookup_resolutions[selector][0],
                 "resolved_label_id": label_lookup_resolutions[selector][1],
                 "entity_ids": ordered,
+                "complete": bool(selector_complete[selector]),
             },
             sort_keys=True,
             separators=(",", ":"),
@@ -1312,10 +1482,16 @@ def _build_label_membership_evidence(
             retained[selector] = tuple(ordered[:MAX_LABEL_MEMBERSHIP])
         else:
             retained[selector] = tuple(ordered)
-    return (
-        retained,
-        fingerprints,
-        tuple(sorted(truncated)),
-        label_lookup_resolutions,
-        complete,
+    complete = bool(
+        ordered_selectors
+        and all(selector_complete.values())
+        and not truncated
+    )
+    return LabelMembershipEvidence(
+        memberships=retained,
+        fingerprints=fingerprints,
+        truncated=tuple(sorted(truncated)),
+        lookup_resolutions=label_lookup_resolutions,
+        selector_complete=selector_complete,
+        complete=complete,
     )

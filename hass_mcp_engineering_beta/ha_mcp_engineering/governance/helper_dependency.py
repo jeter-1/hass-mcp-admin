@@ -20,7 +20,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v10"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v11"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -34,6 +34,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v7",
         "helper-dependency-risk-v8",
         "helper-dependency-risk-v9",
+        "helper-dependency-risk-v10",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -136,20 +137,26 @@ def _resolved_dynamic_reference_evidence(
     label_candidates: set[str] = set()
     truncated_labels = set(snapshot.label_membership_truncated)
     if labels:
-        if not snapshot.label_registry_complete:
-            complete = False
-            reason_codes.append("label_registry_evidence_incomplete")
         for selector in labels:
             membership = snapshot.label_memberships.get(selector)
             fingerprint = snapshot.label_membership_fingerprints.get(
                 selector
             )
+            selector_complete = snapshot.label_membership_complete.get(
+                selector,
+                snapshot.label_registry_complete,
+            )
             if (
                 membership is None
                 or not isinstance(fingerprint, str)
                 or selector in truncated_labels
+                or selector_complete is not True
             ):
                 complete = False
+                if not snapshot.label_registry_complete:
+                    reason_codes.append(
+                        "label_registry_evidence_incomplete"
+                    )
                 reason_codes.append(
                     "label_membership_evidence_incomplete"
                 )

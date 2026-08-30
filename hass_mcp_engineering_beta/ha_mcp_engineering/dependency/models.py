@@ -455,6 +455,9 @@ class DependencyScanResult:
     label_membership_fingerprints: dict[str, str] = field(
         default_factory=dict
     )
+    label_membership_complete: dict[str, bool] = field(
+        default_factory=dict
+    )
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
     obligations: list[DependencyObligation] = field(default_factory=list)
@@ -487,6 +490,9 @@ class DependencyIndexSnapshot:
         default_factory=dict
     )
     label_membership_fingerprints: dict[str, str] = field(
+        default_factory=dict
+    )
+    label_membership_complete: dict[str, bool] = field(
         default_factory=dict
     )
     label_membership_truncated: tuple[str, ...] = ()
@@ -615,6 +621,7 @@ def snapshot_fingerprint(
     dynamic_reference_overflow_count: int = 0,
     dynamic_reference_overflow_fingerprint: str | None = None,
     label_membership_fingerprints: dict[str, str] | None = None,
+    label_membership_complete: dict[str, bool] | None = None,
     label_membership_truncated: tuple[str, ...] = (),
     label_registry_complete: bool = False,
     obligations: list[DependencyObligation] | tuple[
@@ -666,6 +673,9 @@ def snapshot_fingerprint(
         },
         "label_resolution": {
             "complete": bool(label_registry_complete),
+            "selector_complete": dict(
+                sorted((label_membership_complete or {}).items())
+            ),
             "membership_fingerprints": dict(
                 sorted((label_membership_fingerprints or {}).items())
             ),
