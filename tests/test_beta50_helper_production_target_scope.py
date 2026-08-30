@@ -15,6 +15,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import subprocess
 from types import SimpleNamespace
 import sys
 import tempfile
@@ -1516,6 +1517,53 @@ class Beta50CapturedProductionReplayTests(
         self.assertTrue(corrected["coverage_complete"])
         self.assertTrue(corrected["evidence_complete"])
         self.assertTrue(corrected["execution_eligible"])
+
+    def test_acceptance_correction_head_binds_runtime_and_replay_tree(self):
+        acceptance = (
+            ROOT / "docs" / "V2_2_0_BETA51_ACCEPTANCE.md"
+        ).read_text(encoding="utf-8")
+        match = re.search(
+            r"complete runtime, test and replay-provenance correction "
+            r"is source head\s+`([0-9a-f]{40})`",
+            acceptance,
+        )
+        self.assertIsNotNone(match, acceptance[:500])
+        correction_head = match.group(1) if match is not None else ""
+        correction_paths = (
+            "hass_mcp_engineering_beta/ha_mcp_engineering/"
+            "dependency/extraction.py",
+            "hass_mcp_engineering_beta/ha_mcp_engineering/"
+            "dependency/obligation_ledger.py",
+            "hass_mcp_engineering_beta/ha_mcp_engineering/"
+            "governance/helper_dependency.py",
+            "tests/fixtures/dependency/"
+            "hamcp089_beta50_standard_helper_replay_v1.json",
+            "tests/test_beta47_helper_risk_semantic_completion.py",
+            "tests/test_beta48_helper_target_relevance.py",
+            "tests/test_beta49_helper_obligation_target_scope.py",
+            "tests/test_beta50_helper_production_target_scope.py",
+            "tests/test_hamcp089_plan_observability.py",
+        )
+        changed = subprocess.run(
+            (
+                "git",
+                "diff",
+                "--name-only",
+                f"{correction_head}..HEAD",
+                "--",
+                *correction_paths,
+            ),
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.splitlines()
+        self.assertEqual(
+            [],
+            changed,
+            "Beta 51 correction paths changed after the acceptance-bound "
+            f"source head {correction_head}",
+        )
 
     async def test_standard_helper_closes_every_captured_source_before_risk_aggregation(
         self,
