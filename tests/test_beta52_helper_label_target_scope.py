@@ -6,6 +6,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -61,6 +62,12 @@ REPLAY = (
     / "fixtures"
     / "dependency"
     / "hamcp089_beta51_label_target_scope_replay_v1.json"
+)
+BASELINE_REPLAY_RUNNER = (
+    ROOT
+    / "tests"
+    / "support"
+    / "replay_hamcp089_beta51_label_scope.py"
 )
 
 
@@ -413,6 +420,158 @@ class Beta52LabelMembershipEvidenceTests(unittest.TestCase):
         self.assertEqual(observed[0].fingerprints, observed[1].fingerprints)
 
 
+class Beta51HistoricalWriterReplayTests(unittest.TestCase):
+    """Prove fixture provenance with the shipped writer before Beta 52."""
+
+    def setUp(self) -> None:
+        self.fixture = json.loads(REPLAY.read_text(encoding="utf-8"))
+
+    def test_fixture_is_sanitized_and_binds_exact_capture_shape(self):
+        provenance = self.fixture["provenance"]
+        bound = {
+            key: value
+            for key, value in self.fixture.items()
+            if key != "provenance"
+        }
+        self.assertEqual(
+            provenance["sanitized_self_fingerprint"],
+            hashlib.sha256(_canonical(bound)).hexdigest(),
+        )
+        self.assertTrue(provenance["sanitized_before_hashing"])
+        self.assertFalse(
+            provenance["current_configuration_snapshot_equivalence_proven"]
+        )
+        historical_replay = provenance["historical_replay"]
+        self.assertEqual(
+            provenance["source_release_commit"],
+            historical_replay["source_commit"],
+        )
+        self.assertEqual(
+            "tests/support/replay_hamcp089_beta51_label_scope.py",
+            historical_replay["runner"],
+        )
+        self.assertIn(
+            "--source-root <detached-worktree-at-source-commit>",
+            historical_replay["command"],
+        )
+        checkout_commands = historical_replay["source_checkout_commands"]
+        self.assertEqual(2, len(checkout_commands))
+        self.assertIn("--no-checkout", checkout_commands[0])
+        self.assertIn("checkout --detach", checkout_commands[1])
+        self.assertIn(
+            provenance["source_release_commit"], checkout_commands[1]
+        )
+        captured = self.fixture["captured_beta51_projection"]
+        self.assertEqual(31, len(captured["obligations"]))
+        self.assertEqual(31, captured["target_capable_opaque_obligation_count"])
+        self.assertEqual(2, len(captured["downstream_profiles"]))
+        self.assertEqual(
+            {"source_01": 22, "source_02": 9},
+            captured["source_obligation_counts"],
+        )
+        self.assertEqual(
+            [16, 11, 5],
+            [
+                len(item["members"])
+                for item in self.fixture["membership_evidence"]["labels"]
+            ],
+        )
+        encoded = REPLAY.read_text(encoding="utf-8")
+        for forbidden in (
+            "fb757887f1c74aa1bd19198d454caebd",
+            "input_boolean.mcp_f2_standard_admin_test_flag",
+            "ha_tier_1",
+            "ha_tier_2",
+            "ha_monitor_unavailable",
+        ):
+            self.assertNotIn(forbidden, encoded)
+
+    def test_exact_beta51_writer_reproduces_captured_v10_records(self):
+        """Bind the capture to the exact shipped Beta 51 implementation."""
+
+        source_commit = self.fixture["provenance"][
+            "source_release_commit"
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            source_root = Path(temporary) / "beta51-source"
+            subprocess.run(
+                [
+                    "git",
+                    "clone",
+                    "--shared",
+                    "--no-checkout",
+                    "--quiet",
+                    str(ROOT),
+                    str(source_root),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(source_root),
+                    "checkout",
+                    "--detach",
+                    "--quiet",
+                    source_commit,
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(BASELINE_REPLAY_RUNNER),
+                    "--source-root",
+                    str(source_root),
+                    "--fixture",
+                    str(REPLAY),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            replayed = json.loads(completed.stdout)
+
+        captured = self.fixture["captured_beta51_projection"]
+        for field in (
+            "risk_model",
+            "exact_dependency_count",
+            "target_capable_opaque_obligation_count",
+            "downstream_profile_count",
+            "coverage_complete",
+            "evidence_complete",
+            "execution_eligible",
+            "physical_consequence",
+            "semantic_precision",
+            "obligation_reason_counts",
+            "source_obligation_counts",
+        ):
+            self.assertEqual(captured[field], replayed[field], field)
+        self.assertEqual(source_commit, replayed["source_release_commit"])
+        self.assertTrue(replayed["source_imports_verified"])
+        self.assertFalse(replayed["approval_actionable"])
+        self.assertEqual(0, replayed["provider_dispatch_count"])
+        self.assertEqual(
+            sorted(_canonical(item) for item in captured["obligations"]),
+            sorted(_canonical(item) for item in replayed["obligations"]),
+        )
+        self.assertEqual(
+            sorted(
+                _canonical(item)
+                for item in captured["downstream_profiles"]
+            ),
+            sorted(
+                _canonical(item)
+                for item in replayed["downstream_profiles"]
+            ),
+        )
+
+
 class Beta52CapturedProductionReplayTests(
     unittest.IsolatedAsyncioTestCase
 ):
@@ -475,46 +634,6 @@ class Beta52CapturedProductionReplayTests(
                 break
             cursor = detail["next_cursor"]
         return items, fingerprint
-
-    def test_fixture_is_sanitized_and_binds_exact_capture_shape(self):
-        provenance = self.fixture["provenance"]
-        bound = {
-            key: value
-            for key, value in self.fixture.items()
-            if key != "provenance"
-        }
-        self.assertEqual(
-            provenance["sanitized_self_fingerprint"],
-            hashlib.sha256(_canonical(bound)).hexdigest(),
-        )
-        self.assertTrue(provenance["sanitized_before_hashing"])
-        self.assertFalse(
-            provenance["current_configuration_snapshot_equivalence_proven"]
-        )
-        captured = self.fixture["captured_beta51_projection"]
-        self.assertEqual(31, len(captured["obligations"]))
-        self.assertEqual(31, captured["target_capable_opaque_obligation_count"])
-        self.assertEqual(2, len(captured["downstream_profiles"]))
-        self.assertEqual(
-            {"source_01": 22, "source_02": 9},
-            captured["source_obligation_counts"],
-        )
-        self.assertEqual(
-            [16, 11, 5],
-            [
-                len(item["members"])
-                for item in self.fixture["membership_evidence"]["labels"]
-            ],
-        )
-        encoded = REPLAY.read_text(encoding="utf-8")
-        for forbidden in (
-            "fb757887f1c74aa1bd19198d454caebd",
-            "input_boolean.mcp_f2_standard_admin_test_flag",
-            "ha_tier_1",
-            "ha_tier_2",
-            "ha_monitor_unavailable",
-        ):
-            self.assertNotIn(forbidden, encoded)
 
     async def test_exact_beta51_replay_closes_before_risk_aggregation(self):
         expected = self.fixture["expected_corrected_projection"]

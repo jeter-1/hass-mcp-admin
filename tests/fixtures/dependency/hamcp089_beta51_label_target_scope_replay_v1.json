@@ -1183,7 +1183,7 @@
         ],
         "services": [
           "input_text.set_value",
-          "notify.mobile_app_pixel_9_pro_xl",
+          "notify.mobile_app_device_001",
           "persistent_notification.create",
           "persistent_notification.dismiss"
         ],
@@ -1193,7 +1193,7 @@
           "notification_extension_unreviewed",
           "unrecognized_action_effect"
         ],
-        "sanitized_profile_fingerprint": "cafdf0db7c9e6665f49a616b7f1d0c7f6304b66f86366537d4151d0d990e73f2"
+        "sanitized_profile_fingerprint": "0436261ab8fb389e1c624fbb412987020c8eb0262b00df49f2bcf124dea65497"
       },
       {
         "source": "source_02",
@@ -1246,6 +1246,16 @@
     "engineering_version": "2.2.0-beta.51",
     "home_assistant_version": "2026.8.1",
     "source_release_commit": "d0a7e68607febe680a771cc1a802492f1638af80",
+    "historical_replay": {
+      "source_commit": "d0a7e68607febe680a771cc1a802492f1638af80",
+      "runner": "tests/support/replay_hamcp089_beta51_label_scope.py",
+      "source_checkout_commands": [
+        "git clone --shared --no-checkout <repository> <detached-worktree-at-source-commit>",
+        "git -C <detached-worktree-at-source-commit> checkout --detach d0a7e68607febe680a771cc1a802492f1638af80"
+      ],
+      "command": "python tests/support/replay_hamcp089_beta51_label_scope.py --source-root <detached-worktree-at-source-commit> --fixture tests/fixtures/dependency/hamcp089_beta51_label_target_scope_replay_v1.json",
+      "contract": "Run the exact shipped provider, dependency index, and helper-risk service offline; compare every sanitized v10 obligation and downstream profile as an order-independent multiset."
+    },
     "sanitized_before_hashing": true,
     "current_configuration_snapshot_equivalence_proven": false,
     "snapshot_equivalence_limitation": "The persisted plan binds dependency generation 3. Current configurations and memberships were read later and cannot be cryptographically proven identical to the plan-time snapshot.",
@@ -1265,6 +1275,6 @@
       "https://github.com/home-assistant/core/blob/2026.8.1/homeassistant/helpers/template/extensions/labels.py",
       "https://github.com/home-assistant/core/blob/2026.8.1/homeassistant/helpers/normalized_name_base_registry.py"
     ],
-    "sanitized_self_fingerprint": "80907bc4c669dbc13741a2e44e949098db4172659ad26e73b30ecf23b2a9d1c1"
+    "sanitized_self_fingerprint": "df8da08f4ace861fa354dc3e45dd11dfb47cfb44373797ad8b6b5fe0a3c4f3b2"
   }
 }
