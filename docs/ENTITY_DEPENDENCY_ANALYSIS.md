@@ -186,6 +186,21 @@ dependency-index generation, fingerprint and source epoch used for its own
 classification. Persisted v3-v8 evidence remains readable but requires
 replanning and has no current execution authority.
 
+The post-Beta-50 replay correction advances new helper plans to
+`helper-dependency-risk-v10`. It is grounded in the sanitized, complete
+five-source HAMCP-089 replay rather than an aggregate reconstruction. Entity-set
+helper loops now distinguish entity-id members from State members; exact State
+subscripts retain their label/candidate provenance; State rendering through
+concatenation is accounted once and returns scalar taint; `this.attributes`
+retains its typed `last_triggered` path; and exact finite entity outputs from a
+single expression-only variables action remain finite across later action
+steps. Statement-prefixed templates, incomplete conditional branches,
+caller-supplied selectors, malformed/over-limit evidence and genuine coverage
+loss remain conservative. A current dependency generation may be reused across
+immediately following plans, while stale, invalidated and fenced pre-dispatch
+reads still require a new scan. Persisted v3-v9 evidence remains readable but
+requires replanning and has no current execution authority.
+
 Pinned collection filters that accept an optional member `attribute` consume a
 State receiver directly when that argument is omitted or explicitly null. The
 filter's later formatting, comparison, ordering or aggregation may be neutral,

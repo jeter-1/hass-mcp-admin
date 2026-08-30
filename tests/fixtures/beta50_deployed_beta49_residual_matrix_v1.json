@@ -9,7 +9,10 @@
     "raw_configuration_retained": false,
     "identity_sanitization": "deterministic source, selector, and entity-domain pseudonyms",
     "home_assistant_request_count": 0,
-    "upstream_request_count": 0
+    "upstream_request_count": 0,
+    "record_level_obligation_evidence_retained": false,
+    "source_semantic_replay_retained": false,
+    "capture_limitation": "aggregate counts cannot reproduce the deployed producer path or prove a target-scope correction"
   },
   "obligation_collection": {
     "total_count": 59,

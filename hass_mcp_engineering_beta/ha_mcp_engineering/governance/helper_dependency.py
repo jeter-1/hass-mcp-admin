@@ -20,7 +20,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v9"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v10"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -33,6 +33,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v6",
         "helper-dependency-risk-v7",
         "helper-dependency-risk-v8",
+        "helper-dependency-risk-v9",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -1450,6 +1451,13 @@ class HelperDependencyRiskService:
     ) -> dict[str, Any]:
         """Read target-specific risk, optionally behind a governed fence.
 
+        An ordinary ``refresh`` request means "ensure current evidence": a
+        committed, non-invalidated snapshot inside the soft TTL is reused.
+        This lets an explicit dependency refresh and the plans immediately
+        following it bind one immutable generation instead of silently
+        replacing the acceptance evidence for every target.  Missing, stale,
+        or invalidated evidence still forces a rebuild.
+
         ``fenced`` is used by the post-lock preflight, which runs only after
         the complete lock set is held.  It opens a source-read fence and
         accepts only evidence from a scan that started after it, so a build
@@ -1462,10 +1470,43 @@ class HelperDependencyRiskService:
                 fence = self.index.open_source_fence(
                     "governed_helper_preflight"
                 )
+            active_identity_reader = getattr(
+                self.index, "active_identity", None
+            )
+            current_snapshot = False
+            if callable(active_identity_reader) and not fenced:
+                try:
+                    current_snapshot = bool(
+                        active_identity_reader().get("current") is True
+                    )
+                except Exception:
+                    # Identity uncertainty cannot authorize cache reuse.
+                    current_snapshot = False
+            effective_refresh = bool(
+                refresh and (fenced or not current_snapshot)
+            )
             snapshot, rebuilt, lookup_duration_ms = await self.index.get(
-                refresh=refresh, min_source_epoch=fence
+                refresh=effective_refresh, min_source_epoch=fence
             )
             metadata = self.index.evidence_metadata(snapshot)
+            if (
+                refresh
+                and not fenced
+                and current_snapshot
+                and metadata.get("freshness") != "current"
+            ):
+                # The soft TTL or invalidation boundary may race the identity
+                # check above.  Reusing a previously current generation is
+                # allowed; binding a generation that became stale during that
+                # decision is not.
+                (
+                    snapshot,
+                    followup_rebuilt,
+                    followup_lookup_ms,
+                ) = await self.index.get(refresh=True)
+                rebuilt = bool(rebuilt or followup_rebuilt)
+                lookup_duration_ms += followup_lookup_ms
+                metadata = self.index.evidence_metadata(snapshot)
         except Exception as exc:
             return {
                 "binding": _failed_binding(entity_id, "failed"),

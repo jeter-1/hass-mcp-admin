@@ -97,6 +97,10 @@ MAX_EXPAND_RESOLUTION_DEPTH = 32
 MAX_CONFIGURATION_NODES = 10_000
 MAX_CONFIGURATION_DEPTH = 64
 MAX_EVENT_SELECTOR_VALUES = 128
+_EXACT_TEMPLATE_OUTPUT = re.compile(
+    r"^\s*\{\{\s*(?P<expression>.*?)\s*\}\}\s*$",
+    re.DOTALL,
+)
 ACTION_SEQUENCE_KEYS = frozenset(
     {"action", "actions", "sequence", "then", "else", "default"}
 )
@@ -1124,13 +1128,20 @@ def extract_document_obligation_evidence(
                     # Their possible post-branch values are joined only by
                     # the enclosing parallel action when execution continues.
                     if parent_key != "parallel":
-                        sequence_context = (
-                            _join_template_contexts(
-                                pre_action_context, variable_context
+                        if conditional_transfer:
+                            sequence_context, joined_limit = (
+                                _join_template_contexts(
+                                    pre_action_context,
+                                    variable_context,
+                                )
                             )
-                            if conditional_transfer
-                            else variable_context
-                        )
+                            if joined_limit:
+                                document_limit_exceeded = True
+                                document_limit_reason = (
+                                    "configuration_context_evidence_limit_exceeded"
+                                )
+                        else:
+                            sequence_context = variable_context
                     continue
                 walk(
                     item,
@@ -2223,6 +2234,83 @@ def _bounded_context_value(
     return finish("opaque", complete=False), False
 
 
+def _finite_template_entity_output_values(
+    value: Any,
+    *,
+    budget: list[int] | None = None,
+) -> tuple[tuple[TemplateContextValueEvidence, ...] | None, bool]:
+    """Return exact finite entity-string outputs for one expression template.
+
+    This is deliberately narrower than rendering Jinja.  The existing bounded
+    candidate evaluator accepts only its reviewed expression grammar and unions
+    exact branches of a conditional.  Statement-prefixed templates, filters,
+    calls other than the reviewed candidate helpers, and caller-supplied values
+    remain unresolved.
+    """
+
+    if budget is None:
+        budget = [MAX_CONFIGURATION_NODES]
+    if not isinstance(value, str) or len(value) > MAX_TEMPLATE_SEGMENT_CHARS:
+        return None, False
+    match = _EXACT_TEMPLATE_OUTPUT.fullmatch(value)
+    if match is None:
+        return None, False
+    expression = match.group("expression")
+    try:
+        output_node = ast.parse(expression.strip(), mode="eval").body
+    except (RecursionError, SyntaxError, ValueError):
+        return None, False
+
+    def is_entity_output_choice(node: ast.AST, *, depth: int = 0) -> bool:
+        """Return whether one expression result is one exact entity string."""
+
+        if depth > MAX_CONTEXT_VALUE_DEPTH:
+            return False
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return valid_entity_id(node.value)
+        if isinstance(node, ast.IfExp):
+            return is_entity_output_choice(
+                node.body, depth=depth + 1
+            ) and is_entity_output_choice(
+                node.orelse, depth=depth + 1
+            )
+        if isinstance(node, ast.Subscript) and isinstance(
+            node.value, ast.Dict
+        ):
+            return bool(node.value.values) and all(
+                is_entity_output_choice(item, depth=depth + 1)
+                for item in node.value.values
+            )
+        return False
+
+    if not is_entity_output_choice(output_node):
+        return None, False
+    resolution = BoundedTemplateContext(valid_entity_id).resolve(
+        expression
+    )
+    if (
+        not resolution.complete
+        or resolution.limit_exceeded
+        or resolution.literal_label_selectors
+        or not resolution.entity_ids
+        or len(resolution.entity_ids) > MAX_CONTEXT_ENTITY_IDS
+    ):
+        return None, False
+
+    values: list[TemplateContextValueEvidence] = []
+    for entity_id in resolution.entity_ids:
+        evidence, limit_exceeded = _bounded_context_value(
+            entity_id,
+            budget=budget,
+        )
+        if limit_exceeded:
+            return tuple(values), True
+        if not evidence.complete:
+            return None, False
+        values.append(evidence)
+    return tuple(values), False
+
+
 def _template_context_evidence(
     config: dict[str, Any],
     *,
@@ -2557,11 +2645,30 @@ def _context_with_variables(
         if len(name) > MAX_CONTEXT_SCALAR_CHARS:
             limit_exceeded = True
             continue
+        retain_unknown_only = bool(
+            join_existing
+            and name in incomplete
+            and name not in values
+        )
         evidence, evidence_limit = _bounded_context_value(
             raw_value,
             budget=context_value_budget,
         )
-        limit_exceeded = bool(limit_exceeded or evidence_limit)
+        variable_limit = bool(evidence_limit)
+        if evidence_limit or context_value_budget[0] < 0:
+            finite_entity_outputs = None
+            finite_output_limit = True
+        else:
+            finite_entity_outputs, finite_output_limit = (
+                _finite_template_entity_output_values(
+                    raw_value,
+                    budget=context_value_budget,
+                )
+            )
+        variable_limit = bool(variable_limit or finite_output_limit)
+        limit_exceeded = bool(
+            limit_exceeded or evidence_limit or finite_output_limit
+        )
         if not join_existing:
             values[name] = {}
             candidates.pop(name, None)
@@ -2595,26 +2702,67 @@ def _context_with_variables(
                 repeat_values = {}
                 repeat_values_join_variable = False
         alternatives = values.setdefault(name, {})
-        if (
-            evidence.fingerprint not in alternatives
-            and len(alternatives) >= MAX_CONTEXT_ENTITY_IDS
-        ):
-            limit_exceeded = True
-            incomplete.add(name)
-        else:
-            alternatives[evidence.fingerprint] = evidence
-        if evidence.kind in {"dynamic_scalar", "opaque"}:
-            incomplete.add(name)
-        exact, exact_limit = _bounded_literal_entities_deep(raw_value)
-        limit_exceeded = bool(limit_exceeded or exact_limit)
-        if exact:
-            target = candidates.setdefault(name, set())
-            target.update(exact)
-            if len(target) > MAX_CONTEXT_ENTITY_IDS:
+        retained_values = (
+            finite_entity_outputs
+            if finite_entity_outputs is not None
+            else (evidence,)
+        )
+        for retained in retained_values:
+            fingerprint = retained.fingerprint
+            if fingerprint in alternatives:
+                continue
+            if len(alternatives) >= MAX_CONTEXT_ENTITY_IDS:
                 limit_exceeded = True
-                candidates[name] = set(
-                    sorted(target)[:MAX_CONTEXT_ENTITY_IDS]
+                variable_limit = True
+                incomplete.add(name)
+                largest = max(alternatives)
+                if fingerprint >= largest:
+                    continue
+                alternatives.pop(largest)
+            alternatives[fingerprint] = retained
+        if finite_entity_outputs is not None:
+            retained_candidates, candidate_limit = (
+                _bounded_context_entity_id_union(
+                    candidates.get(name, ()),
+                    (
+                        item.literal_string
+                        for item in finite_entity_outputs
+                        if item.literal_string is not None
+                    ),
                 )
+            )
+            candidates[name] = retained_candidates
+            if candidate_limit:
+                limit_exceeded = True
+                variable_limit = True
+                incomplete.add(name)
+        elif evidence.kind in {"dynamic_scalar", "opaque"}:
+            incomplete.add(name)
+        if context_value_budget[0] < 0:
+            exact, exact_limit = (), True
+        else:
+            exact, exact_limit = _bounded_literal_entities_deep(raw_value)
+        limit_exceeded = bool(limit_exceeded or exact_limit)
+        variable_limit = bool(variable_limit or exact_limit)
+        if exact:
+            retained_candidates, candidate_limit = (
+                _bounded_context_entity_id_union(
+                    candidates.get(name, ()), exact
+                )
+            )
+            candidates[name] = retained_candidates
+            if candidate_limit:
+                limit_exceeded = True
+                variable_limit = True
+                incomplete.add(name)
+        if variable_limit:
+            incomplete.add(name)
+        if variable_limit or retain_unknown_only:
+            # Do not let retained complete value alternatives override the
+            # incomplete selector authority.  The bounded candidate prefix is
+            # retained separately and `_initial_scope` combines it with the
+            # incomplete marker into exact diagnostic evidence plus opacity.
+            values.pop(name, None)
         provenance.add(f"{path}.variables.{name}")
 
     return (
@@ -2653,22 +2801,57 @@ def _is_direct_variables_action(value: Any) -> bool:
     )
 
 
+def _bounded_context_entity_id_union(
+    *collections: Iterable[str],
+) -> tuple[set[str], bool]:
+    """Return the deterministic bounded union of finite entity identities."""
+
+    retained: set[str] = set()
+    limit_exceeded = False
+    for collection in collections:
+        for entity_id in collection:
+            if entity_id in retained:
+                continue
+            if len(retained) < MAX_CONTEXT_ENTITY_IDS:
+                retained.add(entity_id)
+                continue
+            limit_exceeded = True
+            largest = max(retained)
+            if entity_id < largest:
+                retained.remove(largest)
+                retained.add(entity_id)
+    return retained, limit_exceeded
+
+
 def _join_template_contexts(
     skipped: TemplateContextEvidence,
     executed: TemplateContextEvidence,
-) -> TemplateContextEvidence:
+) -> tuple[TemplateContextEvidence, bool]:
     """Join skipped/executed action paths without mixing intra-action state."""
 
     values: dict[str, dict[str, TemplateContextValueEvidence]] = {}
     incomplete = set(skipped.incomplete_variable_names).union(
         executed.incomplete_variable_names
     )
+    limit_exceeded = False
+    overflowed_names: set[str] = set()
     names = set(skipped.variable_values).union(executed.variable_values)
     for name in sorted(names):
         alternatives: dict[str, TemplateContextValueEvidence] = {}
         for context in (skipped, executed):
             for item in context.variable_values.get(name, ()):
-                alternatives[item.fingerprint] = item
+                fingerprint = item.fingerprint
+                if fingerprint in alternatives:
+                    continue
+                if len(alternatives) >= MAX_CONTEXT_ENTITY_IDS:
+                    limit_exceeded = True
+                    incomplete.add(name)
+                    overflowed_names.add(name)
+                    largest = max(alternatives)
+                    if fingerprint >= largest:
+                        continue
+                    alternatives.pop(largest)
+                alternatives[fingerprint] = item
         if (
             name not in skipped.variable_values
             or name not in executed.variable_values
@@ -2676,18 +2859,41 @@ def _join_template_contexts(
             marker = hashlib.sha256(
                 f"joined_runtime_variable:{name}".encode("utf-8")
             ).hexdigest()
-            alternatives[marker] = TemplateContextValueEvidence(
+            marker_value = TemplateContextValueEvidence(
                 kind="dynamic_scalar",
                 complete=False,
                 fingerprint=marker,
             )
+            if marker not in alternatives:
+                if len(alternatives) >= MAX_CONTEXT_ENTITY_IDS:
+                    limit_exceeded = True
+                    overflowed_names.add(name)
+                    largest = max(alternatives)
+                    if marker < largest:
+                        alternatives.pop(largest)
+                        alternatives[marker] = marker_value
+                else:
+                    alternatives[marker] = marker_value
             incomplete.add(name)
         values[name] = alternatives
 
     candidates: dict[str, set[str]] = {}
-    for context in (skipped, executed):
-        for name, entity_ids in context.variable_entity_ids.items():
-            candidates.setdefault(name, set()).update(entity_ids)
+    candidate_names = set(skipped.variable_entity_ids).union(
+        executed.variable_entity_ids
+    )
+    for name in sorted(candidate_names):
+        retained, candidate_limit = _bounded_context_entity_id_union(
+            skipped.variable_entity_ids.get(name, ()),
+            executed.variable_entity_ids.get(name, ()),
+        )
+        candidates[name] = retained
+        if candidate_limit:
+            limit_exceeded = True
+            incomplete.add(name)
+            overflowed_names.add(name)
+
+    for name in overflowed_names:
+        values.pop(name, None)
 
     repeat_values: dict[
         str, dict[str, TemplateContextValueEvidence]
@@ -2700,35 +2906,38 @@ def _join_template_contexts(
     repeat_special_present = bool(repeat_values)
     repeat_variable_present = "repeat" in values
 
-    return replace(
-        skipped,
-        variable_values={
-            name: tuple(
-                item
-                for _fingerprint, item in sorted(alternatives.items())
-            )
-            for name, alternatives in sorted(values.items())
-        },
-        variable_entity_ids={
-            name: tuple(sorted(entity_ids))
-            for name, entity_ids in sorted(candidates.items())
-        },
-        incomplete_variable_names=tuple(sorted(incomplete)),
-        provenance=tuple(
-            sorted(set(skipped.provenance).union(executed.provenance))
+    return (
+        replace(
+            skipped,
+            variable_values={
+                name: tuple(
+                    item
+                    for _fingerprint, item in sorted(alternatives.items())
+                )
+                for name, alternatives in sorted(values.items())
+            },
+            variable_entity_ids={
+                name: tuple(sorted(entity_ids))
+                for name, entity_ids in sorted(candidates.items())
+            },
+            incomplete_variable_names=tuple(sorted(incomplete)),
+            provenance=tuple(
+                sorted(set(skipped.provenance).union(executed.provenance))
+            ),
+            repeat_values={
+                name: tuple(
+                    item
+                    for _fingerprint, item in sorted(alternatives.items())
+                )
+                for name, alternatives in sorted(repeat_values.items())
+            },
+            repeat_values_join_variable=bool(
+                skipped.repeat_values_join_variable
+                or executed.repeat_values_join_variable
+                or (repeat_special_present and repeat_variable_present)
+            ),
         ),
-        repeat_values={
-            name: tuple(
-                item
-                for _fingerprint, item in sorted(alternatives.items())
-            )
-            for name, alternatives in sorted(repeat_values.items())
-        },
-        repeat_values_join_variable=bool(
-            skipped.repeat_values_join_variable
-            or executed.repeat_values_join_variable
-            or (repeat_special_present and repeat_variable_present)
-        ),
+        limit_exceeded,
     )
 
 
