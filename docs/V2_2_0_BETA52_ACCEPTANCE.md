@@ -4,8 +4,10 @@ Beta 52 stages the selector-local label and finite entity-set correction for
 the deployed Beta 51 HAMCP-089 planning failure. The source baseline is exact
 Beta 51 main and tag authority
 `d0a7e68607febe680a771cc1a802492f1638af80`; the bounded implementation and
-replay correction is commit
-`2ad1f90e9bcac7902946adac801f2ca6d4488c27`. Engineering advertised
+replay correction source authority is exact commit
+`30089a67339803d6ae80b8d955c928dd506b4385`. That identity includes the
+subsequent exact-candidate overflow, shipped-writer replay, and canonical
+bounded-registry corrections reviewed for the release candidate. Engineering advertised
 2.2.0-beta.51 at the source baseline. The final review candidate
 materializes 2.2.0-beta.52 in the repository's three authoritative version
 locations; publication and deployment remain separately authorized operations.
