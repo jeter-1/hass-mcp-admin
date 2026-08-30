@@ -38,6 +38,7 @@ from ha_mcp_engineering.f3_configuration.locks import (
     unconstrained_helper_dependency_lock_key,
 )
 from ha_mcp_engineering.governance.helper_dependency import (
+    HELPER_DEPENDENCY_RISK_MODEL,
     HelperDependencyRiskService,
     build_helper_dependency_risk_binding,
     helper_dependency_risk_assessment,
@@ -691,7 +692,7 @@ class Beta52CapturedProductionReplayTests(
         binding = evidence["binding"]
         assessment = helper_dependency_risk_assessment(evidence)
         self.assertEqual(
-            expected["risk_model"], binding["model"]
+            HELPER_DEPENDENCY_RISK_MODEL, binding["model"]
         )
         self.assertEqual(
             expected["exact_dependency_count"],
@@ -755,7 +756,7 @@ class Beta52CapturedProductionReplayTests(
             plan = created["plan"]
             binding = plan["operational"]["baseline"]["dependency_risk"]
 
-            self.assertEqual("helper-dependency-risk-v11", binding["model"])
+            self.assertEqual("helper-dependency-risk-v12", binding["model"])
             self.assertEqual(0, binding["exact_dependency_obligation_count"])
             self.assertEqual(0, binding["opaque_obligation_count"])
             self.assertEqual([], binding["downstream_profiles"])

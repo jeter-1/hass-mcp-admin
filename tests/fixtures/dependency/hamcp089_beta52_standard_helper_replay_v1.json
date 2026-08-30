@@ -1,0 +1,2976 @@
+{
+  "completion_verdict": "READY_FOR_OFFLINE_REPLAY",
+  "disclosed_limitations": [
+    "Plan-time source equivalence is unproven.",
+    "A first render_template membership read timed out in connector permission review and was replaced by two later successful identical reads; audit records only successful server-side calls."
+  ],
+  "downstream_profiles": [
+    {
+      "action_domain_count": 3,
+      "action_domains": [
+        "input_text",
+        "notify",
+        "persistent_notification"
+      ],
+      "action_domains_fingerprint": "0000000000000000000000000000000000000000000000000000000000000025",
+      "analysis_complete": true,
+      "automation_id": "automation.synthetic_monitor_01",
+      "automation_resource_id": "9000000000001",
+      "complete": false,
+      "effect_data": [
+        "actions[0].choose[0].sequence[0].then[0].data.data.actions[0].action=sha256:0000000000000000000000000000000000000000000000000000000000000006",
+        "actions[0].choose[0].sequence[0].then[0].data.data.actions[0].title=sha256:0000000000000000000000000000000000000000000000000000000000000013",
+        "actions[0].choose[0].sequence[0].then[0].data.data.actions[1].action=sha256:0000000000000000000000000000000000000000000000000000000000000050",
+        "actions[0].choose[0].sequence[0].then[0].data.data.actions[1].title=sha256:000000000000000000000000000000000000000000000000000000000000002c",
+        "actions[0].choose[0].sequence[0].then[0].data.data.actions[2].action=sha256:0000000000000000000000000000000000000000000000000000000000000043",
+        "actions[0].choose[0].sequence[0].then[0].data.data.actions[2].title=sha256:0000000000000000000000000000000000000000000000000000000000000064",
+        "actions[0].choose[0].sequence[0].then[0].data.data.channel=sha256:0000000000000000000000000000000000000000000000000000000000000047",
+        "actions[0].choose[0].sequence[0].then[0].data.data.priority=sha256:0000000000000000000000000000000000000000000000000000000000000032",
+        "actions[0].choose[0].sequence[0].then[0].data.data.tag=sha256:0000000000000000000000000000000000000000000000000000000000000029",
+        "actions[0].choose[0].sequence[0].then[0].data.data.ttl=0",
+        "actions[0].choose[0].sequence[0].then[0].data.message=dynamic_sha256:0000000000000000000000000000000000000000000000000000000000000061",
+        "actions[0].choose[0].sequence[0].then[0].data.title=sha256:000000000000000000000000000000000000000000000000000000000000004d",
+        "actions[0].choose[0].sequence[1].data.message=dynamic_sha256:0000000000000000000000000000000000000000000000000000000000000061",
+        "actions[0].choose[0].sequence[1].data.notification_id=sha256:000000000000000000000000000000000000000000000000000000000000005b",
+        "actions[0].choose[0].sequence[1].data.title=sha256:000000000000000000000000000000000000000000000000000000000000004d",
+        "actions[0].choose[0].sequence[2].data.value=dynamic_sha256:0000000000000000000000000000000000000000000000000000000000000055",
+        "actions[0].default[0].data.notification_id=sha256:000000000000000000000000000000000000000000000000000000000000005b",
+        "actions[0].default[1].data.value=sha256:000000000000000000000000000000000000000000000000000000000000005f"
+      ],
+      "effect_data_count": 18,
+      "effect_data_fingerprint": "000000000000000000000000000000000000000000000000000000000000000b",
+      "effect_projection_clipped": false,
+      "effect_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000009",
+      "effect_projection_model": "automation-action-effect-v2",
+      "effect_structure_fingerprint": "000000000000000000000000000000000000000000000000000000000000000e",
+      "effect_target_count": 2,
+      "effect_targets": [
+        "actions[0].choose[0].sequence[2].target.entity_id|entity_id|input_text.synthetic_001",
+        "actions[0].default[1].target.entity_id|entity_id|input_text.synthetic_001"
+      ],
+      "effect_targets_fingerprint": "0000000000000000000000000000000000000000000000000000000000000019",
+      "physical_consequence": "unknown",
+      "presentation_truncated": false,
+      "processing_action_depth_limit": 16,
+      "processing_action_step_limit": 512,
+      "processing_effect_depth_limit": 16,
+      "processing_effect_node_limit": 4096,
+      "processing_limit_exceeded": false,
+      "processing_limit_reason": null,
+      "processing_observed_action_step_count": 7,
+      "processing_observed_effect_node_count": 28,
+      "processing_overflow_fingerprint": null,
+      "profile_fingerprint": "0000000000000000000000000000000000000000000000000000000000000038",
+      "reason_code_count": 4,
+      "reason_codes": [
+        "action_effect_unresolved",
+        "dynamic_notification_content",
+        "notification_extension_unreviewed",
+        "unrecognized_action_effect"
+      ],
+      "reason_codes_fingerprint": "0000000000000000000000000000000000000000000000000000000000000020",
+      "relationships": [
+        "bounded_semantic_opaque"
+      ],
+      "semantic_complete": false,
+      "service_count": 4,
+      "services": [
+        "input_text.synthetic_002",
+        "notify.synthetic_001",
+        "persistent_notification.synthetic_001",
+        "persistent_notification.synthetic_002"
+      ],
+      "services_fingerprint": "0000000000000000000000000000000000000000000000000000000000000028",
+      "truncated": false
+    },
+    {
+      "action_domain_count": 1,
+      "action_domains": [
+        "persistent_notification"
+      ],
+      "action_domains_fingerprint": "0000000000000000000000000000000000000000000000000000000000000057",
+      "analysis_complete": true,
+      "automation_id": "automation.synthetic_monitor_02",
+      "automation_resource_id": "9000000000002",
+      "complete": false,
+      "effect_data": [
+        "actions[0].choose[0].sequence[0].data.message=dynamic_sha256:0000000000000000000000000000000000000000000000000000000000000061",
+        "actions[0].choose[0].sequence[0].data.notification_id=sha256:0000000000000000000000000000000000000000000000000000000000000037",
+        "actions[0].choose[0].sequence[0].data.title=sha256:000000000000000000000000000000000000000000000000000000000000000c",
+        "actions[0].default[0].data.notification_id=sha256:0000000000000000000000000000000000000000000000000000000000000037"
+      ],
+      "effect_data_count": 4,
+      "effect_data_fingerprint": "000000000000000000000000000000000000000000000000000000000000003c",
+      "effect_projection_clipped": false,
+      "effect_projection_fingerprint": "000000000000000000000000000000000000000000000000000000000000002b",
+      "effect_projection_model": "automation-action-effect-v2",
+      "effect_structure_fingerprint": "0000000000000000000000000000000000000000000000000000000000000049",
+      "effect_target_count": 0,
+      "effect_targets": [],
+      "effect_targets_fingerprint": "000000000000000000000000000000000000000000000000000000000000001f",
+      "physical_consequence": "unknown",
+      "presentation_truncated": false,
+      "processing_action_depth_limit": 16,
+      "processing_action_step_limit": 512,
+      "processing_effect_depth_limit": 16,
+      "processing_effect_node_limit": 4096,
+      "processing_limit_exceeded": false,
+      "processing_limit_reason": null,
+      "processing_observed_action_step_count": 3,
+      "processing_observed_effect_node_count": 6,
+      "processing_overflow_fingerprint": null,
+      "profile_fingerprint": "000000000000000000000000000000000000000000000000000000000000005e",
+      "reason_code_count": 2,
+      "reason_codes": [
+        "action_effect_unresolved",
+        "unrecognized_action_effect"
+      ],
+      "reason_codes_fingerprint": "000000000000000000000000000000000000000000000000000000000000001e",
+      "relationships": [
+        "bounded_semantic_opaque"
+      ],
+      "semantic_complete": false,
+      "service_count": 2,
+      "services": [
+        "persistent_notification.synthetic_001",
+        "persistent_notification.synthetic_002"
+      ],
+      "services_fingerprint": "000000000000000000000000000000000000000000000000000000000000000f",
+      "truncated": false
+    }
+  ],
+  "expected_persisted_projection": {
+    "conservative_downstream_locking": true,
+    "coverage_complete": false,
+    "downstream_profile_count": 2,
+    "evidence_complete": false,
+    "exact_dependency_count": 0,
+    "target_capable_opaque_obligation_count": 24
+  },
+  "fixture_model": "hamcp089-beta52-c990-sanitized-replay-v1",
+  "grouped_obligation_totals": {
+    "candidate_completeness": [
+      {
+        "count": 24,
+        "value": "<unavailable>"
+      }
+    ],
+    "configuration_path": [
+      {
+        "count": 14,
+        "value": "$.variables.issue_message"
+      },
+      {
+        "count": 10,
+        "value": "$.variables.issue_signature"
+      }
+    ],
+    "literal_selectors": [
+      {
+        "count": 6,
+        "value": "[\"synthetic_label_04\"]"
+      },
+      {
+        "count": 18,
+        "value": "[\"synthetic_label_05\"]"
+      }
+    ],
+    "lock_projection": [
+      {
+        "count": 24,
+        "value": "conservative"
+      }
+    ],
+    "obligation_kind": [
+      {
+        "count": 4,
+        "value": "filter_state_operand"
+      },
+      {
+        "count": 1,
+        "value": "global_entity_name"
+      },
+      {
+        "count": 5,
+        "value": "global_label_entities"
+      },
+      {
+        "count": 3,
+        "value": "global_states"
+      },
+      {
+        "count": 3,
+        "value": "membership_state_operand"
+      },
+      {
+        "count": 2,
+        "value": "state_collection_iteration"
+      },
+      {
+        "count": 2,
+        "value": "state_object_attribute"
+      },
+      {
+        "count": 4,
+        "value": "states_item_access"
+      }
+    ],
+    "reason_code": [
+      {
+        "count": 1,
+        "value": "entity_name_entity_access_target_opaque"
+      },
+      {
+        "count": 5,
+        "value": "label_entities_entity_set_membership_unavailable"
+      },
+      {
+        "count": 3,
+        "value": "membership_iterates_state_value_target_opaque"
+      },
+      {
+        "count": 2,
+        "value": "state_collection_iterated_target_opaque"
+      },
+      {
+        "count": 2,
+        "value": "state_object_last_changed_access_target_opaque"
+      },
+      {
+        "count": 4,
+        "value": "state_value_consumed_by_filter_target_opaque"
+      },
+      {
+        "count": 3,
+        "value": "states_entity_access_target_opaque"
+      },
+      {
+        "count": 4,
+        "value": "states_item_entity_access_target_opaque"
+      }
+    ],
+    "source": [
+      {
+        "count": 22,
+        "value": "automation.synthetic_monitor_01"
+      },
+      {
+        "count": 2,
+        "value": "automation.synthetic_monitor_02"
+      }
+    ],
+    "target_selector_scope": [
+      {
+        "count": 24,
+        "value": "target_capable"
+      }
+    ]
+  },
+  "membership_evidence": {
+    "groups": [
+      {
+        "declared_members": [
+          "person.synthetic_001",
+          "person.synthetic_002",
+          "person.synthetic_003"
+        ],
+        "expanded_members": [
+          "person.synthetic_001",
+          "person.synthetic_002",
+          "person.synthetic_003"
+        ],
+        "group_id": "group.synthetic_001",
+        "membership_sha256": "d5573cde6a29db1109c35a9a5dcacadf6ceb01f81e945f32b183dbf8510d6368"
+      }
+    ],
+    "labels": [
+      {
+        "identity": {
+          "label_id": null,
+          "label_name": "synthetic_label_02"
+        },
+        "members": [
+          "binary_sensor.synthetic_001",
+          "binary_sensor.synthetic_002",
+          "binary_sensor.synthetic_003",
+          "binary_sensor.synthetic_007",
+          "binary_sensor.synthetic_008",
+          "climate.synthetic_001",
+          "cover.synthetic_001",
+          "input_boolean.synthetic_001",
+          "input_select.synthetic_001",
+          "lock.synthetic_001",
+          "sensor.synthetic_002"
+        ],
+        "membership_sha256": "c844838f2d18446bf72cfdc5a8753a2d245aa601fd26e9f2c23dc79d4a21f27f",
+        "selector": "synthetic_label_05"
+      },
+      {
+        "identity": {
+          "label_id": null,
+          "label_name": "synthetic_label_01"
+        },
+        "members": [
+          "binary_sensor.synthetic_001",
+          "binary_sensor.synthetic_002",
+          "binary_sensor.synthetic_003",
+          "binary_sensor.synthetic_004",
+          "binary_sensor.synthetic_005",
+          "binary_sensor.synthetic_007",
+          "binary_sensor.synthetic_008",
+          "camera.synthetic_001",
+          "camera.synthetic_002",
+          "camera.synthetic_003",
+          "climate.synthetic_001",
+          "cover.synthetic_001",
+          "input_boolean.synthetic_001",
+          "input_select.synthetic_001",
+          "lock.synthetic_001",
+          "sensor.synthetic_002"
+        ],
+        "membership_sha256": "55a85f89bc9bef1b3cb22795b67f58bd961c64cec492b65640f477bc376fee25",
+        "selector": "synthetic_label_04"
+      },
+      {
+        "identity": {
+          "label_id": null,
+          "label_name": "synthetic_label_03"
+        },
+        "members": [
+          "binary_sensor.synthetic_004",
+          "binary_sensor.synthetic_005",
+          "camera.synthetic_001",
+          "camera.synthetic_002",
+          "camera.synthetic_003"
+        ],
+        "membership_sha256": "58b4fc160549c991d579d4049c1af29c3d1ae9ef43fabb79361dde078cceaa5a",
+        "selector": "synthetic_label_06"
+      }
+    ],
+    "target_labels": []
+  },
+  "obligations": [
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_d68f8cdaf296b524fb3a46f7",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000018",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000005c",
+      "obligation_kind": "filter_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "state_value_consumed_by_filter_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000035",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_4cb73aadd1214292d314a38d",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002f",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000003f",
+      "obligation_kind": "filter_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "state_value_consumed_by_filter_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000066",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_dd058970eacedb1ff8ab0c4f",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000003d",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000030",
+      "obligation_kind": "global_entity_name",
+      "possible_entity_domains": null,
+      "reason_code": "entity_name_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000014",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_22599b2e4690aa24f3bbe352",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002a",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000052",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "000000000000000000000000000000000000000000000000000000000000000a",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_44366faa55f5edaa0c5490da",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000017",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000003",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000023",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_32ea7a29eaaa5d247e8779ef",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000007",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000039",
+      "obligation_kind": "global_states",
+      "possible_entity_domains": null,
+      "reason_code": "states_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000016",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_ef0c7c9f2388de6ad84559a9",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000007",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000062",
+      "obligation_kind": "global_states",
+      "possible_entity_domains": null,
+      "reason_code": "states_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "000000000000000000000000000000000000000000000000000000000000004b",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_66098dd7bc2c7d89e617cb5c",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000004c",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000012",
+      "obligation_kind": "membership_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "membership_iterates_state_value_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000005",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_ccd6591d0f88722632a1380c",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000063",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000002",
+      "obligation_kind": "state_collection_iteration",
+      "possible_entity_domains": null,
+      "reason_code": "state_collection_iterated_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000054",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_ac73de747117349d4ab28538",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002e",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000003a",
+      "obligation_kind": "state_object_attribute",
+      "possible_entity_domains": null,
+      "reason_code": "state_object_last_changed_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000067",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_d6ae2ce11b97c656d816069b",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002d",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000024",
+      "obligation_kind": "states_item_access",
+      "possible_entity_domains": null,
+      "reason_code": "states_item_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "000000000000000000000000000000000000000000000000000000000000001b",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_a66cbd28f8a0e2658acdaa72",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002d",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000015",
+      "obligation_kind": "states_item_access",
+      "possible_entity_domains": null,
+      "reason_code": "states_item_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000031",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_e40436d0e6f81a45e6a4b00c",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000018",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000046",
+      "obligation_kind": "filter_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "state_value_consumed_by_filter_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000040",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_dc665264d4c3c7dd8e80047a",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002f",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000003b",
+      "obligation_kind": "filter_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "state_value_consumed_by_filter_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000059",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_9b5c42659f24fee1ac335bec",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000017",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000005a",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "000000000000000000000000000000000000000000000000000000000000001a",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_b24e669fe8d94c91068e77bc",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002a",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000003e",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000026",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_c50b86569b87c22472a2769e",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000007",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000051",
+      "obligation_kind": "global_states",
+      "possible_entity_domains": null,
+      "reason_code": "states_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "000000000000000000000000000000000000000000000000000000000000004e",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_02365e29aa8e318208ceb2a9",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000004c",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000004",
+      "obligation_kind": "membership_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "membership_iterates_state_value_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000058",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_2a9d44cf93ad193aec4c81da",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000063",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000010",
+      "obligation_kind": "state_collection_iteration",
+      "possible_entity_domains": null,
+      "reason_code": "state_collection_iterated_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000011",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_8c046aa5a0f17bf2dd8ee108",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002e",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000027",
+      "obligation_kind": "state_object_attribute",
+      "possible_entity_domains": null,
+      "reason_code": "state_object_last_changed_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "000000000000000000000000000000000000000000000000000000000000000d",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_bf084e96bd7eb8b50dbcc0ec",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002d",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000036",
+      "obligation_kind": "states_item_access",
+      "possible_entity_domains": null,
+      "reason_code": "states_item_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "000000000000000000000000000000000000000000000000000000000000001d",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000056",
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_93bf91a387ec184ae55867d3",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000002d",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000004a",
+      "obligation_kind": "states_item_access",
+      "possible_entity_domains": null,
+      "reason_code": "states_item_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000065",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000022",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_0b83bf54682717709e522c3d",
+      "expression_fingerprint": "0000000000000000000000000000000000000000000000000000000000000017",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000053",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_02",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000045",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "candidate_entity_ids": [],
+      "configuration_fingerprint": "0000000000000000000000000000000000000000000000000000000000000022",
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "evidence_id": "ev_1f0dd9393fb715ad78d5ea94",
+      "expression_fingerprint": "000000000000000000000000000000000000000000000000000000000000004c",
+      "external_template_name": null,
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000041",
+      "obligation_kind": "membership_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "membership_iterates_state_value_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "semantic_registry_fingerprint": "000000000000000000000000000000000000000000000000000000000000001c",
+      "semantic_registry_version": "home-assistant-template-semantic-registry-v1",
+      "source_object_id": "automation.synthetic_monitor_02",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_projection_fingerprint": "0000000000000000000000000000000000000000000000000000000000000044",
+      "target_selector_scope": "target_capable"
+    }
+  ],
+  "plan_summary": {
+    "apply_allowed": false,
+    "approval_actionable": false,
+    "approval_lifecycle": "approval_not_requested",
+    "dependency_lock_projection": {
+      "automation_resource_ids": [
+        "9000000000001",
+        "9000000000002"
+      ],
+      "conservative_helper_dependency": true,
+      "custom_template_reload": false,
+      "exact_helper_dependency": true
+    },
+    "dispatch": {
+      "attempt_count": 0,
+      "attempted_at": null,
+      "dispatched": false,
+      "provider_response_received": false,
+      "request_id": null
+    },
+    "downstream_automation_resource_ids": [
+      "9000000000001",
+      "9000000000002"
+    ],
+    "execution_eligible": false,
+    "execution_task": {
+      "provider_dispatch_occurred": false,
+      "record_kind": "legacy_plan",
+      "task_id": null,
+      "task_state": null,
+      "terminal_outcome": null
+    },
+    "physical_consequence": "unknown",
+    "plan_hash": "0000000000000000000000000000000000000000000000000000000000000008",
+    "policy_decision": {
+      "physical_consequence": "indirect",
+      "policy_class": "elevated_admin",
+      "policy_decision_hash": "0000000000000000000000000000000000000000000000000000000000000048",
+      "policy_subject_hash": "0000000000000000000000000000000000000000000000000000000000000042",
+      "policy_version": "f2-v1",
+      "reason_codes": [
+        "exact_input_boolean_state_elevated_policy",
+        "helper_dependency_coverage_failure",
+        "low_risk_not_established"
+      ],
+      "required_acknowledgements": [
+        "plan_approval",
+        "elevated_risk_acknowledgement"
+      ],
+      "risk_delta": "high"
+    },
+    "risk": {
+      "apply_allowed": false,
+      "evidence": [
+        {
+          "field": "operation",
+          "trigger": "exact_input_boolean_state"
+        },
+        {
+          "completeness": "failed",
+          "coverage_complete": false,
+          "coverage_failure_count": 1,
+          "evidence_fingerprint": "0000000000000000000000000000000000000000000000000000000000000001",
+          "field": "dependency_index",
+          "generation": "3",
+          "index_fingerprint": "0000000000000000000000000000000000000000000000000000000000000060",
+          "opaque_obligation_count": 24,
+          "physical_consequence": "unknown",
+          "semantic_precision": "coverage_failure",
+          "trigger": "helper_dependency_risk_evidence"
+        },
+        {
+          "admitted": true,
+          "field": "home_assistant_version",
+          "observation_status": "observed",
+          "observed_version": "2026.8.1",
+          "supported_versions": [
+            "2026.7.2",
+            "2026.8.0",
+            "2026.8.1"
+          ],
+          "trigger": "reviewed_semantics_version_admission"
+        }
+      ],
+      "level": "high",
+      "reasons": [
+        "Dependency evidence coverage failed, so execution scope cannot be bounded."
+      ],
+      "warnings": [
+        "Fresh bounded dependency coverage is required before approval or dispatch."
+      ]
+    },
+    "status": "awaiting_approval"
+  },
+  "plan_to_source_reconciliation": [
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_d68f8cdaf296b524fb3a46f7",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000005c",
+      "obligation_kind": "filter_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "state_value_consumed_by_filter_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_4cb73aadd1214292d314a38d",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000003f",
+      "obligation_kind": "filter_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "state_value_consumed_by_filter_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_dd058970eacedb1ff8ab0c4f",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000030",
+      "obligation_kind": "global_entity_name",
+      "possible_entity_domains": null,
+      "reason_code": "entity_name_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_22599b2e4690aa24f3bbe352",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000052",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_44366faa55f5edaa0c5490da",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000003",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_32ea7a29eaaa5d247e8779ef",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000039",
+      "obligation_kind": "global_states",
+      "possible_entity_domains": null,
+      "reason_code": "states_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_ef0c7c9f2388de6ad84559a9",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000062",
+      "obligation_kind": "global_states",
+      "possible_entity_domains": null,
+      "reason_code": "states_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_66098dd7bc2c7d89e617cb5c",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000012",
+      "obligation_kind": "membership_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "membership_iterates_state_value_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_ccd6591d0f88722632a1380c",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000002",
+      "obligation_kind": "state_collection_iteration",
+      "possible_entity_domains": null,
+      "reason_code": "state_collection_iterated_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_ac73de747117349d4ab28538",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000003a",
+      "obligation_kind": "state_object_attribute",
+      "possible_entity_domains": null,
+      "reason_code": "state_object_last_changed_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_d6ae2ce11b97c656d816069b",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000024",
+      "obligation_kind": "states_item_access",
+      "possible_entity_domains": null,
+      "reason_code": "states_item_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_a66cbd28f8a0e2658acdaa72",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000015",
+      "obligation_kind": "states_item_access",
+      "possible_entity_domains": null,
+      "reason_code": "states_item_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_e40436d0e6f81a45e6a4b00c",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000046",
+      "obligation_kind": "filter_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "state_value_consumed_by_filter_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_dc665264d4c3c7dd8e80047a",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000003b",
+      "obligation_kind": "filter_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "state_value_consumed_by_filter_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_9b5c42659f24fee1ac335bec",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000005a",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_b24e669fe8d94c91068e77bc",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000003e",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_c50b86569b87c22472a2769e",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000051",
+      "obligation_kind": "global_states",
+      "possible_entity_domains": null,
+      "reason_code": "states_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_02365e29aa8e318208ceb2a9",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000004",
+      "obligation_kind": "membership_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "membership_iterates_state_value_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_2a9d44cf93ad193aec4c81da",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000010",
+      "obligation_kind": "state_collection_iteration",
+      "possible_entity_domains": null,
+      "reason_code": "state_collection_iterated_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_8c046aa5a0f17bf2dd8ee108",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000027",
+      "obligation_kind": "state_object_attribute",
+      "possible_entity_domains": null,
+      "reason_code": "state_object_last_changed_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_bf084e96bd7eb8b50dbcc0ec",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000036",
+      "obligation_kind": "states_item_access",
+      "possible_entity_domains": null,
+      "reason_code": "states_item_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000001",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [
+        "binary_sensor.synthetic_006",
+        "binary_sensor.synthetic_009",
+        "binary_sensor.synthetic_010",
+        "binary_sensor.synthetic_011"
+      ],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_signature",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_93bf91a387ec184ae55867d3",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_05"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "000000000000000000000000000000000000000000000000000000000000004a",
+      "obligation_kind": "states_item_access",
+      "possible_entity_domains": null,
+      "reason_code": "states_item_entity_access_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_01",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000002",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_0b83bf54682717709e522c3d",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000053",
+      "obligation_kind": "global_label_entities",
+      "possible_entity_domains": null,
+      "reason_code": "label_entities_entity_set_membership_unavailable",
+      "relation": "other_structured_reference",
+      "semantic_category": "entity_set_producer",
+      "source_object_id": "automation.synthetic_monitor_02",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    },
+    {
+      "automation_resource_id": "9000000000002",
+      "candidate_completeness": null,
+      "candidate_entity_ids": [],
+      "candidate_overflow": false,
+      "configuration_path": "$.variables.issue_message",
+      "context_provenance": [
+        "entity_candidate_evidence:incomplete",
+        "entity_non_selector_evidence:complete",
+        "entity_selector_provenance:complete",
+        "entity_set_producer:label_entities"
+      ],
+      "current_configuration_value_found": false,
+      "current_containing_scalar": null,
+      "downstream_profile_relationship": true,
+      "evidence_id": "ev_1f0dd9393fb715ad78d5ea94",
+      "external_template_name": null,
+      "label_memberships": [],
+      "ledger_outcome": "bounded_semantic_opaque",
+      "limit_exceeded": false,
+      "literal_selectors": [
+        "synthetic_label_04"
+      ],
+      "lock_projection": "conservative",
+      "obligation_fingerprint": "0000000000000000000000000000000000000000000000000000000000000041",
+      "obligation_kind": "membership_state_operand",
+      "possible_entity_domains": null,
+      "reason_code": "membership_iterates_state_value_target_opaque",
+      "relation": "other_structured_reference",
+      "semantic_category": "state_entity_access",
+      "source_object_id": "automation.synthetic_monitor_02",
+      "target_outcome": "bounded_semantic_opaque",
+      "target_selector_scope": "target_capable"
+    }
+  ],
+  "provenance": {
+    "plan_time_source_equivalence": "unproven",
+    "plan_time_source_equivalence_limitation": "Current configurations expose no fingerprint directly comparable to the persisted plan-time obligation configuration fingerprints; no missing evidence was manufactured.",
+    "risk_model": "helper-dependency-risk-v11",
+    "sanitization_order": "pseudonymize identities and text before calculating shareable hashes",
+    "sanitizer_model": "deterministic-token-and-jinja-literal-pseudonymizer-v1",
+    "self_fingerprint": "c501621df35e5f3ee2c44528b87bd56b58dcbfa4bb7983228647caa48da52a22",
+    "self_fingerprint_model": "canonical-json-sha256-excluding-provenance.self_fingerprint-v1",
+    "source_build_sha": "1b23baab38715ff9958e544d61ca8ac5dd208812",
+    "source_plan": "plan.synthetic_beta52_c990",
+    "source_release": "2.2.0-beta.52"
+  },
+  "read_only_accounting": {
+    "audit_window": {
+      "event_count": 36,
+      "failed_call_count": 0,
+      "non_read_access_count": 0,
+      "start_utc": "2026-08-30T16:09:49Z",
+      "tool_names": [
+        "get_audit_log",
+        "get_automation_config",
+        "get_change_plan",
+        "get_entity",
+        "get_server_health",
+        "render_template"
+      ],
+      "write_like_operation_count": 0
+    },
+    "baseline": {
+      "active_applies": 0,
+      "active_conflict_holds": 0,
+      "active_normal_locks": 0,
+      "execution_events": 377,
+      "execution_tasks": 54,
+      "f3_status": "ready",
+      "fallback_attempts": 0,
+      "fallback_successes": 0,
+      "helper_apply_attempts": 0,
+      "helper_dispatch_attempts": 0,
+      "helper_dispatch_successes": 0,
+      "helper_plans": 24,
+      "nonterminal_executions": 0,
+      "pending_challenges": 0,
+      "recovery_failures": 0,
+      "total_plans": 193
+    },
+    "final": {
+      "active_applies": 0,
+      "active_conflict_holds": 0,
+      "active_normal_locks": 0,
+      "execution_events": 377,
+      "execution_tasks": 54,
+      "f3_status": "ready",
+      "fallback_attempts": 0,
+      "fallback_successes": 0,
+      "helper_apply_attempts": 0,
+      "helper_dispatch_attempts": 0,
+      "helper_dispatch_successes": 0,
+      "helper_plans": 24,
+      "nonterminal_executions": 0,
+      "pending_challenges": 0,
+      "recovery_failures": 0,
+      "total_plans": 193
+    },
+    "followup_final": {
+      "active_applies": 0,
+      "active_conflict_holds": 0,
+      "active_normal_locks": 0,
+      "dependency_generation": 3,
+      "dependency_index_build_count": 3,
+      "execution_events": 377,
+      "execution_tasks": 54,
+      "f3_status": "ready",
+      "fallback_attempts": 0,
+      "fallback_successes": 0,
+      "helper_apply_attempts": 0,
+      "helper_dispatch_attempts": 0,
+      "helper_dispatch_successes": 0,
+      "helper_plans": 24,
+      "nonterminal_executions": 0,
+      "pending_challenges": 0,
+      "recovery_failures": 0,
+      "total_plans": 193
+    },
+    "guest_mode_followup": {
+      "entity_id": "input_boolean.synthetic_guest_mode",
+      "get_entity_read_count": 1,
+      "last_changed": "2026-08-30T01:25:02.005731+00:00",
+      "state": "off"
+    },
+    "target_state_baseline": {
+      "entity_id": "input_boolean.synthetic_standard_helper",
+      "last_changed": "2026-08-30T01:25:02.006398+00:00",
+      "state": "off"
+    },
+    "target_state_final": {
+      "entity_id": "input_boolean.synthetic_standard_helper",
+      "last_changed": "2026-08-30T01:25:02.006398+00:00",
+      "state": "off"
+    }
+  },
+  "schema_version": 1,
+  "selector_inventory": [
+    {
+      "explicit_entity_values": [
+        {
+          "configuration_path": "description",
+          "entity_ids": [
+            "climate.synthetic_001",
+            "group.synthetic_001"
+          ]
+        },
+        {
+          "configuration_path": "variables.issue_message",
+          "entity_ids": [
+            "climate.synthetic_001",
+            "binary_sensor.synthetic_009",
+            "binary_sensor.synthetic_011",
+            "binary_sensor.synthetic_010",
+            "binary_sensor.synthetic_006",
+            "group.synthetic_001"
+          ]
+        },
+        {
+          "configuration_path": "variables.issue_signature",
+          "entity_ids": [
+            "climate.synthetic_001",
+            "binary_sensor.synthetic_009",
+            "binary_sensor.synthetic_011",
+            "binary_sensor.synthetic_010",
+            "binary_sensor.synthetic_006",
+            "group.synthetic_001"
+          ]
+        }
+      ],
+      "source_resource_id": "9000000000001",
+      "templates": [
+        {
+          "configuration_path": "description",
+          "consumers": [],
+          "selector_producers": {
+            "entity_ids": [
+              "climate.synthetic_001",
+              "group.synthetic_001"
+            ],
+            "group_ids": [
+              "group.synthetic_001"
+            ],
+            "literal_labels": []
+          },
+          "template": "Checks entities labeled synthetic_label_02 + synthetic_label_01 every 5 minutes, plus explicitly monitors the front-door Aqara sensor, Master Bathroom FP300 occupancy, Living Room FP2 primary presence, and Master Bedroom FP2 bed zone because these critical automation inputs are not currently label-managed. Sends a phone push only when the active issue set changes; dismisses and clears the signature on recovery. PER-ENTITY GRACE: climate.synthetic_001 requires 20 minutes unavailable; the bathroom FP300, Living Room FP2, and Master Bedroom FP2 each require 15 minutes unknown or unavailable. All other entities alert immediately. group.synthetic_001 is checked explicitly because it is not labelable.",
+          "transport_chain": []
+        },
+        {
+          "configuration_path": "conditions[0].value_template",
+          "consumers": [
+            {
+              "kind": "states_call",
+              "text": "states('input_text.synthetic_001')"
+            }
+          ],
+          "selector_producers": {
+            "entity_ids": [],
+            "group_ids": [],
+            "literal_labels": []
+          },
+          "template": "{{ issue_signature != states('input_text.synthetic_001') }}",
+          "transport_chain": []
+        },
+        {
+          "configuration_path": "actions[0].choose[0].conditions[0].value_template",
+          "consumers": [],
+          "selector_producers": {
+            "entity_ids": [],
+            "group_ids": [],
+            "literal_labels": []
+          },
+          "template": "{{ issue_signature | length > 0 }}",
+          "transport_chain": [
+            {
+              "kind": "filter",
+              "name": "length"
+            }
+          ]
+        },
+        {
+          "configuration_path": "actions[0].choose[0].sequence[0].then[0].data.message",
+          "consumers": [],
+          "selector_producers": {
+            "entity_ids": [],
+            "group_ids": [],
+            "literal_labels": []
+          },
+          "template": "{{ issue_message }}",
+          "transport_chain": []
+        },
+        {
+          "configuration_path": "actions[0].choose[0].sequence[1].data.message",
+          "consumers": [],
+          "selector_producers": {
+            "entity_ids": [],
+            "group_ids": [],
+            "literal_labels": []
+          },
+          "template": "{{ issue_message }}",
+          "transport_chain": []
+        },
+        {
+          "configuration_path": "actions[0].choose[0].sequence[2].data.value",
+          "consumers": [],
+          "selector_producers": {
+            "entity_ids": [],
+            "group_ids": [],
+            "literal_labels": []
+          },
+          "template": "{{ issue_signature[:255] }}",
+          "transport_chain": []
+        },
+        {
+          "configuration_path": "variables.issue_message",
+          "consumers": [
+            {
+              "kind": "states_call",
+              "text": "states(e)"
+            },
+            {
+              "kind": "states_call",
+              "text": "states(e)"
+            },
+            {
+              "kind": "states_call",
+              "text": "states('group.synthetic_001')"
+            },
+            {
+              "kind": "states_call",
+              "text": "states('group.synthetic_001')"
+            },
+            {
+              "kind": "states_bracket",
+              "text": "states[e]"
+            },
+            {
+              "kind": "states_bracket",
+              "text": "states[e]"
+            },
+            {
+              "kind": "entity_name",
+              "text": "entity_name(e)"
+            },
+            {
+              "kind": "state_attribute",
+              "text": ".last_changed"
+            }
+          ],
+          "selector_producers": {
+            "entity_ids": [
+              "climate.synthetic_001",
+              "binary_sensor.synthetic_009",
+              "binary_sensor.synthetic_011",
+              "binary_sensor.synthetic_010",
+              "binary_sensor.synthetic_006",
+              "group.synthetic_001"
+            ],
+            "group_ids": [
+              "group.synthetic_001",
+              "group.synthetic_001",
+              "group.synthetic_001"
+            ],
+            "literal_labels": [
+              "synthetic_label_05",
+              "synthetic_label_04"
+            ]
+          },
+          "template": "{% set grace = {'climate.synthetic_001': 1200, 'binary_sensor.synthetic_009': 900, 'binary_sensor.synthetic_011': 900, 'binary_sensor.synthetic_010': 900} %}\n{% set explicit = ['binary_sensor.synthetic_006','binary_sensor.synthetic_009','binary_sensor.synthetic_011','binary_sensor.synthetic_010'] %}\n{% set monitored = (label_entities('synthetic_label_05') + explicit) | unique | list %}\n{% set unavailable = label_entities('synthetic_label_04') %}\n{% set ns = namespace(lines=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set age = (now() - states[e].last_changed).total_seconds() if states[e] is not none else 999999 %}\n    {% if age >= grace.get(e, 0) %}\n      {% set ns.lines = ns.lines + ['synthetic_literal_011' ~ entity_name(e) ~ 'synthetic_literal_012' ~ states(e) ~ 'synthetic_literal_013' ~ ((age/60)|round(0)|int) ~ 'synthetic_literal_014' ~ e ~ 'synthetic_literal_015'] %}\n    {% endif %}\n  {% endif %}\n{% endfor %}\n{% if states('group.synthetic_001') in ['unavailable','unknown'] %}\n  {% set ns.lines = ns.lines + ['synthetic_literal_016' ~ states('group.synthetic_001') ~ 'synthetic_literal_017'] %}\n{% endif %}\n{{ ns.lines | join('synthetic_literal_018') }}",
+          "transport_chain": [
+            {
+              "kind": "filter",
+              "name": "unique"
+            },
+            {
+              "kind": "filter",
+              "name": "list"
+            },
+            {
+              "kind": "filter",
+              "name": "round"
+            },
+            {
+              "kind": "filter",
+              "name": "int"
+            },
+            {
+              "kind": "filter",
+              "name": "join"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "for"
+            },
+            {
+              "kind": "control",
+              "name": "if"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "if"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "endif"
+            },
+            {
+              "kind": "control",
+              "name": "endif"
+            },
+            {
+              "kind": "control",
+              "name": "endfor"
+            },
+            {
+              "kind": "control",
+              "name": "if"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "endif"
+            }
+          ]
+        },
+        {
+          "configuration_path": "variables.issue_signature",
+          "consumers": [
+            {
+              "kind": "states_call",
+              "text": "states(e)"
+            },
+            {
+              "kind": "states_call",
+              "text": "states('group.synthetic_001')"
+            },
+            {
+              "kind": "states_bracket",
+              "text": "states[e]"
+            },
+            {
+              "kind": "states_bracket",
+              "text": "states[e]"
+            },
+            {
+              "kind": "state_attribute",
+              "text": ".last_changed"
+            }
+          ],
+          "selector_producers": {
+            "entity_ids": [
+              "climate.synthetic_001",
+              "binary_sensor.synthetic_009",
+              "binary_sensor.synthetic_011",
+              "binary_sensor.synthetic_010",
+              "binary_sensor.synthetic_006",
+              "group.synthetic_001"
+            ],
+            "group_ids": [
+              "group.synthetic_001",
+              "group.synthetic_001"
+            ],
+            "literal_labels": [
+              "synthetic_label_05",
+              "synthetic_label_04"
+            ]
+          },
+          "template": "{% set grace = {'climate.synthetic_001': 1200, 'binary_sensor.synthetic_009': 900, 'binary_sensor.synthetic_011': 900, 'binary_sensor.synthetic_010': 900} %}\n{% set explicit = ['binary_sensor.synthetic_006','binary_sensor.synthetic_009','binary_sensor.synthetic_011','binary_sensor.synthetic_010'] %}\n{% set monitored = (label_entities('synthetic_label_05') + explicit) | unique | list %}\n{% set unavailable = label_entities('synthetic_label_04') %}\n{% set ns = namespace(bad=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set age = (now() - states[e].last_changed).total_seconds() if states[e] is not none else 999999 %}\n    {% if age >= grace.get(e, 0) %}\n      {% set ns.bad = ns.bad + [e] %}\n    {% endif %}\n  {% endif %}\n{% endfor %}\n{% if states('group.synthetic_001') in ['unavailable','unknown'] %}\n  {% set ns.bad = ns.bad + ['group.synthetic_001'] %}\n{% endif %}\n{{ ns.bad | sort | join('synthetic_literal_019') }}",
+          "transport_chain": [
+            {
+              "kind": "filter",
+              "name": "unique"
+            },
+            {
+              "kind": "filter",
+              "name": "list"
+            },
+            {
+              "kind": "filter",
+              "name": "sort"
+            },
+            {
+              "kind": "filter",
+              "name": "join"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "for"
+            },
+            {
+              "kind": "control",
+              "name": "if"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "if"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "endif"
+            },
+            {
+              "kind": "control",
+              "name": "endif"
+            },
+            {
+              "kind": "control",
+              "name": "endfor"
+            },
+            {
+              "kind": "control",
+              "name": "if"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "endif"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "explicit_entity_values": [
+        {
+          "configuration_path": "variables.issue_message",
+          "entity_ids": [
+            "sensor.synthetic_001",
+            "sensor.synthetic_003"
+          ]
+        }
+      ],
+      "source_resource_id": "9000000000002",
+      "templates": [
+        {
+          "configuration_path": "actions[0].choose[0].conditions[0].value_template",
+          "consumers": [],
+          "selector_producers": {
+            "entity_ids": [],
+            "group_ids": [],
+            "literal_labels": []
+          },
+          "template": "{{ issue_message | trim | length > 0 }}",
+          "transport_chain": [
+            {
+              "kind": "filter",
+              "name": "trim"
+            },
+            {
+              "kind": "filter",
+              "name": "length"
+            }
+          ]
+        },
+        {
+          "configuration_path": "actions[0].choose[0].sequence[0].data.message",
+          "consumers": [],
+          "selector_producers": {
+            "entity_ids": [],
+            "group_ids": [],
+            "literal_labels": []
+          },
+          "template": "{{ issue_message }}",
+          "transport_chain": []
+        },
+        {
+          "configuration_path": "variables.issue_message",
+          "consumers": [
+            {
+              "kind": "states_call",
+              "text": "states(e)"
+            },
+            {
+              "kind": "states_call",
+              "text": "states(e)"
+            },
+            {
+              "kind": "entity_name",
+              "text": "entity_name(e)"
+            }
+          ],
+          "selector_producers": {
+            "entity_ids": [
+              "sensor.synthetic_001",
+              "sensor.synthetic_003"
+            ],
+            "group_ids": [],
+            "literal_labels": [
+              "synthetic_label_06",
+              "synthetic_label_04"
+            ]
+          },
+          "template": "{% set explicit = ['sensor.synthetic_001','sensor.synthetic_003'] %}\n{% set monitored = (label_entities('synthetic_label_06') + explicit) | unique | list %}\n{% set unavailable = label_entities('synthetic_label_04') %}\n{% set ns = namespace(lines=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set ns.lines = ns.lines + ['synthetic_literal_011' ~ entity_name(e) ~ 'synthetic_literal_012' ~ states(e) ~ 'synthetic_literal_020' ~ e ~ 'synthetic_literal_015'] %}\n  {% endif %}\n{% endfor %}\n{{ ns.lines | join('synthetic_literal_018') }}",
+          "transport_chain": [
+            {
+              "kind": "filter",
+              "name": "unique"
+            },
+            {
+              "kind": "filter",
+              "name": "list"
+            },
+            {
+              "kind": "filter",
+              "name": "join"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "for"
+            },
+            {
+              "kind": "control",
+              "name": "if"
+            },
+            {
+              "kind": "control",
+              "name": "set"
+            },
+            {
+              "kind": "control",
+              "name": "endif"
+            },
+            {
+              "kind": "control",
+              "name": "endfor"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "snapshot_identity": {
+    "fingerprint": "0000000000000000000000000000000000000000000000000000000000000060",
+    "generation": 3,
+    "source_epoch": 0
+  },
+  "source_configurations": [
+    {
+      "configuration": {
+        "actions": [
+          {
+            "choose": [
+              {
+                "conditions": [
+                  {
+                    "condition": "template",
+                    "value_template": "{{ issue_signature | length > 0 }}"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "if": [
+                      {
+                        "condition": "state",
+                        "entity_id": "timer.ha_health_alert_snooze",
+                        "state": "idle"
+                      }
+                    ],
+                    "then": [
+                      {
+                        "action": "notify.synthetic_001",
+                        "data": {
+                          "data": {
+                            "actions": [
+                              {
+                                "action": "SNOOZE_HA_HEALTH_1H",
+                                "title": "synthetic_title_016"
+                              },
+                              {
+                                "action": "SNOOZE_HA_HEALTH_4H",
+                                "title": "synthetic_title_017"
+                              },
+                              {
+                                "action": "ACK_HA_HEALTH",
+                                "title": "synthetic_title_018"
+                              }
+                            ],
+                            "channel": "synthetic_channel_019",
+                            "priority": "high",
+                            "tag": "synthetic_tag_020",
+                            "ttl": 0
+                          },
+                          "message": "{{ issue_message }}",
+                          "title": "synthetic_title_021"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "action": "persistent_notification.synthetic_001",
+                    "data": {
+                      "message": "{{ issue_message }}",
+                      "notification_id": "synthetic_notification_id_022",
+                      "title": "synthetic_title_021"
+                    }
+                  },
+                  {
+                    "action": "input_text.synthetic_002",
+                    "data": {
+                      "value": "{{ issue_signature[:255] }}"
+                    },
+                    "target": {
+                      "entity_id": "input_text.synthetic_001"
+                    }
+                  }
+                ]
+              }
+            ],
+            "default": [
+              {
+                "action": "persistent_notification.synthetic_002",
+                "data": {
+                  "notification_id": "synthetic_notification_id_022"
+                }
+              },
+              {
+                "action": "input_text.synthetic_002",
+                "data": {
+                  "value": ""
+                },
+                "target": {
+                  "entity_id": "input_text.synthetic_001"
+                }
+              }
+            ]
+          }
+        ],
+        "alias": "synthetic_alias_023",
+        "conditions": [
+          {
+            "condition": "template",
+            "value_template": "{{ issue_signature != states('input_text.synthetic_001') }}"
+          }
+        ],
+        "description": "synthetic_description_024",
+        "id": "synthetic_id_010",
+        "mode": "single",
+        "triggers": [
+          {
+            "minutes": "/5",
+            "trigger": "time_pattern"
+          },
+          {
+            "event": "start",
+            "trigger": "homeassistant"
+          }
+        ],
+        "variables": {
+          "issue_message": "{% set grace = {'climate.synthetic_001': 1200, 'binary_sensor.synthetic_009': 900, 'binary_sensor.synthetic_011': 900, 'binary_sensor.synthetic_010': 900} %}\n{% set explicit = ['binary_sensor.synthetic_006','binary_sensor.synthetic_009','binary_sensor.synthetic_011','binary_sensor.synthetic_010'] %}\n{% set monitored = (label_entities('synthetic_label_05') + explicit) | unique | list %}\n{% set unavailable = label_entities('synthetic_label_04') %}\n{% set ns = namespace(lines=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set age = (now() - states[e].last_changed).total_seconds() if states[e] is not none else 999999 %}\n    {% if age >= grace.get(e, 0) %}\n      {% set ns.lines = ns.lines + ['synthetic_literal_011' ~ entity_name(e) ~ 'synthetic_literal_012' ~ states(e) ~ 'synthetic_literal_013' ~ ((age/60)|round(0)|int) ~ 'synthetic_literal_014' ~ e ~ 'synthetic_literal_015'] %}\n    {% endif %}\n  {% endif %}\n{% endfor %}\n{% if states('group.synthetic_001') in ['unavailable','unknown'] %}\n  {% set ns.lines = ns.lines + ['synthetic_literal_016' ~ states('group.synthetic_001') ~ 'synthetic_literal_017'] %}\n{% endif %}\n{{ ns.lines | join('synthetic_literal_018') }}",
+          "issue_signature": "{% set grace = {'climate.synthetic_001': 1200, 'binary_sensor.synthetic_009': 900, 'binary_sensor.synthetic_011': 900, 'binary_sensor.synthetic_010': 900} %}\n{% set explicit = ['binary_sensor.synthetic_006','binary_sensor.synthetic_009','binary_sensor.synthetic_011','binary_sensor.synthetic_010'] %}\n{% set monitored = (label_entities('synthetic_label_05') + explicit) | unique | list %}\n{% set unavailable = label_entities('synthetic_label_04') %}\n{% set ns = namespace(bad=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set age = (now() - states[e].last_changed).total_seconds() if states[e] is not none else 999999 %}\n    {% if age >= grace.get(e, 0) %}\n      {% set ns.bad = ns.bad + [e] %}\n    {% endif %}\n  {% endif %}\n{% endfor %}\n{% if states('group.synthetic_001') in ['unavailable','unknown'] %}\n  {% set ns.bad = ns.bad + ['group.synthetic_001'] %}\n{% endif %}\n{{ ns.bad | sort | join('synthetic_literal_019') }}"
+        }
+      },
+      "resource_id": "9000000000001"
+    },
+    {
+      "configuration": {
+        "actions": [
+          {
+            "choose": [
+              {
+                "conditions": [
+                  {
+                    "condition": "template",
+                    "value_template": "{{ issue_message | trim | length > 0 }}"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "action": "persistent_notification.synthetic_001",
+                    "data": {
+                      "message": "{{ issue_message }}",
+                      "notification_id": "synthetic_notification_id_025",
+                      "title": "synthetic_title_026"
+                    }
+                  }
+                ]
+              }
+            ],
+            "default": [
+              {
+                "action": "persistent_notification.synthetic_002",
+                "data": {
+                  "notification_id": "synthetic_notification_id_025"
+                }
+              }
+            ]
+          }
+        ],
+        "alias": "synthetic_alias_027",
+        "description": "synthetic_description_028",
+        "id": "synthetic_id_015",
+        "mode": "single",
+        "triggers": [
+          {
+            "at": "07:10:00",
+            "trigger": "time"
+          },
+          {
+            "event": "start",
+            "trigger": "homeassistant"
+          }
+        ],
+        "variables": {
+          "issue_message": "{% set explicit = ['sensor.synthetic_001','sensor.synthetic_003'] %}\n{% set monitored = (label_entities('synthetic_label_06') + explicit) | unique | list %}\n{% set unavailable = label_entities('synthetic_label_04') %}\n{% set ns = namespace(lines=[]) %}\n{% for e in monitored %}\n  {% if (e in unavailable or e in explicit) and states(e) in ['unavailable','unknown'] %}\n    {% set ns.lines = ns.lines + ['synthetic_literal_011' ~ entity_name(e) ~ 'synthetic_literal_012' ~ states(e) ~ 'synthetic_literal_020' ~ e ~ 'synthetic_literal_015'] %}\n  {% endif %}\n{% endfor %}\n{{ ns.lines | join('synthetic_literal_018') }}"
+        }
+      },
+      "resource_id": "9000000000002"
+    }
+  ]
+}

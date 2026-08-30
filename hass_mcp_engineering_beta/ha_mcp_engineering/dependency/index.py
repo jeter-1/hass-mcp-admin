@@ -502,6 +502,9 @@ class DependencyIndex:
                 label_registry_complete=(
                     scan.label_registry_complete
                 ),
+                label_selector_authority=(
+                    scan.label_selector_authority
+                ),
                 obligations=obligations,
                 obligation_overflow_count=obligation_overflow_count,
                 obligation_overflow_fingerprint=(
@@ -545,6 +548,9 @@ class DependencyIndex:
                 ),
                 label_registry_complete=bool(
                     scan.label_registry_complete
+                ),
+                label_selector_authority=dict(
+                    scan.label_selector_authority
                 ),
                 obligations=tuple(obligations),
                 obligation_overflow_count=(

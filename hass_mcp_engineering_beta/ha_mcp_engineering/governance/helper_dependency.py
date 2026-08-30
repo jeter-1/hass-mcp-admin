@@ -9,6 +9,7 @@ from ..dependency.index import DependencyIndex
 from ..dependency.models import (
     DependencyObligation,
     DependencyIndexSnapshot,
+    LABEL_SELECTOR_DIAGNOSTIC_MODEL,
     OBLIGATION_LEDGER_MODEL,
     dynamic_reference_fingerprint,
     obligation_fingerprint,
@@ -20,7 +21,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v11"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v12"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -35,6 +36,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v8",
         "helper-dependency-risk-v9",
         "helper-dependency-risk-v10",
+        "helper-dependency-risk-v11",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -52,6 +54,8 @@ MAX_DYNAMIC_REFERENCES_EVALUATED = 64
 MAX_RESOLVED_CANDIDATES_PER_EXPRESSION = 128
 MAX_TOTAL_RESOLVED_CANDIDATES = 512
 MAX_UNREADABLE_AUTOMATIONS = 50
+MAX_SELECTOR_AUTHORITY_DIAGNOSTICS = 256
+MAX_SELECTOR_AUTHORITY_REASON_CODES = 16
 _AUTOMATION_RESOURCE_ID = re.compile(
     r"^[a-z0-9][a-z0-9_.-]{0,255}$"
 )
@@ -334,6 +338,90 @@ def _causal_automation_sources(
     return sources
 
 
+def _selector_authority_diagnostics(
+    snapshot: DependencyIndexSnapshot,
+    *,
+    entity_id: str,
+) -> list[dict[str, Any]]:
+    """Project bounded, hash-safe selector diagnostics for persistence."""
+
+    projected: list[dict[str, Any]] = []
+    ordered = sorted(
+        getattr(snapshot, "label_selector_authority", {}).items(),
+        key=lambda item: item[1].selector_fingerprint,
+    )[:MAX_SELECTOR_AUTHORITY_DIAGNOSTICS]
+    for selector, evidence in ordered:
+        reason_codes = sorted(
+            {
+                str(reason)[:96]
+                for reason in evidence.failure_reason_codes
+                if isinstance(reason, str) and reason
+            }
+        )[:MAX_SELECTOR_AUTHORITY_REASON_CODES]
+        candidates = snapshot.label_memberships.get(selector, ())
+        target_disposition = (
+            "included"
+            if evidence.complete and entity_id in candidates
+            else "excluded"
+            if evidence.complete
+            else "unresolved"
+        )
+        record = {
+            "model": LABEL_SELECTOR_DIAGNOSTIC_MODEL,
+            "selector_fingerprint": evidence.selector_fingerprint,
+            "lookup_mode": str(evidence.lookup_mode)[:64],
+            "resolved_label_fingerprint": (
+                evidence.resolved_label_fingerprint
+            ),
+            "complete": bool(evidence.complete),
+            "complete_disposition": (
+                "complete" if evidence.complete else "incomplete"
+            ),
+            "failure_reason_codes": reason_codes,
+            "membership_count": max(0, int(evidence.membership_count)),
+            "membership_fingerprint": evidence.membership_fingerprint,
+            "candidate_count": max(0, int(evidence.candidate_count)),
+            "candidate_complete": bool(evidence.candidate_complete),
+            "target_disposition": target_disposition,
+            "entity_inventory_available": bool(
+                evidence.entity_inventory_available
+            ),
+            "entity_inventory_complete": bool(
+                evidence.entity_inventory_complete
+            ),
+            "label_inventory_available": bool(
+                evidence.label_inventory_available
+            ),
+            "label_inventory_complete": bool(
+                evidence.label_inventory_complete
+            ),
+            "raw_entity_record_count": max(
+                0, int(evidence.raw_entity_record_count)
+            ),
+            "canonical_unique_record_count": max(
+                0, int(evidence.canonical_unique_record_count)
+            ),
+            "identical_duplicates_collapsed": max(
+                0, int(evidence.identical_duplicates_collapsed)
+            ),
+            "conflicting_duplicate_count": max(
+                0, int(evidence.conflicting_duplicate_count)
+            ),
+            "malformed_relevant_record_count": max(
+                0, int(evidence.malformed_relevant_record_count)
+            ),
+            "raw_bound_exceeded": bool(evidence.raw_bound_exceeded),
+            "authority_fingerprint": evidence.authority_fingerprint,
+            "anomaly_fingerprint": evidence.anomaly_fingerprint,
+            "snapshot_generation": snapshot.generation,
+            "snapshot_fingerprint": snapshot.fingerprint,
+            "snapshot_source_epoch": snapshot.source_epoch,
+        }
+        record["diagnostic_fingerprint"] = stable_hash(record)
+        projected.append(record)
+    return projected
+
+
 def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
     material = {
         "model": HELPER_DEPENDENCY_RISK_MODEL,
@@ -364,6 +452,9 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "opaque_obligation_count": 0,
         "coverage_failure_count": 1,
         "obligation_evidence": [],
+        "selector_authority_diagnostics": [],
+        "selector_authority_diagnostic_count": 0,
+        "selector_authority_diagnostic_fingerprint": stable_hash([]),
         "obligation_overflow_count": 0,
         "obligation_overflow_fingerprint": None,
         "dependency_lock_projection": {
@@ -647,6 +738,10 @@ def _build_obligation_binding(
     index_metadata: dict[str, Any],
 ) -> dict[str, Any]:
     """Build the target-specific governance contract from one shared ledger."""
+
+    selector_diagnostics = _selector_authority_diagnostics(
+        snapshot, entity_id=entity_id
+    )
 
     automation_obligations = sorted(
         (
@@ -949,6 +1044,13 @@ def _build_obligation_binding(
     }
     return {
         **material,
+        "selector_authority_diagnostics": selector_diagnostics,
+        "selector_authority_diagnostic_count": len(
+            selector_diagnostics
+        ),
+        "selector_authority_diagnostic_fingerprint": stable_hash(
+            selector_diagnostics
+        ),
         # Retain additive legacy projections for existing clients and tests.
         "target_relevant_dynamic_reference_count": opaque_count,
         "target_relevant_dynamic_reference_fingerprints": [
@@ -1083,6 +1185,10 @@ def build_helper_dependency_risk_binding(
             entity_id=entity_id,
             index_metadata=index_metadata,
         )
+
+    selector_diagnostics = _selector_authority_diagnostics(
+        snapshot, entity_id=entity_id
+    )
 
     sources = _causal_automation_sources(snapshot, entity_id)
     profiles_by_source = {
@@ -1422,6 +1528,13 @@ def build_helper_dependency_risk_binding(
     }
     return {
         **material,
+        "selector_authority_diagnostics": selector_diagnostics,
+        "selector_authority_diagnostic_count": len(
+            selector_diagnostics
+        ),
+        "selector_authority_diagnostic_fingerprint": stable_hash(
+            selector_diagnostics
+        ),
         "unrelated_dynamic_reference_count": max(
             0,
             sum(

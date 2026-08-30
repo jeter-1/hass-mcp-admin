@@ -22,6 +22,8 @@ OBLIGATION_OUTCOMES = frozenset(
     }
 )
 OBLIGATION_LEDGER_MODEL = "whole-template-obligation-ledger-v1"
+LABEL_SELECTOR_AUTHORITY_MODEL = "label-selector-authority-v1"
+LABEL_SELECTOR_DIAGNOSTIC_MODEL = "label-selector-authority-diagnostic-v1"
 TARGET_SELECTOR_SCOPES = frozenset(
     {
         "closed_finite_candidates",
@@ -436,6 +438,39 @@ class SourceCoverageItem:
         }
 
 
+@dataclass(frozen=True)
+class LabelSelectorAuthorityEvidence:
+    """Bounded selector-local authority and anomaly evidence.
+
+    Raw registry bodies and literal selector values never enter the persisted
+    projection. The authority fingerprint excludes accepted identical-
+    duplicate multiplicity, while the anomaly fingerprint records it for
+    diagnosis.
+    """
+
+    selector_fingerprint: str
+    lookup_mode: str
+    resolved_label_fingerprint: str | None
+    complete: bool
+    failure_reason_codes: tuple[str, ...]
+    membership_count: int
+    membership_fingerprint: str
+    candidate_count: int
+    candidate_complete: bool
+    entity_inventory_available: bool
+    entity_inventory_complete: bool
+    label_inventory_available: bool
+    label_inventory_complete: bool
+    raw_entity_record_count: int
+    canonical_unique_record_count: int
+    identical_duplicates_collapsed: int
+    conflicting_duplicate_count: int
+    malformed_relevant_record_count: int
+    raw_bound_exceeded: bool
+    authority_fingerprint: str
+    anomaly_fingerprint: str
+
+
 @dataclass
 class DependencyScanResult:
     findings: list[DependencyFinding]
@@ -460,6 +495,9 @@ class DependencyScanResult:
     )
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
+    label_selector_authority: dict[
+        str, LabelSelectorAuthorityEvidence
+    ] = field(default_factory=dict)
     obligations: list[DependencyObligation] = field(default_factory=list)
     obligation_ledger_model: str | None = None
     # The running Home Assistant version observed during this scan, and how
@@ -497,6 +535,9 @@ class DependencyIndexSnapshot:
     )
     label_membership_truncated: tuple[str, ...] = ()
     label_registry_complete: bool = False
+    label_selector_authority: dict[
+        str, LabelSelectorAuthorityEvidence
+    ] = field(default_factory=dict)
     obligations: tuple[DependencyObligation, ...] = ()
     obligation_overflow_count: int = 0
     obligation_overflow_fingerprint: str | None = None
@@ -624,6 +665,9 @@ def snapshot_fingerprint(
     label_membership_complete: dict[str, bool] | None = None,
     label_membership_truncated: tuple[str, ...] = (),
     label_registry_complete: bool = False,
+    label_selector_authority: dict[
+        str, LabelSelectorAuthorityEvidence
+    ] | None = None,
     obligations: list[DependencyObligation] | tuple[
         DependencyObligation, ...
     ] = (),
@@ -680,6 +724,12 @@ def snapshot_fingerprint(
                 sorted((label_membership_fingerprints or {}).items())
             ),
             "truncated": sorted(label_membership_truncated),
+            "selector_authority_fingerprints": {
+                selector: item.authority_fingerprint
+                for selector, item in sorted(
+                    (label_selector_authority or {}).items()
+                )
+            },
         },
         "obligations": sorted(
             obligation_fingerprint(item) for item in obligations

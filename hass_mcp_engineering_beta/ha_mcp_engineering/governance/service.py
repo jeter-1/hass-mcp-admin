@@ -4636,6 +4636,13 @@ class ChangeGovernanceService:
                 "target_projection_fingerprint",
                 "obligation_fingerprint",
             )
+        elif section == "selector_authority":
+            fields = (
+                "selector_fingerprint",
+                "authority_fingerprint",
+                "anomaly_fingerprint",
+                "diagnostic_fingerprint",
+            )
         else:
             fields = (
                 "automation_id",
@@ -4660,6 +4667,7 @@ class ChangeGovernanceService:
         binding: dict[str, Any] | None,
         obligation_evidence: list[dict[str, Any]],
         downstream_profiles: list[dict[str, Any]],
+        selector_authority: list[dict[str, Any]],
     ) -> dict[str, Any]:
         binding = binding or {}
         retained_count = self._plan_observability_count(
@@ -4723,6 +4731,7 @@ class ChangeGovernanceService:
         )
         obligation_fingerprint = stable_hash(obligation_evidence)
         profile_fingerprint = stable_hash(downstream_profiles)
+        selector_authority_fingerprint = stable_hash(selector_authority)
         return {
             "model": "change-plan-observability-v1",
             "plan_id": public.get("plan_id"),
@@ -4775,6 +4784,12 @@ class ChangeGovernanceService:
             "downstream_profile_retained_count": len(downstream_profiles),
             "downstream_profile_total_count": len(downstream_profiles),
             "downstream_profile_full_set_fingerprint": profile_fingerprint,
+            "selector_authority_diagnostic_count": len(
+                selector_authority
+            ),
+            "selector_authority_diagnostic_fingerprint": (
+                selector_authority_fingerprint
+            ),
             "relevant_automation_count": (
                 len(relevant) if isinstance(relevant, list) else None
             ),
@@ -4786,7 +4801,13 @@ class ChangeGovernanceService:
                 binding.get("truncated") or (overflow_count or 0) > 0
             ),
             "pagination_available": bool(
-                obligation_evidence or downstream_profiles
+                obligation_evidence
+                or downstream_profiles
+                or selector_authority
+            ),
+            "selector_authority_pagination_required": (
+                len(selector_authority)
+                > PLAN_OBSERVABILITY_DEFAULT_PAGE_SIZE
             ),
             "obligation_pagination_required": (
                 len(obligation_evidence)
@@ -4904,6 +4925,7 @@ class ChangeGovernanceService:
                 ):
                     raise ValueError(f"cursor {field} is invalid")
             if value["section"] not in (
+                "summary",
                 "obligation_evidence",
                 "downstream_profiles",
             ):
@@ -5110,15 +5132,6 @@ class ChangeGovernanceService:
                 ErrorCode.INVALID_REQUEST,
                 details={"field": "page_size"},
             )
-        if detail_section == "summary" and cursor:
-            raise GovernanceError(
-                ErrorCode.INVALID_CURSOR,
-                details={
-                    "field": "cursor",
-                    "reason": "detail_section_required",
-                    "operation": "get_change_plan",
-                },
-            )
         decoded_cursor: dict[str, Any] | None = None
         if cursor:
             decoded_cursor = self._decode_plan_observability_cursor(cursor)
@@ -5183,13 +5196,25 @@ class ChangeGovernanceService:
         binding = public_binding or {}
         raw_obligations = binding.get("obligation_evidence")
         raw_profiles = binding.get("downstream_profiles")
+        raw_selector_authority = binding.get(
+            "selector_authority_diagnostics"
+        )
         if raw_obligations is not None and not isinstance(raw_obligations, list):
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
         if raw_profiles is not None and not isinstance(raw_profiles, list):
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        if raw_selector_authority is not None and not isinstance(
+            raw_selector_authority, list
+        ):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
         if any(not isinstance(item, dict) for item in raw_obligations or []):
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
         if any(not isinstance(item, dict) for item in raw_profiles or []):
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        if any(
+            not isinstance(item, dict)
+            for item in raw_selector_authority or []
+        ):
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
         obligation_evidence = sorted(
             (deepcopy(item) for item in raw_obligations or []),
@@ -5203,17 +5228,25 @@ class ChangeGovernanceService:
                 "downstream_profiles", item
             ),
         )
+        selector_authority = sorted(
+            (deepcopy(item) for item in raw_selector_authority or []),
+            key=lambda item: self._plan_observability_sort_key(
+                "selector_authority", item
+            ),
+        )
         summary = self._plan_observability_summary(
             public=public,
             binding=public_binding,
             obligation_evidence=obligation_evidence,
             downstream_profiles=downstream_profiles,
+            selector_authority=selector_authority,
         )
         compact_public = deepcopy(public)
         compact_binding = self._public_helper_dependency_binding(compact_public)
         if compact_binding is not None:
             compact_binding.pop("obligation_evidence", None)
             compact_binding.pop("downstream_profiles", None)
+            compact_binding.pop("selector_authority_diagnostics", None)
         detail: dict[str, Any] = {
             "section": detail_section,
             "ordering_version": PLAN_OBSERVABILITY_ORDERING_VERSION,
@@ -5253,11 +5286,24 @@ class ChangeGovernanceService:
                 ErrorCode.INVALID_REQUEST,
                 details={"reason": "plan_summary_exceeds_response_budget"},
             )
-        if detail_section == "summary":
+        # Preserve the exact historical summary projection when a persisted
+        # plan predates selector diagnostics.  Fresh v12 plans use the same
+        # section's existing item/cursor envelope below.
+        if detail_section == "summary" and not selector_authority:
+            if decoded_cursor is not None:
+                raise GovernanceError(
+                    ErrorCode.STALE_CURSOR,
+                    details={
+                        "field": "cursor",
+                        "reason": "selector_authority_binding_changed",
+                        "operation": "get_change_plan",
+                    },
+                )
             return result
-
         items = (
-            obligation_evidence
+            selector_authority
+            if detail_section == "summary"
+            else obligation_evidence
             if detail_section == "obligation_evidence"
             else downstream_profiles
         )
