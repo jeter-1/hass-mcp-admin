@@ -648,7 +648,7 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["plan_id"], plan_id)
         self.assertEqual(
             summary["dependency_risk_binding_model"],
-            "helper-dependency-risk-v10",
+            "helper-dependency-risk-v11",
         )
         self.assertEqual(summary["exact_dependency_count"], 2)
         self.assertEqual(summary["retained_obligation_count"], 2)

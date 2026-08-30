@@ -1805,6 +1805,7 @@ def resolve_literal_label_obligations(
     label_membership_truncated: Iterable[str],
     label_lookup_resolutions: dict[str, tuple[str, str | None]],
     label_registry_complete: bool,
+    label_membership_complete: dict[str, bool] | None = None,
     expand_snapshot_evidence: ExpandSnapshotEvidence | None = None,
 ) -> list[DependencyObligation]:
     """Discharge literal ``label_entities`` opacity from one scan snapshot.
@@ -1831,23 +1832,31 @@ def resolve_literal_label_obligations(
             for value in context
             if value.startswith("entity_selector_transform:")
         }
+        selectors = tuple(sorted(set(item.literal_selectors)))
+        completion = (
+            label_membership_complete
+            if label_membership_complete is not None
+            else {
+                selector: bool(label_registry_complete)
+                for selector in selectors
+            }
+        )
         eligible = bool(
             producers == {"label_entities"}
             and selector_transforms.issubset({"expand"})
             and "entity_selector_provenance:complete" in context
             and "entity_selector_provenance:incomplete" not in context
-            and item.literal_selectors
-            and label_registry_complete
+            and selectors
         )
         if not eligible:
             resolved.append(item)
             continue
-        selectors = tuple(sorted(set(item.literal_selectors)))
         if any(
             selector in truncated
             or selector not in label_memberships
             or selector not in label_membership_fingerprints
             or selector not in label_lookup_resolutions
+            or completion.get(selector) is not True
             for selector in selectors
         ):
             resolved.append(item)

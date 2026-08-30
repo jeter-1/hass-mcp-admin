@@ -493,6 +493,9 @@ class DependencyIndex:
                 label_membership_fingerprints=(
                     scan.label_membership_fingerprints
                 ),
+                label_membership_complete=(
+                    scan.label_membership_complete
+                ),
                 label_membership_truncated=(
                     scan.label_membership_truncated
                 ),
@@ -533,6 +536,9 @@ class DependencyIndex:
                 label_memberships=dict(scan.label_memberships),
                 label_membership_fingerprints=dict(
                     scan.label_membership_fingerprints
+                ),
+                label_membership_complete=dict(
+                    scan.label_membership_complete
                 ),
                 label_membership_truncated=tuple(
                     scan.label_membership_truncated
