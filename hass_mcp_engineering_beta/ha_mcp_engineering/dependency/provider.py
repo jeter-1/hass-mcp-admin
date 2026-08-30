@@ -61,6 +61,9 @@ MAX_LABEL_REGISTRY_ENTRIES = 1_000
 MAX_LABEL_MEMBERSHIP = 128
 MAX_LITERAL_LABEL_SELECTORS = 256
 MAX_ENTITY_LABELS = 64
+MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES = 65_536
+MAX_ENTITY_REGISTRY_CANONICAL_RECORD_NODES = 4_096
+MAX_ENTITY_REGISTRY_CANONICAL_RECORD_DEPTH = 64
 MAX_BLUEPRINT_RESOLUTION_NODES = 10_000
 MAX_BLUEPRINT_RESOLUTION_DEPTH = 64
 MAX_BLUEPRINT_SOURCE_BYTES = 1_048_576
@@ -1265,33 +1268,105 @@ def _build_expand_snapshot_evidence(
 def _strict_canonical_json_bytes(value: Any) -> bytes:
     """Return complete canonical JSON bytes without coercion or repair."""
 
+    encoded_size = 0
+    node_count = 0
+
+    def charge(size: int) -> None:
+        nonlocal encoded_size
+        encoded_size += size
+        if encoded_size > MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES:
+            raise ValueError("canonical JSON record exceeds the byte bound")
+
+    def count_node() -> None:
+        nonlocal node_count
+        node_count += 1
+        if node_count > MAX_ENTITY_REGISTRY_CANONICAL_RECORD_NODES:
+            raise ValueError("canonical JSON record exceeds the node bound")
+
+    def charge_string(value: str) -> None:
+        charge(2)
+        for character in value:
+            codepoint = ord(character)
+            if codepoint in {0x22, 0x5C} or codepoint in {
+                0x08,
+                0x09,
+                0x0A,
+                0x0C,
+                0x0D,
+            }:
+                charge(2)
+            elif codepoint < 0x20:
+                charge(6)
+            elif codepoint <= 0x7F:
+                charge(1)
+            elif codepoint <= 0x7FF:
+                charge(2)
+            elif 0xD800 <= codepoint <= 0xDFFF:
+                raise TypeError("canonical JSON strings must be valid Unicode")
+            elif codepoint <= 0xFFFF:
+                charge(3)
+            else:
+                charge(4)
+
     def validate(item: Any, *, depth: int = 0) -> None:
-        if depth > 64:
+        if depth > MAX_ENTITY_REGISTRY_CANONICAL_RECORD_DEPTH:
             raise ValueError("canonical JSON nesting exceeds the bound")
+        count_node()
         if isinstance(item, dict):
             if any(type(key) is not str for key in item):
                 raise TypeError("canonical JSON mapping keys must be strings")
-            for nested in item.values():
+            charge(2)
+            for index, (key, nested) in enumerate(item.items()):
+                if index:
+                    charge(1)
+                count_node()
+                charge_string(key)
+                charge(1)
                 validate(nested, depth=depth + 1)
             return
         if isinstance(item, list):
-            for nested in item:
+            charge(2)
+            for index, nested in enumerate(item):
+                if index:
+                    charge(1)
                 validate(nested, depth=depth + 1)
             return
-        if item is None or type(item) in {str, int, bool}:
+        if item is None:
+            charge(4)
+            return
+        if type(item) is str:
+            charge_string(item)
+            return
+        if type(item) is bool:
+            charge(4 if item else 5)
+            return
+        if type(item) is int:
+            charge(len(str(item)))
             return
         if type(item) is float and math.isfinite(item):
+            charge(
+                len(
+                    json.dumps(
+                        item,
+                        allow_nan=False,
+                        separators=(",", ":"),
+                    )
+                )
+            )
             return
         raise TypeError("unsupported canonical JSON value")
 
     validate(value)
-    return json.dumps(
+    encoded = json.dumps(
         value,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
+    if len(encoded) > MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES:
+        raise ValueError("canonical JSON record exceeds the byte bound")
+    return encoded
 
 
 def _deduplicate_identical_entity_registry_records(
@@ -1714,13 +1789,17 @@ def _build_label_membership_evidence(
             and entity_selector_complete[selector]
             and not selector_bound_exceeded
         )
-        authority_material = {
-            "model": LABEL_SELECTOR_AUTHORITY_MODEL,
+        lookup_material = {
+            "model": LABEL_LOOKUP_MODEL,
             "selector": selector,
             "lookup_mode": label_lookup_resolutions[selector][0],
             "resolved_label_id": label_lookup_resolutions[selector][1],
             "entity_ids": ordered,
             "complete": selector_complete[selector],
+        }
+        authority_material = {
+            **lookup_material,
+            "model": LABEL_SELECTOR_AUTHORITY_MODEL,
             "failure_reason_codes": sorted(failure_reasons[selector]),
             "entity_inventory_available": bool(entity_inventory_available),
             "entity_inventory_complete": entity_selector_complete[selector],
@@ -1729,10 +1808,7 @@ def _build_label_membership_evidence(
             "raw_bound_exceeded": raw_bound_exceeded,
         }
         encoded = json.dumps(
-            {
-                "model": LABEL_LOOKUP_MODEL,
-                **authority_material,
-            },
+            lookup_material,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=True,

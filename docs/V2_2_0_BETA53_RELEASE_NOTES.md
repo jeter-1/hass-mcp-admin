@@ -13,7 +13,9 @@ treats multiple bounded records for the same valid entity ID as one semantic
 record only when their complete strict canonical JSON bytes are identical.
 Mapping-key order is normalized; list order, scalar type and every field remain
 material. No trimming, case folding, coercion, repair, field merge or label
-union is performed.
+union is performed. Canonicalization enforces byte, node and depth budgets
+before serialization, so an oversized or wide record remains malformed
+evidence rather than consuming unbounded work.
 
 Raw response bounds run first. Conflicting records, unreadable labels,
 relevant malformed or unsupported values, non-finite numbers, incomplete

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -18,11 +19,15 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.dependency.index import DependencyIndex
 from ha_mcp_engineering.dependency.provider import (
     DirectHaDependencyProvider,
+    MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES,
+    MAX_ENTITY_REGISTRY_CANONICAL_RECORD_NODES,
     MAX_EXPAND_SNAPSHOT_ENTITIES,
     _build_expand_snapshot_evidence,
     _build_label_membership_evidence,
     _deduplicate_identical_entity_registry_records,
 )
+from ha_mcp_engineering.dependency.extraction import LABEL_LOOKUP_MODEL
+from ha_mcp_engineering.dependency.models import LABEL_SELECTOR_AUTHORITY_MODEL
 from ha_mcp_engineering.f3.operational_locks import (
     OperationalLockSetCalculator,
 )
@@ -195,6 +200,36 @@ class Beta53CanonicalEntityRegistryTests(unittest.TestCase):
                 diagnostic = observed.selector_authority["label_a"]
                 self.assertFalse(diagnostic.complete)
                 self.assertEqual(1, diagnostic.malformed_relevant_record_count)
+                self.assertIn(
+                    "entity_registry_malformed_relevant_record",
+                    diagnostic.failure_reason_codes,
+                )
+
+    def test_oversized_and_wide_canonical_records_fail_closed_before_dedup(self):
+        oversized = _record(
+            unrelated="x"
+            * (MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES + 1)
+        )
+        wide = _record(
+            unrelated=[
+                None
+                for _index in range(
+                    MAX_ENTITY_REGISTRY_CANONICAL_RECORD_NODES + 1
+                )
+            ]
+        )
+        for name, record in (("oversized", oversized), ("wide", wide)):
+            with self.subTest(name=name):
+                semantic = _deduplicate_identical_entity_registry_records(
+                    [copy.deepcopy(record), copy.deepcopy(record)]
+                )
+                self.assertEqual(2, len(semantic))
+                observed = _evidence(semantic)
+                diagnostic = observed.selector_authority["label_a"]
+                self.assertFalse(diagnostic.complete)
+                self.assertEqual(
+                    2, diagnostic.malformed_relevant_record_count
+                )
                 self.assertIn(
                     "entity_registry_malformed_relevant_record",
                     diagnostic.failure_reason_codes,
@@ -434,6 +469,50 @@ class Beta53CanonicalEntityRegistryTests(unittest.TestCase):
         self.assertEqual(
             "normalized_name",
             normalized.selector_authority["Label A"].lookup_mode,
+        )
+
+    def test_membership_and_authority_fingerprints_keep_distinct_models(self):
+        observed = _evidence([_record()])
+        evidence = observed.selector_authority["label_a"]
+        lookup_material = {
+            "model": LABEL_LOOKUP_MODEL,
+            "selector": "label_a",
+            "lookup_mode": "label_id",
+            "resolved_label_id": "label_a",
+            "entity_ids": ["sensor.member"],
+            "complete": True,
+        }
+        authority_material = {
+            **lookup_material,
+            "model": LABEL_SELECTOR_AUTHORITY_MODEL,
+            "failure_reason_codes": [],
+            "entity_inventory_available": True,
+            "entity_inventory_complete": True,
+            "label_inventory_available": True,
+            "label_inventory_complete": True,
+            "raw_bound_exceeded": False,
+        }
+
+        def fingerprint(material: dict) -> str:
+            return hashlib.sha256(
+                json.dumps(
+                    material,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode("utf-8")
+            ).hexdigest()
+
+        self.assertEqual(
+            fingerprint(lookup_material),
+            observed.fingerprints["label_a"],
+        )
+        self.assertEqual(
+            fingerprint(authority_material), evidence.authority_fingerprint
+        )
+        self.assertNotEqual(
+            observed.fingerprints["label_a"],
+            evidence.authority_fingerprint,
         )
 
 
