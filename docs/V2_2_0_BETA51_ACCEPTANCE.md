@@ -2,7 +2,7 @@
 
 Beta 51 materializes the HAMCP-089 production-path agreement correction. The
 complete runtime, test and replay-provenance correction is source head
-`552be8f8fbc3a0ae4e6b9736befe430b9ed25408`, integrated against protected
+`12ee70725083c5974810e8b071beb2b2be9ecf57`, integrated against protected
 `main` at `ff719b3dfa0ef9bba74244ca0204ca538f2ef4ab`; the shipped Beta 50
 baseline is `66448fc8ece110a73900909ba113eab504db20f6`. Fresh exact-head review
 of the final release-state commit remains required before merge. This unmerged
