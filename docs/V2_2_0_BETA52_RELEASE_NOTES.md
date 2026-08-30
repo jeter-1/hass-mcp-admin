@@ -1,8 +1,9 @@
 # Engineering 2.2.0-beta.52 release notes
 
 Beta 52 stages a production-path correction for literal label and finite
-entity-set target scope. Engineering 2.2.0-beta.51 remains advertised until a
-separately authorized protected promotion. Stable v1.1.2 and the 51-tool
+entity-set target scope. Engineering 2.2.0-beta.51 was the source baseline; the
+final review candidate materializes 2.2.0-beta.52, while publication remains a
+separately authorized protected operation. Stable v1.1.2 and the 51-tool
 Engineering catalog are unchanged.
 
 ## Selector-local complete evidence

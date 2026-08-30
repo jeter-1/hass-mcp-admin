@@ -5,8 +5,10 @@ the deployed Beta 51 HAMCP-089 planning failure. The source baseline is exact
 Beta 51 main and tag authority
 `d0a7e68607febe680a771cc1a802492f1638af80`; the bounded implementation and
 replay correction is commit
-`2ad1f90e9bcac7902946adac801f2ca6d4488c27`. Engineering continues to
-advertise 2.2.0-beta.51 until a separately authorized protected promotion.
+`2ad1f90e9bcac7902946adac801f2ca6d4488c27`. Engineering advertised
+2.2.0-beta.51 at the source baseline. The final review candidate
+materializes 2.2.0-beta.52 in the repository's three authoritative version
+locations; publication and deployment remain separately authorized operations.
 Stable v1.1.2, the 51-tool Engineering registration, task schema 1, approval
 authority 3, standard provider routing and fallback none remain unchanged.
 
