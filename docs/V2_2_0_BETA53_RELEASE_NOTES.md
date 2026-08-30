@@ -1,9 +1,12 @@
 # Engineering 2.2.0-beta.53 release notes
 
-Beta 53 stages canonical entity-registry deduplication and bounded selector
-authority diagnostics. Engineering remains advertised as 2.2.0-beta.52 until
-a separately authorized protected promotion. Stable v1.1.2 and all provider,
-routing, fallback, workflow, container and deployment boundaries are unchanged.
+Beta 53 is materialized with canonical entity-registry deduplication and
+bounded selector-authority diagnostics. Engineering now advertises
+2.2.0-beta.53 after the repository's protected promotion mechanism consumed
+`.release/next-version`. Stable v1.1.2 and all provider, routing, fallback,
+workflow, container and deployment-authority boundaries are unchanged. This
+source promotion does not publish an image, merge the draft change, or deploy
+the release.
 
 ## Canonical-identical registry records
 

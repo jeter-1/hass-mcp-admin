@@ -1,11 +1,11 @@
 # Engineering 2.2.0-beta.53 acceptance
 
-Beta 53 stages a narrow provider-evidence correction on shipped Beta 52
-commit `1b23baab38715ff9958e544d61ca8ac5dd208812`. Engineering continues to
-advertise 2.2.0-beta.52 until a separately authorized protected promotion.
-Stable v1.1.2, tool registration, task schema, approval authority, provider
-routing, fallback, workflows, containers and deployment metadata are
-unchanged.
+Beta 53 is materialized with a narrow provider-evidence correction based on
+shipped Beta 52 commit `1b23baab38715ff9958e544d61ca8ac5dd208812`.
+Engineering now advertises 2.2.0-beta.53 after the repository's protected
+promotion mechanism consumed `.release/next-version`. Stable v1.1.2, tool
+registration, task schema, approval authority, provider routing, fallback,
+workflows, containers and deployment authority are unchanged.
 
 This acceptance boundary does not claim that an identical entity-registry
 duplicate caused historical plan c990. The offline differential proves only
@@ -123,6 +123,7 @@ records, raw overflow, group failure and all other incomplete evidence remain
 non-actionable and conservatively locked. Final preflight drift rejects before
 provider dispatch.
 
-Source completion does not authorize merge, promotion, publication,
-deployment, live Home Assistant access, plan approval/application or the
-HAMCP-089 canary. Those remain separate authority boundaries.
+This repository source promotion does not authorize merge, publication,
+image creation, deployment, live Home Assistant access, plan
+approval/application or the HAMCP-089 canary. Those remain separate authority
+boundaries.

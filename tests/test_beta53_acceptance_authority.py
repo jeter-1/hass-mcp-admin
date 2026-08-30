@@ -42,22 +42,43 @@ class Beta53AcceptanceAuthorityTests(unittest.TestCase):
             resolution["active_release_notes"],
         )
 
-        for path in (ACCEPTANCE, RELEASE_NOTES):
-            self.assertIn(
-                "2.2.0-beta.53", path.read_text(encoding="utf-8")
-            )
-
         next_version = ROOT / ".release" / "next-version"
         config = (
             ROOT / "hass_mcp_engineering_beta" / "config.yaml"
         ).read_text(encoding="utf-8")
         if next_version.exists():
+            acceptance_text = ACCEPTANCE.read_text(encoding="utf-8")
+            release_notes_text = RELEASE_NOTES.read_text(encoding="utf-8")
+            self.assertIn("Beta 53 stages", acceptance_text)
+            self.assertIn(
+                "Engineering continues to advertise 2.2.0-beta.52",
+                acceptance_text,
+            )
+            self.assertIn("Beta 53 stages", release_notes_text)
+            self.assertIn(
+                "Engineering remains advertised as 2.2.0-beta.52",
+                release_notes_text,
+            )
             self.assertEqual(
                 "2.2.0-beta.53",
                 next_version.read_text(encoding="utf-8").strip(),
             )
             self.assertIn('version: "2.2.0-beta.52"', config)
             return
+
+        for path in (ACCEPTANCE, RELEASE_NOTES):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("Beta 53 is materialized", text)
+            self.assertIn("Engineering now advertises", text)
+            self.assertIn("2.2.0-beta.53", text)
+            self.assertNotIn(
+                "Engineering remains advertised as 2.2.0-beta.52",
+                text,
+            )
+            self.assertNotIn(
+                "Engineering continues to advertise 2.2.0-beta.52",
+                text,
+            )
 
         self.assertIn('version: "2.2.0-beta.53"', config)
         self.assertIn(
