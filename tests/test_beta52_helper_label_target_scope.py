@@ -16,6 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.dependency.index import DependencyIndex
+from ha_mcp_engineering.dependency.extraction import (
+    extract_document_with_obligations,
+    resolve_literal_label_obligations,
+)
+from ha_mcp_engineering.dependency.obligation_ledger import (
+    MAX_TEMPLATE_CANDIDATES,
+)
 from ha_mcp_engineering.dependency.provider import (
     DirectHaDependencyProvider,
     MAX_LABEL_MEMBERSHIP,
@@ -30,6 +37,7 @@ from ha_mcp_engineering.f3_configuration.locks import (
 )
 from ha_mcp_engineering.governance.helper_dependency import (
     HelperDependencyRiskService,
+    build_helper_dependency_risk_binding,
     helper_dependency_risk_assessment,
 )
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
@@ -44,6 +52,7 @@ from tests.test_beta37_exact_helper_state import (
     FakeHelperStateGateway,
     UnusedLegacyGateway,
 )
+from tests.test_beta45_helper_risk_exclusion_provenance import _snapshot
 
 
 REPLAY = (
@@ -80,6 +89,109 @@ class Beta51LabelScopeReplayWebSocket(CapturedBeta50ReplayWebSocket):
 
 
 class Beta52LabelMembershipEvidenceTests(unittest.TestCase):
+    def test_overflow_preserves_independently_proven_exact_target(self):
+        target = "input_boolean.zz_explicit_target"
+        config = {
+            "condition": [
+                {
+                    "condition": "template",
+                    "value_template": (
+                        "{% set candidates = label_entities('first') "
+                        "+ label_entities('second') "
+                        "+ ['input_boolean.zz_explicit_target'] %}"
+                        "{% for entity in candidates %}"
+                        "{{ states(entity) }}"
+                        "{% endfor %}"
+                    ),
+                }
+            ],
+            "action": [
+                {
+                    "service": "cover.open_cover",
+                    "target": {"entity_id": "cover.synthetic_garage"},
+                }
+            ],
+        }
+        obligations = extract_document_with_obligations(
+            source_type="automation",
+            source_id="label_union_overflow",
+            source_entity_id="automation.label_union_overflow",
+            source_name="Label union overflow",
+            source_state="on",
+            config=config,
+        )[2]
+        members = {
+            "first": tuple(
+                f"binary_sensor.first_{index:03d}"
+                for index in range(MAX_LABEL_MEMBERSHIP)
+            ),
+            "second": tuple(
+                f"binary_sensor.second_{index:03d}"
+                for index in range(MAX_LABEL_MEMBERSHIP)
+            ),
+        }
+        resolved = resolve_literal_label_obligations(
+            obligations,
+            label_memberships=members,
+            label_membership_fingerprints={
+                selector: hashlib.sha256(_canonical(values)).hexdigest()
+                for selector, values in members.items()
+            },
+            label_membership_truncated=(),
+            label_lookup_resolutions={
+                selector: ("label_id", selector) for selector in members
+            },
+            label_registry_complete=True,
+            label_membership_complete={
+                selector: True for selector in members
+            },
+        )
+        failures = [
+            item
+            for item in resolved
+            if item.reason_code
+            == "literal_label_candidate_union_limit_exceeded"
+        ]
+        self.assertEqual(4, len(failures))
+        for failure in failures:
+            self.assertIn(target, failure.exact_entity_ids)
+            self.assertTrue(failure.coverage_failure_authority)
+            self.assertLessEqual(
+                len(failure.exact_entity_ids), MAX_TEMPLATE_CANDIDATES
+            )
+
+        binding = build_helper_dependency_risk_binding(
+            _snapshot(
+                resolved,
+                source_id="label_union_overflow",
+            ),
+            entity_id=target,
+            index_metadata={
+                "freshness": "current",
+                "evidence_stale": False,
+                "invalidated": False,
+            },
+        )
+        self.assertFalse(binding["coverage_complete"])
+        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(
+            binding["dependency_lock_projection"]
+            ["conservative_helper_dependency"]
+        )
+        operation = SimpleNamespace(
+            validate=lambda: None,
+            operation="set_input_boolean_state",
+            target=SimpleNamespace(target_id=target),
+            authoritative_provider_slug="direct_home_assistant_state",
+            baseline={"dependency_risk": binding},
+        )
+        lock_keys = {
+            item.key
+            for item in OperationalLockSetCalculator().calculate(operation)
+        }
+        self.assertIn(f"helper_dependency:{target}", lock_keys)
+        self.assertIn(unconstrained_helper_dependency_lock_key(), lock_keys)
+
     def test_unrelated_malformed_identity_does_not_poison_selector(self):
         evidence = _build_label_membership_evidence(
             ["reviewed_label"],

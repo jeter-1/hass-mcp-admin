@@ -1876,9 +1876,21 @@ def resolve_literal_label_obligations(
             for selector in selectors
             for entity_id in label_memberships[selector]
         }
+        independent_candidates = tuple(
+            sorted(
+                set(item.exact_entity_ids),
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
+        label_only_candidates = tuple(
+            sorted(
+                label_candidates.difference(independent_candidates),
+                key=lambda value: value.encode("utf-8"),
+            )
+        )
         candidates = tuple(
             sorted(
-                set(item.exact_entity_ids).union(label_candidates),
+                set(independent_candidates).union(label_only_candidates),
                 key=lambda value: value.encode("utf-8"),
             )
         )
@@ -1916,14 +1928,29 @@ def resolve_literal_label_obligations(
             )
         )
         if len(candidates) > MAX_TEMPLATE_CANDIDATES:
+            # Bounding the completed label union must never erase an exact
+            # inclusion proved independently of label expansion.  Reserve
+            # capacity for that evidence first, then fill the remaining
+            # bounded projection deterministically with label-only members.
+            retained_candidates = tuple(
+                sorted(
+                    independent_candidates
+                    + label_only_candidates[
+                        : max(
+                            0,
+                            MAX_TEMPLATE_CANDIDATES
+                            - len(independent_candidates),
+                        )
+                    ],
+                    key=lambda value: value.encode("utf-8"),
+                )
+            )[:MAX_TEMPLATE_CANDIDATES]
             resolved.append(
                 replace(
                     item,
                     outcome="coverage_failure",
                     reason_code="literal_label_candidate_union_limit_exceeded",
-                    exact_entity_ids=tuple(
-                        candidates[:MAX_TEMPLATE_CANDIDATES]
-                    ),
+                    exact_entity_ids=retained_candidates,
                     context_provenance=bound_context,
                     limit_exceeded=True,
                     lock_projection="coverage_failure",
