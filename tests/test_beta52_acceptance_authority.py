@@ -10,6 +10,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 ACCEPTANCE = ROOT / "docs" / "V2_2_0_BETA52_ACCEPTANCE.md"
+SHIPPED_TAG = "v2.2.0-beta.52"
 SOURCE_AUTHORITY_PATHS = (
     "hass_mcp_engineering_beta/ha_mcp_engineering/dependency",
     "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_dependency.py",
@@ -20,7 +21,7 @@ SOURCE_AUTHORITY_PATHS = (
 
 
 class Beta52AcceptanceAuthorityTests(unittest.TestCase):
-    def test_acceptance_commit_resolves_to_exact_candidate_source_tree(self):
+    def test_acceptance_commit_resolves_to_exact_shipped_source(self):
         text = ACCEPTANCE.read_text(encoding="utf-8")
         match = re.search(
             r"replay correction source authority is exact commit\s+`([0-9a-f]{40})`",
@@ -42,7 +43,7 @@ class Beta52AcceptanceAuthorityTests(unittest.TestCase):
                 "diff",
                 "--exit-code",
                 source_commit,
-                "HEAD",
+                SHIPPED_TAG,
                 "--",
                 *SOURCE_AUTHORITY_PATHS,
             ],

@@ -2131,7 +2131,7 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             "dependency_risk"
         ]
         self.assertEqual(
-            "helper-dependency-risk-v11", standard_binding["model"]
+            "helper-dependency-risk-v12", standard_binding["model"]
         )
         self.assertTrue(standard["approval_actionable"])
         self.assertEqual("low", standard["risk"]["level"])
@@ -2362,15 +2362,15 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, self.helper.dispatch_count)
 
-    def test_v3_through_v10_are_readable_but_non_authoritative(self):
+    def test_v3_through_v11_are_readable_but_non_authoritative(self):
         self.assertEqual(
-            "helper-dependency-risk-v11", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v12", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v11"}),
+            frozenset({"helper-dependency-risk-v12"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 11):
+        for version in range(3, 12):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

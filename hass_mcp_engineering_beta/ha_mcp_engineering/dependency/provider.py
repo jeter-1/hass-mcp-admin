@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import hashlib
 import heapq
 import json
+import math
 from pathlib import Path
 import re
 import time
@@ -44,6 +45,9 @@ from .models import (
     AutomationReadFailure,
     AutomationActionRiskProfile,
     DependencyScanResult,
+    LABEL_SELECTOR_AUTHORITY_MODEL,
+    LABEL_SELECTOR_DIAGNOSTIC_MODEL,
+    LabelSelectorAuthorityEvidence,
     OBLIGATION_LEDGER_MODEL,
     SOURCE_TYPES,
     SourceCoverageItem,
@@ -57,6 +61,10 @@ MAX_LABEL_REGISTRY_ENTRIES = 1_000
 MAX_LABEL_MEMBERSHIP = 128
 MAX_LITERAL_LABEL_SELECTORS = 256
 MAX_ENTITY_LABELS = 64
+MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES = 65_536
+MAX_ENTITY_REGISTRY_CANONICAL_RECORD_NODES = 4_096
+MAX_ENTITY_REGISTRY_CANONICAL_RECORD_DEPTH = 64
+MAX_ENTITY_REGISTRY_CANONICAL_TOTAL_BYTES = 16_777_216
 MAX_BLUEPRINT_RESOLUTION_NODES = 10_000
 MAX_BLUEPRINT_RESOLUTION_DEPTH = 64
 MAX_BLUEPRINT_SOURCE_BYTES = 1_048_576
@@ -81,6 +89,7 @@ class LabelMembershipEvidence:
     truncated: tuple[str, ...]
     lookup_resolutions: dict[str, tuple[str, str | None]]
     selector_complete: dict[str, bool]
+    selector_authority: dict[str, LabelSelectorAuthorityEvidence]
     complete: bool
 
     def _legacy_values(self) -> tuple[Any, ...]:
@@ -201,6 +210,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         label_memberships: dict[str, tuple[str, ...]] = {}
         label_membership_fingerprints: dict[str, str] = {}
         label_membership_complete: dict[str, bool] = {}
+        label_selector_authority: dict[
+            str, LabelSelectorAuthorityEvidence
+        ] = {}
         label_lookup_resolutions: dict[
             str, tuple[str, str | None]
         ] = {}
@@ -290,9 +302,13 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             registry_warning.append("Entity registry could not be read; target metadata is partial.")
             METRICS.record_provider_result(self.provider_id, "failed", dispatched=True)
 
+        semantic_registry = _deduplicate_identical_entity_registry_records(
+            registry
+        )
+
         expand_snapshot_evidence = _build_expand_snapshot_evidence(
             states=states,
-            entity_registry=registry,
+            entity_registry=semantic_registry,
             entity_registry_complete=entity_registry_complete,
         )
 
@@ -309,7 +325,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 "friendly_name": redact_data(attrs.get("friendly_name"), secret=self.secret, max_string=160),
                 "state": redact_data(state.get("state"), secret=self.secret, max_string=128),
             }
-        for entry in registry:
+        for entry in semantic_registry:
+            if not isinstance(entry, dict):
+                continue
             entity_id = str(entry.get("entity_id", "")).lower()
             if not entity_id:
                 continue
@@ -682,7 +700,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         )
         label_warning: list[str] = []
         if literal_label_selectors:
+            selector_inventory_complete = True
             if len(literal_label_selectors) > MAX_LITERAL_LABEL_SELECTORS:
+                selector_inventory_complete = False
                 literal_label_selectors = literal_label_selectors[
                     :MAX_LITERAL_LABEL_SELECTORS
                 ]
@@ -691,6 +711,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 )
             label_registry: list[Any] = []
             label_inventory_available = False
+            label_inventory_raw_bound_exceeded = False
             try:
                 label_registry = await request(
                     "label_registry_inventory",
@@ -704,6 +725,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                         "Label registry returned an invalid response."
                     )
                 elif len(label_registry) > MAX_LABEL_REGISTRY_ENTRIES:
+                    label_inventory_raw_bound_exceeded = True
                     label_registry = sorted(
                         label_registry,
                         key=lambda item: json.dumps(
@@ -725,6 +747,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 label_registry=label_registry,
                 entity_inventory_available=entity_registry_complete,
                 label_inventory_available=label_inventory_available,
+                selector_inventory_complete=selector_inventory_complete,
+                label_inventory_raw_bound_exceeded=(
+                    label_inventory_raw_bound_exceeded
+                ),
             )
             (
                 label_memberships,
@@ -735,6 +761,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             ) = label_evidence
             label_membership_complete = dict(
                 label_evidence.selector_complete
+            )
+            label_selector_authority = dict(
+                label_evidence.selector_authority
             )
             label_registry_complete = bool(
                 membership_complete
@@ -925,6 +954,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 label_membership_truncated
             ),
             label_registry_complete=label_registry_complete,
+            label_selector_authority=label_selector_authority,
             obligations=obligations,
             obligation_ledger_model=OBLIGATION_LEDGER_MODEL,
         )
@@ -1236,6 +1266,181 @@ def _build_expand_snapshot_evidence(
     )
 
 
+def _strict_canonical_json_bytes(value: Any) -> bytes:
+    """Return complete canonical JSON bytes without coercion or repair."""
+
+    encoded_size = 0
+    node_count = 0
+
+    def charge(size: int) -> None:
+        nonlocal encoded_size
+        encoded_size += size
+        if encoded_size > MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES:
+            raise ValueError("canonical JSON record exceeds the byte bound")
+
+    def count_node() -> None:
+        nonlocal node_count
+        node_count += 1
+        if node_count > MAX_ENTITY_REGISTRY_CANONICAL_RECORD_NODES:
+            raise ValueError("canonical JSON record exceeds the node bound")
+
+    def charge_string(value: str) -> None:
+        charge(2)
+        for character in value:
+            codepoint = ord(character)
+            if codepoint in {0x22, 0x5C} or codepoint in {
+                0x08,
+                0x09,
+                0x0A,
+                0x0C,
+                0x0D,
+            }:
+                charge(2)
+            elif codepoint < 0x20:
+                charge(6)
+            elif codepoint <= 0x7F:
+                charge(1)
+            elif codepoint <= 0x7FF:
+                charge(2)
+            elif 0xD800 <= codepoint <= 0xDFFF:
+                raise TypeError("canonical JSON strings must be valid Unicode")
+            elif codepoint <= 0xFFFF:
+                charge(3)
+            else:
+                charge(4)
+
+    def validate(item: Any, *, depth: int = 0) -> None:
+        if depth > MAX_ENTITY_REGISTRY_CANONICAL_RECORD_DEPTH:
+            raise ValueError("canonical JSON nesting exceeds the bound")
+        count_node()
+        if isinstance(item, dict):
+            if any(type(key) is not str for key in item):
+                raise TypeError("canonical JSON mapping keys must be strings")
+            charge(2)
+            for index, (key, nested) in enumerate(item.items()):
+                if index:
+                    charge(1)
+                count_node()
+                charge_string(key)
+                charge(1)
+                validate(nested, depth=depth + 1)
+            return
+        if isinstance(item, list):
+            charge(2)
+            for index, nested in enumerate(item):
+                if index:
+                    charge(1)
+                validate(nested, depth=depth + 1)
+            return
+        if item is None:
+            charge(4)
+            return
+        if type(item) is str:
+            charge_string(item)
+            return
+        if type(item) is bool:
+            charge(4 if item else 5)
+            return
+        if type(item) is int:
+            charge(len(str(item)))
+            return
+        if type(item) is float and math.isfinite(item):
+            charge(
+                len(
+                    json.dumps(
+                        item,
+                        allow_nan=False,
+                        separators=(",", ":"),
+                    )
+                )
+            )
+            return
+        raise TypeError("unsupported canonical JSON value")
+
+    validate(value)
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    if len(encoded) > MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES:
+        raise ValueError("canonical JSON record exceeds the byte bound")
+    return encoded
+
+
+def _bounded_registry_canonical_bytes(
+    value: Any,
+    *,
+    retained_bytes: int,
+) -> tuple[bytes | None, int, bool]:
+    """Canonicalize one record without exceeding aggregate retention."""
+
+    try:
+        canonical = _strict_canonical_json_bytes(value)
+    except (TypeError, ValueError, OverflowError):
+        return None, retained_bytes, False
+    if len(canonical) > (
+        MAX_ENTITY_REGISTRY_CANONICAL_TOTAL_BYTES - retained_bytes
+    ):
+        return None, retained_bytes, True
+    return canonical, retained_bytes + len(canonical), False
+
+
+def _deduplicate_identical_entity_registry_records(
+    entity_registry: list[Any],
+) -> list[Any]:
+    """Collapse only bounded, fully canonical-identical entity records.
+
+    The raw response bound is authoritative and is evaluated before this
+    helper is called.  Invalid, unsupported, or conflicting records are kept
+    byte-for-byte in their original order so downstream completeness checks
+    continue to fail closed.
+    """
+
+    if len(entity_registry) > MAX_EXPAND_SNAPSHOT_ENTITIES:
+        return entity_registry
+
+    groups: dict[str, list[tuple[int, bytes | None]]] = defaultdict(list)
+    canonical_retained_bytes = 0
+    for index, item in enumerate(entity_registry):
+        if not isinstance(item, dict):
+            continue
+        entity_id = item.get("entity_id")
+        if not isinstance(entity_id, str) or not valid_entity_id(entity_id):
+            continue
+        canonical, canonical_retained_bytes, _bound_exceeded = (
+            _bounded_registry_canonical_bytes(
+                item,
+                retained_bytes=canonical_retained_bytes,
+            )
+        )
+        groups[entity_id].append((index, canonical))
+
+    duplicate_indexes: set[int] = set()
+    for records in groups.values():
+        if len(records) < 2:
+            continue
+        canonical_values = {canonical for _, canonical in records}
+        if None not in canonical_values and len(canonical_values) == 1:
+            duplicate_indexes.update(index for index, _ in records[1:])
+
+    if not duplicate_indexes:
+        return entity_registry
+    return [
+        item
+        for index, item in enumerate(entity_registry)
+        if index not in duplicate_indexes
+    ]
+
+
+def _selector_identity_fingerprint(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 def _build_label_membership_evidence(
     selectors: list[str],
     *,
@@ -1243,6 +1448,8 @@ def _build_label_membership_evidence(
     label_registry: list[Any],
     entity_inventory_available: bool = True,
     label_inventory_available: bool = True,
+    selector_inventory_complete: bool = True,
+    label_inventory_raw_bound_exceeded: bool = False,
 ) -> LabelMembershipEvidence:
     """Resolve literal labels with admitted Home Assistant lookup semantics.
 
@@ -1253,11 +1460,24 @@ def _build_label_membership_evidence(
     called.
     """
 
+    distinct_selectors = sorted(
+        {
+            item
+            for item in selectors
+            if isinstance(item, str) and item
+        },
+        key=lambda item: item.encode("utf-8"),
+    )
+    selector_bound_exceeded = bool(
+        len(distinct_selectors) > MAX_LITERAL_LABEL_SELECTORS
+        or not selector_inventory_complete
+    )
     ordered_selectors = tuple(
-        sorted(set(selectors), key=lambda item: item.encode("utf-8"))
+        distinct_selectors[:MAX_LITERAL_LABEL_SELECTORS]
     )
     label_inventory_bounded = bool(
         label_inventory_available
+        and not label_inventory_raw_bound_exceeded
         and len(label_registry) <= MAX_LABEL_REGISTRY_ENTRIES
     )
     retained_label_registry = label_registry[:MAX_LABEL_REGISTRY_ENTRIES]
@@ -1292,7 +1512,10 @@ def _build_label_membership_evidence(
 
     label_lookup_resolutions: dict[str, tuple[str, str | None]] = {}
     label_ids_by_selector: dict[str, str | None] = {}
-    selector_complete: dict[str, bool] = {}
+    label_selector_complete: dict[str, bool] = {}
+    failure_reasons: dict[str, set[str]] = {
+        selector: set() for selector in ordered_selectors
+    }
     for selector in ordered_selectors:
         exact_matches = [
             (label_id, name, valid)
@@ -1302,12 +1525,32 @@ def _build_label_membership_evidence(
         if exact_matches:
             label_ids_by_selector[selector] = selector
             label_lookup_resolutions[selector] = ("label_id", selector)
-            selector_complete[selector] = bool(
+            label_selector_complete[selector] = bool(
                 label_inventory_bounded
                 and len(exact_matches) == 1
                 and exact_matches[0][2]
                 and label_id_counts[selector] == 1
             )
+            if label_inventory_raw_bound_exceeded:
+                failure_reasons[selector].add(
+                    "label_registry_raw_bound_exceeded"
+                )
+            elif not label_inventory_available:
+                failure_reasons[selector].add(
+                    "label_inventory_unavailable"
+                )
+            elif len(label_registry) > MAX_LABEL_REGISTRY_ENTRIES:
+                failure_reasons[selector].add(
+                    "label_registry_raw_bound_exceeded"
+                )
+            elif not exact_matches[0][2]:
+                failure_reasons[selector].add(
+                    "label_identity_malformed"
+                )
+            elif len(exact_matches) != 1 or label_id_counts[selector] != 1:
+                failure_reasons[selector].add(
+                    "label_identity_conflicting"
+                )
             continue
 
         normalized_selector = selector.casefold().replace(" ", "")
@@ -1329,12 +1572,28 @@ def _build_label_membership_evidence(
                 "normalized_name",
                 resolved_label_id,
             )
-            selector_complete[selector] = bool(
+            label_selector_complete[selector] = bool(
                 label_inventory_canonical
                 and len(name_matches) == 1
                 and name_matches[0][2]
                 and resolved_label_id is not None
             )
+            if label_inventory_raw_bound_exceeded:
+                failure_reasons[selector].add(
+                    "label_registry_raw_bound_exceeded"
+                )
+            elif not label_inventory_available:
+                failure_reasons[selector].add(
+                    "label_inventory_unavailable"
+                )
+            elif len(label_registry) > MAX_LABEL_REGISTRY_ENTRIES:
+                failure_reasons[selector].add(
+                    "label_registry_raw_bound_exceeded"
+                )
+            elif not label_selector_complete[selector]:
+                failure_reasons[selector].add(
+                    "label_identity_conflicting_or_malformed"
+                )
             continue
 
         label_ids_by_selector[selector] = None
@@ -1342,21 +1601,55 @@ def _build_label_membership_evidence(
         # Missing-label exclusion depends on the complete registry.  Exact-ID
         # selection above is the only lookup whose precedence can isolate it
         # from a malformed unrelated label record.
-        selector_complete[selector] = label_inventory_canonical
+        label_selector_complete[selector] = label_inventory_canonical
+        if label_inventory_raw_bound_exceeded:
+            failure_reasons[selector].add(
+                "label_registry_raw_bound_exceeded"
+            )
+        elif not label_inventory_available:
+            failure_reasons[selector].add("label_inventory_unavailable")
+        elif len(label_registry) > MAX_LABEL_REGISTRY_ENTRIES:
+            failure_reasons[selector].add(
+                "label_registry_raw_bound_exceeded"
+            )
+        elif not label_inventory_canonical:
+            failure_reasons[selector].add(
+                "label_identity_conflicting_or_malformed"
+            )
 
-    if not entity_inventory_available:
-        for selector in selector_complete:
-            selector_complete[selector] = False
+    if selector_bound_exceeded:
+        for selector in ordered_selectors:
+            failure_reasons[selector].add(
+                "literal_label_selector_bound_exceeded"
+            )
 
     memberships: dict[str, set[str]] = {
         selector: set() for selector in ordered_selectors
     }
-    if len(entity_registry) > MAX_EXPAND_SNAPSHOT_ENTITIES:
-        for selector in selector_complete:
-            selector_complete[selector] = False
+    raw_entity_record_count = len(entity_registry)
+    raw_bound_exceeded = bool(
+        raw_entity_record_count > MAX_EXPAND_SNAPSHOT_ENTITIES
+    )
+    entity_selector_complete: dict[str, bool] = {
+        selector: bool(entity_inventory_available and not raw_bound_exceeded)
+        for selector in ordered_selectors
+    }
+    identical_duplicates: Counter[str] = Counter()
+    conflicting_duplicates: Counter[str] = Counter()
+    malformed_relevant: Counter[str] = Counter()
+    if not entity_inventory_available:
+        for selector in ordered_selectors:
+            failure_reasons[selector].add(
+                "entity_inventory_unavailable"
+            )
+    if raw_bound_exceeded:
+        for selector in ordered_selectors:
+            failure_reasons[selector].add(
+                "entity_registry_raw_bound_exceeded"
+            )
 
         def canonical_registry_key(value: Any) -> tuple[Any, ...]:
-            """Order bounded label evidence by complete used semantics."""
+            """Order an oversized raw response without semantic repair."""
 
             if not isinstance(value, dict):
                 return (1, b"", ())
@@ -1380,7 +1673,18 @@ def _build_label_membership_evidence(
                     {label.encode("utf-8") for label in raw_labels}
                 )
             )
-            return (0, raw_entity_id.encode("utf-8"), labels)
+            try:
+                canonical_digest = hashlib.sha256(
+                    _strict_canonical_json_bytes(value)
+                ).digest()
+            except (TypeError, ValueError, OverflowError):
+                canonical_digest = b""
+            return (
+                0,
+                raw_entity_id.encode("utf-8"),
+                labels,
+                canonical_digest,
+            )
 
         # ``nsmallest`` traverses the supplied snapshot while retaining only
         # the admitted prefix.  Equivalent oversized registries therefore
@@ -1393,14 +1697,32 @@ def _build_label_membership_evidence(
     else:
         retained_entity_registry = entity_registry
 
-    parsed_entities: list[tuple[str | None, set[str] | None]] = []
-    entity_id_counts: Counter[str] = Counter()
+    canonical_unique_records: set[bytes] = set()
+    canonical_groups: dict[
+        str, list[tuple[bytes | None, frozenset[str]]]
+    ] = defaultdict(list)
+    canonical_retained_bytes = 0
+    canonical_byte_bound_exceeded = False
     for item in retained_entity_registry:
         if not isinstance(item, dict):
-            parsed_entities.append((None, None))
-            for selector in selector_complete:
-                selector_complete[selector] = False
+            for selector in ordered_selectors:
+                entity_selector_complete[selector] = False
+                malformed_relevant[selector] += 1
+                failure_reasons[selector].add(
+                    "entity_registry_malformed_relevant_record"
+                )
             continue
+        canonical, canonical_retained_bytes, bound_exceeded = (
+            _bounded_registry_canonical_bytes(
+                item,
+                retained_bytes=canonical_retained_bytes,
+            )
+        )
+        canonical_byte_bound_exceeded = bool(
+            canonical_byte_bound_exceeded or bound_exceeded
+        )
+        if canonical is not None:
+            canonical_unique_records.add(canonical)
         raw_labels = item.get("labels", [])
         if (
             not isinstance(raw_labels, list)
@@ -1412,10 +1734,13 @@ def _build_label_membership_evidence(
                 for label in raw_labels
             )
         ):
-            parsed_entities.append((None, None))
             # An unreadable label collection could contain any admitted label.
-            for selector in selector_complete:
-                selector_complete[selector] = False
+            for selector in ordered_selectors:
+                entity_selector_complete[selector] = False
+                malformed_relevant[selector] += 1
+                failure_reasons[selector].add(
+                    "entity_registry_malformed_relevant_record"
+                )
             continue
         labels = set(raw_labels)
         raw_entity_id = item.get("entity_id")
@@ -1425,51 +1750,103 @@ def _build_label_membership_evidence(
             and valid_entity_id(raw_entity_id)
             else None
         )
-        parsed_entities.append((entity_id, labels))
-        if entity_id is not None:
-            entity_id_counts[entity_id] += 1
-
-    for entity_id, labels in parsed_entities:
-        if labels is None:
-            continue
         relevant_selectors = [
             selector
             for selector, label_id in label_ids_by_selector.items()
             if label_id is not None and label_id in labels
         ]
-        if not relevant_selectors:
-            # A canonical bounded empty/nonmatching label set proves this
-            # malformed identity cannot be a member of the selected label.
-            continue
         if entity_id is None:
             for selector in relevant_selectors:
-                selector_complete[selector] = False
+                entity_selector_complete[selector] = False
+                malformed_relevant[selector] += 1
+                failure_reasons[selector].add(
+                    "entity_registry_malformed_relevant_record"
+                )
             continue
+        canonical_groups[entity_id].append((canonical, frozenset(labels)))
+
+    if canonical_byte_bound_exceeded:
+        for selector in ordered_selectors:
+            entity_selector_complete[selector] = False
+            failure_reasons[selector].add(
+                "entity_registry_canonical_byte_bound_exceeded"
+            )
+
+    for entity_id, records in canonical_groups.items():
+        variants = {canonical for canonical, _labels in records}
+        labels_union = set().union(
+            *(labels for _canonical, labels in records)
+        )
+        relevant_selectors = [
+            selector
+            for selector, label_id in label_ids_by_selector.items()
+            if label_id is not None and label_id in labels_union
+        ]
         for selector in relevant_selectors:
             memberships[selector].add(entity_id)
-            if entity_id_counts[entity_id] != 1:
-                # Duplicate registry identities are internally inconsistent
-                # whenever they claim membership in this selector.
-                selector_complete[selector] = False
+        if None in variants:
+            malformed_count = sum(
+                canonical is None for canonical, _labels in records
+            )
+            for selector in relevant_selectors:
+                entity_selector_complete[selector] = False
+                malformed_relevant[selector] += malformed_count
+                failure_reasons[selector].add(
+                    "entity_registry_malformed_relevant_record"
+                )
+            continue
+        if len(variants) == 1:
+            collapsed = max(0, len(records) - 1)
+            for selector in relevant_selectors:
+                identical_duplicates[selector] += collapsed
+            continue
+        conflict_count = max(1, len(records) - 1)
+        for selector in relevant_selectors:
+            entity_selector_complete[selector] = False
+            conflicting_duplicates[selector] += conflict_count
+            failure_reasons[selector].add(
+                "entity_registry_conflicting_duplicate"
+            )
 
     retained: dict[str, tuple[str, ...]] = {}
     fingerprints: dict[str, str] = {}
+    selector_authority: dict[str, LabelSelectorAuthorityEvidence] = {}
+    selector_complete: dict[str, bool] = {}
     truncated: list[str] = []
     for selector in ordered_selectors:
         ordered = sorted(
             memberships[selector], key=lambda item: item.encode("utf-8")
         )
         if len(ordered) > MAX_LABEL_MEMBERSHIP:
-            selector_complete[selector] = False
+            entity_selector_complete[selector] = False
+            failure_reasons[selector].add(
+                "label_membership_bound_exceeded"
+            )
+        selector_complete[selector] = bool(
+            label_selector_complete[selector]
+            and entity_selector_complete[selector]
+            and not selector_bound_exceeded
+        )
+        lookup_material = {
+            "model": LABEL_LOOKUP_MODEL,
+            "selector": selector,
+            "lookup_mode": label_lookup_resolutions[selector][0],
+            "resolved_label_id": label_lookup_resolutions[selector][1],
+            "entity_ids": ordered,
+            "complete": selector_complete[selector],
+        }
+        authority_material = {
+            **lookup_material,
+            "model": LABEL_SELECTOR_AUTHORITY_MODEL,
+            "failure_reason_codes": sorted(failure_reasons[selector]),
+            "entity_inventory_available": bool(entity_inventory_available),
+            "entity_inventory_complete": entity_selector_complete[selector],
+            "label_inventory_available": bool(label_inventory_available),
+            "label_inventory_complete": label_selector_complete[selector],
+            "raw_bound_exceeded": raw_bound_exceeded,
+        }
         encoded = json.dumps(
-            {
-                "model": LABEL_LOOKUP_MODEL,
-                "selector": selector,
-                "lookup_mode": label_lookup_resolutions[selector][0],
-                "resolved_label_id": label_lookup_resolutions[selector][1],
-                "entity_ids": ordered,
-                "complete": bool(selector_complete[selector]),
-            },
+            lookup_material,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=True,
@@ -1482,6 +1859,74 @@ def _build_label_membership_evidence(
             retained[selector] = tuple(ordered[:MAX_LABEL_MEMBERSHIP])
         else:
             retained[selector] = tuple(ordered)
+        authority_fingerprint = hashlib.sha256(
+            json.dumps(
+                authority_material,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        anomaly_material = {
+            "model": LABEL_SELECTOR_DIAGNOSTIC_MODEL,
+            "selector_fingerprint": _selector_identity_fingerprint(
+                selector
+            ),
+            "raw_entity_record_count": raw_entity_record_count,
+            "canonical_unique_record_count": len(
+                canonical_unique_records
+            ),
+            "identical_duplicates_collapsed": identical_duplicates[
+                selector
+            ],
+            "conflicting_duplicate_count": conflicting_duplicates[
+                selector
+            ],
+            "malformed_relevant_record_count": malformed_relevant[
+                selector
+            ],
+            "raw_bound_exceeded": raw_bound_exceeded,
+            "canonical_byte_bound_exceeded": (
+                canonical_byte_bound_exceeded
+            ),
+        }
+        anomaly_fingerprint = hashlib.sha256(
+            json.dumps(
+                anomaly_material,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        selector_authority[selector] = LabelSelectorAuthorityEvidence(
+            selector_fingerprint=(
+                _selector_identity_fingerprint(selector) or ""
+            ),
+            lookup_mode=label_lookup_resolutions[selector][0],
+            resolved_label_fingerprint=_selector_identity_fingerprint(
+                label_lookup_resolutions[selector][1]
+            ),
+            complete=selector_complete[selector],
+            failure_reason_codes=tuple(
+                sorted(failure_reasons[selector])
+            ),
+            membership_count=len(ordered),
+            membership_fingerprint=fingerprints[selector],
+            candidate_count=len(ordered),
+            candidate_complete=selector_complete[selector],
+            entity_inventory_available=bool(entity_inventory_available),
+            entity_inventory_complete=entity_selector_complete[selector],
+            label_inventory_available=bool(label_inventory_available),
+            label_inventory_complete=label_selector_complete[selector],
+            raw_entity_record_count=raw_entity_record_count,
+            canonical_unique_record_count=len(canonical_unique_records),
+            identical_duplicates_collapsed=identical_duplicates[selector],
+            conflicting_duplicate_count=conflicting_duplicates[selector],
+            malformed_relevant_record_count=malformed_relevant[selector],
+            raw_bound_exceeded=raw_bound_exceeded,
+            authority_fingerprint=authority_fingerprint,
+            anomaly_fingerprint=anomaly_fingerprint,
+        )
     complete = bool(
         ordered_selectors
         and all(selector_complete.values())
@@ -1493,5 +1938,6 @@ def _build_label_membership_evidence(
         truncated=tuple(sorted(truncated)),
         lookup_resolutions=label_lookup_resolutions,
         selector_complete=selector_complete,
+        selector_authority=selector_authority,
         complete=complete,
     )
