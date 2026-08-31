@@ -93,12 +93,21 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         cls.steps = cls.promote["steps"]
         cls.text = PUBLISH_PATH.read_text(encoding="utf-8")
 
-    def test_only_main_push_can_publish_a_release(self):
+    def test_only_main_push_or_guarded_manual_recovery_can_publish(self):
         events = workflow_events(self.workflow)
-        self.assertEqual(events, {"push": {"branches": ["main"]}})
+        self.assertEqual(
+            set(events),
+            {"push", "workflow_dispatch"},
+        )
+        self.assertEqual(events["push"], {"branches": ["main"]})
+        dispatch = events["workflow_dispatch"]
+        self.assertEqual(set(dispatch), {"inputs"})
+        self.assertEqual(set(dispatch["inputs"]), {"release_sha", "expected_version"})
+        for value in dispatch["inputs"].values():
+            self.assertIs(value["required"], True)
+            self.assertEqual(value["type"], "string")
         self.assertEqual(self.workflow["permissions"], {})
         self.assertNotIn("push:\n    tags:", self.text)
-        self.assertNotIn("workflow_dispatch", self.text)
         self.assertEqual(
             self.workflow["concurrency"],
             {
@@ -348,16 +357,21 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 self.assertEqual(result.returncode == 0, succeeds, result.stderr)
 
     def test_reviewed_release_transition_is_detected_and_validated(self):
-        detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
+        detect_step = self.jobs["detect-release"]["steps"][-1]
+        detect = str(detect_step["run"])
         prepare = str(next(
             step["run"]
             for step in self.steps
             if step.get("name") == "Validate protected release commit"
         ))
-        self.assertIn("github.event.before", detect)
+        self.assertEqual(detect_step["env"]["EVENT_BEFORE"], "${{ github.event.before }}")
         self.assertIn("current_version", detect)
         self.assertIn("previous_version", detect)
         self.assertIn("release_action=publish", detect)
+        self.assertIn('EVENT_ACTOR" != "jeter-1', detect)
+        self.assertIn('EVENT_REF" != "refs/heads/main', detect)
+        self.assertIn("git merge-base --is-ancestor", detect)
+        self.assertIn("git diff --quiet", detect)
         self.assertIn(".release/next-version", prepare)
         self.assertNotIn("staged_version", prepare)
         self.assertIn('version="$current_version"', prepare)
@@ -391,6 +405,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         previous_version="2.0.0-rc2-dev16",
         previous_staged_version=None,
         current_staged_version=None,
+        event_name="push",
+        event_actor="jeter-1",
+        event_ref="refs/heads/main",
+        event_expected_version=None,
+        manual_target="release",
+        runtime_drift=False,
         expect_success=True,
     ):
         bash = shutil.which("bash")
@@ -410,7 +430,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                     check=True,
                 ).stdout.strip()
 
-            git("init")
+            git("init", "-b", "main")
             git("config", "user.name", "Detector Fixture")
             git("config", "user.email", "detector-fixture@example.invalid")
             config.write_text(
@@ -441,14 +461,60 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 declaration.unlink()
             git("add", "-A")
             git("commit", "--allow-empty", "-m", subject)
+            release_sha = git("rev-parse", "HEAD")
+
+            manual_release_sha = release_sha
+            if manual_target == "nonancestor":
+                git("switch", "-c", "unrelated-release", before)
+                config.write_text(
+                    f'version: "{current_version}"\n',
+                    encoding="utf-8",
+                )
+                git("add", "-A")
+                git("commit", "--allow-empty", "-m", "Unrelated release candidate")
+                manual_release_sha = git("rev-parse", "HEAD")
+                git("switch", "main")
+            elif manual_target == "unavailable":
+                manual_release_sha = "a" * 40
+            elif manual_target == "malformed":
+                manual_release_sha = "not-a-commit"
+            elif manual_target != "release":
+                raise AssertionError(f"unsupported manual target: {manual_target}")
+
+            if event_name == "workflow_dispatch":
+                recovery = root / ".github" / "workflows" / "recovery.txt"
+                recovery.parent.mkdir(parents=True, exist_ok=True)
+                recovery.write_text("reviewed publication recovery\n", encoding="utf-8")
+                if runtime_drift:
+                    drift = root / "hass_mcp_engineering_beta" / "runtime-drift.txt"
+                    drift.write_text("drift\n", encoding="utf-8")
+                git("add", "-A")
+                git("commit", "-m", "Add reviewed publication recovery")
+
+            trigger_sha = git("rev-parse", "HEAD")
+            git("remote", "add", "origin", str(root))
 
             output = root / "github-output"
             summary = root / "github-summary"
             environment = os.environ.copy()
-            environment["GITHUB_OUTPUT"] = str(output)
-            environment["GITHUB_STEP_SUMMARY"] = str(summary)
+            environment.update(
+                {
+                    "EVENT_ACTOR": event_actor,
+                    "EVENT_BEFORE": before,
+                    "EVENT_EXPECTED_VERSION": (
+                        event_expected_version
+                        if event_expected_version is not None
+                        else current_version
+                    ),
+                    "EVENT_NAME": event_name,
+                    "EVENT_REF": event_ref,
+                    "EVENT_RELEASE_SHA": manual_release_sha,
+                    "GITHUB_OUTPUT": str(output),
+                    "GITHUB_STEP_SUMMARY": str(summary),
+                    "TRIGGER_SHA": trigger_sha,
+                }
+            )
             detector = str(self.jobs["detect-release"]["steps"][-1]["run"])
-            detector = detector.replace("${{ github.event.before }}", before)
             result = subprocess.run(
                 [bash, "-c", detector],
                 cwd=root,
@@ -467,11 +533,17 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 else {}
             )
             self.assertEqual(git("tag", "--list"), "")
-            return values, (
-                summary.read_text(encoding="utf-8")
-                if summary.exists()
-                else ""
-            ), result
+            return (
+                values,
+                summary.read_text(encoding="utf-8") if summary.exists() else "",
+                result,
+                {
+                    "before": before,
+                    "release_sha": release_sha,
+                    "requested_release_sha": manual_release_sha,
+                    "trigger_sha": trigger_sha,
+                },
+            )
 
     def run_github_release_finalization(
         self,
@@ -621,15 +693,24 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             }
 
     def test_release_detector_routes_only_final_reviewed_version_state(self):
-        publish_values, publish_summary, _ = self.run_release_detector(
+        publish_values, publish_summary, _, identities = self.run_release_detector(
             subject="Merge reviewed release pull request",
             current_version="2.0.0-rc2-dev16",
             previous_version="2.0.0-rc2-dev15",
         )
-        self.assertEqual(publish_values, {"release_action": "publish"})
-        self.assertIn("eligible for publication", publish_summary)
+        self.assertEqual(
+            publish_values,
+            {
+                "release_action": "publish",
+                "release_sha": identities["release_sha"],
+                "validation_base": identities["before"],
+                "expected_version": "2.0.0-rc2-dev16",
+                "release_mode": "protected_main_push",
+            },
+        )
+        self.assertIn("eligible for protected_main_push publication", publish_summary)
 
-        none_values, none_summary, _ = self.run_release_detector(
+        none_values, none_summary, _, _ = self.run_release_detector(
             subject="Ordinary source correction",
             current_version="2.0.0-rc2-dev16",
             previous_version="2.0.0-rc2-dev16",
@@ -657,9 +738,81 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 output, _summary, result = self.run_release_detector(
                     expect_success=False,
                     **values,
-                )
+                )[:3]
                 self.assertEqual(output, {})
                 self.assertIn("::error::", result.stdout)
+
+    def test_manual_recovery_selects_exact_unchanged_release_commit(self):
+        values, summary, _result, identities = self.run_release_detector(
+            subject="Merge reviewed release pull request",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+        )
+        self.assertNotEqual(identities["release_sha"], identities["trigger_sha"])
+        self.assertEqual(
+            values,
+            {
+                "release_action": "publish",
+                "release_sha": identities["release_sha"],
+                "validation_base": identities["before"],
+                "expected_version": "2.2.0-beta.53",
+                "release_mode": "manual_recovery",
+            },
+        )
+        self.assertIn("eligible for manual_recovery publication", summary)
+
+    def test_manual_recovery_rejects_missing_authority_or_drift(self):
+        cases = (
+            {"event_actor": "someone-else"},
+            {"event_ref": "refs/heads/feature"},
+            {"manual_target": "malformed"},
+            {"manual_target": "unavailable"},
+            {"manual_target": "nonancestor"},
+            {"event_expected_version": "2.2.0-beta.54"},
+            {"event_expected_version": "not/version"},
+            {"runtime_drift": True},
+            {"previous_version": "2.2.0-beta.53"},
+            {"current_staged_version": "2.2.0-beta.54"},
+        )
+        for delta in cases:
+            with self.subTest(**delta):
+                case = dict(delta)
+                values, _summary, result, _identities = self.run_release_detector(
+                    subject="Synthetic manual recovery case",
+                    current_version="2.2.0-beta.53",
+                    previous_version=case.pop(
+                        "previous_version", "2.2.0-beta.52"
+                    ),
+                    current_staged_version=case.pop(
+                        "current_staged_version", None
+                    ),
+                    event_name="workflow_dispatch",
+                    expect_success=False,
+                    **case,
+                )
+                self.assertEqual(values, {})
+                self.assertIn("::error::", result.stdout)
+
+    def test_promote_checks_out_only_the_detected_release_commit(self):
+        checkout = action_steps(self.promote, "actions/checkout")
+        self.assertEqual(len(checkout), 1)
+        self.assertEqual(
+            checkout[0]["with"]["ref"],
+            "${{ needs.detect-release.outputs.release_sha }}",
+        )
+        prepare = next(
+            step for step in self.steps
+            if step.get("name") == "Validate protected release commit"
+        )
+        self.assertEqual(
+            prepare["env"]["DETECTED_RELEASE_SHA"],
+            "${{ needs.detect-release.outputs.release_sha }}",
+        )
+        script = str(prepare["run"])
+        self.assertIn('source_main_sha" != "$DETECTED_RELEASE_SHA', script)
+        self.assertIn('DETECTED_RELEASE_MODE" == "manual_recovery', script)
+        self.assertIn("git diff --quiet", script)
 
     def test_github_release_finalization_succeeds_with_exact_identity(self):
         outcome = self.run_github_release_finalization()

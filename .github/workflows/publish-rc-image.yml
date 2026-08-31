@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact reviewed unpublished release commit retained on main
+        required: true
+        type: string
+      expected_version:
+        description: Exact Engineering version already materialized by that commit
+        required: true
+        type: string
 
 permissions: {}
 
@@ -29,6 +39,10 @@ jobs:
       contents: read
     outputs:
       release_action: ${{ steps.detect.outputs.release_action }}
+      release_sha: ${{ steps.detect.outputs.release_sha }}
+      validation_base: ${{ steps.detect.outputs.validation_base }}
+      expected_version: ${{ steps.detect.outputs.expected_version }}
+      release_mode: ${{ steps.detect.outputs.release_mode }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -36,23 +50,96 @@ jobs:
           persist-credentials: false
       - id: detect
         shell: bash
+        env:
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_RELEASE_SHA: ${{ inputs.release_sha }}
+          TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
-          before="${{ github.event.before }}"
-          previous_version=""
-          if [[ "$before" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
-            previous_version="$(git show "${before}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+
+          release_sha="$TRIGGER_SHA"
+          validation_base="$EVENT_BEFORE"
+          release_mode="protected_main_push"
+          expected_version=""
+          trigger_checkout_sha="$(git rev-parse HEAD)"
+
+          if [[ "$trigger_checkout_sha" != "$TRIGGER_SHA" ]]; then
+            echo "::error::The detector checkout is not the exact triggering commit."
+            exit 1
           fi
-          if [[ -f .release/next-version ]]; then
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" ]]; then
+              echo "::error::Only the repository owner may request manual publication recovery."
+              exit 1
+            elif [[ "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery must be dispatched from protected main."
+              exit 1
+            elif [[ ! "$EVENT_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Manual publication recovery requires an exact lowercase commit SHA."
+              exit 1
+            elif [[ ! "$EVENT_EXPECTED_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$ ]]; then
+              echo "::error::Manual publication recovery requires a bounded exact version."
+              exit 1
+            fi
+
+            git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+            protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+            if [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Manual publication recovery was not triggered from the current protected-main head."
+              exit 1
+            elif ! git cat-file -e "${EVENT_RELEASE_SHA}^{commit}" 2>/dev/null; then
+              echo "::error::The requested manual recovery commit is unavailable."
+              exit 1
+            elif ! git merge-base --is-ancestor "$EVENT_RELEASE_SHA" "$protected_main_sha"; then
+              echo "::error::The requested manual recovery commit is not retained on protected main."
+              exit 1
+            elif ! git diff --quiet "$EVENT_RELEASE_SHA..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted after the requested release commit."
+              exit 1
+            fi
+
+            release_sha="$EVENT_RELEASE_SHA"
+            validation_base="$(git rev-parse "${release_sha}^1")"
+            release_mode="manual_recovery"
+            expected_version="$EVENT_EXPECTED_VERSION"
+          elif [[ "$EVENT_NAME" != "push" || "$EVENT_REF" != "refs/heads/main" ]]; then
+            echo "::error::Unsupported publication event or branch."
+            exit 1
+          fi
+
+          current_version="$(git show "${release_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+          previous_version=""
+          if [[ "$validation_base" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${validation_base}^{commit}" 2>/dev/null; then
+            previous_version="$(git show "${validation_base}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+          fi
+          if git cat-file -e "${release_sha}:.release/next-version" 2>/dev/null; then
             echo "::error::Main contains an unmaterialized release declaration. Release state must be finalized in the reviewed pull request."
             exit 1
-          elif git cat-file -e "${before}:.release/next-version" 2>/dev/null; then
+          elif git cat-file -e "${validation_base}:.release/next-version" 2>/dev/null; then
             echo "::error::A legacy staged declaration reached main. Finalize the release state in one reviewed pull request."
             exit 1
           elif [[ -n "$current_version" && -n "$previous_version" && "$current_version" != "$previous_version" ]]; then
-            echo "release_action=publish" >> "$GITHUB_OUTPUT"
-            echo "A reviewed final-version pull request reached protected main and is eligible for publication." >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$release_mode" == "manual_recovery" && "$current_version" != "$expected_version" ]]; then
+              echo "::error::The requested version does not match the exact recovery commit."
+              exit 1
+            fi
+            expected_version="$current_version"
+            {
+              echo "release_action=publish"
+              echo "release_sha=$release_sha"
+              echo "validation_base=$validation_base"
+              echo "expected_version=$expected_version"
+              echo "release_mode=$release_mode"
+            } >> "$GITHUB_OUTPUT"
+            echo "A reviewed final-version commit is eligible for ${release_mode} publication." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$release_mode" == "manual_recovery" ]]; then
+            echo "::error::The requested recovery commit has no bounded Engineering version transition."
+            exit 1
           else
             echo "release_action=none" >> "$GITHUB_OUTPUT"
             echo "No reviewed Engineering version transition is present." >> "$GITHUB_STEP_SUMMARY"
@@ -82,6 +169,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ needs.detect-release.outputs.release_sha }}
           fetch-depth: 0
 
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
@@ -105,13 +193,20 @@ jobs:
         id: prepare
         shell: bash
         env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          DETECTED_VALIDATION_BASE: ${{ needs.detect-release.outputs.validation_base }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
           GH_TOKEN: ${{ github.token }}
+          TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
           source_main_sha="$(git rev-parse HEAD)"
-          if [[ "$source_main_sha" != "$GITHUB_SHA" ]]; then
-            echo "::error::The workflow checkout is not the exact triggering main commit."
+          if [[ "$source_main_sha" != "$DETECTED_RELEASE_SHA" ]]; then
+            echo "::error::The workflow checkout is not the exact detected release commit."
             exit 1
           fi
           git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
@@ -122,9 +217,32 @@ jobs:
             exit 1
           fi
 
-          validation_base="${{ github.event.before }}"
+          validation_base="$DETECTED_VALIDATION_BASE"
           if [[ ! "$validation_base" =~ ^[0-9a-f]{40}$ ]] || ! git cat-file -e "${validation_base}^{commit}" 2>/dev/null; then
             echo "::error::The protected release transition has no valid prior main commit."
+            exit 1
+          fi
+          if [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before publication."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved after manual publication recovery was authorized."
+              exit 1
+            elif [[ "$(git rev-parse "${source_main_sha}^1")" != "$validation_base" ]]; then
+              echo "::error::The manual recovery validation base is not the release commit's first parent."
+              exit 1
+            elif ! git diff --quiet "$source_main_sha..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before publication."
+              exit 1
+            fi
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
             exit 1
           fi
           if [[ -f .release/next-version ]]; then
@@ -135,7 +253,7 @@ jobs:
           current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
           deployed_version="$(git show "${validation_base}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
           version="$current_version"
-          if [[ -z "$version" || -z "$deployed_version" || "$deployed_version" == "$version" ]]; then
+          if [[ -z "$version" || "$version" != "$DETECTED_EXPECTED_VERSION" || -z "$deployed_version" || "$deployed_version" == "$version" ]]; then
             echo "::error::The protected release commit does not contain a bounded version transition."
             exit 1
           fi
@@ -216,7 +334,7 @@ jobs:
             echo "source_main_sha=$source_main_sha"
             echo "current_version=$current_version"
             echo "deployed_version=$deployed_version"
-            echo "release_mode=preversioned"
+            echo "release_mode=$DETECTED_RELEASE_MODE"
             echo "version=$version"
             echo "release_tag=$release_tag"
             echo "release_notes_path=$release_notes_path"

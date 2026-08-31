@@ -179,3 +179,29 @@ This repository source promotion does not authorize merge, publication,
 image creation, deployment, live Home Assistant access, plan
 approval/application or the HAMCP-089 canary. Those remain separate authority
 boundaries.
+
+## Post-merge publication recovery boundary
+
+Beta 53 source was reviewed at
+`b9cf44bccb9b5ed7af3ed0478ca8f2906775e9ae` and merged to protected main as
+`153b4dd7e2e60806c7117bb83c6c83b8adf02ff8`. The merge-triggered validation and
+Codex receipt checks passed, but no publication run started. GitHub suppresses
+most downstream workflow events caused by its repository `GITHUB_TOKEN`; the
+protected auto-merge workflow uses that token, while the publication workflow
+previously accepted only a main `push` event. This records the deterministic
+trigger gap and does not reinterpret Beta 53 runtime acceptance.
+
+The reviewed recovery change adds a manual publication entry point without
+changing Beta 53 runtime, schemas, providers, routing, fallback, stable v1 or
+deployment authority. It may publish the exact merge commit above only if the
+current protected-main Engineering tree is identical, its exact first-parent
+version transition remains valid, its expected version is exactly
+`2.2.0-beta.53`, and all tag, release and image identities remain unused. The
+workflow revalidates the original release checkout before any write and fails
+closed on actor, ref, ancestry, source/configuration drift, version, staged-state
+or artifact ambiguity.
+
+This recovery mechanism does not assert that Beta 53 has been published. Merging
+the workflow correction, dispatching publication, deploying to Home Assistant
+and running HAMCP-089 remain distinct authorizations with separate evidence and
+rollback boundaries.

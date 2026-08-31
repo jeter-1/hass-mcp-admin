@@ -190,6 +190,56 @@ sequence:
    protected-main publication workflow validates and publishes that exact merge
    commit. It does not deploy the add-on or modify Home Assistant.
 
+### Missed protected-main publication recovery
+
+GitHub does not start new workflow runs for most events created with the
+repository `GITHUB_TOKEN`. Consequently, a merge performed by the protected
+auto-merge workflow can reach `main` without starting the publication workflow's
+ordinary `push` event. This is a GitHub event-suppression boundary, not evidence
+that the reviewed release failed validation. See GitHub's
+[workflow-trigger documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
+
+The publication workflow has one recovery-only manual entry point. It does not
+publish its own workflow-fix commit. It accepts an earlier release commit only
+when all of these conditions remain true:
+
+- Josh dispatches the workflow from the current protected `main` ref with an
+  exact lowercase 40-character release SHA and exact expected version;
+- that SHA is an available ancestor of the current protected-main head;
+- the entire `hass_mcp_engineering_beta/` tree is unchanged between that SHA and
+  current protected main;
+- the release SHA still contains a bounded version transition from its first
+  parent and no staged release declaration; and
+- the immutable version tag, commit tag, GitHub Release and image tags are all
+  proven absent before any registry login or write.
+
+Any mismatch fails before publication. Existing concurrency, complete-test,
+metadata, dependency-audit, ancestry, anonymous multi-architecture verification,
+provenance/SBOM, tag and GitHub Release checks remain mandatory. The recovery is
+not a retry mechanism after partial publication; an existing or ambiguous
+artifact is a stop condition requiring reconciliation.
+
+After the recovery workflow change itself is merged and exact-head review and CI
+are complete, use the GitHub Actions page for **Publish reviewed Engineering
+release**, choose **Run workflow**, select `main`, and enter the reviewed release
+SHA and expected version. For the missed Beta 53 publication, the bounded inputs
+are:
+
+```text
+release_sha: 153b4dd7e2e60806c7117bb83c6c83b8adf02ff8
+expected_version: 2.2.0-beta.53
+```
+
+The equivalent authenticated GitHub CLI command is:
+
+```powershell
+gh workflow run publish-rc-image.yml --repo jeter-1/hass-mcp-admin --ref main -f release_sha=153b4dd7e2e60806c7117bb83c6c83b8adf02ff8 -f expected_version=2.2.0-beta.53
+```
+
+Dispatch is a distinct publication action and still requires Josh's explicit
+authorization after the workflow fix is merged. Successful publication does not
+authorize Home Assistant backup, update, restart, deployment or canary work.
+
 Only Josh may mark the draft ready. Converting the pull request back to draft,
 closing it, or pushing a new head withdraws the immediate merge path. The
 protected-base workflow disarms any stored auto-merge request on every
