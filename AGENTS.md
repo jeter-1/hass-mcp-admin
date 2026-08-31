@@ -72,6 +72,25 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   product identity, and inability to act is not by itself proof of safety.
   Acceptance for implementation work must prove useful authorized success as
   well as refusal, failure preservation, verification, and recovery behavior.
+- Preserve the supported one-connector product topology: the Engineering MCP is
+  the client-facing MCP endpoint exposed through the Nabu Casa path. Reviewed
+  `ha-mcp` capabilities are internal delegated providers behind that endpoint;
+  Engineering-native capabilities supply semantics the upstream provider does
+  not. The client should not need a second public MCP connector or choose a
+  provider. Provider selection, attribution, admission, and fallback remain
+  explicit internal security boundaries.
+- Distinguish technical execution integrity from operational consequence. Fail
+  closed when the exact target, operation, arguments, authority, provider,
+  current-state validity, concurrency safety, dispatch ownership, or
+  verification contract cannot be established. Explain physical effects,
+  household consequences, risk classifications, and unresolved consequence
+  evidence to Josh, but do not let those factors alone redefine an exact,
+  owner-authorized operation as non-actionable. Josh decides whether disclosed
+  operational consequences are acceptable.
+- Treat risk labels and consequence analysis as decision support, not an
+  independent source of product or execution authority. Existing runtime
+  approval and policy behavior remains source truth until a separately scoped,
+  reviewed, released, and deployed implementation changes it.
 
 ## Default Workflow
 

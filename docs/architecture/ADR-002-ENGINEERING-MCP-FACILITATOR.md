@@ -1,5 +1,22 @@
 # ADR-002: Engineering MCP as a facilitator
 
+## Product-direction amendment from ADR-022
+
+[`ADR-022`](ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md) changes the
+client-facing topology assumed by this decision. The supported product has one
+public Nabu Casa MCP connector: Engineering is that client-facing endpoint, and
+reviewed `ha-mcp` capabilities are internal delegated providers behind it. The
+provider matrix, explicit direct-HA exceptions, truthful attribution, exact
+contract admission, and prohibition on silent fallback in this ADR remain
+authoritative. References below to a separately client-selected standard MCP
+server are historical architecture context, not the current product direction.
+
+ADR-022 also clarifies that Engineering facilitation includes implementing
+legitimate typed operations. Whether an operation is technically dispatchable
+must be decided separately from whether its disclosed household consequences
+are acceptable to the owner. This amendment changes no shipped runtime route or
+authority by itself.
+
 ## RC3A dashboard evidence decision
 
 RC3A introduces a provider-specific exception to the still-unavailable generic
