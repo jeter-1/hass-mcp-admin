@@ -237,11 +237,18 @@ the existing digest reference to prove GHCR enforces the HTTP `If-None-Match: *`
 precondition on an OCI manifest PUT, then uses the same precondition for the
 release-commit tag first and the deployable version tag last. A concurrent tag,
 an ambiguous response, or unsupported create-only semantics stops without
-overwriting the competing tag. Any partial or unknown write disposition is
-retained in reconciliation output, including the case where a registry applies
-a write but its response is lost. The recovery is not a retry mechanism after
-partial publication; an existing, partial, unknown, or ambiguous artifact is a
-stop condition requiring reconciliation.
+overwriting the competing tag. After anonymous verification of those final image
+tags, the complete manual actor, ref, exact protected-main, first-parent,
+Engineering-tree, advertised-version and staged-state authority guard is fetched
+and repeated directly before the annotated Git tag push, and again directly
+before GitHub Release creation. The corresponding remote identity is also
+reprobed at each write boundary. Protected-main movement at either point stops
+the metadata write; already-created image tags remain an explicit partial state
+requiring reconciliation. Any partial or unknown write disposition is retained
+in reconciliation output, including the case where a registry applies a write
+but its response is lost. The recovery is not a retry mechanism after partial
+publication; an existing, partial, unknown, or ambiguous artifact is a stop
+condition requiring reconciliation.
 
 Manual recovery still builds only the exact historical release checkout. The
 create-only registry helper is separately materialized into runner temp from the

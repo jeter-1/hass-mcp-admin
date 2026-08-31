@@ -716,8 +716,15 @@ jobs:
         id: finalize
         shell: bash
         env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          TRIGGER_SHA: ${{ github.sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
@@ -728,10 +735,6 @@ jobs:
             echo "::error::The published checkout moved from the reviewed release commit."
             exit 1
           fi
-          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
-          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
-          bash scripts/assert_protected_release_ancestor.sh \
-            "$RELEASE_SHA" "$protected_main_sha"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -749,9 +752,58 @@ jobs:
             echo "::error::The local annotated tag does not resolve to release_sha."
             exit 1
           fi
-          echo "tag_created=true" >> "$GITHUB_OUTPUT"
+
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$protected_main_sha"
+          if [[ "$DETECTED_RELEASE_SHA" != "$RELEASE_SHA" ]]; then
+            echo "::error::The detected release identity changed before the annotated-tag write."
+            exit 1
+          elif [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before the annotated-tag write."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved before the annotated-tag write."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$RELEASE_SHA" >/dev/null; then
+              echo "::error::The manual recovery commit left protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$RELEASE_SHA..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before the annotated-tag write."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
+
+          remote_tag_probe="$RUNNER_TEMP/pre-push-remote-tag-probe"
+          set +e
+          git ls-remote --exit-code --tags origin \
+            "refs/tags/${RELEASE_TAG}" >"$remote_tag_probe" 2>&1
+          remote_tag_status=$?
+          set -e
+          if [[ "$remote_tag_status" -eq 0 ]]; then
+            echo "::error::The immutable release tag appeared before the annotated-tag write."
+            exit 1
+          elif [[ "$remote_tag_status" -ne 2 ]]; then
+            echo "::error::Unable to prove that the immutable release tag remains absent."
+            exit 1
+          fi
 
           git push origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          echo "tag_created=true" >> "$GITHUB_OUTPUT"
 
           git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
           promoted_main="$(git rev-parse refs/remotes/origin/main)"
@@ -768,11 +820,18 @@ jobs:
         id: release
         shell: bash
         env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
           RELEASE_NOTES_PATH: ${{ steps.prepare.outputs.release_notes_path }}
           SOURCE_MAIN_SHA: ${{ steps.prepare.outputs.source_main_sha }}
+          TRIGGER_SHA: ${{ github.sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
@@ -788,16 +847,6 @@ jobs:
           fi
           bash scripts/assert_protected_release_ancestor.sh \
             "$RELEASE_SHA" "$promoted_main"
-
-          release_probe_error="$RUNNER_TEMP/github-release-final-probe-error"
-          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
-            echo "::error::A GitHub Release appeared before exact finalization."
-            exit 1
-          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
-            cat "$release_probe_error" >&2
-            echo "::error::Unable to prove that the GitHub Release tag remains unused."
-            exit 1
-          fi
 
           release_title="HA MCP Engineering Server ${VERSION}"
           release_body="$RUNNER_TEMP/github-release-notes.md"
@@ -829,6 +878,57 @@ jobs:
             expected_prerelease=true
             release_flags+=(--prerelease)
           fi
+
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          promoted_tag="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')"
+          if [[ "$promoted_tag" != "$RELEASE_SHA" ]]; then
+            echo "::error::The GitHub Release cannot be created because its annotated tag moved."
+            exit 1
+          fi
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$protected_main_sha"
+          if [[ "$DETECTED_RELEASE_SHA" != "$RELEASE_SHA" ]]; then
+            echo "::error::The detected release identity changed before the GitHub Release write."
+            exit 1
+          elif [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before the GitHub Release write."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved before the GitHub Release write."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$RELEASE_SHA" >/dev/null; then
+              echo "::error::The manual recovery commit left protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$RELEASE_SHA..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before the GitHub Release write."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
+
+          release_probe_error="$RUNNER_TEMP/github-release-final-probe-error"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
+            echo "::error::A GitHub Release appeared before exact finalization."
+            exit 1
+          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
+            cat "$release_probe_error" >&2
+            echo "::error::Unable to prove that the GitHub Release tag remains unused."
+            exit 1
+          fi
+
           release_url="$(gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$release_title" \

@@ -219,7 +219,13 @@ behavior, ambiguity, or a tag that appears after the earlier probe fails closed
 without overwriting that tag. Partial and unknown publication dispositions
 remain explicit when a later tag fails or a registry response is lost; the
 deployable version identity is attempted only after the commit tag and the exact
-digest-addressed image have been verified.
+digest-addressed image have been verified. After final image-tag verification,
+the complete manual actor, ref, exact protected-main, first-parent,
+Engineering-tree, advertised-version and staged-state authority guard is fetched
+and repeated directly before the annotated Git tag push and again directly
+before GitHub Release creation. Each remote metadata identity is reprobed at its
+write boundary. Protected-main movement at either point prevents that write and
+leaves any already-created image identities in explicit reconciliation state.
 For manual recovery, only this publisher helper is materialized in runner temp
 from the exact guarded workflow-authority SHA; the Beta 53 image continues to be
 built solely from the historical release checkout.

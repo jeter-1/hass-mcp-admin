@@ -785,6 +785,140 @@ raise SystemExit(1)
                 ),
             }
 
+    def run_annotated_tag_finalization(
+        self,
+        *,
+        manual_recovery=False,
+        main_sha=None,
+        trigger_sha=None,
+        main_is_descendant=True,
+        main_first_parent=True,
+        engineering_drift=False,
+        main_has_staged_declaration=False,
+        main_version=CURRENT_REPOSITORY_VERSION,
+    ):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute annotated-tag finalization")
+        release_sha = "d" * 40
+        release_tag = f"v{CURRENT_REPOSITORY_VERSION}"
+        step = next(
+            item
+            for item in self.steps
+            if item.get("name") == "Finalize release commit and annotated tag"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_git = root / "git"
+            fake_git.write_text(
+                """#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if args == ["rev-parse", "HEAD"]:
+    print(os.environ["RELEASE_SHA"])
+elif args == ["rev-parse", "refs/remotes/origin/main"]:
+    print(os.environ["MOCK_MAIN_SHA"])
+elif args[:2] == ["rev-parse", f"{os.environ['RELEASE_TAG']}^{{commit}}"]:
+    print(os.environ["RELEASE_SHA"])
+elif args[:2] == ["config", "user.name"] or args[:2] == ["config", "user.email"]:
+    pass
+elif args[:3] == ["config", "--get", "user.name"]:
+    print("github-actions[bot]")
+elif args[:3] == ["config", "--get", "user.email"]:
+    print("41898282+github-actions[bot]@users.noreply.github.com")
+elif args[:2] == ["tag", "-a"]:
+    pass
+elif args == ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"]:
+    pass
+elif args[:2] == ["cat-file", "-e"]:
+    if args[2].endswith(":.release/next-version"):
+        raise SystemExit(
+            0 if os.environ["MOCK_MAIN_HAS_STAGED_DECLARATION"] == "true" else 1
+        )
+elif args[:2] == ["merge-base", "--is-ancestor"]:
+    raise SystemExit(0 if os.environ["MOCK_MAIN_IS_DESCENDANT"] == "true" else 1)
+elif args[:2] == ["rev-list", "--first-parent"]:
+    if os.environ["MOCK_MAIN_FIRST_PARENT"] == "true":
+        print(os.environ["RELEASE_SHA"])
+elif args[:2] == ["diff", "--quiet"]:
+    raise SystemExit(1 if os.environ["MOCK_ENGINEERING_DRIFT"] == "true" else 0)
+elif args[0] == "show" and args[1].endswith(":hass_mcp_engineering_beta/config.yaml"):
+    print(f'version: "{os.environ["MOCK_MAIN_VERSION"]}"')
+elif args[:3] == ["ls-remote", "--exit-code", "--tags"]:
+    raise SystemExit(2)
+elif args[:2] == ["ls-remote", "origin"] and args[2].endswith("^{}"):
+    print(os.environ["RELEASE_SHA"], args[2])
+elif args[:2] == ["push", "origin"]:
+    with Path(os.environ["MOCK_GIT_WRITE_LOG"]).open("a", encoding="utf-8") as stream:
+        stream.write("push " + " ".join(args[2:]) + "\\n")
+else:
+    raise SystemExit(f"unexpected git arguments: {args!r}")
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            helper = root / "scripts" / ANCESTOR_GUARD_PATH.name
+            helper.parent.mkdir()
+            shutil.copy2(ANCESTOR_GUARD_PATH, helper)
+            output = root / "github-output"
+            write_log = root / "git-writes.txt"
+            current_main_sha = main_sha or release_sha
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PATH": f"{root}{os.pathsep}{environment['PATH']}",
+                    "GITHUB_OUTPUT": str(output),
+                    "RUNNER_TEMP": str(root),
+                    "DETECTED_EXPECTED_VERSION": CURRENT_REPOSITORY_VERSION,
+                    "DETECTED_RELEASE_MODE": (
+                        "manual_recovery" if manual_recovery else "protected_main_push"
+                    ),
+                    "DETECTED_RELEASE_SHA": release_sha,
+                    "EVENT_ACTOR": "jeter-1",
+                    "EVENT_REF": "refs/heads/main",
+                    "EVENT_TRIGGERING_ACTOR": "jeter-1",
+                    "TRIGGER_SHA": trigger_sha or current_main_sha,
+                    "RELEASE_SHA": release_sha,
+                    "RELEASE_TAG": release_tag,
+                    "VERSION": CURRENT_REPOSITORY_VERSION,
+                    "BUILD_TIME": "2026-08-06T00:00:00Z",
+                    "IMAGE_DIGEST": f"sha256:{'e' * 64}",
+                    "MOCK_MAIN_SHA": current_main_sha,
+                    "MOCK_MAIN_IS_DESCENDANT": str(main_is_descendant).lower(),
+                    "MOCK_MAIN_FIRST_PARENT": str(main_first_parent).lower(),
+                    "MOCK_ENGINEERING_DRIFT": str(engineering_drift).lower(),
+                    "MOCK_MAIN_HAS_STAGED_DECLARATION": str(
+                        main_has_staged_declaration
+                    ).lower(),
+                    "MOCK_MAIN_VERSION": main_version,
+                    "MOCK_GIT_WRITE_LOG": str(write_log),
+                }
+            )
+            result = subprocess.run(
+                [bash, "-c", str(step["run"])],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+            return {
+                "result": result,
+                "outputs": (
+                    assignment_lines(output.read_text(encoding="utf-8"))
+                    if output.exists()
+                    else {}
+                ),
+                "writes": (
+                    write_log.read_text(encoding="utf-8").splitlines()
+                    if write_log.exists()
+                    else []
+                ),
+            }
+
     def run_github_release_finalization(
         self,
         *,
@@ -792,6 +926,15 @@ raise SystemExit(1)
         main_sha=None,
         main_is_descendant=True,
         tag_sha=None,
+        manual_recovery=False,
+        trigger_sha=None,
+        main_first_parent=True,
+        engineering_drift=False,
+        main_has_staged_declaration=False,
+        main_version=CURRENT_REPOSITORY_VERSION,
+        event_actor="jeter-1",
+        event_triggering_actor="jeter-1",
+        event_ref="refs/heads/main",
     ):
         bash = shutil.which("bash")
         if bash is None:
@@ -824,9 +967,19 @@ if args == ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin
 elif args == ["rev-parse", "refs/remotes/origin/main"]:
     print(os.environ["MOCK_MAIN_SHA"])
 elif args[:2] == ["cat-file", "-e"]:
-    pass
+    if args[2].endswith(":.release/next-version"):
+        raise SystemExit(
+            0 if os.environ["MOCK_MAIN_HAS_STAGED_DECLARATION"] == "true" else 1
+        )
 elif args[:2] == ["merge-base", "--is-ancestor"]:
     raise SystemExit(0 if os.environ["MOCK_MAIN_IS_DESCENDANT"] == "true" else 1)
+elif args[:2] == ["rev-list", "--first-parent"]:
+    if os.environ["MOCK_MAIN_FIRST_PARENT"] == "true":
+        print(os.environ["RELEASE_SHA"])
+elif args[:2] == ["diff", "--quiet"]:
+    raise SystemExit(1 if os.environ["MOCK_ENGINEERING_DRIFT"] == "true" else 0)
+elif args[0] == "show" and args[1].endswith(":hass_mcp_engineering_beta/config.yaml"):
+    print(f'version: "{os.environ["MOCK_MAIN_VERSION"]}"')
 elif args[:2] == ["ls-remote", "origin"] and args[2].startswith("refs/tags/"):
     print(os.environ["MOCK_TAG_SHA"], args[2])
 else:
@@ -907,7 +1060,22 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                     "MOCK_EXISTING_RELEASE": str(existing_release).lower(),
                     "MOCK_MAIN_SHA": main_sha or release_sha,
                     "MOCK_MAIN_IS_DESCENDANT": str(main_is_descendant).lower(),
+                    "MOCK_MAIN_FIRST_PARENT": str(main_first_parent).lower(),
+                    "MOCK_ENGINEERING_DRIFT": str(engineering_drift).lower(),
+                    "MOCK_MAIN_HAS_STAGED_DECLARATION": str(
+                        main_has_staged_declaration
+                    ).lower(),
+                    "MOCK_MAIN_VERSION": main_version,
                     "MOCK_TAG_SHA": tag_sha or release_sha,
+                    "DETECTED_EXPECTED_VERSION": CURRENT_REPOSITORY_VERSION,
+                    "DETECTED_RELEASE_MODE": (
+                        "manual_recovery" if manual_recovery else "protected_main_push"
+                    ),
+                    "DETECTED_RELEASE_SHA": release_sha,
+                    "EVENT_ACTOR": event_actor,
+                    "EVENT_REF": event_ref,
+                    "EVENT_TRIGGERING_ACTOR": event_triggering_actor,
+                    "TRIGGER_SHA": trigger_sha or main_sha or release_sha,
                 }
             )
             result = subprocess.run(
@@ -1116,7 +1284,30 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             if step.get("name")
             == "Revalidate publication authority before registry access"
         )
-        for step in (detector, prepare, recheck):
+        final_image_recheck = next(
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Revalidate publication authority before final image tags"
+        )
+        finalize = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Finalize release commit and annotated tag"
+        )
+        release = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Create and verify GitHub Release"
+        )
+        for step in (
+            detector,
+            prepare,
+            recheck,
+            final_image_recheck,
+            finalize,
+            release,
+        ):
             with self.subTest(step=step.get("name", "detect")):
                 self.assertEqual(
                     step["env"]["EVENT_TRIGGERING_ACTOR"],
@@ -1172,6 +1363,74 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 outcome = self.run_github_release_finalization(**values)
                 self.assertNotEqual(outcome["result"].returncode, 0)
                 self.assertEqual(outcome["outputs"], {})
+
+    def test_manual_recovery_main_drift_after_image_tags_blocks_metadata_writes(self):
+        trigger_sha = "c" * 40
+        moved_main_sha = "a" * 40
+
+        tag_outcome = self.run_annotated_tag_finalization(
+            manual_recovery=True,
+            trigger_sha=trigger_sha,
+            main_sha=moved_main_sha,
+        )
+        self.assertNotEqual(tag_outcome["result"].returncode, 0)
+        self.assertIn(
+            "Protected main moved before the annotated-tag write",
+            tag_outcome["result"].stdout,
+        )
+        self.assertEqual(tag_outcome["writes"], [])
+        self.assertEqual(tag_outcome["outputs"], {})
+
+        release_outcome = self.run_github_release_finalization(
+            manual_recovery=True,
+            trigger_sha=trigger_sha,
+            main_sha=moved_main_sha,
+        )
+        self.assertNotEqual(release_outcome["result"].returncode, 0)
+        self.assertIn(
+            "Protected main moved before the GitHub Release write",
+            release_outcome["result"].stdout,
+        )
+        self.assertIsNone(release_outcome["release"])
+        self.assertEqual(release_outcome["outputs"], {})
+
+        names = [step.get("name", "") for step in self.steps]
+        image_verify_index = names.index("Verify immutable release tags anonymously")
+        tag_index = names.index("Finalize release commit and annotated tag")
+        release_index = names.index("Create and verify GitHub Release")
+        self.assertLess(image_verify_index, tag_index)
+        self.assertLess(tag_index, release_index)
+
+    def test_manual_recovery_current_authority_allows_metadata_writes(self):
+        current_main_sha = "a" * 40
+        tag_outcome = self.run_annotated_tag_finalization(
+            manual_recovery=True,
+            trigger_sha=current_main_sha,
+            main_sha=current_main_sha,
+        )
+        self.assertEqual(
+            tag_outcome["result"].returncode,
+            0,
+            tag_outcome["result"].stderr,
+        )
+        self.assertEqual(len(tag_outcome["writes"]), 1)
+        self.assertEqual(
+            tag_outcome["outputs"],
+            {"tag_created": "true", "tag_verified": "true"},
+        )
+
+        release_outcome = self.run_github_release_finalization(
+            manual_recovery=True,
+            trigger_sha=current_main_sha,
+            main_sha=current_main_sha,
+        )
+        self.assertEqual(
+            release_outcome["result"].returncode,
+            0,
+            release_outcome["result"].stderr,
+        )
+        self.assertIsNotNone(release_outcome["release"])
+        self.assertEqual(release_outcome["outputs"]["release_complete"], "true")
 
     def test_publication_has_no_second_pull_request_or_branch_write(self):
         detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
@@ -1654,6 +1913,28 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn('git config user.name "github-actions[bot]"', push)
         self.assertIn('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"', push)
         self.assertIn('git rev-parse "${RELEASE_TAG}^{commit}"', push)
+        for value in (
+            "git rev-list --first-parent",
+            "git diff --quiet",
+            ".release/next-version",
+            "Protected main moved before the annotated-tag write",
+            "git ls-remote --exit-code --tags",
+        ):
+            self.assertIn(value, push)
+        tag_push_index = push.index('git push origin "refs/tags/')
+        self.assertNotEqual(
+            push.rfind(
+                "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
+                0,
+                tag_push_index,
+            ),
+            -1,
+        )
+        self.assertLess(
+            push.index("Protected main moved before the annotated-tag write"),
+            tag_push_index,
+        )
+        self.assertGreater(push.index("tag_created=true"), tag_push_index)
         for value in ("Version:", "Source SHA:", "Image digest:", "Build timestamp:"):
             self.assertIn(value, push)
 
@@ -1673,8 +1954,26 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "github_release_created=true",
             "github_release_verified=true",
             "release_complete=true",
+            "git rev-list --first-parent",
+            "git diff --quiet",
+            ".release/next-version",
+            "Protected main moved before the GitHub Release write",
         ):
             self.assertIn(value, release)
+        release_create_index = release.index("gh release create")
+        self.assertNotEqual(
+            release.rfind(
+                "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
+                0,
+                release_create_index,
+            ),
+            -1,
+        )
+        self.assertLess(
+            release.index("Protected main moved before the GitHub Release write"),
+            release_create_index,
+        )
+        self.assertNotEqual(release.rfind("gh api", 0, release_create_index), -1)
         self.assertNotIn("--latest", release)
 
     def test_failures_produce_reconciliation_without_silent_reuse(self):
