@@ -19,6 +19,9 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 ANCESTOR_GUARD_PATH = ROOT / "scripts" / "assert_protected_release_ancestor.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
+CREATE_ONLY_PUBLISHER_PATH = (
+    ROOT / "scripts" / "publish_registry_tags_create_only.py"
+)
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 remains the immutable failed full-host-reboot candidate. The
 # correction uses the staged-release mechanism without changing advertised
@@ -1227,11 +1230,17 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "Revalidate publication authority before registry access"
         )
         login_index = names.index("Log in to GHCR")
-        build_index = names.index("Build and publish local release commit")
+        build_index = names.index(
+            "Build release commit to non-authoritative staging tag"
+        )
+        publish_index = names.index(
+            "Create release image tags with registry-enforced preconditions"
+        )
         self.assertLess(prepare_index, login_index)
         self.assertLess(qemu_index, recheck_index)
         self.assertEqual(recheck_index + 1, login_index)
         self.assertEqual(login_index + 1, build_index)
+        self.assertEqual(build_index + 1, publish_index)
         prepare = str(self.steps[prepare_index]["run"])
         for value in (
             "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
@@ -1467,7 +1476,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             4,
         )
 
-    def test_one_build_publishes_exact_multiarch_and_provenance_tags(self):
+    def test_one_build_stages_exact_multiarch_before_create_only_tagging(self):
         builds = action_steps(self.promote, "docker/build-push-action")
         self.assertEqual(len(builds), 1)
         values = builds[0]["with"]
@@ -1495,18 +1504,53 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertEqual(
             tags,
             (
-                f"{IMAGE}:${{{{ steps.prepare.outputs.version }}}}",
-                f"{IMAGE}:sha-${{{{ steps.prepare.outputs.release_sha }}}}",
+                f"{IMAGE}:publication-staging-"
+                "${{ steps.prepare.outputs.release_sha }}",
             ),
         )
+        publisher = next(
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Create release image tags with registry-enforced preconditions"
+        )
+        self.assertEqual(publisher["id"], "publish_tags")
+        publish_script = str(publisher["run"])
+        self.assertIn(
+            'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/'
+            'publish_registry_tags_create_only.py"',
+            publish_script,
+        )
+        self.assertIn('python "$publisher"', publish_script)
+        self.assertIn("$RUNNER_TEMP/publish_registry_tags_create_only.py", publish_script)
+        self.assertIn('--target-tag "$VERSION"', publish_script)
+        self.assertIn('--target-tag "sha-${RELEASE_SHA}"', publish_script)
+        self.assertEqual(
+            publisher["env"]["EXPECTED_DIGEST"],
+            "${{ steps.build.outputs.digest }}",
+        )
+        self.assertEqual(publisher["env"]["GHCR_TOKEN"], "${{ github.token }}")
+        self.assertEqual(publisher["env"]["GHCR_USERNAME"], "${{ github.actor }}")
+        self.assertEqual(
+            publisher["env"]["WORKFLOW_AUTHORITY_SHA"], "${{ github.sha }}"
+        )
+        self.assertTrue(CREATE_ONLY_PUBLISHER_PATH.is_file())
+        publisher_source = CREATE_ONLY_PUBLISHER_PATH.read_text(encoding="utf-8")
+        self.assertIn('headers["If-None-Match"] = "*"', publisher_source)
+        self.assertIn("REGISTRY_CREATE_ONLY_UNSUPPORTED", publisher_source)
+        self.assertIn("REGISTRY_CREATE_ONLY_CAPABILITY_AMBIGUOUS", publisher_source)
 
     def test_anonymous_verification_precedes_release_finalization(self):
         names = [step.get("name", "") for step in self.steps]
         verify_index = names.index(
             "Verify immutable tags, architectures, and provenance anonymously"
         )
+        publish_image_index = names.index(
+            "Create release image tags with registry-enforced preconditions"
+        )
         push_index = names.index("Finalize release commit and annotated tag")
         release_index = names.index("Create and verify GitHub Release")
+        self.assertLess(publish_image_index, verify_index)
         self.assertLess(verify_index, push_index)
         self.assertLess(push_index, release_index)
         verify = str(self.steps[verify_index]["run"])
@@ -1569,12 +1613,13 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn("Do not rebuild or overwrite", script)
         self.assertIn("did not push, force-push, or overwrite main", script)
         for field in (
-            "image_published", "image_verified", "manifest_digest",
+            "staging_image_published", "image_published", "image_verified", "manifest_digest",
             "tag_created", "tag_verified", "github_release_created",
             "github_release_verified", "github_release_url",
             "release_complete",
         ):
             self.assertIn(field, script)
+        self.assertIn("Non-authoritative staging image", script)
         self.assertIn("creating or correcting only the GitHub Release", script)
 
     def test_promotion_exposes_truthful_phase_outputs(self):
@@ -1595,6 +1640,10 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertEqual(verify["id"], "verify")
         self.assertIn("attestation-manifest", str(verify["run"]))
         self.assertIn("sbom_status=present", str(verify["run"]))
+        self.assertEqual(
+            outputs["image_published"],
+            "${{ steps.publish_tags.outcome == 'success' }}",
+        )
 
     def test_declared_architectures_match_ci_and_publication(self):
         config = yaml.safe_load(

@@ -166,7 +166,7 @@ jobs:
       version: ${{ steps.prepare.outputs.version }}
       release_sha: ${{ steps.prepare.outputs.release_sha }}
       digest: ${{ steps.build.outputs.digest }}
-      image_published: ${{ steps.build.outcome == 'success' }}
+      image_published: ${{ steps.publish_tags.outcome == 'success' }}
       image_verified: ${{ steps.verify.outputs.image_verified }}
       tag_created: ${{ steps.finalize.outputs.tag_created }}
       tag_verified: ${{ steps.finalize.outputs.tag_verified }}
@@ -454,7 +454,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish local release commit
+      - name: Build release commit to non-authoritative staging tag
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
@@ -469,14 +469,44 @@ jobs:
             HAMCP_BUILD_TIME=${{ steps.prepare.outputs.build_time }}
             HAMCP_BUILD_DIRTY=false
           tags: |
-            ghcr.io/jeter-1/hass-mcp-engineering-beta:${{ steps.prepare.outputs.version }}
-            ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-${{ steps.prepare.outputs.release_sha }}
+            ghcr.io/jeter-1/hass-mcp-engineering-beta:publication-staging-${{ steps.prepare.outputs.release_sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/jeter-1/hass-mcp-admin
             org.opencontainers.image.revision=${{ steps.prepare.outputs.release_sha }}
             org.opencontainers.image.created=${{ steps.prepare.outputs.build_time }}
             org.opencontainers.image.version=${{ steps.prepare.outputs.version }}
             io.hass-mcp.build.dirty=false
+
+      - name: Create release image tags with registry-enforced preconditions
+        id: publish_tags
+        shell: bash
+        env:
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USERNAME: ${{ github.actor }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          SOURCE_TAG: publication-staging-${{ steps.prepare.outputs.release_sha }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The workflow-authority commit is not an exact SHA."
+            exit 1
+          fi
+          publisher="$RUNNER_TEMP/publish_registry_tags_create_only.py"
+          if ! git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_create_only.py" > "$publisher" || [[ ! -s "$publisher" ]]; then
+            echo "::error::The create-only publisher is unavailable from the exact workflow-authority commit."
+            exit 1
+          fi
+
+          python "$publisher" \
+            --repository "$IMAGE_REPOSITORY" \
+            --source-tag "$SOURCE_TAG" \
+            --expected-digest "$EXPECTED_DIGEST" \
+            --target-tag "$VERSION" \
+            --target-tag "sha-${RELEASE_SHA}"
 
       - name: Verify immutable tags, architectures, and provenance anonymously
         id: verify
@@ -741,7 +771,7 @@ jobs:
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
           VERSION: ${{ steps.prepare.outputs.version }}
-          IMAGE_PUBLISHED: ${{ steps.build.outcome == 'success' }}
+          IMAGE_PUBLISHED: ${{ steps.publish_tags.outcome == 'success' }}
           IMAGE_VERIFIED: ${{ steps.verify.outputs.image_verified || 'false' }}
           TAG_CREATED: ${{ steps.finalize.outputs.tag_created || 'false' }}
           TAG_VERIFIED: ${{ steps.finalize.outputs.tag_verified || 'false' }}
@@ -749,6 +779,8 @@ jobs:
           GITHUB_RELEASE_VERIFIED: ${{ steps.release.outputs.github_release_verified || 'false' }}
           GITHUB_RELEASE_URL: ${{ steps.release.outputs.release_url || 'not-created' }}
           RELEASE_COMPLETE: ${{ steps.release.outputs.release_complete || 'false' }}
+          STAGING_IMAGE_PUBLISHED: ${{ steps.build.outcome == 'success' }}
+          STAGING_TAG: publication-staging-${{ steps.prepare.outputs.release_sha }}
         run: |
           {
             if [[ "$RELEASE_COMPLETE" == "true" ]]; then
@@ -763,6 +795,8 @@ jobs:
             echo "- Commit image: ${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
             echo "- OCI digest: $DIGEST"
             echo "- Architectures: linux/amd64, linux/arm64, linux/arm/v7"
+            echo "- Non-authoritative staging image: ${IMAGE_REPOSITORY}:${STAGING_TAG}"
+            echo "- staging_image_published: $STAGING_IMAGE_PUBLISHED"
             echo "- image_published: $IMAGE_PUBLISHED"
             echo "- image_verified: $IMAGE_VERIFIED"
             echo "- manifest_digest: ${DIGEST:-not-published}"

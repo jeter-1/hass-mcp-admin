@@ -205,7 +205,17 @@ artifact ambiguity. Manual reruns require both the original workflow actor and
 the rerun-triggering actor to remain the repository owner. The immediate
 pre-registry guard also reprobes the immutable Git tag, GitHub Release and both
 image tags, so concurrent publication or an ambiguous GitHub or registry
-response stops before authentication and build.
+response stops before authentication and build. The multi-architecture build
+then writes only a release-scoped non-authoritative staging tag; retries may
+replace that staging tag because it is not an advertised or deployable release
+identity. The final version and release-commit image tags are created with an
+OCI manifest PUT carrying HTTP `If-None-Match: *` after a
+same-run capability probe proves GHCR rejects a conditional write to the
+existing staging tag. Unsupported conditional behavior, ambiguity, or a tag
+that appears after the earlier probe fails closed without overwriting that tag.
+For manual recovery, only this publisher helper is materialized in runner temp
+from the exact guarded workflow-authority SHA; the Beta 53 image continues to be
+built solely from the historical release checkout.
 
 This recovery mechanism does not assert that Beta 53 has been published. Merging
 the workflow correction, dispatching publication, deploying to Home Assistant
