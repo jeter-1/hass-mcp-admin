@@ -28,6 +28,19 @@ alone to activate nested guidance. This rule applies equally to Desktop keyboard
 work, CLI or IDE work, connected-host Remote or mobile work, and Codex cloud work
 when the environment starts at the repository root.
 
+## Home Assistant source authority
+
+Before making or reviewing a claim about Home Assistant semantics, browser
+frontend or dashboard behavior, a delegated `ha-mcp` contract, MCP protocol or
+pinned-SDK behavior, webhook and Home Assistant Cloud transport ownership,
+Supervisor behavior, Engineering container construction or provenance, or the
+HAOS platform, use the boundary-specific hierarchy in
+[`ADR-021`](architecture/ADR-021-HOME-ASSISTANT-SOURCE-AUTHORITY.md). Record the
+exact upstream repository, tag or commit, relevant paths, and supported-version
+relationship in review evidence. Moving branches, documentation examples, and
+skills are useful discovery or guidance, but they do not replace exact source or
+executable validation.
+
 ## Keyboard Workflow
 
 1. Open the repository or a clean Codex-managed worktree. Use one worktree and
