@@ -20,6 +20,12 @@ union is performed. Canonicalization enforces byte, node and depth budgets
 before serialization, so an oversized or wide record remains malformed
 evidence rather than consuming unbounded work.
 
+Canonical retention is also capped at 16,777,216 aggregate bytes in each
+provider pass. Exhaustion retains no additional canonical blobs and makes the
+selector evidence incomplete with an exact diagnostic reason. The raw
+record-count bound remains authoritative and runs before deduplication;
+oversized-response ordering uses fixed-size canonical digests.
+
 Raw response bounds run first. Conflicting records, unreadable labels,
 relevant malformed or unsupported values, non-finite numbers, incomplete
 inventories and every overflow remain fail-closed. An unrelated readable

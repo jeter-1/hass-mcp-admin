@@ -113,8 +113,13 @@ as complete deterministic canonical JSON: sorted mapping keys, compact
 separators, UTF-8, strict JSON scalar types, preserved list order, no coercion,
 no `default=str`, and no non-finite number. A 65,536-byte canonical-record
 budget, 4,096-node budget and bounded depth are enforced before serialization;
-oversized or wide records remain noncanonical and fail closed. Records are
-grouped only by an exact validated `entity_id`.
+oversized or wide records remain noncanonical and fail closed. Each provider
+pass also caps aggregate retained canonical bytes at 16,777,216. Exhaustion
+marks selector evidence incomplete with
+`entity_registry_canonical_byte_bound_exceeded`; canonical bytes beyond the
+budget are not retained. Raw record-count bounds still run first, and
+oversized-response ordering retains only fixed-size canonical digests. Records
+are grouped only by an exact validated `entity_id`.
 
 Multiple records collapse only when every complete canonical JSON byte string
 is identical. Accepted multiplicity changes diagnostic anomaly evidence but

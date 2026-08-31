@@ -64,6 +64,7 @@ MAX_ENTITY_LABELS = 64
 MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES = 65_536
 MAX_ENTITY_REGISTRY_CANONICAL_RECORD_NODES = 4_096
 MAX_ENTITY_REGISTRY_CANONICAL_RECORD_DEPTH = 64
+MAX_ENTITY_REGISTRY_CANONICAL_TOTAL_BYTES = 16_777_216
 MAX_BLUEPRINT_RESOLUTION_NODES = 10_000
 MAX_BLUEPRINT_RESOLUTION_DEPTH = 64
 MAX_BLUEPRINT_SOURCE_BYTES = 1_048_576
@@ -1369,6 +1370,24 @@ def _strict_canonical_json_bytes(value: Any) -> bytes:
     return encoded
 
 
+def _bounded_registry_canonical_bytes(
+    value: Any,
+    *,
+    retained_bytes: int,
+) -> tuple[bytes | None, int, bool]:
+    """Canonicalize one record without exceeding aggregate retention."""
+
+    try:
+        canonical = _strict_canonical_json_bytes(value)
+    except (TypeError, ValueError, OverflowError):
+        return None, retained_bytes, False
+    if len(canonical) > (
+        MAX_ENTITY_REGISTRY_CANONICAL_TOTAL_BYTES - retained_bytes
+    ):
+        return None, retained_bytes, True
+    return canonical, retained_bytes + len(canonical), False
+
+
 def _deduplicate_identical_entity_registry_records(
     entity_registry: list[Any],
 ) -> list[Any]:
@@ -1384,16 +1403,19 @@ def _deduplicate_identical_entity_registry_records(
         return entity_registry
 
     groups: dict[str, list[tuple[int, bytes | None]]] = defaultdict(list)
+    canonical_retained_bytes = 0
     for index, item in enumerate(entity_registry):
         if not isinstance(item, dict):
             continue
         entity_id = item.get("entity_id")
         if not isinstance(entity_id, str) or not valid_entity_id(entity_id):
             continue
-        try:
-            canonical = _strict_canonical_json_bytes(item)
-        except (TypeError, ValueError, OverflowError):
-            canonical = None
+        canonical, canonical_retained_bytes, _bound_exceeded = (
+            _bounded_registry_canonical_bytes(
+                item,
+                retained_bytes=canonical_retained_bytes,
+            )
+        )
         groups[entity_id].append((index, canonical))
 
     duplicate_indexes: set[int] = set()
@@ -1652,14 +1674,16 @@ def _build_label_membership_evidence(
                 )
             )
             try:
-                canonical = _strict_canonical_json_bytes(value)
+                canonical_digest = hashlib.sha256(
+                    _strict_canonical_json_bytes(value)
+                ).digest()
             except (TypeError, ValueError, OverflowError):
-                canonical = b""
+                canonical_digest = b""
             return (
                 0,
                 raw_entity_id.encode("utf-8"),
                 labels,
-                canonical,
+                canonical_digest,
             )
 
         # ``nsmallest`` traverses the supplied snapshot while retaining only
@@ -1677,6 +1701,8 @@ def _build_label_membership_evidence(
     canonical_groups: dict[
         str, list[tuple[bytes | None, frozenset[str]]]
     ] = defaultdict(list)
+    canonical_retained_bytes = 0
+    canonical_byte_bound_exceeded = False
     for item in retained_entity_registry:
         if not isinstance(item, dict):
             for selector in ordered_selectors:
@@ -1686,10 +1712,15 @@ def _build_label_membership_evidence(
                     "entity_registry_malformed_relevant_record"
                 )
             continue
-        try:
-            canonical = _strict_canonical_json_bytes(item)
-        except (TypeError, ValueError, OverflowError):
-            canonical = None
+        canonical, canonical_retained_bytes, bound_exceeded = (
+            _bounded_registry_canonical_bytes(
+                item,
+                retained_bytes=canonical_retained_bytes,
+            )
+        )
+        canonical_byte_bound_exceeded = bool(
+            canonical_byte_bound_exceeded or bound_exceeded
+        )
         if canonical is not None:
             canonical_unique_records.add(canonical)
         raw_labels = item.get("labels", [])
@@ -1733,6 +1764,13 @@ def _build_label_membership_evidence(
                 )
             continue
         canonical_groups[entity_id].append((canonical, frozenset(labels)))
+
+    if canonical_byte_bound_exceeded:
+        for selector in ordered_selectors:
+            entity_selector_complete[selector] = False
+            failure_reasons[selector].add(
+                "entity_registry_canonical_byte_bound_exceeded"
+            )
 
     for entity_id, records in canonical_groups.items():
         variants = {canonical for canonical, _labels in records}
@@ -1848,6 +1886,9 @@ def _build_label_membership_evidence(
                 selector
             ],
             "raw_bound_exceeded": raw_bound_exceeded,
+            "canonical_byte_bound_exceeded": (
+                canonical_byte_bound_exceeded
+            ),
         }
         anomaly_fingerprint = hashlib.sha256(
             json.dumps(

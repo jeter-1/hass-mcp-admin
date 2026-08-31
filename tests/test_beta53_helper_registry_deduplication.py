@@ -21,10 +21,12 @@ from ha_mcp_engineering.dependency.provider import (
     DirectHaDependencyProvider,
     MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES,
     MAX_ENTITY_REGISTRY_CANONICAL_RECORD_NODES,
+    MAX_ENTITY_REGISTRY_CANONICAL_TOTAL_BYTES,
     MAX_EXPAND_SNAPSHOT_ENTITIES,
     _build_expand_snapshot_evidence,
     _build_label_membership_evidence,
     _deduplicate_identical_entity_registry_records,
+    _strict_canonical_json_bytes,
 )
 from ha_mcp_engineering.dependency.extraction import LABEL_LOOKUP_MODEL
 from ha_mcp_engineering.dependency.models import LABEL_SELECTOR_AUTHORITY_MODEL
@@ -237,6 +239,50 @@ class Beta53CanonicalEntityRegistryTests(unittest.TestCase):
                     "entity_registry_malformed_relevant_record",
                     diagnostic.failure_reason_codes,
                 )
+
+    def test_aggregate_canonical_retention_is_bounded_in_both_passes(self):
+        payload = "x" * (
+            MAX_ENTITY_REGISTRY_CANONICAL_RECORD_BYTES - 512
+        )
+        sample = _record(
+            "sensor.aggregate_00000",
+            ["label_a"],
+            payload=payload,
+        )
+        canonical_size = len(_strict_canonical_json_bytes(sample))
+        pair_count = (
+            MAX_ENTITY_REGISTRY_CANONICAL_TOTAL_BYTES
+            // (canonical_size * 2)
+        ) + 2
+        records = []
+        for index in range(pair_count):
+            record = _record(
+                f"sensor.aggregate_{index:05d}",
+                ["label_a"],
+                payload=payload,
+            )
+            records.extend(
+                (copy.deepcopy(record), copy.deepcopy(record))
+            )
+
+        self.assertLess(len(records), MAX_EXPAND_SNAPSHOT_ENTITIES)
+        semantic = _deduplicate_identical_entity_registry_records(
+            records
+        )
+        self.assertGreater(len(semantic), pair_count)
+
+        observed = _evidence(records)
+        diagnostic = observed.selector_authority["label_a"]
+        self.assertFalse(diagnostic.complete)
+        self.assertFalse(diagnostic.raw_bound_exceeded)
+        self.assertIn(
+            "entity_registry_canonical_byte_bound_exceeded",
+            diagnostic.failure_reason_codes,
+        )
+        self.assertLessEqual(
+            diagnostic.canonical_unique_record_count * canonical_size,
+            MAX_ENTITY_REGISTRY_CANONICAL_TOTAL_BYTES,
+        )
 
     def test_malformed_peer_prevents_partial_identical_collapse(self):
         canonical = _record()
