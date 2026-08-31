@@ -11,9 +11,9 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = ROOT / "scripts" / "publish_registry_tags_create_only.py"
+SCRIPT_PATH = ROOT / "scripts" / "publish_registry_tags_guarded.py"
 SPEC = importlib.util.spec_from_file_location(
-    "publish_registry_tags_create_only", SCRIPT_PATH
+    "publish_registry_tags_guarded", SCRIPT_PATH
 )
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -49,12 +49,10 @@ class FakeRegistryTransport:
     def __init__(
         self,
         *,
-        conditional_supported=True,
         race_target=None,
         ambiguous_target=None,
         applied_then_error_target=None,
     ):
-        self.conditional_supported = conditional_supported
         self.race_target = race_target
         self.ambiguous_target = ambiguous_target
         self.applied_then_error_target = applied_then_error_target
@@ -107,14 +105,12 @@ class FakeRegistryTransport:
 
         if method != "PUT":
             raise AssertionError(f"unexpected method: {method}")
-        if headers.get("If-None-Match") != "*":
-            raise AssertionError("manifest PUT was not create-only")
+        if "If-None-Match" in headers:
+            raise AssertionError("GHCR-compatible publication must not claim conditional PUT")
         if tag == self.race_target and tag not in self.tags:
             self.tags[tag] = COMPETING_MANIFEST
         if tag == self.ambiguous_target:
             return self._response(503)
-        if tag in self.tags and self.conditional_supported:
-            return self._response(412)
         assert body is not None
         self.tags[tag] = body
         if tag == self.applied_then_error_target:
@@ -123,9 +119,9 @@ class FakeRegistryTransport:
         return self._response(201, digest=digest)
 
 
-class CreateOnlyRegistryPublicationTests(unittest.TestCase):
+class GuardedRegistryPublicationTests(unittest.TestCase):
     def publisher(self, transport):
-        return MODULE.CreateOnlyPublisher(
+        return MODULE.GuardedGhcrPublisher(
             repository=MODULE.RegistryReference.parse(
                 "ghcr.io/jeter-1/hass-mcp-engineering-beta"
             ),
@@ -149,57 +145,48 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
         manifest_puts = [
             request for request in transport.requests if request["method"] == "PUT"
         ]
-        self.assertEqual(len(manifest_puts), 3)
-        self.assertTrue(
-            transport.requests[1]["url"].endswith(f"/manifests/{DIGEST}")
-        )
+        self.assertEqual(len(manifest_puts), 2)
         self.assertNotIn(
             "publication-staging",
             "\n".join(request["url"] for request in transport.requests),
         )
         self.assertTrue(
-            all(request["headers"].get("If-None-Match") == "*" for request in manifest_puts)
+            all("If-None-Match" not in request["headers"] for request in manifest_puts)
         )
         self.assertNotIn(
             "Authorization",
             "\n".join(repr(request) for request in transport.requests),
         )
 
-    def test_late_competing_tag_is_never_overwritten(self):
+    def test_late_external_race_is_followed_by_exact_postcondition(self):
         targets = (COMMIT_TAG, VERSION_TAG)
-        for target_index, target in enumerate(targets):
+        for target in targets:
             with self.subTest(target=target):
                 transport = FakeRegistryTransport(race_target=target)
+                created = self.publisher(transport).publish(
+                    source_digest=DIGEST,
+                    target_tags=targets,
+                )
+                self.assertEqual(created, targets)
+                self.assertEqual(transport.tags[target], MANIFEST)
 
-                with self.assertRaisesRegex(
-                    MODULE.PublicationError,
-                    rf"TARGET_TAG_ALREADY_EXISTS:{re.escape(target)}:created={target_index}",
-                ) as raised:
-                    self.publisher(transport).publish(
-                        source_digest=DIGEST,
-                        target_tags=targets,
-                    )
-
-                expected_disposition = "partial" if target_index else "none"
-                self.assertEqual(raised.exception.disposition, expected_disposition)
-                self.assertEqual(transport.tags[target], COMPETING_MANIFEST)
-                for prior in targets[:target_index]:
-                    self.assertEqual(transport.tags[prior], MANIFEST)
-                for later in targets[target_index + 1 :]:
-                    self.assertNotIn(later, transport.tags)
-
-    def test_unsupported_create_only_semantics_stop_before_release_tags(self):
-        transport = FakeRegistryTransport(conditional_supported=False)
+    def test_preexisting_target_stops_before_any_target_write(self):
+        transport = FakeRegistryTransport()
+        transport.tags[COMMIT_TAG] = COMPETING_MANIFEST
 
         with self.assertRaisesRegex(
-            MODULE.PublicationError, "REGISTRY_CREATE_ONLY_UNSUPPORTED"
-        ):
+            MODULE.PublicationError,
+            rf"TARGET_TAG_ALREADY_EXISTS:{re.escape(COMMIT_TAG)}:created=0",
+        ) as raised:
             self.publisher(transport).publish(
                 source_digest=DIGEST,
-                target_tags=("2.2.0-beta.53",),
+                target_tags=(COMMIT_TAG, VERSION_TAG),
             )
 
-        self.assertEqual(set(transport.tags), {DIGEST})
+        self.assertEqual(raised.exception.disposition, "none")
+        self.assertFalse(
+            any(request["method"] == "PUT" for request in transport.requests)
+        )
 
     def test_ambiguous_target_response_stops_without_claiming_that_tag(self):
         target = COMMIT_TAG
@@ -211,7 +198,7 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
         ) as raised:
             self.publisher(transport).publish(
                 source_digest=DIGEST,
-                target_tags=(target,),
+                target_tags=(target, VERSION_TAG),
             )
 
         self.assertEqual(raised.exception.disposition, "unknown")
@@ -283,7 +270,7 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
         ):
             self.publisher(transport).publish(
                 source_digest=DIGEST,
-                target_tags=("2.2.0-beta.53",),
+                target_tags=(COMMIT_TAG, VERSION_TAG),
             )
 
         self.assertFalse(
@@ -309,6 +296,14 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
                 "source_digest": DIGEST,
                 "target_tags": tuple(f"tag-{index}" for index in range(5)),
             },
+            {
+                "source_digest": DIGEST,
+                "target_tags": (VERSION_TAG, COMMIT_TAG),
+            },
+            {
+                "source_digest": DIGEST,
+                "target_tags": (COMMIT_TAG, f"sha-{'c' * 40}"),
+            },
         )
         for values in invalid_cases:
             with self.subTest(values=values), self.assertRaises(MODULE.PublicationError):
@@ -321,7 +316,7 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(
             MODULE.PublicationError, "REGISTRY_USERNAME_INVALID"
         ):
-            MODULE.CreateOnlyPublisher(
+            MODULE.GuardedGhcrPublisher(
                 repository=MODULE.RegistryReference.parse(
                     "ghcr.io/jeter-1/hass-mcp-engineering-beta"
                 ),

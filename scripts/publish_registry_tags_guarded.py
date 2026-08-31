@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Create GHCR release tags without overwriting an existing tag.
+"""Publish GHCR release tags with bounded checks and exact postconditions.
 
-The image is first pushed only by its immutable digest. This helper reads that
-exact manifest, proves that the registry enforces ``If-None-Match: *`` on the
-existing digest reference, and then creates each release tag with the same
-precondition. It never creates a temporary tag or issues an unconditional
-manifest write.
+GHCR does not enforce conditional create-only manifest PUTs. This helper reads
+the exact digest-only source, proves each target is absent immediately before
+its ordinary manifest PUT, and verifies the target digest immediately after.
+The commit tag must be supplied first and the version tag last. A writer outside
+the serialized workflow can still race the check-to-write interval; the helper
+reports every ambiguous or partial result and never proceeds after uncertainty.
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ MAX_TOKEN_LENGTH = 8192
 EXPECTED_REGISTRY = "ghcr.io"
 TAG_PATTERN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}\Z")
 DIGEST_PATTERN = re.compile(r"sha256:[0-9a-f]{64}\Z")
+COMMIT_TAG_PATTERN = re.compile(r"sha-[0-9a-f]{40}\Z")
 _REPOSITORY_SEGMENT = r"[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*"
 REPOSITORY_PATH_PATTERN = re.compile(
     rf"{_REPOSITORY_SEGMENT}(?:/{_REPOSITORY_SEGMENT})*\Z"
@@ -154,7 +156,7 @@ class RegistryReference:
         )
 
 
-class CreateOnlyPublisher:
+class GuardedGhcrPublisher:
     def __init__(
         self,
         *,
@@ -213,7 +215,6 @@ class CreateOnlyPublisher:
         reference: str,
         body: bytes | None = None,
         media_type: str | None = None,
-        create_only: bool = False,
     ) -> HttpResponse:
         validate_manifest_reference(reference)
         headers = {
@@ -224,8 +225,6 @@ class CreateOnlyPublisher:
             if media_type not in MANIFEST_MEDIA_TYPES:
                 raise PublicationError("SOURCE_MANIFEST_MEDIA_TYPE_INVALID")
             headers["Content-Type"] = media_type
-        if create_only:
-            headers["If-None-Match"] = "*"
         return self._transport.request(
             method,
             self._repository.manifest_url(reference),
@@ -241,12 +240,17 @@ class CreateOnlyPublisher:
         target_tags: tuple[str, ...],
     ) -> tuple[str, ...]:
         validate_digest(source_digest)
-        if not target_tags or len(target_tags) > 4:
+        if len(target_tags) != 2:
             raise PublicationError("TARGET_TAG_COUNT_INVALID")
         if len(set(target_tags)) != len(target_tags):
             raise PublicationError("TARGET_TAG_SET_INVALID")
         for target_tag in target_tags:
             validate_tag(target_tag)
+        if (
+            COMMIT_TAG_PATTERN.fullmatch(target_tags[0]) is None
+            or COMMIT_TAG_PATTERN.fullmatch(target_tags[1]) is not None
+        ):
+            raise PublicationError("TARGET_TAG_ORDER_INVALID")
 
         token = self._bearer_token()
         source = self._manifest_request(
@@ -264,21 +268,32 @@ class CreateOnlyPublisher:
         if actual_digest != source_digest or header_digest != source_digest:
             raise PublicationError("SOURCE_MANIFEST_DIGEST_MISMATCH")
 
-        capability = self._manifest_request(
-            token=token,
-            method="PUT",
-            reference=source_digest,
-            body=source.body,
-            media_type=media_type,
-            create_only=True,
-        )
-        if capability.status == 201:
-            raise PublicationError("REGISTRY_CREATE_ONLY_UNSUPPORTED")
-        if capability.status != 412:
-            raise PublicationError("REGISTRY_CREATE_ONLY_CAPABILITY_AMBIGUOUS")
-
         created: list[str] = []
         for target_tag in target_tags:
+            try:
+                existing = self._manifest_request(
+                    token=token,
+                    method="GET",
+                    reference=target_tag,
+                )
+            except PublicationError as error:
+                raise PublicationError(
+                    f"TARGET_TAG_ABSENCE_UNKNOWN:{target_tag}:created={len(created)}",
+                    disposition="unknown",
+                    created=tuple(created),
+                ) from error
+            if existing.status == 200:
+                raise PublicationError(
+                    f"TARGET_TAG_ALREADY_EXISTS:{target_tag}:created={len(created)}",
+                    disposition="partial" if created else "none",
+                    created=tuple(created),
+                )
+            if existing.status != 404:
+                raise PublicationError(
+                    f"TARGET_TAG_ABSENCE_AMBIGUOUS:{target_tag}:created={len(created)}",
+                    disposition="unknown",
+                    created=tuple(created),
+                )
             try:
                 response = self._manifest_request(
                     token=token,
@@ -286,7 +301,6 @@ class CreateOnlyPublisher:
                     reference=target_tag,
                     body=source.body,
                     media_type=media_type,
-                    create_only=True,
                 )
             except PublicationError as error:
                 raise PublicationError(
@@ -294,12 +308,6 @@ class CreateOnlyPublisher:
                     disposition="unknown",
                     created=tuple(created),
                 ) from error
-            if response.status == 412:
-                raise PublicationError(
-                    f"TARGET_TAG_ALREADY_EXISTS:{target_tag}:created={len(created)}",
-                    disposition="partial" if created else "none",
-                    created=tuple(created),
-                )
             if response.status != 201:
                 raise PublicationError(
                     f"TARGET_TAG_CREATE_AMBIGUOUS:{target_tag}:created={len(created)}",
@@ -314,10 +322,8 @@ class CreateOnlyPublisher:
                     created=tuple((*created, target_tag)),
                 )
             created.append(target_tag)
-
-        for target_tag in target_tags:
             try:
-                response = self._manifest_request(
+                confirmed = self._manifest_request(
                     token=token,
                     method="GET",
                     reference=target_tag,
@@ -328,11 +334,11 @@ class CreateOnlyPublisher:
                     disposition="unknown",
                     created=tuple(created),
                 ) from error
-            actual = f"sha256:{hashlib.sha256(response.body).hexdigest()}"
+            actual = f"sha256:{hashlib.sha256(confirmed.body).hexdigest()}"
             if (
-                response.status != 200
+                confirmed.status != 200
                 or actual != source_digest
-                or response.headers.get("docker-content-digest") != source_digest
+                or confirmed.headers.get("docker-content-digest") != source_digest
             ):
                 raise PublicationError(
                     f"TARGET_TAG_POSTCONDITION_FAILED:{target_tag}",
@@ -360,7 +366,7 @@ def validate_manifest_reference(value: str) -> None:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create GHCR tags with an enforced no-overwrite precondition."
+        description="Create and verify GHCR tags with bounded absence checks."
     )
     parser.add_argument("--repository", required=True)
     parser.add_argument("--source-digest", required=True)
@@ -384,7 +390,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(list(argv if argv is not None else sys.argv[1:]))
     try:
         repository = RegistryReference.parse(args.repository)
-        publisher = CreateOnlyPublisher(
+        publisher = GuardedGhcrPublisher(
             repository=repository,
             username=os.environ.get("GHCR_USERNAME", ""),
             password=os.environ.get("GHCR_TOKEN", ""),
@@ -400,7 +406,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     write_outputs(created=created, disposition="complete")
     print(
-        f"Created {len(created)} release tag(s) with enforced create-only semantics."
+        f"Created and verified {len(created)} guarded GHCR release tag(s)."
     )
     return 0
 

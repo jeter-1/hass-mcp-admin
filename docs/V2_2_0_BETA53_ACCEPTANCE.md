@@ -210,15 +210,21 @@ pushes the multi-architecture build without a temporary tag, only under its
 content-addressed digest, so later failure cannot leave a predictable staging
 reference or require deletion of a digest shared by completed final tags. The
 digest, architectures, attestations, and provenance labels are verified
-anonymously, then the complete recovery-authority and artifact-absence guard is
+anonymously. Every attestation manifest and raw in-toto statement is fetched by
+its exact descriptor digest and must bind its bounded bytes, predicate type,
+manifest subject, and statement subject to the same platform digest. Failed-run
+metadata is read in a separate job with only Actions-read and contents-read
+authority; the publishing job retains no Actions-read permission. The complete
+recovery-authority and artifact-absence guard is
 repeated immediately before final image tags. The final release-commit and
-version image tags are created in that order with an OCI manifest PUT carrying
-HTTP `If-None-Match: *` after a same-run capability probe proves GHCR rejects a
-conditional write to the existing digest reference. Unsupported conditional
-behavior, ambiguity, or a tag that appears after the earlier probe fails closed
-without overwriting that tag. Partial and unknown publication dispositions
-remain explicit when a later tag fails or a registry response is lost; the
-deployable version identity is attempted only after the commit tag and the exact
+version image tags are created in that order through GHCR's supported ordinary
+manifest PUT. Each target is proved absent immediately before its write and is
+verified at the exact source digest immediately afterward. GHCR supplies no
+atomic create-only precondition, so an external package writer can race that
+bounded check-to-write interval; repository workflow concurrency still
+serializes this publisher. Partial and unknown publication dispositions remain
+explicit when a later tag fails or a registry response is lost; the deployable
+version identity is attempted only after the commit tag and the exact
 digest-addressed image have been verified. After final image-tag verification,
 the complete manual actor, ref, exact protected-main, first-parent,
 Engineering-tree, advertised-version and staged-state authority guard is fetched
@@ -226,9 +232,9 @@ and repeated directly before the annotated Git tag push and again directly
 before GitHub Release creation. Each remote metadata identity is reprobed at its
 write boundary. Protected-main movement at either point prevents that write and
 leaves any already-created image identities in explicit reconciliation state.
-For fresh manual recovery, only this publisher helper is materialized in runner
-temp from the exact guarded workflow-authority SHA; the Beta 53 image is built
-solely from the historical release checkout.
+For fresh manual recovery, publication helpers are materialized in runner temp
+from the exact guarded workflow-authority SHA; the Beta 53 image is built solely
+from the historical release checkout.
 
 Authorized run `33379623142` subsequently completed all validation and produced
 the untagged immutable OCI index
@@ -237,16 +243,18 @@ at `2026-08-31T10:10:06Z`. Its old Docker-daemon verification failed while
 switching the same index between platform pulls; it created no final image tag,
 Git tag, or GitHub Release. The narrow completion path therefore accepts the
 failed run ID, exact digest, and build time only as one all-or-none recovery
-triple. It grants `actions: read` only to the publication job so the workflow can
-require that run to be a completed failed owner-triggered manual execution of
-the same protected-main workflow in this repository.
+triple. It grants `actions: read` only to the isolated read-only recovery-source
+job so the workflow can require that run to be a completed failed
+owner-triggered manual execution of the same protected-main workflow in this
+repository.
 
 In digest-resume mode QEMU, GHCR login, and the build action are skipped. A
 bounded verifier is materialized from the exact current workflow-authority SHA
 and anonymously validates the index digest, the exact three platform children,
-one attestation subject per child, every platform's source/version/time/dirty
-labels, and SLSA provenance binding the prior run ID and attempt, workflow SHA
-and path, protected ref, repository and actors, release SHA, source tree, build
+one digest-bound attestation manifest and two digest-bound in-toto statements
+per child, every platform's source/version/time/dirty labels, and SLSA
+provenance binding the prior run ID and attempt, workflow SHA and path,
+protected ref, repository and actors, release SHA, source tree, build
 arguments, and BuildKit VCS identity. The verifier uses daemonless Buildx
 metadata inspection; it never performs a Docker image pull. Any disagreement,
 unsupported shape, duplicate JSON key, non-finite value, oversized evidence,

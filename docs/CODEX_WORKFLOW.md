@@ -236,19 +236,25 @@ and a failure at any later phase therefore cannot leave a predictable staging
 tag or delete a digest shared by completed release tags. The exact OCI index,
 three platform child digests, per-platform image labels, attestation subjects,
 and SLSA provenance are verified anonymously and without Docker image pulls
-before any final image tag is created. The provenance must bind the release SHA,
+before any final image tag is created. Each attestation manifest and raw in-toto
+statement is fetched by its descriptor digest; its byte hash, bounded size,
+predicate type, manifest subject, and statement subject must all bind the same
+platform digest. The provenance must bind the release SHA,
 version, timestamp, protected ref, repository/owner, prior run ID and attempt,
 workflow SHA/path, source tree, build arguments, and BuildKit VCS identity. The
 complete protected-main, actor,
 source-tree, version, staged-state, Git-tag, GitHub-Release, and registry-tag
 authority guard is then repeated after the digest-addressed build and
-verification, immediately before the final registry writes. The publisher uses
-the existing digest reference to prove GHCR enforces the HTTP `If-None-Match: *`
-precondition on an OCI manifest PUT, then uses the same precondition for the
-release-commit tag first and the deployable version tag last. A concurrent tag,
-an ambiguous response, or unsupported create-only semantics stops without
-overwriting the competing tag. After anonymous verification of those final image
-tags, the complete manual actor, ref, exact protected-main, first-parent,
+verification, immediately before the final registry writes. GHCR does not
+enforce conditional create-only manifest PUTs. The guarded publisher therefore
+proves each target absent immediately before its ordinary manifest PUT, creates
+the release-commit tag first, verifies its exact digest, and only then repeats
+that sequence for the deployable version tag. Repository workflow concurrency
+serializes these publications, but an external package writer can still race the
+check-to-write interval. Ambiguous reads or writes stop with an explicit partial
+or unknown disposition; exact postconditions are required before continuing.
+After anonymous verification of those final image tags, the complete manual
+actor, ref, exact protected-main, first-parent,
 Engineering-tree, advertised-version and staged-state authority guard is fetched
 and repeated directly before the annotated Git tag push, and again directly
 before GitHub Release creation. The corresponding remote identity is also
@@ -261,7 +267,9 @@ publication; an existing, partial, unknown, or ambiguous artifact is a stop
 condition requiring reconciliation.
 
 Fresh manual recovery still builds only the exact historical release checkout.
-Digest resume cannot invoke that build. The source verifier and create-only
+Digest resume cannot invoke that build. Failed-run metadata is read and
+validated in a separate job with only `actions: read` and `contents: read`; the
+publication job has no Actions-read permission. The source verifier and guarded
 registry helper are separately materialized into runner temp from the exact
 current protected-main workflow-authority SHA after that SHA has passed the
 actor, ref, current-head, first-parent, source-tree and staged-state guards. They
