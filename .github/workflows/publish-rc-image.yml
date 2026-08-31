@@ -203,16 +203,65 @@ jobs:
             echo "No reviewed Engineering version transition is present." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  recovery-source:
+    name: Validate digest-recovery source run
+    needs:
+      - detect-release
+    if: needs.detect-release.outputs.release_action == 'publish'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      source_workflow_sha: ${{ steps.recovery.outputs.source_workflow_sha }}
+      source_run_attempt: ${{ steps.recovery.outputs.source_run_attempt }}
+      source_event_name: ${{ steps.recovery.outputs.source_event_name }}
+    steps:
+      - if: needs.detect-release.outputs.source_mode == 'resume_digest'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read and validate failed publication run
+        id: recovery
+        if: needs.detect-release.outputs.source_mode == 'resume_digest'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RECOVERY_RUN_ID: ${{ needs.detect-release.outputs.recovery_run_id }}
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RECOVERY_RUN_ID" =~ ^[1-9][0-9]{0,19}$ || ! "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Digest recovery lacks bounded read-only source authority."
+            exit 1
+          fi
+          verifier="$RUNNER_TEMP/verify_publication_source_image.py"
+          if ! git show "${WORKFLOW_AUTHORITY_SHA}:scripts/verify_publication_source_image.py" > "$verifier" || [[ ! -s "$verifier" ]]; then
+            echo "::error::The digest-recovery verifier is unavailable from current workflow authority."
+            exit 1
+          fi
+          recovery_run_json="$RUNNER_TEMP/recovery-run.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" > "$recovery_run_json"
+          python "$verifier" verify-recovery-run \
+            --run-json "$recovery_run_json" \
+            --expected-run-id "$RECOVERY_RUN_ID" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-owner "jeter-1" \
+            --github-output "$GITHUB_OUTPUT"
+
   promote:
     name: Publish and verify reviewed release
     needs:
       - validate
       - detect-release
+      - recovery-source
     if: needs.detect-release.outputs.release_action == 'publish'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
-      actions: read
       contents: write
       packages: write
     outputs:
@@ -268,6 +317,9 @@ jobs:
           EVENT_REF: ${{ github.ref }}
           EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           GH_TOKEN: ${{ github.token }}
+          RECOVERY_SOURCE_EVENT_NAME: ${{ needs.recovery-source.outputs.source_event_name }}
+          RECOVERY_SOURCE_RUN_ATTEMPT: ${{ needs.recovery-source.outputs.source_run_attempt }}
+          RECOVERY_SOURCE_WORKFLOW_SHA: ${{ needs.recovery-source.outputs.source_workflow_sha }}
           TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -392,23 +444,18 @@ jobs:
               echo "::error::An existing digest may be resumed only through owner-authorized manual recovery."
               exit 1
             fi
-            verifier="$RUNNER_TEMP/verify_publication_source_image.py"
-            if ! git show "${TRIGGER_SHA}:scripts/verify_publication_source_image.py" > "$verifier" || [[ ! -s "$verifier" ]]; then
-              echo "::error::The digest-recovery verifier is unavailable from current workflow authority."
+            source_workflow_sha="$RECOVERY_SOURCE_WORKFLOW_SHA"
+            source_run_attempt="$RECOVERY_SOURCE_RUN_ATTEMPT"
+            source_event_name="$RECOVERY_SOURCE_EVENT_NAME"
+            if [[ ! "$source_workflow_sha" =~ ^[0-9a-f]{40}$ || ! "$source_run_attempt" =~ ^[1-9][0-9]{0,2}$ || "$source_event_name" != "workflow_dispatch" ]]; then
+              echo "::error::The read-only recovery-source job did not provide exact failed-run authority."
               exit 1
             fi
-            recovery_run_json="$RUNNER_TEMP/recovery-run.json"
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DETECTED_RECOVERY_RUN_ID}" > "$recovery_run_json"
-            source_run_env="$RUNNER_TEMP/source-run.env"
-            python "$verifier" verify-recovery-run \
-              --run-json "$recovery_run_json" \
-              --expected-run-id "$DETECTED_RECOVERY_RUN_ID" \
-              --expected-repository "$GITHUB_REPOSITORY" \
-              --expected-owner "jeter-1" \
-              --github-output "$source_run_env"
-            # The verifier emits only fixed keys with validated SHA/integer values.
-            source "$source_run_env"
-            cat "$source_run_env" >> "$GITHUB_OUTPUT"
+            {
+              echo "source_workflow_sha=$source_workflow_sha"
+              echo "source_run_attempt=$source_run_attempt"
+              echo "source_event_name=$source_event_name"
+            } >> "$GITHUB_OUTPUT"
             if ! git cat-file -e "${source_workflow_sha}^{commit}" 2>/dev/null; then
               echo "::error::The failed publication workflow commit is unavailable."
               exit 1
@@ -633,7 +680,7 @@ jobs:
             echo "source_image_reused=$source_image_reused"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Verify digest-addressed image architectures and provenance anonymously
+      - name: Verify digest-addressed image architectures and raw attestations anonymously
         id: verify_source
         shell: bash
         env:
@@ -653,8 +700,6 @@ jobs:
           mkdir -p "$anonymous_config"
           source_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"
           manifest_json="$RUNNER_TEMP/source-manifest.json"
-          provenance_json="$RUNNER_TEMP/source-provenance.json"
-          sbom_json="$RUNNER_TEMP/source-sbom.json"
           verifier="$RUNNER_TEMP/verify_publication_source_image.py"
 
           if [[ ! "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
@@ -684,15 +729,9 @@ jobs:
             --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${SOURCE_ARM64_DIGEST}" > "$arm64_json"
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
             --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${SOURCE_ARMV7_DIGEST}" > "$armv7_json"
-          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            --format '{{json .Provenance}}' "$source_image" > "$provenance_json"
-          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            --format '{{json .SBOM}}' "$source_image" > "$sbom_json"
-
           python "$verifier" verify-source \
             --manifest-json "$manifest_json" \
-            --provenance-json "$provenance_json" \
-            --sbom-json "$sbom_json" \
+            --image-repository "$IMAGE_REPOSITORY" \
             --image-json "linux/amd64=$amd64_json" \
             --image-json "linux/arm64=$arm64_json" \
             --image-json "linux/arm/v7=$armv7_json" \
@@ -794,7 +833,7 @@ jobs:
             "${IMAGE_REPOSITORY}:${PREPARED_VERSION}" \
             "${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"
 
-      - name: Create release image tags with registry-enforced preconditions
+      - name: Create release image tags with bounded GHCR checks
         id: publish_tags
         shell: bash
         env:
@@ -811,9 +850,9 @@ jobs:
             echo "::error::The workflow-authority commit is not an exact SHA."
             exit 1
           fi
-          publisher="$RUNNER_TEMP/publish_registry_tags_create_only.py"
-          if ! git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_create_only.py" > "$publisher" || [[ ! -s "$publisher" ]]; then
-            echo "::error::The create-only publisher is unavailable from the exact workflow-authority commit."
+          publisher="$RUNNER_TEMP/publish_registry_tags_guarded.py"
+          if ! git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_guarded.py" > "$publisher" || [[ ! -s "$publisher" ]]; then
+            echo "::error::The guarded GHCR publisher is unavailable from the exact workflow-authority commit."
             exit 1
           fi
 

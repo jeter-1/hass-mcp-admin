@@ -3,8 +3,11 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
+from unittest import mock
+from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +17,7 @@ SPEC = importlib.util.spec_from_file_location(
 )
 MODULE = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
+sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
 
 REPOSITORY = "jeter-1/hass-mcp-admin"
@@ -25,6 +29,7 @@ BUILD_TIME = "2026-08-31T10:10:06Z"
 RUN_ID = "33379623142"
 RUN_ATTEMPT = 1
 SOURCE_URL = f"https://github.com/{REPOSITORY}"
+IMAGE_REPOSITORY = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 
 PLATFORM_DIGESTS = {
     "linux/amd64": f"sha256:{'a' * 64}",
@@ -192,6 +197,161 @@ def valid_sbom():
     }
 
 
+class FakeAttestationTransport:
+    def __init__(self, manifests, blobs):
+        self.manifests = manifests
+        self.blobs = blobs
+        self.requests = []
+
+    def request(self, method, url, headers, response_limit):
+        self.requests.append((method, url, dict(headers), response_limit))
+        if url.startswith("https://ghcr.io/token?"):
+            return MODULE.HttpResponse(
+                status=200,
+                headers={},
+                body=b'{"token":"synthetic-anonymous-token"}',
+            )
+        parsed = urlsplit(url)
+        reference = unquote(parsed.path.rsplit("/", 1)[-1])
+        if "/manifests/" in parsed.path:
+            raw = self.manifests.get(reference)
+            if raw is None:
+                return MODULE.HttpResponse(status=404, headers={}, body=b"")
+            return MODULE.HttpResponse(
+                status=200,
+                headers={"docker-content-digest": reference},
+                body=raw,
+            )
+        if parsed.hostname == "ghcr.io" and "/blobs/" in parsed.path:
+            return MODULE.HttpResponse(
+                status=307,
+                headers={"location": f"https://storage.invalid/{reference}"},
+                body=b"",
+            )
+        if parsed.hostname == "storage.invalid":
+            if "Authorization" in headers:
+                raise AssertionError("registry authorization crossed the redirect")
+            raw = self.blobs.get(reference)
+            if raw is None:
+                return MODULE.HttpResponse(status=404, headers={}, body=b"")
+            return MODULE.HttpResponse(status=200, headers={}, body=raw)
+        raise AssertionError(f"unexpected URL: {url}")
+
+
+def registry_attestation_fixture(
+    *,
+    statement_mutator=None,
+    manifest_mutator=None,
+    tamper_blob=None,
+):
+    manifests = {}
+    blobs = {}
+    platform_entries = copy.deepcopy(valid_manifest()["manifests"][:3])
+    entries = copy.deepcopy(platform_entries)
+    provenance = valid_provenance()
+    sbom = valid_sbom()
+    for platform, platform_entry in zip(
+        MODULE.REQUIRED_PLATFORMS,
+        platform_entries,
+        strict=True,
+    ):
+        layers = []
+        for predicate_type, predicate in (
+            (
+                MODULE.SPDX_PREDICATE_TYPE,
+                sbom[platform]["SPDX"],
+            ),
+            (
+                MODULE.SLSA_PREDICATE_TYPE,
+                provenance[platform]["SLSA"],
+            ),
+        ):
+            statement = {
+                "_type": MODULE.IN_TOTO_STATEMENT_TYPE,
+                "predicate": copy.deepcopy(predicate),
+                "predicateType": predicate_type,
+                "subject": [
+                    {
+                        "digest": {
+                            "sha256": platform_entry["digest"].removeprefix(
+                                "sha256:"
+                            )
+                        },
+                        "name": (
+                            f"pkg:docker/{IMAGE_REPOSITORY}@latest?"
+                            f"platform={platform.replace('/', '%2F')}"
+                        ),
+                    }
+                ],
+            }
+            if statement_mutator is not None:
+                statement_mutator(platform, predicate_type, statement)
+            raw_statement = json_bytes(statement)
+            statement_digest = (
+                f"sha256:{hashlib.sha256(raw_statement).hexdigest()}"
+            )
+            stored_statement = raw_statement
+            if tamper_blob == (platform, predicate_type):
+                stored_statement = raw_statement + b" "
+            blobs[statement_digest] = stored_statement
+            layers.append(
+                {
+                    "annotations": {
+                        "in-toto.io/predicate-type": predicate_type,
+                    },
+                    "digest": statement_digest,
+                    "mediaType": MODULE.IN_TOTO_MEDIA_TYPE,
+                    "size": len(raw_statement),
+                }
+            )
+        attestation = {
+            "artifactType": MODULE.ATTESTATION_ARTIFACT_TYPE,
+            "config": {
+                "data": "e30=",
+                "digest": MODULE.EMPTY_CONFIG_DIGEST,
+                "mediaType": MODULE.EMPTY_CONFIG_MEDIA_TYPE,
+                "size": 2,
+            },
+            "layers": layers,
+            "mediaType": MODULE.IMAGE_MEDIA_TYPE,
+            "schemaVersion": 2,
+            "subject": {
+                "digest": platform_entry["digest"],
+                "mediaType": MODULE.IMAGE_MEDIA_TYPE,
+                "size": platform_entry["size"],
+            },
+        }
+        if manifest_mutator is not None:
+            manifest_mutator(platform, attestation)
+        raw_attestation = json_bytes(attestation)
+        attestation_digest = (
+            f"sha256:{hashlib.sha256(raw_attestation).hexdigest()}"
+        )
+        manifests[attestation_digest] = raw_attestation
+        entries.append(
+            {
+                "annotations": {
+                    "vnd.docker.reference.digest": platform_entry["digest"],
+                    "vnd.docker.reference.type": MODULE.ATTESTATION_TYPE,
+                },
+                "digest": attestation_digest,
+                "mediaType": MODULE.IMAGE_MEDIA_TYPE,
+                "platform": {"architecture": "unknown", "os": "unknown"},
+                "size": len(raw_attestation),
+            }
+        )
+    return (
+        {
+            "manifests": entries,
+            "mediaType": MODULE.INDEX_MEDIA_TYPE,
+            "schemaVersion": 2,
+        },
+        FakeAttestationTransport(manifests, blobs),
+        provenance,
+        sbom,
+    )
+
+
 def valid_run_metadata():
     return {
         "actor": {"login": OWNER},
@@ -250,10 +410,8 @@ class PublicationSourceVerifierTests(unittest.TestCase):
             "verify-source",
             "--manifest-json",
             str(manifest_path),
-            "--provenance-json",
-            str(provenance_path),
-            "--sbom-json",
-            str(sbom_path),
+            "--image-repository",
+            "ghcr.io/jeter-1/hass-mcp-engineering-beta",
         ]
         for platform, path in image_paths.items():
             arguments.extend(("--image-json", f"{platform}={path}"))
@@ -283,7 +441,15 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                 str(output),
             )
         )
-        return MODULE.main(arguments), output, digest
+        with mock.patch.object(
+            MODULE,
+            "_attestation_statements",
+            return_value=(
+                provenance or valid_provenance(),
+                sbom or valid_sbom(),
+            ),
+        ):
+            return MODULE.main(arguments), output, digest
 
     def test_exact_manifest_images_and_provenance_are_accepted(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -381,6 +547,119 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                 )
                 self.assertEqual(result, 1)
 
+    def test_registry_attestations_are_bound_to_each_platform_digest(self):
+        manifest, transport, expected_provenance, expected_sbom = (
+            registry_attestation_fixture()
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            raw = json_bytes(manifest)
+            path = root / "manifest.json"
+            path.write_bytes(raw)
+            evidence = MODULE._manifest_evidence(
+                path,
+                f"sha256:{hashlib.sha256(raw).hexdigest()}",
+            )
+            provenance, sbom = MODULE._attestation_statements(
+                IMAGE_REPOSITORY,
+                evidence,
+                transport=transport,
+            )
+        self.assertEqual(provenance, expected_provenance)
+        self.assertEqual(sbom, expected_sbom)
+        redirected = [
+            headers
+            for _method, url, headers, _limit in transport.requests
+            if url.startswith("https://storage.invalid/")
+        ]
+        self.assertTrue(redirected)
+        self.assertTrue(
+            all("Authorization" not in headers for headers in redirected)
+        )
+
+    def test_attestation_manifest_and_statement_subject_drift_fail_closed(self):
+        def statement_mutator(platform, predicate_type, statement):
+            if (
+                platform == "linux/arm64"
+                and predicate_type == MODULE.SLSA_PREDICATE_TYPE
+            ):
+                statement["subject"][0]["digest"]["sha256"] = "9" * 64
+
+        def manifest_mutator(platform, attestation):
+            if platform == "linux/arm64":
+                attestation["subject"]["digest"] = f"sha256:{'9' * 64}"
+
+        for name, fixture in (
+            (
+                "statement-subject",
+                registry_attestation_fixture(
+                    statement_mutator=statement_mutator
+                ),
+            ),
+            (
+                "manifest-subject",
+                registry_attestation_fixture(
+                    manifest_mutator=manifest_mutator
+                ),
+            ),
+        ):
+            manifest, transport, _provenance, _sbom = fixture
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                raw = json_bytes(manifest)
+                path = root / "manifest.json"
+                path.write_bytes(raw)
+                evidence = MODULE._manifest_evidence(
+                    path,
+                    f"sha256:{hashlib.sha256(raw).hexdigest()}",
+                )
+                with self.assertRaises(MODULE.VerificationError):
+                    MODULE._attestation_statements(
+                        IMAGE_REPOSITORY,
+                        evidence,
+                        transport=transport,
+                    )
+
+    def test_attestation_predicate_and_blob_digest_drift_fail_closed(self):
+        def statement_mutator(platform, predicate_type, statement):
+            if (
+                platform == "linux/amd64"
+                and predicate_type == MODULE.SLSA_PREDICATE_TYPE
+            ):
+                statement["predicateType"] = MODULE.SPDX_PREDICATE_TYPE
+
+        fixtures = (
+            (
+                "predicate-type",
+                registry_attestation_fixture(
+                    statement_mutator=statement_mutator
+                ),
+            ),
+            (
+                "blob-digest",
+                registry_attestation_fixture(
+                    tamper_blob=("linux/amd64", MODULE.SLSA_PREDICATE_TYPE)
+                ),
+            ),
+        )
+        for name, fixture in fixtures:
+            manifest, transport, _provenance, _sbom = fixture
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                raw = json_bytes(manifest)
+                path = root / "manifest.json"
+                path.write_bytes(raw)
+                evidence = MODULE._manifest_evidence(
+                    path,
+                    f"sha256:{hashlib.sha256(raw).hexdigest()}",
+                )
+                with self.assertRaises(MODULE.VerificationError):
+                    MODULE._attestation_statements(
+                        IMAGE_REPOSITORY,
+                        evidence,
+                        transport=transport,
+                    )
+
     def test_every_source_authority_field_is_fail_closed(self):
         mutations = []
 
@@ -460,10 +739,8 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                 "verify-source",
                 "--manifest-json",
                 str(manifest_path),
-                "--provenance-json",
-                str(provenance_path),
-                "--sbom-json",
-                str(sbom_path),
+                "--image-repository",
+                "ghcr.io/jeter-1/hass-mcp-engineering-beta",
             ]
             for platform, path in image_paths.items():
                 arguments.extend(("--image-json", f"{platform}={path}"))
@@ -493,7 +770,12 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                     str(output),
                 )
             )
-            self.assertEqual(MODULE.main(arguments), 1)
+            with mock.patch.object(
+                MODULE,
+                "_attestation_statements",
+                return_value=(valid_provenance(), valid_sbom()),
+            ):
+                self.assertEqual(MODULE.main(arguments), 1)
             self.assertFalse(output.exists())
 
     def test_recovery_run_metadata_is_exact_and_bounded(self):

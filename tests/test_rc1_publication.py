@@ -19,8 +19,8 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 ANCESTOR_GUARD_PATH = ROOT / "scripts" / "assert_protected_release_ancestor.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
-CREATE_ONLY_PUBLISHER_PATH = (
-    ROOT / "scripts" / "publish_registry_tags_create_only.py"
+GUARDED_PUBLISHER_PATH = (
+    ROOT / "scripts" / "publish_registry_tags_guarded.py"
 )
 SOURCE_VERIFIER_PATH = ROOT / "scripts" / "verify_publication_source_image.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
@@ -202,7 +202,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertEqual(self.jobs["detect-release"]["needs"], "validate")
         self.assertEqual(
             set(self.promote["needs"]),
-            {"validate", "detect-release"},
+            {"validate", "detect-release", "recovery-source"},
         )
         self.assertEqual(
             self.promote["if"],
@@ -1539,7 +1539,6 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             writers,
             {
                 "promote": {
-                    "actions": "read",
                     "contents": "write",
                     "packages": "write",
                 },
@@ -1549,6 +1548,38 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             self.jobs["detect-release"]["permissions"],
             {"contents": "read"},
         )
+        self.assertEqual(
+            self.jobs["recovery-source"]["permissions"],
+            {"actions": "read", "contents": "read"},
+        )
+
+    def test_recovery_run_lookup_is_isolated_from_publication_authority(self):
+        recovery = self.jobs["recovery-source"]
+        self.assertEqual(recovery["needs"], ["detect-release"])
+        self.assertEqual(
+            recovery["if"],
+            "needs.detect-release.outputs.release_action == 'publish'",
+        )
+        checkout = action_steps(recovery, "actions/checkout")
+        self.assertEqual(len(checkout), 1)
+        self.assertEqual(
+            checkout[0]["if"],
+            "needs.detect-release.outputs.source_mode == 'resume_digest'",
+        )
+        self.assertIs(checkout[0]["with"]["persist-credentials"], False)
+        recovery_script = "\n".join(run_steps(recovery))
+        self.assertIn("/actions/runs/${RECOVERY_RUN_ID}", recovery_script)
+        self.assertIn("verify-recovery-run", recovery_script)
+        for forbidden in (
+            "docker",
+            "git push",
+            "gh release create",
+            "packages: write",
+        ):
+            self.assertNotIn(forbidden, recovery_script)
+        publication_script = "\n".join(run_steps(self.promote))
+        self.assertNotIn("/actions/runs/", publication_script)
+        self.assertNotIn("verify-recovery-run", publication_script)
 
     def test_pull_request_ci_cannot_authenticate_or_push(self):
         events = workflow_events(self.ci)
@@ -1583,10 +1614,10 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         source_index = names.index("Resolve immutable source image")
         publish_index = names.index(
-            "Create release image tags with registry-enforced preconditions"
+            "Create release image tags with bounded GHCR checks"
         )
         source_verify_index = names.index(
-            "Verify digest-addressed image architectures and provenance anonymously"
+            "Verify digest-addressed image architectures and raw attestations anonymously"
         )
         final_recheck_index = names.index(
             "Revalidate publication authority before final image tags"
@@ -1773,7 +1804,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "Revalidate publication authority before final image tags"
         )
         publish_index = names.index(
-            "Create release image tags with registry-enforced preconditions"
+            "Create release image tags with bounded GHCR checks"
         )
         self.assertEqual(final_recheck_index + 1, publish_index)
         final_recheck = str(self.steps[final_recheck_index]["run"])
@@ -1875,7 +1906,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertEqual(self.promote["timeout-minutes"], 45)
         self.assertEqual(
             self.promote["permissions"],
-            {"actions": "read", "contents": "write", "packages": "write"},
+            {"contents": "write", "packages": "write"},
         )
         build_only = "needs.detect-release.outputs.source_mode == 'build'"
         self.assertEqual(builds[0]["if"], build_only)
@@ -1912,17 +1943,17 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             step
             for step in self.steps
             if step.get("name")
-            == "Create release image tags with registry-enforced preconditions"
+            == "Create release image tags with bounded GHCR checks"
         )
         self.assertEqual(publisher["id"], "publish_tags")
         publish_script = str(publisher["run"])
         self.assertIn(
             'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/'
-            'publish_registry_tags_create_only.py"',
+            'publish_registry_tags_guarded.py"',
             publish_script,
         )
         self.assertIn('python "$publisher"', publish_script)
-        self.assertIn("$RUNNER_TEMP/publish_registry_tags_create_only.py", publish_script)
+        self.assertIn("$RUNNER_TEMP/publish_registry_tags_guarded.py", publish_script)
         self.assertIn('--source-digest "$SOURCE_DIGEST"', publish_script)
         sha_target = '--target-tag "sha-${RELEASE_SHA}"'
         version_target = '--target-tag "$VERSION"'
@@ -1940,12 +1971,12 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertEqual(
             publisher["env"]["WORKFLOW_AUTHORITY_SHA"], "${{ github.sha }}"
         )
-        self.assertTrue(CREATE_ONLY_PUBLISHER_PATH.is_file())
-        publisher_source = CREATE_ONLY_PUBLISHER_PATH.read_text(encoding="utf-8")
-        self.assertIn('headers["If-None-Match"] = "*"', publisher_source)
-        self.assertIn("never creates a temporary tag", publisher_source)
-        self.assertIn("REGISTRY_CREATE_ONLY_UNSUPPORTED", publisher_source)
-        self.assertIn("REGISTRY_CREATE_ONLY_CAPABILITY_AMBIGUOUS", publisher_source)
+        self.assertTrue(GUARDED_PUBLISHER_PATH.is_file())
+        publisher_source = GUARDED_PUBLISHER_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("If-None-Match", publisher_source)
+        self.assertIn("TARGET_TAG_ORDER_INVALID", publisher_source)
+        self.assertIn("TARGET_TAG_ABSENCE_AMBIGUOUS", publisher_source)
+        self.assertIn("can still race the check-to-write interval", publisher_source)
         self.assertTrue(SOURCE_VERIFIER_PATH.is_file())
 
     def test_digest_recovery_resolves_existing_source_without_a_build_path(self):
@@ -2035,13 +2066,13 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
     def test_anonymous_verification_precedes_release_finalization(self):
         names = [step.get("name", "") for step in self.steps]
         source_verify_index = names.index(
-            "Verify digest-addressed image architectures and provenance anonymously"
+            "Verify digest-addressed image architectures and raw attestations anonymously"
         )
         verify_index = names.index(
             "Verify immutable release tags anonymously"
         )
         publish_image_index = names.index(
-            "Create release image tags with registry-enforced preconditions"
+            "Create release image tags with bounded GHCR checks"
         )
         push_index = names.index("Finalize release commit and annotated tag")
         release_index = names.index("Create and verify GitHub Release")
@@ -2056,10 +2087,9 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             'DOCKER_CONFIG="$anonymous_config"',
             'imagetools inspect --raw',
             "{{json .Image}}",
-            "{{json .Provenance}}",
-            "{{json .SBOM}}",
             "extract-manifest",
             "verify-source",
+            '--image-repository "$IMAGE_REPOSITORY"',
             'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/verify_publication_source_image.py"',
             '--image-json "linux/amd64=$amd64_json"',
             '--image-json "linux/arm64=$arm64_json"',
@@ -2185,7 +2215,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             step
             for step in self.steps
             if step.get("name")
-            == "Verify digest-addressed image architectures and provenance anonymously"
+            == "Verify digest-addressed image architectures and raw attestations anonymously"
         )
         self.assertEqual(verify["id"], "verify_source")
         self.assertIn("verify_publication_source_image.py", str(verify["run"]))
