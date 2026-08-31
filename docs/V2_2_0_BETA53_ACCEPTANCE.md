@@ -205,20 +205,21 @@ artifact ambiguity. Manual reruns require both the original workflow actor and
 the rerun-triggering actor to remain the repository owner. The immediate
 pre-registry guard also reprobes the immutable Git tag, GitHub Release and both
 image tags, so concurrent publication or an ambiguous GitHub or registry
-response stops before authentication and build. The multi-architecture build
-then writes only a release-scoped non-authoritative staging tag; retries may
-replace that staging tag because it is not an advertised or deployable release
-identity. The staging digest, architectures, attestations, and provenance labels
-are verified anonymously, then the complete recovery-authority and artifact
-absence guard is repeated immediately before final image tags. The final
-release-commit and version image tags are created in that order with an OCI
-manifest PUT carrying HTTP `If-None-Match: *` after a same-run capability probe
-proves GHCR rejects a conditional write to the existing staging tag. Unsupported
-conditional behavior, ambiguity, or a tag that appears after the earlier probe
-fails closed without overwriting that tag. Partial and unknown publication
-dispositions remain explicit when a later tag fails or a registry response is
-lost; the deployable version identity is attempted only after the commit tag and
-the exact staging image have been verified.
+response stops before authentication and build. The bounded publication job
+pushes the multi-architecture build without a temporary tag, only under its
+content-addressed digest, so later failure cannot leave a predictable staging
+reference or require deletion of a digest shared by completed final tags. The
+digest, architectures, attestations, and provenance labels are verified
+anonymously, then the complete recovery-authority and artifact-absence guard is
+repeated immediately before final image tags. The final release-commit and
+version image tags are created in that order with an OCI manifest PUT carrying
+HTTP `If-None-Match: *` after a same-run capability probe proves GHCR rejects a
+conditional write to the existing digest reference. Unsupported conditional
+behavior, ambiguity, or a tag that appears after the earlier probe fails closed
+without overwriting that tag. Partial and unknown publication dispositions
+remain explicit when a later tag fails or a registry response is lost; the
+deployable version identity is attempted only after the commit tag and the exact
+digest-addressed image have been verified.
 For manual recovery, only this publisher helper is materialized in runner temp
 from the exact guarded workflow-authority SHA; the Beta 53 image continues to be
 built solely from the historical release checkout.

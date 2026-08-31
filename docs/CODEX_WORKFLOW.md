@@ -224,22 +224,24 @@ Engineering tree, advertised version and staged state immediately before
 registry authentication. The immutable Git tag, GitHub Release, and both image
 tags are also probed again at that boundary; an identity appearing, or an
 ambiguous GitHub or registry response, stops before login and build. The
-multi-architecture image is built only to a release-scoped, non-authoritative
-staging tag. Reruns may replace that staging tag; it is never an advertised or
-deployable release identity. Its exact digest, architectures, attestations, and
-provenance labels are verified anonymously before any final image tag is
-created. The complete protected-main, actor, source-tree, version, staged-state,
-Git-tag, GitHub-Release, and registry-tag authority guard is then repeated after
-the staging build and verification, immediately before the final registry
-writes. The publisher uses that staging manifest to prove GHCR enforces the HTTP
-`If-None-Match: *` precondition on an OCI manifest PUT, then uses the same
-precondition for the release-commit tag first and the deployable version tag
-last. A concurrent tag, an ambiguous response, or unsupported create-only
-semantics stops without overwriting the competing tag. Any partial or unknown
-write disposition is retained in reconciliation output, including the case
-where a registry applies a write but its response is lost. The recovery is not
-a retry mechanism after partial publication; an existing, partial, unknown, or
-ambiguous artifact is a stop condition requiring reconciliation.
+multi-architecture image is pushed without a temporary tag, only under its
+content-addressed digest. The publication job has a bounded timeout, and a
+failure at any later phase therefore cannot leave a predictable staging tag or
+delete a digest shared by completed release tags. The exact digest,
+architectures, attestations, and provenance labels are verified anonymously
+before any final image tag is created. The complete protected-main, actor,
+source-tree, version, staged-state, Git-tag, GitHub-Release, and registry-tag
+authority guard is then repeated after the digest-addressed build and
+verification, immediately before the final registry writes. The publisher uses
+the existing digest reference to prove GHCR enforces the HTTP `If-None-Match: *`
+precondition on an OCI manifest PUT, then uses the same precondition for the
+release-commit tag first and the deployable version tag last. A concurrent tag,
+an ambiguous response, or unsupported create-only semantics stops without
+overwriting the competing tag. Any partial or unknown write disposition is
+retained in reconciliation output, including the case where a registry applies
+a write but its response is lost. The recovery is not a retry mechanism after
+partial publication; an existing, partial, unknown, or ambiguous artifact is a
+stop condition requiring reconciliation.
 
 Manual recovery still builds only the exact historical release checkout. The
 create-only registry helper is separately materialized into runner temp from the

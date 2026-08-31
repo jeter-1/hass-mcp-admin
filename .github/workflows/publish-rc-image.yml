@@ -159,6 +159,7 @@ jobs:
       - detect-release
     if: needs.detect-release.outputs.release_action == 'publish'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
       packages: write
@@ -455,22 +456,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build release commit to non-authoritative staging tag
+      - name: Build release commit without a temporary tag
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ./hass_mcp_engineering_beta
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
           provenance: mode=max
           sbom: true
+          outputs: type=image,name=ghcr.io/jeter-1/hass-mcp-engineering-beta,push-by-digest=true,name-canonical=true,push=true
           build-args: |
             BUILD_VERSION=${{ steps.prepare.outputs.version }}
             HAMCP_BUILD_SHA=${{ steps.prepare.outputs.release_sha }}
             HAMCP_BUILD_TIME=${{ steps.prepare.outputs.build_time }}
             HAMCP_BUILD_DIRTY=false
-          tags: |
-            ghcr.io/jeter-1/hass-mcp-engineering-beta:publication-staging-${{ steps.prepare.outputs.release_sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/jeter-1/hass-mcp-admin
             org.opencontainers.image.revision=${{ steps.prepare.outputs.release_sha }}
@@ -478,8 +477,8 @@ jobs:
             org.opencontainers.image.version=${{ steps.prepare.outputs.version }}
             io.hass-mcp.build.dirty=false
 
-      - name: Verify staging image architectures and provenance anonymously
-        id: verify_staging
+      - name: Verify digest-addressed image architectures and provenance anonymously
+        id: verify_source
         shell: bash
         env:
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
@@ -491,14 +490,14 @@ jobs:
 
           anonymous_config="$RUNNER_TEMP/anonymous-docker"
           mkdir -p "$anonymous_config"
-          staging_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"
-          manifest_json="$RUNNER_TEMP/staging-manifest.json"
-          staging_inspect="$RUNNER_TEMP/staging-inspect.txt"
+          source_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"
+          manifest_json="$RUNNER_TEMP/source-manifest.json"
+          source_inspect="$RUNNER_TEMP/source-inspect.txt"
 
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect --raw \
-            "$staging_image" > "$manifest_json"
+            "$source_image" > "$manifest_json"
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            "$staging_image" > "$staging_inspect"
+            "$source_image" > "$source_inspect"
 
           python - "$manifest_json" <<'PY'
           import json
@@ -530,38 +529,38 @@ jobs:
               raise SystemExit("SLSA provenance/SBOM attestations are missing for one or more platforms")
           PY
 
-          staging_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$staging_inspect")"
-          if [[ -z "$EXPECTED_DIGEST" || "$staging_digest" != "$EXPECTED_DIGEST" ]]; then
-            echo "::error::The anonymously inspected staging image does not match the built immutable digest."
+          source_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$source_inspect")"
+          if [[ -z "$EXPECTED_DIGEST" || "$source_digest" != "$EXPECTED_DIGEST" ]]; then
+            echo "::error::The anonymously inspected source image does not match the built immutable digest."
             exit 1
           fi
 
-          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$staging_image"
-          actual_revision="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-          actual_created="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
-          actual_version="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
-          actual_source="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
+          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$source_image"
+          actual_revision="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          actual_created="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
+          actual_version="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          actual_source="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
           if [[ "$actual_revision" != "$RELEASE_SHA" || "$actual_created" != "$BUILD_TIME" || "$actual_version" != "$VERSION" || "$actual_source" != "https://github.com/jeter-1/hass-mcp-admin" ]]; then
-            echo "::error::The anonymously pulled staging image provenance does not match the local release commit."
+            echo "::error::The anonymously pulled source image provenance does not match the local release commit."
             exit 1
           fi
-          actual_dirty="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+          actual_dirty="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
           if [[ "$actual_dirty" != "false" ]]; then
-            echo "::error::The staging image dirty-tree label is not false."
+            echo "::error::The digest-addressed image dirty-tree label is not false."
             exit 1
           fi
           reference_labels="$actual_revision|$actual_created|$actual_version|$actual_dirty"
           for platform in linux/arm64 linux/arm/v7; do
-            DOCKER_CONFIG="$anonymous_config" docker pull --platform "$platform" "$staging_image"
-            platform_labels="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}|{{ index .Config.Labels "org.opencontainers.image.created" }}|{{ index .Config.Labels "org.opencontainers.image.version" }}|{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+            DOCKER_CONFIG="$anonymous_config" docker pull --platform "$platform" "$source_image"
+            platform_labels="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}|{{ index .Config.Labels "org.opencontainers.image.created" }}|{{ index .Config.Labels "org.opencontainers.image.version" }}|{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
             if [[ "$platform_labels" != "$reference_labels" ]]; then
-              echo "::error::Platform $platform does not share staging revision, version, creation time, and dirty=false provenance."
+              echo "::error::Platform $platform does not share source revision, version, creation time, and dirty=false provenance."
               exit 1
             fi
           done
           {
-            echo "staging_image_verified=true"
-            echo "manifest_digest=$staging_digest"
+            echo "source_image_verified=true"
+            echo "manifest_digest=$source_digest"
             echo "sbom_status=present"
           } >> "$GITHUB_OUTPUT"
 
@@ -655,11 +654,10 @@ jobs:
         id: publish_tags
         shell: bash
         env:
-          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
           GHCR_TOKEN: ${{ github.token }}
           GHCR_USERNAME: ${{ github.actor }}
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
-          SOURCE_TAG: publication-staging-${{ steps.prepare.outputs.release_sha }}
+          SOURCE_DIGEST: ${{ steps.build.outputs.digest }}
           VERSION: ${{ steps.prepare.outputs.version }}
           WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
         run: |
@@ -677,8 +675,7 @@ jobs:
 
           python "$publisher" \
             --repository "$IMAGE_REPOSITORY" \
-            --source-tag "$SOURCE_TAG" \
-            --expected-digest "$EXPECTED_DIGEST" \
+            --source-digest "$SOURCE_DIGEST" \
             --target-tag "sha-${RELEASE_SHA}" \
             --target-tag "$VERSION"
 
@@ -896,9 +893,8 @@ jobs:
           GITHUB_RELEASE_VERIFIED: ${{ steps.release.outputs.github_release_verified || 'false' }}
           GITHUB_RELEASE_URL: ${{ steps.release.outputs.release_url || 'not-created' }}
           RELEASE_COMPLETE: ${{ steps.release.outputs.release_complete || 'false' }}
-          STAGING_IMAGE_PUBLISHED: ${{ steps.build.outcome == 'success' }}
-          STAGING_IMAGE_VERIFIED: ${{ steps.verify_staging.outputs.staging_image_verified || 'false' }}
-          STAGING_TAG: publication-staging-${{ steps.prepare.outputs.release_sha }}
+          SOURCE_IMAGE_PUBLISHED: ${{ steps.build.outcome == 'success' }}
+          SOURCE_IMAGE_VERIFIED: ${{ steps.verify_source.outputs.source_image_verified || 'false' }}
         run: |
           {
             if [[ "$RELEASE_COMPLETE" == "true" ]]; then
@@ -913,9 +909,10 @@ jobs:
             echo "- Commit image: ${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
             echo "- OCI digest: $DIGEST"
             echo "- Architectures: linux/amd64, linux/arm64, linux/arm/v7"
-            echo "- Non-authoritative staging image: ${IMAGE_REPOSITORY}:${STAGING_TAG}"
-            echo "- staging_image_published: $STAGING_IMAGE_PUBLISHED"
-            echo "- staging_image_verified: $STAGING_IMAGE_VERIFIED"
+            echo "- Digest-addressed source image: ${IMAGE_REPOSITORY}@${DIGEST}"
+            echo "- temporary_registry_tag_created: false"
+            echo "- source_image_published: $SOURCE_IMAGE_PUBLISHED"
+            echo "- source_image_verified: $SOURCE_IMAGE_VERIFIED"
             echo "- image_published: $IMAGE_PUBLISHED"
             echo "- image_publication_disposition: $IMAGE_PUBLICATION_DISPOSITION"
             echo "- known_release_tags_created: $KNOWN_RELEASE_TAGS_CREATED"

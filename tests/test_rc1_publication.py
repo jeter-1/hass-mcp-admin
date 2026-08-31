@@ -1232,13 +1232,13 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         login_index = names.index("Log in to GHCR")
         build_index = names.index(
-            "Build release commit to non-authoritative staging tag"
+            "Build release commit without a temporary tag"
         )
         publish_index = names.index(
             "Create release image tags with registry-enforced preconditions"
         )
-        staging_verify_index = names.index(
-            "Verify staging image architectures and provenance anonymously"
+        source_verify_index = names.index(
+            "Verify digest-addressed image architectures and provenance anonymously"
         )
         final_recheck_index = names.index(
             "Revalidate publication authority before final image tags"
@@ -1247,8 +1247,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertLess(qemu_index, recheck_index)
         self.assertEqual(recheck_index + 1, login_index)
         self.assertEqual(login_index + 1, build_index)
-        self.assertEqual(build_index + 1, staging_verify_index)
-        self.assertEqual(staging_verify_index + 1, final_recheck_index)
+        self.assertEqual(build_index + 1, source_verify_index)
+        self.assertEqual(source_verify_index + 1, final_recheck_index)
         self.assertEqual(final_recheck_index + 1, publish_index)
         prepare = str(self.steps[prepare_index]["run"])
         for value in (
@@ -1405,7 +1405,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertNotIn("gh release", script)
         self.assertNotIn("git push", script)
 
-    def test_final_tag_recheck_blocks_main_movement_after_staging(self):
+    def test_final_tag_recheck_blocks_main_movement_after_digest_build(self):
         accepted, _ = self.run_prepublication_recheck(
             step_name="Revalidate publication authority before final image tags"
         )
@@ -1520,11 +1520,18 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             4,
         )
 
-    def test_one_build_stages_exact_multiarch_before_create_only_tagging(self):
+    def test_one_build_pushes_exact_multiarch_by_digest_before_tagging(self):
         builds = action_steps(self.promote, "docker/build-push-action")
         self.assertEqual(len(builds), 1)
+        self.assertEqual(self.promote["timeout-minutes"], 45)
         values = builds[0]["with"]
-        self.assertIs(values["push"], True)
+        self.assertNotIn("push", values)
+        self.assertNotIn("tags", values)
+        self.assertEqual(
+            values["outputs"],
+            "type=image,name=ghcr.io/jeter-1/hass-mcp-engineering-beta,"
+            "push-by-digest=true,name-canonical=true,push=true",
+        )
         self.assertEqual(values["provenance"], "mode=max")
         self.assertIs(values["sbom"], True)
         self.assertEqual(
@@ -1542,16 +1549,6 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 "HAMCP_BUILD_DIRTY": "false",
             },
         )
-        tags = tuple(
-            line.strip() for line in values["tags"].splitlines() if line.strip()
-        )
-        self.assertEqual(
-            tags,
-            (
-                f"{IMAGE}:publication-staging-"
-                "${{ steps.prepare.outputs.release_sha }}",
-            ),
-        )
         publisher = next(
             step
             for step in self.steps
@@ -1567,6 +1564,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertIn('python "$publisher"', publish_script)
         self.assertIn("$RUNNER_TEMP/publish_registry_tags_create_only.py", publish_script)
+        self.assertIn('--source-digest "$SOURCE_DIGEST"', publish_script)
         sha_target = '--target-tag "sha-${RELEASE_SHA}"'
         version_target = '--target-tag "$VERSION"'
         self.assertIn(sha_target, publish_script)
@@ -1575,7 +1573,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             publish_script.index(sha_target), publish_script.index(version_target)
         )
         self.assertEqual(
-            publisher["env"]["EXPECTED_DIGEST"],
+            publisher["env"]["SOURCE_DIGEST"],
             "${{ steps.build.outputs.digest }}",
         )
         self.assertEqual(publisher["env"]["GHCR_TOKEN"], "${{ github.token }}")
@@ -1586,13 +1584,34 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertTrue(CREATE_ONLY_PUBLISHER_PATH.is_file())
         publisher_source = CREATE_ONLY_PUBLISHER_PATH.read_text(encoding="utf-8")
         self.assertIn('headers["If-None-Match"] = "*"', publisher_source)
+        self.assertIn("never creates a temporary tag", publisher_source)
         self.assertIn("REGISTRY_CREATE_ONLY_UNSUPPORTED", publisher_source)
         self.assertIn("REGISTRY_CREATE_ONLY_CAPABILITY_AMBIGUOUS", publisher_source)
 
+    def test_failure_after_build_cannot_leave_a_temporary_registry_tag(self):
+        build = action_steps(self.promote, "docker/build-push-action")[0]
+        values = build["with"]
+        self.assertNotIn("tags", values)
+        self.assertIn("push-by-digest=true", values["outputs"])
+        self.assertIn("name-canonical=true", values["outputs"])
+        self.assertEqual(self.promote["timeout-minutes"], 45)
+
+        workflow_source = PUBLISH_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("publication-staging-", workflow_source)
+        summary = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Write promotion and reconciliation summary"
+        )
+        self.assertIn(
+            "temporary_registry_tag_created: false",
+            str(summary["run"]),
+        )
+
     def test_anonymous_verification_precedes_release_finalization(self):
         names = [step.get("name", "") for step in self.steps]
-        staging_verify_index = names.index(
-            "Verify staging image architectures and provenance anonymously"
+        source_verify_index = names.index(
+            "Verify digest-addressed image architectures and provenance anonymously"
         )
         verify_index = names.index(
             "Verify immutable release tags anonymously"
@@ -1602,26 +1621,26 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         push_index = names.index("Finalize release commit and annotated tag")
         release_index = names.index("Create and verify GitHub Release")
-        self.assertLess(staging_verify_index, publish_image_index)
+        self.assertLess(source_verify_index, publish_image_index)
         self.assertLess(publish_image_index, verify_index)
         self.assertLess(verify_index, push_index)
         self.assertLess(push_index, release_index)
-        staging_verify = str(self.steps[staging_verify_index]["run"])
+        source_verify = str(self.steps[source_verify_index]["run"])
         for value in (
             'anonymous_config="$RUNNER_TEMP/anonymous-docker"',
-            'staging_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"',
+            'source_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"',
             'DOCKER_CONFIG="$anonymous_config"',
             'imagetools inspect --raw',
             '("linux", "amd64", None)',
             '("linux", "arm64", None)',
             '("linux", "arm", "v7")',
-            "staging_digest",
+            "source_digest",
             "attestation-manifest",
             "org.opencontainers.image.revision",
             "org.opencontainers.image.created",
             "org.opencontainers.image.version",
         ):
-            self.assertIn(value, staging_verify)
+            self.assertIn(value, source_verify)
         verify = str(self.steps[verify_index]["run"])
         self.assertIn("version_digest", verify)
         self.assertIn("sha_digest", verify)
@@ -1670,7 +1689,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn("Do not rebuild or overwrite", script)
         self.assertIn("did not push, force-push, or overwrite main", script)
         for field in (
-            "staging_image_published", "staging_image_verified",
+            "temporary_registry_tag_created",
+            "source_image_published", "source_image_verified",
             "image_published", "image_publication_disposition",
             "known_release_tags_created", "image_verified", "manifest_digest",
             "tag_created", "tag_verified", "github_release_created",
@@ -1678,7 +1698,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "release_complete",
         ):
             self.assertIn(field, script)
-        self.assertIn("Non-authoritative staging image", script)
+        self.assertIn("Digest-addressed source image", script)
         self.assertIn("creating or correcting only the GitHub Release", script)
 
     def test_promotion_exposes_truthful_phase_outputs(self):
@@ -1697,9 +1717,9 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             step
             for step in self.steps
             if step.get("name")
-            == "Verify staging image architectures and provenance anonymously"
+            == "Verify digest-addressed image architectures and provenance anonymously"
         )
-        self.assertEqual(verify["id"], "verify_staging")
+        self.assertEqual(verify["id"], "verify_source")
         self.assertIn("attestation-manifest", str(verify["run"]))
         self.assertIn("sbom_status=present", str(verify["run"]))
         self.assertEqual(

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Create GHCR release tags without overwriting an existing tag.
 
-The image is first built to a non-authoritative staging tag. This helper reads
-that exact manifest, proves that the registry enforces ``If-None-Match: *`` on
-an existing tag, and then creates each release tag with the same precondition.
-It never issues an unconditional manifest write.
+The image is first pushed only by its immutable digest. This helper reads that
+exact manifest, proves that the registry enforces ``If-None-Match: *`` on the
+existing digest reference, and then creates each release tag with the same
+precondition. It never creates a temporary tag or issues an unconditional
+manifest write.
 """
 
 from __future__ import annotations
@@ -146,8 +147,11 @@ class RegistryReference:
             raise PublicationError("REGISTRY_REPOSITORY_INVALID")
         return cls(host=host, path=path)
 
-    def manifest_url(self, tag: str) -> str:
-        return f"https://{self.host}/v2/{self.path}/manifests/{quote(tag, safe='')}"
+    def manifest_url(self, reference: str) -> str:
+        return (
+            f"https://{self.host}/v2/{self.path}/manifests/"
+            f"{quote(reference, safe=':')}"
+        )
 
 
 class CreateOnlyPublisher:
@@ -206,25 +210,25 @@ class CreateOnlyPublisher:
         *,
         token: str,
         method: str,
-        tag: str,
+        reference: str,
         body: bytes | None = None,
         media_type: str | None = None,
         create_only: bool = False,
     ) -> HttpResponse:
-        validate_tag(tag)
+        validate_manifest_reference(reference)
         headers = {
             "Authorization": f"Bearer {token}",
             "Accept": MANIFEST_ACCEPT,
         }
         if body is not None:
             if media_type not in MANIFEST_MEDIA_TYPES:
-                raise PublicationError("STAGING_MANIFEST_MEDIA_TYPE_INVALID")
+                raise PublicationError("SOURCE_MANIFEST_MEDIA_TYPE_INVALID")
             headers["Content-Type"] = media_type
         if create_only:
             headers["If-None-Match"] = "*"
         return self._transport.request(
             method,
-            self._repository.manifest_url(tag),
+            self._repository.manifest_url(reference),
             headers,
             body,
             MAX_MANIFEST_BYTES,
@@ -233,35 +237,37 @@ class CreateOnlyPublisher:
     def publish(
         self,
         *,
-        source_tag: str,
+        source_digest: str,
         target_tags: tuple[str, ...],
-        expected_digest: str,
     ) -> tuple[str, ...]:
-        validate_tag(source_tag)
-        validate_digest(expected_digest)
+        validate_digest(source_digest)
         if not target_tags or len(target_tags) > 4:
             raise PublicationError("TARGET_TAG_COUNT_INVALID")
-        if len(set(target_tags)) != len(target_tags) or source_tag in target_tags:
+        if len(set(target_tags)) != len(target_tags):
             raise PublicationError("TARGET_TAG_SET_INVALID")
         for target_tag in target_tags:
             validate_tag(target_tag)
 
         token = self._bearer_token()
-        source = self._manifest_request(token=token, method="GET", tag=source_tag)
+        source = self._manifest_request(
+            token=token,
+            method="GET",
+            reference=source_digest,
+        )
         if source.status != 200:
-            raise PublicationError("STAGING_MANIFEST_UNAVAILABLE")
+            raise PublicationError("SOURCE_MANIFEST_UNAVAILABLE")
         media_type = source.headers.get("content-type", "").split(";", 1)[0].strip()
         if media_type not in MANIFEST_MEDIA_TYPES:
-            raise PublicationError("STAGING_MANIFEST_MEDIA_TYPE_INVALID")
+            raise PublicationError("SOURCE_MANIFEST_MEDIA_TYPE_INVALID")
         actual_digest = f"sha256:{hashlib.sha256(source.body).hexdigest()}"
         header_digest = source.headers.get("docker-content-digest")
-        if actual_digest != expected_digest or header_digest != expected_digest:
-            raise PublicationError("STAGING_MANIFEST_DIGEST_MISMATCH")
+        if actual_digest != source_digest or header_digest != source_digest:
+            raise PublicationError("SOURCE_MANIFEST_DIGEST_MISMATCH")
 
         capability = self._manifest_request(
             token=token,
             method="PUT",
-            tag=source_tag,
+            reference=source_digest,
             body=source.body,
             media_type=media_type,
             create_only=True,
@@ -277,7 +283,7 @@ class CreateOnlyPublisher:
                 response = self._manifest_request(
                     token=token,
                     method="PUT",
-                    tag=target_tag,
+                    reference=target_tag,
                     body=source.body,
                     media_type=media_type,
                     create_only=True,
@@ -301,7 +307,7 @@ class CreateOnlyPublisher:
                     created=tuple(created),
                 )
             response_digest = response.headers.get("docker-content-digest")
-            if response_digest != expected_digest:
+            if response_digest != source_digest:
                 raise PublicationError(
                     f"TARGET_TAG_DIGEST_UNCONFIRMED:{target_tag}:created={len(created) + 1}",
                     disposition="unknown",
@@ -314,7 +320,7 @@ class CreateOnlyPublisher:
                 response = self._manifest_request(
                     token=token,
                     method="GET",
-                    tag=target_tag,
+                    reference=target_tag,
                 )
             except PublicationError as error:
                 raise PublicationError(
@@ -325,8 +331,8 @@ class CreateOnlyPublisher:
             actual = f"sha256:{hashlib.sha256(response.body).hexdigest()}"
             if (
                 response.status != 200
-                or actual != expected_digest
-                or response.headers.get("docker-content-digest") != expected_digest
+                or actual != source_digest
+                or response.headers.get("docker-content-digest") != source_digest
             ):
                 raise PublicationError(
                     f"TARGET_TAG_POSTCONDITION_FAILED:{target_tag}",
@@ -346,13 +352,18 @@ def validate_digest(value: str) -> None:
         raise PublicationError("REGISTRY_DIGEST_INVALID")
 
 
+def validate_manifest_reference(value: str) -> None:
+    if TAG_PATTERN.fullmatch(value) or DIGEST_PATTERN.fullmatch(value):
+        return
+    raise PublicationError("REGISTRY_REFERENCE_INVALID")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create GHCR tags with an enforced no-overwrite precondition."
     )
     parser.add_argument("--repository", required=True)
-    parser.add_argument("--source-tag", required=True)
-    parser.add_argument("--expected-digest", required=True)
+    parser.add_argument("--source-digest", required=True)
     parser.add_argument("--target-tag", action="append", required=True)
     return parser.parse_args(argv)
 
@@ -380,9 +391,8 @@ def main(argv: list[str] | None = None) -> int:
             transport=UrllibTransport(),
         )
         created = publisher.publish(
-            source_tag=args.source_tag,
+            source_digest=args.source_digest,
             target_tags=tuple(args.target_tag),
-            expected_digest=args.expected_digest,
         )
     except PublicationError as error:
         write_outputs(created=error.created, disposition=error.disposition)

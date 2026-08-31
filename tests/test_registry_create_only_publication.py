@@ -58,7 +58,7 @@ class FakeRegistryTransport:
         self.race_target = race_target
         self.ambiguous_target = ambiguous_target
         self.applied_then_error_target = applied_then_error_target
-        self.tags = {"publication-staging": MANIFEST}
+        self.tags = {DIGEST: MANIFEST}
         self.requests = []
 
     @staticmethod
@@ -134,14 +134,13 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
             transport=transport,
         )
 
-    def test_two_release_tags_are_created_from_exact_staging_manifest(self):
+    def test_two_release_tags_are_created_from_exact_digest_manifest(self):
         transport = FakeRegistryTransport()
         targets = (COMMIT_TAG, VERSION_TAG)
 
         created = self.publisher(transport).publish(
-            source_tag="publication-staging",
+            source_digest=DIGEST,
             target_tags=targets,
-            expected_digest=DIGEST,
         )
 
         self.assertEqual(created, targets)
@@ -151,6 +150,13 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
             request for request in transport.requests if request["method"] == "PUT"
         ]
         self.assertEqual(len(manifest_puts), 3)
+        self.assertTrue(
+            transport.requests[1]["url"].endswith(f"/manifests/{DIGEST}")
+        )
+        self.assertNotIn(
+            "publication-staging",
+            "\n".join(request["url"] for request in transport.requests),
+        )
         self.assertTrue(
             all(request["headers"].get("If-None-Match") == "*" for request in manifest_puts)
         )
@@ -170,9 +176,8 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
                     rf"TARGET_TAG_ALREADY_EXISTS:{re.escape(target)}:created={target_index}",
                 ) as raised:
                     self.publisher(transport).publish(
-                        source_tag="publication-staging",
+                        source_digest=DIGEST,
                         target_tags=targets,
-                        expected_digest=DIGEST,
                     )
 
                 expected_disposition = "partial" if target_index else "none"
@@ -190,12 +195,11 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
             MODULE.PublicationError, "REGISTRY_CREATE_ONLY_UNSUPPORTED"
         ):
             self.publisher(transport).publish(
-                source_tag="publication-staging",
+                source_digest=DIGEST,
                 target_tags=("2.2.0-beta.53",),
-                expected_digest=DIGEST,
             )
 
-        self.assertEqual(set(transport.tags), {"publication-staging"})
+        self.assertEqual(set(transport.tags), {DIGEST})
 
     def test_ambiguous_target_response_stops_without_claiming_that_tag(self):
         target = COMMIT_TAG
@@ -206,9 +210,8 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
             rf"TARGET_TAG_CREATE_AMBIGUOUS:{re.escape(target)}:created=0",
         ) as raised:
             self.publisher(transport).publish(
-                source_tag="publication-staging",
+                source_digest=DIGEST,
                 target_tags=(target,),
-                expected_digest=DIGEST,
             )
 
         self.assertEqual(raised.exception.disposition, "unknown")
@@ -227,9 +230,8 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
                     rf"TARGET_TAG_CREATE_UNKNOWN:{re.escape(target)}:created={target_index}",
                 ) as raised:
                     self.publisher(transport).publish(
-                        source_tag="publication-staging",
+                        source_digest=DIGEST,
                         target_tags=targets,
-                        expected_digest=DIGEST,
                     )
 
                 self.assertEqual(raised.exception.disposition, "unknown")
@@ -272,16 +274,16 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
                     "true" if disposition == "complete" else "false",
                 )
 
-    def test_staging_digest_drift_stops_before_any_manifest_write(self):
+    def test_source_digest_drift_stops_before_any_manifest_write(self):
         transport = FakeRegistryTransport()
+        transport.tags[DIGEST] = COMPETING_MANIFEST
 
         with self.assertRaisesRegex(
-            MODULE.PublicationError, "STAGING_MANIFEST_DIGEST_MISMATCH"
+            MODULE.PublicationError, "SOURCE_MANIFEST_DIGEST_MISMATCH"
         ):
             self.publisher(transport).publish(
-                source_tag="publication-staging",
+                source_digest=DIGEST,
                 target_tags=("2.2.0-beta.53",),
-                expected_digest=f"sha256:{'c' * 64}",
             )
 
         self.assertFalse(
@@ -292,24 +294,20 @@ class CreateOnlyRegistryPublicationTests(unittest.TestCase):
         publisher = self.publisher(FakeRegistryTransport())
         invalid_cases = (
             {
-                "source_tag": "bad/tag",
+                "source_digest": "bad/tag",
                 "target_tags": ("2.2.0-beta.53",),
-                "expected_digest": DIGEST,
             },
             {
-                "source_tag": "publication-staging",
+                "source_digest": DIGEST,
                 "target_tags": ("same", "same"),
-                "expected_digest": DIGEST,
             },
             {
-                "source_tag": "publication-staging",
+                "source_digest": "sha256:not-a-digest",
                 "target_tags": ("2.2.0-beta.53",),
-                "expected_digest": "sha256:not-a-digest",
             },
             {
-                "source_tag": "publication-staging",
+                "source_digest": DIGEST,
                 "target_tags": tuple(f"tag-{index}" for index in range(5)),
-                "expected_digest": DIGEST,
             },
         )
         for values in invalid_cases:
