@@ -19,6 +19,9 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 ANCESTOR_GUARD_PATH = ROOT / "scripts" / "assert_protected_release_ancestor.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
+CREATE_ONLY_PUBLISHER_PATH = (
+    ROOT / "scripts" / "publish_registry_tags_create_only.py"
+)
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 remains the immutable failed full-host-reboot candidate. The
 # correction uses the staged-release mechanism without changing advertised
@@ -93,12 +96,21 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         cls.steps = cls.promote["steps"]
         cls.text = PUBLISH_PATH.read_text(encoding="utf-8")
 
-    def test_only_main_push_can_publish_a_release(self):
+    def test_only_main_push_or_guarded_manual_recovery_can_publish(self):
         events = workflow_events(self.workflow)
-        self.assertEqual(events, {"push": {"branches": ["main"]}})
+        self.assertEqual(
+            set(events),
+            {"push", "workflow_dispatch"},
+        )
+        self.assertEqual(events["push"], {"branches": ["main"]})
+        dispatch = events["workflow_dispatch"]
+        self.assertEqual(set(dispatch), {"inputs"})
+        self.assertEqual(set(dispatch["inputs"]), {"release_sha", "expected_version"})
+        for value in dispatch["inputs"].values():
+            self.assertIs(value["required"], True)
+            self.assertEqual(value["type"], "string")
         self.assertEqual(self.workflow["permissions"], {})
         self.assertNotIn("push:\n    tags:", self.text)
-        self.assertNotIn("workflow_dispatch", self.text)
         self.assertEqual(
             self.workflow["concurrency"],
             {
@@ -348,16 +360,22 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 self.assertEqual(result.returncode == 0, succeeds, result.stderr)
 
     def test_reviewed_release_transition_is_detected_and_validated(self):
-        detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
+        detect_step = self.jobs["detect-release"]["steps"][-1]
+        detect = str(detect_step["run"])
         prepare = str(next(
             step["run"]
             for step in self.steps
             if step.get("name") == "Validate protected release commit"
         ))
-        self.assertIn("github.event.before", detect)
+        self.assertEqual(detect_step["env"]["EVENT_BEFORE"], "${{ github.event.before }}")
         self.assertIn("current_version", detect)
         self.assertIn("previous_version", detect)
         self.assertIn("release_action=publish", detect)
+        self.assertIn('EVENT_ACTOR" != "jeter-1', detect)
+        self.assertIn('EVENT_TRIGGERING_ACTOR" != "jeter-1', detect)
+        self.assertIn('EVENT_REF" != "refs/heads/main', detect)
+        self.assertIn("git merge-base --is-ancestor", detect)
+        self.assertIn("git diff --quiet", detect)
         self.assertIn(".release/next-version", prepare)
         self.assertNotIn("staged_version", prepare)
         self.assertIn('version="$current_version"', prepare)
@@ -391,6 +409,15 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         previous_version="2.0.0-rc2-dev16",
         previous_staged_version=None,
         current_staged_version=None,
+        event_name="push",
+        event_actor="jeter-1",
+        event_triggering_actor=None,
+        event_ref="refs/heads/main",
+        event_expected_version=None,
+        manual_target="release",
+        release_topology="linear",
+        post_release_staged_version=None,
+        runtime_drift=False,
         expect_success=True,
     ):
         bash = shutil.which("bash")
@@ -410,7 +437,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                     check=True,
                 ).stdout.strip()
 
-            git("init")
+            git("init", "-b", "main")
             git("config", "user.name", "Detector Fixture")
             git("config", "user.email", "detector-fixture@example.invalid")
             config.write_text(
@@ -427,6 +454,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             git("commit", "-m", "Establish previous Engineering version")
             before = git("rev-parse", "HEAD")
 
+            if release_topology == "feature_merge":
+                git("switch", "-c", "reviewed-release")
+            elif release_topology != "linear":
+                raise AssertionError(
+                    f"unsupported release topology: {release_topology}"
+                )
             config.write_text(
                 f'version: "{current_version}"\n',
                 encoding="utf-8",
@@ -441,14 +474,89 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 declaration.unlink()
             git("add", "-A")
             git("commit", "--allow-empty", "-m", subject)
+            feature_release_sha = git("rev-parse", "HEAD")
+            if release_topology == "feature_merge":
+                git("switch", "main")
+                git(
+                    "merge",
+                    "--no-ff",
+                    "reviewed-release",
+                    "-m",
+                    "Merge reviewed release pull request",
+                )
+                release_sha = git("rev-parse", "HEAD")
+            else:
+                release_sha = feature_release_sha
+
+            manual_release_sha = release_sha
+            if manual_target == "nonancestor":
+                git("switch", "-c", "unrelated-release", before)
+                config.write_text(
+                    f'version: "{current_version}"\n',
+                    encoding="utf-8",
+                )
+                git("add", "-A")
+                git("commit", "--allow-empty", "-m", "Unrelated release candidate")
+                manual_release_sha = git("rev-parse", "HEAD")
+                git("switch", "main")
+            elif manual_target == "unavailable":
+                manual_release_sha = "a" * 40
+            elif manual_target == "malformed":
+                manual_release_sha = "not-a-commit"
+            elif manual_target == "feature_commit":
+                if release_topology != "feature_merge":
+                    raise AssertionError(
+                        "feature_commit requires the feature_merge topology"
+                    )
+                manual_release_sha = feature_release_sha
+            elif manual_target != "release":
+                raise AssertionError(f"unsupported manual target: {manual_target}")
+
+            if event_name == "workflow_dispatch":
+                recovery = root / ".github" / "workflows" / "recovery.txt"
+                recovery.parent.mkdir(parents=True, exist_ok=True)
+                recovery.write_text("reviewed publication recovery\n", encoding="utf-8")
+                if runtime_drift:
+                    drift = root / "hass_mcp_engineering_beta" / "runtime-drift.txt"
+                    drift.write_text("drift\n", encoding="utf-8")
+                if post_release_staged_version is not None:
+                    declaration = root / ".release" / "next-version"
+                    declaration.parent.mkdir(parents=True, exist_ok=True)
+                    declaration.write_text(
+                        f"{post_release_staged_version}\n", encoding="utf-8"
+                    )
+                git("add", "-A")
+                git("commit", "-m", "Add reviewed publication recovery")
+
+            trigger_sha = git("rev-parse", "HEAD")
+            git("remote", "add", "origin", str(root))
 
             output = root / "github-output"
             summary = root / "github-summary"
             environment = os.environ.copy()
-            environment["GITHUB_OUTPUT"] = str(output)
-            environment["GITHUB_STEP_SUMMARY"] = str(summary)
+            environment.update(
+                {
+                    "EVENT_ACTOR": event_actor,
+                    "EVENT_BEFORE": before,
+                    "EVENT_EXPECTED_VERSION": (
+                        event_expected_version
+                        if event_expected_version is not None
+                        else current_version
+                    ),
+                    "EVENT_NAME": event_name,
+                    "EVENT_REF": event_ref,
+                    "EVENT_RELEASE_SHA": manual_release_sha,
+                    "EVENT_TRIGGERING_ACTOR": (
+                        event_triggering_actor
+                        if event_triggering_actor is not None
+                        else event_actor
+                    ),
+                    "GITHUB_OUTPUT": str(output),
+                    "GITHUB_STEP_SUMMARY": str(summary),
+                    "TRIGGER_SHA": trigger_sha,
+                }
+            )
             detector = str(self.jobs["detect-release"]["steps"][-1]["run"])
-            detector = detector.replace("${{ github.event.before }}", before)
             result = subprocess.run(
                 [bash, "-c", detector],
                 cwd=root,
@@ -467,11 +575,349 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 else {}
             )
             self.assertEqual(git("tag", "--list"), "")
-            return values, (
-                summary.read_text(encoding="utf-8")
-                if summary.exists()
-                else ""
-            ), result
+            return (
+                values,
+                summary.read_text(encoding="utf-8") if summary.exists() else "",
+                result,
+                {
+                    "before": before,
+                    "release_sha": release_sha,
+                    "feature_release_sha": feature_release_sha,
+                    "requested_release_sha": manual_release_sha,
+                    "trigger_sha": trigger_sha,
+                },
+            )
+
+    def run_prepublication_recheck(
+        self,
+        *,
+        step_name="Revalidate publication authority before registry access",
+        move_main_after_trigger=False,
+        trigger_contains_staged_declaration=False,
+        event_triggering_actor="jeter-1",
+        github_release_exists=False,
+        github_release_probe_error=False,
+        git_tag_probe_error=False,
+        present_git_tag=False,
+        present_registry_tags=(),
+        registry_probe_error=False,
+    ):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute the pre-publication guard")
+        step = next(
+            item
+            for item in self.steps
+            if item.get("name")
+            == step_name
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "hass_mcp_engineering_beta" / "config.yaml"
+            config.parent.mkdir(parents=True)
+
+            def git(*arguments):
+                return subprocess.run(
+                    ["git", *arguments],
+                    cwd=root,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                ).stdout.strip()
+
+            git("init", "-b", "main")
+            git("config", "user.name", "Pre-publication Fixture")
+            git("config", "user.email", "prepublication-fixture@example.invalid")
+            config.write_text('version: "2.2.0-beta.52"\n', encoding="utf-8")
+            git("add", "-A")
+            git("commit", "-m", "Establish previous version")
+
+            config.write_text('version: "2.2.0-beta.53"\n', encoding="utf-8")
+            git("add", "-A")
+            git("commit", "-m", "Merge reviewed Beta 53 release")
+            release_sha = git("rev-parse", "HEAD")
+
+            recovery = root / ".github" / "workflows" / "recovery.txt"
+            recovery.parent.mkdir(parents=True)
+            recovery.write_text("reviewed publication recovery\n", encoding="utf-8")
+            if trigger_contains_staged_declaration:
+                declaration = root / ".release" / "next-version"
+                declaration.parent.mkdir()
+                declaration.write_text("2.2.0-beta.54\n", encoding="utf-8")
+            git("add", "-A")
+            git("commit", "-m", "Add reviewed publication recovery")
+            trigger_sha = git("rev-parse", "HEAD")
+
+            if move_main_after_trigger:
+                later = root / "docs" / "later-main-change.md"
+                later.parent.mkdir(exist_ok=True)
+                later.write_text("later protected-main change\n", encoding="utf-8")
+                git("add", "-A")
+                git("commit", "-m", "Advance protected main after preparation")
+            current_main_sha = git("rev-parse", "HEAD")
+
+            helper = root / "scripts" / ANCESTOR_GUARD_PATH.name
+            helper.parent.mkdir()
+            shutil.copy2(ANCESTOR_GUARD_PATH, helper)
+            registry_helper = root / "scripts" / TAG_GUARD_PATH.name
+            shutil.copy2(TAG_GUARD_PATH, registry_helper)
+            registry_log = root / "registry-probes.txt"
+            fake_docker = root / "fake-docker"
+            fake_docker.write_text(
+                """#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if args[:3] != ["buildx", "imagetools", "inspect"] or len(args) != 4:
+    raise SystemExit(f"unexpected docker arguments: {args!r}")
+image = args[3]
+with Path(os.environ["MOCK_REGISTRY_LOG"]).open("a", encoding="utf-8") as stream:
+    stream.write(image + "\\n")
+if image in set(filter(None, os.environ.get("MOCK_PRESENT_TAGS", "").split(","))):
+    print("synthetic existing manifest")
+    raise SystemExit(0)
+if os.environ.get("MOCK_REGISTRY_PROBE_ERROR") == "true":
+    print("synthetic registry transport failure", file=sys.stderr)
+    raise SystemExit(2)
+print("manifest unknown", file=sys.stderr)
+raise SystemExit(1)
+""",
+                encoding="utf-8",
+            )
+            fake_docker.chmod(0o755)
+            release_tag = "v2.2.0-beta.53"
+            if present_git_tag:
+                git("tag", release_tag)
+            initial_tags = git("tag", "--list")
+            git("remote", "add", "origin", str(root))
+            git("switch", "--detach", release_sha)
+
+            fake_git = root / "git"
+            fake_git.write_text(
+                """#!/usr/bin/env python3
+import os
+import sys
+
+args = sys.argv[1:]
+if args[:3] == ["ls-remote", "--exit-code", "--tags"] and os.environ.get("MOCK_GIT_TAG_PROBE_ERROR") == "true":
+    print("synthetic Git tag transport failure", file=sys.stderr)
+    raise SystemExit(128)
+real_git = os.environ["REAL_GIT"]
+os.execv(real_git, [real_git, *args])
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            fake_gh = root / "gh"
+            fake_gh.write_text(
+                """#!/usr/bin/env python3
+import os
+import sys
+
+args = sys.argv[1:]
+if not args or args[0] != "api":
+    raise SystemExit(f"unexpected gh arguments: {args!r}")
+if os.environ.get("MOCK_GITHUB_RELEASE_EXISTS") == "true":
+    print('{"tag_name":"v2.2.0-beta.53"}')
+    raise SystemExit(0)
+if os.environ.get("MOCK_GITHUB_RELEASE_PROBE_ERROR") == "true":
+    print("synthetic GitHub Release transport failure", file=sys.stderr)
+    raise SystemExit(2)
+print("gh: Not Found (HTTP 404)", file=sys.stderr)
+raise SystemExit(1)
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o755)
+
+            result = subprocess.run(
+                [bash, "-c", str(step["run"])],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+                env={
+                    **os.environ,
+                    "DETECTED_EXPECTED_VERSION": "2.2.0-beta.53",
+                    "DETECTED_RELEASE_MODE": "manual_recovery",
+                    "DETECTED_RELEASE_SHA": release_sha,
+                    "EVENT_ACTOR": "jeter-1",
+                    "EVENT_REF": "refs/heads/main",
+                    "EVENT_TRIGGERING_ACTOR": event_triggering_actor,
+                    "GH_TOKEN": "synthetic-github-token",
+                    "GITHUB_REPOSITORY": "jeter-1/hass-mcp-admin",
+                    "IMAGE_REPOSITORY": IMAGE,
+                    "PATH": f"{root}{os.pathsep}{os.environ['PATH']}",
+                    "PREPARED_RELEASE_SHA": release_sha,
+                    "PREPARED_RELEASE_TAG": release_tag,
+                    "PREPARED_VERSION": "2.2.0-beta.53",
+                    "REAL_GIT": shutil.which("git") or "git",
+                    "RUNNER_TEMP": str(root),
+                    "TRIGGER_SHA": trigger_sha,
+                    "DOCKER_CLI": str(fake_docker),
+                    "MOCK_GITHUB_RELEASE_EXISTS": str(
+                        github_release_exists
+                    ).lower(),
+                    "MOCK_GITHUB_RELEASE_PROBE_ERROR": str(
+                        github_release_probe_error
+                    ).lower(),
+                    "MOCK_GIT_TAG_PROBE_ERROR": str(
+                        git_tag_probe_error
+                    ).lower(),
+                    "MOCK_PRESENT_TAGS": ",".join(present_registry_tags),
+                    "MOCK_REGISTRY_PROBE_ERROR": str(
+                        registry_probe_error
+                    ).lower(),
+                    "MOCK_REGISTRY_LOG": str(registry_log),
+                },
+            )
+            self.assertEqual(git("tag", "--list"), initial_tags)
+            return result, {
+                "release_sha": release_sha,
+                "trigger_sha": trigger_sha,
+                "current_main_sha": current_main_sha,
+                "registry_probes": (
+                    registry_log.read_text(encoding="utf-8").splitlines()
+                    if registry_log.exists()
+                    else []
+                ),
+            }
+
+    def run_annotated_tag_finalization(
+        self,
+        *,
+        manual_recovery=False,
+        main_sha=None,
+        trigger_sha=None,
+        main_is_descendant=True,
+        main_first_parent=True,
+        engineering_drift=False,
+        main_has_staged_declaration=False,
+        main_version=CURRENT_REPOSITORY_VERSION,
+    ):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute annotated-tag finalization")
+        release_sha = "d" * 40
+        release_tag = f"v{CURRENT_REPOSITORY_VERSION}"
+        step = next(
+            item
+            for item in self.steps
+            if item.get("name") == "Finalize release commit and annotated tag"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_git = root / "git"
+            fake_git.write_text(
+                """#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if args == ["rev-parse", "HEAD"]:
+    print(os.environ["RELEASE_SHA"])
+elif args == ["rev-parse", "refs/remotes/origin/main"]:
+    print(os.environ["MOCK_MAIN_SHA"])
+elif args[:2] == ["rev-parse", f"{os.environ['RELEASE_TAG']}^{{commit}}"]:
+    print(os.environ["RELEASE_SHA"])
+elif args[:2] == ["config", "user.name"] or args[:2] == ["config", "user.email"]:
+    pass
+elif args[:3] == ["config", "--get", "user.name"]:
+    print("github-actions[bot]")
+elif args[:3] == ["config", "--get", "user.email"]:
+    print("41898282+github-actions[bot]@users.noreply.github.com")
+elif args[:2] == ["tag", "-a"]:
+    pass
+elif args == ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin/main"]:
+    pass
+elif args[:2] == ["cat-file", "-e"]:
+    if args[2].endswith(":.release/next-version"):
+        raise SystemExit(
+            0 if os.environ["MOCK_MAIN_HAS_STAGED_DECLARATION"] == "true" else 1
+        )
+elif args[:2] == ["merge-base", "--is-ancestor"]:
+    raise SystemExit(0 if os.environ["MOCK_MAIN_IS_DESCENDANT"] == "true" else 1)
+elif args[:2] == ["rev-list", "--first-parent"]:
+    if os.environ["MOCK_MAIN_FIRST_PARENT"] == "true":
+        print(os.environ["RELEASE_SHA"])
+elif args[:2] == ["diff", "--quiet"]:
+    raise SystemExit(1 if os.environ["MOCK_ENGINEERING_DRIFT"] == "true" else 0)
+elif args[0] == "show" and args[1].endswith(":hass_mcp_engineering_beta/config.yaml"):
+    print(f'version: "{os.environ["MOCK_MAIN_VERSION"]}"')
+elif args[:3] == ["ls-remote", "--exit-code", "--tags"]:
+    raise SystemExit(2)
+elif args[:2] == ["ls-remote", "origin"] and args[2].endswith("^{}"):
+    print(os.environ["RELEASE_SHA"], args[2])
+elif args[:2] == ["push", "origin"]:
+    with Path(os.environ["MOCK_GIT_WRITE_LOG"]).open("a", encoding="utf-8") as stream:
+        stream.write("push " + " ".join(args[2:]) + "\\n")
+else:
+    raise SystemExit(f"unexpected git arguments: {args!r}")
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            helper = root / "scripts" / ANCESTOR_GUARD_PATH.name
+            helper.parent.mkdir()
+            shutil.copy2(ANCESTOR_GUARD_PATH, helper)
+            output = root / "github-output"
+            write_log = root / "git-writes.txt"
+            current_main_sha = main_sha or release_sha
+            environment = os.environ.copy()
+            environment.update(
+                {
+                    "PATH": f"{root}{os.pathsep}{environment['PATH']}",
+                    "GITHUB_OUTPUT": str(output),
+                    "RUNNER_TEMP": str(root),
+                    "DETECTED_EXPECTED_VERSION": CURRENT_REPOSITORY_VERSION,
+                    "DETECTED_RELEASE_MODE": (
+                        "manual_recovery" if manual_recovery else "protected_main_push"
+                    ),
+                    "DETECTED_RELEASE_SHA": release_sha,
+                    "EVENT_ACTOR": "jeter-1",
+                    "EVENT_REF": "refs/heads/main",
+                    "EVENT_TRIGGERING_ACTOR": "jeter-1",
+                    "TRIGGER_SHA": trigger_sha or current_main_sha,
+                    "RELEASE_SHA": release_sha,
+                    "RELEASE_TAG": release_tag,
+                    "VERSION": CURRENT_REPOSITORY_VERSION,
+                    "BUILD_TIME": "2026-08-06T00:00:00Z",
+                    "IMAGE_DIGEST": f"sha256:{'e' * 64}",
+                    "MOCK_MAIN_SHA": current_main_sha,
+                    "MOCK_MAIN_IS_DESCENDANT": str(main_is_descendant).lower(),
+                    "MOCK_MAIN_FIRST_PARENT": str(main_first_parent).lower(),
+                    "MOCK_ENGINEERING_DRIFT": str(engineering_drift).lower(),
+                    "MOCK_MAIN_HAS_STAGED_DECLARATION": str(
+                        main_has_staged_declaration
+                    ).lower(),
+                    "MOCK_MAIN_VERSION": main_version,
+                    "MOCK_GIT_WRITE_LOG": str(write_log),
+                }
+            )
+            result = subprocess.run(
+                [bash, "-c", str(step["run"])],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+                env=environment,
+            )
+            return {
+                "result": result,
+                "outputs": (
+                    assignment_lines(output.read_text(encoding="utf-8"))
+                    if output.exists()
+                    else {}
+                ),
+                "writes": (
+                    write_log.read_text(encoding="utf-8").splitlines()
+                    if write_log.exists()
+                    else []
+                ),
+            }
 
     def run_github_release_finalization(
         self,
@@ -480,6 +926,15 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         main_sha=None,
         main_is_descendant=True,
         tag_sha=None,
+        manual_recovery=False,
+        trigger_sha=None,
+        main_first_parent=True,
+        engineering_drift=False,
+        main_has_staged_declaration=False,
+        main_version=CURRENT_REPOSITORY_VERSION,
+        event_actor="jeter-1",
+        event_triggering_actor="jeter-1",
+        event_ref="refs/heads/main",
     ):
         bash = shutil.which("bash")
         if bash is None:
@@ -512,9 +967,19 @@ if args == ["fetch", "--no-tags", "origin", "refs/heads/main:refs/remotes/origin
 elif args == ["rev-parse", "refs/remotes/origin/main"]:
     print(os.environ["MOCK_MAIN_SHA"])
 elif args[:2] == ["cat-file", "-e"]:
-    pass
+    if args[2].endswith(":.release/next-version"):
+        raise SystemExit(
+            0 if os.environ["MOCK_MAIN_HAS_STAGED_DECLARATION"] == "true" else 1
+        )
 elif args[:2] == ["merge-base", "--is-ancestor"]:
     raise SystemExit(0 if os.environ["MOCK_MAIN_IS_DESCENDANT"] == "true" else 1)
+elif args[:2] == ["rev-list", "--first-parent"]:
+    if os.environ["MOCK_MAIN_FIRST_PARENT"] == "true":
+        print(os.environ["RELEASE_SHA"])
+elif args[:2] == ["diff", "--quiet"]:
+    raise SystemExit(1 if os.environ["MOCK_ENGINEERING_DRIFT"] == "true" else 0)
+elif args[0] == "show" and args[1].endswith(":hass_mcp_engineering_beta/config.yaml"):
+    print(f'version: "{os.environ["MOCK_MAIN_VERSION"]}"')
 elif args[:2] == ["ls-remote", "origin"] and args[2].startswith("refs/tags/"):
     print(os.environ["MOCK_TAG_SHA"], args[2])
 else:
@@ -595,7 +1060,22 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                     "MOCK_EXISTING_RELEASE": str(existing_release).lower(),
                     "MOCK_MAIN_SHA": main_sha or release_sha,
                     "MOCK_MAIN_IS_DESCENDANT": str(main_is_descendant).lower(),
+                    "MOCK_MAIN_FIRST_PARENT": str(main_first_parent).lower(),
+                    "MOCK_ENGINEERING_DRIFT": str(engineering_drift).lower(),
+                    "MOCK_MAIN_HAS_STAGED_DECLARATION": str(
+                        main_has_staged_declaration
+                    ).lower(),
+                    "MOCK_MAIN_VERSION": main_version,
                     "MOCK_TAG_SHA": tag_sha or release_sha,
+                    "DETECTED_EXPECTED_VERSION": CURRENT_REPOSITORY_VERSION,
+                    "DETECTED_RELEASE_MODE": (
+                        "manual_recovery" if manual_recovery else "protected_main_push"
+                    ),
+                    "DETECTED_RELEASE_SHA": release_sha,
+                    "EVENT_ACTOR": event_actor,
+                    "EVENT_REF": event_ref,
+                    "EVENT_TRIGGERING_ACTOR": event_triggering_actor,
+                    "TRIGGER_SHA": trigger_sha or main_sha or release_sha,
                 }
             )
             result = subprocess.run(
@@ -621,15 +1101,24 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             }
 
     def test_release_detector_routes_only_final_reviewed_version_state(self):
-        publish_values, publish_summary, _ = self.run_release_detector(
+        publish_values, publish_summary, _, identities = self.run_release_detector(
             subject="Merge reviewed release pull request",
             current_version="2.0.0-rc2-dev16",
             previous_version="2.0.0-rc2-dev15",
         )
-        self.assertEqual(publish_values, {"release_action": "publish"})
-        self.assertIn("eligible for publication", publish_summary)
+        self.assertEqual(
+            publish_values,
+            {
+                "release_action": "publish",
+                "release_sha": identities["release_sha"],
+                "validation_base": identities["before"],
+                "expected_version": "2.0.0-rc2-dev16",
+                "release_mode": "protected_main_push",
+            },
+        )
+        self.assertIn("eligible for protected_main_push publication", publish_summary)
 
-        none_values, none_summary, _ = self.run_release_detector(
+        none_values, none_summary, _, _ = self.run_release_detector(
             subject="Ordinary source correction",
             current_version="2.0.0-rc2-dev16",
             previous_version="2.0.0-rc2-dev16",
@@ -657,9 +1146,189 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 output, _summary, result = self.run_release_detector(
                     expect_success=False,
                     **values,
-                )
+                )[:3]
                 self.assertEqual(output, {})
                 self.assertIn("::error::", result.stdout)
+
+    def test_manual_recovery_selects_exact_unchanged_release_commit(self):
+        values, summary, _result, identities = self.run_release_detector(
+            subject="Merge reviewed release pull request",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+        )
+        self.assertNotEqual(identities["release_sha"], identities["trigger_sha"])
+        self.assertEqual(
+            values,
+            {
+                "release_action": "publish",
+                "release_sha": identities["release_sha"],
+                "validation_base": identities["before"],
+                "expected_version": "2.2.0-beta.53",
+                "release_mode": "manual_recovery",
+            },
+        )
+        self.assertIn("eligible for manual_recovery publication", summary)
+
+    def test_manual_recovery_requires_protected_main_first_parent_commit(self):
+        values, _summary, _result, identities = self.run_release_detector(
+            subject="Materialize reviewed release on feature branch",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            release_topology="feature_merge",
+        )
+        self.assertEqual(values["release_sha"], identities["release_sha"])
+        self.assertNotEqual(
+            identities["release_sha"], identities["feature_release_sha"]
+        )
+
+        rejected, _summary, result, rejected_identities = self.run_release_detector(
+            subject="Materialize reviewed release on feature branch",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            release_topology="feature_merge",
+            manual_target="feature_commit",
+            expect_success=False,
+        )
+        self.assertEqual(rejected, {})
+        self.assertEqual(
+            rejected_identities["requested_release_sha"],
+            rejected_identities["feature_release_sha"],
+        )
+        self.assertIn("not on protected main's first-parent history", result.stdout)
+
+    def test_manual_recovery_rejects_declaration_added_after_release(self):
+        values, _summary, result, _identities = self.run_release_detector(
+            subject="Merge reviewed release pull request",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            post_release_staged_version="2.2.0-beta.54",
+            expect_success=False,
+        )
+        self.assertEqual(values, {})
+        self.assertIn(
+            "Current protected main contains an unmaterialized release declaration",
+            result.stdout,
+        )
+
+    def test_manual_recovery_rejects_missing_authority_or_drift(self):
+        cases = (
+            {"event_actor": "someone-else"},
+            {"event_triggering_actor": "someone-else"},
+            {"event_ref": "refs/heads/feature"},
+            {"manual_target": "malformed"},
+            {"manual_target": "unavailable"},
+            {"manual_target": "nonancestor"},
+            {"event_expected_version": "2.2.0-beta.54"},
+            {"event_expected_version": "not/version"},
+            {"runtime_drift": True},
+            {"previous_version": "2.2.0-beta.53"},
+            {"current_staged_version": "2.2.0-beta.54"},
+            {"post_release_staged_version": "2.2.0-beta.54"},
+        )
+        for delta in cases:
+            with self.subTest(**delta):
+                case = dict(delta)
+                values, _summary, result, _identities = self.run_release_detector(
+                    subject="Synthetic manual recovery case",
+                    current_version="2.2.0-beta.53",
+                    previous_version=case.pop(
+                        "previous_version", "2.2.0-beta.52"
+                    ),
+                    current_staged_version=case.pop(
+                        "current_staged_version", None
+                    ),
+                    post_release_staged_version=case.pop(
+                        "post_release_staged_version", None
+                    ),
+                    event_name="workflow_dispatch",
+                    expect_success=False,
+                    **case,
+                )
+                self.assertEqual(values, {})
+                self.assertIn("::error::", result.stdout)
+
+    def test_promote_checks_out_only_the_detected_release_commit(self):
+        checkout = action_steps(self.promote, "actions/checkout")
+        self.assertEqual(len(checkout), 1)
+        self.assertEqual(
+            checkout[0]["with"]["ref"],
+            "${{ needs.detect-release.outputs.release_sha }}",
+        )
+        prepare = next(
+            step for step in self.steps
+            if step.get("name") == "Validate protected release commit"
+        )
+        self.assertEqual(
+            prepare["env"]["DETECTED_RELEASE_SHA"],
+            "${{ needs.detect-release.outputs.release_sha }}",
+        )
+        script = str(prepare["run"])
+        self.assertIn('source_main_sha" != "$DETECTED_RELEASE_SHA', script)
+        self.assertIn('DETECTED_RELEASE_MODE" == "manual_recovery', script)
+        self.assertIn("git diff --quiet", script)
+
+    def test_manual_recovery_rechecks_request_and_rerun_actor(self):
+        detector = self.jobs["detect-release"]["steps"][-1]
+        prepare = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Validate protected release commit"
+        )
+        recheck = next(
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Revalidate publication authority before registry access"
+        )
+        final_image_recheck = next(
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Revalidate publication authority before final image tags"
+        )
+        finalize = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Finalize release commit and annotated tag"
+        )
+        release = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Create and verify GitHub Release"
+        )
+        for step in (
+            detector,
+            prepare,
+            recheck,
+            final_image_recheck,
+            finalize,
+            release,
+        ):
+            with self.subTest(step=step.get("name", "detect")):
+                self.assertEqual(
+                    step["env"]["EVENT_TRIGGERING_ACTOR"],
+                    "${{ github.triggering_actor }}",
+                )
+                self.assertIn(
+                    'EVENT_TRIGGERING_ACTOR" != "jeter-1',
+                    str(step["run"]),
+                )
+
+        rejected, _summary, result, _identities = self.run_release_detector(
+            subject="Synthetic non-owner rerun",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            event_actor="jeter-1",
+            event_triggering_actor="repository-writer",
+            expect_success=False,
+        )
+        self.assertEqual(rejected, {})
+        self.assertIn("request or rerun", result.stdout)
 
     def test_github_release_finalization_succeeds_with_exact_identity(self):
         outcome = self.run_github_release_finalization()
@@ -694,6 +1363,74 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 outcome = self.run_github_release_finalization(**values)
                 self.assertNotEqual(outcome["result"].returncode, 0)
                 self.assertEqual(outcome["outputs"], {})
+
+    def test_manual_recovery_main_drift_after_image_tags_blocks_metadata_writes(self):
+        trigger_sha = "c" * 40
+        moved_main_sha = "a" * 40
+
+        tag_outcome = self.run_annotated_tag_finalization(
+            manual_recovery=True,
+            trigger_sha=trigger_sha,
+            main_sha=moved_main_sha,
+        )
+        self.assertNotEqual(tag_outcome["result"].returncode, 0)
+        self.assertIn(
+            "Protected main moved before the annotated-tag write",
+            tag_outcome["result"].stdout,
+        )
+        self.assertEqual(tag_outcome["writes"], [])
+        self.assertEqual(tag_outcome["outputs"], {})
+
+        release_outcome = self.run_github_release_finalization(
+            manual_recovery=True,
+            trigger_sha=trigger_sha,
+            main_sha=moved_main_sha,
+        )
+        self.assertNotEqual(release_outcome["result"].returncode, 0)
+        self.assertIn(
+            "Protected main moved before the GitHub Release write",
+            release_outcome["result"].stdout,
+        )
+        self.assertIsNone(release_outcome["release"])
+        self.assertEqual(release_outcome["outputs"], {})
+
+        names = [step.get("name", "") for step in self.steps]
+        image_verify_index = names.index("Verify immutable release tags anonymously")
+        tag_index = names.index("Finalize release commit and annotated tag")
+        release_index = names.index("Create and verify GitHub Release")
+        self.assertLess(image_verify_index, tag_index)
+        self.assertLess(tag_index, release_index)
+
+    def test_manual_recovery_current_authority_allows_metadata_writes(self):
+        current_main_sha = "a" * 40
+        tag_outcome = self.run_annotated_tag_finalization(
+            manual_recovery=True,
+            trigger_sha=current_main_sha,
+            main_sha=current_main_sha,
+        )
+        self.assertEqual(
+            tag_outcome["result"].returncode,
+            0,
+            tag_outcome["result"].stderr,
+        )
+        self.assertEqual(len(tag_outcome["writes"]), 1)
+        self.assertEqual(
+            tag_outcome["outputs"],
+            {"tag_created": "true", "tag_verified": "true"},
+        )
+
+        release_outcome = self.run_github_release_finalization(
+            manual_recovery=True,
+            trigger_sha=current_main_sha,
+            main_sha=current_main_sha,
+        )
+        self.assertEqual(
+            release_outcome["result"].returncode,
+            0,
+            release_outcome["result"].stderr,
+        )
+        self.assertIsNotNone(release_outcome["release"])
+        self.assertEqual(release_outcome["outputs"]["release_complete"], "true")
 
     def test_publication_has_no_second_pull_request_or_branch_write(self):
         detect = str(self.jobs["detect-release"]["steps"][-1]["run"])
@@ -748,10 +1485,30 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
     def test_protected_release_commit_is_validated_before_registry_login(self):
         names = [step.get("name", "") for step in self.steps]
         prepare_index = names.index("Validate protected release commit")
+        qemu_index = names.index("Set up QEMU")
+        recheck_index = names.index(
+            "Revalidate publication authority before registry access"
+        )
         login_index = names.index("Log in to GHCR")
-        build_index = names.index("Build and publish local release commit")
+        build_index = names.index(
+            "Build release commit without a temporary tag"
+        )
+        publish_index = names.index(
+            "Create release image tags with registry-enforced preconditions"
+        )
+        source_verify_index = names.index(
+            "Verify digest-addressed image architectures and provenance anonymously"
+        )
+        final_recheck_index = names.index(
+            "Revalidate publication authority before final image tags"
+        )
         self.assertLess(prepare_index, login_index)
-        self.assertLess(login_index, build_index)
+        self.assertLess(qemu_index, recheck_index)
+        self.assertEqual(recheck_index + 1, login_index)
+        self.assertEqual(login_index + 1, build_index)
+        self.assertEqual(build_index + 1, source_verify_index)
+        self.assertEqual(source_verify_index + 1, final_recheck_index)
+        self.assertEqual(final_recheck_index + 1, publish_index)
         prepare = str(self.steps[prepare_index]["run"])
         for value in (
             "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
@@ -770,6 +1527,177 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertNotIn("promote_next_release.py --apply", prepare)
         self.assertNotIn("git commit", prepare)
         self.assertNotIn("expected-release-paths", prepare)
+
+    def test_prepublication_recheck_blocks_main_movement_before_any_write(self):
+        accepted, accepted_identities = self.run_prepublication_recheck()
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(
+            accepted_identities["trigger_sha"],
+            accepted_identities["current_main_sha"],
+        )
+        self.assertEqual(
+            accepted_identities["registry_probes"],
+            [
+                f"{IMAGE}:2.2.0-beta.53",
+                f"{IMAGE}:sha-{accepted_identities['release_sha']}",
+            ],
+        )
+
+        moved, moved_identities = self.run_prepublication_recheck(
+            move_main_after_trigger=True
+        )
+        self.assertNotEqual(moved.returncode, 0)
+        self.assertNotEqual(
+            moved_identities["trigger_sha"], moved_identities["current_main_sha"]
+        )
+        self.assertIn("Protected main moved before registry access", moved.stdout)
+
+        staged, staged_identities = self.run_prepublication_recheck(
+            trigger_contains_staged_declaration=True
+        )
+        self.assertNotEqual(staged.returncode, 0)
+        self.assertEqual(
+            staged_identities["trigger_sha"], staged_identities["current_main_sha"]
+        )
+        self.assertIn(
+            "Current protected main contains an unmaterialized release declaration",
+            staged.stdout,
+        )
+
+        changed_rerun_actor, changed_actor_identities = (
+            self.run_prepublication_recheck(
+                event_triggering_actor="repository-writer"
+            )
+        )
+        self.assertNotEqual(changed_rerun_actor.returncode, 0)
+        self.assertEqual(changed_actor_identities["registry_probes"], [])
+        self.assertIn(
+            "authority changed before registry access",
+            changed_rerun_actor.stdout,
+        )
+
+        existing_git_tag, existing_git_tag_identities = (
+            self.run_prepublication_recheck(present_git_tag=True)
+        )
+        self.assertNotEqual(existing_git_tag.returncode, 0)
+        self.assertEqual(existing_git_tag_identities["registry_probes"], [])
+        self.assertIn(
+            "immutable release tag v2.2.0-beta.53 appeared",
+            existing_git_tag.stdout,
+        )
+
+        ambiguous_git_tag, ambiguous_git_tag_identities = (
+            self.run_prepublication_recheck(git_tag_probe_error=True)
+        )
+        self.assertNotEqual(ambiguous_git_tag.returncode, 0)
+        self.assertEqual(ambiguous_git_tag_identities["registry_probes"], [])
+        self.assertIn(
+            "Unable to prove that the immutable release tag is absent",
+            ambiguous_git_tag.stdout,
+        )
+
+        existing_release, existing_release_identities = (
+            self.run_prepublication_recheck(github_release_exists=True)
+        )
+        self.assertNotEqual(existing_release.returncode, 0)
+        self.assertEqual(existing_release_identities["registry_probes"], [])
+        self.assertIn(
+            "GitHub Release for v2.2.0-beta.53 appeared",
+            existing_release.stdout,
+        )
+
+        ambiguous_release, ambiguous_release_identities = (
+            self.run_prepublication_recheck(github_release_probe_error=True)
+        )
+        self.assertNotEqual(ambiguous_release.returncode, 0)
+        self.assertEqual(ambiguous_release_identities["registry_probes"], [])
+        self.assertIn(
+            "Unable to prove that the GitHub Release is absent",
+            ambiguous_release.stdout,
+        )
+
+        occupied_version_tag = f"{IMAGE}:2.2.0-beta.53"
+        occupied, occupied_identities = self.run_prepublication_recheck(
+            present_registry_tags=(occupied_version_tag,)
+        )
+        self.assertNotEqual(occupied.returncode, 0)
+        self.assertEqual(
+            occupied_identities["registry_probes"], [occupied_version_tag]
+        )
+        self.assertIn(
+            f"Refusing to overwrite immutable tag {occupied_version_tag}",
+            occupied.stdout,
+        )
+
+        ambiguous, ambiguous_identities = self.run_prepublication_recheck(
+            registry_probe_error=True
+        )
+        self.assertNotEqual(ambiguous.returncode, 0)
+        self.assertEqual(
+            ambiguous_identities["registry_probes"], [occupied_version_tag]
+        )
+        self.assertIn(
+            "Unable to prove registry tag is absent",
+            ambiguous.stdout,
+        )
+
+        recheck = next(
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Revalidate publication authority before registry access"
+        )
+        script = str(recheck["run"])
+        self.assertIn("git rev-list --first-parent", script)
+        self.assertIn("git diff --quiet", script)
+        self.assertIn(".release/next-version", script)
+        self.assertIn("git ls-remote --exit-code --tags", script)
+        self.assertIn("remote_tag_status", script)
+        self.assertIn("gh api", script)
+        self.assertIn("HTTP 404", script)
+        self.assertIn("scripts/assert_registry_tags_absent.sh", script)
+        self.assertIn('"${IMAGE_REPOSITORY}:${PREPARED_VERSION}"', script)
+        self.assertIn(
+            '"${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"', script
+        )
+        self.assertNotIn("docker", script)
+        self.assertNotIn("gh release", script)
+        self.assertNotIn("git push", script)
+
+    def test_final_tag_recheck_blocks_main_movement_after_digest_build(self):
+        accepted, _ = self.run_prepublication_recheck(
+            step_name="Revalidate publication authority before final image tags"
+        )
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+        moved, identities = self.run_prepublication_recheck(
+            step_name="Revalidate publication authority before final image tags",
+            move_main_after_trigger=True,
+        )
+        self.assertNotEqual(moved.returncode, 0)
+        self.assertEqual(identities["registry_probes"], [])
+        self.assertIn("Protected main moved before final image tags", moved.stdout)
+
+        names = [step.get("name", "") for step in self.steps]
+        final_recheck_index = names.index(
+            "Revalidate publication authority before final image tags"
+        )
+        publish_index = names.index(
+            "Create release image tags with registry-enforced preconditions"
+        )
+        self.assertEqual(final_recheck_index + 1, publish_index)
+        final_recheck = str(self.steps[final_recheck_index]["run"])
+        for value in (
+            "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
+            "git rev-list --first-parent",
+            "git diff --quiet",
+            ".release/next-version",
+            "git ls-remote --exit-code --tags",
+            "gh api",
+            "scripts/assert_registry_tags_absent.sh",
+        ):
+            self.assertIn(value, final_recheck)
+        self.assertNotIn('python "$publisher"', final_recheck)
 
     def test_later_nonrelease_merge_preserves_release_ancestor(self):
         bash = shutil.which("bash")
@@ -851,11 +1779,18 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             4,
         )
 
-    def test_one_build_publishes_exact_multiarch_and_provenance_tags(self):
+    def test_one_build_pushes_exact_multiarch_by_digest_before_tagging(self):
         builds = action_steps(self.promote, "docker/build-push-action")
         self.assertEqual(len(builds), 1)
+        self.assertEqual(self.promote["timeout-minutes"], 45)
         values = builds[0]["with"]
-        self.assertIs(values["push"], True)
+        self.assertNotIn("push", values)
+        self.assertNotIn("tags", values)
+        self.assertEqual(
+            values["outputs"],
+            "type=image,name=ghcr.io/jeter-1/hass-mcp-engineering-beta,"
+            "push-by-digest=true,name-canonical=true,push=true",
+        )
         self.assertEqual(values["provenance"], "mode=max")
         self.assertIs(values["sbom"], True)
         self.assertEqual(
@@ -873,41 +1808,101 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 "HAMCP_BUILD_DIRTY": "false",
             },
         )
-        tags = tuple(
-            line.strip() for line in values["tags"].splitlines() if line.strip()
+        publisher = next(
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Create release image tags with registry-enforced preconditions"
+        )
+        self.assertEqual(publisher["id"], "publish_tags")
+        publish_script = str(publisher["run"])
+        self.assertIn(
+            'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/'
+            'publish_registry_tags_create_only.py"',
+            publish_script,
+        )
+        self.assertIn('python "$publisher"', publish_script)
+        self.assertIn("$RUNNER_TEMP/publish_registry_tags_create_only.py", publish_script)
+        self.assertIn('--source-digest "$SOURCE_DIGEST"', publish_script)
+        sha_target = '--target-tag "sha-${RELEASE_SHA}"'
+        version_target = '--target-tag "$VERSION"'
+        self.assertIn(sha_target, publish_script)
+        self.assertIn(version_target, publish_script)
+        self.assertLess(
+            publish_script.index(sha_target), publish_script.index(version_target)
         )
         self.assertEqual(
-            tags,
-            (
-                f"{IMAGE}:${{{{ steps.prepare.outputs.version }}}}",
-                f"{IMAGE}:sha-${{{{ steps.prepare.outputs.release_sha }}}}",
-            ),
+            publisher["env"]["SOURCE_DIGEST"],
+            "${{ steps.build.outputs.digest }}",
+        )
+        self.assertEqual(publisher["env"]["GHCR_TOKEN"], "${{ github.token }}")
+        self.assertEqual(publisher["env"]["GHCR_USERNAME"], "${{ github.actor }}")
+        self.assertEqual(
+            publisher["env"]["WORKFLOW_AUTHORITY_SHA"], "${{ github.sha }}"
+        )
+        self.assertTrue(CREATE_ONLY_PUBLISHER_PATH.is_file())
+        publisher_source = CREATE_ONLY_PUBLISHER_PATH.read_text(encoding="utf-8")
+        self.assertIn('headers["If-None-Match"] = "*"', publisher_source)
+        self.assertIn("never creates a temporary tag", publisher_source)
+        self.assertIn("REGISTRY_CREATE_ONLY_UNSUPPORTED", publisher_source)
+        self.assertIn("REGISTRY_CREATE_ONLY_CAPABILITY_AMBIGUOUS", publisher_source)
+
+    def test_failure_after_build_cannot_leave_a_temporary_registry_tag(self):
+        build = action_steps(self.promote, "docker/build-push-action")[0]
+        values = build["with"]
+        self.assertNotIn("tags", values)
+        self.assertIn("push-by-digest=true", values["outputs"])
+        self.assertIn("name-canonical=true", values["outputs"])
+        self.assertEqual(self.promote["timeout-minutes"], 45)
+
+        workflow_source = PUBLISH_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("publication-staging-", workflow_source)
+        summary = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Write promotion and reconciliation summary"
+        )
+        self.assertIn(
+            "temporary_registry_tag_created: false",
+            str(summary["run"]),
         )
 
     def test_anonymous_verification_precedes_release_finalization(self):
         names = [step.get("name", "") for step in self.steps]
+        source_verify_index = names.index(
+            "Verify digest-addressed image architectures and provenance anonymously"
+        )
         verify_index = names.index(
-            "Verify immutable tags, architectures, and provenance anonymously"
+            "Verify immutable release tags anonymously"
+        )
+        publish_image_index = names.index(
+            "Create release image tags with registry-enforced preconditions"
         )
         push_index = names.index("Finalize release commit and annotated tag")
         release_index = names.index("Create and verify GitHub Release")
+        self.assertLess(source_verify_index, publish_image_index)
+        self.assertLess(publish_image_index, verify_index)
         self.assertLess(verify_index, push_index)
         self.assertLess(push_index, release_index)
-        verify = str(self.steps[verify_index]["run"])
+        source_verify = str(self.steps[source_verify_index]["run"])
         for value in (
             'anonymous_config="$RUNNER_TEMP/anonymous-docker"',
+            'source_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"',
             'DOCKER_CONFIG="$anonymous_config"',
             'imagetools inspect --raw',
             '("linux", "amd64", None)',
             '("linux", "arm64", None)',
             '("linux", "arm", "v7")',
-            "version_digest",
-            "sha_digest",
+            "source_digest",
+            "attestation-manifest",
             "org.opencontainers.image.revision",
             "org.opencontainers.image.created",
             "org.opencontainers.image.version",
         ):
-            self.assertIn(value, verify)
+            self.assertIn(value, source_verify)
+        verify = str(self.steps[verify_index]["run"])
+        self.assertIn("version_digest", verify)
+        self.assertIn("sha_digest", verify)
         push = str(self.steps[push_index]["run"])
         self.assertIn('git push origin "refs/tags/', push)
         self.assertNotIn("HEAD:refs/heads/main", push)
@@ -918,6 +1913,28 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn('git config user.name "github-actions[bot]"', push)
         self.assertIn('git config user.email "41898282+github-actions[bot]@users.noreply.github.com"', push)
         self.assertIn('git rev-parse "${RELEASE_TAG}^{commit}"', push)
+        for value in (
+            "git rev-list --first-parent",
+            "git diff --quiet",
+            ".release/next-version",
+            "Protected main moved before the annotated-tag write",
+            "git ls-remote --exit-code --tags",
+        ):
+            self.assertIn(value, push)
+        tag_push_index = push.index('git push origin "refs/tags/')
+        self.assertNotEqual(
+            push.rfind(
+                "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
+                0,
+                tag_push_index,
+            ),
+            -1,
+        )
+        self.assertLess(
+            push.index("Protected main moved before the annotated-tag write"),
+            tag_push_index,
+        )
+        self.assertGreater(push.index("tag_created=true"), tag_push_index)
         for value in ("Version:", "Source SHA:", "Image digest:", "Build timestamp:"):
             self.assertIn(value, push)
 
@@ -937,8 +1954,26 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "github_release_created=true",
             "github_release_verified=true",
             "release_complete=true",
+            "git rev-list --first-parent",
+            "git diff --quiet",
+            ".release/next-version",
+            "Protected main moved before the GitHub Release write",
         ):
             self.assertIn(value, release)
+        release_create_index = release.index("gh release create")
+        self.assertNotEqual(
+            release.rfind(
+                "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
+                0,
+                release_create_index,
+            ),
+            -1,
+        )
+        self.assertLess(
+            release.index("Protected main moved before the GitHub Release write"),
+            release_create_index,
+        )
+        self.assertNotEqual(release.rfind("gh api", 0, release_create_index), -1)
         self.assertNotIn("--latest", release)
 
     def test_failures_produce_reconciliation_without_silent_reuse(self):
@@ -953,12 +1988,16 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn("Do not rebuild or overwrite", script)
         self.assertIn("did not push, force-push, or overwrite main", script)
         for field in (
-            "image_published", "image_verified", "manifest_digest",
+            "temporary_registry_tag_created",
+            "source_image_published", "source_image_verified",
+            "image_published", "image_publication_disposition",
+            "known_release_tags_created", "image_verified", "manifest_digest",
             "tag_created", "tag_verified", "github_release_created",
             "github_release_verified", "github_release_url",
             "release_complete",
         ):
             self.assertIn(field, script)
+        self.assertIn("Digest-addressed source image", script)
         self.assertIn("creating or correcting only the GitHub Release", script)
 
     def test_promotion_exposes_truthful_phase_outputs(self):
@@ -967,18 +2006,29 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             set(outputs),
             {
                 "version", "release_sha", "digest", "image_published",
+                "image_publication_disposition",
                 "image_verified", "tag_created", "tag_verified",
                 "github_release_created", "github_release_verified",
                 "release_complete",
             },
         )
         verify = next(
-            step for step in self.steps
-            if step.get("name") == "Verify immutable tags, architectures, and provenance anonymously"
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Verify digest-addressed image architectures and provenance anonymously"
         )
-        self.assertEqual(verify["id"], "verify")
+        self.assertEqual(verify["id"], "verify_source")
         self.assertIn("attestation-manifest", str(verify["run"]))
         self.assertIn("sbom_status=present", str(verify["run"]))
+        self.assertEqual(
+            outputs["image_published"],
+            "${{ steps.publish_tags.outputs.publication_disposition == 'complete' }}",
+        )
+        self.assertEqual(
+            outputs["image_publication_disposition"],
+            "${{ steps.publish_tags.outputs.publication_disposition || 'none' }}",
+        )
 
     def test_declared_architectures_match_ci_and_publication(self):
         config = yaml.safe_load(

@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Exact reviewed unpublished release commit retained on main
+        required: true
+        type: string
+      expected_version:
+        description: Exact Engineering version already materialized by that commit
+        required: true
+        type: string
 
 permissions: {}
 
@@ -29,6 +39,10 @@ jobs:
       contents: read
     outputs:
       release_action: ${{ steps.detect.outputs.release_action }}
+      release_sha: ${{ steps.detect.outputs.release_sha }}
+      validation_base: ${{ steps.detect.outputs.validation_base }}
+      expected_version: ${{ steps.detect.outputs.expected_version }}
+      release_mode: ${{ steps.detect.outputs.release_mode }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -36,23 +50,103 @@ jobs:
           persist-credentials: false
       - id: detect
         shell: bash
+        env:
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_BEFORE: ${{ github.event.before }}
+          EVENT_EXPECTED_VERSION: ${{ inputs.expected_version }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_RELEASE_SHA: ${{ inputs.release_sha }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
-          before="${{ github.event.before }}"
-          previous_version=""
-          if [[ "$before" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
-            previous_version="$(git show "${before}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+
+          release_sha="$TRIGGER_SHA"
+          validation_base="$EVENT_BEFORE"
+          release_mode="protected_main_push"
+          expected_version=""
+          trigger_checkout_sha="$(git rev-parse HEAD)"
+
+          if [[ "$trigger_checkout_sha" != "$TRIGGER_SHA" ]]; then
+            echo "::error::The detector checkout is not the exact triggering commit."
+            exit 1
           fi
-          if [[ -f .release/next-version ]]; then
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" ]]; then
+              echo "::error::Only the repository owner may request or rerun manual publication recovery."
+              exit 1
+            elif [[ "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery must be dispatched from protected main."
+              exit 1
+            elif [[ ! "$EVENT_RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Manual publication recovery requires an exact lowercase commit SHA."
+              exit 1
+            elif [[ ! "$EVENT_EXPECTED_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$ ]]; then
+              echo "::error::Manual publication recovery requires a bounded exact version."
+              exit 1
+            fi
+
+            git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+            protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+            if [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Manual publication recovery was not triggered from the current protected-main head."
+              exit 1
+            elif ! git cat-file -e "${EVENT_RELEASE_SHA}^{commit}" 2>/dev/null; then
+              echo "::error::The requested manual recovery commit is unavailable."
+              exit 1
+            elif ! git merge-base --is-ancestor "$EVENT_RELEASE_SHA" "$protected_main_sha"; then
+              echo "::error::The requested manual recovery commit is not retained on protected main."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$EVENT_RELEASE_SHA" >/dev/null; then
+              echo "::error::The requested manual recovery commit is not on protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$EVENT_RELEASE_SHA..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted after the requested release commit."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            release_sha="$EVENT_RELEASE_SHA"
+            validation_base="$(git rev-parse "${release_sha}^1")"
+            release_mode="manual_recovery"
+            expected_version="$EVENT_EXPECTED_VERSION"
+          elif [[ "$EVENT_NAME" != "push" || "$EVENT_REF" != "refs/heads/main" ]]; then
+            echo "::error::Unsupported publication event or branch."
+            exit 1
+          fi
+
+          current_version="$(git show "${release_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+          previous_version=""
+          if [[ "$validation_base" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "${validation_base}^{commit}" 2>/dev/null; then
+            previous_version="$(git show "${validation_base}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+          fi
+          if git cat-file -e "${release_sha}:.release/next-version" 2>/dev/null; then
             echo "::error::Main contains an unmaterialized release declaration. Release state must be finalized in the reviewed pull request."
             exit 1
-          elif git cat-file -e "${before}:.release/next-version" 2>/dev/null; then
+          elif git cat-file -e "${validation_base}:.release/next-version" 2>/dev/null; then
             echo "::error::A legacy staged declaration reached main. Finalize the release state in one reviewed pull request."
             exit 1
           elif [[ -n "$current_version" && -n "$previous_version" && "$current_version" != "$previous_version" ]]; then
-            echo "release_action=publish" >> "$GITHUB_OUTPUT"
-            echo "A reviewed final-version pull request reached protected main and is eligible for publication." >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$release_mode" == "manual_recovery" && "$current_version" != "$expected_version" ]]; then
+              echo "::error::The requested version does not match the exact recovery commit."
+              exit 1
+            fi
+            expected_version="$current_version"
+            {
+              echo "release_action=publish"
+              echo "release_sha=$release_sha"
+              echo "validation_base=$validation_base"
+              echo "expected_version=$expected_version"
+              echo "release_mode=$release_mode"
+            } >> "$GITHUB_OUTPUT"
+            echo "A reviewed final-version commit is eligible for ${release_mode} publication." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$release_mode" == "manual_recovery" ]]; then
+            echo "::error::The requested recovery commit has no bounded Engineering version transition."
+            exit 1
           else
             echo "release_action=none" >> "$GITHUB_OUTPUT"
             echo "No reviewed Engineering version transition is present." >> "$GITHUB_STEP_SUMMARY"
@@ -65,6 +159,7 @@ jobs:
       - detect-release
     if: needs.detect-release.outputs.release_action == 'publish'
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: write
       packages: write
@@ -72,7 +167,8 @@ jobs:
       version: ${{ steps.prepare.outputs.version }}
       release_sha: ${{ steps.prepare.outputs.release_sha }}
       digest: ${{ steps.build.outputs.digest }}
-      image_published: ${{ steps.build.outcome == 'success' }}
+      image_published: ${{ steps.publish_tags.outputs.publication_disposition == 'complete' }}
+      image_publication_disposition: ${{ steps.publish_tags.outputs.publication_disposition || 'none' }}
       image_verified: ${{ steps.verify.outputs.image_verified }}
       tag_created: ${{ steps.finalize.outputs.tag_created }}
       tag_verified: ${{ steps.finalize.outputs.tag_verified }}
@@ -82,6 +178,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ needs.detect-release.outputs.release_sha }}
           fetch-depth: 0
 
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
@@ -105,13 +202,21 @@ jobs:
         id: prepare
         shell: bash
         env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          DETECTED_VALIDATION_BASE: ${{ needs.detect-release.outputs.validation_base }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           GH_TOKEN: ${{ github.token }}
+          TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
           source_main_sha="$(git rev-parse HEAD)"
-          if [[ "$source_main_sha" != "$GITHUB_SHA" ]]; then
-            echo "::error::The workflow checkout is not the exact triggering main commit."
+          if [[ "$source_main_sha" != "$DETECTED_RELEASE_SHA" ]]; then
+            echo "::error::The workflow checkout is not the exact detected release commit."
             exit 1
           fi
           git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
@@ -122,9 +227,38 @@ jobs:
             exit 1
           fi
 
-          validation_base="${{ github.event.before }}"
+          validation_base="$DETECTED_VALIDATION_BASE"
           if [[ ! "$validation_base" =~ ^[0-9a-f]{40}$ ]] || ! git cat-file -e "${validation_base}^{commit}" 2>/dev/null; then
             echo "::error::The protected release transition has no valid prior main commit."
+            exit 1
+          fi
+          if [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before publication."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved after manual publication recovery was authorized."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$source_main_sha" >/dev/null; then
+              echo "::error::The manual recovery commit is not on protected main's first-parent history."
+              exit 1
+            elif [[ "$(git rev-parse "${source_main_sha}^1")" != "$validation_base" ]]; then
+              echo "::error::The manual recovery validation base is not the release commit's first parent."
+              exit 1
+            elif ! git diff --quiet "$source_main_sha..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before publication."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
             exit 1
           fi
           if [[ -f .release/next-version ]]; then
@@ -135,7 +269,7 @@ jobs:
           current_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
           deployed_version="$(git show "${validation_base}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
           version="$current_version"
-          if [[ -z "$version" || -z "$deployed_version" || "$deployed_version" == "$version" ]]; then
+          if [[ -z "$version" || "$version" != "$DETECTED_EXPECTED_VERSION" || -z "$deployed_version" || "$deployed_version" == "$version" ]]; then
             echo "::error::The protected release commit does not contain a bounded version transition."
             exit 1
           fi
@@ -216,7 +350,7 @@ jobs:
             echo "source_main_sha=$source_main_sha"
             echo "current_version=$current_version"
             echo "deployed_version=$deployed_version"
-            echo "release_mode=preversioned"
+            echo "release_mode=$DETECTED_RELEASE_MODE"
             echo "version=$version"
             echo "release_tag=$release_tag"
             echo "release_notes_path=$release_notes_path"
@@ -229,6 +363,92 @@ jobs:
         with:
           platforms: arm64,arm
 
+      - name: Revalidate publication authority before registry access
+        shell: bash
+        env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          GH_TOKEN: ${{ github.token }}
+          PREPARED_RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          PREPARED_RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          PREPARED_VERSION: ${{ steps.prepare.outputs.version }}
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          release_sha="$(git rev-parse HEAD)"
+          if [[ "$release_sha" != "$DETECTED_RELEASE_SHA" || "$release_sha" != "$PREPARED_RELEASE_SHA" ]]; then
+            echo "::error::The pre-publication checkout is not the exact detected release commit."
+            exit 1
+          fi
+
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if ! bash scripts/assert_protected_release_ancestor.sh \
+            "$release_sha" "$protected_main_sha"; then
+            echo "::error::The release commit is no longer retained in protected-main history."
+            exit 1
+          fi
+
+          if [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before registry access."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved before registry access."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$release_sha" >/dev/null; then
+              echo "::error::The manual recovery commit left protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$release_sha..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before registry access."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
+
+          remote_tag_probe="$RUNNER_TEMP/prepublication-remote-tag-probe"
+          set +e
+          git ls-remote --exit-code --tags origin \
+            "refs/tags/${PREPARED_RELEASE_TAG}" >"$remote_tag_probe" 2>&1
+          remote_tag_status=$?
+          set -e
+          if [[ "$remote_tag_status" -eq 0 ]]; then
+            echo "::error::The immutable release tag ${PREPARED_RELEASE_TAG} appeared before image publication."
+            exit 1
+          elif [[ "$remote_tag_status" -ne 2 ]]; then
+            echo "::error::Unable to prove that the immutable release tag is absent before image publication."
+            exit 1
+          fi
+
+          release_probe_error="$RUNNER_TEMP/prepublication-github-release-probe-error"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${PREPARED_RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
+            echo "::error::A GitHub Release for ${PREPARED_RELEASE_TAG} appeared before image publication."
+            exit 1
+          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
+            echo "::error::Unable to prove that the GitHub Release is absent before image publication."
+            exit 1
+          fi
+
+          bash scripts/assert_registry_tags_absent.sh \
+            "${IMAGE_REPOSITORY}:${PREPARED_VERSION}" \
+            "${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"
+
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
@@ -236,23 +456,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and publish local release commit
+      - name: Build release commit without a temporary tag
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ./hass_mcp_engineering_beta
           platforms: linux/amd64,linux/arm64,linux/arm/v7
-          push: true
           provenance: mode=max
           sbom: true
+          outputs: type=image,name=ghcr.io/jeter-1/hass-mcp-engineering-beta,push-by-digest=true,name-canonical=true,push=true
           build-args: |
             BUILD_VERSION=${{ steps.prepare.outputs.version }}
             HAMCP_BUILD_SHA=${{ steps.prepare.outputs.release_sha }}
             HAMCP_BUILD_TIME=${{ steps.prepare.outputs.build_time }}
             HAMCP_BUILD_DIRTY=false
-          tags: |
-            ghcr.io/jeter-1/hass-mcp-engineering-beta:${{ steps.prepare.outputs.version }}
-            ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-${{ steps.prepare.outputs.release_sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/jeter-1/hass-mcp-admin
             org.opencontainers.image.revision=${{ steps.prepare.outputs.release_sha }}
@@ -260,8 +477,8 @@ jobs:
             org.opencontainers.image.version=${{ steps.prepare.outputs.version }}
             io.hass-mcp.build.dirty=false
 
-      - name: Verify immutable tags, architectures, and provenance anonymously
-        id: verify
+      - name: Verify digest-addressed image architectures and provenance anonymously
+        id: verify_source
         shell: bash
         env:
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
@@ -273,18 +490,14 @@ jobs:
 
           anonymous_config="$RUNNER_TEMP/anonymous-docker"
           mkdir -p "$anonymous_config"
-          version_image="${IMAGE_REPOSITORY}:${VERSION}"
-          sha_image="${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
-          manifest_json="$RUNNER_TEMP/release-manifest.json"
-          version_inspect="$RUNNER_TEMP/version-inspect.txt"
-          sha_inspect="$RUNNER_TEMP/sha-inspect.txt"
+          source_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"
+          manifest_json="$RUNNER_TEMP/source-manifest.json"
+          source_inspect="$RUNNER_TEMP/source-inspect.txt"
 
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect --raw \
-            "$version_image" > "$manifest_json"
+            "$source_image" > "$manifest_json"
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            "$version_image" > "$version_inspect"
-          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            "$sha_image" > "$sha_inspect"
+            "$source_image" > "$source_inspect"
 
           python - "$manifest_json" <<'PY'
           import json
@@ -316,48 +529,202 @@ jobs:
               raise SystemExit("SLSA provenance/SBOM attestations are missing for one or more platforms")
           PY
 
+          source_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$source_inspect")"
+          if [[ -z "$EXPECTED_DIGEST" || "$source_digest" != "$EXPECTED_DIGEST" ]]; then
+            echo "::error::The anonymously inspected source image does not match the built immutable digest."
+            exit 1
+          fi
+
+          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$source_image"
+          actual_revision="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          actual_created="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
+          actual_version="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          actual_source="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
+          if [[ "$actual_revision" != "$RELEASE_SHA" || "$actual_created" != "$BUILD_TIME" || "$actual_version" != "$VERSION" || "$actual_source" != "https://github.com/jeter-1/hass-mcp-admin" ]]; then
+            echo "::error::The anonymously pulled source image provenance does not match the local release commit."
+            exit 1
+          fi
+          actual_dirty="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+          if [[ "$actual_dirty" != "false" ]]; then
+            echo "::error::The digest-addressed image dirty-tree label is not false."
+            exit 1
+          fi
+          reference_labels="$actual_revision|$actual_created|$actual_version|$actual_dirty"
+          for platform in linux/arm64 linux/arm/v7; do
+            DOCKER_CONFIG="$anonymous_config" docker pull --platform "$platform" "$source_image"
+            platform_labels="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}|{{ index .Config.Labels "org.opencontainers.image.created" }}|{{ index .Config.Labels "org.opencontainers.image.version" }}|{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+            if [[ "$platform_labels" != "$reference_labels" ]]; then
+              echo "::error::Platform $platform does not share source revision, version, creation time, and dirty=false provenance."
+              exit 1
+            fi
+          done
+          {
+            echo "source_image_verified=true"
+            echo "manifest_digest=$source_digest"
+            echo "sbom_status=present"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Revalidate publication authority before final image tags
+        shell: bash
+        env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          GH_TOKEN: ${{ github.token }}
+          PREPARED_RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          PREPARED_RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          PREPARED_VERSION: ${{ steps.prepare.outputs.version }}
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          release_sha="$(git rev-parse HEAD)"
+          if [[ "$release_sha" != "$DETECTED_RELEASE_SHA" || "$release_sha" != "$PREPARED_RELEASE_SHA" ]]; then
+            echo "::error::The final-tag checkout is not the exact detected release commit."
+            exit 1
+          fi
+
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if ! bash scripts/assert_protected_release_ancestor.sh \
+            "$release_sha" "$protected_main_sha"; then
+            echo "::error::The release commit is no longer retained in protected-main history."
+            exit 1
+          fi
+
+          if [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before final image tags."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved before final image tags."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$release_sha" >/dev/null; then
+              echo "::error::The manual recovery commit left protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$release_sha..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before final image tags."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
+
+          remote_tag_probe="$RUNNER_TEMP/final-image-remote-tag-probe"
+          set +e
+          git ls-remote --exit-code --tags origin \
+            "refs/tags/${PREPARED_RELEASE_TAG}" >"$remote_tag_probe" 2>&1
+          remote_tag_status=$?
+          set -e
+          if [[ "$remote_tag_status" -eq 0 ]]; then
+            echo "::error::The immutable release tag ${PREPARED_RELEASE_TAG} appeared before final image tags."
+            exit 1
+          elif [[ "$remote_tag_status" -ne 2 ]]; then
+            echo "::error::Unable to prove that the immutable release tag is absent before final image tags."
+            exit 1
+          fi
+
+          release_probe_error="$RUNNER_TEMP/final-image-github-release-probe-error"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${PREPARED_RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
+            echo "::error::A GitHub Release for ${PREPARED_RELEASE_TAG} appeared before final image tags."
+            exit 1
+          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
+            echo "::error::Unable to prove that the GitHub Release is absent before final image tags."
+            exit 1
+          fi
+
+          bash scripts/assert_registry_tags_absent.sh \
+            "${IMAGE_REPOSITORY}:${PREPARED_VERSION}" \
+            "${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"
+
+      - name: Create release image tags with registry-enforced preconditions
+        id: publish_tags
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USERNAME: ${{ github.actor }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          SOURCE_DIGEST: ${{ steps.build.outputs.digest }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The workflow-authority commit is not an exact SHA."
+            exit 1
+          fi
+          publisher="$RUNNER_TEMP/publish_registry_tags_create_only.py"
+          if ! git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_create_only.py" > "$publisher" || [[ ! -s "$publisher" ]]; then
+            echo "::error::The create-only publisher is unavailable from the exact workflow-authority commit."
+            exit 1
+          fi
+
+          python "$publisher" \
+            --repository "$IMAGE_REPOSITORY" \
+            --source-digest "$SOURCE_DIGEST" \
+            --target-tag "sha-${RELEASE_SHA}" \
+            --target-tag "$VERSION"
+
+      - name: Verify immutable release tags anonymously
+        id: verify
+        shell: bash
+        env:
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          anonymous_config="$RUNNER_TEMP/anonymous-docker"
+          mkdir -p "$anonymous_config"
+          version_image="${IMAGE_REPOSITORY}:${VERSION}"
+          sha_image="${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
+          version_inspect="$RUNNER_TEMP/version-inspect.txt"
+          sha_inspect="$RUNNER_TEMP/sha-inspect.txt"
+
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            "$version_image" > "$version_inspect"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            "$sha_image" > "$sha_inspect"
+
           version_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$version_inspect")"
           sha_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$sha_inspect")"
           if [[ -z "$EXPECTED_DIGEST" || "$version_digest" != "$EXPECTED_DIGEST" || "$sha_digest" != "$EXPECTED_DIGEST" ]]; then
             echo "::error::The version and release-commit tags do not share the published immutable digest."
             exit 1
           fi
-
-          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$version_image"
-          actual_revision="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-          actual_created="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
-          actual_version="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
-          actual_source="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
-          if [[ "$actual_revision" != "$RELEASE_SHA" || "$actual_created" != "$BUILD_TIME" || "$actual_version" != "$VERSION" || "$actual_source" != "https://github.com/jeter-1/hass-mcp-admin" ]]; then
-            echo "::error::The anonymously pulled image provenance does not match the local release commit."
-            exit 1
-          fi
-          actual_dirty="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
-          if [[ "$actual_dirty" != "false" ]]; then
-            echo "::error::The release image dirty-tree label is not false."
-            exit 1
-          fi
-          reference_labels="$actual_revision|$actual_created|$actual_version|$actual_dirty"
-          for platform in linux/arm64 linux/arm/v7; do
-            DOCKER_CONFIG="$anonymous_config" docker pull --platform "$platform" "$version_image"
-            platform_labels="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}|{{ index .Config.Labels "org.opencontainers.image.created" }}|{{ index .Config.Labels "org.opencontainers.image.version" }}|{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
-            if [[ "$platform_labels" != "$reference_labels" ]]; then
-              echo "::error::Platform $platform does not share release revision, version, creation time, and dirty=false provenance."
-              exit 1
-            fi
-          done
           {
             echo "image_verified=true"
             echo "manifest_digest=$version_digest"
-            echo "sbom_status=present"
           } >> "$GITHUB_OUTPUT"
 
       - name: Finalize release commit and annotated tag
         id: finalize
         shell: bash
         env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          TRIGGER_SHA: ${{ github.sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
@@ -368,10 +735,6 @@ jobs:
             echo "::error::The published checkout moved from the reviewed release commit."
             exit 1
           fi
-          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
-          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
-          bash scripts/assert_protected_release_ancestor.sh \
-            "$RELEASE_SHA" "$protected_main_sha"
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -389,9 +752,58 @@ jobs:
             echo "::error::The local annotated tag does not resolve to release_sha."
             exit 1
           fi
-          echo "tag_created=true" >> "$GITHUB_OUTPUT"
+
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$protected_main_sha"
+          if [[ "$DETECTED_RELEASE_SHA" != "$RELEASE_SHA" ]]; then
+            echo "::error::The detected release identity changed before the annotated-tag write."
+            exit 1
+          elif [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before the annotated-tag write."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved before the annotated-tag write."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$RELEASE_SHA" >/dev/null; then
+              echo "::error::The manual recovery commit left protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$RELEASE_SHA..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before the annotated-tag write."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
+
+          remote_tag_probe="$RUNNER_TEMP/pre-push-remote-tag-probe"
+          set +e
+          git ls-remote --exit-code --tags origin \
+            "refs/tags/${RELEASE_TAG}" >"$remote_tag_probe" 2>&1
+          remote_tag_status=$?
+          set -e
+          if [[ "$remote_tag_status" -eq 0 ]]; then
+            echo "::error::The immutable release tag appeared before the annotated-tag write."
+            exit 1
+          elif [[ "$remote_tag_status" -ne 2 ]]; then
+            echo "::error::Unable to prove that the immutable release tag remains absent."
+            exit 1
+          fi
 
           git push origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          echo "tag_created=true" >> "$GITHUB_OUTPUT"
 
           git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
           promoted_main="$(git rev-parse refs/remotes/origin/main)"
@@ -408,11 +820,18 @@ jobs:
         id: release
         shell: bash
         env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           GH_TOKEN: ${{ github.token }}
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
           RELEASE_NOTES_PATH: ${{ steps.prepare.outputs.release_notes_path }}
           SOURCE_MAIN_SHA: ${{ steps.prepare.outputs.source_main_sha }}
+          TRIGGER_SHA: ${{ github.sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
           IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
@@ -428,16 +847,6 @@ jobs:
           fi
           bash scripts/assert_protected_release_ancestor.sh \
             "$RELEASE_SHA" "$promoted_main"
-
-          release_probe_error="$RUNNER_TEMP/github-release-final-probe-error"
-          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
-            echo "::error::A GitHub Release appeared before exact finalization."
-            exit 1
-          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
-            cat "$release_probe_error" >&2
-            echo "::error::Unable to prove that the GitHub Release tag remains unused."
-            exit 1
-          fi
 
           release_title="HA MCP Engineering Server ${VERSION}"
           release_body="$RUNNER_TEMP/github-release-notes.md"
@@ -469,6 +878,57 @@ jobs:
             expected_prerelease=true
             release_flags+=(--prerelease)
           fi
+
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          promoted_tag="$(git ls-remote origin "refs/tags/${RELEASE_TAG}^{}" | awk '{print $1}')"
+          if [[ "$promoted_tag" != "$RELEASE_SHA" ]]; then
+            echo "::error::The GitHub Release cannot be created because its annotated tag moved."
+            exit 1
+          fi
+          bash scripts/assert_protected_release_ancestor.sh \
+            "$RELEASE_SHA" "$protected_main_sha"
+          if [[ "$DETECTED_RELEASE_SHA" != "$RELEASE_SHA" ]]; then
+            echo "::error::The detected release identity changed before the GitHub Release write."
+            exit 1
+          elif [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before the GitHub Release write."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved before the GitHub Release write."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$RELEASE_SHA" >/dev/null; then
+              echo "::error::The manual recovery commit left protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$RELEASE_SHA..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before the GitHub Release write."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
+
+          release_probe_error="$RUNNER_TEMP/github-release-final-probe-error"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
+            echo "::error::A GitHub Release appeared before exact finalization."
+            exit 1
+          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
+            cat "$release_probe_error" >&2
+            echo "::error::Unable to prove that the GitHub Release tag remains unused."
+            exit 1
+          fi
+
           release_url="$(gh release create "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$release_title" \
@@ -523,7 +983,9 @@ jobs:
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
           VERSION: ${{ steps.prepare.outputs.version }}
-          IMAGE_PUBLISHED: ${{ steps.build.outcome == 'success' }}
+          IMAGE_PUBLISHED: ${{ steps.publish_tags.outputs.publication_disposition == 'complete' }}
+          IMAGE_PUBLICATION_DISPOSITION: ${{ steps.publish_tags.outputs.publication_disposition || 'none' }}
+          KNOWN_RELEASE_TAGS_CREATED: ${{ steps.publish_tags.outputs.known_created_tag_count || '0' }}
           IMAGE_VERIFIED: ${{ steps.verify.outputs.image_verified || 'false' }}
           TAG_CREATED: ${{ steps.finalize.outputs.tag_created || 'false' }}
           TAG_VERIFIED: ${{ steps.finalize.outputs.tag_verified || 'false' }}
@@ -531,6 +993,8 @@ jobs:
           GITHUB_RELEASE_VERIFIED: ${{ steps.release.outputs.github_release_verified || 'false' }}
           GITHUB_RELEASE_URL: ${{ steps.release.outputs.release_url || 'not-created' }}
           RELEASE_COMPLETE: ${{ steps.release.outputs.release_complete || 'false' }}
+          SOURCE_IMAGE_PUBLISHED: ${{ steps.build.outcome == 'success' }}
+          SOURCE_IMAGE_VERIFIED: ${{ steps.verify_source.outputs.source_image_verified || 'false' }}
         run: |
           {
             if [[ "$RELEASE_COMPLETE" == "true" ]]; then
@@ -545,7 +1009,13 @@ jobs:
             echo "- Commit image: ${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
             echo "- OCI digest: $DIGEST"
             echo "- Architectures: linux/amd64, linux/arm64, linux/arm/v7"
+            echo "- Digest-addressed source image: ${IMAGE_REPOSITORY}@${DIGEST}"
+            echo "- temporary_registry_tag_created: false"
+            echo "- source_image_published: $SOURCE_IMAGE_PUBLISHED"
+            echo "- source_image_verified: $SOURCE_IMAGE_VERIFIED"
             echo "- image_published: $IMAGE_PUBLISHED"
+            echo "- image_publication_disposition: $IMAGE_PUBLICATION_DISPOSITION"
+            echo "- known_release_tags_created: $KNOWN_RELEASE_TAGS_CREATED"
             echo "- image_verified: $IMAGE_VERIFIED"
             echo "- manifest_digest: ${DIGEST:-not-published}"
             echo "- tag_created: $TAG_CREATED"
@@ -560,6 +1030,9 @@ jobs:
             elif [[ "$TAG_VERIFIED" == "true" ]]; then
               echo "- Failed phase: GitHub Release creation or verification."
               echo "- Recovery: verify the existing annotated tag, release commit, digest, OCI provenance, and canonical release notes before creating or correcting only the GitHub Release. Do not rebuild or overwrite the immutable image or tag."
+            elif [[ "$IMAGE_PUBLICATION_DISPOSITION" == "partial" || "$IMAGE_PUBLICATION_DISPOSITION" == "unknown" ]]; then
+              echo "- Failed phase: final image tag creation or reconciliation."
+              echo "- Recovery: inspect both final tags and their anonymous digests before any retry. The version tag may exist when disposition is unknown. Do not rebuild, overwrite, or continue release finalization until registry state is reconciled."
             elif [[ "$IMAGE_PUBLISHED" == "true" ]]; then
               echo "- Failed phase: tag finalization or later verification."
               echo "- Recovery: verify the existing digest, OCI revision, version, and anonymous access before retrying only tag finalization. Do not rebuild or overwrite the immutable image tag."

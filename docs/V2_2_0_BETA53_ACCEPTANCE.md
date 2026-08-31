@@ -179,3 +179,58 @@ This repository source promotion does not authorize merge, publication,
 image creation, deployment, live Home Assistant access, plan
 approval/application or the HAMCP-089 canary. Those remain separate authority
 boundaries.
+
+## Post-merge publication recovery boundary
+
+Beta 53 source was reviewed at
+`b9cf44bccb9b5ed7af3ed0478ca8f2906775e9ae` and merged to protected main as
+`153b4dd7e2e60806c7117bb83c6c83b8adf02ff8`. The merge-triggered validation and
+Codex receipt checks passed, but no publication run started. GitHub suppresses
+most downstream workflow events caused by its repository `GITHUB_TOKEN`; the
+protected auto-merge workflow uses that token, while the publication workflow
+previously accepted only a main `push` event. This records the deterministic
+trigger gap and does not reinterpret Beta 53 runtime acceptance.
+
+The reviewed recovery change adds a manual publication entry point without
+changing Beta 53 runtime, schemas, providers, routing, fallback, stable v1 or
+deployment authority. It may publish the exact merge commit above only if the
+current protected-main Engineering tree is identical, its exact first-parent
+chain contains that merge commit, its exact first-parent version transition
+remains valid, its expected version is exactly `2.2.0-beta.53`, current main has
+no staged declaration, and all tag, release and image identities remain unused.
+The workflow revalidates the original release checkout during preparation and
+again immediately before registry access, and fails closed on actor, ref,
+first-parent identity, source/configuration drift, version, staged-state or
+artifact ambiguity. Manual reruns require both the original workflow actor and
+the rerun-triggering actor to remain the repository owner. The immediate
+pre-registry guard also reprobes the immutable Git tag, GitHub Release and both
+image tags, so concurrent publication or an ambiguous GitHub or registry
+response stops before authentication and build. The bounded publication job
+pushes the multi-architecture build without a temporary tag, only under its
+content-addressed digest, so later failure cannot leave a predictable staging
+reference or require deletion of a digest shared by completed final tags. The
+digest, architectures, attestations, and provenance labels are verified
+anonymously, then the complete recovery-authority and artifact-absence guard is
+repeated immediately before final image tags. The final release-commit and
+version image tags are created in that order with an OCI manifest PUT carrying
+HTTP `If-None-Match: *` after a same-run capability probe proves GHCR rejects a
+conditional write to the existing digest reference. Unsupported conditional
+behavior, ambiguity, or a tag that appears after the earlier probe fails closed
+without overwriting that tag. Partial and unknown publication dispositions
+remain explicit when a later tag fails or a registry response is lost; the
+deployable version identity is attempted only after the commit tag and the exact
+digest-addressed image have been verified. After final image-tag verification,
+the complete manual actor, ref, exact protected-main, first-parent,
+Engineering-tree, advertised-version and staged-state authority guard is fetched
+and repeated directly before the annotated Git tag push and again directly
+before GitHub Release creation. Each remote metadata identity is reprobed at its
+write boundary. Protected-main movement at either point prevents that write and
+leaves any already-created image identities in explicit reconciliation state.
+For manual recovery, only this publisher helper is materialized in runner temp
+from the exact guarded workflow-authority SHA; the Beta 53 image continues to be
+built solely from the historical release checkout.
+
+This recovery mechanism does not assert that Beta 53 has been published. Merging
+the workflow correction, dispatching publication, deploying to Home Assistant
+and running HAMCP-089 remain distinct authorizations with separate evidence and
+rollback boundaries.
