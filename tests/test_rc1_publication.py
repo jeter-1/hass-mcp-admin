@@ -22,6 +22,7 @@ PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
 CREATE_ONLY_PUBLISHER_PATH = (
     ROOT / "scripts" / "publish_registry_tags_create_only.py"
 )
+SOURCE_VERIFIER_PATH = ROOT / "scripts" / "verify_publication_source_image.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 # RC2dev12 remains the immutable failed full-host-reboot candidate. The
 # correction uses the staged-release mechanism without changing advertised
@@ -105,9 +106,27 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertEqual(events["push"], {"branches": ["main"]})
         dispatch = events["workflow_dispatch"]
         self.assertEqual(set(dispatch), {"inputs"})
-        self.assertEqual(set(dispatch["inputs"]), {"release_sha", "expected_version"})
-        for value in dispatch["inputs"].values():
+        self.assertEqual(
+            set(dispatch["inputs"]),
+            {
+                "release_sha",
+                "expected_version",
+                "recovery_run_id",
+                "recovery_source_digest",
+                "recovery_build_time",
+            },
+        )
+        for name in ("release_sha", "expected_version"):
+            value = dispatch["inputs"][name]
             self.assertIs(value["required"], True)
+            self.assertEqual(value["type"], "string")
+        for name in (
+            "recovery_run_id",
+            "recovery_source_digest",
+            "recovery_build_time",
+        ):
+            value = dispatch["inputs"][name]
+            self.assertIs(value["required"], False)
             self.assertEqual(value["type"], "string")
         self.assertEqual(self.workflow["permissions"], {})
         self.assertNotIn("push:\n    tags:", self.text)
@@ -414,6 +433,9 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         event_triggering_actor=None,
         event_ref="refs/heads/main",
         event_expected_version=None,
+        recovery_run_id="",
+        recovery_source_digest="",
+        recovery_build_time="",
         manual_target="release",
         release_topology="linear",
         post_release_staged_version=None,
@@ -546,6 +568,9 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                     "EVENT_NAME": event_name,
                     "EVENT_REF": event_ref,
                     "EVENT_RELEASE_SHA": manual_release_sha,
+                    "EVENT_RECOVERY_BUILD_TIME": recovery_build_time,
+                    "EVENT_RECOVERY_RUN_ID": recovery_run_id,
+                    "EVENT_RECOVERY_SOURCE_DIGEST": recovery_source_digest,
                     "EVENT_TRIGGERING_ACTOR": (
                         event_triggering_actor
                         if event_triggering_actor is not None
@@ -1114,6 +1139,10 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 "validation_base": identities["before"],
                 "expected_version": "2.0.0-rc2-dev16",
                 "release_mode": "protected_main_push",
+                "source_mode": "build",
+                "recovery_run_id": "",
+                "recovery_source_digest": "",
+                "recovery_build_time": "",
             },
         )
         self.assertIn("eligible for protected_main_push publication", publish_summary)
@@ -1166,9 +1195,64 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 "validation_base": identities["before"],
                 "expected_version": "2.2.0-beta.53",
                 "release_mode": "manual_recovery",
+                "source_mode": "build",
+                "recovery_run_id": "",
+                "recovery_source_digest": "",
+                "recovery_build_time": "",
             },
         )
         self.assertIn("eligible for manual_recovery publication", summary)
+
+    def test_manual_recovery_accepts_only_complete_bounded_digest_authority(self):
+        digest = f"sha256:{'2' * 64}"
+        values, summary, _result, identities = self.run_release_detector(
+            subject="Merge reviewed release pull request",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            recovery_run_id="33379623142",
+            recovery_source_digest=digest,
+            recovery_build_time="2026-08-31T10:10:06Z",
+        )
+        self.assertEqual(values["release_sha"], identities["release_sha"])
+        self.assertEqual(values["source_mode"], "resume_digest")
+        self.assertEqual(values["recovery_run_id"], "33379623142")
+        self.assertEqual(values["recovery_source_digest"], digest)
+        self.assertEqual(
+            values["recovery_build_time"], "2026-08-31T10:10:06Z"
+        )
+        self.assertIn("using resume_digest", summary)
+
+        invalid_cases = (
+            {"recovery_run_id": "33379623142"},
+            {
+                "recovery_run_id": "0",
+                "recovery_source_digest": digest,
+                "recovery_build_time": "2026-08-31T10:10:06Z",
+            },
+            {
+                "recovery_run_id": "33379623142",
+                "recovery_source_digest": "sha256:not-a-digest",
+                "recovery_build_time": "2026-08-31T10:10:06Z",
+            },
+            {
+                "recovery_run_id": "33379623142",
+                "recovery_source_digest": digest,
+                "recovery_build_time": "2026-08-31 10:10:06",
+            },
+        )
+        for delta in invalid_cases:
+            with self.subTest(delta=delta):
+                rejected, _summary, result, _identities = self.run_release_detector(
+                    subject="Reject invalid digest recovery",
+                    current_version="2.2.0-beta.53",
+                    previous_version="2.2.0-beta.52",
+                    event_name="workflow_dispatch",
+                    expect_success=False,
+                    **delta,
+                )
+                self.assertEqual(rejected, {})
+                self.assertIn("::error::", result.stdout)
 
     def test_manual_recovery_requires_protected_main_first_parent_commit(self):
         values, _summary, _result, identities = self.run_release_detector(
@@ -1454,7 +1538,11 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertEqual(
             writers,
             {
-                "promote": {"contents": "write", "packages": "write"},
+                "promote": {
+                    "actions": "read",
+                    "contents": "write",
+                    "packages": "write",
+                },
             },
         )
         self.assertEqual(
@@ -1493,6 +1581,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         build_index = names.index(
             "Build release commit without a temporary tag"
         )
+        source_index = names.index("Resolve immutable source image")
         publish_index = names.index(
             "Create release image tags with registry-enforced preconditions"
         )
@@ -1506,7 +1595,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertLess(qemu_index, recheck_index)
         self.assertEqual(recheck_index + 1, login_index)
         self.assertEqual(login_index + 1, build_index)
-        self.assertEqual(build_index + 1, source_verify_index)
+        self.assertEqual(build_index + 1, source_index)
+        self.assertEqual(source_index + 1, source_verify_index)
         self.assertEqual(source_verify_index + 1, final_recheck_index)
         self.assertEqual(final_recheck_index + 1, publish_index)
         prepare = str(self.steps[prepare_index]["run"])
@@ -1783,6 +1873,16 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         builds = action_steps(self.promote, "docker/build-push-action")
         self.assertEqual(len(builds), 1)
         self.assertEqual(self.promote["timeout-minutes"], 45)
+        self.assertEqual(
+            self.promote["permissions"],
+            {"actions": "read", "contents": "write", "packages": "write"},
+        )
+        build_only = "needs.detect-release.outputs.source_mode == 'build'"
+        self.assertEqual(builds[0]["if"], build_only)
+        qemu = next(step for step in self.steps if step.get("name") == "Set up QEMU")
+        login = next(step for step in self.steps if step.get("name") == "Log in to GHCR")
+        self.assertEqual(qemu["if"], build_only)
+        self.assertEqual(login["if"], build_only)
         values = builds[0]["with"]
         self.assertNotIn("push", values)
         self.assertNotIn("tags", values)
@@ -1833,7 +1933,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertEqual(
             publisher["env"]["SOURCE_DIGEST"],
-            "${{ steps.build.outputs.digest }}",
+            "${{ steps.source.outputs.digest }}",
         )
         self.assertEqual(publisher["env"]["GHCR_TOKEN"], "${{ github.token }}")
         self.assertEqual(publisher["env"]["GHCR_USERNAME"], "${{ github.actor }}")
@@ -1846,6 +1946,71 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn("never creates a temporary tag", publisher_source)
         self.assertIn("REGISTRY_CREATE_ONLY_UNSUPPORTED", publisher_source)
         self.assertIn("REGISTRY_CREATE_ONLY_CAPABILITY_AMBIGUOUS", publisher_source)
+        self.assertTrue(SOURCE_VERIFIER_PATH.is_file())
+
+    def test_digest_recovery_resolves_existing_source_without_a_build_path(self):
+        source = next(
+            step for step in self.steps if step.get("name") == "Resolve immutable source image"
+        )
+        self.assertEqual(source["id"], "source")
+        self.assertEqual(
+            source["env"]["RECOVERY_DIGEST"],
+            "${{ needs.detect-release.outputs.recovery_source_digest }}",
+        )
+        script = str(source["run"])
+        self.assertIn('SOURCE_MODE" == "resume_digest', script)
+        self.assertIn('-n "$BUILT_DIGEST"', script)
+        self.assertIn("source_image_reused=true", script)
+        self.assertIn("source_image_published=false", script)
+        self.assertNotIn("docker", script)
+
+        workflow_source = PUBLISH_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("docker pull", workflow_source)
+        self.assertNotIn("docker image inspect", workflow_source)
+        for step in action_steps(self.promote, "docker/build-push-action"):
+            self.assertEqual(
+                step["if"], "needs.detect-release.outputs.source_mode == 'build'"
+            )
+
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute the source resolver")
+        digest = f"sha256:{'2' * 64}"
+        cases = (
+            ("build", digest, "", True, "true", "false"),
+            ("resume_digest", "", digest, True, "false", "true"),
+            ("resume_digest", digest, digest, False, None, None),
+            ("build", "", digest, False, None, None),
+            ("unsupported", "", digest, False, None, None),
+        )
+        for mode, built, recovery, succeeds, published, reused in cases:
+            with self.subTest(mode=mode, built=bool(built), recovery=bool(recovery)):
+                with tempfile.TemporaryDirectory() as directory:
+                    output = Path(directory) / "github-output"
+                    environment = os.environ.copy()
+                    environment.update(
+                        {
+                            "BUILT_DIGEST": built,
+                            "GITHUB_OUTPUT": str(output),
+                            "RECOVERY_DIGEST": recovery,
+                            "SOURCE_MODE": mode,
+                        }
+                    )
+                    result = subprocess.run(
+                        [bash, "-c", script],
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                        env=environment,
+                    )
+                    self.assertEqual(result.returncode == 0, succeeds, result.stderr)
+                    if succeeds:
+                        outputs = assignment_lines(output.read_text(encoding="utf-8"))
+                        self.assertEqual(outputs["digest"], digest)
+                        self.assertEqual(outputs["source_image_published"], published)
+                        self.assertEqual(outputs["source_image_reused"], reused)
+                    else:
+                        self.assertFalse(output.exists())
 
     def test_failure_after_build_cannot_leave_a_temporary_registry_tag(self):
         build = action_steps(self.promote, "docker/build-push-action")[0]
@@ -1890,16 +2055,19 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             'source_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"',
             'DOCKER_CONFIG="$anonymous_config"',
             'imagetools inspect --raw',
-            '("linux", "amd64", None)',
-            '("linux", "arm64", None)',
-            '("linux", "arm", "v7")',
-            "source_digest",
-            "attestation-manifest",
-            "org.opencontainers.image.revision",
-            "org.opencontainers.image.created",
-            "org.opencontainers.image.version",
+            "{{json .Image}}",
+            "{{json .Provenance}}",
+            "{{json .SBOM}}",
+            "extract-manifest",
+            "verify-source",
+            'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/verify_publication_source_image.py"',
+            '--image-json "linux/amd64=$amd64_json"',
+            '--image-json "linux/arm64=$arm64_json"',
+            '--image-json "linux/arm/v7=$armv7_json"',
         ):
             self.assertIn(value, source_verify)
+        self.assertNotIn("docker pull", source_verify)
+        self.assertNotIn("docker image inspect", source_verify)
         verify = str(self.steps[verify_index]["run"])
         self.assertIn("version_digest", verify)
         self.assertIn("sha_digest", verify)
@@ -1989,7 +2157,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn("did not push, force-push, or overwrite main", script)
         for field in (
             "temporary_registry_tag_created",
-            "source_image_published", "source_image_verified",
+            "source_image_published", "source_image_reused", "source_mode",
+            "source_image_verified",
             "image_published", "image_publication_disposition",
             "known_release_tags_created", "image_verified", "manifest_digest",
             "tag_created", "tag_verified", "github_release_created",
@@ -2019,8 +2188,10 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             == "Verify digest-addressed image architectures and provenance anonymously"
         )
         self.assertEqual(verify["id"], "verify_source")
-        self.assertIn("attestation-manifest", str(verify["run"]))
-        self.assertIn("sbom_status=present", str(verify["run"]))
+        self.assertIn("verify_publication_source_image.py", str(verify["run"]))
+        verifier_source = SOURCE_VERIFIER_PATH.read_text(encoding="utf-8")
+        self.assertIn("attestation-manifest", verifier_source)
+        self.assertIn('"sbom_status=present"', verifier_source)
         self.assertEqual(
             outputs["image_published"],
             "${{ steps.publish_tags.outputs.publication_disposition == 'complete' }}",
