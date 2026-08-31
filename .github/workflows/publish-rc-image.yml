@@ -166,7 +166,8 @@ jobs:
       version: ${{ steps.prepare.outputs.version }}
       release_sha: ${{ steps.prepare.outputs.release_sha }}
       digest: ${{ steps.build.outputs.digest }}
-      image_published: ${{ steps.publish_tags.outcome == 'success' }}
+      image_published: ${{ steps.publish_tags.outputs.publication_disposition == 'complete' }}
+      image_publication_disposition: ${{ steps.publish_tags.outputs.publication_disposition || 'none' }}
       image_verified: ${{ steps.verify.outputs.image_verified }}
       tag_created: ${{ steps.finalize.outputs.tag_created }}
       tag_verified: ${{ steps.finalize.outputs.tag_verified }}
@@ -477,39 +478,8 @@ jobs:
             org.opencontainers.image.version=${{ steps.prepare.outputs.version }}
             io.hass-mcp.build.dirty=false
 
-      - name: Create release image tags with registry-enforced preconditions
-        id: publish_tags
-        shell: bash
-        env:
-          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
-          GHCR_TOKEN: ${{ github.token }}
-          GHCR_USERNAME: ${{ github.actor }}
-          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
-          SOURCE_TAG: publication-staging-${{ steps.prepare.outputs.release_sha }}
-          VERSION: ${{ steps.prepare.outputs.version }}
-          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-
-          if [[ ! "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::The workflow-authority commit is not an exact SHA."
-            exit 1
-          fi
-          publisher="$RUNNER_TEMP/publish_registry_tags_create_only.py"
-          if ! git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_create_only.py" > "$publisher" || [[ ! -s "$publisher" ]]; then
-            echo "::error::The create-only publisher is unavailable from the exact workflow-authority commit."
-            exit 1
-          fi
-
-          python "$publisher" \
-            --repository "$IMAGE_REPOSITORY" \
-            --source-tag "$SOURCE_TAG" \
-            --expected-digest "$EXPECTED_DIGEST" \
-            --target-tag "$VERSION" \
-            --target-tag "sha-${RELEASE_SHA}"
-
-      - name: Verify immutable tags, architectures, and provenance anonymously
-        id: verify
+      - name: Verify staging image architectures and provenance anonymously
+        id: verify_staging
         shell: bash
         env:
           EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
@@ -521,18 +491,14 @@ jobs:
 
           anonymous_config="$RUNNER_TEMP/anonymous-docker"
           mkdir -p "$anonymous_config"
-          version_image="${IMAGE_REPOSITORY}:${VERSION}"
-          sha_image="${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
-          manifest_json="$RUNNER_TEMP/release-manifest.json"
-          version_inspect="$RUNNER_TEMP/version-inspect.txt"
-          sha_inspect="$RUNNER_TEMP/sha-inspect.txt"
+          staging_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"
+          manifest_json="$RUNNER_TEMP/staging-manifest.json"
+          staging_inspect="$RUNNER_TEMP/staging-inspect.txt"
 
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect --raw \
-            "$version_image" > "$manifest_json"
+            "$staging_image" > "$manifest_json"
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            "$version_image" > "$version_inspect"
-          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            "$sha_image" > "$sha_inspect"
+            "$staging_image" > "$staging_inspect"
 
           python - "$manifest_json" <<'PY'
           import json
@@ -564,40 +530,189 @@ jobs:
               raise SystemExit("SLSA provenance/SBOM attestations are missing for one or more platforms")
           PY
 
+          staging_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$staging_inspect")"
+          if [[ -z "$EXPECTED_DIGEST" || "$staging_digest" != "$EXPECTED_DIGEST" ]]; then
+            echo "::error::The anonymously inspected staging image does not match the built immutable digest."
+            exit 1
+          fi
+
+          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$staging_image"
+          actual_revision="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+          actual_created="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
+          actual_version="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
+          actual_source="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
+          if [[ "$actual_revision" != "$RELEASE_SHA" || "$actual_created" != "$BUILD_TIME" || "$actual_version" != "$VERSION" || "$actual_source" != "https://github.com/jeter-1/hass-mcp-admin" ]]; then
+            echo "::error::The anonymously pulled staging image provenance does not match the local release commit."
+            exit 1
+          fi
+          actual_dirty="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+          if [[ "$actual_dirty" != "false" ]]; then
+            echo "::error::The staging image dirty-tree label is not false."
+            exit 1
+          fi
+          reference_labels="$actual_revision|$actual_created|$actual_version|$actual_dirty"
+          for platform in linux/arm64 linux/arm/v7; do
+            DOCKER_CONFIG="$anonymous_config" docker pull --platform "$platform" "$staging_image"
+            platform_labels="$(docker image inspect "$staging_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}|{{ index .Config.Labels "org.opencontainers.image.created" }}|{{ index .Config.Labels "org.opencontainers.image.version" }}|{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
+            if [[ "$platform_labels" != "$reference_labels" ]]; then
+              echo "::error::Platform $platform does not share staging revision, version, creation time, and dirty=false provenance."
+              exit 1
+            fi
+          done
+          {
+            echo "staging_image_verified=true"
+            echo "manifest_digest=$staging_digest"
+            echo "sbom_status=present"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Revalidate publication authority before final image tags
+        shell: bash
+        env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          GH_TOKEN: ${{ github.token }}
+          PREPARED_RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          PREPARED_RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          PREPARED_VERSION: ${{ steps.prepare.outputs.version }}
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          release_sha="$(git rev-parse HEAD)"
+          if [[ "$release_sha" != "$DETECTED_RELEASE_SHA" || "$release_sha" != "$PREPARED_RELEASE_SHA" ]]; then
+            echo "::error::The final-tag checkout is not the exact detected release commit."
+            exit 1
+          fi
+
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if ! bash scripts/assert_protected_release_ancestor.sh \
+            "$release_sha" "$protected_main_sha"; then
+            echo "::error::The release commit is no longer retained in protected-main history."
+            exit 1
+          fi
+
+          if [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before final image tags."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved before final image tags."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$release_sha" >/dev/null; then
+              echo "::error::The manual recovery commit left protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$release_sha..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before final image tags."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
+
+          remote_tag_probe="$RUNNER_TEMP/final-image-remote-tag-probe"
+          set +e
+          git ls-remote --exit-code --tags origin \
+            "refs/tags/${PREPARED_RELEASE_TAG}" >"$remote_tag_probe" 2>&1
+          remote_tag_status=$?
+          set -e
+          if [[ "$remote_tag_status" -eq 0 ]]; then
+            echo "::error::The immutable release tag ${PREPARED_RELEASE_TAG} appeared before final image tags."
+            exit 1
+          elif [[ "$remote_tag_status" -ne 2 ]]; then
+            echo "::error::Unable to prove that the immutable release tag is absent before final image tags."
+            exit 1
+          fi
+
+          release_probe_error="$RUNNER_TEMP/final-image-github-release-probe-error"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${PREPARED_RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
+            echo "::error::A GitHub Release for ${PREPARED_RELEASE_TAG} appeared before final image tags."
+            exit 1
+          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
+            echo "::error::Unable to prove that the GitHub Release is absent before final image tags."
+            exit 1
+          fi
+
+          bash scripts/assert_registry_tags_absent.sh \
+            "${IMAGE_REPOSITORY}:${PREPARED_VERSION}" \
+            "${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"
+
+      - name: Create release image tags with registry-enforced preconditions
+        id: publish_tags
+        shell: bash
+        env:
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          GHCR_TOKEN: ${{ github.token }}
+          GHCR_USERNAME: ${{ github.actor }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          SOURCE_TAG: publication-staging-${{ steps.prepare.outputs.release_sha }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The workflow-authority commit is not an exact SHA."
+            exit 1
+          fi
+          publisher="$RUNNER_TEMP/publish_registry_tags_create_only.py"
+          if ! git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_create_only.py" > "$publisher" || [[ ! -s "$publisher" ]]; then
+            echo "::error::The create-only publisher is unavailable from the exact workflow-authority commit."
+            exit 1
+          fi
+
+          python "$publisher" \
+            --repository "$IMAGE_REPOSITORY" \
+            --source-tag "$SOURCE_TAG" \
+            --expected-digest "$EXPECTED_DIGEST" \
+            --target-tag "sha-${RELEASE_SHA}" \
+            --target-tag "$VERSION"
+
+      - name: Verify immutable release tags anonymously
+        id: verify
+        shell: bash
+        env:
+          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          anonymous_config="$RUNNER_TEMP/anonymous-docker"
+          mkdir -p "$anonymous_config"
+          version_image="${IMAGE_REPOSITORY}:${VERSION}"
+          sha_image="${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
+          version_inspect="$RUNNER_TEMP/version-inspect.txt"
+          sha_inspect="$RUNNER_TEMP/sha-inspect.txt"
+
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            "$version_image" > "$version_inspect"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            "$sha_image" > "$sha_inspect"
+
           version_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$version_inspect")"
           sha_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$sha_inspect")"
           if [[ -z "$EXPECTED_DIGEST" || "$version_digest" != "$EXPECTED_DIGEST" || "$sha_digest" != "$EXPECTED_DIGEST" ]]; then
             echo "::error::The version and release-commit tags do not share the published immutable digest."
             exit 1
           fi
-
-          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$version_image"
-          actual_revision="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-          actual_created="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
-          actual_version="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
-          actual_source="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
-          if [[ "$actual_revision" != "$RELEASE_SHA" || "$actual_created" != "$BUILD_TIME" || "$actual_version" != "$VERSION" || "$actual_source" != "https://github.com/jeter-1/hass-mcp-admin" ]]; then
-            echo "::error::The anonymously pulled image provenance does not match the local release commit."
-            exit 1
-          fi
-          actual_dirty="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
-          if [[ "$actual_dirty" != "false" ]]; then
-            echo "::error::The release image dirty-tree label is not false."
-            exit 1
-          fi
-          reference_labels="$actual_revision|$actual_created|$actual_version|$actual_dirty"
-          for platform in linux/arm64 linux/arm/v7; do
-            DOCKER_CONFIG="$anonymous_config" docker pull --platform "$platform" "$version_image"
-            platform_labels="$(docker image inspect "$version_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}|{{ index .Config.Labels "org.opencontainers.image.created" }}|{{ index .Config.Labels "org.opencontainers.image.version" }}|{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
-            if [[ "$platform_labels" != "$reference_labels" ]]; then
-              echo "::error::Platform $platform does not share release revision, version, creation time, and dirty=false provenance."
-              exit 1
-            fi
-          done
           {
             echo "image_verified=true"
             echo "manifest_digest=$version_digest"
-            echo "sbom_status=present"
           } >> "$GITHUB_OUTPUT"
 
       - name: Finalize release commit and annotated tag
@@ -771,7 +886,9 @@ jobs:
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
           VERSION: ${{ steps.prepare.outputs.version }}
-          IMAGE_PUBLISHED: ${{ steps.publish_tags.outcome == 'success' }}
+          IMAGE_PUBLISHED: ${{ steps.publish_tags.outputs.publication_disposition == 'complete' }}
+          IMAGE_PUBLICATION_DISPOSITION: ${{ steps.publish_tags.outputs.publication_disposition || 'none' }}
+          KNOWN_RELEASE_TAGS_CREATED: ${{ steps.publish_tags.outputs.known_created_tag_count || '0' }}
           IMAGE_VERIFIED: ${{ steps.verify.outputs.image_verified || 'false' }}
           TAG_CREATED: ${{ steps.finalize.outputs.tag_created || 'false' }}
           TAG_VERIFIED: ${{ steps.finalize.outputs.tag_verified || 'false' }}
@@ -780,6 +897,7 @@ jobs:
           GITHUB_RELEASE_URL: ${{ steps.release.outputs.release_url || 'not-created' }}
           RELEASE_COMPLETE: ${{ steps.release.outputs.release_complete || 'false' }}
           STAGING_IMAGE_PUBLISHED: ${{ steps.build.outcome == 'success' }}
+          STAGING_IMAGE_VERIFIED: ${{ steps.verify_staging.outputs.staging_image_verified || 'false' }}
           STAGING_TAG: publication-staging-${{ steps.prepare.outputs.release_sha }}
         run: |
           {
@@ -797,7 +915,10 @@ jobs:
             echo "- Architectures: linux/amd64, linux/arm64, linux/arm/v7"
             echo "- Non-authoritative staging image: ${IMAGE_REPOSITORY}:${STAGING_TAG}"
             echo "- staging_image_published: $STAGING_IMAGE_PUBLISHED"
+            echo "- staging_image_verified: $STAGING_IMAGE_VERIFIED"
             echo "- image_published: $IMAGE_PUBLISHED"
+            echo "- image_publication_disposition: $IMAGE_PUBLICATION_DISPOSITION"
+            echo "- known_release_tags_created: $KNOWN_RELEASE_TAGS_CREATED"
             echo "- image_verified: $IMAGE_VERIFIED"
             echo "- manifest_digest: ${DIGEST:-not-published}"
             echo "- tag_created: $TAG_CREATED"
@@ -812,6 +933,9 @@ jobs:
             elif [[ "$TAG_VERIFIED" == "true" ]]; then
               echo "- Failed phase: GitHub Release creation or verification."
               echo "- Recovery: verify the existing annotated tag, release commit, digest, OCI provenance, and canonical release notes before creating or correcting only the GitHub Release. Do not rebuild or overwrite the immutable image or tag."
+            elif [[ "$IMAGE_PUBLICATION_DISPOSITION" == "partial" || "$IMAGE_PUBLICATION_DISPOSITION" == "unknown" ]]; then
+              echo "- Failed phase: final image tag creation or reconciliation."
+              echo "- Recovery: inspect both final tags and their anonymous digests before any retry. The version tag may exist when disposition is unknown. Do not rebuild, overwrite, or continue release finalization until registry state is reconciled."
             elif [[ "$IMAGE_PUBLISHED" == "true" ]]; then
               echo "- Failed phase: tag finalization or later verification."
               echo "- Recovery: verify the existing digest, OCI revision, version, and anonymous access before retrying only tag finalization. Do not rebuild or overwrite the immutable image tag."

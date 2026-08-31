@@ -13,6 +13,7 @@ import argparse
 import base64
 from dataclasses import dataclass
 import hashlib
+from http.client import HTTPException
 import json
 import os
 import re
@@ -44,6 +45,19 @@ MANIFEST_ACCEPT = ", ".join(sorted(MANIFEST_MEDIA_TYPES))
 
 class PublicationError(RuntimeError):
     """A bounded, operator-safe publication refusal."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        disposition: str = "none",
+        created: tuple[str, ...] = (),
+    ) -> None:
+        if disposition not in {"none", "partial", "unknown"}:
+            raise ValueError("invalid publication disposition")
+        super().__init__(code)
+        self.disposition = disposition
+        self.created = created
 
 
 @dataclass(frozen=True)
@@ -88,7 +102,7 @@ class UrllibTransport:
             response = self._opener.open(request, timeout=30)
         except HTTPError as error:
             response = error
-        except (OSError, TimeoutError, URLError) as error:
+        except (OSError, TimeoutError, URLError, HTTPException) as error:
             raise PublicationError("REGISTRY_TRANSPORT_FAILED") from error
         try:
             with response:
@@ -114,7 +128,7 @@ class UrllibTransport:
                 )
         except PublicationError:
             raise
-        except (OSError, TimeoutError, URLError) as error:
+        except (OSError, TimeoutError, URLError, HTTPException) as error:
             raise PublicationError("REGISTRY_TRANSPORT_FAILED") from error
 
 
@@ -259,35 +273,55 @@ class CreateOnlyPublisher:
 
         created: list[str] = []
         for target_tag in target_tags:
-            response = self._manifest_request(
-                token=token,
-                method="PUT",
-                tag=target_tag,
-                body=source.body,
-                media_type=media_type,
-                create_only=True,
-            )
+            try:
+                response = self._manifest_request(
+                    token=token,
+                    method="PUT",
+                    tag=target_tag,
+                    body=source.body,
+                    media_type=media_type,
+                    create_only=True,
+                )
+            except PublicationError as error:
+                raise PublicationError(
+                    f"TARGET_TAG_CREATE_UNKNOWN:{target_tag}:created={len(created)}",
+                    disposition="unknown",
+                    created=tuple(created),
+                ) from error
             if response.status == 412:
                 raise PublicationError(
-                    f"TARGET_TAG_ALREADY_EXISTS:{target_tag}:created={len(created)}"
+                    f"TARGET_TAG_ALREADY_EXISTS:{target_tag}:created={len(created)}",
+                    disposition="partial" if created else "none",
+                    created=tuple(created),
                 )
             if response.status != 201:
                 raise PublicationError(
-                    f"TARGET_TAG_CREATE_AMBIGUOUS:{target_tag}:created={len(created)}"
+                    f"TARGET_TAG_CREATE_AMBIGUOUS:{target_tag}:created={len(created)}",
+                    disposition="unknown",
+                    created=tuple(created),
                 )
             response_digest = response.headers.get("docker-content-digest")
             if response_digest != expected_digest:
                 raise PublicationError(
-                    f"TARGET_TAG_DIGEST_UNCONFIRMED:{target_tag}:created={len(created) + 1}"
+                    f"TARGET_TAG_DIGEST_UNCONFIRMED:{target_tag}:created={len(created) + 1}",
+                    disposition="unknown",
+                    created=tuple((*created, target_tag)),
                 )
             created.append(target_tag)
 
         for target_tag in target_tags:
-            response = self._manifest_request(
-                token=token,
-                method="GET",
-                tag=target_tag,
-            )
+            try:
+                response = self._manifest_request(
+                    token=token,
+                    method="GET",
+                    tag=target_tag,
+                )
+            except PublicationError as error:
+                raise PublicationError(
+                    f"TARGET_TAG_POSTCONDITION_UNKNOWN:{target_tag}",
+                    disposition="unknown",
+                    created=tuple(created),
+                ) from error
             actual = f"sha256:{hashlib.sha256(response.body).hexdigest()}"
             if (
                 response.status != 200
@@ -295,7 +329,9 @@ class CreateOnlyPublisher:
                 or response.headers.get("docker-content-digest") != expected_digest
             ):
                 raise PublicationError(
-                    f"TARGET_TAG_POSTCONDITION_FAILED:{target_tag}"
+                    f"TARGET_TAG_POSTCONDITION_FAILED:{target_tag}",
+                    disposition="unknown",
+                    created=tuple(created),
                 )
         return tuple(created)
 
@@ -321,14 +357,16 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def write_outputs(digest: str, created: tuple[str, ...]) -> None:
+def write_outputs(*, created: tuple[str, ...], disposition: str) -> None:
     output_path = os.environ.get("GITHUB_OUTPUT")
     if not output_path:
         return
     with open(output_path, "a", encoding="utf-8", newline="") as output:
-        output.write(f"digest={digest}\n")
-        output.write(f"created_tag_count={len(created)}\n")
-        output.write("release_tags_created=true\n")
+        output.write(f"publication_disposition={disposition}\n")
+        output.write(f"known_created_tag_count={len(created)}\n")
+        output.write(
+            f"release_tags_created={'true' if disposition == 'complete' else 'false'}\n"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -346,10 +384,11 @@ def main(argv: list[str] | None = None) -> int:
             target_tags=tuple(args.target_tag),
             expected_digest=args.expected_digest,
         )
-        write_outputs(args.expected_digest, created)
     except PublicationError as error:
+        write_outputs(created=error.created, disposition=error.disposition)
         print(f"::error::{error}", file=sys.stderr)
         return 1
+    write_outputs(created=created, disposition="complete")
     print(
         f"Created {len(created)} release tag(s) with enforced create-only semantics."
     )
