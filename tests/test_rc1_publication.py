@@ -369,6 +369,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("previous_version", detect)
         self.assertIn("release_action=publish", detect)
         self.assertIn('EVENT_ACTOR" != "jeter-1', detect)
+        self.assertIn('EVENT_TRIGGERING_ACTOR" != "jeter-1', detect)
         self.assertIn('EVENT_REF" != "refs/heads/main', detect)
         self.assertIn("git merge-base --is-ancestor", detect)
         self.assertIn("git diff --quiet", detect)
@@ -407,6 +408,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         current_staged_version=None,
         event_name="push",
         event_actor="jeter-1",
+        event_triggering_actor=None,
         event_ref="refs/heads/main",
         event_expected_version=None,
         manual_target="release",
@@ -541,6 +543,11 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                     "EVENT_NAME": event_name,
                     "EVENT_REF": event_ref,
                     "EVENT_RELEASE_SHA": manual_release_sha,
+                    "EVENT_TRIGGERING_ACTOR": (
+                        event_triggering_actor
+                        if event_triggering_actor is not None
+                        else event_actor
+                    ),
                     "GITHUB_OUTPUT": str(output),
                     "GITHUB_STEP_SUMMARY": str(summary),
                     "TRIGGER_SHA": trigger_sha,
@@ -583,6 +590,9 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         *,
         move_main_after_trigger=False,
         trigger_contains_staged_declaration=False,
+        event_triggering_actor="jeter-1",
+        present_registry_tags=(),
+        registry_probe_error=False,
     ):
         bash = shutil.which("bash")
         if bash is None:
@@ -641,6 +651,34 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             helper = root / "scripts" / ANCESTOR_GUARD_PATH.name
             helper.parent.mkdir()
             shutil.copy2(ANCESTOR_GUARD_PATH, helper)
+            registry_helper = root / "scripts" / TAG_GUARD_PATH.name
+            shutil.copy2(TAG_GUARD_PATH, registry_helper)
+            registry_log = root / "registry-probes.txt"
+            fake_docker = root / "fake-docker"
+            fake_docker.write_text(
+                """#!/usr/bin/env python3
+import os
+from pathlib import Path
+import sys
+
+args = sys.argv[1:]
+if args[:3] != ["buildx", "imagetools", "inspect"] or len(args) != 4:
+    raise SystemExit(f"unexpected docker arguments: {args!r}")
+image = args[3]
+with Path(os.environ["MOCK_REGISTRY_LOG"]).open("a", encoding="utf-8") as stream:
+    stream.write(image + "\\n")
+if image in set(filter(None, os.environ.get("MOCK_PRESENT_TAGS", "").split(","))):
+    print("synthetic existing manifest")
+    raise SystemExit(0)
+if os.environ.get("MOCK_REGISTRY_PROBE_ERROR") == "true":
+    print("synthetic registry transport failure", file=sys.stderr)
+    raise SystemExit(2)
+print("manifest unknown", file=sys.stderr)
+raise SystemExit(1)
+""",
+                encoding="utf-8",
+            )
+            fake_docker.chmod(0o755)
             git("remote", "add", "origin", str(root))
             git("switch", "--detach", release_sha)
 
@@ -657,7 +695,17 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                     "DETECTED_RELEASE_SHA": release_sha,
                     "EVENT_ACTOR": "jeter-1",
                     "EVENT_REF": "refs/heads/main",
+                    "EVENT_TRIGGERING_ACTOR": event_triggering_actor,
+                    "IMAGE_REPOSITORY": IMAGE,
+                    "PREPARED_RELEASE_SHA": release_sha,
+                    "PREPARED_VERSION": "2.2.0-beta.53",
                     "TRIGGER_SHA": trigger_sha,
+                    "DOCKER_CLI": str(fake_docker),
+                    "MOCK_PRESENT_TAGS": ",".join(present_registry_tags),
+                    "MOCK_REGISTRY_PROBE_ERROR": str(
+                        registry_probe_error
+                    ).lower(),
+                    "MOCK_REGISTRY_LOG": str(registry_log),
                 },
             )
             self.assertEqual(git("tag", "--list"), "")
@@ -665,6 +713,11 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 "release_sha": release_sha,
                 "trigger_sha": trigger_sha,
                 "current_main_sha": current_main_sha,
+                "registry_probes": (
+                    registry_log.read_text(encoding="utf-8").splitlines()
+                    if registry_log.exists()
+                    else []
+                ),
             }
 
     def run_github_release_finalization(
@@ -931,6 +984,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
     def test_manual_recovery_rejects_missing_authority_or_drift(self):
         cases = (
             {"event_actor": "someone-else"},
+            {"event_triggering_actor": "someone-else"},
             {"event_ref": "refs/heads/feature"},
             {"manual_target": "malformed"},
             {"manual_target": "unavailable"},
@@ -983,6 +1037,42 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn('source_main_sha" != "$DETECTED_RELEASE_SHA', script)
         self.assertIn('DETECTED_RELEASE_MODE" == "manual_recovery', script)
         self.assertIn("git diff --quiet", script)
+
+    def test_manual_recovery_rechecks_request_and_rerun_actor(self):
+        detector = self.jobs["detect-release"]["steps"][-1]
+        prepare = next(
+            step
+            for step in self.steps
+            if step.get("name") == "Validate protected release commit"
+        )
+        recheck = next(
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Revalidate publication authority before registry access"
+        )
+        for step in (detector, prepare, recheck):
+            with self.subTest(step=step.get("name", "detect")):
+                self.assertEqual(
+                    step["env"]["EVENT_TRIGGERING_ACTOR"],
+                    "${{ github.triggering_actor }}",
+                )
+                self.assertIn(
+                    'EVENT_TRIGGERING_ACTOR" != "jeter-1',
+                    str(step["run"]),
+                )
+
+        rejected, _summary, result, _identities = self.run_release_detector(
+            subject="Synthetic non-owner rerun",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            event_actor="jeter-1",
+            event_triggering_actor="repository-writer",
+            expect_success=False,
+        )
+        self.assertEqual(rejected, {})
+        self.assertIn("request or rerun", result.stdout)
 
     def test_github_release_finalization_succeeds_with_exact_identity(self):
         outcome = self.run_github_release_finalization()
@@ -1107,6 +1197,13 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             accepted_identities["trigger_sha"],
             accepted_identities["current_main_sha"],
         )
+        self.assertEqual(
+            accepted_identities["registry_probes"],
+            [
+                f"{IMAGE}:2.2.0-beta.53",
+                f"{IMAGE}:sha-{accepted_identities['release_sha']}",
+            ],
+        )
 
         moved, moved_identities = self.run_prepublication_recheck(
             move_main_after_trigger=True
@@ -1129,6 +1226,43 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             staged.stdout,
         )
 
+        changed_rerun_actor, changed_actor_identities = (
+            self.run_prepublication_recheck(
+                event_triggering_actor="repository-writer"
+            )
+        )
+        self.assertNotEqual(changed_rerun_actor.returncode, 0)
+        self.assertEqual(changed_actor_identities["registry_probes"], [])
+        self.assertIn(
+            "authority changed before registry access",
+            changed_rerun_actor.stdout,
+        )
+
+        occupied_version_tag = f"{IMAGE}:2.2.0-beta.53"
+        occupied, occupied_identities = self.run_prepublication_recheck(
+            present_registry_tags=(occupied_version_tag,)
+        )
+        self.assertNotEqual(occupied.returncode, 0)
+        self.assertEqual(
+            occupied_identities["registry_probes"], [occupied_version_tag]
+        )
+        self.assertIn(
+            f"Refusing to overwrite immutable tag {occupied_version_tag}",
+            occupied.stdout,
+        )
+
+        ambiguous, ambiguous_identities = self.run_prepublication_recheck(
+            registry_probe_error=True
+        )
+        self.assertNotEqual(ambiguous.returncode, 0)
+        self.assertEqual(
+            ambiguous_identities["registry_probes"], [occupied_version_tag]
+        )
+        self.assertIn(
+            "Unable to prove registry tag is absent",
+            ambiguous.stdout,
+        )
+
         recheck = next(
             step
             for step in self.steps
@@ -1139,6 +1273,11 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn("git rev-list --first-parent", script)
         self.assertIn("git diff --quiet", script)
         self.assertIn(".release/next-version", script)
+        self.assertIn("scripts/assert_registry_tags_absent.sh", script)
+        self.assertIn('"${IMAGE_REPOSITORY}:${PREPARED_VERSION}"', script)
+        self.assertIn(
+            '"${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"', script
+        )
         self.assertNotIn("docker", script)
         self.assertNotIn("gh release", script)
         self.assertNotIn("git push", script)

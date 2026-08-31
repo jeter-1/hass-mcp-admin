@@ -204,7 +204,8 @@ publish its own workflow-fix commit. It accepts an earlier release commit only
 when all of these conditions remain true:
 
 - Josh dispatches the workflow from the current protected `main` ref with an
-  exact lowercase 40-character release SHA and exact expected version;
+  exact lowercase 40-character release SHA and exact expected version, and Josh
+  remains the triggering actor for any rerun of that dispatch;
 - that SHA appears on the current protected-main first-parent chain, so a
   same-tree feature-branch commit cannot substitute for its reviewed merge;
 - the entire `hass_mcp_engineering_beta/` tree is unchanged between that SHA and
@@ -220,9 +221,10 @@ metadata, dependency-audit, ancestry, anonymous multi-architecture verification,
 provenance/SBOM, tag and GitHub Release checks remain mandatory. The recovery is
 rechecked against the current protected-main SHA, first-parent chain,
 Engineering tree, advertised version and staged state immediately before
-registry authentication. The recovery is not a retry mechanism after partial
-publication; an existing or ambiguous artifact is a stop condition requiring
-reconciliation.
+registry authentication. Both immutable image tags are also probed again at
+that boundary; a tag appearing, or an ambiguous registry response, stops before
+login and build. The recovery is not a retry mechanism after partial publication;
+an existing or ambiguous artifact is a stop condition requiring reconciliation.
 
 After the recovery workflow change itself is merged and exact-head review and CI
 are complete, use the GitHub Actions page for **Publish reviewed Engineering

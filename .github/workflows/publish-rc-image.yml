@@ -57,6 +57,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           EVENT_RELEASE_SHA: ${{ inputs.release_sha }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -73,8 +74,8 @@ jobs:
           fi
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            if [[ "$EVENT_ACTOR" != "jeter-1" ]]; then
-              echo "::error::Only the repository owner may request manual publication recovery."
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" ]]; then
+              echo "::error::Only the repository owner may request or rerun manual publication recovery."
               exit 1
             elif [[ "$EVENT_REF" != "refs/heads/main" ]]; then
               echo "::error::Manual publication recovery must be dispatched from protected main."
@@ -205,6 +206,7 @@ jobs:
           DETECTED_VALIDATION_BASE: ${{ needs.detect-release.outputs.validation_base }}
           EVENT_ACTOR: ${{ github.actor }}
           EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           GH_TOKEN: ${{ github.token }}
           TRIGGER_SHA: ${{ github.sha }}
         run: |
@@ -229,7 +231,7 @@ jobs:
             exit 1
           fi
           if [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
-            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
               echo "::error::Manual publication recovery authority changed before publication."
               exit 1
             elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
@@ -367,12 +369,15 @@ jobs:
           DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
           EVENT_ACTOR: ${{ github.actor }}
           EVENT_REF: ${{ github.ref }}
+          EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          PREPARED_RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          PREPARED_VERSION: ${{ steps.prepare.outputs.version }}
           TRIGGER_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
           release_sha="$(git rev-parse HEAD)"
-          if [[ "$release_sha" != "$DETECTED_RELEASE_SHA" ]]; then
+          if [[ "$release_sha" != "$DETECTED_RELEASE_SHA" || "$release_sha" != "$PREPARED_RELEASE_SHA" ]]; then
             echo "::error::The pre-publication checkout is not the exact detected release commit."
             exit 1
           fi
@@ -386,7 +391,7 @@ jobs:
           fi
 
           if [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
-            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
               echo "::error::Manual publication recovery authority changed before registry access."
               exit 1
             elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
@@ -412,6 +417,10 @@ jobs:
             echo "::error::The detected release mode is unsupported."
             exit 1
           fi
+
+          bash scripts/assert_registry_tags_absent.sh \
+            "${IMAGE_REPOSITORY}:${PREPARED_VERSION}" \
+            "${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
