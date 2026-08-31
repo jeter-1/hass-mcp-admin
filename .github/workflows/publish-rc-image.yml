@@ -14,6 +14,18 @@ on:
         description: Exact Engineering version already materialized by that commit
         required: true
         type: string
+      recovery_run_id:
+        description: Failed authorized publication run that produced an untagged digest
+        required: false
+        type: string
+      recovery_source_digest:
+        description: Exact untagged OCI digest from that failed authorized run
+        required: false
+        type: string
+      recovery_build_time:
+        description: Exact UTC build timestamp bound by that digest's provenance
+        required: false
+        type: string
 
 permissions: {}
 
@@ -43,6 +55,10 @@ jobs:
       validation_base: ${{ steps.detect.outputs.validation_base }}
       expected_version: ${{ steps.detect.outputs.expected_version }}
       release_mode: ${{ steps.detect.outputs.release_mode }}
+      source_mode: ${{ steps.detect.outputs.source_mode }}
+      recovery_run_id: ${{ steps.detect.outputs.recovery_run_id }}
+      recovery_source_digest: ${{ steps.detect.outputs.recovery_source_digest }}
+      recovery_build_time: ${{ steps.detect.outputs.recovery_build_time }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -57,6 +73,9 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           EVENT_RELEASE_SHA: ${{ inputs.release_sha }}
+          EVENT_RECOVERY_BUILD_TIME: ${{ inputs.recovery_build_time }}
+          EVENT_RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+          EVENT_RECOVERY_SOURCE_DIGEST: ${{ inputs.recovery_source_digest }}
           EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           TRIGGER_SHA: ${{ github.sha }}
         run: |
@@ -66,6 +85,10 @@ jobs:
           validation_base="$EVENT_BEFORE"
           release_mode="protected_main_push"
           expected_version=""
+          source_mode="build"
+          recovery_run_id=""
+          recovery_source_digest=""
+          recovery_build_time=""
           trigger_checkout_sha="$(git rev-parse HEAD)"
 
           if [[ "$trigger_checkout_sha" != "$TRIGGER_SHA" ]]; then
@@ -86,6 +109,30 @@ jobs:
             elif [[ ! "$EVENT_EXPECTED_VERSION" =~ ^[0-9A-Za-z][0-9A-Za-z.+-]{0,63}$ ]]; then
               echo "::error::Manual publication recovery requires a bounded exact version."
               exit 1
+            fi
+
+            recovery_field_count=0
+            [[ -n "$EVENT_RECOVERY_RUN_ID" ]] && recovery_field_count=$((recovery_field_count + 1))
+            [[ -n "$EVENT_RECOVERY_SOURCE_DIGEST" ]] && recovery_field_count=$((recovery_field_count + 1))
+            [[ -n "$EVENT_RECOVERY_BUILD_TIME" ]] && recovery_field_count=$((recovery_field_count + 1))
+            if [[ "$recovery_field_count" -ne 0 && "$recovery_field_count" -ne 3 ]]; then
+              echo "::error::Digest recovery requires run ID, source digest, and build time together."
+              exit 1
+            elif [[ "$recovery_field_count" -eq 3 ]]; then
+              if [[ ! "$EVENT_RECOVERY_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]; then
+                echo "::error::Digest recovery requires a bounded exact prior run ID."
+                exit 1
+              elif [[ ! "$EVENT_RECOVERY_SOURCE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+                echo "::error::Digest recovery requires an exact lowercase sha256 digest."
+                exit 1
+              elif [[ ! "$EVENT_RECOVERY_BUILD_TIME" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+                echo "::error::Digest recovery requires an exact UTC RFC3339 build timestamp."
+                exit 1
+              fi
+              source_mode="resume_digest"
+              recovery_run_id="$EVENT_RECOVERY_RUN_ID"
+              recovery_source_digest="$EVENT_RECOVERY_SOURCE_DIGEST"
+              recovery_build_time="$EVENT_RECOVERY_BUILD_TIME"
             fi
 
             git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
@@ -142,8 +189,12 @@ jobs:
               echo "validation_base=$validation_base"
               echo "expected_version=$expected_version"
               echo "release_mode=$release_mode"
+              echo "source_mode=$source_mode"
+              echo "recovery_run_id=$recovery_run_id"
+              echo "recovery_source_digest=$recovery_source_digest"
+              echo "recovery_build_time=$recovery_build_time"
             } >> "$GITHUB_OUTPUT"
-            echo "A reviewed final-version commit is eligible for ${release_mode} publication." >> "$GITHUB_STEP_SUMMARY"
+            echo "A reviewed final-version commit is eligible for ${release_mode} publication using ${source_mode}." >> "$GITHUB_STEP_SUMMARY"
           elif [[ "$release_mode" == "manual_recovery" ]]; then
             echo "::error::The requested recovery commit has no bounded Engineering version transition."
             exit 1
@@ -161,12 +212,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
+      actions: read
       contents: write
       packages: write
     outputs:
       version: ${{ steps.prepare.outputs.version }}
       release_sha: ${{ steps.prepare.outputs.release_sha }}
-      digest: ${{ steps.build.outputs.digest }}
+      digest: ${{ steps.source.outputs.digest }}
       image_published: ${{ steps.publish_tags.outputs.publication_disposition == 'complete' }}
       image_publication_disposition: ${{ steps.publish_tags.outputs.publication_disposition || 'none' }}
       image_verified: ${{ steps.verify.outputs.image_verified }}
@@ -202,11 +254,17 @@ jobs:
         id: prepare
         shell: bash
         env:
+          CURRENT_RUN_ATTEMPT: ${{ github.run_attempt }}
           DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RECOVERY_BUILD_TIME: ${{ needs.detect-release.outputs.recovery_build_time }}
+          DETECTED_RECOVERY_RUN_ID: ${{ needs.detect-release.outputs.recovery_run_id }}
+          DETECTED_RECOVERY_SOURCE_DIGEST: ${{ needs.detect-release.outputs.recovery_source_digest }}
           DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
           DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          DETECTED_SOURCE_MODE: ${{ needs.detect-release.outputs.source_mode }}
           DETECTED_VALIDATION_BASE: ${{ needs.detect-release.outputs.validation_base }}
           EVENT_ACTOR: ${{ github.actor }}
+          EVENT_NAME: ${{ github.event_name }}
           EVENT_REF: ${{ github.ref }}
           EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           GH_TOKEN: ${{ github.token }}
@@ -325,9 +383,66 @@ jobs:
             exit 1
           fi
           release_sha="$(git rev-parse HEAD)"
-          build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          source_workflow_sha="$TRIGGER_SHA"
+          source_run_attempt="$CURRENT_RUN_ATTEMPT"
+          source_event_name="$EVENT_NAME"
 
-          if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ || ! "$build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+          if [[ "$DETECTED_SOURCE_MODE" == "resume_digest" ]]; then
+            if [[ "$DETECTED_RELEASE_MODE" != "manual_recovery" ]]; then
+              echo "::error::An existing digest may be resumed only through owner-authorized manual recovery."
+              exit 1
+            fi
+            verifier="$RUNNER_TEMP/verify_publication_source_image.py"
+            if ! git show "${TRIGGER_SHA}:scripts/verify_publication_source_image.py" > "$verifier" || [[ ! -s "$verifier" ]]; then
+              echo "::error::The digest-recovery verifier is unavailable from current workflow authority."
+              exit 1
+            fi
+            recovery_run_json="$RUNNER_TEMP/recovery-run.json"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${DETECTED_RECOVERY_RUN_ID}" > "$recovery_run_json"
+            source_run_env="$RUNNER_TEMP/source-run.env"
+            python "$verifier" verify-recovery-run \
+              --run-json "$recovery_run_json" \
+              --expected-run-id "$DETECTED_RECOVERY_RUN_ID" \
+              --expected-repository "$GITHUB_REPOSITORY" \
+              --expected-owner "jeter-1" \
+              --github-output "$source_run_env"
+            # The verifier emits only fixed keys with validated SHA/integer values.
+            source "$source_run_env"
+            cat "$source_run_env" >> "$GITHUB_OUTPUT"
+            if ! git cat-file -e "${source_workflow_sha}^{commit}" 2>/dev/null; then
+              echo "::error::The failed publication workflow commit is unavailable."
+              exit 1
+            elif ! git merge-base --is-ancestor "$source_workflow_sha" "$protected_main_sha"; then
+              echo "::error::The failed publication workflow commit is no longer retained on protected main."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$source_workflow_sha" >/dev/null; then
+              echo "::error::The failed publication workflow commit is not on protected main's first-parent history."
+              exit 1
+            elif ! git cat-file -e "${source_workflow_sha}:.github/workflows/publish-rc-image.yml" 2>/dev/null; then
+              echo "::error::The failed run is not bound to the reviewed publication workflow."
+              exit 1
+            elif ! git diff --quiet "$source_workflow_sha..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source drifted after the failed digest build."
+              exit 1
+            fi
+            build_time="$DETECTED_RECOVERY_BUILD_TIME"
+          elif [[ "$DETECTED_SOURCE_MODE" == "build" ]]; then
+            if [[ -n "$DETECTED_RECOVERY_RUN_ID" || -n "$DETECTED_RECOVERY_SOURCE_DIGEST" || -n "$DETECTED_RECOVERY_BUILD_TIME" ]]; then
+              echo "::error::Fresh publication cannot carry partial digest-recovery evidence."
+              exit 1
+            fi
+            build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            {
+              echo "source_workflow_sha=$source_workflow_sha"
+              echo "source_run_attempt=$source_run_attempt"
+              echo "source_event_name=$source_event_name"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::The detected publication source mode is unsupported."
+            exit 1
+          fi
+
+          if [[ ! "$release_sha" =~ ^[0-9a-f]{40}$ || ! "$source_workflow_sha" =~ ^[0-9a-f]{40}$ || ! "$source_run_attempt" =~ ^[1-9][0-9]{0,2}$ || ! "$build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
             echo "::error::Release provenance is not a bounded commit SHA and UTC RFC3339 timestamp."
             exit 1
           fi
@@ -356,9 +471,11 @@ jobs:
             echo "release_notes_path=$release_notes_path"
             echo "release_sha=$release_sha"
             echo "build_time=$build_time"
+            echo "source_mode=$DETECTED_SOURCE_MODE"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
+        if: needs.detect-release.outputs.source_mode == 'build'
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         with:
           platforms: arm64,arm
@@ -450,6 +567,7 @@ jobs:
             "${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"
 
       - name: Log in to GHCR
+        if: needs.detect-release.outputs.source_mode == 'build'
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
@@ -458,6 +576,7 @@ jobs:
 
       - name: Build release commit without a temporary tag
         id: build
+        if: needs.detect-release.outputs.source_mode == 'build'
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ./hass_mcp_engineering_beta
@@ -477,14 +596,56 @@ jobs:
             org.opencontainers.image.version=${{ steps.prepare.outputs.version }}
             io.hass-mcp.build.dirty=false
 
+      - name: Resolve immutable source image
+        id: source
+        shell: bash
+        env:
+          BUILT_DIGEST: ${{ steps.build.outputs.digest }}
+          RECOVERY_DIGEST: ${{ needs.detect-release.outputs.recovery_source_digest }}
+          SOURCE_MODE: ${{ needs.detect-release.outputs.source_mode }}
+        run: |
+          set -euo pipefail
+
+          digest=""
+          source_image_published=false
+          source_image_reused=false
+          if [[ "$SOURCE_MODE" == "build" ]]; then
+            if [[ ! "$BUILT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ || -n "$RECOVERY_DIGEST" ]]; then
+              echo "::error::Fresh publication did not produce one exact immutable source digest."
+              exit 1
+            fi
+            digest="$BUILT_DIGEST"
+            source_image_published=true
+          elif [[ "$SOURCE_MODE" == "resume_digest" ]]; then
+            if [[ -n "$BUILT_DIGEST" || ! "$RECOVERY_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "::error::Digest recovery attempted to build or lacks its exact prior digest."
+              exit 1
+            fi
+            digest="$RECOVERY_DIGEST"
+            source_image_reused=true
+          else
+            echo "::error::The immutable source-image mode is unsupported."
+            exit 1
+          fi
+          {
+            echo "digest=$digest"
+            echo "source_image_published=$source_image_published"
+            echo "source_image_reused=$source_image_reused"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Verify digest-addressed image architectures and provenance anonymously
         id: verify_source
         shell: bash
         env:
-          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
-          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
+          EXPECTED_DIGEST: ${{ steps.source.outputs.digest }}
+          EXPECTED_EVENT_NAME: ${{ steps.prepare.outputs.source_event_name }}
+          EXPECTED_RUN_ATTEMPT: ${{ steps.prepare.outputs.source_run_attempt }}
+          EXPECTED_RUN_ID: ${{ needs.detect-release.outputs.recovery_run_id || github.run_id }}
+          EXPECTED_WORKFLOW_SHA: ${{ steps.prepare.outputs.source_workflow_sha }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
@@ -492,77 +653,60 @@ jobs:
           mkdir -p "$anonymous_config"
           source_image="${IMAGE_REPOSITORY}@${EXPECTED_DIGEST}"
           manifest_json="$RUNNER_TEMP/source-manifest.json"
-          source_inspect="$RUNNER_TEMP/source-inspect.txt"
+          provenance_json="$RUNNER_TEMP/source-provenance.json"
+          sbom_json="$RUNNER_TEMP/source-sbom.json"
+          verifier="$RUNNER_TEMP/verify_publication_source_image.py"
+
+          if [[ ! "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The source verifier has no exact workflow-authority commit."
+            exit 1
+          elif ! git show "${WORKFLOW_AUTHORITY_SHA}:scripts/verify_publication_source_image.py" > "$verifier" || [[ ! -s "$verifier" ]]; then
+            echo "::error::The source verifier is unavailable from exact workflow authority."
+            exit 1
+          fi
 
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect --raw \
             "$source_image" > "$manifest_json"
+          platform_env="$RUNNER_TEMP/source-platforms.env"
+          python "$verifier" extract-manifest \
+            --manifest-json "$manifest_json" \
+            --expected-digest "$EXPECTED_DIGEST" \
+            --output-env "$platform_env"
+          # The verifier emits only fixed platform keys with exact sha256 values.
+          source "$platform_env"
+
+          amd64_json="$RUNNER_TEMP/source-amd64.json"
+          arm64_json="$RUNNER_TEMP/source-arm64.json"
+          armv7_json="$RUNNER_TEMP/source-armv7.json"
           DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            "$source_image" > "$source_inspect"
+            --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${SOURCE_AMD64_DIGEST}" > "$amd64_json"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${SOURCE_ARM64_DIGEST}" > "$arm64_json"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${SOURCE_ARMV7_DIGEST}" > "$armv7_json"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            --format '{{json .Provenance}}' "$source_image" > "$provenance_json"
+          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+            --format '{{json .SBOM}}' "$source_image" > "$sbom_json"
 
-          python - "$manifest_json" <<'PY'
-          import json
-          import pathlib
-          import sys
-
-          manifest = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
-          actual = {
-              (
-                  item.get("platform", {}).get("os"),
-                  item.get("platform", {}).get("architecture"),
-                  item.get("platform", {}).get("variant"),
-              )
-              for item in manifest.get("manifests", [])
-          }
-          required = {
-              ("linux", "amd64", None),
-              ("linux", "arm64", None),
-              ("linux", "arm", "v7"),
-          }
-          missing = required - actual
-          if missing:
-              raise SystemExit(f"multi-architecture manifest is missing: {sorted(missing)!r}")
-          attestations = [
-              item for item in manifest.get("manifests", [])
-              if item.get("annotations", {}).get("vnd.docker.reference.type") == "attestation-manifest"
-          ]
-          if len(attestations) < len(required):
-              raise SystemExit("SLSA provenance/SBOM attestations are missing for one or more platforms")
-          PY
-
-          source_digest="$(awk '$1 == "Digest:" { print $2; exit }' "$source_inspect")"
-          if [[ -z "$EXPECTED_DIGEST" || "$source_digest" != "$EXPECTED_DIGEST" ]]; then
-            echo "::error::The anonymously inspected source image does not match the built immutable digest."
-            exit 1
-          fi
-
-          DOCKER_CONFIG="$anonymous_config" docker pull --platform linux/amd64 "$source_image"
-          actual_revision="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
-          actual_created="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.created" }}')"
-          actual_version="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.version" }}')"
-          actual_source="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.source" }}')"
-          if [[ "$actual_revision" != "$RELEASE_SHA" || "$actual_created" != "$BUILD_TIME" || "$actual_version" != "$VERSION" || "$actual_source" != "https://github.com/jeter-1/hass-mcp-admin" ]]; then
-            echo "::error::The anonymously pulled source image provenance does not match the local release commit."
-            exit 1
-          fi
-          actual_dirty="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
-          if [[ "$actual_dirty" != "false" ]]; then
-            echo "::error::The digest-addressed image dirty-tree label is not false."
-            exit 1
-          fi
-          reference_labels="$actual_revision|$actual_created|$actual_version|$actual_dirty"
-          for platform in linux/arm64 linux/arm/v7; do
-            DOCKER_CONFIG="$anonymous_config" docker pull --platform "$platform" "$source_image"
-            platform_labels="$(docker image inspect "$source_image" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}|{{ index .Config.Labels "org.opencontainers.image.created" }}|{{ index .Config.Labels "org.opencontainers.image.version" }}|{{ index .Config.Labels "io.hass-mcp.build.dirty" }}')"
-            if [[ "$platform_labels" != "$reference_labels" ]]; then
-              echo "::error::Platform $platform does not share source revision, version, creation time, and dirty=false provenance."
-              exit 1
-            fi
-          done
-          {
-            echo "source_image_verified=true"
-            echo "manifest_digest=$source_digest"
-            echo "sbom_status=present"
-          } >> "$GITHUB_OUTPUT"
+          python "$verifier" verify-source \
+            --manifest-json "$manifest_json" \
+            --provenance-json "$provenance_json" \
+            --sbom-json "$sbom_json" \
+            --image-json "linux/amd64=$amd64_json" \
+            --image-json "linux/arm64=$arm64_json" \
+            --image-json "linux/arm/v7=$armv7_json" \
+            --expected-digest "$EXPECTED_DIGEST" \
+            --expected-release-sha "$RELEASE_SHA" \
+            --expected-version "$VERSION" \
+            --expected-build-time "$BUILD_TIME" \
+            --expected-run-id "$EXPECTED_RUN_ID" \
+            --expected-run-attempt "$EXPECTED_RUN_ATTEMPT" \
+            --expected-workflow-sha "$EXPECTED_WORKFLOW_SHA" \
+            --expected-event-name "$EXPECTED_EVENT_NAME" \
+            --repository "$GITHUB_REPOSITORY" \
+            --owner "jeter-1" \
+            --github-output "$GITHUB_OUTPUT"
 
       - name: Revalidate publication authority before final image tags
         shell: bash
@@ -657,7 +801,7 @@ jobs:
           GHCR_TOKEN: ${{ github.token }}
           GHCR_USERNAME: ${{ github.actor }}
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
-          SOURCE_DIGEST: ${{ steps.build.outputs.digest }}
+          SOURCE_DIGEST: ${{ steps.source.outputs.digest }}
           VERSION: ${{ steps.prepare.outputs.version }}
           WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
         run: |
@@ -683,7 +827,7 @@ jobs:
         id: verify
         shell: bash
         env:
-          EXPECTED_DIGEST: ${{ steps.build.outputs.digest }}
+          EXPECTED_DIGEST: ${{ steps.source.outputs.digest }}
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
         run: |
@@ -727,7 +871,7 @@ jobs:
           TRIGGER_SHA: ${{ github.sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.source.outputs.digest }}
         run: |
           set -euo pipefail
 
@@ -834,7 +978,7 @@ jobs:
           TRIGGER_SHA: ${{ github.sha }}
           VERSION: ${{ steps.prepare.outputs.version }}
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
-          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          IMAGE_DIGEST: ${{ steps.source.outputs.digest }}
         run: |
           set -euo pipefail
 
@@ -979,7 +1123,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.source.outputs.digest }}
           RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
           RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
           VERSION: ${{ steps.prepare.outputs.version }}
@@ -993,7 +1137,9 @@ jobs:
           GITHUB_RELEASE_VERIFIED: ${{ steps.release.outputs.github_release_verified || 'false' }}
           GITHUB_RELEASE_URL: ${{ steps.release.outputs.release_url || 'not-created' }}
           RELEASE_COMPLETE: ${{ steps.release.outputs.release_complete || 'false' }}
-          SOURCE_IMAGE_PUBLISHED: ${{ steps.build.outcome == 'success' }}
+          SOURCE_IMAGE_PUBLISHED: ${{ steps.source.outputs.source_image_published || 'false' }}
+          SOURCE_IMAGE_REUSED: ${{ steps.source.outputs.source_image_reused || 'false' }}
+          SOURCE_MODE: ${{ needs.detect-release.outputs.source_mode }}
           SOURCE_IMAGE_VERIFIED: ${{ steps.verify_source.outputs.source_image_verified || 'false' }}
         run: |
           {
@@ -1012,6 +1158,8 @@ jobs:
             echo "- Digest-addressed source image: ${IMAGE_REPOSITORY}@${DIGEST}"
             echo "- temporary_registry_tag_created: false"
             echo "- source_image_published: $SOURCE_IMAGE_PUBLISHED"
+            echo "- source_image_reused: $SOURCE_IMAGE_REUSED"
+            echo "- source_mode: $SOURCE_MODE"
             echo "- source_image_verified: $SOURCE_IMAGE_VERIFIED"
             echo "- image_published: $IMAGE_PUBLISHED"
             echo "- image_publication_disposition: $IMAGE_PUBLICATION_DISPOSITION"

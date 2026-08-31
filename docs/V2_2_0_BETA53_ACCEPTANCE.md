@@ -226,11 +226,35 @@ and repeated directly before the annotated Git tag push and again directly
 before GitHub Release creation. Each remote metadata identity is reprobed at its
 write boundary. Protected-main movement at either point prevents that write and
 leaves any already-created image identities in explicit reconciliation state.
-For manual recovery, only this publisher helper is materialized in runner temp
-from the exact guarded workflow-authority SHA; the Beta 53 image continues to be
-built solely from the historical release checkout.
+For fresh manual recovery, only this publisher helper is materialized in runner
+temp from the exact guarded workflow-authority SHA; the Beta 53 image is built
+solely from the historical release checkout.
+
+Authorized run `33379623142` subsequently completed all validation and produced
+the untagged immutable OCI index
+`sha256:2cd84c96aec6c1772e8933f9c78127bc8a13c02743fc8056b23d3f9275eb8b40`
+at `2026-08-31T10:10:06Z`. Its old Docker-daemon verification failed while
+switching the same index between platform pulls; it created no final image tag,
+Git tag, or GitHub Release. The narrow completion path therefore accepts the
+failed run ID, exact digest, and build time only as one all-or-none recovery
+triple. It grants `actions: read` only to the publication job so the workflow can
+require that run to be a completed failed owner-triggered manual execution of
+the same protected-main workflow in this repository.
+
+In digest-resume mode QEMU, GHCR login, and the build action are skipped. A
+bounded verifier is materialized from the exact current workflow-authority SHA
+and anonymously validates the index digest, the exact three platform children,
+one attestation subject per child, every platform's source/version/time/dirty
+labels, and SLSA provenance binding the prior run ID and attempt, workflow SHA
+and path, protected ref, repository and actors, release SHA, source tree, build
+arguments, and BuildKit VCS identity. The verifier uses daemonless Buildx
+metadata inspection; it never performs a Docker image pull. Any disagreement,
+unsupported shape, duplicate JSON key, non-finite value, oversized evidence,
+main/source drift, pre-existing final identity, or attempted build in resume
+mode fails closed before final tag creation.
 
 This recovery mechanism does not assert that Beta 53 has been published. Merging
-the workflow correction, dispatching publication, deploying to Home Assistant
-and running HAMCP-089 remain distinct authorizations with separate evidence and
+the workflow correction and completing one exact digest-resume dispatch are the
+authorized publication boundary; deploying to Home Assistant and running
+HAMCP-089 remain distinct and unauthorized actions with separate evidence and
 rollback boundaries.

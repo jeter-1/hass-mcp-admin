@@ -200,8 +200,10 @@ that the reviewed release failed validation. See GitHub's
 [workflow-trigger documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
 
 The publication workflow has one recovery-only manual entry point. It does not
-publish its own workflow-fix commit. It accepts an earlier release commit only
-when all of these conditions remain true:
+publish its own workflow-fix commit. A dispatch either performs the original
+fresh digest build or, only when all three recovery fields are supplied, resumes
+one exact digest from one exact failed publication run. It accepts an earlier
+release commit only when all of these conditions remain true:
 
 - Josh dispatches the workflow from the current protected `main` ref with an
   exact lowercase 40-character release SHA and exact expected version, and Josh
@@ -213,6 +215,9 @@ when all of these conditions remain true:
 - the release SHA still contains a bounded version transition from its first
   parent, and neither it nor current protected main contains a staged release
   declaration; and
+- digest resume names a completed failed `workflow_dispatch` run of this exact
+  workflow on `main`, owned and triggered by Josh in this repository, plus its
+  exact lowercase digest and UTC build timestamp; and
 - the immutable version tag, commit tag, GitHub Release and image tags are all
   proven absent before any registry login or write.
 
@@ -223,13 +228,18 @@ rechecked against the current protected-main SHA, first-parent chain,
 Engineering tree, advertised version and staged state immediately before
 registry authentication. The immutable Git tag, GitHub Release, and both image
 tags are also probed again at that boundary; an identity appearing, or an
-ambiguous GitHub or registry response, stops before login and build. The
-multi-architecture image is pushed without a temporary tag, only under its
-content-addressed digest. The publication job has a bounded timeout, and a
-failure at any later phase therefore cannot leave a predictable staging tag or
-delete a digest shared by completed release tags. The exact digest,
-architectures, attestations, and provenance labels are verified anonymously
-before any final image tag is created. The complete protected-main, actor,
+ambiguous GitHub or registry response, stops before login and any fresh build.
+Fresh publication pushes the multi-architecture image without a temporary tag,
+only under its content-addressed digest. Digest resume skips QEMU, registry
+login, and the build action entirely. The publication job has a bounded timeout,
+and a failure at any later phase therefore cannot leave a predictable staging
+tag or delete a digest shared by completed release tags. The exact OCI index,
+three platform child digests, per-platform image labels, attestation subjects,
+and SLSA provenance are verified anonymously and without Docker image pulls
+before any final image tag is created. The provenance must bind the release SHA,
+version, timestamp, protected ref, repository/owner, prior run ID and attempt,
+workflow SHA/path, source tree, build arguments, and BuildKit VCS identity. The
+complete protected-main, actor,
 source-tree, version, staged-state, Git-tag, GitHub-Release, and registry-tag
 authority guard is then repeated after the digest-addressed build and
 verification, immediately before the final registry writes. The publisher uses
@@ -250,27 +260,33 @@ but its response is lost. The recovery is not a retry mechanism after partial
 publication; an existing, partial, unknown, or ambiguous artifact is a stop
 condition requiring reconciliation.
 
-Manual recovery still builds only the exact historical release checkout. The
-create-only registry helper is separately materialized into runner temp from the
-exact current protected-main workflow-authority SHA after that SHA has passed
-the actor, ref, current-head, first-parent, source-tree and staged-state guards.
-It is publication tooling only and never enters the historical image context.
+Fresh manual recovery still builds only the exact historical release checkout.
+Digest resume cannot invoke that build. The source verifier and create-only
+registry helper are separately materialized into runner temp from the exact
+current protected-main workflow-authority SHA after that SHA has passed the
+actor, ref, current-head, first-parent, source-tree and staged-state guards. They
+are publication tooling only and never enter the historical image context.
 
 After the recovery workflow change itself is merged and exact-head review and CI
 are complete, use the GitHub Actions page for **Publish reviewed Engineering
 release**, choose **Run workflow**, select `main`, and enter the reviewed release
-SHA and expected version. For the missed Beta 53 publication, the bounded inputs
-are:
+SHA and expected version. Beta 53 run `33379623142` completed every validation
+job and created the untagged digest below before its old local-Docker verifier
+failed while switching platforms. The bounded completion inputs reuse only that
+digest; they do not rebuild it:
 
 ```text
 release_sha: 153b4dd7e2e60806c7117bb83c6c83b8adf02ff8
 expected_version: 2.2.0-beta.53
+recovery_run_id: 33379623142
+recovery_source_digest: sha256:2cd84c96aec6c1772e8933f9c78127bc8a13c02743fc8056b23d3f9275eb8b40
+recovery_build_time: 2026-08-31T10:10:06Z
 ```
 
 The equivalent authenticated GitHub CLI command is:
 
 ```powershell
-gh workflow run publish-rc-image.yml --repo jeter-1/hass-mcp-admin --ref main -f release_sha=153b4dd7e2e60806c7117bb83c6c83b8adf02ff8 -f expected_version=2.2.0-beta.53
+gh workflow run publish-rc-image.yml --repo jeter-1/hass-mcp-admin --ref main -f release_sha=153b4dd7e2e60806c7117bb83c6c83b8adf02ff8 -f expected_version=2.2.0-beta.53 -f recovery_run_id=33379623142 -f recovery_source_digest=sha256:2cd84c96aec6c1772e8933f9c78127bc8a13c02743fc8056b23d3f9275eb8b40 -f recovery_build_time=2026-08-31T10:10:06Z
 ```
 
 Dispatch is a distinct publication action and still requires Josh's explicit
