@@ -221,10 +221,11 @@ metadata, dependency-audit, ancestry, anonymous multi-architecture verification,
 provenance/SBOM, tag and GitHub Release checks remain mandatory. The recovery is
 rechecked against the current protected-main SHA, first-parent chain,
 Engineering tree, advertised version and staged state immediately before
-registry authentication. Both immutable image tags are also probed again at
-that boundary; a tag appearing, or an ambiguous registry response, stops before
-login and build. The recovery is not a retry mechanism after partial publication;
-an existing or ambiguous artifact is a stop condition requiring reconciliation.
+registry authentication. The immutable Git tag, GitHub Release, and both image
+tags are also probed again at that boundary; an identity appearing, or an
+ambiguous GitHub or registry response, stops before login and build. The
+recovery is not a retry mechanism after partial publication; an existing or
+ambiguous artifact is a stop condition requiring reconciliation.
 
 After the recovery workflow change itself is merged and exact-head review and CI
 are complete, use the GitHub Actions page for **Publish reviewed Engineering

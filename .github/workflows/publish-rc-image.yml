@@ -370,7 +370,9 @@ jobs:
           EVENT_ACTOR: ${{ github.actor }}
           EVENT_REF: ${{ github.ref }}
           EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
+          GH_TOKEN: ${{ github.token }}
           PREPARED_RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          PREPARED_RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
           PREPARED_VERSION: ${{ steps.prepare.outputs.version }}
           TRIGGER_SHA: ${{ github.sha }}
         run: |
@@ -415,6 +417,29 @@ jobs:
             fi
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
+
+          remote_tag_probe="$RUNNER_TEMP/prepublication-remote-tag-probe"
+          set +e
+          git ls-remote --exit-code --tags origin \
+            "refs/tags/${PREPARED_RELEASE_TAG}" >"$remote_tag_probe" 2>&1
+          remote_tag_status=$?
+          set -e
+          if [[ "$remote_tag_status" -eq 0 ]]; then
+            echo "::error::The immutable release tag ${PREPARED_RELEASE_TAG} appeared before image publication."
+            exit 1
+          elif [[ "$remote_tag_status" -ne 2 ]]; then
+            echo "::error::Unable to prove that the immutable release tag is absent before image publication."
+            exit 1
+          fi
+
+          release_probe_error="$RUNNER_TEMP/prepublication-github-release-probe-error"
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${PREPARED_RELEASE_TAG}" >/dev/null 2>"$release_probe_error"; then
+            echo "::error::A GitHub Release for ${PREPARED_RELEASE_TAG} appeared before image publication."
+            exit 1
+          elif ! grep -Fq "HTTP 404" "$release_probe_error"; then
+            echo "::error::Unable to prove that the GitHub Release is absent before image publication."
             exit 1
           fi
 

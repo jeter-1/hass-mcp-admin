@@ -203,9 +203,9 @@ again immediately before registry access, and fails closed on actor, ref,
 first-parent identity, source/configuration drift, version, staged-state or
 artifact ambiguity. Manual reruns require both the original workflow actor and
 the rerun-triggering actor to remain the repository owner. The immediate
-pre-registry guard also reprobes both immutable image tags, so concurrent
-publication or an ambiguous registry response stops before authentication and
-build.
+pre-registry guard also reprobes the immutable Git tag, GitHub Release and both
+image tags, so concurrent publication or an ambiguous GitHub or registry
+response stops before authentication and build.
 
 This recovery mechanism does not assert that Beta 53 has been published. Merging
 the workflow correction, dispatching publication, deploying to Home Assistant

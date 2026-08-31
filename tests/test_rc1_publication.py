@@ -591,6 +591,10 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         move_main_after_trigger=False,
         trigger_contains_staged_declaration=False,
         event_triggering_actor="jeter-1",
+        github_release_exists=False,
+        github_release_probe_error=False,
+        git_tag_probe_error=False,
+        present_git_tag=False,
         present_registry_tags=(),
         registry_probe_error=False,
     ):
@@ -679,8 +683,50 @@ raise SystemExit(1)
                 encoding="utf-8",
             )
             fake_docker.chmod(0o755)
+            release_tag = "v2.2.0-beta.53"
+            if present_git_tag:
+                git("tag", release_tag)
+            initial_tags = git("tag", "--list")
             git("remote", "add", "origin", str(root))
             git("switch", "--detach", release_sha)
+
+            fake_git = root / "git"
+            fake_git.write_text(
+                """#!/usr/bin/env python3
+import os
+import sys
+
+args = sys.argv[1:]
+if args[:3] == ["ls-remote", "--exit-code", "--tags"] and os.environ.get("MOCK_GIT_TAG_PROBE_ERROR") == "true":
+    print("synthetic Git tag transport failure", file=sys.stderr)
+    raise SystemExit(128)
+real_git = os.environ["REAL_GIT"]
+os.execv(real_git, [real_git, *args])
+""",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            fake_gh = root / "gh"
+            fake_gh.write_text(
+                """#!/usr/bin/env python3
+import os
+import sys
+
+args = sys.argv[1:]
+if not args or args[0] != "api":
+    raise SystemExit(f"unexpected gh arguments: {args!r}")
+if os.environ.get("MOCK_GITHUB_RELEASE_EXISTS") == "true":
+    print('{"tag_name":"v2.2.0-beta.53"}')
+    raise SystemExit(0)
+if os.environ.get("MOCK_GITHUB_RELEASE_PROBE_ERROR") == "true":
+    print("synthetic GitHub Release transport failure", file=sys.stderr)
+    raise SystemExit(2)
+print("gh: Not Found (HTTP 404)", file=sys.stderr)
+raise SystemExit(1)
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o755)
 
             result = subprocess.run(
                 [bash, "-c", str(step["run"])],
@@ -696,11 +742,26 @@ raise SystemExit(1)
                     "EVENT_ACTOR": "jeter-1",
                     "EVENT_REF": "refs/heads/main",
                     "EVENT_TRIGGERING_ACTOR": event_triggering_actor,
+                    "GH_TOKEN": "synthetic-github-token",
+                    "GITHUB_REPOSITORY": "jeter-1/hass-mcp-admin",
                     "IMAGE_REPOSITORY": IMAGE,
+                    "PATH": f"{root}{os.pathsep}{os.environ['PATH']}",
                     "PREPARED_RELEASE_SHA": release_sha,
+                    "PREPARED_RELEASE_TAG": release_tag,
                     "PREPARED_VERSION": "2.2.0-beta.53",
+                    "REAL_GIT": shutil.which("git") or "git",
+                    "RUNNER_TEMP": str(root),
                     "TRIGGER_SHA": trigger_sha,
                     "DOCKER_CLI": str(fake_docker),
+                    "MOCK_GITHUB_RELEASE_EXISTS": str(
+                        github_release_exists
+                    ).lower(),
+                    "MOCK_GITHUB_RELEASE_PROBE_ERROR": str(
+                        github_release_probe_error
+                    ).lower(),
+                    "MOCK_GIT_TAG_PROBE_ERROR": str(
+                        git_tag_probe_error
+                    ).lower(),
                     "MOCK_PRESENT_TAGS": ",".join(present_registry_tags),
                     "MOCK_REGISTRY_PROBE_ERROR": str(
                         registry_probe_error
@@ -708,7 +769,7 @@ raise SystemExit(1)
                     "MOCK_REGISTRY_LOG": str(registry_log),
                 },
             )
-            self.assertEqual(git("tag", "--list"), "")
+            self.assertEqual(git("tag", "--list"), initial_tags)
             return result, {
                 "release_sha": release_sha,
                 "trigger_sha": trigger_sha,
@@ -1238,6 +1299,46 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             changed_rerun_actor.stdout,
         )
 
+        existing_git_tag, existing_git_tag_identities = (
+            self.run_prepublication_recheck(present_git_tag=True)
+        )
+        self.assertNotEqual(existing_git_tag.returncode, 0)
+        self.assertEqual(existing_git_tag_identities["registry_probes"], [])
+        self.assertIn(
+            "immutable release tag v2.2.0-beta.53 appeared",
+            existing_git_tag.stdout,
+        )
+
+        ambiguous_git_tag, ambiguous_git_tag_identities = (
+            self.run_prepublication_recheck(git_tag_probe_error=True)
+        )
+        self.assertNotEqual(ambiguous_git_tag.returncode, 0)
+        self.assertEqual(ambiguous_git_tag_identities["registry_probes"], [])
+        self.assertIn(
+            "Unable to prove that the immutable release tag is absent",
+            ambiguous_git_tag.stdout,
+        )
+
+        existing_release, existing_release_identities = (
+            self.run_prepublication_recheck(github_release_exists=True)
+        )
+        self.assertNotEqual(existing_release.returncode, 0)
+        self.assertEqual(existing_release_identities["registry_probes"], [])
+        self.assertIn(
+            "GitHub Release for v2.2.0-beta.53 appeared",
+            existing_release.stdout,
+        )
+
+        ambiguous_release, ambiguous_release_identities = (
+            self.run_prepublication_recheck(github_release_probe_error=True)
+        )
+        self.assertNotEqual(ambiguous_release.returncode, 0)
+        self.assertEqual(ambiguous_release_identities["registry_probes"], [])
+        self.assertIn(
+            "Unable to prove that the GitHub Release is absent",
+            ambiguous_release.stdout,
+        )
+
         occupied_version_tag = f"{IMAGE}:2.2.0-beta.53"
         occupied, occupied_identities = self.run_prepublication_recheck(
             present_registry_tags=(occupied_version_tag,)
@@ -1273,6 +1374,10 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertIn("git rev-list --first-parent", script)
         self.assertIn("git diff --quiet", script)
         self.assertIn(".release/next-version", script)
+        self.assertIn("git ls-remote --exit-code --tags", script)
+        self.assertIn("remote_tag_status", script)
+        self.assertIn("gh api", script)
+        self.assertIn("HTTP 404", script)
         self.assertIn("scripts/assert_registry_tags_absent.sh", script)
         self.assertIn('"${IMAGE_REPOSITORY}:${PREPARED_VERSION}"', script)
         self.assertIn(
