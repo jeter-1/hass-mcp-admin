@@ -410,6 +410,8 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         event_ref="refs/heads/main",
         event_expected_version=None,
         manual_target="release",
+        release_topology="linear",
+        post_release_staged_version=None,
         runtime_drift=False,
         expect_success=True,
     ):
@@ -447,6 +449,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             git("commit", "-m", "Establish previous Engineering version")
             before = git("rev-parse", "HEAD")
 
+            if release_topology == "feature_merge":
+                git("switch", "-c", "reviewed-release")
+            elif release_topology != "linear":
+                raise AssertionError(
+                    f"unsupported release topology: {release_topology}"
+                )
             config.write_text(
                 f'version: "{current_version}"\n',
                 encoding="utf-8",
@@ -461,7 +469,19 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 declaration.unlink()
             git("add", "-A")
             git("commit", "--allow-empty", "-m", subject)
-            release_sha = git("rev-parse", "HEAD")
+            feature_release_sha = git("rev-parse", "HEAD")
+            if release_topology == "feature_merge":
+                git("switch", "main")
+                git(
+                    "merge",
+                    "--no-ff",
+                    "reviewed-release",
+                    "-m",
+                    "Merge reviewed release pull request",
+                )
+                release_sha = git("rev-parse", "HEAD")
+            else:
+                release_sha = feature_release_sha
 
             manual_release_sha = release_sha
             if manual_target == "nonancestor":
@@ -478,6 +498,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 manual_release_sha = "a" * 40
             elif manual_target == "malformed":
                 manual_release_sha = "not-a-commit"
+            elif manual_target == "feature_commit":
+                if release_topology != "feature_merge":
+                    raise AssertionError(
+                        "feature_commit requires the feature_merge topology"
+                    )
+                manual_release_sha = feature_release_sha
             elif manual_target != "release":
                 raise AssertionError(f"unsupported manual target: {manual_target}")
 
@@ -488,6 +514,12 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 if runtime_drift:
                     drift = root / "hass_mcp_engineering_beta" / "runtime-drift.txt"
                     drift.write_text("drift\n", encoding="utf-8")
+                if post_release_staged_version is not None:
+                    declaration = root / ".release" / "next-version"
+                    declaration.parent.mkdir(parents=True, exist_ok=True)
+                    declaration.write_text(
+                        f"{post_release_staged_version}\n", encoding="utf-8"
+                    )
                 git("add", "-A")
                 git("commit", "-m", "Add reviewed publication recovery")
 
@@ -540,10 +572,100 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 {
                     "before": before,
                     "release_sha": release_sha,
+                    "feature_release_sha": feature_release_sha,
                     "requested_release_sha": manual_release_sha,
                     "trigger_sha": trigger_sha,
                 },
             )
+
+    def run_prepublication_recheck(
+        self,
+        *,
+        move_main_after_trigger=False,
+        trigger_contains_staged_declaration=False,
+    ):
+        bash = shutil.which("bash")
+        if bash is None:
+            self.skipTest("bash is required to execute the pre-publication guard")
+        step = next(
+            item
+            for item in self.steps
+            if item.get("name")
+            == "Revalidate publication authority before registry access"
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "hass_mcp_engineering_beta" / "config.yaml"
+            config.parent.mkdir(parents=True)
+
+            def git(*arguments):
+                return subprocess.run(
+                    ["git", *arguments],
+                    cwd=root,
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                ).stdout.strip()
+
+            git("init", "-b", "main")
+            git("config", "user.name", "Pre-publication Fixture")
+            git("config", "user.email", "prepublication-fixture@example.invalid")
+            config.write_text('version: "2.2.0-beta.52"\n', encoding="utf-8")
+            git("add", "-A")
+            git("commit", "-m", "Establish previous version")
+
+            config.write_text('version: "2.2.0-beta.53"\n', encoding="utf-8")
+            git("add", "-A")
+            git("commit", "-m", "Merge reviewed Beta 53 release")
+            release_sha = git("rev-parse", "HEAD")
+
+            recovery = root / ".github" / "workflows" / "recovery.txt"
+            recovery.parent.mkdir(parents=True)
+            recovery.write_text("reviewed publication recovery\n", encoding="utf-8")
+            if trigger_contains_staged_declaration:
+                declaration = root / ".release" / "next-version"
+                declaration.parent.mkdir()
+                declaration.write_text("2.2.0-beta.54\n", encoding="utf-8")
+            git("add", "-A")
+            git("commit", "-m", "Add reviewed publication recovery")
+            trigger_sha = git("rev-parse", "HEAD")
+
+            if move_main_after_trigger:
+                later = root / "docs" / "later-main-change.md"
+                later.parent.mkdir(exist_ok=True)
+                later.write_text("later protected-main change\n", encoding="utf-8")
+                git("add", "-A")
+                git("commit", "-m", "Advance protected main after preparation")
+            current_main_sha = git("rev-parse", "HEAD")
+
+            helper = root / "scripts" / ANCESTOR_GUARD_PATH.name
+            helper.parent.mkdir()
+            shutil.copy2(ANCESTOR_GUARD_PATH, helper)
+            git("remote", "add", "origin", str(root))
+            git("switch", "--detach", release_sha)
+
+            result = subprocess.run(
+                [bash, "-c", str(step["run"])],
+                cwd=root,
+                text=True,
+                capture_output=True,
+                check=False,
+                env={
+                    **os.environ,
+                    "DETECTED_EXPECTED_VERSION": "2.2.0-beta.53",
+                    "DETECTED_RELEASE_MODE": "manual_recovery",
+                    "DETECTED_RELEASE_SHA": release_sha,
+                    "EVENT_ACTOR": "jeter-1",
+                    "EVENT_REF": "refs/heads/main",
+                    "TRIGGER_SHA": trigger_sha,
+                },
+            )
+            self.assertEqual(git("tag", "--list"), "")
+            return result, {
+                "release_sha": release_sha,
+                "trigger_sha": trigger_sha,
+                "current_main_sha": current_main_sha,
+            }
 
     def run_github_release_finalization(
         self,
@@ -762,6 +884,50 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertIn("eligible for manual_recovery publication", summary)
 
+    def test_manual_recovery_requires_protected_main_first_parent_commit(self):
+        values, _summary, _result, identities = self.run_release_detector(
+            subject="Materialize reviewed release on feature branch",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            release_topology="feature_merge",
+        )
+        self.assertEqual(values["release_sha"], identities["release_sha"])
+        self.assertNotEqual(
+            identities["release_sha"], identities["feature_release_sha"]
+        )
+
+        rejected, _summary, result, rejected_identities = self.run_release_detector(
+            subject="Materialize reviewed release on feature branch",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            release_topology="feature_merge",
+            manual_target="feature_commit",
+            expect_success=False,
+        )
+        self.assertEqual(rejected, {})
+        self.assertEqual(
+            rejected_identities["requested_release_sha"],
+            rejected_identities["feature_release_sha"],
+        )
+        self.assertIn("not on protected main's first-parent history", result.stdout)
+
+    def test_manual_recovery_rejects_declaration_added_after_release(self):
+        values, _summary, result, _identities = self.run_release_detector(
+            subject="Merge reviewed release pull request",
+            current_version="2.2.0-beta.53",
+            previous_version="2.2.0-beta.52",
+            event_name="workflow_dispatch",
+            post_release_staged_version="2.2.0-beta.54",
+            expect_success=False,
+        )
+        self.assertEqual(values, {})
+        self.assertIn(
+            "Current protected main contains an unmaterialized release declaration",
+            result.stdout,
+        )
+
     def test_manual_recovery_rejects_missing_authority_or_drift(self):
         cases = (
             {"event_actor": "someone-else"},
@@ -774,6 +940,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             {"runtime_drift": True},
             {"previous_version": "2.2.0-beta.53"},
             {"current_staged_version": "2.2.0-beta.54"},
+            {"post_release_staged_version": "2.2.0-beta.54"},
         )
         for delta in cases:
             with self.subTest(**delta):
@@ -786,6 +953,9 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                     ),
                     current_staged_version=case.pop(
                         "current_staged_version", None
+                    ),
+                    post_release_staged_version=case.pop(
+                        "post_release_staged_version", None
                     ),
                     event_name="workflow_dispatch",
                     expect_success=False,
@@ -901,10 +1071,16 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
     def test_protected_release_commit_is_validated_before_registry_login(self):
         names = [step.get("name", "") for step in self.steps]
         prepare_index = names.index("Validate protected release commit")
+        qemu_index = names.index("Set up QEMU")
+        recheck_index = names.index(
+            "Revalidate publication authority before registry access"
+        )
         login_index = names.index("Log in to GHCR")
         build_index = names.index("Build and publish local release commit")
         self.assertLess(prepare_index, login_index)
-        self.assertLess(login_index, build_index)
+        self.assertLess(qemu_index, recheck_index)
+        self.assertEqual(recheck_index + 1, login_index)
+        self.assertEqual(login_index + 1, build_index)
         prepare = str(self.steps[prepare_index]["run"])
         for value in (
             "git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main",
@@ -923,6 +1099,49 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertNotIn("promote_next_release.py --apply", prepare)
         self.assertNotIn("git commit", prepare)
         self.assertNotIn("expected-release-paths", prepare)
+
+    def test_prepublication_recheck_blocks_main_movement_before_any_write(self):
+        accepted, accepted_identities = self.run_prepublication_recheck()
+        self.assertEqual(accepted.returncode, 0, accepted.stderr)
+        self.assertEqual(
+            accepted_identities["trigger_sha"],
+            accepted_identities["current_main_sha"],
+        )
+
+        moved, moved_identities = self.run_prepublication_recheck(
+            move_main_after_trigger=True
+        )
+        self.assertNotEqual(moved.returncode, 0)
+        self.assertNotEqual(
+            moved_identities["trigger_sha"], moved_identities["current_main_sha"]
+        )
+        self.assertIn("Protected main moved before registry access", moved.stdout)
+
+        staged, staged_identities = self.run_prepublication_recheck(
+            trigger_contains_staged_declaration=True
+        )
+        self.assertNotEqual(staged.returncode, 0)
+        self.assertEqual(
+            staged_identities["trigger_sha"], staged_identities["current_main_sha"]
+        )
+        self.assertIn(
+            "Current protected main contains an unmaterialized release declaration",
+            staged.stdout,
+        )
+
+        recheck = next(
+            step
+            for step in self.steps
+            if step.get("name")
+            == "Revalidate publication authority before registry access"
+        )
+        script = str(recheck["run"])
+        self.assertIn("git rev-list --first-parent", script)
+        self.assertIn("git diff --quiet", script)
+        self.assertIn(".release/next-version", script)
+        self.assertNotIn("docker", script)
+        self.assertNotIn("gh release", script)
+        self.assertNotIn("git push", script)
 
     def test_later_nonrelease_merge_preserves_release_ancestor(self):
         bash = shutil.which("bash")

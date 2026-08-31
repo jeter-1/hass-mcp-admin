@@ -195,11 +195,13 @@ The reviewed recovery change adds a manual publication entry point without
 changing Beta 53 runtime, schemas, providers, routing, fallback, stable v1 or
 deployment authority. It may publish the exact merge commit above only if the
 current protected-main Engineering tree is identical, its exact first-parent
-version transition remains valid, its expected version is exactly
-`2.2.0-beta.53`, and all tag, release and image identities remain unused. The
-workflow revalidates the original release checkout before any write and fails
-closed on actor, ref, ancestry, source/configuration drift, version, staged-state
-or artifact ambiguity.
+chain contains that merge commit, its exact first-parent version transition
+remains valid, its expected version is exactly `2.2.0-beta.53`, current main has
+no staged declaration, and all tag, release and image identities remain unused.
+The workflow revalidates the original release checkout during preparation and
+again immediately before registry access, and fails closed on actor, ref,
+first-parent identity, source/configuration drift, version, staged-state or
+artifact ambiguity.
 
 This recovery mechanism does not assert that Beta 53 has been published. Merging
 the workflow correction, dispatching publication, deploying to Home Assistant

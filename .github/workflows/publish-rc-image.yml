@@ -98,8 +98,14 @@ jobs:
             elif ! git merge-base --is-ancestor "$EVENT_RELEASE_SHA" "$protected_main_sha"; then
               echo "::error::The requested manual recovery commit is not retained on protected main."
               exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$EVENT_RELEASE_SHA" >/dev/null; then
+              echo "::error::The requested manual recovery commit is not on protected main's first-parent history."
+              exit 1
             elif ! git diff --quiet "$EVENT_RELEASE_SHA..$protected_main_sha" -- hass_mcp_engineering_beta; then
               echo "::error::Engineering source or deployment metadata drifted after the requested release commit."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
               exit 1
             fi
 
@@ -229,11 +235,17 @@ jobs:
             elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
               echo "::error::Protected main moved after manual publication recovery was authorized."
               exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$source_main_sha" >/dev/null; then
+              echo "::error::The manual recovery commit is not on protected main's first-parent history."
+              exit 1
             elif [[ "$(git rev-parse "${source_main_sha}^1")" != "$validation_base" ]]; then
               echo "::error::The manual recovery validation base is not the release commit's first parent."
               exit 1
             elif ! git diff --quiet "$source_main_sha..$protected_main_sha" -- hass_mcp_engineering_beta; then
               echo "::error::Engineering source or deployment metadata drifted before publication."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
               exit 1
             fi
             protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
@@ -346,6 +358,60 @@ jobs:
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         with:
           platforms: arm64,arm
+
+      - name: Revalidate publication authority before registry access
+        shell: bash
+        env:
+          DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
+          DETECTED_RELEASE_MODE: ${{ needs.detect-release.outputs.release_mode }}
+          DETECTED_RELEASE_SHA: ${{ needs.detect-release.outputs.release_sha }}
+          EVENT_ACTOR: ${{ github.actor }}
+          EVENT_REF: ${{ github.ref }}
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          release_sha="$(git rev-parse HEAD)"
+          if [[ "$release_sha" != "$DETECTED_RELEASE_SHA" ]]; then
+            echo "::error::The pre-publication checkout is not the exact detected release commit."
+            exit 1
+          fi
+
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          protected_main_sha="$(git rev-parse refs/remotes/origin/main)"
+          if ! bash scripts/assert_protected_release_ancestor.sh \
+            "$release_sha" "$protected_main_sha"; then
+            echo "::error::The release commit is no longer retained in protected-main history."
+            exit 1
+          fi
+
+          if [[ "$DETECTED_RELEASE_MODE" == "manual_recovery" ]]; then
+            if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_REF" != "refs/heads/main" ]]; then
+              echo "::error::Manual publication recovery authority changed before registry access."
+              exit 1
+            elif [[ "$TRIGGER_SHA" != "$protected_main_sha" ]]; then
+              echo "::error::Protected main moved before registry access."
+              exit 1
+            elif ! git rev-list --first-parent "$protected_main_sha" | grep -Fx "$release_sha" >/dev/null; then
+              echo "::error::The manual recovery commit left protected main's first-parent history."
+              exit 1
+            elif ! git diff --quiet "$release_sha..$protected_main_sha" -- hass_mcp_engineering_beta; then
+              echo "::error::Engineering source or deployment metadata drifted before registry access."
+              exit 1
+            elif git cat-file -e "${protected_main_sha}:.release/next-version" 2>/dev/null; then
+              echo "::error::Current protected main contains an unmaterialized release declaration."
+              exit 1
+            fi
+
+            protected_version="$(git show "${protected_main_sha}:hass_mcp_engineering_beta/config.yaml" | sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p')"
+            if [[ "$protected_version" != "$DETECTED_EXPECTED_VERSION" ]]; then
+              echo "::error::Protected main no longer advertises the authorized recovery version."
+              exit 1
+            fi
+          elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
+            echo "::error::The detected release mode is unsupported."
+            exit 1
+          fi
 
       - name: Log in to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
