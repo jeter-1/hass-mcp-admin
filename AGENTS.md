@@ -44,6 +44,35 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   a moving branch, documentation example, installed skill, or remembered value
   as a substitute for exact-version source and executable evidence.
 
+## Product Ownership and Direction
+
+- Josh is the product owner and final authority for product objectives,
+  priorities, material architecture, scope, risk policy, release goals, and
+  deployment decisions. Follow
+  [`ADR-022`](docs/architecture/ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md)
+  when interpreting those decisions.
+- Josh's current explicit direction may supersede an earlier product decision.
+  Record the superseding decision and its consequences instead of silently
+  preserving an obsolete AI-authored assumption. Current direction does not
+  turn an unverified factual claim into evidence or authorize an action Josh did
+  not request.
+- Do not allow an agent, prior chat, pull-request description, implementation
+  convenience, test suite, or existing documentation to redefine the product's
+  purpose, approved scope, approval meaning, or responsibility boundaries.
+- Distinguish product authority from implementation and operational evidence:
+  Josh decides what the product should do; current GitHub source establishes
+  what the software implements; exact deployed read-only observation establishes
+  what the running system actually does.
+- If an approved objective cannot be implemented within its stated architecture,
+  safety, compatibility, or scope constraints, stop and report the conflict.
+  Do not substitute a narrower objective, expand scope, or make a new product
+  decision on Josh's behalf.
+- Preserve the product north star: make AI use with Home Assistant as capable
+  and safe as practical. Governance is a proportional safety mechanism, not the
+  product identity, and inability to act is not by itself proof of safety.
+  Acceptance for implementation work must prove useful authorized success as
+  well as refusal, failure preservation, verification, and recovery behavior.
+
 ## Default Workflow
 
 - Inspect before editing. Inventory instructions, scripts, tests, workflows, and
