@@ -2,6 +2,22 @@
 
 Status: accepted for 2.2.0-beta.6; narrowly amended for 2.2.0-beta.33
 
+## Product-policy amendment from ADR-022
+
+[`ADR-022`](ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md) distinguishes
+technical execution uncertainty from uncertainty about operational consequence.
+The hash binding, approval records, stale-state checks, dispatch boundary,
+durable ownership, and currently shipped policy behavior defined here remain
+runtime truth until a separate implementation changes them.
+
+For future implementation, however, `high`, `critical`, `safety_critical`,
+`unknown`, or incomplete consequence analysis is not by itself sufficient to
+prohibit an otherwise exact owner-authorized operation. Such evidence must be
+disclosed for the owner's decision. Uncertainty about target, arguments,
+authority, provider, current state, concurrency, dispatch ownership, or
+verification remains fail-closed. This documentation amendment grants no new
+current execution authority.
+
 ## Context
 
 The existing governance lifecycle binds one external Home Assistant

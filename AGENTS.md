@@ -44,6 +44,54 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   a moving branch, documentation example, installed skill, or remembered value
   as a substitute for exact-version source and executable evidence.
 
+## Product Ownership and Direction
+
+- Josh is the product owner and final authority for product objectives,
+  priorities, material architecture, scope, risk policy, release goals, and
+  deployment decisions. Follow
+  [`ADR-022`](docs/architecture/ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md)
+  when interpreting those decisions.
+- Josh's current explicit direction may supersede an earlier product decision.
+  Record the superseding decision and its consequences instead of silently
+  preserving an obsolete AI-authored assumption. Current direction does not
+  turn an unverified factual claim into evidence or authorize an action Josh did
+  not request.
+- Do not allow an agent, prior chat, pull-request description, implementation
+  convenience, test suite, or existing documentation to redefine the product's
+  purpose, approved scope, approval meaning, or responsibility boundaries.
+- Distinguish product authority from implementation and operational evidence:
+  Josh decides what the product should do; current GitHub source establishes
+  what the software implements; exact deployed read-only observation establishes
+  what the running system actually does.
+- If an approved objective cannot be implemented within its stated architecture,
+  safety, compatibility, or scope constraints, stop and report the conflict.
+  Do not substitute a narrower objective, expand scope, or make a new product
+  decision on Josh's behalf.
+- Preserve the product north star: make AI use with Home Assistant as capable
+  and safe as practical. Governance is a proportional safety mechanism, not the
+  product identity, and inability to act is not by itself proof of safety.
+  Acceptance for implementation work must prove useful authorized success as
+  well as refusal, failure preservation, verification, and recovery behavior.
+- Preserve the supported one-connector product topology: the Engineering MCP is
+  the client-facing MCP endpoint exposed through the Nabu Casa path. Reviewed
+  `ha-mcp` capabilities are internal delegated providers behind that endpoint;
+  Engineering-native capabilities supply semantics the upstream provider does
+  not. The client should not need a second public MCP connector or choose a
+  provider. Provider selection, attribution, admission, and fallback remain
+  explicit internal security boundaries.
+- Distinguish technical execution integrity from operational consequence. Fail
+  closed when the exact target, operation, arguments, authority, provider,
+  current-state validity, concurrency safety, dispatch ownership, or
+  verification contract cannot be established. Explain physical effects,
+  household consequences, risk classifications, and unresolved consequence
+  evidence to Josh, but do not let those factors alone redefine an exact,
+  owner-authorized operation as non-actionable. Josh decides whether disclosed
+  operational consequences are acceptable.
+- Treat risk labels and consequence analysis as decision support, not an
+  independent source of product or execution authority. Existing runtime
+  approval and policy behavior remains source truth until a separately scoped,
+  reviewed, released, and deployed implementation changes it.
+
 ## Default Workflow
 
 - Inspect before editing. Inventory instructions, scripts, tests, workflows, and
