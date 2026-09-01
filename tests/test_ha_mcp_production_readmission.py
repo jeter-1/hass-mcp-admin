@@ -604,8 +604,9 @@ class OperationalSignedRegistryTests(
             (
                 "pending",
                 {
-                    "schema_version": 2.0,
+                    "schema_version": 3.0,
                     "candidate_journal": valid_journal,
+                    "retained_denial_journals": [],
                 },
             ),
         ):
@@ -797,6 +798,52 @@ class OperationalSignedRegistryTests(
             signer.journal_raw(envelopes=[chain[0]]),
             signer.journal_raw(envelopes=chain),
         ]
+        attempted_restore = signer.raw(
+            sequence=11,
+            previous_registry_sha256=previous,
+            generated_at=NOW + timedelta(seconds=11),
+            expires_at=NOW + timedelta(days=1),
+            entries=[
+                reviewed_entry(
+                    entry_id="ha-mcp-v8.2.1-synthetic",
+                    version=active_version,
+                )
+            ],
+            revocations=[],
+        )
+        responses.append(
+            signer.journal_raw(envelopes=[attempted_restore])
+        )
+        attempted_restore_digest = RegistryEnvelope.from_bytes(
+            attempted_restore
+        ).content_digest
+        safe_version = "8.2.2"
+        corrected = signer.raw(
+            sequence=12,
+            previous_registry_sha256=attempted_restore_digest,
+            generated_at=NOW + timedelta(seconds=12),
+            expires_at=NOW + timedelta(days=1),
+            entries=[
+                reviewed_entry(
+                    entry_id="ha-mcp-v8.2.2-synthetic",
+                    version=safe_version,
+                )
+            ],
+            revocations=[
+                *[
+                    revocation(
+                        entry_id=f"ha-mcp-8.1.{sequence}-synthetic",
+                        version=f"8.1.{sequence}",
+                    )
+                    for sequence in range(2, 10)
+                ],
+                revocation(
+                    entry_id=f"ha-mcp-{active_version}-synthetic",
+                    version=active_version,
+                ),
+            ],
+        )
+        responses.append(signer.journal_raw(envelopes=[corrected]))
 
         async def fetcher(_url, _maximum):
             return responses.pop(0)
@@ -828,6 +875,7 @@ class OperationalSignedRegistryTests(
                 enabled=True,
                 public_key=signer.public_key_base64,
                 cache_path=cache,
+                fetcher=fetcher,
                 now=lambda: NOW,
             )
             self.assertEqual(restarted.authority().sequence, 10)
@@ -835,6 +883,214 @@ class OperationalSignedRegistryTests(
             self.assertFalse(
                 restarted.authority().positive_authority_current
             )
+            self.assertTrue(
+                restarted.authority().revoked("ha-mcp", active_version)
+            )
+
+            # A later signed checkpoint cannot omit retained denial evidence
+            # and thereby restore the previously revoked release.
+            self.assertFalse(await restarted.refresh())
+            self.assertEqual(restarted.authority().sequence, 11)
+            self.assertTrue(restarted.authority().surface_denied)
+            self.assertFalse(
+                restarted.authority().positive_authority_current
+            )
+            self.assertTrue(
+                restarted.authority().revoked("ha-mcp", active_version)
+            )
+            second_restart = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertEqual(second_restart.authority().sequence, 11)
+            self.assertTrue(second_restart.authority().surface_denied)
+            self.assertFalse(
+                second_restart.authority().positive_authority_current
+            )
+            self.assertTrue(
+                second_restart.authority().revoked(
+                    "ha-mcp",
+                    active_version,
+                )
+            )
+
+            # A later linked checkpoint may recover global availability only
+            # after it carries every retained denial in a representable form.
+            self.assertTrue(await second_restart.refresh())
+            recovered = second_restart.authority()
+            self.assertEqual(recovered.sequence, 12)
+            self.assertFalse(recovered.surface_denied)
+            self.assertTrue(recovered.positive_authority_current)
+            self.assertTrue(recovered.revoked("ha-mcp", active_version))
+            self.assertIsNotNone(
+                recovered.entry_for("ha-mcp", safe_version)
+            )
+
+    async def test_marker_failure_boundaries_retire_positive_cache_first(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        active_version = "8.2.1"
+        entry = reviewed_entry(
+            entry_id="ha-mcp-v8.2.1-synthetic",
+            version=active_version,
+        )
+        first = signer.raw(
+            sequence=1,
+            entries=[entry],
+            revocations=[],
+        )
+        first_digest = RegistryEnvelope.from_bytes(first).content_digest
+        second = signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            generated_at=NOW + timedelta(seconds=1),
+            expires_at=NOW + timedelta(days=1),
+            entries=[],
+            revocations=[
+                revocation(
+                    entry_id=entry["entry_id"],
+                    version=active_version,
+                )
+            ],
+        )
+        initial = signer.journal_raw(envelopes=[first])
+        revoked = signer.journal_raw(envelopes=[first, second])
+        attempted_restore = signer.journal_raw(
+            envelopes=[
+                signer.raw(
+                    sequence=3,
+                    previous_registry_sha256=(
+                        RegistryEnvelope.from_bytes(second).content_digest
+                    ),
+                    generated_at=NOW + timedelta(seconds=2),
+                    expires_at=NOW + timedelta(days=1),
+                    entries=[entry],
+                    revocations=[],
+                )
+            ]
+        )
+
+        for boundary in (
+            "marker_create",
+            "marker_file_fsync",
+            "marker_replace",
+            "marker_directory_fsync",
+        ):
+            with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as directory:
+                responses = [initial, revoked]
+                restart_responses = [initial, attempted_restore]
+
+                async def fetcher(_url, _maximum):
+                    return responses.pop(0)
+
+                async def restore_fetcher(_url, _maximum):
+                    return restart_responses.pop(0)
+
+                cache = Path(directory) / "cache.json"
+                registry = SignedReleaseRegistry(
+                    enabled=True,
+                    public_key=signer.public_key_base64,
+                    cache_path=cache,
+                    fetcher=fetcher,
+                    now=lambda: NOW,
+                )
+                self.assertTrue(await registry.refresh())
+                self.assertTrue(cache.exists())
+
+                if boundary == "marker_create":
+                    failure = patch(
+                        "ha_mcp_engineering.ha_mcp_readmission.registry."
+                        "tempfile.NamedTemporaryFile",
+                        side_effect=OSError("synthetic marker create failure"),
+                    )
+                elif boundary == "marker_file_fsync":
+                    original_fsync = os.fsync
+                    fsync_calls = 0
+
+                    def fail_marker_file_fsync(fd):
+                        nonlocal fsync_calls
+                        fsync_calls += 1
+                        if fsync_calls == 2:
+                            raise OSError("synthetic marker fsync failure")
+                        return original_fsync(fd)
+
+                    failure = patch(
+                        "ha_mcp_engineering.ha_mcp_readmission.registry."
+                        "os.fsync",
+                        side_effect=fail_marker_file_fsync,
+                    )
+                elif boundary == "marker_replace":
+                    original_replace = os.replace
+                    replace_calls = 0
+
+                    def fail_marker_replace(source, target):
+                        nonlocal replace_calls
+                        replace_calls += 1
+                        if replace_calls == 2:
+                            raise OSError("synthetic marker replace failure")
+                        return original_replace(source, target)
+
+                    failure = patch(
+                        "ha_mcp_engineering.ha_mcp_readmission.registry."
+                        "os.replace",
+                        side_effect=fail_marker_replace,
+                    )
+                else:
+                    failure = patch.object(
+                        SignedReleaseRegistry,
+                        "_fsync_directory",
+                        side_effect=[
+                            None,
+                            OSError("synthetic marker directory failure"),
+                        ],
+                    )
+
+                with failure:
+                    self.assertFalse(await registry.refresh())
+                self.assertTrue(registry.authority().surface_denied)
+                self.assertFalse(
+                    registry.authority().positive_authority_current
+                )
+                self.assertFalse(cache.exists())
+                self.assertTrue(
+                    cache.with_name(cache.name + ".previous").exists()
+                )
+
+                restarted = SignedReleaseRegistry(
+                    enabled=True,
+                    public_key=signer.public_key_base64,
+                    cache_path=cache,
+                    fetcher=restore_fetcher,
+                    now=lambda: NOW,
+                )
+                self.assertTrue(restarted.authority().surface_denied)
+                self.assertFalse(
+                    restarted.authority().positive_authority_current
+                )
+                self.assertFalse(await restarted.refresh())
+                self.assertIn(
+                    restarted.snapshot()["last_failure_reason"],
+                    {
+                        "registry_journal_disconnected",
+                        "registry_sequence_rollback",
+                    },
+                )
+                self.assertFalse(
+                    restarted.authority().positive_authority_current
+                )
+                self.assertFalse(await restarted.refresh())
+                self.assertIn(
+                    restarted.snapshot()["last_failure_reason"],
+                    {
+                        "registry_journal_disconnected",
+                        "registry_revocation_history_missing",
+                    },
+                )
+                self.assertFalse(
+                    restarted.authority().positive_authority_current
+                )
 
     async def test_failed_candidate_is_sequence_barrier_until_chained_success(self):
         signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
@@ -873,10 +1129,11 @@ class OperationalSignedRegistryTests(
             return responses.pop(0)
 
         with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "cache.json"
             registry = SignedReleaseRegistry(
                 enabled=True,
                 public_key=signer.public_key_base64,
-                cache_path=Path(directory) / "cache.json",
+                cache_path=cache_path,
                 fetcher=fetcher,
                 now=lambda: NOW,
             )
@@ -1012,10 +1269,11 @@ class OperationalSignedRegistryTests(
             return responses.pop(0)
 
         with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "cache.json"
             registry = SignedReleaseRegistry(
                 enabled=True,
                 public_key=signer.public_key_base64,
-                cache_path=Path(directory) / "cache.json",
+                cache_path=cache_path,
                 fetcher=fetcher,
                 now=lambda: NOW,
             )
@@ -1219,10 +1477,11 @@ class OperationalSignedRegistryTests(
             return responses.pop(0)
 
         with tempfile.TemporaryDirectory() as directory:
+            cache_path = Path(directory) / "cache.json"
             registry = SignedReleaseRegistry(
                 enabled=True,
                 public_key=signer.public_key_base64,
-                cache_path=Path(directory) / "cache.json",
+                cache_path=cache_path,
                 fetcher=fetcher,
                 now=lambda: NOW,
             )
@@ -1243,6 +1502,21 @@ class OperationalSignedRegistryTests(
             self.assertEqual(
                 registry.snapshot()["last_failure_reason"],
                 "registry_cache_write_failed",
+            )
+            restarted = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache_path,
+                now=lambda: NOW,
+            )
+            restarted_authority = restarted.authority()
+            self.assertEqual(restarted_authority.sequence, 2)
+            self.assertTrue(restarted_authority.surface_denied)
+            self.assertTrue(
+                restarted_authority.revoked("ha-mcp", "8.2.0")
+            )
+            self.assertFalse(
+                restarted_authority.positive_authority_current
             )
 
     async def test_persistence_failure_never_publishes_candidate(self):
@@ -2253,12 +2527,11 @@ class SignedGatewayReadmissionTests(
         async def fetcher(_url, _maximum):
             return responses.pop(0)
 
+        cache = Path(self.temporary.name) / "revocation-capacity-cache.json"
         registry = SignedReleaseRegistry(
             enabled=True,
             public_key=self.signer.public_key_base64,
-            cache_path=(
-                Path(self.temporary.name) / "revocation-capacity-cache.json"
-            ),
+            cache_path=cache,
             fetcher=fetcher,
             now=lambda: self.now,
         )
@@ -2278,12 +2551,57 @@ class SignedGatewayReadmissionTests(
             "ha_list_services"
         ]
 
-        self.assertFalse(await registry.refresh())
+        with patch.object(
+            registry,
+            "_write_pending_barrier",
+            side_effect=ReleaseRegistryOperationalError(
+                "registry_cache_write_failed"
+            ),
+        ):
+            self.assertFalse(await registry.refresh())
         self.assertTrue(registry.authority().surface_denied)
+        self.assertFalse(cache.exists())
+        self.assertTrue(
+            cache.with_name(cache.name + ".previous").exists()
+        )
         result = json.loads(await old_tool.run({}))
         self.assertFalse(result["success"])
         self.assertEqual(transport.calls, 0)
         self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
+
+        async def unavailable(_url, _maximum):
+            raise OSError("synthetic registry outage")
+
+        restarted_registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=unavailable,
+            now=lambda: self.now,
+        )
+        self.assertTrue(restarted_registry.authority().surface_denied)
+        self.assertFalse(
+            restarted_registry.authority().positive_authority_current
+        )
+        restarted_transport = _GatewayTransport(
+            self.capture["tools"],
+            version=version,
+        )
+        restarted_gateway = UpstreamReadGateway()
+        restarted_gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=restarted_transport,
+            release_registry=self.compiled,
+            signed_release_registry=restarted_registry,
+        )
+        restarted_snapshot = await restarted_gateway.initialize(
+            FastMCP("signed-revocation-capacity-restart")
+        )
+        self.assertEqual(
+            restarted_snapshot["dynamically_exposed_count"],
+            0,
+        )
+        self.assertEqual(restarted_transport.calls, 0)
 
     async def test_corrupt_retained_cache_denies_compiled_exact_on_restart(self):
         signed_revocation = {
@@ -2628,11 +2946,37 @@ class SignedGatewayReadmissionTests(
         self.assertTrue(result["success"])
         self.assertEqual(
             telemetry.audit_context["upstream_version_evidence"],
-            "signed_release",
+            "signed_registry",
         )
         self.assertNotIn(
             version,
             json.dumps(telemetry.audit_context, sort_keys=True),
+        )
+
+        compiled_gateway, _compiled_transport, _compiled_snapshot = (
+            await self._initialize(
+                raw=self._raw(entry=None),
+                version="8.2.0",
+            )
+        )
+        compiled_tool = compiled_gateway._registered_tool_registry.snapshot()[
+            "ha_list_services"
+        ]
+        compiled_telemetry, compiled_token = begin_request(
+            "compiled-release-audit-redaction"
+        )
+        try:
+            compiled_result = json.loads(await compiled_tool.run({}))
+        finally:
+            end_request(compiled_token)
+        self.assertTrue(compiled_result["success"])
+        self.assertEqual(
+            compiled_telemetry.audit_context["upstream_version_evidence"],
+            "compiled_exact",
+        )
+        self.assertNotIn(
+            "8.2.0",
+            json.dumps(compiled_telemetry.audit_context, sort_keys=True),
         )
 
 

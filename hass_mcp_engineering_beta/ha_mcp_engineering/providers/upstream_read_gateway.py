@@ -2447,11 +2447,9 @@ class UpstreamReadGateway:
                     telemetry.audit_context[
                         "upstream_version_evidence"
                     ] = (
-                        "signed_release"
+                        mapping.authority_source
                         if self._signed_release_registry is not None
-                        else self._safe_version_evidence(
-                            catalog.server_version
-                        )
+                        else self._safe_version_evidence(catalog.server_version)
                     )
                     telemetry.audit_context[
                         "upstream_identity_status"

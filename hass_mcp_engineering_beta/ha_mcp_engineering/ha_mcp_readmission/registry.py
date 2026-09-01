@@ -50,10 +50,12 @@ MISSING_RELEASE_REFRESH_INTERVAL_SECONDS = 60.0
 MAX_CACHE_BYTES = 32 * 1024 * 1024
 MAX_REVOCATION_SOURCE_ENVELOPES = 8
 MAX_AUTHORITY_CHAIN_ENVELOPES = 64
+MAX_DENIAL_JOURNALS = 64
 MAX_MISSING_RELEASE_TRACKED = 16
 MAX_FAILURE_REASONS = 32
 JOURNAL_SCHEMA_VERSION = 1
 CACHE_SCHEMA_VERSION = 3
+PENDING_SCHEMA_VERSION = 3
 
 _SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -386,7 +388,13 @@ class SignedReleaseRegistry:
         self._authority_chain: tuple[RegistryEnvelope, ...] = ()
         self._revocation_sources: tuple[RegistryEnvelope, ...] = ()
         self._volatile_accepted: RegistryEnvelope | None = None
+        self._volatile_journal: SignedRegistryJournal | None = None
+        self._volatile_denial_journals: tuple[
+            SignedRegistryJournal, ...
+        ] = ()
         self._volatile_revocations: tuple[ReleaseRevocation, ...] = ()
+        self._volatile_revocation_overflow = False
+        self._retired_cache_incomplete = False
         self._surface_denied = False
         self._last_refresh_monotonic: float | None = None
         self._missing_release_refreshes: dict[
@@ -518,11 +526,18 @@ class SignedReleaseRegistry:
                     # chain-verified.  A bounded retention failure must never
                     # leave older positive authority active, especially when
                     # the verified tip revokes it.  Retain the monotonic
-                    # sequence barrier first, then durably mark denial when the
-                    # filesystem permits it.
+                    # sequence barrier and independently retain older signed
+                    # denial journals when the new candidate omits them.
                     self._retain_verified_denial(journal)
                     try:
-                        self._write_pending_barrier(journal)
+                        parent = self._retire_cached_positive_authority()
+                        self._write_pending_barrier(
+                            journal,
+                            parent=parent,
+                            denial_journals=(
+                                self._volatile_denial_journals
+                            ),
+                        )
                     except ReleaseRegistryOperationalError:
                         pass
                     raise
@@ -530,13 +545,28 @@ class SignedReleaseRegistry:
                     self._write_cache(journal)
                 except ReleaseRegistryOperationalError:
                     self._retain_volatile_candidate(journal, sources)
+                    try:
+                        parent = self._retire_cached_positive_authority()
+                        self._write_pending_barrier(
+                            journal,
+                            parent=parent,
+                            denial_journals=(
+                                self._volatile_denial_journals
+                            ),
+                        )
+                    except ReleaseRegistryOperationalError:
+                        pass
                     raise
                 self._accepted = journal.accepted
                 self._authority_journal = journal
                 self._authority_chain = journal.envelopes
                 self._revocation_sources = sources
                 self._volatile_accepted = None
+                self._volatile_journal = None
+                self._volatile_denial_journals = ()
                 self._volatile_revocations = ()
+                self._volatile_revocation_overflow = False
+                self._retired_cache_incomplete = False
                 self._surface_denied = False
                 self._cache_status = "valid"
                 self._last_refresh_status = "accepted"
@@ -714,6 +744,10 @@ class SignedReleaseRegistry:
                 raise ReleaseRegistryOperationalError(
                     RegistryErrorCode.REPLAY_CONFLICT.value
                 )
+            if self._retired_cache_incomplete:
+                raise ReleaseRegistryOperationalError(
+                    "registry_journal_disconnected"
+                )
             return "idempotent"
 
         first = journal.envelopes[0]
@@ -751,6 +785,20 @@ class SignedReleaseRegistry:
             )
         # A larger gap is an explicit checkpoint/compaction authorized by the
         # journal signature. Retained denial evidence is checked separately.
+        if self._retired_cache_incomplete:
+            forward = (
+                journal.envelopes[matching + 1 :]
+                if matching is not None
+                else journal.envelopes
+            )
+            expected_sequence = barrier.sequence + 1
+            if not forward or any(
+                item.sequence != expected_sequence + offset
+                for offset, item in enumerate(forward)
+            ):
+                raise ReleaseRegistryOperationalError(
+                    "registry_journal_disconnected"
+                )
         return (
             "accepted_compaction"
             if first.sequence > barrier.sequence + 1
@@ -761,6 +809,10 @@ class SignedReleaseRegistry:
         self,
         journal: SignedRegistryJournal,
     ) -> tuple[RegistryEnvelope, ...]:
+        if self._volatile_revocation_overflow:
+            raise ReleaseRegistryOperationalError(
+                "registry_revocation_history_capacity_exhausted"
+            )
         candidates = self._sources_in_journal(journal)
         candidate_revocations = {
             item.revocation_identity
@@ -828,24 +880,20 @@ class SignedReleaseRegistry:
         journal: SignedRegistryJournal,
         sources: tuple[RegistryEnvelope, ...],
     ) -> None:
-        retained = {
-            item.revocation_identity: item
-            for item in self._volatile_revocations
-        }
-        for source in sources:
-            for item in source.revocations:
-                retained[item.revocation_identity] = item
-        if len(retained) > MAX_REVOCATIONS:
-            self._volatile_accepted = journal.accepted
-            self._volatile_revocations = ()
-            self._surface_denied = True
-            raise ReleaseRegistryOperationalError(
-                "registry_revocation_history_capacity_exhausted"
-            )
+        del sources
         self._volatile_accepted = journal.accepted
-        self._volatile_revocations = tuple(
-            retained[key] for key in sorted(retained)
-        )
+        self._volatile_journal = journal
+        try:
+            self._volatile_denial_journals = self._denial_journals_with(
+                journal
+            )
+            self._volatile_revocations = self._bounded_denial_revocations(
+                self._volatile_denial_journals
+            )
+            self._volatile_revocation_overflow = False
+        except ReleaseRegistryOperationalError:
+            self._volatile_revocations = ()
+            self._volatile_revocation_overflow = True
         self._surface_denied = True
 
     def _retain_verified_denial(
@@ -854,20 +902,63 @@ class SignedReleaseRegistry:
     ) -> None:
         """Retain a verified candidate as a bounded denial-only barrier."""
 
-        retained = {
-            item.revocation_identity: item
-            for item in self._volatile_revocations
-        }
-        for source in self._sources_in_journal(journal):
-            for item in source.revocations:
-                retained[item.revocation_identity] = item
         self._volatile_accepted = journal.accepted
-        self._volatile_revocations = (
-            tuple(retained[key] for key in sorted(retained))
-            if len(retained) <= MAX_REVOCATIONS
-            else ()
-        )
+        self._volatile_journal = journal
+        try:
+            self._volatile_denial_journals = self._denial_journals_with(
+                journal
+            )
+            self._volatile_revocations = self._bounded_denial_revocations(
+                self._volatile_denial_journals
+            )
+            self._volatile_revocation_overflow = False
+        except ReleaseRegistryOperationalError:
+            self._volatile_revocations = ()
+            self._volatile_revocation_overflow = True
+            self._surface_denied = True
+            return
         self._surface_denied = True
+
+    def _denial_journals_with(
+        self,
+        journal: SignedRegistryJournal,
+    ) -> tuple[SignedRegistryJournal, ...]:
+        candidates = list(self._volatile_denial_journals)
+        if self._authority_journal is not None:
+            candidates.append(self._authority_journal)
+        candidates.append(journal)
+        return self._minimal_denial_journals(tuple(candidates))
+
+    @classmethod
+    def _minimal_denial_journals(
+        cls,
+        candidates: tuple[SignedRegistryJournal, ...],
+    ) -> tuple[SignedRegistryJournal, ...]:
+        latest_by_identity: dict[
+            tuple[str, str, str, str], SignedRegistryJournal
+        ] = {}
+        for journal in sorted(
+            candidates,
+            key=lambda item: (
+                item.accepted.sequence,
+                item.accepted.content_digest,
+            ),
+        ):
+            for source in cls._sources_in_journal(journal):
+                for revocation in source.revocations:
+                    latest_by_identity[
+                        revocation.revocation_identity
+                    ] = journal
+        selected = {
+            item.content_digest: item
+            for item in latest_by_identity.values()
+        }
+        result = tuple(selected[key] for key in sorted(selected))
+        if len(result) > MAX_DENIAL_JOURNALS:
+            raise ReleaseRegistryOperationalError(
+                "registry_revocation_history_capacity_exhausted"
+            )
+        return result
 
     @staticmethod
     def _missing_release_key(
@@ -901,7 +992,10 @@ class SignedReleaseRegistry:
                 else "denial_only"
             )
         except FileNotFoundError:
-            self._cache_status = "missing"
+            if self._previous_cache_path().exists():
+                self._load_retired_cache()
+            else:
+                self._cache_status = "missing"
         except Exception:
             self._accepted = None
             self._authority_journal = None
@@ -946,25 +1040,29 @@ class SignedReleaseRegistry:
 
     def _load_interrupted_cache_transaction(self) -> None:
         self._surface_denied = True
+        self._retired_cache_incomplete = True
         candidate_revocations: tuple[ReleaseRevocation, ...] = ()
         try:
-            candidate_journal = self._parse_pending_document(
+            (
+                candidate_journal,
+                retained_denial_journals,
+            ) = self._parse_pending_document(
                 self._pending_cache_path().read_bytes()
             )
             self._volatile_accepted = candidate_journal.accepted
-            try:
-                candidate_sources = self._minimal_revocation_sources(
-                    self._sources_in_journal(candidate_journal)
+            self._volatile_journal = candidate_journal
+            self._volatile_denial_journals = (
+                self._minimal_denial_journals(
+                    retained_denial_journals + (candidate_journal,)
                 )
-                candidate_revocations = tuple(
-                    item
-                    for source in candidate_sources
-                    for item in source.revocations
+            )
+            self._retired_cache_incomplete = False
+            try:
+                candidate_revocations = self._bounded_denial_revocations(
+                    self._volatile_denial_journals
                 )
             except ReleaseRegistryOperationalError:
-                # The signed candidate remains a sequence barrier even when
-                # its denial evidence cannot be represented within bounds.
-                candidate_revocations = ()
+                self._volatile_revocation_overflow = True
         except Exception:
             pass
         try:
@@ -990,10 +1088,53 @@ class SignedReleaseRegistry:
         self._cache_status = "invalid"
         self._record_failure("registry_cache_incomplete_transaction")
 
+    def _load_retired_cache(self) -> None:
+        """Treat a retirement-first cache as denial-only after restart."""
+
+        self._surface_denied = True
+        self._retired_cache_incomplete = True
+        try:
+            journal, sources = self._parse_cache_document(
+                self._previous_cache_path().read_bytes()
+            )
+            self._accepted = journal.accepted
+            self._authority_journal = journal
+            self._authority_chain = journal.envelopes
+            self._revocation_sources = sources
+        except Exception:
+            self._accepted = None
+            self._authority_journal = None
+            self._authority_chain = ()
+            self._revocation_sources = ()
+        self._cache_status = "invalid"
+        self._record_failure("registry_cache_incomplete_transaction")
+
+    @classmethod
+    def _bounded_denial_revocations(
+        cls,
+        journals: tuple[SignedRegistryJournal, ...],
+    ) -> tuple[ReleaseRevocation, ...]:
+        """Flatten signed denial evidence without the positive-cache bound."""
+
+        retained = {
+            item.revocation_identity: item
+            for journal in journals
+            for source in cls._sources_in_journal(journal)
+            for item in source.revocations
+        }
+        if len(retained) > MAX_REVOCATIONS:
+            raise ReleaseRegistryOperationalError(
+                "registry_revocation_history_capacity_exhausted"
+            )
+        return tuple(retained[key] for key in sorted(retained))
+
     def _parse_pending_document(
         self,
         raw: bytes,
-    ) -> SignedRegistryJournal:
+    ) -> tuple[
+        SignedRegistryJournal,
+        tuple[SignedRegistryJournal, ...],
+    ]:
         if len(raw) > MAX_CACHE_BYTES:
             raise ReleaseRegistryOperationalError(
                 "registry_cache_oversized"
@@ -1002,60 +1143,84 @@ class SignedReleaseRegistry:
         if not isinstance(value, dict) or set(value) != {
             "schema_version",
             "candidate_journal",
+            "retained_denial_journals",
         }:
             raise ReleaseRegistryOperationalError("registry_cache_invalid")
         if (
             type(value["schema_version"]) is not int
-            or value["schema_version"] != 2
+            or value["schema_version"] != PENDING_SCHEMA_VERSION
         ):
             raise ReleaseRegistryOperationalError(
                 "registry_cache_schema_unsupported"
             )
-        return _parse_signed_journal(
+        candidate = _parse_signed_journal(
             canonical_json(value["candidate_journal"]),
             trust_anchors=self._anchors,
         )
+        raw_denial_journals = value["retained_denial_journals"]
+        if (
+            not isinstance(raw_denial_journals, list)
+            or len(raw_denial_journals) > MAX_DENIAL_JOURNALS
+        ):
+            raise ReleaseRegistryOperationalError(
+                "registry_revocation_history_capacity_exhausted"
+            )
+        retained = tuple(
+            _parse_signed_journal(
+                canonical_json(item),
+                trust_anchors=self._anchors,
+            )
+            for item in raw_denial_journals
+        )
+        seen_digests = {candidate.content_digest}
+        accepted_by_sequence = {
+            candidate.accepted.sequence: candidate.accepted.content_digest
+        }
+        for journal in retained:
+            accepted = journal.accepted
+            if (
+                accepted.sequence > candidate.accepted.sequence
+                or journal.content_digest in seen_digests
+                or (
+                    accepted.sequence in accepted_by_sequence
+                    and accepted_by_sequence[accepted.sequence]
+                    != accepted.content_digest
+                )
+            ):
+                raise ReleaseRegistryOperationalError(
+                    "registry_cache_invalid"
+                )
+            seen_digests.add(journal.content_digest)
+            accepted_by_sequence[
+                accepted.sequence
+            ] = accepted.content_digest
+        return candidate, retained
 
     def _write_pending_barrier(
         self,
         journal: SignedRegistryJournal,
+        *,
+        parent: Path,
+        denial_journals: tuple[SignedRegistryJournal, ...],
     ) -> Path:
         """Durably retain a verified candidate as restart denial evidence."""
 
         marker_encoded = canonical_json(
             {
-                "schema_version": 2,
+                "schema_version": PENDING_SCHEMA_VERSION,
                 "candidate_journal": journal.to_mapping(),
+                "retained_denial_journals": [
+                    item.to_mapping()
+                    for item in denial_journals
+                    if item.content_digest != journal.content_digest
+                ],
             }
         )
         if len(marker_encoded) > MAX_CACHE_BYTES:
             raise ReleaseRegistryOperationalError("registry_cache_oversized")
-        parent = self._cache_path.parent
-        backup: Path | None = None
         marker_temporary: Path | None = None
         pending = self._pending_cache_path()
-        previous_path = self._previous_cache_path()
         try:
-            parent.mkdir(parents=True, exist_ok=True)
-            if self._cache_path.exists():
-                previous = self._cache_path.read_bytes()
-                if len(previous) > MAX_CACHE_BYTES:
-                    raise ReleaseRegistryOperationalError(
-                        "registry_cache_oversized"
-                    )
-                backup_handle = tempfile.NamedTemporaryFile(
-                    mode="wb",
-                    prefix=f".{self._cache_path.name}.backup.",
-                    dir=parent,
-                    delete=False,
-                )
-                backup = Path(backup_handle.name)
-                with backup_handle:
-                    backup_handle.write(previous)
-                    backup_handle.flush()
-                    os.fsync(backup_handle.fileno())
-                os.replace(backup, previous_path)
-                self._fsync_directory(parent)
             marker_handle = tempfile.NamedTemporaryFile(
                 mode="wb",
                 prefix=f".{self._cache_path.name}.pending.",
@@ -1074,13 +1239,29 @@ class SignedReleaseRegistry:
                 "registry_cache_write_failed"
             ) from exc
         finally:
-            for transient in (backup, marker_temporary):
-                if transient is None:
-                    continue
+            if marker_temporary is not None:
                 try:
-                    transient.unlink(missing_ok=True)
+                    marker_temporary.unlink(missing_ok=True)
                 except OSError:
                     pass
+        return parent
+
+    def _retire_cached_positive_authority(self) -> Path:
+        """Durably remove the active cache before writing a denial marker."""
+
+        parent = self._cache_path.parent
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+            if self._cache_path.exists():
+                os.replace(
+                    self._cache_path,
+                    self._previous_cache_path(),
+                )
+                self._fsync_directory(parent)
+        except OSError as exc:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_write_failed"
+            ) from exc
         return parent
 
     def _write_cache(
@@ -1097,7 +1278,13 @@ class SignedReleaseRegistry:
             raise ReleaseRegistryOperationalError(
                 "registry_cache_oversized"
             )
-        parent = self._write_pending_barrier(journal)
+        denial_journals = self._denial_journals_with(journal)
+        parent = self._retire_cached_positive_authority()
+        self._write_pending_barrier(
+            journal,
+            parent=parent,
+            denial_journals=denial_journals,
+        )
         handle = None
         temporary: Path | None = None
         pending = self._pending_cache_path()
