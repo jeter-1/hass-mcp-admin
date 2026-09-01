@@ -53,7 +53,10 @@ from ..ha_mcp_readmission.ha_mcp import (
     HaMcpAuthoritySelector,
     observation_for_catalog,
 )
-from ..ha_mcp_readmission.registry import SignedReleaseRegistry
+from ..ha_mcp_readmission.registry import (
+    MISSING_RELEASE_REFRESH_INTERVAL_SECONDS,
+    SignedReleaseRegistry,
+)
 from ..observability import METRICS
 from ..request_context import current_request_id, current_telemetry
 from ..sanitization import sanitize_untrusted_data
@@ -535,6 +538,7 @@ class UpstreamReadGateway:
         self._stale_reprobe_retry_armed = False
         self._discovery_in_progress = False
         self._reprobe_event = asyncio.Event()
+        self._missing_release_retry_handle: asyncio.TimerHandle | None = None
         self._initialize_lock = asyncio.Lock()
         self._reconciliation_lock = asyncio.Lock()
         self._lock = threading.RLock()
@@ -747,6 +751,9 @@ class UpstreamReadGateway:
         self._latest_live_contract_token = None
         self._stale_reprobe_retry_armed = False
         self._discovery_in_progress = False
+        if self._missing_release_retry_handle is not None:
+            self._missing_release_retry_handle.cancel()
+            self._missing_release_retry_handle = None
         self._reprobe_event.clear()
         self._transport = (
             transport
@@ -884,26 +891,35 @@ class UpstreamReadGateway:
                     catalog.protocol_version,
                 )
             except DashboardTransportError as initial_identity_error:
-                refreshed = bool(
-                    self._signed_release_registry is not None
-                    and initial_identity_error.category
-                    == "upstream_version_mismatch"
-                    and await self._signed_release_registry.refresh_for_missing_release(
-                        server_name=catalog.server_name,
-                        version=catalog.server_version,
-                    )
-                )
-                if not refreshed:
+                signed_registry = self._signed_release_registry
+                if (
+                    signed_registry is None
+                    or initial_identity_error.category
+                    != "upstream_version_mismatch"
+                ):
                     raise
-                (
-                    selected_policy,
-                    selected_release,
-                    readmission_selection,
-                ) = self._validate_identity(
-                    catalog.server_name,
-                    catalog.server_version,
-                    catalog.protocol_version,
+                await signed_registry.refresh_for_missing_release(
+                    server_name=catalog.server_name,
+                    version=catalog.server_version,
                 )
+                try:
+                    (
+                        selected_policy,
+                        selected_release,
+                        readmission_selection,
+                    ) = self._validate_identity(
+                        catalog.server_name,
+                        catalog.server_version,
+                        catalog.protocol_version,
+                    )
+                except DashboardTransportError:
+                    self._arm_missing_release_retry(
+                        signed_registry.missing_release_retry_delay(
+                            server_name=catalog.server_name,
+                            version=catalog.server_version,
+                        )
+                    )
+                    raise
             identity_validated = True
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
@@ -1260,6 +1276,22 @@ class UpstreamReadGateway:
                 next(iter(generations)) if len(generations) == 1 else None
             )
             return generation, tuple(sorted(self._exposed))
+
+    def _arm_missing_release_retry(self, delay: float | None) -> None:
+        if delay is None:
+            return
+        if self._missing_release_retry_handle is not None:
+            self._missing_release_retry_handle.cancel()
+        loop = asyncio.get_running_loop()
+
+        def trigger() -> None:
+            self._missing_release_retry_handle = None
+            self._reprobe_event.set()
+
+        self._missing_release_retry_handle = loop.call_later(
+            max(0.01, min(MISSING_RELEASE_REFRESH_INTERVAL_SECONDS, delay)),
+            trigger,
+        )
 
     def _publish_discovery_generation(
         self,
@@ -4123,7 +4155,91 @@ class UpstreamReadGateway:
             }
         if registry is not None:
             value["automatic_readmission_registry"] = registry.snapshot()
+            self._sanitize_registry_enabled_health(value)
         return value
+
+    @staticmethod
+    def _sanitize_registry_enabled_health(value: dict[str, Any]) -> None:
+        """Project signed-mode health without raw release or catalog data."""
+
+        tool_fields = (
+            "held_tools",
+            "live_canary_required_tools",
+            "quarantined_tools",
+            "missing_tools",
+            "unreviewed_tools",
+            "exposed_tools",
+            "collision_mappings",
+            "blocked_tools",
+        )
+        raw_projection = {
+            field: value.get(field, []) for field in tool_fields
+        }
+        try:
+            value["catalog_name_projection_fingerprint"] = (
+                schema_fingerprint(raw_projection)
+            )
+        except Exception:
+            value["catalog_name_projection_fingerprint"] = None
+        for field in tool_fields:
+            value[field] = []
+        value.update(
+            {
+                "upstream_server_name": (
+                    "accepted_provider"
+                    if value.get("observed_identity_status") == "accepted"
+                    else "unavailable_provider"
+                ),
+                "upstream_server_version": (
+                    "accepted_release"
+                    if value.get("observed_identity_status") == "accepted"
+                    else "unavailable_release"
+                ),
+                "observed_upstream_server_name": (
+                    "accepted"
+                    if value.get("observed_identity_status") == "accepted"
+                    else "rejected"
+                ),
+                "observed_upstream_server_version": (
+                    "accepted"
+                    if value.get("observed_identity_status") == "accepted"
+                    else "rejected"
+                ),
+                "observed_protocol_version": (
+                    "accepted"
+                    if value.get("observed_identity_status") == "accepted"
+                    else "rejected"
+                ),
+                "reviewed_upstream_version": "compiled_profile",
+                "protocol_version": (
+                    "accepted"
+                    if value.get("observed_identity_status") == "accepted"
+                    else "unavailable"
+                ),
+                "last_compatible_version": (
+                    "accepted_release"
+                    if value.get("last_compatible_version")
+                    else None
+                ),
+                "reviewed_source_commit": None,
+                "reviewed_image_index_digest": None,
+                "reviewed_architecture_image_digests": {},
+                "reviewed_addon_artifact_digests": {},
+                "reviewed_image_revision": None,
+                "reviewed_allowed_protocol_versions": ["accepted"],
+            }
+        )
+        selected = value.get("selected_compatibility_entry_id")
+        if (
+            selected is not None
+            and not (
+                isinstance(selected, str)
+                and re.fullmatch(r"[0-9a-f]{64}", selected)
+            )
+        ):
+            value["selected_compatibility_entry_id"] = schema_fingerprint(
+                {"compatibility_entry_id": selected}
+            )
 
     def readmission_audit_snapshot(self) -> tuple[dict[str, Any], ...]:
         """Return bounded sanitized internal reconciliation audit projections."""

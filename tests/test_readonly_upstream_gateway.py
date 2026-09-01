@@ -892,6 +892,138 @@ class ReadGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_disabled_mode_preserves_independent_concurrent_exchanges(self):
+        entered = 0
+        both_entered = asyncio.Event()
+
+        @asynccontextmanager
+        async def fake_streamable(_url, **_kwargs):
+            nonlocal entered
+            entered += 1
+            if entered == 2:
+                both_entered.set()
+            await asyncio.wait_for(both_entered.wait(), timeout=1)
+            yield ("read", "write", lambda: "synthetic-session")
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def initialize(self):
+                return types.InitializeResult(
+                    protocolVersion="2025-03-26",
+                    capabilities=types.ServerCapabilities(),
+                    serverInfo=types.Implementation(
+                        name="ha-mcp", version="8.2.0"
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                del cursor
+                return types.ListToolsResult(tools=[])
+
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.2.0-beta.55",
+            retain_session=False,
+        )
+        with (
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.streamablehttp_client",
+                fake_streamable,
+            ),
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                Session,
+            ),
+        ):
+            results = await asyncio.gather(
+                transport.discover(),
+                transport.discover(),
+            )
+        self.assertEqual(len(results), 2)
+        self.assertEqual(entered, 2)
+        self.assertIsNone(transport._worker)
+
+    async def test_malformed_supplied_session_evidence_is_never_repaired(self):
+        list_calls = 0
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def initialize(self):
+                return types.InitializeResult(
+                    protocolVersion="2025-03-26",
+                    capabilities=types.ServerCapabilities(),
+                    serverInfo=types.Implementation(
+                        name="ha-mcp", version="8.2.0"
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                nonlocal list_calls
+                del cursor
+                list_calls += 1
+                return types.ListToolsResult(tools=[])
+
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.2.0-beta.55",
+        )
+        for invalid in ("", "x" * 513, 17):
+            @asynccontextmanager
+            async def fake_streamable(_url, **_kwargs):
+                yield ("read", "write", lambda: invalid)
+
+            with (
+                self.subTest(invalid=type(invalid).__name__),
+                patch(
+                    "ha_mcp_engineering.clients.upstream_read.streamablehttp_client",
+                    fake_streamable,
+                ),
+                patch(
+                    "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                    Session,
+                ),
+                self.assertRaises(DashboardTransportError) as caught,
+            ):
+                await transport.discover()
+            self.assertEqual(caught.exception.category, "protocol_error")
+        self.assertEqual(list_calls, 0)
+
+        @asynccontextmanager
+        async def no_session(_url, **_kwargs):
+            yield ("read", "write", lambda: None)
+
+        with (
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.streamablehttp_client",
+                no_session,
+            ),
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                Session,
+            ),
+        ):
+            catalog = await transport.discover()
+        self.assertTrue(catalog.session_id.startswith("ha-mcp-exchange-"))
+        self.assertEqual(list_calls, 1)
+
 
 class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
     async def test_audit_distinguishes_delegated_failure_classes(self):

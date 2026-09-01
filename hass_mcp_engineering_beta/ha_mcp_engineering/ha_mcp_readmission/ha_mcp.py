@@ -156,6 +156,13 @@ class HaMcpAuthoritySelector:
             )
 
         if registry.surface_denied:
+            if (
+                registry.sequence is None
+                or registry.content_digest is None
+            ):
+                raise HaMcpAuthorityError(
+                    "registry_cache_authority_denied"
+                )
             authority = AuthorityBundle(
                 evaluated_at_epoch=evaluated_epoch,
                 decisions=(

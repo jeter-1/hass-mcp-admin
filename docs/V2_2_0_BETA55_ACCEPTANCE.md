@@ -66,19 +66,23 @@ not advertise
 ## Registry, restart, and revocation
 
 The optional registry uses one fixed HTTPS location, refuses redirects, and
-enforces connection, total-time, envelope, entry, revocation, cache, and
-retention bounds. Strict parsing and Ed25519 verification precede exact
-registry-ID/schema, sequence, digest, previous-digest chain, expiry, rollback,
-equal-sequence conflict, duplicate, and revocation checks.
+enforces connection, total-time, journal, envelope, entry, revocation, cache,
+and retention bounds. The fetched artifact is an independently signed bounded
+journal/checkpoint containing individually signed envelopes. Strict parsing and
+Ed25519 verification precede exact registry-ID/schema, sequence, digest, every
+retained previous-digest link, expiry, rollback, equal-sequence conflict,
+duplicate, compaction-checkpoint, and revocation checks. A bare tip cannot
+bootstrap or catch up a client.
 
 Accepted state uses temporary write, file fsync, atomic replacement, directory
-fsync, a durable pending marker, and a prior checkpoint. A failed persistence
+fsync, a durable pending signed journal, and a prior checkpoint. A failed persistence
 step cannot activate the candidate's positive entries. Authenticated
 revocations remain effective as bounded denial-only state even if candidate
-persistence fails. Restart reparses and reverifies every cached signature and
-the bounded authority-chain topology. Unexpired positive authority survives a
+persistence fails, and the verified candidate remains a sequence/digest barrier
+against conflicting replay. Restart reparses and reverifies every cached outer
+and envelope signature and the bounded journal/checkpoint topology. Unexpired positive authority survives a
 registry outage, expired positive authority becomes unavailable, and retained
-valid revocations remain denial-only. Malformed, conflicting, interrupted,
+valid revocations remain denial-only across bounded compaction. Malformed, conflicting, interrupted,
 oversized, or capacity-exhausted cache state denies the ha-mcp surface until a
 fresh valid registry is accepted. A valid revocation overrides compiled exact
 authority.
@@ -103,7 +107,8 @@ completion cannot restore, republish, or extend authority. Late verification
 cannot replace a newer decision. There is no semantic retry, alternate
 provider, direct-HA path, generic forwarding, or fallback.
 
-Health and internal audit projections are bounded and sanitized. They expose
+Health and internal audit projections are bounded and sanitized on success,
+partial admission, and refusal. They expose
 only fixed dispositions and reason codes, generation, compiled profile and
 adapter IDs, authority source, admitted/held/unavailable and lifecycle counts,
 registry freshness/sequence status, and fallback zero. They exclude endpoints,

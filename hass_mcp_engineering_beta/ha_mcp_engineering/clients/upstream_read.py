@@ -138,6 +138,8 @@ class McpReadGatewayTransport:
     async def aclose(self) -> None:
         """Close the retained upstream exchange in its owning worker task."""
 
+        if not self._retain_session:
+            return
         if self._worker is None or self._worker.done():
             return
         operation = self._new_operation("close")
@@ -157,6 +159,8 @@ class McpReadGatewayTransport:
         )
 
     async def _submit(self, operation: _TransportOperation) -> Any:
+        if not self._retain_session:
+            return await self._run_isolated(operation)
         if self._operations is None:
             self._operations = asyncio.Queue(
                 maxsize=MAX_PENDING_TRANSPORT_OPERATIONS
@@ -168,6 +172,55 @@ class McpReadGatewayTransport:
         except asyncio.QueueFull:
             raise DashboardTransportError("provider_unavailable") from None
         return await operation.future
+
+    async def _run_isolated(self, operation: _TransportOperation) -> Any:
+        """Preserve Beta 54's independent per-operation transport behavior."""
+
+        started = time.perf_counter()
+        timeout = timedelta(
+            seconds=max(
+                1.0,
+                float(
+                    operation.timeout_seconds
+                    if operation.timeout_seconds is not None
+                    else self._timeout.total_seconds()
+                ),
+            )
+        )
+        try:
+            async with streamablehttp_client(
+                self._url,
+                timeout=timeout,
+                sse_read_timeout=timeout,
+                terminate_on_close=True,
+            ) as (read_stream, write_stream, get_session_id):
+                async with ClientSession(
+                    read_stream,
+                    write_stream,
+                    read_timeout_seconds=timeout,
+                    client_info=self._client_info,
+                ) as session:
+                    initialize = await session.initialize()
+                    fallback_session_id = (
+                        "ha-mcp-exchange-" + uuid.uuid4().hex
+                    )
+                    session_id = self._observed_session_id(
+                        get_session_id,
+                        fallback_session_id,
+                    )
+                    return await self._run_operation(
+                        operation,
+                        session=session,
+                        initialize=initialize,
+                        get_session_id=get_session_id,
+                        session_id=session_id,
+                        fallback_session_id=fallback_session_id,
+                        started=started,
+                    )
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            raise self._map_operation_error(exc) from None
 
     async def _run_worker(self) -> None:
         operations = self._operations
@@ -377,12 +430,10 @@ class McpReadGatewayTransport:
         fallback: str,
     ) -> str:
         value = get_session_id()
-        if (
-            value is None
-            or not isinstance(value, str)
-            or not 1 <= len(value) <= 512
-        ):
+        if value is None:
             return fallback
+        if not isinstance(value, str) or not 1 <= len(value) <= 512:
+            raise DashboardTransportError("protocol_error")
         return value
 
     @classmethod

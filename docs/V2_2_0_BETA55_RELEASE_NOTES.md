@@ -38,13 +38,15 @@ arguments, classifications, routes, actions, writes, forwarding, or fallback.
 Live schemas remain observation and never authorize themselves.
 
 The fixed HTTPS registry refuses redirects and enforces strict parsing,
-signature, identity, schema, sequence/digest chain, expiry, rollback, replay,
-revocation, and capacity checks. Its accepted cache uses a bounded verified
-authority chain, a durable pending marker, prior checkpoint, file fsync, and
-directory fsync. Restart reverifies signatures and chain topology; interrupted
-or malformed state denies positive authority. Expired positive authority
+signature, identity, schema, bounded signed-journal/checkpoint,
+sequence/digest-chain, expiry, rollback, replay, revocation, and capacity
+checks. A bare tip cannot bootstrap. Its accepted cache uses the verified
+journal, a durable pending signed journal, prior checkpoint, file fsync, and
+directory fsync. Restart reverifies outer and envelope signatures and chain
+topology; interrupted or malformed state denies positive authority. Expired positive authority
 disappears while valid retained revocations remain denial-only, including
-authenticated revocations whose positive cache transaction could not commit.
+authenticated revocations whose positive cache transaction could not commit or
+whose original chain segment was compacted.
 
 No production key, registry entry, signing workflow, secret, trust-anchor
 activation, or registry publication is included. Tests use synthetic ephemeral

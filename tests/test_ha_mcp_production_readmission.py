@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import replace
@@ -386,6 +387,383 @@ class ProductionVectorTests(unittest.TestCase):
 class OperationalSignedRegistryTests(
     unittest.IsolatedAsyncioTestCase
 ):
+    async def test_registry_http_reader_accumulates_fragmented_body_to_eof(self):
+        class Content:
+            def __init__(self, chunks):
+                self.chunks = list(chunks)
+
+            async def read(self, _maximum):
+                return self.chunks.pop(0) if self.chunks else b""
+
+        class Response:
+            status = 200
+            content_length = None
+
+            def __init__(self, chunks):
+                self.content = Content(chunks)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+        class Session:
+            def __init__(self, response, **_kwargs):
+                self.response = response
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def get(self, _url, **_kwargs):
+                return self.response
+
+        registry = SignedReleaseRegistry(enabled=False, public_key="")
+        response = Response([b"first", b"-", b"second"])
+        with patch(
+            "ha_mcp_engineering.ha_mcp_readmission.registry.aiohttp."
+            "ClientSession",
+            side_effect=lambda **kwargs: Session(response, **kwargs),
+        ):
+            raw = await registry._fetch_bytes(REGISTRY_URL, 32)
+        self.assertEqual(raw, b"first-second")
+
+    async def test_signed_journal_bootstrap_catchup_and_compaction(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+
+        def chain(count, *, start=1, previous=None):
+            result = []
+            prior = previous
+            for sequence in range(start, start + count):
+                raw = signer.raw(
+                    sequence=sequence,
+                    previous_registry_sha256=prior,
+                    generated_at=NOW + timedelta(seconds=sequence),
+                    expires_at=NOW + timedelta(days=2),
+                    entries=[],
+                    revocations=[],
+                )
+                result.append(raw)
+                prior = RegistryEnvelope.from_bytes(raw).content_digest
+            return result
+
+        first_three = chain(3)
+        with tempfile.TemporaryDirectory() as directory:
+            async def fresh_fetcher(_url, _maximum):
+                return signer.journal_raw(envelopes=first_three)
+
+            fresh = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=Path(directory) / "fresh.json",
+                fetcher=fresh_fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(await fresh.refresh())
+            self.assertEqual(fresh.authority().sequence, 3)
+
+            responses = [
+                signer.journal_raw(envelopes=[first_three[0]]),
+                signer.journal_raw(envelopes=first_three),
+            ]
+
+            async def fetcher(_url, _maximum):
+                return responses.pop(0)
+
+            catching_up = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=Path(directory) / "catchup.json",
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(await catching_up.refresh())
+            self.assertEqual(catching_up.authority().sequence, 1)
+            self.assertTrue(await catching_up.refresh())
+            self.assertEqual(catching_up.authority().sequence, 3)
+
+            first_window = chain(64)
+            sequence_64 = RegistryEnvelope.from_bytes(first_window[-1])
+            sequence_65 = chain(
+                1,
+                start=65,
+                previous=sequence_64.content_digest,
+            )[0]
+            windows = [
+                signer.journal_raw(envelopes=first_window),
+                signer.journal_raw(envelopes=[sequence_65]),
+            ]
+
+            async def window_fetcher(_url, _maximum):
+                return windows.pop(0)
+
+            compacted = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=Path(directory) / "compacted.json",
+                fetcher=window_fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(await compacted.refresh())
+            self.assertEqual(compacted.authority().sequence, 64)
+            self.assertTrue(await compacted.refresh())
+            self.assertEqual(compacted.authority().sequence, 65)
+
+    async def test_corrupt_cache_recovers_only_from_authenticated_checkpoint(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        checkpoint = signer.raw(
+            sequence=7,
+            previous_registry_sha256="sha256:" + "1" * 64,
+            generated_at=NOW,
+            expires_at=NOW + timedelta(days=1),
+            entries=[],
+            revocations=[],
+        )
+        journal = signer.journal_raw(envelopes=[checkpoint])
+        tampered = json.loads(journal)
+        tampered["checkpoint_sequence"] = 6
+        responses = [json.dumps(tampered).encode("utf-8"), journal]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+            cache.write_bytes(b"corrupt")
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(registry.authority().surface_denied)
+            self.assertFalse(await registry.refresh())
+            self.assertTrue(registry.authority().surface_denied)
+            self.assertTrue(await registry.refresh())
+            self.assertEqual(registry.authority().sequence, 7)
+            self.assertFalse(registry.authority().surface_denied)
+
+    async def test_journal_intermediate_refusal_matrix_and_no_tip_shortcut(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        first = signer.raw(sequence=1, entries=[], revocations=[])
+        first_digest = RegistryEnvelope.from_bytes(first).content_digest
+        second = signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            generated_at=NOW,
+            entries=[],
+            revocations=[],
+        )
+        second_digest = RegistryEnvelope.from_bytes(second).content_digest
+        third = signer.raw(
+            sequence=3,
+            previous_registry_sha256=second_digest,
+            generated_at=NOW + timedelta(seconds=1),
+            entries=[],
+            revocations=[],
+        )
+        disconnected = signer.raw(
+            sequence=2,
+            previous_registry_sha256="sha256:" + "0" * 64,
+            generated_at=NOW,
+            entries=[],
+            revocations=[],
+        )
+        conflict = signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            generated_at=NOW,
+            entries=[],
+            revocations=[revocation()],
+        )
+        cases = {
+            "missing": signer.journal_raw(envelopes=[first, third]),
+            "disconnected": signer.journal_raw(
+                envelopes=[first, disconnected]
+            ),
+            "duplicate": signer.journal_raw(
+                envelopes=[first, second, second]
+            ),
+            "conflicting": signer.journal_raw(
+                envelopes=[first, second, conflict]
+            ),
+            "capacity": signer.journal_raw(
+                envelopes=[first] * 65
+            ),
+            "bare_tip": third,
+        }
+        for label, raw in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                async def fetcher(_url, _maximum, value=raw):
+                    return value
+
+                registry = SignedReleaseRegistry(
+                    enabled=True,
+                    public_key=signer.public_key_base64,
+                    cache_path=Path(directory) / "cache.json",
+                    fetcher=fetcher,
+                    now=lambda: NOW,
+                )
+                self.assertFalse(await registry.refresh())
+                self.assertIsNone(registry.authority().envelope)
+
+    async def test_skipped_revocation_is_retained_across_restart(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        first = signer.raw(sequence=1, entries=[], revocations=[])
+        first_digest = RegistryEnvelope.from_bytes(first).content_digest
+        second = signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            generated_at=NOW,
+            entries=[],
+            revocations=[revocation(version="8.2.0")],
+        )
+        second_digest = RegistryEnvelope.from_bytes(second).content_digest
+        third = signer.raw(
+            sequence=3,
+            previous_registry_sha256=second_digest,
+            generated_at=NOW + timedelta(seconds=1),
+            entries=[],
+            revocations=[],
+        )
+        journal = signer.journal_raw(envelopes=[first, second, third])
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+
+            async def fetcher(_url, _maximum):
+                return journal
+
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(await registry.refresh())
+            self.assertTrue(registry.authority().revoked("ha-mcp", "8.2.0"))
+            fifth = signer.raw(
+                sequence=5,
+                previous_registry_sha256="sha256:" + "4" * 64,
+                generated_at=NOW + timedelta(seconds=2),
+                entries=[],
+                revocations=[],
+            )
+            compacted = signer.journal_raw(
+                envelopes=[fifth],
+                revocation_sources=[second],
+            )
+
+            async def compacted_fetcher(_url, _maximum):
+                return compacted
+
+            registry._fetcher = compacted_fetcher
+            self.assertTrue(await registry.refresh())
+            self.assertEqual(registry.authority().sequence, 5)
+            self.assertTrue(registry.authority().revoked("ha-mcp", "8.2.0"))
+            restarted = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                now=lambda: NOW,
+            )
+            self.assertEqual(restarted.authority().sequence, 5)
+            self.assertTrue(restarted.authority().revoked("ha-mcp", "8.2.0"))
+
+    async def test_failed_candidate_is_sequence_barrier_until_chained_success(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        first = signer.raw(sequence=1, entries=[], revocations=[])
+        first_digest = RegistryEnvelope.from_bytes(first).content_digest
+        second = signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            generated_at=NOW,
+            entries=[],
+            revocations=[revocation(version="8.2.0")],
+        )
+        conflict = signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            generated_at=NOW,
+            entries=[],
+            revocations=[],
+        )
+        second_digest = RegistryEnvelope.from_bytes(second).content_digest
+        third = signer.raw(
+            sequence=3,
+            previous_registry_sha256=second_digest,
+            generated_at=NOW + timedelta(seconds=1),
+            entries=[],
+            revocations=[],
+        )
+        responses = [
+            signer.journal_raw(envelopes=[first]),
+            signer.journal_raw(envelopes=[first, second]),
+            signer.journal_raw(envelopes=[first, conflict]),
+            signer.journal_raw(envelopes=[second, third]),
+        ]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=Path(directory) / "cache.json",
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(await registry.refresh())
+            with patch.object(
+                registry,
+                "_write_cache",
+                side_effect=ReleaseRegistryOperationalError(
+                    "registry_cache_write_failed"
+                ),
+            ):
+                self.assertFalse(await registry.refresh())
+            self.assertEqual(registry.authority().sequence, 2)
+            self.assertTrue(registry.authority().surface_denied)
+            self.assertFalse(await registry.refresh())
+            self.assertEqual(
+                registry.snapshot()["last_failure_reason"],
+                "registry_sequence_replay_conflict",
+            )
+            self.assertTrue(await registry.refresh())
+            self.assertEqual(registry.authority().sequence, 3)
+            self.assertFalse(registry.authority().surface_denied)
+            self.assertTrue(registry.authority().revoked("ha-mcp", "8.2.0"))
+
+    async def test_failed_preinstall_fsync_cleans_temporary_files(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+
+        async def fetcher(_url, _maximum):
+            return signer.journal_raw(
+                sequence=1,
+                entries=[],
+                revocations=[],
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=Path(directory) / "cache.json",
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            with patch(
+                "ha_mcp_engineering.ha_mcp_readmission.registry.os.fsync",
+                side_effect=OSError("synthetic fsync failure"),
+            ):
+                self.assertFalse(await registry.refresh())
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
     async def test_cache_retains_signed_revocation_as_denial_only(self):
         signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
         first = signer.raw(
@@ -402,7 +780,10 @@ class OperationalSignedRegistryTests(
             generated_at=NOW,
             expires_at=NOW + timedelta(days=1),
         )
-        responses = [first, second]
+        responses = [
+            signer.journal_raw(envelopes=[first]),
+            signer.journal_raw(envelopes=[first, second]),
+        ]
 
         async def fetcher(url, maximum):
             self.assertEqual(url, REGISTRY_URL)
@@ -457,7 +838,13 @@ class OperationalSignedRegistryTests(
             revocations=[revocation()],
             generated_at=NOW,
         )
-        responses = [first, second, first, conflict, b"not-json"]
+        responses = [
+            signer.journal_raw(envelopes=[first]),
+            signer.journal_raw(envelopes=[first, second]),
+            signer.journal_raw(envelopes=[first]),
+            signer.journal_raw(envelopes=[first, conflict]),
+            b"not-json",
+        ]
 
         async def fetcher(_url, _maximum):
             return responses.pop(0)
@@ -477,7 +864,7 @@ class OperationalSignedRegistryTests(
             for expected_reason in (
                 "registry_sequence_rollback",
                 "registry_sequence_replay_conflict",
-                "registry_malformed_json",
+                "registry_journal_invalid",
             ):
                 self.assertFalse(await registry.refresh())
                 self.assertEqual(registry.authority(), accepted)
@@ -510,7 +897,11 @@ class OperationalSignedRegistryTests(
         )
         tampered_mapping["registry_id"] = "ha-mcp-other-registry"
         tampered = json.dumps(tampered_mapping).encode("utf-8")
-        responses = [expired, unknown_key, tampered]
+        responses = [
+            trusted.journal_raw(envelopes=[expired]),
+            unknown.journal_raw(envelopes=[unknown_key]),
+            trusted.journal_raw(envelopes=[tampered]),
+        ]
 
         async def fetcher(_url, _maximum):
             return responses.pop(0)
@@ -628,7 +1019,10 @@ class OperationalSignedRegistryTests(
             revocations=[revocation(version="8.2.0")],
             generated_at=NOW,
         )
-        responses = [first, second]
+        responses = [
+            signer.journal_raw(envelopes=[first]),
+            signer.journal_raw(envelopes=[first, second]),
+        ]
 
         async def fetcher(_url, _maximum):
             return responses.pop(0)
@@ -651,7 +1045,9 @@ class OperationalSignedRegistryTests(
             ):
                 self.assertFalse(await registry.refresh())
             authority = registry.authority()
-            self.assertEqual(authority.sequence, 1)
+            self.assertEqual(authority.envelope.sequence, 1)
+            self.assertEqual(authority.sequence, 2)
+            self.assertTrue(authority.surface_denied)
             self.assertTrue(authority.revoked("ha-mcp", "8.2.0"))
             self.assertEqual(
                 registry.snapshot()["last_failure_reason"],
@@ -662,7 +1058,11 @@ class OperationalSignedRegistryTests(
         signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
 
         async def fetcher(_url, _maximum):
-            return signer.raw(sequence=1, entries=[], revocations=[])
+            return signer.journal_raw(
+                sequence=1,
+                entries=[],
+                revocations=[],
+            )
 
         with tempfile.TemporaryDirectory() as directory:
             blocked_parent = Path(directory) / "not-a-directory"
@@ -685,7 +1085,11 @@ class OperationalSignedRegistryTests(
         signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
 
         async def fetcher(_url, _maximum):
-            return signer.raw(sequence=1, entries=[], revocations=[])
+            return signer.journal_raw(
+                sequence=1,
+                entries=[],
+                revocations=[],
+            )
 
         real_fsync = os.fsync
 
@@ -732,7 +1136,10 @@ class OperationalSignedRegistryTests(
             revocations=[],
             generated_at=NOW,
         )
-        responses = [first, second]
+        responses = [
+            signer.journal_raw(envelopes=[first]),
+            signer.journal_raw(envelopes=[first, second]),
+        ]
 
         async def fetcher(_url, _maximum):
             return responses.pop(0)
@@ -763,7 +1170,9 @@ class OperationalSignedRegistryTests(
                 side_effect=fail_final_directory_fsync,
             ):
                 self.assertFalse(await registry.refresh())
-            self.assertEqual(registry.authority().sequence, 1)
+            self.assertEqual(registry.authority().envelope.sequence, 1)
+            self.assertEqual(registry.authority().sequence, 2)
+            self.assertTrue(registry.authority().surface_denied)
 
             restarted = SignedReleaseRegistry(
                 enabled=True,
@@ -771,7 +1180,8 @@ class OperationalSignedRegistryTests(
                 cache_path=cache,
                 now=lambda: NOW,
             )
-            self.assertEqual(restarted.authority().sequence, 1)
+            self.assertEqual(restarted.authority().envelope.sequence, 1)
+            self.assertEqual(restarted.authority().sequence, 2)
             self.assertTrue(restarted.authority().surface_denied)
 
     def test_distinct_trust_configuration_fails_closed(self):
@@ -994,7 +1404,7 @@ class SignedGatewayReadmissionTests(
         entry: dict | None,
         revocations: list[dict] | None = None,
     ) -> bytes:
-        return self.signer.raw(
+        return self.signer.journal_raw(
             sequence=1,
             generated_at=self.now - timedelta(minutes=1),
             expires_at=self.now + timedelta(days=1),
@@ -1131,7 +1541,10 @@ class SignedGatewayReadmissionTests(
             entries=[entry],
             revocations=[],
         )
-        responses = [first, second]
+        responses = [
+            self.signer.journal_raw(envelopes=[first]),
+            self.signer.journal_raw(envelopes=[first, second]),
+        ]
         fetch_count = 0
 
         async def fetcher(url, maximum):
@@ -1166,6 +1579,75 @@ class SignedGatewayReadmissionTests(
         self.assertEqual(fetch_count, 2)
         self.assertEqual(snapshot["dynamically_exposed_count"], 25)
         self.assertEqual(snapshot["readmission_authority_source"], "signed_registry")
+        self.assertEqual(transport.calls, 0)
+
+    async def test_missing_release_rearms_bounded_refresh_until_published(self):
+        version = "8.2.1"
+        entry = _signed_entry_for(self.release, version=version)
+        first = self.signer.raw(
+            sequence=1,
+            generated_at=self.now - timedelta(minutes=2),
+            expires_at=self.now + timedelta(days=1),
+            entries=[],
+            revocations=[],
+        )
+        first_digest = RegistryEnvelope.from_bytes(first).content_digest
+        second = self.signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            generated_at=self.now - timedelta(minutes=1),
+            expires_at=self.now + timedelta(days=1),
+            entries=[entry],
+            revocations=[],
+        )
+        empty = self.signer.journal_raw(envelopes=[first])
+        responses = [
+            empty,
+            empty,
+            self.signer.journal_raw(envelopes=[first, second]),
+        ]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=Path(self.temporary.name) / "retry-cache.json",
+            fetcher=fetcher,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(
+            self.capture["tools"],
+            version=version,
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=registry,
+        )
+        server = FastMCP("signed-readmission-bounded-missing-retry")
+        with (
+            patch(
+                "ha_mcp_engineering.ha_mcp_readmission.registry."
+                "MISSING_RELEASE_REFRESH_INTERVAL_SECONDS",
+                0.01,
+            ),
+            patch(
+                "ha_mcp_engineering.providers.upstream_read_gateway."
+                "MISSING_RELEASE_REFRESH_INTERVAL_SECONDS",
+                0.01,
+            ),
+        ):
+            first_snapshot = await gateway.initialize(server)
+            self.assertEqual(first_snapshot["dynamically_exposed_count"], 0)
+            await asyncio.wait_for(gateway._reprobe_event.wait(), timeout=1)
+            gateway._reprobe_event.clear()
+            second_snapshot = await gateway.initialize(server)
+        self.assertEqual(second_snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(len(responses), 0)
         self.assertEqual(transport.calls, 0)
 
     async def test_disabled_registry_preserves_beta54_compiled_exact_behavior(self):
@@ -1386,6 +1868,9 @@ class SignedGatewayReadmissionTests(
         self.assertNotIn("synthetic_future_write", snapshot["exposed_tools"])
         self.assertEqual(snapshot["unreviewed_tool_count"], 1)
         self.assertEqual(transport.calls, 0)
+        encoded = json.dumps(snapshot, sort_keys=True)
+        self.assertNotIn("synthetic_future_write", encoded)
+        self.assertNotIn(version, encoded)
 
     async def test_incomplete_duplicate_and_malformed_catalogs_fail_closed(self):
         version = "8.2.1"
@@ -1494,7 +1979,10 @@ class SignedGatewayReadmissionTests(
             entries=[],
             revocations=[signed_revocation],
         )
-        responses = [first, second]
+        responses = [
+            self.signer.journal_raw(envelopes=[first]),
+            self.signer.journal_raw(envelopes=[first, second]),
+        ]
 
         async def fetcher(_url, _maximum):
             return responses.pop(0)
@@ -1589,6 +2077,14 @@ class SignedGatewayReadmissionTests(
         self.assertEqual(snapshot["dynamically_exposed_count"], 0)
         self.assertTrue(
             snapshot["automatic_readmission_registry"]["surface_denied"]
+        )
+        self.assertEqual(
+            snapshot["last_discovery_failure_category"],
+            "upstream_version_mismatch",
+        )
+        self.assertNotEqual(
+            snapshot["last_discovery_failure_category"],
+            "internal_error",
         )
         self.assertEqual(transport.calls, 0)
 
@@ -1704,6 +2200,11 @@ class SignedGatewayReadmissionTests(
                 self.assertEqual(snapshot["dynamically_exposed_count"], 0)
                 self.assertEqual(snapshot["fallback_count"], 0)
                 self.assertEqual(transport.calls, 0)
+                encoded = json.dumps(snapshot, sort_keys=True)
+                if server_name != "ha-mcp":
+                    self.assertNotIn(server_name, encoded)
+                self.assertNotIn(version, encoded)
+                self.assertNotIn(protocol_version, encoded)
 
     async def test_same_session_commit_occurs_once_after_final_validation(self):
         version = "8.2.1"

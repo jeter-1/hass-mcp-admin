@@ -79,7 +79,10 @@ held reads. Exact 8.1.1 adds 25 for 74 registered tools and keeps only
 `ha_get_operation_status` held. Held reads are accounted but never registered
 as delegated upstream tools. One missing or quarantined read
 leaves other matches available. A client that cached an earlier list must re-list or reconnect; the
-stateless transport does not broadcast `tools/list_changed`.
+Beta 54-compatible disabled mode remains stateless. Enabled automatic
+readmission uses a stateful authenticated inbound MCP session to bind each
+`tools/list` generation to later delegated calls, without advertising or
+broadcasting `tools/list_changed`.
 
 Unlisted, mixed, write, action, prohibited, and unsupported tools are never
 registered. A changed reviewed contract is quarantined individually, and

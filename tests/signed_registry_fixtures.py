@@ -195,6 +195,60 @@ class RegistrySigner:
     def raw(self, **kwargs: Any) -> bytes:
         return canonical_json(self.sign_mapping(self.unsigned(**kwargs)))
 
+    def journal_unsigned(
+        self,
+        *,
+        envelopes: list[bytes | dict[str, Any]] | None = None,
+        revocation_sources: list[bytes | dict[str, Any]] | None = None,
+        checkpoint_sequence: int | None = None,
+        checkpoint_previous_registry_sha256: str | None = None,
+        **envelope_kwargs: Any,
+    ) -> dict[str, Any]:
+        """Build one synthetic authenticated journal/checkpoint artifact."""
+
+        if envelopes is None:
+            normalized_envelopes = [
+                self.sign_mapping(self.unsigned(**envelope_kwargs))
+            ]
+        else:
+            normalized_envelopes = [
+                json.loads(item.decode("utf-8"))
+                if isinstance(item, bytes)
+                else deepcopy(item)
+                for item in envelopes
+            ]
+        if not normalized_envelopes:
+            raise ValueError("envelopes must not be empty")
+        normalized_sources = [
+            json.loads(item.decode("utf-8"))
+            if isinstance(item, bytes)
+            else deepcopy(item)
+            for item in (revocation_sources or [])
+        ]
+        first = normalized_envelopes[0]
+        return {
+            "schema_version": 1,
+            "registry_id": "ha-mcp-reviewed-releases",
+            "key_id": self.key_id,
+            "checkpoint_sequence": (
+                first["sequence"]
+                if checkpoint_sequence is None
+                else checkpoint_sequence
+            ),
+            "checkpoint_previous_registry_sha256": (
+                first["previous_registry_sha256"]
+                if checkpoint_previous_registry_sha256 is None
+                else checkpoint_previous_registry_sha256
+            ),
+            "envelopes": normalized_envelopes,
+            "revocation_sources": normalized_sources,
+        }
+
+    def journal_raw(self, **kwargs: Any) -> bytes:
+        return canonical_json(
+            self.sign_mapping(self.journal_unsigned(**kwargs))
+        )
+
     def raw_with_order(
         self,
         unsigned: dict[str, Any],

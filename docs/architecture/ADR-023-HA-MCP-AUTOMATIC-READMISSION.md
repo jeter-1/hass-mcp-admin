@@ -71,24 +71,30 @@ The release registry has one repository-owned HTTPS location:
 `https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/main/upstream-trust/ha-mcp-release-registry.json`
 
 The fetcher rejects redirects and applies fixed connection, total-time, and
-byte bounds. ADR-009 strict envelope parsing, Ed25519 signature verification,
-registry ID, schema, sequence, digest, previous-digest chain, clock, expiry,
-duplicate, contradiction, and unknown-key checks run before positive authority
-is available.
+byte bounds. The fetched artifact is a separately Ed25519-signed bounded
+journal containing individually signed ADR-009 envelopes, an explicit signed
+checkpoint, and bounded signed revocation sources. Strict outer and envelope
+parsing, registry ID, schema, sequence, digest, every retained previous-digest
+link, clock, expiry, duplicate, contradiction, and unknown-key checks run before
+positive authority is available. A bare current envelope is not a bootstrap
+shortcut. The signed checkpoint permits bounded compaction only while every
+previously retained revocation remains represented as denial-only evidence.
 
 Accepted content is cached in
 `/data/ha-mcp-release-registry-cache.json` with a temporary write, file fsync,
-atomic replacement, and directory fsync. A durable pending marker and prior
+atomic replacement, and directory fsync. A durable pending journal and prior
 checkpoint make an interrupted replacement denial-only on restart. A cache
 write failure prevents the candidate's positive entries from becoming
 accepted, while any already authenticated revocations take effect immediately
-as bounded process-local denial evidence. The cache contains a bounded complete
-authority chain and bounded signed revocation-source envelopes. On restart
-every signature and the initial-sequence, previous-digest, sequence, duplicate,
-and source-membership topology are revalidated. Positive use is re-evaluated
-against the current clock. Signed revocations remain denial-only when the
-accepted positive envelope expires or a later registry omits them; malformed
-cache state denies the ha-mcp surface until a fresh valid registry is accepted.
+as bounded process-local denial evidence. The verified candidate sequence and
+digest also remain a process-local rollback/replay barrier after persistence
+failure. The cache contains the authenticated bounded journal/checkpoint and
+signed revocation sources. On restart every outer and envelope signature,
+checkpoint, previous-digest link, sequence, duplicate, and source-membership
+relationship is revalidated. Positive use is re-evaluated against the current
+clock. Signed revocations remain denial-only when the accepted positive
+envelope expires or after journal compaction; malformed cache state denies the
+ha-mcp surface until a fresh valid authenticated journal is accepted.
 
 This registry uses the distinct add-on options
 `ha_mcp_release_registry_enabled` and
@@ -157,9 +163,10 @@ Core changes cannot retire ha-mcp authority because this runtime coordinator is
 instantiated only for `ha_mcp` by the read gateway.
 
 Operational freshness is pull-based at the bounded gateway reconciliation
-cadence. When a newly observed release has no cached entry, one separately
-rate-limited authenticated refresh is allowed before refusal so a just-published
-compatible entry need not wait for the ordinary refresh interval. Clients must
+cadence. When a newly observed release has no cached entry, separately
+rate-limited per-release authenticated refreshes continue on a bounded retry
+cadence so a publication that becomes visible just after the first fetch does
+not wait for the ordinary refresh interval. Clients must
 reconnect or re-list to observe a published catalog change. Production signing,
 publication, release staging, deployment, and live acceptance are separate
 governed steps.
