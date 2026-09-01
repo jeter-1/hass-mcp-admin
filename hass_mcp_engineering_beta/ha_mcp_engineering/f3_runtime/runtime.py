@@ -34,6 +34,7 @@ from ..f3.models import (
     LockTiming,
     LockToken,
     validate_identifier,
+    validate_sha256,
 )
 from ..f3.persistence import DuplicateExecutionActive, ExecutionStorageError
 from ..f3.operational_adapter import (
@@ -269,6 +270,9 @@ class _ReadbackOnlyRecoveryAdapter:
 
     async def recover(self, prepared: Any, *, context: Any):
         return await self._adapter.recover(prepared, context=context)
+
+    async def observe(self, prepared: Any, dispatch: Any):
+        return await self._adapter.observe(prepared, dispatch)
 
     async def verify(self, prepared: Any, observation: Any):
         return await self._adapter.verify(prepared, observation)
@@ -1178,13 +1182,8 @@ class F3RuntimeIntegration:
                     attempt_id=attempt_id,
                     request_id=task.execution_request_id,
                     idempotency_key=f"{task.idempotency_key}:{ordinal}",
-                    complete_lock_request_hash=(
-                        lock_set_hash(complete_requests)
-                        if plan.contract_version in {1, 2}
-                        else canonical_hash([
-                            {"key": item.key, "mode": item.mode.value}
-                            for item in complete_requests
-                        ])
+                    complete_lock_request_hash=self._complete_lock_hash(
+                        plan, tuple(complete_requests)
                     ),
                     approval_bundle_hash=approval_hash,
                     selective_hold_keys=holds,
@@ -1229,6 +1228,8 @@ class F3RuntimeIntegration:
         if not declarations:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
         readback_only = readback_child_id is not None
+        selected = None
+        readback_record = None
         if readback_only:
             selected = next(
                 (
@@ -1238,15 +1239,15 @@ class F3RuntimeIntegration:
                 ),
                 None,
             )
-            record = (
+            readback_record = (
                 None
                 if selected is None
                 else self.children.get(selected["child_id"])
             )
             if (
-                record is None
-                or record.dispatch_intent is None
-                or record.dispatch_count != 1
+                readback_record is None
+                or readback_record.dispatch_intent is None
+                or readback_record.dispatch_count != 1
             ):
                 raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
         approval_hash = declarations[0]["approval_bundle_hash"]
@@ -1301,8 +1302,104 @@ class F3RuntimeIntegration:
             if declaration["prepared_operation_hash"] != operation.prepared_operation_hash:
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
             self._prepared_cache[declaration["child_id"]] = operation
+        if readback_only:
+            assert selected is not None and readback_record is not None
+            operation = prepared[selected["operation_ordinal"]]
+            self._require_readback_binding(
+                plan=plan,
+                declaration=selected,
+                operation=operation,
+                complete_requests=tuple(requests),
+                record=readback_record,
+            )
         self._sequence_lock_cache[task.task_id] = tuple(requests)
         return tuple(prepared), tuple(requests)
+
+    @staticmethod
+    def _complete_lock_hash(plan: Any, requests: tuple[Any, ...]) -> str:
+        if plan.contract_version in {1, 2}:
+            return lock_set_hash(requests)
+        return canonical_hash(
+            [
+                {"key": item.key, "mode": item.mode.value}
+                for item in requests
+            ]
+        )
+
+    @staticmethod
+    def _prepared_provider_binding(operation: Any) -> tuple[str, str]:
+        provider_operation = getattr(operation, "provider_operation", None)
+        provider_arguments_hash = getattr(
+            operation, "provider_arguments_hash", None
+        )
+        descriptor = getattr(operation, "provider_descriptor", None)
+        if descriptor is not None:
+            provider_operation = getattr(descriptor, "operation", None)
+            provider_arguments_hash = getattr(
+                descriptor, "arguments_hash", None
+            )
+        try:
+            validate_identifier(
+                provider_operation, field_name="provider_operation"
+            )
+            validate_sha256(
+                provider_arguments_hash,
+                field_name="provider_arguments_hash",
+            )
+        except (TypeError, ValueError):
+            raise GovernanceError(
+                ErrorCode.POLICY_SNAPSHOT_MISMATCH
+            ) from None
+        return provider_operation, provider_arguments_hash
+
+    def _require_readback_binding(
+        self,
+        *,
+        plan: Any,
+        declaration: dict[str, Any],
+        operation: Any,
+        complete_requests: tuple[Any, ...],
+        record: Any,
+    ) -> None:
+        intent = record.dispatch_intent
+        if intent is None or record.dispatch_count != 1:
+            raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
+        provider_operation, provider_arguments_hash = (
+            self._prepared_provider_binding(operation)
+        )
+        expected_tokens = tuple(
+            sorted(
+                (item.key, item.mode.value) for item in complete_requests
+            )
+        )
+
+        def token_binding(tokens: Any) -> tuple[tuple[str, str], ...]:
+            if not isinstance(tokens, list):
+                raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
+            try:
+                result = tuple(
+                    sorted((item["key"], item["mode"]) for item in tokens)
+                )
+            except (KeyError, TypeError):
+                raise GovernanceError(
+                    ErrorCode.POLICY_SNAPSHOT_MISMATCH
+                ) from None
+            if len(result) != len(set(result)):
+                raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
+            return result
+
+        if (
+            declaration["plan_contract_version"] != plan.contract_version
+            or intent["request_id"] != declaration["request_id"]
+            or record.identity["request_id"] != declaration["request_id"]
+            or intent["provider_operation"] != provider_operation
+            or intent["provider_arguments_hash"] != provider_arguments_hash
+            or declaration["complete_lock_request_hash"]
+            != self._complete_lock_hash(plan, complete_requests)
+            or token_binding(record.lock_tokens) != expected_tokens
+            or token_binding(intent["lock_tokens"]) != expected_tokens
+        ):
+            raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
 
     def _validate_sequence_state(
         self, task: Any
@@ -1606,7 +1703,13 @@ class F3RuntimeIntegration:
                 or record.dispatch_count != 1
             ):
                 raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
-            adapter = _ReadbackOnlyRecoveryAdapter(adapter)
+            self._require_readback_binding(
+                plan=plan,
+                declaration=declaration,
+                operation=prepared,
+                complete_requests=complete_requests,
+                record=record,
+            )
         evidence_seconds = int(
             getattr(prepared, "evidence_deadline_seconds", 120)
         )
@@ -1627,6 +1730,11 @@ class F3RuntimeIntegration:
         adapter = _LegacyConflictAdapter(
             adapter, self._has_active_legacy_conflict
         )
+        if readback_only:
+            # Keep the reduced recovery protocol outermost so none of the
+            # normal sequence/conflict wrappers can re-expose preflight or
+            # dispatch on historical authority.
+            adapter = _ReadbackOnlyRecoveryAdapter(adapter)
         identity = ExecutionIdentity(
             task_id=declaration["child_id"],
             plan_id=plan.plan_id,
@@ -2354,9 +2462,21 @@ class F3RuntimeIntegration:
     ) -> dict[str, Any]:
         if record.dispatch_intent is None:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_INVALID_STATE)
-        prepared, _requests = await self._load_prepared(plan, task)
+        historical_readback = bool(
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_version != POLICY_VERSION
+        )
+        prepared, _requests = await self._load_prepared(
+            plan,
+            task,
+            readback_child_id=(
+                declaration["child_id"] if historical_readback else None
+            ),
+        )
         operation = prepared[declaration["operation_ordinal"]]
         adapter = self.registry.adapter(declaration["capability_id"])
+        if historical_readback:
+            adapter = _ReadbackOnlyRecoveryAdapter(adapter)
         token = _ACTIVE_F3_CHILD.set(declaration["child_id"])
         try:
             observation = await adapter.observe(operation, None)
@@ -2480,13 +2600,18 @@ class F3RuntimeIntegration:
                     record=record,
                 )
             else:
-                prepared, requests = await self._load_prepared(plan, task)
+                prepared, requests = await self._load_prepared(
+                    plan,
+                    task,
+                    readback_child_id=(child_id if historical_policy else None),
+                )
                 await self._execute_child(
                     plan,
                     task,
                     declaration,
                     prepared[declaration["operation_ordinal"]],
                     requests,
+                    readback_only=historical_policy,
                 )
                 self._project(plan, task)
             outcome = "read_only_reconciliation_completed"

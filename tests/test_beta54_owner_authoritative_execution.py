@@ -25,6 +25,9 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3RuntimeIntegration,
     PRODUCTION_LOCK_TIMING,
 )
+from ha_mcp_engineering.f3_runtime.repository import (  # noqa: E402
+    canonical_hash,
+)
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_MODEL,
@@ -267,6 +270,115 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
         )[0]
         return plan, task, declaration
 
+    def _mutate_crashed_record(self, declaration, mutator) -> None:
+        record = self.runtime.children.get(declaration["child_id"])
+        assert record is not None
+        identity = record.execution_identity()
+        self.runtime.children.mutate_claimed(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=record.claim_generation,
+            mutator=mutator,
+        )
+
+    def _mutate_declaration_lock_hash(
+        self, task, declaration, replacement_hash: str
+    ) -> None:
+        repository = self.runtime.children
+        with repository._exclusive_transaction():
+            manifest_path = (
+                repository.root / f"{task.task_id}.manifest.json"
+            )
+            manifest = json.loads(
+                manifest_path.read_text(encoding="utf-8")
+            )
+            replacement = copy.deepcopy(declaration)
+            replacement["complete_lock_request_hash"] = replacement_hash
+            replacement.pop("declaration_hash")
+            replacement["declaration_hash"] = canonical_hash(replacement)
+            manifest["declarations"] = [replacement]
+            manifest.pop("manifest_hash")
+            manifest["manifest_hash"] = canonical_hash(manifest)
+            envelope = repository._raw_envelope(declaration["child_id"])
+            assert envelope is not None
+            envelope["declaration"] = replacement
+            repository._atomic_write(
+                repository._path(declaration["child_id"]), envelope
+            )
+            repository._atomic_write(manifest_path, manifest)
+
+    def _expire_post_intent(self, plan, declaration) -> None:
+        record = self.runtime.children.get(declaration["child_id"])
+        assert record is not None and record.dispatch_intent is not None
+        self.helper.state = "on"
+        self.helper.last_changed = self.clock().isoformat()
+        self.clock.advance(seconds=31)
+        self.assertGreater(
+            self.clock().isoformat(),
+            self.service._load_for_projection(plan["plan_id"]).expires_at,
+        )
+        identity = record.execution_identity()
+        self.runtime.children.mutate_claimed(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=record.claim_generation,
+            mutator=lambda value: setattr(
+                value, "claim_expires_at", self.clock().isoformat()
+            ),
+        )
+
+    async def _assert_binding_tamper_refused(
+        self, mutator, *, declaration_tamper: bool = False
+    ) -> None:
+        plan, task, declaration = await self._historical_crash(
+            "after_durable_intent_persistence"
+        )
+        if declaration_tamper:
+            mutator(task, declaration)
+        else:
+            self._mutate_crashed_record(declaration, mutator)
+        self._expire_post_intent(plan, declaration)
+        restarted = self._runtime()
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        with patch.object(
+            self.helper,
+            "read_state",
+            wraps=self.helper.read_state,
+        ) as readback:
+            await restarted.recover_once("startup")
+        record = restarted.children.get(declaration["child_id"])
+        assert record is not None
+        self.assertFalse(record.terminal)
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertEqual(0, readback.await_count)
+        self.assertEqual(
+            "bounded_retry",
+            restarted.children.runtime(declaration["child_id"])[
+                "reconciliation_result"
+            ],
+        )
+
+    async def _reconcile(
+        self, declaration, *, action: str = "rerun_observation"
+    ) -> dict:
+        runtime = self.runtime.children.runtime(declaration["child_id"])
+        hold_binding = ",".join(
+            f"{item['key']}:{item['generation']}"
+            for item in runtime["selective_hold_tokens"]
+        )
+        return await self.runtime.reconcile_child(
+            child_id=declaration["child_id"],
+            action=action,
+            record_generation=runtime["record_generation"],
+            prepared_hash=declaration["prepared_operation_hash"],
+            hold_generation_binding=hold_binding,
+            authorized_principal=(
+                "home_assistant_admin_ingress:beta54-reconciler"
+            ),
+        )
+
     async def test_expired_v12_f2_v1_post_intent_recovers_by_readback(self):
         plan, _task, declaration = await self._historical_crash(
             "after_durable_intent_persistence"
@@ -285,24 +397,7 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
         # process was lost.  The test clock crosses plan expiry while the
         # short test lock lease expires and post-dispatch evidence remains
         # within its independent deadline.
-        self.helper.state = "on"
-        self.helper.last_changed = self.clock().isoformat()
-        self.clock.advance(seconds=31)
-        self.assertGreater(
-            self.clock().isoformat(),
-            self.service._load_for_projection(plan["plan_id"]).expires_at,
-        )
-        identity = before.execution_identity()
-        self.runtime.children.mutate_claimed(
-            declaration["child_id"],
-            owner_id=identity.owner_id,
-            claim_generation=before.claim_generation,
-            mutator=lambda value: setattr(
-                value,
-                "claim_expires_at",
-                (self.clock()).isoformat(),
-            ),
-        )
+        self._expire_post_intent(plan, declaration)
 
         restarted = self._runtime()
         self.service.f3_runtime = restarted
@@ -328,6 +423,131 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
             binding_before,
             historical_after.operational.baseline["dependency_risk"],
         )
+
+    async def test_historical_readback_rejects_request_id_mismatch(self):
+        await self._assert_binding_tamper_refused(
+            lambda record: record.dispatch_intent.__setitem__(
+                "request_id", "tampered-request"
+            )
+        )
+
+    async def test_historical_readback_rejects_provider_operation_mismatch(self):
+        await self._assert_binding_tamper_refused(
+            lambda record: record.dispatch_intent.__setitem__(
+                "provider_operation", "tampered_operation"
+            )
+        )
+
+    async def test_historical_readback_rejects_provider_arguments_hash_mismatch(self):
+        await self._assert_binding_tamper_refused(
+            lambda record: record.dispatch_intent.__setitem__(
+                "provider_arguments_hash", stable_hash("tampered")
+            )
+        )
+
+    async def test_historical_readback_rejects_declaration_lock_hash_mismatch(self):
+        await self._assert_binding_tamper_refused(
+            lambda task, declaration: self._mutate_declaration_lock_hash(
+                task, declaration, stable_hash("tampered-lock-graph")
+            ),
+            declaration_tamper=True,
+        )
+
+    async def test_historical_readback_rejects_lock_key_mismatch(self):
+        def mutate(record):
+            record.lock_tokens[0]["key"] = "helper_dependency:tampered"
+            record.lock_tokens.sort(key=lambda item: item["key"].encode())
+            record.dispatch_intent["lock_tokens"] = copy.deepcopy(
+                record.lock_tokens
+            )
+
+        await self._assert_binding_tamper_refused(mutate)
+
+    async def test_historical_readback_rejects_lock_mode_mismatch(self):
+        def mutate(record):
+            record.lock_tokens[0]["mode"] = (
+                "exclusive"
+                if record.lock_tokens[0]["mode"] == "shared"
+                else "shared"
+            )
+            record.dispatch_intent["lock_tokens"] = copy.deepcopy(
+                record.lock_tokens
+            )
+
+        await self._assert_binding_tamper_refused(mutate)
+
+    async def test_manual_historical_reconciliation_is_readback_only(self):
+        plan, _task, declaration = await self._historical_crash(
+            "after_durable_intent_persistence"
+        )
+        self._expire_post_intent(plan, declaration)
+        restarted = self._runtime()
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        adapter = restarted.registry.adapter(declaration["capability_id"])
+        with (
+            patch.object(
+                adapter,
+                "preflight",
+                side_effect=AssertionError("preflight must be unreachable"),
+            ),
+            patch.object(
+                adapter,
+                "dispatch",
+                side_effect=AssertionError("dispatch must be unreachable"),
+            ),
+            patch.object(
+                self.helper,
+                "read_state",
+                wraps=self.helper.read_state,
+            ) as readback,
+        ):
+            result = await self._reconcile(declaration)
+        record = restarted.children.get(declaration["child_id"])
+        assert record is not None
+        self.assertEqual("read_only_reconciliation_completed", result["status"])
+        self.assertEqual("succeeded_verified", record.normalized_outcome)
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertGreaterEqual(readback.await_count, 1)
+
+    async def test_terminal_historical_reconciliation_is_readback_only(self):
+        plan, _task, declaration = await self._historical_crash(
+            "after_durable_intent_persistence"
+        )
+        self._expire_post_intent(plan, declaration)
+        restarted = self._runtime()
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        await restarted.recover_once("startup")
+        record = restarted.children.get(declaration["child_id"])
+        assert record is not None and record.terminal
+        adapter = restarted.registry.adapter(declaration["capability_id"])
+        with (
+            patch.object(
+                adapter,
+                "preflight",
+                side_effect=AssertionError("preflight must be unreachable"),
+            ),
+            patch.object(
+                adapter,
+                "dispatch",
+                side_effect=AssertionError("dispatch must be unreachable"),
+            ),
+            patch.object(
+                self.helper,
+                "read_state",
+                wraps=self.helper.read_state,
+            ) as readback,
+        ):
+            result = await self._reconcile(declaration)
+        after = restarted.children.get(declaration["child_id"])
+        assert after is not None
+        self.assertEqual("read_only_reconciliation_completed", result["status"])
+        self.assertEqual("succeeded_verified", after.normalized_outcome)
+        self.assertEqual(1, after.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertGreaterEqual(readback.await_count, 1)
 
     async def test_v12_f2_v1_pre_intent_restart_cannot_prepare_or_dispatch(self):
         plan, _task, declaration = await self._historical_crash(
