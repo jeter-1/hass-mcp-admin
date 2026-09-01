@@ -2446,8 +2446,12 @@ class UpstreamReadGateway:
                 if telemetry:
                     telemetry.audit_context[
                         "upstream_version_evidence"
-                    ] = self._safe_version_evidence(
-                        catalog.server_version
+                    ] = (
+                        "signed_release"
+                        if self._signed_release_registry is not None
+                        else self._safe_version_evidence(
+                            catalog.server_version
+                        )
                     )
                     telemetry.audit_context[
                         "upstream_identity_status"
@@ -4183,6 +4187,13 @@ class UpstreamReadGateway:
             value["catalog_name_projection_fingerprint"] = None
         for field in tool_fields:
             value[field] = []
+        reviewed_versions = value.get("reviewed_supported_versions")
+        value["reviewed_supported_version_count"] = (
+            len(reviewed_versions)
+            if isinstance(reviewed_versions, list)
+            else 0
+        )
+        value["reviewed_supported_versions"] = []
         value.update(
             {
                 "upstream_server_name": (

@@ -11,14 +11,18 @@ from __future__ import annotations
 from contextvars import ContextVar
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
+import logging
+import re
 from types import MappingProxyType
 from typing import Any, Callable, Mapping
 from weakref import WeakKeyDictionary
 
+import anyio
 from mcp import ClientSession, types
 from mcp.server.lowlevel.server import request_ctx
 from mcp.server.fastmcp.tools.base import Tool
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
+from starlette.responses import JSONResponse
 
 
 PINNED_MCP_SDK_VERSION = "1.28.1"
@@ -27,17 +31,132 @@ _COMPATIBILITY_ERROR_MESSAGE = (
     "The pinned MCP SDK compatibility contract is unavailable; startup is blocked."
 )
 MAX_CATALOG_GENERATION_SESSIONS = 1_024
+MAX_STATEFUL_MCP_SESSIONS = 1_024
 CatalogGenerationSnapshot = Callable[[], tuple[int | None, tuple[str, ...]]]
 _listed_catalog_generation: ContextVar[int | None] = ContextVar(
     "listed_catalog_generation",
     default=None,
 )
+_SESSION_ID = re.compile(r"(?<![0-9A-Fa-f])[0-9A-Fa-f]{32}(?![0-9A-Fa-f])")
+_SDK_SESSION_LOGGERS = (
+    "mcp.server.streamable_http_manager",
+    "mcp.server.streamable_http",
+)
+_LOGGER = logging.getLogger(__name__)
+
+
+class _SessionIdRedactionFilter(logging.Filter):
+    """Remove opaque MCP session IDs from pinned-SDK log records."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = _SESSION_ID.sub(
+            "[redacted-session]",
+            record.getMessage(),
+        )
+        record.args = ()
+        return True
+
+
+_SESSION_LOG_FILTER = _SessionIdRedactionFilter()
 
 
 def current_listed_catalog_generation() -> int | None:
     """Return the inbound session's list-bound generation for this call."""
 
     return _listed_catalog_generation.get()
+
+
+def install_bounded_stateful_session_manager(server: Any) -> None:
+    """Bound pinned-SDK sessions before allocation and redact their logs."""
+
+    _require_pinned_sdk_version()
+    manager = getattr(server, "session_manager", None)
+    instances = getattr(manager, "_server_instances", None)
+    original = getattr(manager, "handle_request", None)
+    if not isinstance(instances, dict) or not callable(original):
+        raise McpSdkCompatibilityError()
+    if getattr(manager, "_engineering_session_bound_installed", False):
+        return
+
+    for name in _SDK_SESSION_LOGGERS:
+        logger = logging.getLogger(name)
+        if _SESSION_LOG_FILTER not in logger.filters:
+            logger.addFilter(_SESSION_LOG_FILTER)
+
+    admission_lock = anyio.Lock()
+
+    async def bounded_handle_request(
+        scope: Any,
+        receive: Any,
+        send: Any,
+    ) -> None:
+        headers = dict(scope.get("headers", ()))
+        if b"mcp-session-id" not in headers:
+            async with admission_lock:
+                current = getattr(manager, "_server_instances", None)
+                if not isinstance(current, dict):
+                    raise McpSdkCompatibilityError()
+                if len(current) >= MAX_STATEFUL_MCP_SESSIONS:
+                    _LOGGER.warning(
+                        "Stateful MCP session capacity exhausted."
+                    )
+                    response = JSONResponse(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": "server-error",
+                            "error": {
+                                "code": -32000,
+                                "message": "Stateful session capacity exhausted",
+                            },
+                        },
+                        status_code=503,
+                        headers={"Retry-After": "30"},
+                    )
+                    await response(scope, receive, send)
+                    return
+                await original(scope, receive, send)
+                return
+        raw_session_id = headers.get(b"mcp-session-id")
+        current = getattr(manager, "_server_instances", None)
+        session_id = (
+            raw_session_id.decode("ascii", errors="ignore")
+            if isinstance(raw_session_id, bytes)
+            else None
+        )
+        transport = (
+            current.get(session_id)
+            if isinstance(current, dict) and session_id
+            else None
+        )
+        await original(scope, receive, send)
+        if (
+            scope.get("method") == "DELETE"
+            and transport is not None
+            and getattr(transport, "is_terminated", False)
+        ):
+            current = getattr(manager, "_server_instances", None)
+            owners = getattr(manager, "_session_owners", None)
+            if isinstance(current, dict) and current.get(session_id) is transport:
+                current.pop(session_id, None)
+            if isinstance(owners, dict):
+                owners.pop(session_id, None)
+
+    def capacity_snapshot() -> dict[str, int | str | None]:
+        current = getattr(manager, "_server_instances", None)
+        count = len(current) if isinstance(current, dict) else 0
+        return {
+            "active_session_count": min(count, MAX_STATEFUL_MCP_SESSIONS),
+            "active_session_limit": MAX_STATEFUL_MCP_SESSIONS,
+            "capacity_reason": (
+                "stateful_session_capacity_exhausted"
+                if count >= MAX_STATEFUL_MCP_SESSIONS
+                else None
+            ),
+        }
+
+    manager.handle_request = bounded_handle_request
+    manager.engineering_session_capacity_snapshot = capacity_snapshot
+    manager._engineering_session_bound_installed = True
 
 
 class McpSdkCompatibilityError(RuntimeError):

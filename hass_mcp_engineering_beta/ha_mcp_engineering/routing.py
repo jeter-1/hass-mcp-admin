@@ -55,8 +55,11 @@ def _delegated_audit_attribution(
         "classification": "automatic_read",
         "upstream_version_evidence": (
             version
-            if isinstance(version, str)
-            and UPSTREAM_VERSION_AUDIT_PATTERN.fullmatch(version)
+            if version == "signed_release"
+            or (
+                isinstance(version, str)
+                and UPSTREAM_VERSION_AUDIT_PATTERN.fullmatch(version)
+            )
             else "unknown"
         ),
         "upstream_identity_status": (

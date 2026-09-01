@@ -3,6 +3,7 @@
 from mcp.server.fastmcp import FastMCP
 
 from .configuration import Settings
+from .mcp_sdk_compatibility import install_bounded_stateful_session_manager
 
 INSTRUCTIONS = """Operating procedure for this Home Assistant admin server:
 1. Debug with evidence, not hypothesis.
@@ -41,4 +42,5 @@ def create_mcp_server(settings: Settings) -> FastMCP:
         server.session_manager.session_idle_timeout = (
             READMISSION_SESSION_IDLE_TIMEOUT_SECONDS
         )
+        install_bounded_stateful_session_manager(server)
     return server

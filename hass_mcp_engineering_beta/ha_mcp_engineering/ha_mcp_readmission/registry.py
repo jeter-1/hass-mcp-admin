@@ -166,7 +166,10 @@ def _parse_signed_journal(
     }
     if not isinstance(value, dict) or set(value) != fields:
         raise ReleaseRegistryOperationalError("registry_journal_invalid")
-    if value["schema_version"] != JOURNAL_SCHEMA_VERSION:
+    if (
+        type(value["schema_version"]) is not int
+        or value["schema_version"] != JOURNAL_SCHEMA_VERSION
+    ):
         raise ReleaseRegistryOperationalError(
             "registry_journal_schema_unsupported"
         )
@@ -508,7 +511,21 @@ class SignedReleaseRegistry:
                     self._last_refresh_status = "idempotent"
                     self._last_failure_reason = None
                     return True
-                sources = self._normalized_revocation_sources(journal)
+                try:
+                    sources = self._normalized_revocation_sources(journal)
+                except ReleaseRegistryOperationalError:
+                    # The candidate is already signature-, time-, and
+                    # chain-verified.  A bounded retention failure must never
+                    # leave older positive authority active, especially when
+                    # the verified tip revokes it.  Retain the monotonic
+                    # sequence barrier first, then durably mark denial when the
+                    # filesystem permits it.
+                    self._retain_verified_denial(journal)
+                    try:
+                        self._write_pending_barrier(journal)
+                    except ReleaseRegistryOperationalError:
+                        pass
+                    raise
                 try:
                     self._write_cache(journal)
                 except ReleaseRegistryOperationalError:
@@ -831,6 +848,27 @@ class SignedReleaseRegistry:
         )
         self._surface_denied = True
 
+    def _retain_verified_denial(
+        self,
+        journal: SignedRegistryJournal,
+    ) -> None:
+        """Retain a verified candidate as a bounded denial-only barrier."""
+
+        retained = {
+            item.revocation_identity: item
+            for item in self._volatile_revocations
+        }
+        for source in self._sources_in_journal(journal):
+            for item in source.revocations:
+                retained[item.revocation_identity] = item
+        self._volatile_accepted = journal.accepted
+        self._volatile_revocations = (
+            tuple(retained[key] for key in sorted(retained))
+            if len(retained) <= MAX_REVOCATIONS
+            else ()
+        )
+        self._surface_denied = True
+
     @staticmethod
     def _missing_release_key(
         server_name: str,
@@ -890,7 +928,10 @@ class SignedReleaseRegistry:
             "authority_journal",
         }:
             raise ReleaseRegistryOperationalError("registry_cache_invalid")
-        if value["schema_version"] != CACHE_SCHEMA_VERSION:
+        if (
+            type(value["schema_version"]) is not int
+            or value["schema_version"] != CACHE_SCHEMA_VERSION
+        ):
             raise ReleaseRegistryOperationalError(
                 "registry_cache_schema_unsupported"
             )
@@ -910,15 +951,20 @@ class SignedReleaseRegistry:
             candidate_journal = self._parse_pending_document(
                 self._pending_cache_path().read_bytes()
             )
-            candidate_sources = self._minimal_revocation_sources(
-                self._sources_in_journal(candidate_journal)
-            )
             self._volatile_accepted = candidate_journal.accepted
-            candidate_revocations = tuple(
-                item
-                for source in candidate_sources
-                for item in source.revocations
-            )
+            try:
+                candidate_sources = self._minimal_revocation_sources(
+                    self._sources_in_journal(candidate_journal)
+                )
+                candidate_revocations = tuple(
+                    item
+                    for source in candidate_sources
+                    for item in source.revocations
+                )
+            except ReleaseRegistryOperationalError:
+                # The signed candidate remains a sequence barrier even when
+                # its denial evidence cannot be represented within bounds.
+                candidate_revocations = ()
         except Exception:
             pass
         try:
@@ -958,7 +1004,10 @@ class SignedReleaseRegistry:
             "candidate_journal",
         }:
             raise ReleaseRegistryOperationalError("registry_cache_invalid")
-        if value["schema_version"] != 2:
+        if (
+            type(value["schema_version"]) is not int
+            or value["schema_version"] != 2
+        ):
             raise ReleaseRegistryOperationalError(
                 "registry_cache_schema_unsupported"
             )
@@ -967,23 +1016,21 @@ class SignedReleaseRegistry:
             trust_anchors=self._anchors,
         )
 
-    def _write_cache(
+    def _write_pending_barrier(
         self,
         journal: SignedRegistryJournal,
-    ) -> None:
-        encoded = canonical_json(
+    ) -> Path:
+        """Durably retain a verified candidate as restart denial evidence."""
+
+        marker_encoded = canonical_json(
             {
-                "schema_version": CACHE_SCHEMA_VERSION,
-                "authority_journal": journal.to_mapping(),
+                "schema_version": 2,
+                "candidate_journal": journal.to_mapping(),
             }
         )
-        if len(encoded) > MAX_CACHE_BYTES:
-            raise ReleaseRegistryOperationalError(
-                "registry_cache_oversized"
-            )
+        if len(marker_encoded) > MAX_CACHE_BYTES:
+            raise ReleaseRegistryOperationalError("registry_cache_oversized")
         parent = self._cache_path.parent
-        handle = None
-        temporary: Path | None = None
         backup: Path | None = None
         marker_temporary: Path | None = None
         pending = self._pending_cache_path()
@@ -1017,18 +1064,45 @@ class SignedReleaseRegistry:
             )
             marker_temporary = Path(marker_handle.name)
             with marker_handle:
-                marker_handle.write(
-                    canonical_json(
-                        {
-                            "schema_version": 2,
-                            "candidate_journal": journal.to_mapping(),
-                        }
-                    )
-                )
+                marker_handle.write(marker_encoded)
                 marker_handle.flush()
                 os.fsync(marker_handle.fileno())
             os.replace(marker_temporary, pending)
             self._fsync_directory(parent)
+        except OSError as exc:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_write_failed"
+            ) from exc
+        finally:
+            for transient in (backup, marker_temporary):
+                if transient is None:
+                    continue
+                try:
+                    transient.unlink(missing_ok=True)
+                except OSError:
+                    pass
+        return parent
+
+    def _write_cache(
+        self,
+        journal: SignedRegistryJournal,
+    ) -> None:
+        encoded = canonical_json(
+            {
+                "schema_version": CACHE_SCHEMA_VERSION,
+                "authority_journal": journal.to_mapping(),
+            }
+        )
+        if len(encoded) > MAX_CACHE_BYTES:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_oversized"
+            )
+        parent = self._write_pending_barrier(journal)
+        handle = None
+        temporary: Path | None = None
+        pending = self._pending_cache_path()
+        previous_path = self._previous_cache_path()
+        try:
             handle = tempfile.NamedTemporaryFile(
                 mode="wb",
                 prefix=f".{self._cache_path.name}.",
@@ -1047,11 +1121,9 @@ class SignedReleaseRegistry:
                 "registry_cache_write_failed"
             ) from exc
         finally:
-            for transient in (temporary, backup, marker_temporary):
-                if transient is None:
-                    continue
+            if temporary is not None:
                 try:
-                    transient.unlink(missing_ok=True)
+                    temporary.unlink(missing_ok=True)
                 except OSError:
                     pass
         # The candidate and its directory entry are durable at this point.

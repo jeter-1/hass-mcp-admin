@@ -66,8 +66,13 @@ from ha_mcp_engineering.errors import ConfigurationError  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
+from ha_mcp_engineering.request_context import (  # noqa: E402
+    begin_request,
+    end_request,
+)
 from ha_mcp_engineering.signed_registry import (  # noqa: E402
     RegistryEnvelope,
+    canonical_json,
 )
 from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
@@ -79,6 +84,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 from signed_registry_fixtures import (  # noqa: E402
     NOW,
     RegistrySigner,
+    reviewed_entry,
     revocation,
 )
 from support.automatic_readmission import (  # noqa: E402
@@ -547,6 +553,81 @@ class OperationalSignedRegistryTests(
             self.assertEqual(registry.authority().sequence, 7)
             self.assertFalse(registry.authority().surface_denied)
 
+    async def test_registry_and_cache_schema_versions_require_exact_integers(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        invalid_journals = []
+        for invalid in (True, 1.0):
+            unsigned = signer.journal_unsigned(
+                sequence=1,
+                entries=[],
+                revocations=[],
+            )
+            unsigned["schema_version"] = invalid
+            invalid_journals.append(
+                canonical_json(signer.sign_mapping(unsigned))
+            )
+
+        with tempfile.TemporaryDirectory() as directory:
+            responses = list(invalid_journals)
+
+            async def fetcher(_url, _maximum):
+                return responses.pop(0)
+
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=Path(directory) / "cache.json",
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            for _invalid in invalid_journals:
+                self.assertFalse(await registry.refresh())
+                self.assertFalse(
+                    registry.authority().positive_authority_current
+                )
+
+        valid_journal = json.loads(
+            signer.journal_raw(
+                sequence=1,
+                entries=[],
+                revocations=[],
+            )
+        )
+        for suffix, document in (
+            (
+                "cache",
+                {
+                    "schema_version": 3.0,
+                    "authority_journal": valid_journal,
+                },
+            ),
+            (
+                "pending",
+                {
+                    "schema_version": 2.0,
+                    "candidate_journal": valid_journal,
+                },
+            ),
+        ):
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as directory:
+                cache = Path(directory) / "cache.json"
+                target = (
+                    cache
+                    if suffix == "cache"
+                    else cache.with_name(cache.name + ".pending")
+                )
+                target.write_bytes(canonical_json(document))
+                restarted = SignedReleaseRegistry(
+                    enabled=True,
+                    public_key=signer.public_key_base64,
+                    cache_path=cache,
+                    now=lambda: NOW,
+                )
+                self.assertTrue(restarted.authority().surface_denied)
+                self.assertFalse(
+                    restarted.authority().positive_authority_current
+                )
+
     async def test_journal_intermediate_refusal_matrix_and_no_tip_shortcut(self):
         signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
         first = signer.raw(sequence=1, entries=[], revocations=[])
@@ -673,6 +754,87 @@ class OperationalSignedRegistryTests(
             )
             self.assertEqual(restarted.authority().sequence, 5)
             self.assertTrue(restarted.authority().revoked("ha-mcp", "8.2.0"))
+
+    async def test_revocation_source_capacity_denies_old_authority_and_restart(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        active_version = "8.2.1"
+        chain = []
+        previous = None
+        for sequence in range(1, 11):
+            revoked_version = (
+                active_version if sequence == 10 else f"8.1.{sequence}"
+            )
+            raw = signer.raw(
+                sequence=sequence,
+                previous_registry_sha256=previous,
+                generated_at=NOW + timedelta(seconds=sequence),
+                expires_at=NOW + timedelta(days=1),
+                entries=(
+                    [
+                        reviewed_entry(
+                            entry_id="ha-mcp-v8.2.1-synthetic",
+                            version=active_version,
+                        )
+                    ]
+                    if sequence == 1
+                    else []
+                ),
+                revocations=(
+                    []
+                    if sequence == 1
+                    else [
+                        revocation(
+                            entry_id=f"ha-mcp-{revoked_version}-synthetic",
+                            version=revoked_version,
+                        )
+                    ]
+                ),
+            )
+            chain.append(raw)
+            previous = RegistryEnvelope.from_bytes(raw).content_digest
+
+        responses = [
+            signer.journal_raw(envelopes=[chain[0]]),
+            signer.journal_raw(envelopes=chain),
+        ]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(await registry.refresh())
+            self.assertIsNotNone(
+                registry.authority().entry_for("ha-mcp", active_version)
+            )
+            self.assertFalse(await registry.refresh())
+            authority = registry.authority()
+            self.assertEqual(authority.sequence, 10)
+            self.assertTrue(authority.surface_denied)
+            self.assertFalse(authority.positive_authority_current)
+            self.assertTrue(authority.revoked("ha-mcp", active_version))
+            self.assertEqual(
+                registry.snapshot()["last_failure_reason"],
+                "registry_revocation_history_capacity_exhausted",
+            )
+            restarted = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                now=lambda: NOW,
+            )
+            self.assertEqual(restarted.authority().sequence, 10)
+            self.assertTrue(restarted.authority().surface_denied)
+            self.assertFalse(
+                restarted.authority().positive_authority_current
+            )
 
     async def test_failed_candidate_is_sequence_barrier_until_chained_success(self):
         signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
@@ -973,28 +1135,57 @@ class OperationalSignedRegistryTests(
             generated_at=NOW,
         )
         cases = {
-            "equal_sequence_conflict": {
-                "accepted_registry": json.loads(second),
-                "authority_chain": [json.loads(first), json.loads(second)],
-                "revocation_sources": [json.loads(conflicting)],
-            },
-            "disconnected_chain": {
-                "accepted_registry": json.loads(disconnected),
-                "authority_chain": [json.loads(first), json.loads(disconnected)],
-                "revocation_sources": [],
-            },
-            "duplicate_source": {
-                "accepted_registry": json.loads(second),
-                "authority_chain": [json.loads(first), json.loads(second)],
-                "revocation_sources": [json.loads(first), json.loads(first)],
-            },
+            "equal_sequence_conflict": signer.sign_mapping(
+                signer.journal_unsigned(
+                    envelopes=[first, second],
+                    revocation_sources=[conflicting],
+                )
+            ),
+            "disconnected_chain": signer.sign_mapping(
+                signer.journal_unsigned(
+                    envelopes=[first, disconnected],
+                )
+            ),
+            "duplicate_source": signer.sign_mapping(
+                signer.journal_unsigned(
+                    envelopes=[first, second],
+                    revocation_sources=[first, first],
+                )
+            ),
         }
-        for label, body in cases.items():
+        valid = signer.sign_mapping(
+            signer.journal_unsigned(envelopes=[first, second])
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "valid.json"
+            cache.write_bytes(
+                canonical_json(
+                    {
+                        "schema_version": 3,
+                        "authority_journal": valid,
+                    }
+                )
+            )
+            restarted = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                now=lambda: NOW,
+            )
+            self.assertTrue(
+                restarted.authority().positive_authority_current
+            )
+
+        for label, journal in cases.items():
             with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
                 cache = Path(directory) / "cache.json"
-                cache.write_text(
-                    json.dumps({"schema_version": 2, **body}),
-                    encoding="utf-8",
+                cache.write_bytes(
+                    canonical_json(
+                        {
+                            "schema_version": 3,
+                            "authority_journal": journal,
+                        }
+                    )
                 )
                 registry = SignedReleaseRegistry(
                     enabled=True,
@@ -2024,6 +2215,76 @@ class SignedGatewayReadmissionTests(
         self.assertEqual(transport.calls, 0)
         self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
 
+    async def test_revocation_source_capacity_retires_route_before_dispatch(self):
+        version = "8.2.1"
+        entry = _signed_entry_for(self.release, version=version)
+        chain = []
+        previous = None
+        for sequence in range(1, 11):
+            revoked_version = version if sequence == 10 else f"8.1.{sequence}"
+            raw = self.signer.raw(
+                sequence=sequence,
+                previous_registry_sha256=previous,
+                generated_at=self.now - timedelta(minutes=11 - sequence),
+                expires_at=self.now + timedelta(days=1),
+                entries=[entry] if sequence == 1 else [],
+                revocations=(
+                    []
+                    if sequence == 1
+                    else [
+                        revocation(
+                            entry_id=(
+                                entry["entry_id"]
+                                if sequence == 10
+                                else f"ha-mcp-{revoked_version}-synthetic"
+                            ),
+                            version=revoked_version,
+                        )
+                    ]
+                ),
+            )
+            chain.append(raw)
+            previous = RegistryEnvelope.from_bytes(raw).content_digest
+        responses = [
+            self.signer.journal_raw(envelopes=[chain[0]]),
+            self.signer.journal_raw(envelopes=chain),
+        ]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=(
+                Path(self.temporary.name) / "revocation-capacity-cache.json"
+            ),
+            fetcher=fetcher,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(self.capture["tools"], version=version)
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=registry,
+        )
+        first = await gateway.initialize(
+            FastMCP("signed-revocation-capacity")
+        )
+        self.assertEqual(first["dynamically_exposed_count"], 25)
+        old_tool = gateway._registered_tool_registry.snapshot()[
+            "ha_list_services"
+        ]
+
+        self.assertFalse(await registry.refresh())
+        self.assertTrue(registry.authority().surface_denied)
+        result = json.loads(await old_tool.run({}))
+        self.assertFalse(result["success"])
+        self.assertEqual(transport.calls, 0)
+        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
+
     async def test_corrupt_retained_cache_denies_compiled_exact_on_restart(self):
         signed_revocation = {
             "entry_id": self.release.entry_id,
@@ -2343,11 +2604,36 @@ class SignedGatewayReadmissionTests(
         self.assertNotIn(REGISTRY_URL, encoded)
         self.assertNotIn(entry["entry_id"], encoded)
         self.assertNotIn(version, encoded)
+        self.assertEqual(snapshot["reviewed_supported_versions"], [])
+        self.assertEqual(
+            snapshot["reviewed_supported_version_count"],
+            len(self.compiled.by_version),
+        )
+        for compiled_version in self.compiled.by_version:
+            self.assertNotIn(compiled_version, encoded)
         self.assertNotIn(entry["source_commit"], encoded)
         self.assertNotIn(entry["image_index_digest"], encoded)
         for digest in entry["architecture_image_digests"].values():
             self.assertNotIn(digest, encoded)
         self.assertLessEqual(len(audit), 8)
+
+        tool = gateway._registered_tool_registry.snapshot()[
+            "ha_list_services"
+        ]
+        telemetry, token = begin_request("signed-release-audit-redaction")
+        try:
+            result = json.loads(await tool.run({}))
+        finally:
+            end_request(token)
+        self.assertTrue(result["success"])
+        self.assertEqual(
+            telemetry.audit_context["upstream_version_evidence"],
+            "signed_release",
+        )
+        self.assertNotIn(
+            version,
+            json.dumps(telemetry.audit_context, sort_keys=True),
+        )
 
 
 if __name__ == "__main__":

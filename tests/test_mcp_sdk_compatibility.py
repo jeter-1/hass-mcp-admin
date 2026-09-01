@@ -578,6 +578,159 @@ class StatefulCatalogGenerationGateTests(unittest.TestCase):
                     )
                     self.assertEqual(terminated.status_code, 200)
 
+    def test_stateful_session_capacity_is_bounded_and_logs_are_redacted(self):
+        secret = "synthetic-bounded-session-secret"
+        dispatched = [0]
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "ha_mcp_engineering.mcp_sdk_compatibility."
+            "MAX_STATEFUL_MCP_SESSIONS",
+            2,
+        ):
+            settings = Settings(
+                ha_url="http://synthetic-ha.invalid",
+                ha_token="synthetic-token",
+                access_secret=secret,
+                port=8100,
+                audit_path=str(Path(directory) / "audit.jsonl"),
+                rate_limit_per_minute=10_000,
+                rate_limit_burst=1_000,
+                destructive_services=frozenset(),
+                ha_mcp_release_registry_enabled=True,
+                ha_mcp_release_registry_public_key=("A" * 44),
+            )
+            server = create_mcp_server(settings)
+
+            @server.tool(name="dynamic_read")
+            async def dynamic_read() -> str:
+                dispatched[0] += 1
+                return "ok"
+
+            install_catalog_generation_gate(
+                server,
+                lambda: (1, ("dynamic_read",)),
+            )
+            gateway = AuthenticatedMcpGateway(
+                server.streamable_http_app(),
+                settings,
+                AuditLogger(settings.audit_path, secret),
+            )
+
+            def initialize(client, request_id):
+                return client.post(
+                    f"/{secret}/mcp",
+                    json={
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2025-03-26",
+                            "capabilities": {},
+                            "clientInfo": {
+                                "name": "bounded-session-client",
+                                "version": "1.0.0",
+                            },
+                        },
+                    },
+                    headers={
+                        "accept": "application/json, text/event-stream",
+                        "content-type": "application/json",
+                    },
+                )
+
+            with self.assertLogs("mcp.server", level="INFO") as captured:
+                with SameThreadAsgiTestClient(
+                    gateway,
+                    lifespan_app=gateway.app,
+                    base_url="http://127.0.0.1:8100",
+                ) as client:
+                    first = initialize(client, 1)
+                    second = initialize(client, 2)
+                    self.assertEqual(first.status_code, 200)
+                    self.assertEqual(second.status_code, 200)
+                    first_id = first.headers["mcp-session-id"]
+                    second_id = second.headers["mcp-session-id"]
+
+                    overflow = initialize(client, 3)
+                    self.assertEqual(overflow.status_code, 503)
+                    self.assertNotIn("mcp-session-id", overflow.headers)
+                    self.assertEqual(dispatched[0], 0)
+                    snapshot = getattr(
+                        server.session_manager,
+                        "engineering_session_capacity_snapshot",
+                    )()
+                    self.assertEqual(snapshot["active_session_count"], 2)
+                    self.assertEqual(snapshot["active_session_limit"], 2)
+                    self.assertEqual(
+                        snapshot["capacity_reason"],
+                        "stateful_session_capacity_exhausted",
+                    )
+
+                    listed = client.post(
+                        f"/{secret}/mcp",
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 4,
+                            "method": "tools/list",
+                        },
+                        headers={
+                            "accept": "application/json, text/event-stream",
+                            "content-type": "application/json",
+                            "mcp-session-id": first_id,
+                        },
+                    )
+                    self.assertEqual(listed.status_code, 200)
+                    called = client.post(
+                        f"/{secret}/mcp",
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 5,
+                            "method": "tools/call",
+                            "params": {
+                                "name": "dynamic_read",
+                                "arguments": {},
+                            },
+                        },
+                        headers={
+                            "accept": "application/json, text/event-stream",
+                            "content-type": "application/json",
+                            "mcp-session-id": first_id,
+                        },
+                    )
+                    self.assertEqual(called.status_code, 200)
+                    self.assertEqual(dispatched[0], 1)
+
+                    terminated = client.request(
+                        "DELETE",
+                        f"/{secret}/mcp",
+                        headers={
+                            "accept": "application/json, text/event-stream",
+                            "mcp-session-id": first_id,
+                        },
+                    )
+                    self.assertEqual(terminated.status_code, 200)
+                    replacement = initialize(client, 6)
+                    self.assertEqual(replacement.status_code, 200)
+                    replacement_id = replacement.headers["mcp-session-id"]
+                    for session_id in (second_id, replacement_id):
+                        self.assertEqual(
+                            client.request(
+                                "DELETE",
+                                f"/{secret}/mcp",
+                                headers={
+                                    "accept": (
+                                        "application/json, text/event-stream"
+                                    ),
+                                    "mcp-session-id": session_id,
+                                },
+                            ).status_code,
+                            200,
+                        )
+
+            serialized_logs = "\n".join(captured.output)
+            for session_id in (first_id, second_id, replacement_id):
+                self.assertNotIn(session_id, serialized_logs)
+            self.assertIn("[redacted-session]", serialized_logs)
+
 
 if __name__ == "__main__":
     unittest.main()
