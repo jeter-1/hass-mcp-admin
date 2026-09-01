@@ -78,13 +78,17 @@ is available.
 
 Accepted content is cached in
 `/data/ha-mcp-release-registry-cache.json` with a temporary write, file fsync,
-atomic replacement, and directory fsync. A cache write failure prevents the
-candidate from becoming accepted. The cache contains a bounded accepted
-envelope and bounded signed revocation-source envelopes. On restart each is
-strictly parsed and signature-verified. Positive use is re-evaluated against
-the current clock. Signed revocations remain denial-only when the accepted
-positive envelope expires or a later registry omits them; exhaustion of the
-bounded revocation-source history fails closed.
+atomic replacement, and directory fsync. A durable pending marker and prior
+checkpoint make an interrupted replacement denial-only on restart. A cache
+write failure prevents the candidate's positive entries from becoming
+accepted, while any already authenticated revocations take effect immediately
+as bounded process-local denial evidence. The cache contains a bounded complete
+authority chain and bounded signed revocation-source envelopes. On restart
+every signature and the initial-sequence, previous-digest, sequence, duplicate,
+and source-membership topology are revalidated. Positive use is re-evaluated
+against the current clock. Signed revocations remain denial-only when the
+accepted positive envelope expires or a later registry omits them; malformed
+cache state denies the ha-mcp surface until a fresh valid registry is accepted.
 
 This registry uses the distinct add-on options
 `ha_mcp_release_registry_enabled` and
@@ -111,7 +115,7 @@ Immediately before `tools/call`, the same MCP exchange has already:
 4. required the selected tool exactly once;
 5. revalidated its complete contract; and
 6. acquired and atomically consumed a registered lease bound to the surface,
-   capability, adapter, generation, and configured transport session.
+   capability, adapter, generation, and observed MCP transport session.
 
 Sequential or concurrent reuse of a lease fails. Retirement invalidates unused
 leases. A call committed after final validation may finish once, but it cannot
@@ -119,16 +123,21 @@ publish or revive authority. Validation, registry, capacity, or persistence
 failure occurs before logical dispatch. There is no semantic retry, generic
 forwarding, alternate provider, direct-HA path, or fallback.
 
-The configured transport session value is an opaque process-local fingerprint
-source. It is stable across the transport's short MCP connections and changes
-when the configured transport object is replaced. Raw session values are not
-published.
+The gateway retains one initialized upstream MCP exchange for the published
+generation. Discovery, final `tools/list`, lease acquisition, commit, and
+`tools/call` use the same actual post-initialize session identifier. A bounded
+per-exchange opaque nonce is used only when the upstream provides no session
+identifier. Session rotation or loss retires the generation before another
+call; a later discovery may publish a new generation. Raw session values are
+never published.
 
 ### Catalog and evidence
 
 Gateway routing, delegated tool registration, and compatibility accounting use
-the same coordinator generation. Existing explicit reconnect or re-list client
-behavior remains required. This decision does not advertise
+the same coordinator generation. Each inbound MCP session is bound to the
+dynamic generation returned by its most recent `tools/list`; a call from a new
+or stale session is refused until it reconnects or lists the current generation.
+This decision does not advertise
 `tools.listChanged=true` and does not emit list-change notifications.
 
 The new bounded health and internal audit projections expose only surface,
@@ -147,10 +156,13 @@ valid signed entry remain unavailable even when their catalog looks identical.
 Core changes cannot retire ha-mcp authority because this runtime coordinator is
 instantiated only for `ha_mcp` by the read gateway.
 
-Operational freshness is intentionally pull-based at the existing bounded
-gateway reconciliation cadence. Clients must reconnect or re-list to observe a
-published catalog change. Production signing, publication, release staging,
-deployment, and live acceptance are separate governed steps.
+Operational freshness is pull-based at the bounded gateway reconciliation
+cadence. When a newly observed release has no cached entry, one separately
+rate-limited authenticated refresh is allowed before refusal so a just-published
+compatible entry need not wait for the ordinary refresh interval. Clients must
+reconnect or re-list to observe a published catalog change. Production signing,
+publication, release staging, deployment, and live acceptance are separate
+governed steps.
 
 ## References
 

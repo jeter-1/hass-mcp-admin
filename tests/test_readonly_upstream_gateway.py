@@ -548,6 +548,103 @@ class ReadGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
             events.index("session_exit"),
         )
 
+    async def test_retained_actual_session_rotation_stops_before_tools_call(self):
+        events = []
+        observed_session = ["actual-session-a"]
+
+        @asynccontextmanager
+        async def fake_streamable(_url, **_kwargs):
+            events.append("transport_enter")
+            yield ("read", "write", lambda: observed_session[0])
+            events.append("transport_exit")
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                events.append("session_enter")
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                events.append("session_exit")
+
+            async def initialize(self):
+                events.append("initialize")
+                return types.InitializeResult(
+                    protocolVersion="2025-03-26",
+                    capabilities=types.ServerCapabilities(),
+                    serverInfo=types.Implementation(
+                        name="ha-mcp", version="8.2.0"
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                del cursor
+                events.append("tools/list")
+                return types.ListToolsResult(
+                    tools=[
+                        types.Tool(
+                            name="ha_get_state",
+                            description="Reviewed ha_get_state operation.",
+                            inputSchema=schema(),
+                        )
+                    ]
+                )
+
+            async def call_tool(self, name, arguments, **_kwargs):
+                events.append(f"tools/call:{name}")
+                return types.CallToolResult(
+                    content=[
+                        types.TextContent(
+                            type="text",
+                            text=json.dumps(arguments),
+                        )
+                    ]
+                )
+
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.2.0-beta.55",
+            retain_session=True,
+        )
+        with (
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.streamablehttp_client",
+                fake_streamable,
+            ),
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                Session,
+            ),
+        ):
+            catalog = await transport.discover()
+            self.assertEqual(catalog.session_id, "actual-session-a")
+            await transport.execute_read(
+                "ha_get_state",
+                {"entity_id": "sun.sun"},
+                timeout_seconds=3,
+                catalog_validator=lambda value: self.assertEqual(
+                    value.session_id, "actual-session-a"
+                ),
+            )
+            self.assertEqual(events.count("tools/call:ha_get_state"), 1)
+
+            observed_session[0] = "actual-session-b"
+            with self.assertRaises(DashboardTransportError) as caught:
+                await transport.execute_read(
+                    "ha_get_state",
+                    {"entity_id": "sun.sun"},
+                    timeout_seconds=3,
+                    catalog_validator=lambda _value: None,
+                )
+            self.assertEqual(caught.exception.category, "protocol_error")
+            self.assertEqual(events.count("tools/call:ha_get_state"), 1)
+            await transport.aclose()
+        self.assertEqual(events.count("initialize"), 1)
+        self.assertEqual(events[-2:], ["session_exit", "transport_exit"])
+
     async def test_same_session_validator_rejection_prevents_tools_call(self):
         events = []
 

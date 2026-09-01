@@ -8,12 +8,15 @@ catalog or broaden the reviewed upstream contract.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from functools import lru_cache
 from importlib.metadata import PackageNotFoundError, version
 from types import MappingProxyType
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
+from weakref import WeakKeyDictionary
 
 from mcp import ClientSession, types
+from mcp.server.lowlevel.server import request_ctx
 from mcp.server.fastmcp.tools.base import Tool
 from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 
@@ -23,6 +26,18 @@ REVIEWED_UPSTREAM_PROTOCOL_VERSION = "2025-03-26"
 _COMPATIBILITY_ERROR_MESSAGE = (
     "The pinned MCP SDK compatibility contract is unavailable; startup is blocked."
 )
+MAX_CATALOG_GENERATION_SESSIONS = 1_024
+CatalogGenerationSnapshot = Callable[[], tuple[int | None, tuple[str, ...]]]
+_listed_catalog_generation: ContextVar[int | None] = ContextVar(
+    "listed_catalog_generation",
+    default=None,
+)
+
+
+def current_listed_catalog_generation() -> int | None:
+    """Return the inbound session's list-bound generation for this call."""
+
+    return _listed_catalog_generation.get()
 
 
 class McpSdkCompatibilityError(RuntimeError):
@@ -172,6 +187,107 @@ class McpSdkToolRegistry:
                 or tool.name != name
             ):
                 raise McpSdkCompatibilityError()
+
+
+class _CatalogGenerationGate:
+    """Bind dynamic reads to the generation listed by each inbound session."""
+
+    def __init__(self, snapshot: CatalogGenerationSnapshot) -> None:
+        self._snapshot = snapshot
+        self._listed: WeakKeyDictionary[Any, int] = WeakKeyDictionary()
+
+    def update(self, snapshot: CatalogGenerationSnapshot) -> None:
+        self._snapshot = snapshot
+
+    @staticmethod
+    def _session() -> Any | None:
+        try:
+            return request_ctx.get().session
+        except (LookupError, AttributeError):
+            return None
+
+    async def list_tools(self, original: Any, request: Any) -> Any:
+        before = self._snapshot()
+        result = await original(request)
+        after = self._snapshot()
+        session = self._session()
+        generation = after[0]
+        if session is not None and generation is not None and before == after:
+            try:
+                if (
+                    session not in self._listed
+                    and len(self._listed) >= MAX_CATALOG_GENERATION_SESSIONS
+                ):
+                    return result
+                self._listed[session] = generation
+            except TypeError:
+                pass
+        return result
+
+    async def call_tool(self, original: Any, request: Any) -> Any:
+        generation, dynamic_names = self._snapshot()
+        name = getattr(getattr(request, "params", None), "name", None)
+        if name in dynamic_names:
+            session = self._session()
+            listed_generation = None
+            if session is not None:
+                try:
+                    listed_generation = self._listed.get(session)
+                except TypeError:
+                    listed_generation = None
+            if generation is None or listed_generation != generation:
+                return types.ServerResult(
+                    types.CallToolResult(
+                        content=[
+                            types.TextContent(
+                                type="text",
+                                text=(
+                                    "The delegated read catalog changed; "
+                                    "reconnect or list tools again."
+                                ),
+                            )
+                        ],
+                        isError=True,
+                    )
+                )
+            token = _listed_catalog_generation.set(listed_generation)
+            try:
+                return await original(request)
+            finally:
+                _listed_catalog_generation.reset(token)
+        return await original(request)
+
+
+def install_catalog_generation_gate(
+    server: Any,
+    snapshot: CatalogGenerationSnapshot,
+) -> None:
+    """Install the pinned-SDK inbound re-list boundary exactly once."""
+
+    _require_pinned_sdk_version()
+    low_level = getattr(server, "_mcp_server", None)
+    handlers = getattr(low_level, "request_handlers", None)
+    if not isinstance(handlers, dict):
+        raise McpSdkCompatibilityError()
+    existing = getattr(low_level, "_engineering_catalog_generation_gate", None)
+    if isinstance(existing, _CatalogGenerationGate):
+        existing.update(snapshot)
+        return
+    list_handler = handlers.get(types.ListToolsRequest)
+    call_handler = handlers.get(types.CallToolRequest)
+    if not callable(list_handler) or not callable(call_handler):
+        raise McpSdkCompatibilityError()
+    gate = _CatalogGenerationGate(snapshot)
+
+    async def gated_list(request: Any) -> Any:
+        return await gate.list_tools(list_handler, request)
+
+    async def gated_call(request: Any) -> Any:
+        return await gate.call_tool(call_handler, request)
+
+    handlers[types.ListToolsRequest] = gated_list
+    handlers[types.CallToolRequest] = gated_call
+    setattr(low_level, "_engineering_catalog_generation_gate", gate)
 
 
 def registered_tools(server: Any) -> Mapping[str, Tool]:

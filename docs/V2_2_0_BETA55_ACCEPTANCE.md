@@ -15,7 +15,7 @@ and every read or write canary remain outside this source boundary.
 
 The first operational update-tolerance surface is the internal read-only
 ha-mcp provider. After a manual ha-mcp update, Engineering can observe the
-changed identity, version, negotiated protocol, configured transport session,
+changed identity, version, negotiated protocol, actual MCP transport session,
 and complete bounded catalog; retire the prior ha-mcp decision generation and
 unused leases; verify compiled or signed release authority; select an existing
 binary-owned profile and adapter; and publish only independently matching
@@ -43,6 +43,11 @@ policy-resource and policy-digest binding. It cannot provide code, tools,
 argument shapes, classifications, routes, actions, writes, forwarding, or
 fallback.
 
+Release-wide error and entity-lookup semantics and any declared provider
+argument-constraint fingerprint must match the selected compiled adapter.
+Binary response normalization and compatibility adapters are selected by that
+compiled binding, not by the newly observed release version.
+
 Live identity and catalogs are observations rather than self-authority. Each
 reviewed automatic-read contract is compared independently across input schema,
 description, annotation, output, runtime descriptor, classification, and exact
@@ -53,7 +58,9 @@ or unsupported capability remain unregistered and unreachable.
 
 Registration, routing, compatibility accounting, profile/adapter selection,
 and health evidence are published from one decision generation. Clients must
-reconnect or explicitly re-list. Beta 55 does not advertise
+reconnect or explicitly re-list; inbound sessions that have not listed the
+current dynamic generation are refused before upstream dispatch. Beta 55 does
+not advertise
 `tools.listChanged` and emits no list-change notification.
 
 ## Registry, restart, and revocation
@@ -64,14 +71,17 @@ retention bounds. Strict parsing and Ed25519 verification precede exact
 registry-ID/schema, sequence, digest, previous-digest chain, expiry, rollback,
 equal-sequence conflict, duplicate, and revocation checks.
 
-Accepted state uses temporary write, file fsync, atomic replacement, and
-directory fsync. A failed persistence step cannot activate the candidate; a
-failed replacement preserves the prior cache when present. Restart reparses
-and reverifies every cached signature. Unexpired positive authority survives a
+Accepted state uses temporary write, file fsync, atomic replacement, directory
+fsync, a durable pending marker, and a prior checkpoint. A failed persistence
+step cannot activate the candidate's positive entries. Authenticated
+revocations remain effective as bounded denial-only state even if candidate
+persistence fails. Restart reparses and reverifies every cached signature and
+the bounded authority-chain topology. Unexpired positive authority survives a
 registry outage, expired positive authority becomes unavailable, and retained
-valid revocations remain denial-only. Malformed, conflicting, oversized, or
-capacity-exhausted state fails closed. A valid revocation overrides compiled
-exact authority.
+valid revocations remain denial-only. Malformed, conflicting, interrupted,
+oversized, or capacity-exhausted cache state denies the ha-mcp surface until a
+fresh valid registry is accepted. A valid revocation overrides compiled exact
+authority.
 
 Only synthetic ephemeral private keys appear in tests. No production private
 key, registry entry, signing workflow, GitHub secret, public trust anchor, or
@@ -84,7 +94,7 @@ Immediately before each delegated `tools/call`, the same bounded MCP exchange
 rechecks initialize identity and protocol, retrieves the complete paginated
 catalog, reselects current release authority and its binary profile, validates
 the exact selected descriptor and argument restrictions, requires the current
-generation and configured transport session, and atomically consumes one
+generation and actual retained MCP session, and atomically consumes one
 registered lease.
 
 Sequential or concurrent lease reuse fails. Generation retirement invalidates

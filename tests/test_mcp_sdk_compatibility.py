@@ -8,6 +8,7 @@ import anyio
 from mcp import ClientSession
 from mcp import types
 from mcp.server.fastmcp import FastMCP
+from mcp.server.lowlevel.server import request_ctx
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,7 @@ from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
     PINNED_MCP_SDK_VERSION,
     REVIEWED_UPSTREAM_PROTOCOL_VERSION,
     ReviewedProtocolClientSession,
+    _CatalogGenerationGate,
     _require_pinned_sdk_version,
     initialize_reviewed_upstream_session,
     registered_tools,
@@ -239,6 +241,7 @@ class McpSdkCompatibilityTests(unittest.TestCase):
         self.assertIsNone(session._server_capabilities)
         self.assertEqual(events, [])
 
+
     def test_reviewed_session_preserves_normal_public_initialization_state(self):
         async def exercise(session_type):
             read_send, read_receive = anyio.create_memory_object_stream(1)
@@ -340,6 +343,59 @@ class McpSdkCompatibilityTests(unittest.TestCase):
             if "_tool_manager" in text or "._tools" in text:
                 offenders.append(path.relative_to(ROOT).as_posix())
         self.assertEqual(offenders, [])
+
+
+class CatalogGenerationGateTests(unittest.IsolatedAsyncioTestCase):
+    async def test_dynamic_call_requires_current_session_relist(self):
+        class Session:
+            pass
+
+        session = Session()
+        generation = [1]
+        dispatched = 0
+
+        def snapshot():
+            return generation[0], ("dynamic_read",)
+
+        async def listed(_request):
+            return types.ServerResult(types.ListToolsResult(tools=[]))
+
+        async def called(_request):
+            nonlocal dispatched
+            dispatched += 1
+            return types.ServerResult(
+                types.CallToolResult(
+                    content=[types.TextContent(type="text", text="ok")],
+                    isError=False,
+                )
+            )
+
+        request = SimpleNamespace(
+            params=SimpleNamespace(name="dynamic_read")
+        )
+        gate = _CatalogGenerationGate(snapshot)
+        token = request_ctx.set(SimpleNamespace(session=session))
+        try:
+            before_list = await gate.call_tool(called, request)
+            self.assertTrue(before_list.root.isError)
+            self.assertEqual(dispatched, 0)
+
+            await gate.list_tools(listed, SimpleNamespace())
+            after_list = await gate.call_tool(called, request)
+            self.assertFalse(after_list.root.isError)
+            self.assertEqual(dispatched, 1)
+
+            generation[0] = 2
+            stale = await gate.call_tool(called, request)
+            self.assertTrue(stale.root.isError)
+            self.assertEqual(dispatched, 1)
+
+            await gate.list_tools(listed, SimpleNamespace())
+            current = await gate.call_tool(called, request)
+            self.assertFalse(current.root.isError)
+            self.assertEqual(dispatched, 2)
+        finally:
+            request_ctx.reset(token)
 
 
 if __name__ == "__main__":

@@ -28,7 +28,11 @@ from ..signed_registry import (
     parse_verified_registry_envelope,
     validate_registry_envelope,
 )
-from ..signed_registry.models import MAX_ENVELOPE_BYTES, parse_utc_timestamp
+from ..signed_registry.models import (
+    MAX_ENVELOPE_BYTES,
+    MAX_REVOCATIONS,
+    parse_utc_timestamp,
+)
 from .models import MAX_SAFE_INTEGER
 
 
@@ -42,8 +46,10 @@ CACHE_PATH = Path("/data/ha-mcp-release-registry-cache.json")
 CONNECT_TIMEOUT_SECONDS = 5.0
 TOTAL_TIMEOUT_SECONDS = 15.0
 REFRESH_INTERVAL_SECONDS = 21_600.0
+MISSING_RELEASE_REFRESH_INTERVAL_SECONDS = 60.0
 MAX_CACHE_BYTES = 32 * 1024 * 1024
 MAX_REVOCATION_SOURCE_ENVELOPES = 8
+MAX_AUTHORITY_CHAIN_ENVELOPES = 64
 MAX_FAILURE_REASONS = 32
 
 
@@ -64,6 +70,7 @@ class ReleaseRegistryAuthority:
     revocations: tuple[ReleaseRevocation, ...]
     sequence: int | None
     content_digest: str | None
+    surface_denied: bool = False
 
     def entry_for(
         self,
@@ -118,8 +125,12 @@ class SignedReleaseRegistry:
         self._now = now or (lambda: datetime.now(timezone.utc))
         self._lock = asyncio.Lock()
         self._accepted: RegistryEnvelope | None = None
+        self._authority_chain: tuple[RegistryEnvelope, ...] = ()
         self._revocation_sources: tuple[RegistryEnvelope, ...] = ()
+        self._volatile_revocations: tuple[ReleaseRevocation, ...] = ()
+        self._surface_denied = False
         self._last_refresh_monotonic: float | None = None
+        self._last_missing_release_refresh_monotonic: float | None = None
         self._last_refresh_status = (
             "not_attempted" if self._enabled else "disabled"
         )
@@ -160,6 +171,32 @@ class SignedReleaseRegistry:
             return False
         return await self.refresh()
 
+    async def refresh_for_missing_release(
+        self,
+        *,
+        server_name: str,
+        version: str,
+    ) -> bool:
+        """Rate-limit one authenticated refresh for a newly observed release."""
+
+        if not self._enabled:
+            return False
+        authority = self.authority()
+        if (
+            authority.entry_for(server_name, version) is not None
+            or authority.revoked(server_name, version)
+        ):
+            return False
+        now = time.monotonic()
+        if (
+            self._last_missing_release_refresh_monotonic is not None
+            and now - self._last_missing_release_refresh_monotonic
+            < MISSING_RELEASE_REFRESH_INTERVAL_SECONDS
+        ):
+            return False
+        self._last_missing_release_refresh_monotonic = now
+        return await self.refresh()
+
     async def refresh(self) -> bool:
         if not self._enabled:
             return False
@@ -194,10 +231,18 @@ class SignedReleaseRegistry:
                     self._last_refresh_status = "idempotent"
                     self._last_failure_reason = None
                     return True
-                sources = self._next_revocation_sources(result.envelope)
-                self._write_cache(result.envelope, sources)
+                try:
+                    chain = self._next_authority_chain(result.envelope)
+                    sources = self._next_revocation_sources(result.envelope)
+                    self._write_cache(result.envelope, sources, chain)
+                except ReleaseRegistryOperationalError:
+                    self._retain_volatile_revocations(result.envelope)
+                    raise
                 self._accepted = result.envelope
+                self._authority_chain = chain
                 self._revocation_sources = sources
+                self._volatile_revocations = ()
+                self._surface_denied = False
                 self._cache_status = "valid"
                 self._last_refresh_status = "accepted"
                 self._last_failure_reason = None
@@ -224,6 +269,8 @@ class SignedReleaseRegistry:
         for source in self._revocation_sources:
             for item in source.revocations:
                 revocations[item.revocation_identity] = item
+        for item in self._volatile_revocations:
+            revocations[item.revocation_identity] = item
         if envelope is not None:
             for item in envelope.revocations:
                 revocations[item.revocation_identity] = item
@@ -235,6 +282,7 @@ class SignedReleaseRegistry:
             ),
             sequence=envelope.sequence if envelope else None,
             content_digest=envelope.content_digest if envelope else None,
+            surface_denied=self._surface_denied,
         )
 
     def snapshot(self) -> dict[str, Any]:
@@ -266,6 +314,7 @@ class SignedReleaseRegistry:
                 self._revocation_sources
             ),
             "registry_location": "fixed_repository_https",
+            "surface_denied": authority.surface_denied,
         }
 
     async def _fetch_bytes(self, url: str, maximum: int) -> bytes:
@@ -349,56 +398,90 @@ class SignedReleaseRegistry:
             )
         return result
 
-    def _load_cache(self) -> None:
-        try:
-            raw = self._cache_path.read_bytes()
-            if len(raw) > MAX_CACHE_BYTES:
-                raise ReleaseRegistryOperationalError(
-                    "registry_cache_oversized"
-                )
-            value = _strict_cache_json(raw)
-            if not isinstance(value, dict) or set(value) != {
-                "schema_version",
-                "accepted_registry",
-                "revocation_sources",
-            }:
+    def _next_authority_chain(
+        self,
+        candidate: RegistryEnvelope,
+    ) -> tuple[RegistryEnvelope, ...]:
+        chain = self._authority_chain + (candidate,)
+        if len(chain) > MAX_AUTHORITY_CHAIN_ENVELOPES:
+            raise ReleaseRegistryOperationalError(
+                "registry_authority_chain_capacity_exhausted"
+            )
+        self._validate_authority_chain(chain, accepted=candidate)
+        return chain
+
+    def _retain_volatile_revocations(
+        self,
+        envelope: RegistryEnvelope,
+    ) -> None:
+        retained = {
+            item.revocation_identity: item
+            for item in self._volatile_revocations
+        }
+        for item in envelope.revocations:
+            retained[item.revocation_identity] = item
+        if len(retained) > MAX_REVOCATIONS:
+            self._volatile_revocations = ()
+            self._surface_denied = True
+            raise ReleaseRegistryOperationalError(
+                "registry_revocation_history_capacity_exhausted"
+            )
+        self._volatile_revocations = tuple(
+            retained[key] for key in sorted(retained)
+        )
+
+    @staticmethod
+    def _validate_authority_chain(
+        chain: tuple[RegistryEnvelope, ...],
+        *,
+        accepted: RegistryEnvelope,
+    ) -> None:
+        if (
+            not chain
+            or len(chain) > MAX_AUTHORITY_CHAIN_ENVELOPES
+            or chain[-1].content_digest != accepted.content_digest
+        ):
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_invalid"
+            )
+        previous: RegistryEnvelope | None = None
+        sequences: set[int] = set()
+        digests: set[str] = set()
+        for envelope in chain:
+            if envelope.sequence in sequences or envelope.content_digest in digests:
                 raise ReleaseRegistryOperationalError(
                     "registry_cache_invalid"
                 )
-            if value["schema_version"] != 1:
-                raise ReleaseRegistryOperationalError(
-                    "registry_cache_schema_unsupported"
-                )
-            accepted = parse_verified_registry_envelope(
-                canonical_json(value["accepted_registry"]),
-                trust_anchors=self._anchors,
-            )
-            self._require_cache_envelope(accepted)
-            raw_sources = value["revocation_sources"]
-            if (
-                not isinstance(raw_sources, list)
-                or len(raw_sources) > MAX_REVOCATION_SOURCE_ENVELOPES
-            ):
-                raise ReleaseRegistryOperationalError(
-                    "registry_cache_invalid"
-                )
-            sources = tuple(
-                parse_verified_registry_envelope(
-                    canonical_json(item),
-                    trust_anchors=self._anchors,
-                )
-                for item in raw_sources
-            )
-            for source in sources:
-                self._require_cache_envelope(source)
+            sequences.add(envelope.sequence)
+            digests.add(envelope.content_digest)
+            if previous is None:
                 if (
-                    source.sequence > accepted.sequence
-                    or not source.revocations
+                    envelope.sequence != 1
+                    or envelope.previous_registry_sha256 is not None
                 ):
                     raise ReleaseRegistryOperationalError(
                         "registry_cache_invalid"
                     )
+            elif (
+                envelope.sequence <= previous.sequence
+                or envelope.previous_registry_sha256
+                != previous.content_digest
+            ):
+                raise ReleaseRegistryOperationalError(
+                    "registry_cache_invalid"
+                )
+            previous = envelope
+
+    def _load_cache(self) -> None:
+        try:
+            if self._pending_cache_path().exists():
+                self._load_interrupted_cache_transaction()
+                return
+            accepted, sources, chain = self._parse_cache_document(
+                self._cache_path.read_bytes()
+            )
             self._accepted = accepted
+            self._authority_chain = chain
             self._revocation_sources = sources
             self._cache_status = (
                 "valid"
@@ -409,9 +492,119 @@ class SignedReleaseRegistry:
             self._cache_status = "missing"
         except Exception:
             self._accepted = None
+            self._authority_chain = ()
             self._revocation_sources = ()
+            self._surface_denied = True
             self._cache_status = "invalid"
             self._record_failure("registry_cache_invalid")
+
+    def _parse_cache_document(
+        self,
+        raw: bytes,
+    ) -> tuple[
+        RegistryEnvelope,
+        tuple[RegistryEnvelope, ...],
+        tuple[RegistryEnvelope, ...],
+    ]:
+        if len(raw) > MAX_CACHE_BYTES:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_oversized"
+            )
+        value = _strict_cache_json(raw)
+        if not isinstance(value, dict) or set(value) != {
+            "schema_version",
+            "accepted_registry",
+            "authority_chain",
+            "revocation_sources",
+        }:
+            raise ReleaseRegistryOperationalError("registry_cache_invalid")
+        if value["schema_version"] != 2:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_schema_unsupported"
+            )
+        accepted = parse_verified_registry_envelope(
+            canonical_json(value["accepted_registry"]),
+            trust_anchors=self._anchors,
+        )
+        self._require_cache_envelope(accepted)
+        raw_chain = value["authority_chain"]
+        if (
+            not isinstance(raw_chain, list)
+            or not raw_chain
+            or len(raw_chain) > MAX_AUTHORITY_CHAIN_ENVELOPES
+        ):
+            raise ReleaseRegistryOperationalError("registry_cache_invalid")
+        chain = tuple(
+            parse_verified_registry_envelope(
+                canonical_json(item), trust_anchors=self._anchors
+            )
+            for item in raw_chain
+        )
+        for envelope in chain:
+            self._require_cache_envelope(envelope)
+        self._validate_authority_chain(chain, accepted=accepted)
+        raw_sources = value["revocation_sources"]
+        if (
+            not isinstance(raw_sources, list)
+            or len(raw_sources) > MAX_REVOCATION_SOURCE_ENVELOPES
+        ):
+            raise ReleaseRegistryOperationalError("registry_cache_invalid")
+        sources = tuple(
+            parse_verified_registry_envelope(
+                canonical_json(item), trust_anchors=self._anchors
+            )
+            for item in raw_sources
+        )
+        chain_digests = {item.content_digest for item in chain}
+        source_digests: set[str] = set()
+        for source in sources:
+            self._require_cache_envelope(source)
+            if (
+                source.content_digest not in chain_digests
+                or source.content_digest in source_digests
+                or source.sequence > accepted.sequence
+                or not source.revocations
+            ):
+                raise ReleaseRegistryOperationalError(
+                    "registry_cache_invalid"
+                )
+            source_digests.add(source.content_digest)
+        return accepted, sources, chain
+
+    def _load_interrupted_cache_transaction(self) -> None:
+        self._surface_denied = True
+        candidate_revocations: tuple[ReleaseRevocation, ...] = ()
+        try:
+            candidate, candidate_sources, _candidate_chain = (
+                self._parse_cache_document(self._cache_path.read_bytes())
+            )
+            candidate_revocations = tuple(
+                item
+                for source in candidate_sources + (candidate,)
+                for item in source.revocations
+            )
+        except Exception:
+            pass
+        try:
+            accepted, sources, chain = self._parse_cache_document(
+                self._previous_cache_path().read_bytes()
+            )
+            self._accepted = accepted
+            self._authority_chain = chain
+            self._revocation_sources = sources
+        except Exception:
+            self._accepted = None
+            self._authority_chain = ()
+            self._revocation_sources = ()
+        retained = {
+            item.revocation_identity: item
+            for item in candidate_revocations
+        }
+        self._volatile_revocations = tuple(
+            retained[key] for key in sorted(retained)
+        )
+        self._cache_status = "invalid"
+        self._record_failure("registry_cache_incomplete_transaction")
 
     def _require_cache_envelope(self, envelope: RegistryEnvelope) -> None:
         if (
@@ -426,11 +619,15 @@ class SignedReleaseRegistry:
         self,
         accepted: RegistryEnvelope,
         sources: tuple[RegistryEnvelope, ...],
+        chain: tuple[RegistryEnvelope, ...],
     ) -> None:
         encoded = canonical_json(
             {
-                "schema_version": 1,
+                "schema_version": 2,
                 "accepted_registry": accepted.to_mapping(),
+                "authority_chain": [
+                    envelope.to_mapping() for envelope in chain
+                ],
                 "revocation_sources": [
                     source.to_mapping() for source in sources
                 ],
@@ -443,8 +640,8 @@ class SignedReleaseRegistry:
         parent = self._cache_path.parent
         handle = None
         temporary: Path | None = None
-        backup: Path | None = None
-        replaced = False
+        pending = self._pending_cache_path()
+        previous_path = self._previous_cache_path()
         try:
             parent.mkdir(parents=True, exist_ok=True)
             if self._cache_path.exists():
@@ -464,7 +661,28 @@ class SignedReleaseRegistry:
                     backup_handle.write(previous)
                     backup_handle.flush()
                     os.fsync(backup_handle.fileno())
+                os.replace(backup, previous_path)
                 self._fsync_directory(parent)
+            marker_handle = tempfile.NamedTemporaryFile(
+                mode="wb",
+                prefix=f".{self._cache_path.name}.pending.",
+                dir=parent,
+                delete=False,
+            )
+            marker_temporary = Path(marker_handle.name)
+            with marker_handle:
+                marker_handle.write(
+                    canonical_json(
+                        {
+                            "schema_version": 1,
+                            "candidate_digest": accepted.content_digest,
+                        }
+                    )
+                )
+                marker_handle.flush()
+                os.fsync(marker_handle.fileno())
+            os.replace(marker_temporary, pending)
+            self._fsync_directory(parent)
             handle = tempfile.NamedTemporaryFile(
                 mode="wb",
                 prefix=f".{self._cache_path.name}.",
@@ -477,19 +695,8 @@ class SignedReleaseRegistry:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self._cache_path)
-            replaced = True
             self._fsync_directory(parent)
         except OSError as exc:
-            if replaced:
-                try:
-                    if backup is not None:
-                        os.replace(backup, self._cache_path)
-                        backup = None
-                    else:
-                        self._cache_path.unlink(missing_ok=True)
-                    self._fsync_directory(parent)
-                except OSError:
-                    pass
             raise ReleaseRegistryOperationalError(
                 "registry_cache_write_failed"
             ) from exc
@@ -499,11 +706,22 @@ class SignedReleaseRegistry:
                     temporary.unlink(missing_ok=True)
                 except OSError:
                     pass
-            if backup is not None:
-                try:
-                    backup.unlink(missing_ok=True)
-                except OSError:
-                    pass
+        # The candidate and its directory entry are durable at this point.
+        # Cleanup is deliberately best effort: a retained pending marker makes
+        # restart deny positive authority rather than guessing that a failed
+        # transaction committed.
+        try:
+            pending.unlink(missing_ok=True)
+            previous_path.unlink(missing_ok=True)
+            self._fsync_directory(parent)
+        except OSError:
+            pass
+
+    def _pending_cache_path(self) -> Path:
+        return self._cache_path.with_name(self._cache_path.name + ".pending")
+
+    def _previous_cache_path(self) -> Path:
+        return self._cache_path.with_name(self._cache_path.name + ".previous")
 
     @staticmethod
     def _fsync_directory(parent: Path) -> None:

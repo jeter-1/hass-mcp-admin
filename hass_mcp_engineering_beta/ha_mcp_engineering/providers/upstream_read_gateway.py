@@ -34,7 +34,11 @@ from ..errors import (
     HomeAssistantTimeoutError,
     HomeAssistantUnavailableError,
 )
-from ..mcp_sdk_compatibility import McpSdkToolRegistry
+from ..mcp_sdk_compatibility import (
+    McpSdkToolRegistry,
+    current_listed_catalog_generation,
+    install_catalog_generation_gate,
+)
 from ..models import FailureResponse, SuccessResponse
 from ..ha_mcp_readmission import (
     CapabilityAdmissionCoordinator,
@@ -339,6 +343,30 @@ class ReviewedUpstreamReadTool(Tool):
         convert_result: bool = False,
     ) -> Any:
         del context
+        listed_generation = current_listed_catalog_generation()
+        if (
+            listed_generation is not None
+            and listed_generation != self._admission_generation
+        ):
+            return FailureResponse(
+                operation=self.name,
+                error="UpstreamReadGatewayError",
+                error_code="capability_unavailable",
+                message=(
+                    "The delegated read catalog changed; reconnect or list "
+                    "tools again."
+                ),
+                details={"failure_category": "prohibited_delegation"},
+                retryable=True,
+                metadata={
+                    "provider": PROVIDER_ID,
+                    "upstream_dispatch_occurred": False,
+                    "fallback": "none",
+                    "fallback_occurred": False,
+                },
+                timing=timing_since(time.perf_counter()),
+                request_id=current_request_id(),
+            ).to_json(8_000)
         result = await self._gateway.execute(
             exposed_name=self.name,
             arguments=arguments,
@@ -432,6 +460,7 @@ class _AdmittedRoute:
     runtime_contract_field_fingerprints: tuple[tuple[str, str], ...]
     runtime_contract_fingerprint_model: str
     server_version: str
+    adapter_version: str
     protocol_version: str
     profile_id: str | None = None
     adapter_id: str | None = None
@@ -726,6 +755,9 @@ class UpstreamReadGateway:
                 endpoint.url,
                 timeout_seconds=settings.ha_timeout_seconds,
                 client_version=_server_version(),
+                retain_session=(
+                    settings.ha_mcp_release_registry_enabled
+                ),
             )
             if endpoint
             else None
@@ -804,6 +836,11 @@ class UpstreamReadGateway:
         """Discover once and transactionally replace this provider's dynamic tools."""
 
         registry = McpSdkToolRegistry(server)
+        if self._readmission_selector is not None:
+            install_catalog_generation_gate(
+                server,
+                self._client_catalog_generation_snapshot,
+            )
         self._registered_server = server
         self._registered_tool_registry = registry
         with self._lock:
@@ -829,21 +866,44 @@ class UpstreamReadGateway:
             self._remove_registered_tools()
             replace_dynamic_upstream_capabilities((), self.health_snapshot())
             return self.health_snapshot()
+
         catalog: McpReadCatalog | None = None
         identity_validated = False
         try:
             if self._signed_release_registry is not None:
                 await self._signed_release_registry.refresh_if_due()
             catalog = await self._transport.discover()
-            (
-                selected_policy,
-                selected_release,
-                readmission_selection,
-            ) = self._validate_identity(
-                catalog.server_name,
-                catalog.server_version,
-                catalog.protocol_version,
-            )
+            try:
+                (
+                    selected_policy,
+                    selected_release,
+                    readmission_selection,
+                ) = self._validate_identity(
+                    catalog.server_name,
+                    catalog.server_version,
+                    catalog.protocol_version,
+                )
+            except DashboardTransportError as initial_identity_error:
+                refreshed = bool(
+                    self._signed_release_registry is not None
+                    and initial_identity_error.category
+                    == "upstream_version_mismatch"
+                    and await self._signed_release_registry.refresh_for_missing_release(
+                        server_name=catalog.server_name,
+                        version=catalog.server_version,
+                    )
+                )
+                if not refreshed:
+                    raise
+                (
+                    selected_policy,
+                    selected_release,
+                    readmission_selection,
+                ) = self._validate_identity(
+                    catalog.server_name,
+                    catalog.server_version,
+                    catalog.protocol_version,
+                )
             identity_validated = True
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
@@ -1013,6 +1073,11 @@ class UpstreamReadGateway:
                         else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                     ),
                     server_version=catalog.server_version,
+                    adapter_version=(
+                        readmission_selection.binary_release.version
+                        if readmission_selection is not None
+                        else catalog.server_version
+                    ),
                     protocol_version=catalog.protocol_version,
                     profile_id=(
                         readmission_selection.profile.profile_id
@@ -1183,6 +1248,18 @@ class UpstreamReadGateway:
                 identity_validated=identity_validated,
                 discovery_epoch=discovery_epoch,
             )
+
+    def _client_catalog_generation_snapshot(
+        self,
+    ) -> tuple[int | None, tuple[str, ...]]:
+        with self._lock:
+            generations = {
+                route.generation for route in self._exposed.values()
+            }
+            generation = (
+                next(iter(generations)) if len(generations) == 1 else None
+            )
+            return generation, tuple(sorted(self._exposed))
 
     def _publish_discovery_generation(
         self,
@@ -1552,6 +1629,47 @@ class UpstreamReadGateway:
                     "stale_reprobe_retry_armed": False,
                 }
             )
+            if (
+                readmission_selection is not None
+                and readmission_selection.signed_entry is not None
+            ):
+                # The signed registry is authority input, not a raw health
+                # surface. Preserve bounded status and fingerprints without
+                # echoing registry identities, versions, commits, or images.
+                self._state.update(
+                    {
+                        "upstream_server_name": "accepted_provider",
+                        "upstream_server_version": (
+                            "signed_compatible_release"
+                        ),
+                        "observed_upstream_server_name": "accepted",
+                        "observed_upstream_server_version": "accepted",
+                        "observed_protocol_version": "accepted",
+                        "reviewed_upstream_version": "compiled_profile",
+                        "selected_compatibility_entry_id": (
+                            schema_fingerprint(
+                                {
+                                    "compatibility_entry_id": (
+                                        readmission_selection
+                                        .compatibility_entry_id
+                                    )
+                                }
+                            )
+                        ),
+                        "reviewed_source_commit": None,
+                        "reviewed_image_index_digest": None,
+                        "reviewed_architecture_image_digests": {},
+                        "reviewed_addon_artifact_digests": {},
+                        "reviewed_image_revision": None,
+                        "reviewed_allowed_protocol_versions": [
+                            "accepted"
+                        ],
+                        "protocol_version": "accepted",
+                        "last_compatible_version": (
+                            "signed_compatible_release"
+                        ),
+                    }
+                )
             self._latest_live_contract_epoch = 0
             self._latest_live_contract_token = None
             self._stale_reprobe_retry_armed = False
@@ -2676,7 +2794,7 @@ class UpstreamReadGateway:
                 )
             payload = _normalize_upstream_payload(
                 exchange.call_result,
-                server_version=mapping.server_version,
+                server_version=mapping.adapter_version,
                 protocol_version=mapping.protocol_version,
                 upstream_tool=policy_entry.upstream_name,
             )
@@ -2687,7 +2805,7 @@ class UpstreamReadGateway:
                         await adapt_ha_get_device_composite_result(
                             payload,
                             arguments=arguments,
-                            upstream_version=mapping.server_version,
+                            upstream_version=mapping.adapter_version,
                             rest_client=self._ha_rest_client,
                             websocket_client=self._ha_websocket_client,
                         )
@@ -2843,6 +2961,19 @@ class UpstreamReadGateway:
                     exposed_name=exposed_name,
                     mapping=mapping,
                     failure=live_contract_failure,
+                )
+            elif (
+                category == "protocol_error"
+                and mapping is not None
+                and mapping.profile_id is not None
+            ):
+                self._retire_live_contract_route(
+                    exposed_name=exposed_name,
+                    mapping=mapping,
+                    failure={
+                        "disposition": "surface_retired",
+                        "reason": "upstream_session_drift",
+                    },
                 )
             code, retryable = _public_failure(category)
             if telemetry:

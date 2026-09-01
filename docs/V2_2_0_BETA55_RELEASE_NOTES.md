@@ -17,6 +17,10 @@ compiled or signed release authority, selects only an existing binary-owned
 profile and adapter, and republishes independently matching reviewed reads from
 one atomic generation.
 
+The selected compiled adapter now remains the execution binding for response
+normalization and provider semantics even when the observed compatible release
+has a newer version.
+
 A changed or missing read stays held while compatible reviewed siblings return.
 Unknown tools and every held, action, mixed, write, prohibited, or unsupported
 capability remain unreachable. Clients must reconnect or explicitly re-list;
@@ -35,9 +39,12 @@ Live schemas remain observation and never authorize themselves.
 
 The fixed HTTPS registry refuses redirects and enforces strict parsing,
 signature, identity, schema, sequence/digest chain, expiry, rollback, replay,
-revocation, and capacity checks. Its accepted cache is durably replaced using
-file and directory fsync. Restart reverifies signatures; expired positive
-authority disappears while valid retained revocations remain denial-only.
+revocation, and capacity checks. Its accepted cache uses a bounded verified
+authority chain, a durable pending marker, prior checkpoint, file fsync, and
+directory fsync. Restart reverifies signatures and chain topology; interrupted
+or malformed state denies positive authority. Expired positive authority
+disappears while valid retained revocations remain denial-only, including
+authenticated revocations whose positive cache transaction could not commit.
 
 No production key, registry entry, signing workflow, secret, trust-anchor
 activation, or registry publication is included. Tests use synthetic ephemeral
@@ -46,14 +53,15 @@ keys only.
 ## Dispatch safety
 
 Each delegated call revalidates current identity, protocol, complete catalog,
-authority, profile, exact tool contract, configured transport session, and
+authority, profile, exact tool contract, actual retained MCP session, and
 generation before atomically consuming a single-use lease. Retired generations
 invalidate unused leases; duplicate sequential and concurrent commits fail.
 A committed call may finish once but cannot republish authority.
 
 No semantic retry, direct-HA route, alternate provider, generic forwarding,
 write reachability, or fallback is added. Health and audit additions are bounded
-and sanitized.
+and sanitized. Each inbound client session must list the current dynamic
+generation before a restored delegated read can dispatch.
 
 Home Assistant Core compatibility, Nabu Casa transport recovery, semantic
 readmission, writes, deployment, and production registry operation remain

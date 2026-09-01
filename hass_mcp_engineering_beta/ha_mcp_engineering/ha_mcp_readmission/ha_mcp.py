@@ -155,7 +155,30 @@ class HaMcpAuthoritySelector:
                 "identity_or_protocol_disagreement"
             )
 
-        if registry.revoked(server_name, version):
+        if registry.surface_denied:
+            authority = AuthorityBundle(
+                evaluated_at_epoch=evaluated_epoch,
+                decisions=(
+                    _authority_decision(
+                        profile=profile,
+                        source=AuthoritySource.SIGNED_REGISTRY,
+                        status=AuthorityStatus.DENY_ONLY,
+                        identity=server_name,
+                        version=version,
+                        protocol=protocol_version,
+                        capability_ids=(),
+                        reason_code="registry_cache_authority_denied",
+                        registry=registry,
+                    ),
+                ),
+            )
+            source = AuthoritySource.SIGNED_REGISTRY
+            compatibility_entry_id = (
+                signed_entry.entry_id
+                if signed_entry is not None
+                else binary_release.entry_id
+            )
+        elif registry.revoked(server_name, version):
             authority = AuthorityBundle(
                 evaluated_at_epoch=evaluated_epoch,
                 decisions=(
@@ -487,9 +510,25 @@ def _signed_matching_capabilities(
     release: ReviewedUpstreamRelease,
     profile: CapabilityProfile,
 ) -> tuple[str, ...]:
+    # These fields select binary-owned response/error semantics.  A signed
+    # release may select an existing compiled adapter, but it cannot redefine
+    # that adapter's behavior.  A disagreement is therefore release-wide and
+    # no capability may use the selected profile.
+    if (
+        entry.error_contract_fingerprint
+        != release.error_contract_fingerprint
+        or entry.entity_lookup_missing_resource_status
+        != release.entity_lookup_missing_resource_status
+    ):
+        return ()
     signed = {item.tool_name: item for item in entry.tool_contracts}
     compiled = release.tool_contracts_by_name
     policy = release.policy.by_name
+    provider_constraints: dict[str, list[Any]] = {}
+    for constraint in entry.provider_argument_constraints:
+        provider_constraints.setdefault(constraint.tool_name, []).append(
+            constraint
+        )
     matched: list[str] = []
     for capability in profile.capabilities:
         name = capability.capability_id
@@ -498,6 +537,20 @@ def _signed_matching_capabilities(
         policy_entry = policy.get(name)
         if remote is None or known is None or policy_entry is None:
             continue
+        declared_provider_constraints = provider_constraints.get(name, [])
+        provider_constraints_match = not declared_provider_constraints or (
+            len(declared_provider_constraints) == 1
+            and declared_provider_constraints[0].provider_id
+            == "upstream_read_gateway"
+            and declared_provider_constraints[0].constraints_fingerprint
+            == schema_fingerprint(
+                {
+                    "argument_restrictions": list(
+                        policy_entry.argument_restrictions
+                    )
+                }
+            )
+        )
         if (
             remote.policy_classification == "automatic_read"
             and remote.reviewed_automatic_read
@@ -514,6 +567,7 @@ def _signed_matching_capabilities(
             == known.runtime_contract_fingerprint
             and remote.argument_restrictions
             == policy_entry.argument_restrictions
+            and provider_constraints_match
         ):
             matched.append(name)
     return tuple(sorted(matched))
