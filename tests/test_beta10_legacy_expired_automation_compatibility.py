@@ -20,6 +20,7 @@ from ha_mcp_engineering.governance.models import (  # noqa: E402
     ChangePlan,
 )
 from ha_mcp_engineering.governance.policy import (  # noqa: E402
+    persisted_f2_v1_policy_snapshot_matches,
     policy_snapshot_matches,
 )
 from ha_mcp_engineering.governance.service import (  # noqa: E402
@@ -213,7 +214,10 @@ class LegacyExpiredAutomationCompatibilityTests(
                 self.assertIsNotNone(plan)
                 assert plan is not None
                 self.service._require_v2_persisted_plan_safe(plan)
-                self.assertTrue(policy_snapshot_matches(plan))
+                self.assertFalse(policy_snapshot_matches(plan))
+                self.assertTrue(
+                    persisted_f2_v1_policy_snapshot_matches(plan)
+                )
                 self.assertRegex(self.service.plan_hash(plan), r"^[0-9a-f]{64}$")
                 self.assertEqual(
                     self.service._beta6_legacy_expired_automation_failures(

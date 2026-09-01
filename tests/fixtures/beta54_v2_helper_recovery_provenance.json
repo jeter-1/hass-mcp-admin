@@ -1,0 +1,25 @@
+{
+  "compatibility_model": "beta54-shipped-v2-post-intent-readback-v1",
+  "fixture": {
+    "dependency_lock_projection_present": false,
+    "downstream_automation_resource_count": 1,
+    "model": "helper-dependency-risk-v2",
+    "path": "tests/fixtures/beta37_helper_dependency_risk_v2_binding.json",
+    "provider_write_count": 0,
+    "sha256": "6e7860178babb2fb56577738780d9be405e8070c2e80fbb8b1cab435f8a7863b"
+  },
+  "generated_at": "2026-09-01T12:20:00Z",
+  "generator": "scripts/generate_beta54_v2_helper_recovery_fixture.py",
+  "generator_command": "python3 scripts/generate_beta54_v2_helper_recovery_fixture.py --source-root <exact-beta37-worktree> --output-dir tests/fixtures --generated-at 2026-09-01T12:20:00Z",
+  "generator_sha256": "b7a41fc71fe900af8eaff6695d6020a2231edb1cf497f07f4accb03bd703f449",
+  "recovery_boundary": "The exact shipped binding is used to initialize a synthetic durable post-intent record; current recovery may observe and verify it but may never redispatch it.",
+  "schema_version": 1,
+  "source": {
+    "commit": "c2f4d9d7e72e59f1ade6e982979bddbf5ef16f21",
+    "helper_dependency_source_sha256": "4a9a4e60dd2ee90deb262e0415cf2089977fef20aba57daa1abe66f0f7eabc0f",
+    "initial_v2_producer_commit": "2433be7815db17c328635cc5f02113abc1dccd58",
+    "operational_locks_source_sha256": "6f76ea0031d09b0a4b7102c752ca11f9ca3187c610d28fc5f1050eb6a7a39e38",
+    "tag": "v2.2.0-beta.37"
+  },
+  "writer": "build_helper_dependency_risk_binding"
+}

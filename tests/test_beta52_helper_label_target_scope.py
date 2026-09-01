@@ -182,7 +182,8 @@ class Beta52LabelMembershipEvidenceTests(unittest.TestCase):
             },
         )
         self.assertFalse(binding["coverage_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertTrue(
             binding["dependency_lock_projection"]
             ["conservative_helper_dependency"]
@@ -756,7 +757,7 @@ class Beta52CapturedProductionReplayTests(
             plan = created["plan"]
             binding = plan["operational"]["baseline"]["dependency_risk"]
 
-            self.assertEqual("helper-dependency-risk-v12", binding["model"])
+            self.assertEqual("helper-dependency-risk-v13", binding["model"])
             self.assertEqual(0, binding["exact_dependency_obligation_count"])
             self.assertEqual(0, binding["opaque_obligation_count"])
             self.assertEqual([], binding["downstream_profiles"])
@@ -860,7 +861,8 @@ class Beta52CapturedProductionReplayTests(
         self.assertGreater(binding["opaque_obligation_count"], 0)
         self.assertFalse(binding["coverage_complete"])
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertTrue(
             binding["dependency_lock_projection"]
             ["conservative_helper_dependency"]

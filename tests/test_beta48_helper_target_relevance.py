@@ -295,7 +295,7 @@ class Beta48FullIndexTargetScopingTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(
-            "helper-dependency-risk-v12", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(0, binding["exact_dependency_obligation_count"])
         self.assertEqual(0, binding["opaque_obligation_count"])
@@ -375,7 +375,7 @@ class Beta48FullIndexTargetScopingTests(unittest.IsolatedAsyncioTestCase):
 
 
 class Beta48TargetPolarityTests(unittest.TestCase):
-    def test_arbitrary_selector_remains_opaque_and_nonactionable(self):
+    def test_arbitrary_selector_remains_opaque_and_owner_actionable(self):
         binding = _template_binding(
             "{{ states(caller_supplied) }}",
             {
@@ -394,10 +394,11 @@ class Beta48TargetPolarityTests(unittest.TestCase):
 
         self.assertGreater(binding["opaque_obligation_count"], 0)
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertTrue(binding["relevant_downstream_object_ids"])
         self.assertEqual("high", risk.level.value)
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
 
     def test_neutral_trigger_values_become_opaque_when_used_as_selectors(self):
         for index, selector in enumerate(
@@ -427,7 +428,8 @@ class Beta48TargetPolarityTests(unittest.TestCase):
                 )
                 self.assertGreater(binding["opaque_obligation_count"], 0)
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
 
     def test_target_relevance_change_is_fingerprint_material(self):
         unrelated = _template_binding(
@@ -448,7 +450,7 @@ class Beta48TargetPolarityTests(unittest.TestCase):
             included["evidence_fingerprint"],
         )
 
-    def test_relevant_semantically_incomplete_profile_remains_blocking(self):
+    def test_relevant_semantically_incomplete_profile_remains_disclosed(self):
         binding = _template_binding(
             "{{ states('input_boolean.beta46_target') }}",
             {"action": [{"service": "custom_domain.unknown_effect"}]},
@@ -459,7 +461,8 @@ class Beta48TargetPolarityTests(unittest.TestCase):
         self.assertTrue(binding["relevant_downstream_object_ids"])
         self.assertFalse(binding["coverage_complete"])
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertIn(
             "action_profile_semantic_incomplete",
             binding["coverage_failure_reason_codes"],
@@ -515,15 +518,15 @@ class Beta48TargetPolarityTests(unittest.TestCase):
         self.assertEqual(1, projected["exact_dependency_obligation_count"])
         self.assertFalse(projected["execution_eligible"])
 
-    def test_v3_through_v11_are_readable_but_only_v12_executes(self):
+    def test_v3_through_v12_are_readable_but_only_v13_executes(self):
         self.assertEqual(
-            "helper-dependency-risk-v12", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v12"}),
+            frozenset({"helper-dependency-risk-v13"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 12):
+        for version in range(3, 13):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)
@@ -680,7 +683,7 @@ class Beta48CoverageFailurePrecedenceTests(unittest.TestCase):
                 )
                 self.assertEqual("coverage_failure", item.lock_projection)
 
-    def test_each_failure_signal_remains_nonactionable_with_exact_target(self):
+    def test_each_consequence_failure_signal_preserves_exact_authority(self):
         operation = SimpleNamespace(
             resource_type="automation",
             current_config=lambda: {},
@@ -709,9 +712,10 @@ class Beta48CoverageFailurePrecedenceTests(unittest.TestCase):
                 )
                 self.assertFalse(binding["coverage_complete"])
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
                 self.assertGreater(binding["coverage_failure_count"], 0)
-                self.assertFalse(risk.apply_allowed)
+                self.assertTrue(risk.apply_allowed)
 
                 plan = SimpleNamespace(
                     operation=ChangeOperation.SET_INPUT_BOOLEAN_STATE,
@@ -720,9 +724,11 @@ class Beta48CoverageFailurePrecedenceTests(unittest.TestCase):
                     ),
                     risk=risk,
                 )
-                service = object.__new__(ChangeGovernanceService)
-                self.assertFalse(
-                    service._approval_is_actionable(plan)  # noqa: SLF001
+                self.assertTrue(
+                    ChangeGovernanceService
+                    ._helper_dependency_plan_is_actionable(  # noqa: SLF001
+                        plan
+                    )
                 )
 
                 with patch.object(
@@ -876,9 +882,10 @@ class Beta48CoverageFailurePrecedenceTests(unittest.TestCase):
         self.assertEqual(0, first["exact_dependency_obligation_count"])
         self.assertGreater(first["coverage_failure_count"], 0)
         self.assertFalse(first["evidence_complete"])
-        self.assertFalse(first["execution_eligible"])
+        self.assertTrue(first["execution_contract_complete"])
+        self.assertTrue(first["execution_eligible"])
         self.assertEqual("high", risk.level.value)
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
         self.assertEqual(
             "coverage_failure",
             first["obligation_evidence"][0]["target_outcome"],

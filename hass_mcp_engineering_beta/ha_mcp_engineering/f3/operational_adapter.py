@@ -23,7 +23,12 @@ from ha_mcp_engineering.f3.locks import (
     normalize_lock_requests as normalize_durable_lock_requests,
 )
 
-from ..governance.models import ApprovalState, ChangePlan, PlanStatus
+from ..governance.models import (
+    ApprovalActionKind,
+    ApprovalState,
+    ChangePlan,
+    PlanStatus,
+)
 from ..governance.helper_dependency import (
     read_runtime_helper_dependency_risk,
 )
@@ -228,6 +233,30 @@ class OperationalAdministrationAdapter:
     async def prepare(
         self, proposal: OperationalPreparationRequest
     ) -> PreparedOperationalOperation:
+        """Prepare a new operation while its approval is still unexpired."""
+
+        return await self._prepare(proposal, allow_expired=False)
+
+    async def reconstruct_for_readback(
+        self, proposal: OperationalPreparationRequest
+    ) -> PreparedOperationalOperation:
+        """Rebuild immutable authority for post-intent readback only.
+
+        The runtime admits this path only after validating a durable dispatch
+        intent.  Every immutable plan, approval, provider, target, argument,
+        and prepared-operation field is reconstructed exactly; only the
+        new-dispatch expiry gate is inapplicable because dispatch authority
+        has already been irreversibly consumed.
+        """
+
+        return await self._prepare(proposal, allow_expired=True)
+
+    async def _prepare(
+        self,
+        proposal: OperationalPreparationRequest,
+        *,
+        allow_expired: bool,
+    ) -> PreparedOperationalOperation:
         proposal.validate()
         plan = proposal.plan
         if not isinstance(plan, ChangePlan):
@@ -290,7 +319,11 @@ class OperationalAdministrationAdapter:
         if operational.provider != strategy.capability.provider:
             raise OperationalAdapterError("provider_identity_mismatch")
         elevated = plan.approval.elevated_risk_acknowledgement
-        if policy_values[0] == "elevated_admin" and not (
+        acknowledgement_required = (
+            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+            in policy.required_acknowledgements
+        )
+        if acknowledgement_required and not (
             elevated is not None
             and elevated.state is ApprovalState.APPROVED
             and elevated.bound_plan_hash == proposal.expected_plan_hash
@@ -301,7 +334,10 @@ class OperationalAdministrationAdapter:
             expires = _parse_aware(plan.expires_at)
         except (TypeError, ValueError):
             raise OperationalAdapterError("plan_expiration_invalid") from None
-        if expires <= self.now().astimezone(timezone.utc):
+        if (
+            not allow_expired
+            and expires <= self.now().astimezone(timezone.utc)
+        ):
             raise OperationalAdapterError("plan_expired")
 
         arguments = provider_arguments(
@@ -387,6 +423,15 @@ class OperationalAdministrationAdapter:
         _validate_prepared(operation)
         self._strategy(operation.operation)
         return self.lock_calculator.calculate(operation)
+
+    def lock_requests_for_readback(
+        self, operation: PreparedOperationalOperation
+    ) -> tuple[Any, ...]:
+        """Rebuild a compatible historical lock graph without dispatch use."""
+
+        _validate_prepared(operation)
+        self._strategy(operation.operation)
+        return self.lock_calculator.calculate_for_readback(operation)
 
     async def _read_authority(
         self, operation: PreparedOperationalOperation

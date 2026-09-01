@@ -1318,7 +1318,8 @@ class Beta50ProductionScopeTests(unittest.IsolatedAsyncioTestCase):
         ).assess(STANDARD_TARGET, refresh=True))["binding"]
         self.assertGreater(arbitrary["opaque_obligation_count"], 0)
         self.assertFalse(arbitrary["evidence_complete"])
-        self.assertFalse(arbitrary["execution_eligible"])
+        self.assertTrue(arbitrary["execution_contract_complete"])
+        self.assertTrue(arbitrary["execution_eligible"])
         self.assertTrue(
             arbitrary["dependency_lock_projection"]
             ["conservative_helper_dependency"]
@@ -1787,13 +1788,14 @@ class Beta50CapturedProductionReplayTests(
         self.assertIn("closed_entity_domains", arbitrary_scopes)
         self.assertGreater(binding["opaque_obligation_count"], 0)
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertTrue(
             binding["dependency_lock_projection"]
             ["conservative_helper_dependency"]
         )
 
-    async def test_rendered_state_scalar_selector_reuse_blocks_planning(self):
+    async def test_rendered_state_scalar_selector_reuse_requires_owner_decision(self):
         scalar_reuse = {
             "id": "source_scalar_reuse",
             "alias": "automation.source_scalar_reuse",
@@ -1857,8 +1859,9 @@ class Beta50CapturedProductionReplayTests(
         binding = plan["operational"]["baseline"]["dependency_risk"]
         self.assertGreater(binding["opaque_obligation_count"], 0)
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
-        self.assertFalse(plan["approval_actionable"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
+        self.assertTrue(plan["approval_actionable"])
         self.assertTrue(
             binding["dependency_lock_projection"]
             ["conservative_helper_dependency"]
@@ -2131,7 +2134,7 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
             "dependency_risk"
         ]
         self.assertEqual(
-            "helper-dependency-risk-v12", standard_binding["model"]
+            "helper-dependency-risk-v13", standard_binding["model"]
         )
         self.assertTrue(standard["approval_actionable"])
         self.assertEqual("low", standard["risk"]["level"])
@@ -2312,8 +2315,9 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(global_binding["opaque_obligation_count"], 0)
         self.assertEqual(1, len(global_binding["downstream_profiles"]))
         self.assertFalse(global_binding["evidence_complete"])
-        self.assertFalse(global_binding["execution_eligible"])
-        self.assertFalse(global_plan["approval_actionable"])
+        self.assertTrue(global_binding["execution_contract_complete"])
+        self.assertTrue(global_binding["execution_eligible"])
+        self.assertTrue(global_plan["approval_actionable"])
         self.assertIn(
             unconstrained_helper_dependency_lock_key(),
             self._lock_keys(STANDARD_TARGET, global_binding),
@@ -2362,15 +2366,15 @@ class Beta50PlanningPathTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, self.helper.dispatch_count)
 
-    def test_v3_through_v11_are_readable_but_non_authoritative(self):
+    def test_v3_through_v12_are_readable_but_non_authoritative(self):
         self.assertEqual(
-            "helper-dependency-risk-v12", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v12"}),
+            frozenset({"helper-dependency-risk-v13"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 12):
+        for version in range(3, 13):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

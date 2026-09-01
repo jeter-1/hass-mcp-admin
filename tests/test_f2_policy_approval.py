@@ -82,7 +82,13 @@ class F2PolicyModelTests(unittest.TestCase):
         )
         self.assertEqual(
             [item.value for item in PhysicalConsequence],
-            ["none", "indirect", "direct", "safety_critical"],
+            [
+                "none",
+                "indirect",
+                "direct",
+                "safety_critical",
+                "unknown",
+            ],
         )
         for enum_type in (
             ApprovalPolicyClass,

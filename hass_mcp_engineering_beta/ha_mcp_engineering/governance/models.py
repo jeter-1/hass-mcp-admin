@@ -74,6 +74,7 @@ class PhysicalConsequence(str, Enum):
     INDIRECT = "indirect"
     DIRECT = "direct"
     SAFETY_CRITICAL = "safety_critical"
+    UNKNOWN = "unknown"
 
 
 class ApprovalActionKind(str, Enum):
@@ -101,7 +102,7 @@ class ChangePolicyDecision:
     policy_decision_hash: str
 
     def __post_init__(self) -> None:
-        if self.policy_version != "f2-v1":
+        if self.policy_version not in {"f2-v1", "f2-v2"}:
             raise ValueError("unsupported policy version")
         if (
             not self.reason_codes

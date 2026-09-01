@@ -21,7 +21,7 @@ from ..dependency.semantic_registry import (
 from .normalize import stable_hash
 
 
-HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v12"
+HELPER_DEPENDENCY_RISK_MODEL = "helper-dependency-risk-v13"
 # Compatibility: persisted bindings from these models stay readable, remain
 # projectable for review, and keep readback-first recovery available.  Being
 # readable is not authority to execute.
@@ -37,6 +37,7 @@ HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS = frozenset(
         "helper-dependency-risk-v9",
         "helper-dependency-risk-v10",
         "helper-dependency-risk-v11",
+        "helper-dependency-risk-v12",
         HELPER_DEPENDENCY_RISK_MODEL,
     }
 )
@@ -68,6 +69,45 @@ _CONSEQUENCE_RANK = {
 _NON_CAUSAL_RELATIONS = frozenset(
     {"action_data", "action_target", "service_target"}
 )
+_CONSERVATIVE_ALL_AUTOMATION_LOCK_REASONS = frozenset(
+    {
+        "automation_configuration_read_failure",
+        "automation_inventory_incomplete",
+        "blueprint_inventory_incomplete",
+        "home_assistant_version_unavailable",
+        "home_assistant_version_unreadable",
+        "home_assistant_version_unsupported",
+        "obligation_coverage_failure",
+        "obligation_ledger_model_unsupported",
+        "obligation_ledger_truncated",
+        "obligation_projection_limit_exceeded",
+    }
+)
+_EXECUTION_BLOCKING_COVERAGE_REASONS = frozenset(
+    {
+        "dependency_index_not_fresh",
+        "dependency_index_payload_truncated",
+        "home_assistant_version_unavailable",
+        "home_assistant_version_unreadable",
+        "home_assistant_version_unsupported",
+    }
+)
+
+
+def _bounded_reason_codes(*values: Any) -> list[str]:
+    """Return canonical bounded reason codes for persisted authority fields."""
+
+    result = {
+        item
+        for value in values
+        for item in (value if isinstance(value, (list, set, tuple)) else ())
+        if isinstance(item, str)
+        and 1 <= len(item) <= 96
+        and item[0].isalpha()
+        and item == item.lower()
+        and item.replace("_", "a").isalnum()
+    }
+    return sorted(result, key=lambda item: item.encode("utf-8"))[:32]
 
 
 def _safe_automation_identity(
@@ -428,8 +468,17 @@ def _failed_binding(entity_id: str, completeness: str) -> dict[str, Any]:
         "entity_id": entity_id,
         "completeness": completeness,
         "evidence_complete": False,
+        "consequence_evidence_complete": False,
         "coverage_complete": False,
         "semantic_precision": "coverage_failure",
+        "execution_contract_complete": False,
+        "execution_block_reason_codes": [
+            "dependency_evidence_unavailable"
+        ],
+        "consequence_uncertainty_reason_codes": [
+            "dependency_evidence_unavailable"
+        ],
+        "owner_decision_required": True,
         "execution_eligible": False,
         "physical_consequence": "unknown",
         "relevant_downstream_object_ids": [],
@@ -908,12 +957,25 @@ def _build_obligation_binding(
             ):
                 external_template_opacity_count += 1
 
-    if len(relevant) > MAX_RELEVANT_AUTOMATIONS:
-        coverage_reasons.add("relevant_automation_limit_exceeded")
     profiles_by_source = {
         item.source_id: item
         for item in snapshot.automation_action_profiles
     }
+    conservative_all_automations = bool(
+        coverage_reasons & _CONSERVATIVE_ALL_AUTOMATION_LOCK_REASONS
+    )
+    if conservative_all_automations:
+        for source_id in profiles_by_source:
+            relevant.setdefault(source_id, set()).add(
+                "conservative_consequence_scope"
+            )
+        for failure in snapshot.automation_read_failures:
+            relevant.setdefault(failure.source_id, set()).add(
+                "unreadable_consequence_scope"
+            )
+
+    if len(relevant) > MAX_RELEVANT_AUTOMATIONS:
+        coverage_reasons.add("relevant_automation_limit_exceeded")
     downstream_profiles: list[dict[str, Any]] = []
     observed_consequence = "none"
     for source_id in sorted(relevant)[:MAX_RELEVANT_AUTOMATIONS]:
@@ -941,9 +1003,8 @@ def _build_obligation_binding(
         semantic_precision = "exact"
     else:
         semantic_precision = "coverage_failure"
-    execution_eligible = bool(coverage_complete and not opaque_count)
     evidence_complete = bool(coverage_complete and not opaque_count)
-    if not coverage_complete and observed_consequence == "none":
+    if not evidence_complete and observed_consequence == "none":
         observed_consequence = "unknown"
 
     resource_ids = sorted(
@@ -954,6 +1015,28 @@ def _build_obligation_binding(
         },
         key=lambda item: item.encode("utf-8"),
     )
+    execution_block_reasons = set(
+        coverage_reasons & _EXECUTION_BLOCKING_COVERAGE_REASONS
+    )
+    if len(relevant) > MAX_RELEVANT_AUTOMATIONS:
+        execution_block_reasons.add("helper_lock_graph_resource_limit_exceeded")
+    if len(resource_ids) != len(downstream_profiles):
+        execution_block_reasons.add("automation_lock_identity_unavailable")
+    execution_block_reason_codes = _bounded_reason_codes(
+        execution_block_reasons
+    )
+    execution_contract_complete = not execution_block_reason_codes
+    selector_uncertainty = [
+        reason
+        for diagnostic in selector_diagnostics
+        for reason in diagnostic.get("failure_reason_codes", [])
+    ]
+    consequence_uncertainty_reason_codes = _bounded_reason_codes(
+        coverage_reasons,
+        selector_uncertainty,
+        (["opaque_downstream_obligations"] if opaque_count else []),
+    )
+    execution_eligible = execution_contract_complete
     lock_projection = {
         "exact_helper_dependency": True,
         # This field describes conservative evidence, not the unconditional
@@ -965,7 +1048,12 @@ def _build_obligation_binding(
             opaque_count or not coverage_complete
         ),
         "automation_resource_ids": resource_ids,
-        "custom_template_reload": bool(external_template_opacity_count),
+        "custom_template_reload": bool(
+            external_template_opacity_count
+            or conservative_all_automations
+            or snapshot.automation_read_failures
+            or not coverage_complete
+        ),
     }
     retained_obligations = [
         item
@@ -994,6 +1082,15 @@ def _build_obligation_binding(
         "coverage_complete": coverage_complete,
         "semantic_precision": semantic_precision,
         "evidence_complete": evidence_complete,
+        "consequence_evidence_complete": evidence_complete,
+        "execution_contract_complete": execution_contract_complete,
+        "execution_block_reason_codes": execution_block_reason_codes,
+        "consequence_uncertainty_reason_codes": (
+            consequence_uncertainty_reason_codes
+        ),
+        "owner_decision_required": bool(
+            not evidence_complete or observed_consequence != "none"
+        ),
         "execution_eligible": execution_eligible,
         "physical_consequence": observed_consequence,
         "relevant_downstream_object_ids": [
@@ -1442,9 +1539,20 @@ def build_helper_dependency_risk_binding(
         "entity_id": entity_id,
         "completeness": completeness,
         "evidence_complete": evidence_complete,
+        "consequence_evidence_complete": evidence_complete,
         "coverage_complete": evidence_complete,
         "semantic_precision": (
             "exact" if evidence_complete else "coverage_failure"
+        ),
+        "execution_contract_complete": evidence_complete,
+        "execution_block_reason_codes": (
+            [] if evidence_complete else ["legacy_lock_graph_incomplete"]
+        ),
+        "consequence_uncertainty_reason_codes": (
+            [] if evidence_complete else ["legacy_evidence_incomplete"]
+        ),
+        "owner_decision_required": bool(
+            not evidence_complete or observed_consequence != "none"
         ),
         "execution_eligible": evidence_complete,
         "physical_consequence": observed_consequence,
@@ -1719,8 +1827,8 @@ def helper_dependency_risk_assessment(
             "provider": "dependency_index",
             "completeness": "failed",
         }
-    complete = binding.get("evidence_complete") is True
-    eligible = binding.get("execution_eligible") is True
+    complete = binding.get("consequence_evidence_complete") is True
+    eligible = binding.get("execution_contract_complete") is True
     precision = str(binding.get("semantic_precision", "exact"))
     consequence = binding.get("physical_consequence")
     if eligible and consequence == "none":
@@ -1741,19 +1849,23 @@ def helper_dependency_risk_assessment(
         )
     elif eligible:
         level = RiskLevel.HIGH
-        reasons = [
-            (
-                "Bounded opaque dependency evidence includes consequential or unknown downstream effects."
-                if precision == "bounded_opaque"
-                else "Bounded dependency evidence found a materially consequential downstream automation path."
-            ),
-        ]
+        reasons = (
+            [
+                "Consequence evidence is incomplete or semantically opaque; downstream household effects remain unknown."
+            ]
+            if not complete
+            else [
+                "Complete bounded dependency evidence found a materially consequential downstream automation path."
+            ]
+        )
         warnings = (
             [
-                "Semantic opacity is explicit and requires elevated acknowledgement plus conservative locks."
+                "The exact helper dispatch contract is executable only after an owner accepts the disclosed consequence uncertainty and conservative locks."
             ]
-            if precision == "bounded_opaque"
-            else []
+            if not complete
+            else [
+                "The exact helper dispatch contract requires an owner decision because the downstream consequence is material."
+            ]
         )
     else:
         level = RiskLevel.HIGH
@@ -1828,6 +1940,21 @@ def helper_dependency_risk_assessment(
             ),
             "coverage_failure_count": int(
                 binding.get("coverage_failure_count", 0) or 0
+            ),
+            "execution_contract_complete": bool(
+                binding.get("execution_contract_complete")
+            ),
+            "execution_block_reason_codes": list(
+                binding.get("execution_block_reason_codes") or []
+            ),
+            "consequence_evidence_complete": bool(
+                binding.get("consequence_evidence_complete")
+            ),
+            "consequence_uncertainty_reason_codes": list(
+                binding.get("consequence_uncertainty_reason_codes") or []
+            ),
+            "owner_decision_required": bool(
+                binding.get("owner_decision_required")
             ),
             "physical_consequence": str(consequence),
             "evidence_fingerprint": str(

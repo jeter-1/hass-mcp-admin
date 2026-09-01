@@ -231,11 +231,16 @@ class FakeDependencyRiskReader:
                 self.automation_ids, resource_ids
             )
         ]
+        consequence_complete = self.complete and not self.opaque
+        disclosed_consequence = (
+            self.consequence if consequence_complete else "unknown"
+        )
         material = {
             "model": self.model,
             "entity_id": entity_id,
             "completeness": "complete" if self.complete else "partial",
-            "evidence_complete": self.complete and not self.opaque,
+            "evidence_complete": consequence_complete,
+            "consequence_evidence_complete": consequence_complete,
             "coverage_complete": self.complete,
             "semantic_precision": (
                 "bounded_opaque"
@@ -244,8 +249,24 @@ class FakeDependencyRiskReader:
                 if self.complete
                 else "coverage_failure"
             ),
-            "execution_eligible": self.complete,
-            "physical_consequence": self.consequence,
+            "execution_contract_complete": True,
+            "execution_block_reason_codes": [],
+            "consequence_uncertainty_reason_codes": (
+                []
+                if consequence_complete
+                else [
+                    (
+                        "opaque_dependency_obligation"
+                        if self.opaque
+                        else "dependency_coverage_incomplete"
+                    )
+                ]
+            ),
+            "owner_decision_required": bool(
+                not consequence_complete or disclosed_consequence != "none"
+            ),
+            "execution_eligible": True,
+            "physical_consequence": disclosed_consequence,
             "relevant_downstream_object_ids": list(self.automation_ids),
             "downstream_automation_resource_ids": resource_ids,
             "consequential_downstream_object_ids": (
@@ -482,7 +503,7 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             plan["policy_decision"]["required_acknowledgements"],
-            ["plan_approval", "elevated_risk_acknowledgement"],
+            ["plan_approval"],
         )
 
     async def test_bounded_opacity_is_actionable_and_visible_to_approver(self):
@@ -495,7 +516,17 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         plan = created["plan"]
         self.assertTrue(plan["approval_actionable"])
-        self.assertEqual(plan["risk"]["level"], "low")
+        self.assertEqual(plan["risk"]["level"], "high")
+        self.assertEqual(
+            plan["policy_decision"]["policy_class"], "elevated_admin"
+        )
+        self.assertEqual(
+            plan["policy_decision"]["physical_consequence"], "unknown"
+        )
+        self.assertEqual(
+            plan["policy_decision"]["required_acknowledgements"],
+            ["plan_approval"],
+        )
         pending = self.service.approve(
             plan["plan_id"], plan["plan_hash"]
         )
@@ -534,21 +565,19 @@ class ExactHelperStateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         plan = created["plan"]
 
         self.assertEqual(plan["risk"]["level"], "high")
-        self.assertFalse(plan["risk"]["apply_allowed"])
+        self.assertTrue(plan["risk"]["apply_allowed"])
         self.assertEqual(
             plan["policy_decision"]["policy_class"], "elevated_admin"
         )
         self.assertEqual(
-            plan["policy_decision"]["physical_consequence"], "indirect"
+            plan["policy_decision"]["physical_consequence"], "unknown"
         )
-        self.assertFalse(plan["approval_actionable"])
-        self.assertIsNone(plan["next_required_operation"])
-        with self.assertRaises(GovernanceError) as caught:
-            self.service.approve(plan["plan_id"], plan["plan_hash"])
+        self.assertTrue(plan["approval_actionable"])
         self.assertEqual(
-            caught.exception.code,
-            ErrorCode.OPERATIONAL_VALIDATION_FAILED,
+            plan["policy_decision"]["required_acknowledgements"],
+            ["plan_approval"],
         )
+        self.assertEqual("approve_change_plan", plan["next_required_operation"])
         self.assertEqual(self.helper.dispatch_count, 0)
 
     async def test_dependency_fingerprint_change_rejects_before_dispatch(self):

@@ -476,7 +476,7 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
             signature_filters | {"map", "selectattr", "rejectattr"},
         )
 
-    def test_unknown_collection_member_attribute_filters_fail_closed(self):
+    def test_unknown_collection_member_effects_remain_owner_actionable(self):
         for filter_name, template in UNKNOWN_MEMBER_ATTRIBUTE_FILTERS.items():
             with self.subTest(filter=filter_name):
                 source_id = f"unknown_member_{filter_name}"
@@ -491,7 +491,8 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
 
                 self.assertGreater(binding["opaque_obligation_count"], 0)
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
                 self.assertIn(
                     f"automation.{source_id}",
                     binding["relevant_downstream_object_ids"],
@@ -500,7 +501,7 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
                     "safety_critical", binding["physical_consequence"]
                 )
                 self.assertEqual("high", risk.level.value)
-                self.assertFalse(risk.apply_allowed)
+                self.assertTrue(risk.apply_allowed)
                 self.assertIn(
                     source_id,
                     binding["dependency_lock_projection"][
@@ -522,12 +523,13 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
         for binding in (direct, projected):
             self.assertGreater(binding["opaque_obligation_count"], 0)
             self.assertFalse(binding["evidence_complete"])
-            self.assertFalse(binding["execution_eligible"])
+            self.assertTrue(binding["execution_contract_complete"])
+            self.assertTrue(binding["execution_eligible"])
             self.assertEqual(
                 "safety_critical", binding["physical_consequence"]
             )
 
-    def test_positional_attribute_arguments_fail_closed(self):
+    def test_positional_attribute_uncertainty_is_owner_actionable(self):
         templates = {
             "join": "{{ [caller_supplied] | join(',', 'state') }}",
             "sum": "{{ [caller_supplied] | sum('state') }}",
@@ -549,9 +551,10 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
                 )
                 self.assertGreater(binding["opaque_obligation_count"], 0)
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
 
-    def test_unknown_member_receiver_boundaries_fail_closed(self):
+    def test_unknown_member_receivers_preserve_owner_authority(self):
         long_path = ".".join("state" for _ in range(9))
         overflow = ", ".join("caller_supplied" for _ in range(129))
         templates = {
@@ -601,7 +604,8 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
                     source_id=f"member_boundary_{name}",
                 )
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
                 self.assertGreater(
                     binding["opaque_obligation_count"]
                     + binding["coverage_failure_count"],
@@ -632,7 +636,7 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
         }
         self.assertEqual(len(templates), len(fingerprints))
 
-    def test_target_capable_unknowns_remain_nonactionable(self):
+    def test_target_capable_unknown_consequences_are_owner_actionable(self):
         config = {
             "action": [
                 {
@@ -660,15 +664,16 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
                     {"binding": binding, "provenance": {"generation": 47}}
                 )
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
                 self.assertGreater(binding["opaque_obligation_count"], 0)
                 self.assertEqual(
                     "safety_critical", binding["physical_consequence"]
                 )
                 self.assertEqual("high", risk.level.value)
-                self.assertFalse(risk.apply_allowed)
+                self.assertTrue(risk.apply_allowed)
 
-    def test_malformed_template_remains_nonactionable_and_conservative(self):
+    def test_malformed_template_remains_disclosed_and_conservative(self):
         binding = _binding(
             "{{ states(",
             {
@@ -682,7 +687,8 @@ class Beta47ConservativeProvenanceControls(unittest.TestCase):
             source_id="malformed_template",
         )
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertGreater(binding["opaque_obligation_count"], 0)
         self.assertEqual("bounded_opaque", binding["semantic_precision"])
 
@@ -811,7 +817,7 @@ class Beta47ActionEffectReproductions(unittest.TestCase):
         self.assertEqual("high", risk.level.value)
         self.assertTrue(risk.apply_allowed)
 
-    def test_exact_dependency_does_not_override_unknown_effect(self):
+    def test_exact_dependency_preserves_unknown_effect_disclosure(self):
         binding = _binding(
             "{{ states('input_boolean.beta46_target') }}",
             {"action": [{"service": "custom_domain.synthetic_effect"}]},
@@ -822,19 +828,20 @@ class Beta47ActionEffectReproductions(unittest.TestCase):
         )
         self.assertGreater(binding["exact_dependency_obligation_count"], 0)
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertEqual("unknown", binding["physical_consequence"])
         self.assertEqual("high", risk.level.value)
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
 
 
 class Beta47RiskModelCompatibilityTests(unittest.TestCase):
-    def test_v12_is_current_and_v3_through_v11_are_read_only(self):
+    def test_v13_is_current_and_v3_through_v12_are_read_only(self):
         self.assertEqual(
-            "helper-dependency-risk-v12", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v12"}),
+            frozenset({"helper-dependency-risk-v13"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
         for model in (
@@ -847,6 +854,7 @@ class Beta47RiskModelCompatibilityTests(unittest.TestCase):
             "helper-dependency-risk-v9",
             "helper-dependency-risk-v10",
             "helper-dependency-risk-v11",
+            "helper-dependency-risk-v12",
         ):
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

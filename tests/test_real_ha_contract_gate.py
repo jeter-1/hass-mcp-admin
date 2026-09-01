@@ -653,10 +653,9 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         for required in (
             "standard_admin",
             "elevated_admin",
-            "prohibited",
-            "ELEVATED_RISK_ACKNOWLEDGEMENT_REQUIRED",
-            "APPROVAL_PRINCIPAL_MISMATCH",
-            "PROHIBITED_CHANGE",
+            "safety_critical_owner_authoritative",
+            "uncertain_device_target_owner_authoritative",
+            "required_acknowledgements'] == ['plan_approval",
             "same_principal_confirmed",
             "duplicate_apply_prevented",
             "task_reused",
@@ -668,7 +667,7 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         self.assertEqual(
             len(calls_under(contract, "create_configuration_plan")), 4
         )
-        self.assertEqual(len(calls_under(contract, "apply")), 7)
+        self.assertEqual(len(calls_under(contract, "apply")), 4)
         self.assertEqual(
             len(calls_under(contract, "fetch_normalized_trace_list")), 2
         )
@@ -827,8 +826,8 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
             [
                 "standard_admin",
                 "elevated_admin",
-                "prohibited",
-                "prohibited_non_entity_target",
+                "safety_critical_owner_authoritative",
+                "uncertain_device_target_owner_authoritative",
                 "persisted_beta6_prohibited_upgrade",
                 "persisted_beta6_legacy_expired_upgrade",
             ],
@@ -914,8 +913,8 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
             [
                 "standard_admin",
                 "elevated_admin",
-                "prohibited",
-                "prohibited_non_entity_target",
+                "safety_critical_owner_authoritative",
+                "uncertain_device_target_owner_authoritative",
                 "persisted_beta6_prohibited_upgrade",
                 "persisted_beta6_legacy_expired_upgrade",
             ],

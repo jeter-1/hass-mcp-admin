@@ -76,8 +76,10 @@ from .normalize import (
 )
 from .risk import classify_risk
 from .policy import (
+    POLICY_VERSION,
     configuration_operation_policy,
     evaluate_change_policy,
+    persisted_f2_v1_policy_snapshot_matches,
     policy_snapshot_matches,
 )
 from .resources import (
@@ -830,8 +832,8 @@ class ChangeGovernanceService:
                     ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
                 )
             )
-            if decision.policy_class
-            == ApprovalPolicyClass.ELEVATED_ADMIN
+            if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+            in decision.required_acknowledgements
             else None
         )
 
@@ -847,7 +849,14 @@ class ChangeGovernanceService:
             )
             raise GovernanceError(
                 ErrorCode.POLICY_SNAPSHOT_MISMATCH,
-                details={"resource_id": plan.plan_id},
+                details={
+                    "resource_id": plan.plan_id,
+                    "policy_replan_required": bool(
+                        plan.policy_decision.policy_version
+                        != POLICY_VERSION
+                        and not self._operational_intent_is_durable(plan)
+                    ),
+                },
             )
         bundle_error = self._approval_bundle_integrity_error(plan)
         if bundle_error is not None:
@@ -860,13 +869,25 @@ class ChangeGovernanceService:
     def _require_projection_policy_snapshot(self, plan: ChangePlan) -> None:
         """Validate current authority or exact terminal history for reads.
 
-        Historical compatibility deliberately exists only at projection
-        boundaries.  Approval, apply, rollback, and recovery continue through
-        ``_require_policy_snapshot`` and therefore require current policy.
+        Historical compatibility deliberately exists only at projection and
+        readback-only recovery boundaries. Approval, apply, rollback, and
+        pre-intent execution continue through current-policy authority.
         """
 
         if policy_snapshot_matches(plan):
             self._require_policy_snapshot(plan)
+            return
+        if persisted_f2_v1_policy_snapshot_matches(plan):
+            # Exact F2-v1 is immutable review evidence only. Approval, apply,
+            # rollback, and recovery load through _require_policy_snapshot and
+            # therefore cannot acquire F2-v2 execution authority.
+            bundle_error = self._approval_bundle_integrity_error(plan)
+            if bundle_error is not None:
+                METRICS.record_classified_outcome(bundle_error.value)
+                raise GovernanceError(
+                    bundle_error,
+                    details={"resource_id": plan.plan_id},
+                )
             return
         if historical_policy_projection_match(plan) is None:
             if historical_policy_projection_has_only_approval_mismatch(plan):
@@ -915,13 +936,22 @@ class ChangeGovernanceService:
                 )
                 else ErrorCode.APPROVAL_SEQUENCE_FAILURE
             )
-        if decision.policy_class == ApprovalPolicyClass.STANDARD_ADMIN:
-            if acknowledgement is not None:
-                return ErrorCode.APPROVAL_SEQUENCE_FAILURE
-        elif (
-            acknowledgement is None
-            or acknowledgement.kind
-            != ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+        if (
+            not decision.required_acknowledgements
+            or decision.required_acknowledgements[0]
+            is not ApprovalActionKind.PLAN_APPROVAL
+        ):
+            return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+        acknowledgement_required = (
+            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+            in decision.required_acknowledgements
+        )
+        if acknowledgement_required != (acknowledgement is not None):
+            return ErrorCode.APPROVAL_SEQUENCE_FAILURE
+        if (
+            acknowledgement is not None
+            and acknowledgement.kind
+            is not ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
         ):
             return ErrorCode.APPROVAL_SEQUENCE_FAILURE
 
@@ -1243,6 +1273,7 @@ class ChangeGovernanceService:
             if (
                 not policy_snapshot_validated
                 and not policy_snapshot_matches(plan)
+                and not persisted_f2_v1_policy_snapshot_matches(plan)
             ):
                 failures.append("legacy_policy_snapshot_invalid")
         if plan.risk.apply_allowed:
@@ -1358,6 +1389,7 @@ class ChangeGovernanceService:
             if (
                 not policy_snapshot_validated
                 and not policy_snapshot_matches(plan)
+                and not persisted_f2_v1_policy_snapshot_matches(plan)
             ):
                 failures.append("policy_snapshot_invalid")
         if plan.risk.apply_allowed:
@@ -1559,6 +1591,14 @@ class ChangeGovernanceService:
             "policy_decision_hash": (
                 plan.approval.policy_decision_hash
             ),
+            "required_acknowledgements": (
+                [
+                    item.value
+                    for item in plan.policy_decision.required_acknowledgements
+                ]
+                if plan.policy_decision is not None
+                else []
+            ),
             "approval_bundle_state": (
                 ChangeGovernanceService._approval_bundle_state(plan)
             ),
@@ -1647,8 +1687,13 @@ class ChangeGovernanceService:
                 "policy_decision_hash"
             ),
             "same_principal_requirement": (
-                task.approval_reference.get("policy_class")
-                == ApprovalPolicyClass.ELEVATED_ADMIN.value
+                ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT.value
+                in (
+                    task.approval_reference.get(
+                        "required_acknowledgements"
+                    )
+                    or []
+                )
             ),
             "fallback_occurred": False,
             "fallback": "none",
@@ -2261,8 +2306,8 @@ class ChangeGovernanceService:
             "approval_bundle_state": self._approval_bundle_state(plan),
             "same_principal_requirement": bool(
                 plan.policy_decision
-                and plan.policy_decision.policy_class
-                == ApprovalPolicyClass.ELEVATED_ADMIN
+                and ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                in plan.policy_decision.required_acknowledgements
             ),
             "same_principal_confirmed": (
                 plan.approval.same_principal_confirmed
@@ -2543,9 +2588,11 @@ class ChangeGovernanceService:
         value["approval_challenge_created"] = bool(plan.approval.challenge_id)
         replan_required = self._helper_dependency_replan_required(plan)
         value["helper_dependency_replan_required"] = replan_required
+        policy_replan_required = self._policy_replan_required(plan)
+        value["policy_replan_required"] = policy_replan_required
         value["next_required_operation"] = (
             "create_change_plan"
-            if replan_required
+            if replan_required or policy_replan_required
             else "approve_change_plan"
             if approval_lifecycle == "approval_not_requested"
             and self._approval_is_actionable(plan)
@@ -2683,6 +2730,8 @@ class ChangeGovernanceService:
                 }
             )
         if (
+            decision.policy_version != POLICY_VERSION
+            or
             self._is_effectively_prohibited_plan(plan)
             or not decision.required_acknowledgements
         ):
@@ -2757,6 +2806,8 @@ class ChangeGovernanceService:
             # authorize approval or dispatch.
             and binding.get("model")
             in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+            and binding.get("execution_contract_complete") is True
+            and binding.get("execution_block_reason_codes") == []
             and binding.get("execution_eligible") is True
             and plan.risk.apply_allowed
         )
@@ -2780,6 +2831,18 @@ class ChangeGovernanceService:
         return bool(
             model in HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS
             and model not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+        )
+
+    @staticmethod
+    def _policy_replan_required(plan: ChangePlan) -> bool:
+        decision = plan.policy_decision
+        return bool(
+            decision is not None
+            and decision.policy_version != POLICY_VERSION
+            and not is_terminal_plan(plan)
+            and not ChangeGovernanceService._operational_intent_is_durable(
+                plan
+            )
         )
 
     def _summary(self, plan: ChangePlan) -> dict[str, Any]:
@@ -2999,6 +3062,23 @@ class ChangeGovernanceService:
             else ChangeOperation.UPDATE_AUTOMATION
         )
         risk = classify_risk(legacy_operation, risk_diff, risk_config)
+        if (
+            resource_type == "automation"
+            and action == "update"
+            and not risk.apply_allowed
+        ):
+            # The risk classifier describes what the stored automation may do.
+            # For an existing typed automation update, that consequence does
+            # not make the exact configuration provider target or payload
+            # ambiguous. Policy v2 keeps the high/safety evidence while F3,
+            # optimistic state, readback, and verification remain mandatory.
+            risk = ChangeRiskAssessment(
+                level=risk.level,
+                reasons=list(risk.reasons),
+                apply_allowed=True,
+                evidence=[dict(item) for item in risk.evidence],
+                warnings=list(risk.warnings),
+            )
         if resource_type == "script":
             risk.reasons = [
                 reason.replace("automation", "script")
@@ -3371,6 +3451,27 @@ class ChangeGovernanceService:
                 "entity_state_readable": True,
                 "dependency_evidence_complete": (
                     dependency_binding.get("evidence_complete") is True
+                ),
+                "consequence_evidence_complete": (
+                    dependency_binding.get(
+                        "consequence_evidence_complete"
+                    )
+                    is True
+                ),
+                "execution_contract_complete": (
+                    dependency_binding.get("execution_contract_complete")
+                    is True
+                ),
+                "execution_block_reason_codes": dependency_binding.get(
+                    "execution_block_reason_codes", []
+                ),
+                "consequence_uncertainty_reason_codes": (
+                    dependency_binding.get(
+                        "consequence_uncertainty_reason_codes", []
+                    )
+                ),
+                "owner_decision_required": bool(
+                    dependency_binding.get("owner_decision_required")
                 ),
                 "dependency_coverage_complete": (
                     dependency_binding.get("coverage_complete") is True
@@ -4762,9 +4863,27 @@ class ChangeGovernanceService:
             "helper_dependency_replan_required": bool(
                 public.get("helper_dependency_replan_required")
             ),
+            "policy_replan_required": bool(
+                public.get("policy_replan_required")
+            ),
             "coverage_complete": binding.get("coverage_complete"),
             "evidence_complete": binding.get("evidence_complete"),
+            "consequence_evidence_complete": binding.get(
+                "consequence_evidence_complete"
+            ),
             "semantic_precision": binding.get("semantic_precision"),
+            "execution_contract_complete": binding.get(
+                "execution_contract_complete"
+            ),
+            "execution_block_reason_codes": binding.get(
+                "execution_block_reason_codes"
+            ),
+            "consequence_uncertainty_reason_codes": binding.get(
+                "consequence_uncertainty_reason_codes"
+            ),
+            "owner_decision_required": binding.get(
+                "owner_decision_required"
+            ),
             "execution_eligible": binding.get("execution_eligible"),
             "physical_consequence": physical_consequence,
             "exact_dependency_count": exact_count,
@@ -5679,12 +5798,26 @@ class ChangeGovernanceService:
     def approve(self, plan_id: str, expected_plan_hash: str, approval_note: str = "") -> dict[str, Any]:
         """Request external approval without granting authority to the MCP caller."""
 
-        plan = self._load(plan_id)
+        plan = self._load_for_projection(plan_id)
+        if (
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_version != POLICY_VERSION
+            and not persisted_f2_v1_policy_snapshot_matches(plan)
+        ):
+            self._require_policy_snapshot(plan)
         self._resolve_lifecycle(plan)
         if plan.status == PlanStatus.EXPIRED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_EXPIRED)
         if plan.status == PlanStatus.REJECTED or plan.approval.state == ApprovalState.REJECTED:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_REJECTED)
+        if (
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_version != POLICY_VERSION
+            and self._is_effectively_prohibited_plan(plan)
+        ):
+            # Exact historical prohibited records retain their terminal
+            # refusal outcome without being recomputed under current policy.
+            raise GovernanceError(ErrorCode.PROHIBITED_CHANGE)
         self._require_policy_snapshot(plan)
         decision = plan.policy_decision
         if decision is None:
@@ -5803,8 +5936,8 @@ class ChangeGovernanceService:
                         decision.physical_consequence.value
                     ),
                 )
-                if decision.policy_class
-                == ApprovalPolicyClass.ELEVATED_ADMIN
+                if ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                in decision.required_acknowledgements
                 else None
             ),
         )
@@ -6105,8 +6238,8 @@ class ChangeGovernanceService:
             "approval_bundle_state": self._approval_bundle_state(plan),
             "same_principal_requirement": bool(
                 plan.policy_decision
-                and plan.policy_decision.policy_class
-                == ApprovalPolicyClass.ELEVATED_ADMIN
+                and ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                in plan.policy_decision.required_acknowledgements
             ),
             "request_note": str(
                 sanitize_untrusted_data(
@@ -6196,6 +6329,21 @@ class ChangeGovernanceService:
                         ErrorCode.INTERNAL_INVARIANT_VIOLATION
                     )
                 summary["helper_dependency_review"] = {
+                    "execution_contract_complete": dependency.get(
+                        "execution_contract_complete"
+                    ),
+                    "execution_block_reason_codes": dependency.get(
+                        "execution_block_reason_codes", []
+                    ),
+                    "consequence_evidence_complete": dependency.get(
+                        "consequence_evidence_complete"
+                    ),
+                    "consequence_uncertainty_reason_codes": dependency.get(
+                        "consequence_uncertainty_reason_codes", []
+                    ),
+                    "owner_decision_required": dependency.get(
+                        "owner_decision_required"
+                    ),
                     "coverage_complete": dependency.get(
                         "coverage_complete"
                     ),
@@ -6447,8 +6595,8 @@ class ChangeGovernanceService:
                     approval.approver_principal = principal
                     approval.principal_separation_enforced = True
                     if (
-                        plan.policy_decision.policy_class
-                        == ApprovalPolicyClass.ELEVATED_ADMIN
+                        ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+                        in plan.policy_decision.required_acknowledgements
                     ):
                         if acknowledgement is None:
                             self._reject_external_decision(
@@ -6944,7 +7092,33 @@ class ChangeGovernanceService:
     async def apply(self, plan_id: str, expected_plan_hash: str = "") -> dict[str, Any]:
         plan_lock = self._plan_locks.setdefault(plan_id, asyncio.Lock())
         async with plan_lock:
-            plan = self._load(plan_id)
+            plan = self._load_for_projection(plan_id)
+            if (
+                plan.policy_decision is not None
+                and plan.policy_decision.policy_version != POLICY_VERSION
+                and not persisted_f2_v1_policy_snapshot_matches(plan)
+            ):
+                self._require_policy_snapshot(plan)
+            if (
+                plan.policy_decision is not None
+                and plan.policy_decision.policy_version != POLICY_VERSION
+                and self._is_effectively_prohibited_plan(plan)
+            ):
+                raise GovernanceError(ErrorCode.PROHIBITED_CHANGE)
+            try:
+                self._require_policy_snapshot(plan)
+            except GovernanceError as exc:
+                # Preserve the existing durable refusal evidence for a
+                # nonterminal historical plan. Projection compatibility does
+                # not grant current execution authority, and the rejection is
+                # recorded before any task creation or provider work.
+                self._record(
+                    plan,
+                    "change_apply_rejected",
+                    "rejected",
+                    error_code=exc.code.value,
+                )
+                raise
             if self.f3_runtime is not None and self.f3_runtime.should_route(plan):
                 return await self.f3_runtime.apply(plan, expected_plan_hash)
             if self.f3_runtime is not None and self.f3_runtime.is_covered_plan(plan):
@@ -11224,8 +11398,8 @@ class ChangeGovernanceService:
         ):
             return ErrorCode.EXTERNAL_APPROVAL_REQUIRED
         if (
-            plan.policy_decision.policy_class
-            == ApprovalPolicyClass.ELEVATED_ADMIN
+            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+            in plan.policy_decision.required_acknowledgements
         ):
             acknowledgement = approval.elevated_risk_acknowledgement
             if (

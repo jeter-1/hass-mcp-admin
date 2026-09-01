@@ -63,7 +63,7 @@ class _DecisionShape:
 
 
 _CURRENT_RETAINED_EFFECT_SHAPE = _DecisionShape(
-    policy_version="f2-v1",
+    policy_version="f2-v2",
     policy_class=ApprovalPolicyClass.ELEVATED_ADMIN,
     risk_delta=RiskDelta.MODERATE,
     physical_consequence=PhysicalConsequence.SAFETY_CRITICAL,

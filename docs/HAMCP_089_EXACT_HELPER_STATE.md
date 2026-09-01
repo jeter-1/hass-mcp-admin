@@ -1,7 +1,7 @@
 # HAMCP-089 exact helper-state action
 
-Status: Beta 39 corrective source increment staged; deployment and live
-acceptance are not part of this change.
+Status: Beta 54 owner-authoritative execution source staged; promotion,
+deployment, and live acceptance are not part of this change.
 
 ## Responsibility and scope
 
@@ -47,13 +47,14 @@ harmless. Direct physical actions elevate the existing governance policy
 proportionally. Generic broad targets, scene or script activation, custom
 action domains and other unknown effects are never described as harmless.
 
-Bounded semantic opacity is distinct from missing coverage. An opaque source
-may remain reviewable only when its automation identity, downstream effect
-profile, conservative lock scope, and final-preflight refresh are all bounded.
-Benign opaque downstream effects may remain low/standard while consequential
-or unknown effects remain elevated/high and visibly acknowledged. Failed,
-stale, unsupported, identity-losing, unbounded, or truncated coverage is not
-dispatch-eligible or approval-actionable.
+Bounded semantic opacity is distinct from technical execution uncertainty. An
+opaque source may remain owner-actionable only when the exact helper provider
+contract and a complete conservative lock graph are independently established.
+Incomplete, high, safety-critical, direct, or unknown downstream consequences
+remain elevated/high and visibly disclosed. Invalid helper targets or states,
+provider ambiguity or drift, stale state, approval/evidence drift, lock-graph
+failure, unsafe concurrency, missing durable intent, duplicate dispatch,
+inconclusive readback, or unverifiable completion remain non-actionable.
 
 Target relevance is projected from one of five explicit obligation terminals:
 exact dependency, proven target exclusion, proven dependency-neutral result,
@@ -77,15 +78,19 @@ formatted, but become bounded opacity if subsequently used as entity selectors.
 An unused data member named `entity_id` is not a causal dependency merely because
 of its key name.
 
-The immutable plan binds the exact target, desired state, state baseline,
-normalized dependency evidence and fingerprint, exact downstream automation
+Fresh Beta 54 plans use `helper-dependency-risk-v13` and `f2-v2`. The immutable
+plan binds the exact target, desired state, state baseline, normalized
+dependency/consequence evidence and fingerprint, exact downstream automation
 resource identities, effect-relevant services, targets and selectors, action
 data, and normalized action structure. Sensitive or oversized values contribute
 through bounded hashes and unbounded automation bodies are not retained.
 Display-only aliases and descriptions do not invalidate approval. The plan also
 binds the code-owned direct-provider contract and no-fallback policy. Approval
-uses the existing external Home Assistant administrator challenge and exact
-plan hash. The MCP caller cannot self-approve.
+uses one existing external Home Assistant administrator owner decision and the
+exact plan hash. Exact standard and elevated owner-authoritative operations both
+require `plan_approval`; severity alone does not create a second challenge. The
+MCP caller cannot self-approve, and principal, CSRF, hash, sequence, and expiry
+checks remain mandatory.
 
 Immediately before the sole mutation opportunity, F3 reads the exact state
 again:

@@ -251,6 +251,11 @@ def baseline_for(
             "evidence_complete": True,
             "coverage_complete": True,
             "semantic_precision": "exact",
+            "execution_contract_complete": True,
+            "execution_block_reason_codes": [],
+            "consequence_evidence_complete": True,
+            "consequence_uncertainty_reason_codes": [],
+            "owner_decision_required": False,
             "execution_eligible": True,
             "opaque_obligation_count": 0,
             "coverage_failure_count": 0,
@@ -367,7 +372,7 @@ def baseline_for(
 def _policy(operation: str) -> ChangePolicyDecision:
     elevated = operation in {RESTART_ADDON, RESTART_HOME_ASSISTANT}
     return ChangePolicyDecision(
-        policy_version="f2-v1",
+        policy_version="f2-v2",
         policy_class=(
             ApprovalPolicyClass.ELEVATED_ADMIN
             if elevated

@@ -305,7 +305,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         self.assertTrue(risk.apply_allowed)
         self.assertEqual(risk.level.value, "low")
 
-    def test_bounded_opaque_benign_effect_is_transparent_and_nonactionable(self):
+    def test_bounded_opaque_benign_effect_is_transparent_and_actionable(self):
         observed = bind(
             snapshot(
                 (obligation("bounded_semantic_opaque"),),
@@ -318,11 +318,12 @@ class ObligationGovernanceTests(unittest.TestCase):
 
         self.assertTrue(observed["coverage_complete"])
         self.assertFalse(observed["evidence_complete"])
-        self.assertFalse(observed["execution_eligible"])
+        self.assertTrue(observed["execution_contract_complete"])
+        self.assertTrue(observed["execution_eligible"])
         self.assertEqual(observed["semantic_precision"], "bounded_opaque")
         self.assertEqual(observed["opaque_obligation_count"], 1)
-        self.assertEqual(observed["physical_consequence"], "none")
-        self.assertFalse(risk.apply_allowed)
+        self.assertEqual(observed["physical_consequence"], "unknown")
+        self.assertTrue(risk.apply_allowed)
         self.assertEqual(risk.level.value, "high")
         self.assertTrue(risk.warnings)
         plan = make_plan("set_input_boolean_state", target_id=TARGET)
@@ -335,7 +336,7 @@ class ObligationGovernanceTests(unittest.TestCase):
             policy.reason_codes,
         )
 
-    def test_bounded_opaque_consequential_effect_is_elevated_and_nonactionable(self):
+    def test_bounded_opaque_consequential_effect_is_elevated_and_actionable(self):
         observed = bind(
             snapshot(
                 (obligation("bounded_semantic_opaque"),),
@@ -346,10 +347,11 @@ class ObligationGovernanceTests(unittest.TestCase):
             {"binding": observed, "provenance": {"generation": 39}}
         )
 
-        self.assertFalse(observed["execution_eligible"])
+        self.assertTrue(observed["execution_contract_complete"])
+        self.assertTrue(observed["execution_eligible"])
         self.assertEqual(observed["physical_consequence"], "safety_critical")
         self.assertEqual(risk.level.value, "high")
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
         plan = make_plan("set_input_boolean_state", target_id=TARGET)
         plan.operational.baseline["dependency_risk"] = observed
         plan.risk = risk
@@ -481,14 +483,17 @@ class ObligationGovernanceTests(unittest.TestCase):
 
         self.assertFalse(observed["coverage_complete"])
         self.assertFalse(observed["evidence_complete"])
-        self.assertFalse(observed["execution_eligible"])
+        self.assertTrue(observed["execution_contract_complete"])
+        self.assertTrue(observed["execution_eligible"])
         self.assertEqual("coverage_failure", observed["semantic_precision"])
         self.assertEqual(
             "coverage_failure",
             observed["obligation_evidence"][0]["target_outcome"],
         )
-        self.assertEqual("unknown", observed["physical_consequence"])
-        self.assertFalse(risk.apply_allowed)
+        self.assertEqual(
+            "safety_critical", observed["physical_consequence"]
+        )
+        self.assertTrue(risk.apply_allowed)
 
     def test_non_entity_dynamic_notification_content_remains_neutral(self):
         _findings, _dynamic, obligations = extract_document_with_obligations(
@@ -611,7 +616,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         )
         self.assertEqual("safety_critical", observed["physical_consequence"])
         self.assertEqual("high", risk.level.value)
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
 
     def test_wait_scalar_metadata_does_not_create_helper_consequence(self):
         config = {
@@ -1263,7 +1268,7 @@ class ObligationGovernanceTests(unittest.TestCase):
         )
         self.assertEqual("safety_critical", observed["physical_consequence"])
         self.assertEqual("high", risk.level.value)
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
 
     def test_broad_state_changed_trigger_retains_consequential_effect(self):
         config = {
@@ -1312,7 +1317,7 @@ class ObligationGovernanceTests(unittest.TestCase):
             "safety_critical", observed["physical_consequence"]
         )
         self.assertEqual("high", risk.level.value)
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
 
     def test_broad_call_service_trigger_retains_consequential_effect(self):
         config = {
@@ -1360,7 +1365,7 @@ class ObligationGovernanceTests(unittest.TestCase):
             "safety_critical", observed["physical_consequence"]
         )
         self.assertEqual("high", risk.level.value)
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
 
     def test_literal_action_target_is_noncausal_but_template_action_data_is_causal(self):
         literal = obligation(
@@ -1439,7 +1444,7 @@ class ObligationGovernanceTests(unittest.TestCase):
             changed["evidence_fingerprint"],
         )
 
-    def test_relevant_obligation_overflow_remains_nonactionable(self):
+    def test_relevant_obligation_overflow_remains_conservatively_actionable(self):
         obligations = tuple(
             obligation(
                 "exact_dependency",
@@ -1460,13 +1465,14 @@ class ObligationGovernanceTests(unittest.TestCase):
         )
 
         self.assertFalse(observed["coverage_complete"])
-        self.assertFalse(observed["execution_eligible"])
+        self.assertTrue(observed["execution_contract_complete"])
+        self.assertTrue(observed["execution_eligible"])
         self.assertIn(
             "obligation_projection_limit_exceeded",
             observed["coverage_failure_reason_codes"],
         )
         self.assertTrue(observed["truncated"])
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
 
     def test_target_domain_is_bounded_opacity_not_inventory_failure(self):
         observed = bind(
@@ -1497,8 +1503,9 @@ class ObligationGovernanceTests(unittest.TestCase):
 
         self.assertTrue(observed["coverage_complete"])
         self.assertEqual("bounded_opaque", observed["semantic_precision"])
-        self.assertFalse(observed["execution_eligible"])
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(observed["execution_contract_complete"])
+        self.assertTrue(observed["execution_eligible"])
+        self.assertTrue(risk.apply_allowed)
         self.assertIn(unconstrained_helper_dependency_lock_key(), keys)
         self.assertIn("automation:porch_light", keys)
 
@@ -1522,13 +1529,22 @@ class ObligationGovernanceTests(unittest.TestCase):
             observed["downstream_automation_resource_ids"], ["porch_light"]
         )
 
-    def test_coverage_failure_and_overflow_are_not_actionable(self):
-        for value in (
-            snapshot((obligation("coverage_failure"),)),
-            snapshot((obligation("proven_dependency_neutral"),), overflow=1),
-            snapshot(
-                (obligation("proven_dependency_neutral"),),
-                automation_completeness="partial",
+    def test_coverage_failure_and_overflow_require_bounded_lock_authority(self):
+        for value, execution_contract_complete in (
+            (snapshot((obligation("coverage_failure"),)), True),
+            (
+                snapshot(
+                    (obligation("proven_dependency_neutral"),),
+                    overflow=1,
+                ),
+                True,
+            ),
+            (
+                snapshot(
+                    (obligation("proven_dependency_neutral"),),
+                    automation_completeness="partial",
+                ),
+                True,
             ),
         ):
             with self.subTest(value=value):
@@ -1540,11 +1556,21 @@ class ObligationGovernanceTests(unittest.TestCase):
                     }
                 )
                 self.assertFalse(observed["coverage_complete"])
-                self.assertFalse(observed["execution_eligible"])
+                self.assertEqual(
+                    execution_contract_complete,
+                    observed["execution_contract_complete"],
+                )
+                self.assertEqual(
+                    execution_contract_complete,
+                    observed["execution_eligible"],
+                )
                 self.assertEqual(
                     observed["semantic_precision"], "coverage_failure"
                 )
-                self.assertFalse(risk.apply_allowed)
+                self.assertEqual(
+                    execution_contract_complete,
+                    risk.apply_allowed,
+                )
                 self.assertEqual(risk.level.value, "high")
 
     def test_registry_obligation_effect_and_lock_projection_bind_fingerprint(self):
@@ -1636,7 +1662,8 @@ class ObligationGovernanceTests(unittest.TestCase):
             with self.subTest(coverage=value.coverage):
                 observed = bind(value)
                 self.assertFalse(observed["coverage_complete"])
-                self.assertFalse(observed["execution_eligible"])
+                self.assertTrue(observed["execution_contract_complete"])
+                self.assertTrue(observed["execution_eligible"])
                 self.assertIn(
                     "blueprint_inventory_incomplete",
                     observed["coverage_failure_reason_codes"],

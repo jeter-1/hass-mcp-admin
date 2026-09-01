@@ -205,7 +205,7 @@ F2_ELEVATED_AUTOMATION_CONFIG = {
 }
 F2_PROHIBITED_AUTOMATION_CONFIG = {
     **F2_ELEVATED_AUTOMATION_CONFIG,
-    "description": "Safety-critical action prohibited by F2 policy",
+    "description": "Safety-critical future action disclosed by F2 policy",
     "action": [
         {
             "service": "lock.unlock",
@@ -216,7 +216,7 @@ F2_PROHIBITED_AUTOMATION_CONFIG = {
 F2_PROHIBITED_DEVICE_TARGET_AUTOMATION_CONFIG = {
     **F2_ELEVATED_AUTOMATION_CONFIG,
     "description": (
-        "Safety-critical action with a device target prohibited by F2 policy"
+        "Safety-critical future action with an uncertain device target"
     ),
     "action": [
         {
@@ -1746,96 +1746,20 @@ async def _run_f2_policy_acceptance_contract(
             ] == "direct"
             assert elevated["policy_decision"][
                 "required_acknowledgements"
-            ] == [
-                "plan_approval",
-                "elevated_risk_acknowledgement",
-            ]
+            ] == ["plan_approval"]
             mutation_count = len(observed.mutations)
             elevated_pending = service.approve(
                 elevated["plan_id"], elevated["plan_hash"]
             )
-            _review, out_of_sequence_csrf = (
-                await service.issue_external_csrf(
-                    elevated["plan_id"],
-                    elevated_pending["challenge_id"],
-                )
-            )
-            try:
-                await service.decide_external_approval(
-                    plan_id=elevated["plan_id"],
-                    challenge_id=elevated_pending["challenge_id"],
-                    expected_plan_hash=elevated["plan_hash"],
-                    approval_kind="apply",
-                    approval_action=(
-                        "elevated_risk_acknowledgement"
-                    ),
-                    csrf_nonce=out_of_sequence_csrf,
-                    decision="approve",
-                    approver_principal=F2_ADMIN_A,
-                )
-            except GovernanceError as exc:
-                assert exc.code == ErrorCode.APPROVAL_SEQUENCE_FAILURE
-            else:
-                raise AssertionError(
-                    "elevated risk was acknowledged before plan approval"
-                )
-            elevated_ack_pending = await _decide_f2_action(
+            elevated_approved = await _decide_f2_action(
                 service,
                 elevated,
                 elevated_pending,
                 principal=F2_ADMIN_A,
             )
-            assert elevated_ack_pending["status"] == "approval_pending"
-            assert elevated_ack_pending["approval_action"] == (
-                "elevated_risk_acknowledgement"
-            )
-            assert len(observed.mutations) == mutation_count
-            try:
-                await service.apply(
-                    elevated["plan_id"], elevated["plan_hash"]
-                )
-            except GovernanceError as exc:
-                assert exc.code == (
-                    ErrorCode.ELEVATED_RISK_ACKNOWLEDGEMENT_REQUIRED
-                )
-            else:
-                raise AssertionError(
-                    "one elevated approval unexpectedly authorized apply"
-                )
-            assert service.list_execution_tasks(
-                plan_id=elevated["plan_id"]
-            )["count"] == 0
-
-            _review, wrong_admin_csrf = await service.issue_external_csrf(
-                elevated["plan_id"],
-                elevated_ack_pending["challenge_id"],
-            )
-            try:
-                await service.decide_external_approval(
-                    plan_id=elevated["plan_id"],
-                    challenge_id=elevated_ack_pending["challenge_id"],
-                    expected_plan_hash=elevated["plan_hash"],
-                    approval_kind="apply",
-                    approval_action="elevated_risk_acknowledgement",
-                    csrf_nonce=wrong_admin_csrf,
-                    decision="approve",
-                    approver_principal=F2_ADMIN_B,
-                )
-            except GovernanceError as exc:
-                assert exc.code == ErrorCode.APPROVAL_PRINCIPAL_MISMATCH
-            else:
-                raise AssertionError(
-                    "a different administrator acknowledged elevated risk"
-                )
-            assert len(observed.mutations) == mutation_count
-
-            elevated_approved = await _decide_f2_action(
-                service,
-                elevated,
-                elevated_ack_pending,
-                principal=F2_ADMIN_A,
-            )
             assert elevated_approved["status"] == "approved"
+            assert elevated_approved["approval_action"] == "plan_approval"
+            assert len(observed.mutations) == mutation_count
             elevated_applied = await service.apply(
                 elevated["plan_id"], elevated["plan_hash"]
             )
@@ -1871,22 +1795,19 @@ async def _run_f2_policy_acceptance_contract(
             )
             assert elevated_task["approval_reference"][
                 "same_principal_confirmed"
-            ] is True
+            ] is None
             assert elevated_task["approval_reference"][
                 "bound_plan_hash"
             ] == elevated["plan_hash"]
             assert elevated_task["approval_reference"][
                 "policy_decision_hash"
             ] == elevated["policy_decision"]["policy_decision_hash"]
-            acknowledgement = elevated_task["approval_reference"][
+            assert elevated_task["approval_reference"][
+                "required_acknowledgements"
+            ] == ["plan_approval"]
+            assert elevated_task["approval_reference"].get(
                 "elevated_risk_acknowledgement"
-            ]
-            assert acknowledgement["bound_plan_hash"] == elevated[
-                "plan_hash"
-            ]
-            assert acknowledgement["policy_decision_hash"] == elevated[
-                "policy_decision"
-            ]["policy_decision_hash"]
+            ) is None
             elevated_events = [
                 event["event_type"]
                 for event in elevated_task["lifecycle_events"]
@@ -1919,16 +1840,20 @@ async def _run_f2_policy_acceptance_contract(
                 for event in elevated_task["lifecycle_events"]
             ) == 1
 
-            scenario = "prohibited"
-            active_operation_id = "prohibited_automation_update"
+            scenario = "safety_critical_owner_authoritative"
+            active_operation_id = "safety_critical_automation_update"
             observed_mutation_baseline = len(observed.mutations)
-            prohibited_health_baseline = service.health_summary()
-            prohibited = await service.create_configuration_plan(
-                title="F2 disposable prohibited plan",
-                description="Attempt to configure a safety-critical action.",
+            safety_critical = await service.create_configuration_plan(
+                title="F2 disposable safety-critical plan",
+                description=(
+                    "Configure, but do not trigger, one safety-critical "
+                    "future action."
+                ),
                 operations=[
                     {
-                        "operation_id": "prohibited_automation_update",
+                        "operation_id": (
+                            "safety_critical_automation_update"
+                        ),
                         "resource_type": "automation",
                         "action": "update",
                         "target_id": RESOURCE_IDS["automation"],
@@ -1939,83 +1864,46 @@ async def _run_f2_policy_acceptance_contract(
                     }
                 ],
             )
-            active_plan_id = prohibited["plan_id"]
-            assert prohibited["policy_decision"]["policy_class"] == (
-                "prohibited"
+            active_plan_id = safety_critical["plan_id"]
+            safety_policy = safety_critical["policy_decision"]
+            assert safety_policy["policy_class"] == "elevated_admin"
+            assert safety_policy["risk_delta"] == "high"
+            assert safety_policy["physical_consequence"] == (
+                "safety_critical"
             )
-            assert prohibited["policy_decision"][
-                "physical_consequence"
-            ] == "safety_critical"
-            assert prohibited["policy_decision"][
-                "required_acknowledgements"
-            ] == []
-            assert prohibited["status"] == "prohibited"
-            assert prohibited["approval"]["state"] == "prohibited"
-            assert prohibited["approval_lifecycle"] == "prohibited"
-            assert prohibited["approval_actionable"] is False
-            assert prohibited["approval_challenge_created"] is False
-            try:
-                service.approve(
-                    prohibited["plan_id"], prohibited["plan_hash"]
-                )
-            except GovernanceError as exc:
-                assert exc.code == ErrorCode.PROHIBITED_CHANGE
-            else:
-                raise AssertionError(
-                    "a prohibited plan created an approval challenge"
-                )
-            try:
-                await service.apply(
-                    prohibited["plan_id"], prohibited["plan_hash"]
-                )
-            except GovernanceError as exc:
-                assert exc.code == ErrorCode.PROHIBITED_CHANGE
-            else:
-                raise AssertionError("a prohibited plan reached apply")
-            assert service.list_execution_tasks(
-                plan_id=prohibited["plan_id"]
-            )["count"] == 0
-            prohibited_plan = service.repository.get(
-                prohibited["plan_id"]
-            )
-            assert prohibited_plan is not None
-            assert prohibited_plan.approval.bundle_state == "prohibited"
-            assert prohibited_plan.approval.challenge_id is None
-            assert prohibited_plan.approval.state.value == "required"
-            prohibited_health = service.health_summary()
-            assert prohibited_health["plans_awaiting_approval"] == (
-                prohibited_health_baseline["plans_awaiting_approval"]
-            )
-            assert prohibited_health["plans_requiring_approval"] == (
-                prohibited_health_baseline["plans_requiring_approval"]
-            )
-            assert prohibited_health["pending_plan_approvals"] == (
-                prohibited_health_baseline["pending_plan_approvals"]
-            )
-            assert prohibited_health[
-                "pending_elevated_acknowledgements"
-            ] == prohibited_health_baseline[
-                "pending_elevated_acknowledgements"
+            assert safety_policy["required_acknowledgements"] == [
+                "plan_approval"
             ]
-            assert prohibited_health["prohibited_policy_decisions"] == (
-                prohibited_health_baseline["prohibited_policy_decisions"]
-                + 1
+            assert safety_critical["approval_actionable"] is True
+            safety_pending = service.approve(
+                safety_critical["plan_id"], safety_critical["plan_hash"]
             )
-            assert len(observed.mutations) == mutation_count + 1
+            safety_approved = await _decide_f2_action(
+                service,
+                safety_critical,
+                safety_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert safety_approved["status"] == "approved"
+            assert service.list_execution_tasks(
+                plan_id=safety_critical["plan_id"]
+            )["count"] == 0
+            assert len(observed.mutations) == observed_mutation_baseline
 
-            scenario = "prohibited_non_entity_target"
-            active_operation_id = "prohibited_device_target_update"
+            scenario = "uncertain_device_target_owner_authoritative"
+            active_operation_id = "uncertain_device_target_update"
             observed_mutation_baseline = len(observed.mutations)
-            prohibited_device_target = (
+            uncertain_device_target = (
                 await service.create_configuration_plan(
-                    title="F2 disposable device-target prohibited plan",
+                    title="F2 disposable uncertain device-target plan",
                     description=(
-                        "Reject a safety-critical service before dispatch."
+                        "Disclose an uncertain future target while preserving "
+                        "the exact configuration-write contract."
                     ),
                     operations=[
                         {
                             "operation_id": (
-                                "prohibited_device_target_update"
+                                "uncertain_device_target_update"
                             ),
                             "resource_type": "automation",
                             "action": "update",
@@ -2028,70 +1916,32 @@ async def _run_f2_policy_acceptance_contract(
                     ],
                 )
             )
-            active_plan_id = prohibited_device_target["plan_id"]
-            device_policy = prohibited_device_target["policy_decision"]
-            assert device_policy["policy_class"] == "prohibited"
+            active_plan_id = uncertain_device_target["plan_id"]
+            device_policy = uncertain_device_target["policy_decision"]
+            assert device_policy["policy_class"] == "elevated_admin"
+            assert device_policy["risk_delta"] == "high"
             assert device_policy["physical_consequence"] == (
                 "safety_critical"
             )
-            assert device_policy["required_acknowledgements"] == []
-            try:
-                service.approve(
-                    prohibited_device_target["plan_id"],
-                    prohibited_device_target["plan_hash"],
-                )
-            except GovernanceError as exc:
-                assert exc.code == ErrorCode.PROHIBITED_CHANGE
-            else:
-                raise AssertionError(
-                    "a device-target prohibited plan created an approval"
-                )
-            try:
-                await service.apply(
-                    prohibited_device_target["plan_id"],
-                    prohibited_device_target["plan_hash"],
-                )
-            except GovernanceError as exc:
-                assert exc.code == ErrorCode.PROHIBITED_CHANGE
-            else:
-                raise AssertionError(
-                    "a device-target prohibited plan reached apply"
-                )
+            assert device_policy["required_acknowledgements"] == [
+                "plan_approval"
+            ]
+            assert uncertain_device_target["approval_actionable"] is True
+            device_pending = service.approve(
+                uncertain_device_target["plan_id"],
+                uncertain_device_target["plan_hash"],
+            )
+            device_approved = await _decide_f2_action(
+                service,
+                uncertain_device_target,
+                device_pending,
+                principal=F2_ADMIN_A,
+            )
+            assert device_approved["status"] == "approved"
             assert service.list_execution_tasks(
-                plan_id=prohibited_device_target["plan_id"]
+                plan_id=uncertain_device_target["plan_id"]
             )["count"] == 0
-            prohibited_device_plan = service.repository.get(
-                prohibited_device_target["plan_id"]
-            )
-            assert prohibited_device_plan is not None
-            assert prohibited_device_plan.approval.bundle_state == (
-                "prohibited"
-            )
-            assert prohibited_device_plan.approval.challenge_id is None
-            prohibited_device_public = service.get_plan(
-                prohibited_device_target["plan_id"]
-            )
-            assert prohibited_device_public["status"] == "prohibited"
-            assert prohibited_device_public["approval"]["state"] == (
-                "prohibited"
-            )
-            assert prohibited_device_public["approval_actionable"] is False
-            prohibited_device_health = service.health_summary()
-            assert prohibited_device_health["plans_awaiting_approval"] == (
-                prohibited_health_baseline["plans_awaiting_approval"]
-            )
-            assert prohibited_device_health["plans_requiring_approval"] == (
-                prohibited_health_baseline["plans_requiring_approval"]
-            )
-            assert prohibited_device_health[
-                "prohibited_policy_decisions"
-            ] == (
-                prohibited_health_baseline[
-                    "prohibited_policy_decisions"
-                ]
-                + 2
-            )
-            assert len(observed.mutations) == mutation_count + 1
+            assert len(observed.mutations) == observed_mutation_baseline
 
             scenario = "persisted_beta6_prohibited_upgrade"
             active_operation_id = "persisted_prohibited_automation_update"
@@ -2225,8 +2075,8 @@ async def _run_f2_policy_acceptance_contract(
                 "completed_scenarios": [
                     "standard_admin",
                     "elevated_admin",
-                    "prohibited",
-                    "prohibited_non_entity_target",
+                    "safety_critical_owner_authoritative",
+                    "uncertain_device_target_owner_authoritative",
                     "persisted_beta6_prohibited_upgrade",
                     "persisted_beta6_legacy_expired_upgrade",
                 ],
@@ -2278,7 +2128,8 @@ async def _run_f2_policy_acceptance_contract(
                 "setup",
                 "standard_admin",
                 "elevated_admin",
-                "prohibited",
+                "safety_critical_owner_authoritative",
+                "uncertain_device_target_owner_authoritative",
             }:
                 setattr(exc, "contract_scenario", scenario)
             if isinstance(exc, KeyError) and exc.args:
