@@ -99,7 +99,7 @@ def _beta53_helper_plan_is_actionable(plan) -> bool:
 
 
 class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
-    """Post-intent Beta 53 authority remains observation-only after expiry."""
+    """Post-intent authority remains observation-only after plan expiry."""
 
     async def asyncSetUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -270,6 +270,47 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
         )[0]
         return plan, task, declaration
 
+    async def _fresh_v13_crash(self, stage: str):
+        self.dependency.model = HELPER_DEPENDENCY_RISK_MODEL
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.helper.entity_id,
+            desired_state="on",
+            expiration_minutes=5,
+        )
+        plan = created["plan"]
+        self.assertEqual(
+            HELPER_DEPENDENCY_RISK_MODEL,
+            self.service._load(plan["plan_id"])
+            .operational.baseline["dependency_risk"]["model"],
+        )
+        self.assertEqual(POLICY_VERSION, plan["policy_decision"]["policy_version"])
+        self.clock.advance(seconds=299)
+        await self._grant(created)
+
+        def crash(point):
+            if point == stage:
+                raise SystemExit(f"simulated process loss at {stage}")
+
+        with patch(
+            "ha_mcp_engineering.f3_runtime.runtime.PRODUCTION_LOCK_TIMING",
+            replace(
+                PRODUCTION_LOCK_TIMING,
+                lease_seconds=30,
+                renewal_interval_seconds=5,
+                poll_interval_seconds=0.01,
+            ),
+        ):
+            self.runtime.children._fault_hook = crash
+            try:
+                with self.assertRaises(SystemExit):
+                    await self.service.apply(plan["plan_id"], plan["plan_hash"])
+            finally:
+                self.runtime.children._fault_hook = None
+
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        declaration = self.runtime.children.declarations_for_task(task.task_id)[0]
+        return plan, task, declaration
+
     def _mutate_crashed_record(self, declaration, mutator) -> None:
         record = self.runtime.children.get(declaration["child_id"])
         assert record is not None
@@ -424,6 +465,51 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
             historical_after.operational.baseline["dependency_risk"],
         )
 
+    async def test_expired_v13_f2_v2_post_intent_recovers_by_readback(self):
+        plan, _task, declaration = await self._fresh_v13_crash(
+            "after_durable_intent_persistence"
+        )
+        before = self.runtime.children.get(declaration["child_id"])
+        assert before is not None and before.dispatch_intent is not None
+        self.assertEqual(1, before.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+
+        # Simulate the exact provider having accepted the durable intent, then
+        # cross plan expiry before restart. Recovery has observation authority
+        # only and must never attempt preflight or another provider dispatch.
+        self._expire_post_intent(plan, declaration)
+        restarted = self._runtime()
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        adapter = restarted.registry.adapter(declaration["capability_id"])
+        with (
+            patch.object(
+                adapter,
+                "preflight",
+                side_effect=AssertionError("preflight must be unreachable"),
+            ),
+            patch.object(
+                adapter,
+                "dispatch",
+                side_effect=AssertionError("dispatch must be unreachable"),
+            ),
+            patch.object(
+                self.helper,
+                "read_state",
+                wraps=self.helper.read_state,
+            ) as readback,
+        ):
+            result = await restarted.recover_once("startup")
+
+        recovered = restarted.children.get(declaration["child_id"])
+        assert recovered is not None
+        self.assertGreaterEqual(result["active_recovery_transitions"], 1)
+        self.assertEqual("succeeded_verified", recovered.normalized_outcome)
+        self.assertTrue(recovered.terminal)
+        self.assertEqual(1, recovered.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertGreaterEqual(readback.await_count, 1)
+
     async def test_historical_readback_rejects_request_id_mismatch(self):
         await self._assert_binding_tamper_refused(
             lambda record: record.dispatch_intent.__setitem__(
@@ -503,6 +589,42 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
             ) as readback,
         ):
             result = await self._reconcile(declaration)
+        record = restarted.children.get(declaration["child_id"])
+        assert record is not None
+        self.assertEqual("read_only_reconciliation_completed", result["status"])
+        self.assertEqual("succeeded_verified", record.normalized_outcome)
+        self.assertEqual(1, record.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertGreaterEqual(readback.await_count, 1)
+
+    async def test_manual_v13_reconciliation_after_expiry_is_readback_only(self):
+        plan, _task, declaration = await self._fresh_v13_crash(
+            "after_durable_intent_persistence"
+        )
+        self._expire_post_intent(plan, declaration)
+        restarted = self._runtime()
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        adapter = restarted.registry.adapter(declaration["capability_id"])
+        with (
+            patch.object(
+                adapter,
+                "preflight",
+                side_effect=AssertionError("preflight must be unreachable"),
+            ),
+            patch.object(
+                adapter,
+                "dispatch",
+                side_effect=AssertionError("dispatch must be unreachable"),
+            ),
+            patch.object(
+                self.helper,
+                "read_state",
+                wraps=self.helper.read_state,
+            ) as readback,
+        ):
+            result = await self._reconcile(declaration)
+
         record = restarted.children.get(declaration["child_id"])
         assert record is not None
         self.assertEqual("read_only_reconciliation_completed", result["status"])

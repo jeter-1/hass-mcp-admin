@@ -1944,11 +1944,22 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         original_reconcile = self.runtime._reconcile_orphaned_children
 
         async def record_active(
-            plan, task, declaration, operation, requests
+            plan,
+            task,
+            declaration,
+            operation,
+            requests,
+            *,
+            readback_only=False,
         ):
             order.append(declaration["child_id"])
             return await original_execute(
-                plan, task, declaration, operation, requests
+                plan,
+                task,
+                declaration,
+                operation,
+                requests,
+                readback_only=readback_only,
             )
 
         def record_history(**kwargs):
@@ -2054,10 +2065,23 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         order = []
         original_execute = self.runtime._execute_child
 
-        async def ordered_execute(plan, task, declaration, operation, requests):
+        async def ordered_execute(
+            plan,
+            task,
+            declaration,
+            operation,
+            requests,
+            *,
+            readback_only=False,
+        ):
             order.append(declaration["child_id"])
             return await original_execute(
-                plan, task, declaration, operation, requests
+                plan,
+                task,
+                declaration,
+                operation,
+                requests,
+                readback_only=readback_only,
             )
 
         with patch.object(
@@ -2535,10 +2559,23 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         order = []
         original_execute = self.runtime._execute_child
 
-        async def record_order(plan, task, declaration, operation, requests):
+        async def record_order(
+            plan,
+            task,
+            declaration,
+            operation,
+            requests,
+            *,
+            readback_only=False,
+        ):
             order.append(declaration["child_id"])
             return await original_execute(
-                plan, task, declaration, operation, requests
+                plan,
+                task,
+                declaration,
+                operation,
+                requests,
+                readback_only=readback_only,
             )
 
         self.runtime._recovery_monotonic = lambda: 0.0
@@ -3857,11 +3894,22 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
         original_execute = self.runtime._execute_child
 
         async def expire_after_current_authority(
-            plan, task, declaration, operation, requests
+            plan,
+            task,
+            declaration,
+            operation,
+            requests,
+            *,
+            readback_only=False,
         ):
             order.append(declaration["child_id"])
             result = await original_execute(
-                plan, task, declaration, operation, requests
+                plan,
+                task,
+                declaration,
+                operation,
+                requests,
+                readback_only=readback_only,
             )
             expired["value"] = True
             return result

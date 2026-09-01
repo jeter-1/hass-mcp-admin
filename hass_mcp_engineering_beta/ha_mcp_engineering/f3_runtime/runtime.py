@@ -1733,7 +1733,7 @@ class F3RuntimeIntegration:
         if readback_only:
             # Keep the reduced recovery protocol outermost so none of the
             # normal sequence/conflict wrappers can re-expose preflight or
-            # dispatch on historical authority.
+            # dispatch after durable intent has consumed write authority.
             adapter = _ReadbackOnlyRecoveryAdapter(adapter)
         identity = ExecutionIdentity(
             task_id=declaration["child_id"],
@@ -2462,21 +2462,14 @@ class F3RuntimeIntegration:
     ) -> dict[str, Any]:
         if record.dispatch_intent is None:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_INVALID_STATE)
-        historical_readback = bool(
-            plan.policy_decision is not None
-            and plan.policy_decision.policy_version != POLICY_VERSION
-        )
         prepared, _requests = await self._load_prepared(
             plan,
             task,
-            readback_child_id=(
-                declaration["child_id"] if historical_readback else None
-            ),
+            readback_child_id=declaration["child_id"],
         )
         operation = prepared[declaration["operation_ordinal"]]
         adapter = self.registry.adapter(declaration["capability_id"])
-        if historical_readback:
-            adapter = _ReadbackOnlyRecoveryAdapter(adapter)
+        adapter = _ReadbackOnlyRecoveryAdapter(adapter)
         token = _ACTIVE_F3_CHILD.set(declaration["child_id"])
         try:
             observation = await adapter.observe(operation, None)
@@ -2603,7 +2596,7 @@ class F3RuntimeIntegration:
                 prepared, requests = await self._load_prepared(
                     plan,
                     task,
-                    readback_child_id=(child_id if historical_policy else None),
+                    readback_child_id=child_id,
                 )
                 await self._execute_child(
                     plan,
@@ -2611,7 +2604,7 @@ class F3RuntimeIntegration:
                     declaration,
                     prepared[declaration["operation_ordinal"]],
                     requests,
-                    readback_only=historical_policy,
+                    readback_only=True,
                 )
                 self._project(plan, task)
             outcome = "read_only_reconciliation_completed"
@@ -3560,12 +3553,10 @@ class F3RuntimeIntegration:
                     pass
                 else:
                     current_recovery_mode = self._active_recovery_mode(record)
-                    historical_readback = bool(
-                        historical_policy
-                        and current_recovery_mode
-                        == _RECOVERY_MODE_POST_INTENT
+                    post_intent_readback = bool(
+                        current_recovery_mode == _RECOVERY_MODE_POST_INTENT
                     )
-                    if historical_readback:
+                    if post_intent_readback:
                         prepared, requests = await self._load_prepared(
                             plan,
                             task,
@@ -3578,7 +3569,7 @@ class F3RuntimeIntegration:
                     operation = prepared[declaration["operation_ordinal"]]
                     if record is None or record.dispatch_intent is None:
                         task = self._enter_public_preflight(task)
-                    if historical_readback:
+                    if post_intent_readback:
                         result = await self._execute_child(
                             plan,
                             task,
