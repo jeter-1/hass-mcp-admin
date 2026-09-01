@@ -9,8 +9,8 @@ HAMCP-089, and the bathroom-vanity change remain outside this boundary.
 
 Public Engineering tools remain 51, task schema remains 1, approval authority
 remains 3, and provider fallback remains absent. Beta 54 adds no public input,
-tool, provider, route, fallback, workflow, container, deployment metadata, or
-stable-v1 change.
+tool, provider, route, fallback, workflow, container, deployment metadata other
+than the Engineering version, or stable-v1 change.
 
 ## Falsification authority
 
