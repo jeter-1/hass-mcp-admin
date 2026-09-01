@@ -51,6 +51,7 @@ from ha_mcp_engineering.ha_mcp_readmission import (  # noqa: E402
     classify_registry_refresh,
 )
 from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
+    MAX_DENIAL_JOURNALS,
     REGISTRY_URL,
     ReleaseRegistryOperationalError,
     SignedReleaseRegistry,
@@ -929,6 +930,134 @@ class OperationalSignedRegistryTests(
                 recovered.entry_for("ha-mcp", safe_version)
             )
 
+    async def test_denial_journal_overflow_is_permanent_across_restart(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        active_version = "8.2.1"
+        active_entry = reviewed_entry(
+            entry_id="ha-mcp-v8.2.1-synthetic",
+            version=active_version,
+        )
+        first = signer.raw(
+            sequence=1,
+            entries=[active_entry],
+            revocations=[],
+        )
+        previous = RegistryEnvelope.from_bytes(first).content_digest
+        candidates = []
+        for sequence in range(2, MAX_DENIAL_JOURNALS + 3):
+            is_overflow_candidate = (
+                sequence == MAX_DENIAL_JOURNALS + 2
+            )
+            revoked_version = (
+                active_version
+                if is_overflow_candidate
+                else f"8.0.{sequence}"
+            )
+            candidate = signer.raw(
+                sequence=sequence,
+                previous_registry_sha256=previous,
+                generated_at=NOW + timedelta(seconds=sequence),
+                expires_at=NOW + timedelta(days=1),
+                entries=[],
+                revocations=[
+                    revocation(
+                        entry_id=(
+                            active_entry["entry_id"]
+                            if is_overflow_candidate
+                            else f"ha-mcp-8.0.{sequence}-synthetic"
+                        ),
+                        version=revoked_version,
+                    )
+                ],
+            )
+            candidates.append(candidate)
+            previous = RegistryEnvelope.from_bytes(
+                candidate
+            ).content_digest
+
+        recovery_sequence = MAX_DENIAL_JOURNALS + 3
+        recovery = signer.raw(
+            sequence=recovery_sequence,
+            previous_registry_sha256=previous,
+            generated_at=NOW + timedelta(seconds=recovery_sequence),
+            expires_at=NOW + timedelta(days=1),
+            entries=[active_entry],
+            revocations=[
+                revocation(
+                    entry_id=f"ha-mcp-8.0.{sequence}-synthetic",
+                    version=f"8.0.{sequence}",
+                )
+                for sequence in range(2, MAX_DENIAL_JOURNALS + 2)
+            ],
+        )
+        recovery_raw = signer.journal_raw(envelopes=[recovery])
+        responses = [
+            signer.journal_raw(envelopes=[first]),
+            *[
+                signer.journal_raw(envelopes=[candidate])
+                for candidate in candidates
+            ],
+            recovery_raw,
+            recovery_raw,
+            recovery_raw,
+        ]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(await registry.refresh())
+            self.assertTrue(await registry.refresh())
+            for _candidate in candidates[1:]:
+                self.assertFalse(await registry.refresh())
+            self.assertEqual(
+                registry.authority().sequence,
+                MAX_DENIAL_JOURNALS + 2,
+            )
+            self.assertTrue(registry.authority().surface_denied)
+            self.assertTrue(registry._volatile_revocation_overflow)
+
+            self.assertFalse(await registry.refresh())
+            self.assertFalse(await registry.refresh())
+            self.assertTrue(registry.authority().surface_denied)
+            self.assertFalse(
+                registry.authority().positive_authority_current
+            )
+            self.assertTrue(registry._volatile_revocation_overflow)
+
+            restarted = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertEqual(
+                restarted.authority().sequence,
+                MAX_DENIAL_JOURNALS + 2,
+            )
+            self.assertTrue(restarted.authority().surface_denied)
+            self.assertTrue(restarted._volatile_revocation_overflow)
+            self.assertFalse(await restarted.refresh())
+            self.assertTrue(restarted.authority().surface_denied)
+            self.assertFalse(
+                restarted.authority().positive_authority_current
+            )
+            self.assertIsNone(
+                restarted.authority().entry_for(
+                    "ha-mcp",
+                    active_version,
+                )
+            )
+
     async def test_marker_failure_boundaries_retire_positive_cache_first(self):
         signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
         active_version = "8.2.1"
@@ -957,6 +1086,18 @@ class OperationalSignedRegistryTests(
         )
         initial = signer.journal_raw(envelopes=[first])
         revoked = signer.journal_raw(envelopes=[first, second])
+        alternate_second = signer.journal_raw(
+            envelopes=[
+                signer.raw(
+                    sequence=2,
+                    previous_registry_sha256=first_digest,
+                    generated_at=NOW + timedelta(seconds=1),
+                    expires_at=NOW + timedelta(days=1),
+                    entries=[entry],
+                    revocations=[],
+                )
+            ]
+        )
         attempted_restore = signer.journal_raw(
             envelopes=[
                 signer.raw(
@@ -977,10 +1118,16 @@ class OperationalSignedRegistryTests(
             "marker_file_fsync",
             "marker_replace",
             "marker_directory_fsync",
+            "retirement_replace",
+            "retirement_directory_fsync",
         ):
             with self.subTest(boundary=boundary), tempfile.TemporaryDirectory() as directory:
                 responses = [initial, revoked]
-                restart_responses = [initial, attempted_restore]
+                restart_responses = [
+                    initial,
+                    alternate_second,
+                    attempted_restore,
+                ]
 
                 async def fetcher(_url, _maximum):
                     return responses.pop(0)
@@ -1037,7 +1184,7 @@ class OperationalSignedRegistryTests(
                         "os.replace",
                         side_effect=fail_marker_replace,
                     )
-                else:
+                elif boundary == "marker_directory_fsync":
                     failure = patch.object(
                         SignedReleaseRegistry,
                         "_fsync_directory",
@@ -1046,6 +1193,43 @@ class OperationalSignedRegistryTests(
                             OSError("synthetic marker directory failure"),
                         ],
                     )
+                elif boundary == "retirement_replace":
+                    original_replace = os.replace
+
+                    def fail_retirement_replace(source, target):
+                        if Path(target) == cache.with_name(
+                            cache.name + ".previous"
+                        ):
+                            raise OSError(
+                                "synthetic retirement replace failure"
+                            )
+                        return original_replace(source, target)
+
+                    failure = patch(
+                        "ha_mcp_engineering.ha_mcp_readmission.registry."
+                        "os.replace",
+                        side_effect=fail_retirement_replace,
+                    )
+                else:
+                    original_fsync_directory = (
+                        SignedReleaseRegistry._fsync_directory
+                    )
+                    fsync_directory_calls = 0
+
+                    def fail_retirement_directory_fsync(parent):
+                        nonlocal fsync_directory_calls
+                        fsync_directory_calls += 1
+                        if fsync_directory_calls == 1:
+                            raise OSError(
+                                "synthetic retirement directory failure"
+                            )
+                        return original_fsync_directory(parent)
+
+                    failure = patch.object(
+                        SignedReleaseRegistry,
+                        "_fsync_directory",
+                        side_effect=fail_retirement_directory_fsync,
+                    )
 
                 with failure:
                     self.assertFalse(await registry.refresh())
@@ -1053,10 +1237,16 @@ class OperationalSignedRegistryTests(
                 self.assertFalse(
                     registry.authority().positive_authority_current
                 )
-                self.assertFalse(cache.exists())
-                self.assertTrue(
-                    cache.with_name(cache.name + ".previous").exists()
-                )
+                if boundary == "retirement_replace":
+                    self.assertTrue(cache.exists())
+                    self.assertTrue(
+                        cache.with_name(cache.name + ".pending").exists()
+                    )
+                else:
+                    self.assertFalse(cache.exists())
+                    self.assertTrue(
+                        cache.with_name(cache.name + ".previous").exists()
+                    )
 
                 restarted = SignedReleaseRegistry(
                     enabled=True,
@@ -1081,10 +1271,15 @@ class OperationalSignedRegistryTests(
                     restarted.authority().positive_authority_current
                 )
                 self.assertFalse(await restarted.refresh())
+                self.assertFalse(
+                    restarted.authority().positive_authority_current
+                )
+                self.assertFalse(await restarted.refresh())
                 self.assertIn(
                     restarted.snapshot()["last_failure_reason"],
                     {
                         "registry_journal_disconnected",
+                        "registry_previous_digest_mismatch",
                         "registry_revocation_history_missing",
                     },
                 )
@@ -2600,6 +2795,141 @@ class SignedGatewayReadmissionTests(
         self.assertEqual(
             restarted_snapshot["dynamically_exposed_count"],
             0,
+        )
+        self.assertEqual(restarted_transport.calls, 0)
+
+    async def test_denial_journal_overflow_never_republishes_provider_routes(self):
+        version = "8.2.1"
+        entry = _signed_entry_for(self.release, version=version)
+        first = self.signer.raw(
+            sequence=1,
+            generated_at=self.now - timedelta(minutes=2),
+            expires_at=self.now + timedelta(days=1),
+            entries=[entry],
+            revocations=[],
+        )
+        previous = RegistryEnvelope.from_bytes(first).content_digest
+        candidates = []
+        for sequence in range(2, MAX_DENIAL_JOURNALS + 3):
+            is_overflow_candidate = (
+                sequence == MAX_DENIAL_JOURNALS + 2
+            )
+            candidate = self.signer.raw(
+                sequence=sequence,
+                previous_registry_sha256=previous,
+                generated_at=self.now + timedelta(seconds=sequence),
+                expires_at=self.now + timedelta(days=1),
+                entries=[],
+                revocations=[
+                    revocation(
+                        entry_id=(
+                            entry["entry_id"]
+                            if is_overflow_candidate
+                            else f"ha-mcp-8.0.{sequence}-synthetic"
+                        ),
+                        version=(
+                            version
+                            if is_overflow_candidate
+                            else f"8.0.{sequence}"
+                        ),
+                    )
+                ],
+            )
+            candidates.append(candidate)
+            previous = RegistryEnvelope.from_bytes(
+                candidate
+            ).content_digest
+        recovery_sequence = MAX_DENIAL_JOURNALS + 3
+        recovery = self.signer.raw(
+            sequence=recovery_sequence,
+            previous_registry_sha256=previous,
+            generated_at=self.now + timedelta(seconds=recovery_sequence),
+            expires_at=self.now + timedelta(days=1),
+            entries=[entry],
+            revocations=[
+                revocation(
+                    entry_id=f"ha-mcp-8.0.{sequence}-synthetic",
+                    version=f"8.0.{sequence}",
+                )
+                for sequence in range(2, MAX_DENIAL_JOURNALS + 2)
+            ],
+        )
+        recovery_raw = self.signer.journal_raw(envelopes=[recovery])
+        responses = [
+            self.signer.journal_raw(envelopes=[first]),
+            *[
+                self.signer.journal_raw(envelopes=[candidate])
+                for candidate in candidates
+            ],
+            recovery_raw,
+            recovery_raw,
+            recovery_raw,
+        ]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        cache = Path(self.temporary.name) / "denial-journal-overflow.json"
+        registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=fetcher,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(self.capture["tools"], version=version)
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=registry,
+        )
+        first_snapshot = await gateway.initialize(
+            FastMCP("signed-denial-journal-overflow")
+        )
+        self.assertEqual(first_snapshot["dynamically_exposed_count"], 25)
+        old_tool = gateway._registered_tool_registry.snapshot()[
+            "ha_list_services"
+        ]
+        self.assertTrue(await registry.refresh())
+        for _candidate in candidates[1:]:
+            self.assertFalse(await registry.refresh())
+        result = json.loads(await old_tool.run({}))
+        self.assertFalse(result["success"])
+        self.assertEqual(transport.calls, 0)
+        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
+
+        restarted_registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=cache,
+            fetcher=fetcher,
+            now=lambda: self.now,
+        )
+        self.assertTrue(restarted_registry.authority().surface_denied)
+        self.assertFalse(await restarted_registry.refresh())
+        restarted_transport = _GatewayTransport(
+            self.capture["tools"],
+            version=version,
+        )
+        restarted_gateway = UpstreamReadGateway()
+        restarted_gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=restarted_transport,
+            release_registry=self.compiled,
+            signed_release_registry=restarted_registry,
+        )
+        restarted_snapshot = await restarted_gateway.initialize(
+            FastMCP("signed-denial-journal-overflow-restart")
+        )
+        self.assertEqual(
+            restarted_snapshot["dynamically_exposed_count"],
+            0,
+        )
+        self.assertEqual(
+            restarted_gateway._registered_tool_registry.snapshot(),
+            {},
         )
         self.assertEqual(restarted_transport.calls, 0)
 

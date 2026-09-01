@@ -528,34 +528,38 @@ class SignedReleaseRegistry:
                     # the verified tip revokes it.  Retain the monotonic
                     # sequence barrier and independently retain older signed
                     # denial journals when the new candidate omits them.
+                    overflow_was_active = (
+                        self._volatile_revocation_overflow
+                    )
                     self._retain_verified_denial(journal)
-                    try:
-                        parent = self._retire_cached_positive_authority()
-                        self._write_pending_barrier(
-                            journal,
-                            parent=parent,
-                            denial_journals=(
-                                self._volatile_denial_journals
-                            ),
-                        )
-                    except ReleaseRegistryOperationalError:
-                        pass
+                    if not overflow_was_active:
+                        try:
+                            self._persist_denial_barrier(
+                                journal,
+                                denial_journals=(
+                                    self._volatile_denial_journals
+                                ),
+                            )
+                        except ReleaseRegistryOperationalError:
+                            pass
                     raise
                 try:
                     self._write_cache(journal)
                 except ReleaseRegistryOperationalError:
+                    overflow_was_active = (
+                        self._volatile_revocation_overflow
+                    )
                     self._retain_volatile_candidate(journal, sources)
-                    try:
-                        parent = self._retire_cached_positive_authority()
-                        self._write_pending_barrier(
-                            journal,
-                            parent=parent,
-                            denial_journals=(
-                                self._volatile_denial_journals
-                            ),
-                        )
-                    except ReleaseRegistryOperationalError:
-                        pass
+                    if not overflow_was_active:
+                        try:
+                            self._persist_denial_barrier(
+                                journal,
+                                denial_journals=(
+                                    self._volatile_denial_journals
+                                ),
+                            )
+                        except ReleaseRegistryOperationalError:
+                            pass
                     raise
                 self._accepted = journal.accepted
                 self._authority_journal = journal
@@ -883,6 +887,9 @@ class SignedReleaseRegistry:
         del sources
         self._volatile_accepted = journal.accepted
         self._volatile_journal = journal
+        if self._volatile_revocation_overflow:
+            self._surface_denied = True
+            return
         try:
             self._volatile_denial_journals = self._denial_journals_with(
                 journal
@@ -904,6 +911,9 @@ class SignedReleaseRegistry:
 
         self._volatile_accepted = journal.accepted
         self._volatile_journal = journal
+        if self._volatile_revocation_overflow:
+            self._surface_denied = True
+            return
         try:
             self._volatile_denial_journals = self._denial_journals_with(
                 journal
@@ -1051,16 +1061,16 @@ class SignedReleaseRegistry:
             )
             self._volatile_accepted = candidate_journal.accepted
             self._volatile_journal = candidate_journal
-            self._volatile_denial_journals = (
-                self._minimal_denial_journals(
-                    retained_denial_journals + (candidate_journal,)
-                )
-            )
-            self._retired_cache_incomplete = False
             try:
+                self._volatile_denial_journals = (
+                    self._minimal_denial_journals(
+                        retained_denial_journals + (candidate_journal,)
+                    )
+                )
                 candidate_revocations = self._bounded_denial_revocations(
                     self._volatile_denial_journals
                 )
+                self._retired_cache_incomplete = False
             except ReleaseRegistryOperationalError:
                 self._volatile_revocation_overflow = True
         except Exception:
@@ -1085,6 +1095,8 @@ class SignedReleaseRegistry:
         self._volatile_revocations = tuple(
             retained[key] for key in sorted(retained)
         )
+        if self._retired_cache_incomplete:
+            self._volatile_revocation_overflow = True
         self._cache_status = "invalid"
         self._record_failure("registry_cache_incomplete_transaction")
 
@@ -1093,6 +1105,7 @@ class SignedReleaseRegistry:
 
         self._surface_denied = True
         self._retired_cache_incomplete = True
+        self._volatile_revocation_overflow = True
         try:
             journal, sources = self._parse_cache_document(
                 self._previous_cache_path().read_bytes()
@@ -1263,6 +1276,35 @@ class SignedReleaseRegistry:
                 "registry_cache_write_failed"
             ) from exc
         return parent
+
+    def _persist_denial_barrier(
+        self,
+        journal: SignedRegistryJournal,
+        *,
+        denial_journals: tuple[SignedRegistryJournal, ...],
+    ) -> None:
+        """Persist denial even when retiring the positive cache fails."""
+
+        try:
+            parent = self._retire_cached_positive_authority()
+        except ReleaseRegistryOperationalError as retirement_error:
+            try:
+                self._write_pending_barrier(
+                    journal,
+                    parent=self._cache_path.parent,
+                    denial_journals=denial_journals,
+                )
+            except ReleaseRegistryOperationalError:
+                try:
+                    self._retire_cached_positive_authority()
+                except ReleaseRegistryOperationalError:
+                    raise retirement_error
+            return
+        self._write_pending_barrier(
+            journal,
+            parent=parent,
+            denial_journals=denial_journals,
+        )
 
     def _write_cache(
         self,
