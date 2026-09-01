@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import importlib.util
 import json
 from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +23,7 @@ from ha_mcp_engineering.dependency.provider import (  # noqa: E402
 )
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3RuntimeIntegration,
+    PRODUCTION_LOCK_TIMING,
 )
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
@@ -28,6 +31,7 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HelperDependencyRiskService,
 )
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
+from ha_mcp_engineering.governance import policy as policy_module  # noqa: E402
 from ha_mcp_engineering.governance.policy import (  # noqa: E402
     POLICY_VERSION,
 )
@@ -71,6 +75,282 @@ class _FrozenDependencyRiskReader:
         self.read_count += 1
         self.fenced_read_count += int(fenced)
         return copy.deepcopy(self.evidence)
+
+
+def _beta53_policy(plan):
+    return policy_module._evaluate_change_policy_version(
+        plan,
+        policy_version="f2-v1",
+        owner_authoritative=False,
+    )
+
+
+def _beta53_helper_plan_is_actionable(plan) -> bool:
+    binding = ChangeGovernanceService._helper_dependency_binding(plan)
+    return bool(
+        binding is not None
+        and binding.get("model") == "helper-dependency-risk-v12"
+        and binding.get("execution_eligible") is True
+        and plan.risk.apply_allowed
+    )
+
+
+class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    """Post-intent Beta 53 authority remains observation-only after expiry."""
+
+    async def asyncSetUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.clock = beta37.Clock()
+        self.helper = beta37.FakeHelperStateGateway()
+        self.dependency = beta37.FakeDependencyRiskReader(
+            self.helper.entity_id
+        )
+        self.dependency.model = "helper-dependency-risk-v12"
+        root = Path(self.temp.name)
+        self.service = ChangeGovernanceService(
+            ChangePlanRepository(root / "plans"),
+            beta37.UnusedLegacyGateway(),
+            AuditLogger(
+                str(root / "audit.jsonl"),
+                "beta54-historical-recovery-secret",
+            ),
+            now=self.clock,
+            helper_state_gateway=self.helper,
+            helper_dependency_risk_reader=self.dependency,
+        )
+        self.telemetry, self.context = begin_request(
+            "beta54-historical-recovery"
+        )
+        self.telemetry.caller_id = "beta54-historical-requester"
+        self.root = root
+        self.runtime = self._runtime()
+        self.service.f3_runtime = self.runtime
+        await self.runtime.recover_once("startup")
+
+    async def asyncTearDown(self) -> None:
+        end_request(self.context)
+        self.temp.cleanup()
+
+    def _runtime(self) -> F3RuntimeIntegration:
+        return F3RuntimeIntegration(
+            service=self.service,
+            storage_root=str(self.root / "plans"),
+            configuration_gateway=beta37.UnusedConfigurationGateway(),
+            backup_gateway=None,
+            lifecycle_gateway=None,
+            helper_state_gateway=self.helper,
+            provider_identity_reader=beta37.forbidden_upstream_identity,
+            retention_days=90,
+        )
+
+    async def _grant(self, created: dict) -> None:
+        plan = created["plan"]
+        pending = self.service.approve(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        _review, csrf = await self.service.issue_external_csrf(
+            plan["plan_id"], pending["challenge_id"]
+        )
+        await self.service.decide_external_approval(
+            plan_id=plan["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=plan["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal=(
+                "home_assistant_admin_ingress:beta54-historical-owner"
+            ),
+        )
+
+    def _beta53_authority(self):
+        """Generate the durable record through the v12/f2-v1 writer path."""
+
+        execution_models = frozenset(
+            {"helper-dependency-risk-v12"}
+        )
+        return (
+            patch(
+                "ha_mcp_engineering.governance.policy."
+                "evaluate_change_policy",
+                _beta53_policy,
+            ),
+            patch(
+                "ha_mcp_engineering.governance.service.POLICY_VERSION",
+                "f2-v1",
+            ),
+            patch(
+                "ha_mcp_engineering.governance.service."
+                "evaluate_change_policy",
+                _beta53_policy,
+            ),
+            patch(
+                "ha_mcp_engineering.f3_runtime.runtime.POLICY_VERSION",
+                "f2-v1",
+            ),
+            patch(
+                "ha_mcp_engineering.governance.service."
+                "HELPER_DEPENDENCY_RISK_EXECUTION_MODELS",
+                execution_models,
+            ),
+            patch.object(
+                ChangeGovernanceService,
+                "_helper_dependency_plan_is_actionable",
+                new=staticmethod(_beta53_helper_plan_is_actionable),
+            ),
+            patch(
+                "ha_mcp_engineering.f3.operational_locks."
+                "HELPER_DEPENDENCY_RISK_EXECUTION_MODELS",
+                execution_models,
+            ),
+            patch(
+                "ha_mcp_engineering.f3_runtime.runtime."
+                "PRODUCTION_LOCK_TIMING",
+                replace(
+                    PRODUCTION_LOCK_TIMING,
+                    lease_seconds=30,
+                    renewal_interval_seconds=5,
+                    poll_interval_seconds=0.01,
+                ),
+            ),
+        )
+
+    async def _historical_crash(self, stage: str):
+        patches = self._beta53_authority()
+        for item in patches:
+            item.start()
+        try:
+            created = await self.service.create_helper_state_plan(
+                entity_id=self.helper.entity_id,
+                desired_state="on",
+                expiration_minutes=5,
+            )
+            plan = created["plan"]
+            self.assertEqual(
+                "helper-dependency-risk-v12",
+                self.service._load(plan["plan_id"])
+                .operational.baseline["dependency_risk"]["model"],
+            )
+            self.assertEqual(
+                "f2-v1", plan["policy_decision"]["policy_version"]
+            )
+            self.clock.advance(seconds=299)
+            await self._grant(created)
+            if stage == "pre_intent_initialized":
+                await self.runtime._initialize(
+                    self.service._load(plan["plan_id"]),
+                    plan["plan_hash"],
+                )
+            else:
+                def crash(point):
+                    if point == stage:
+                        raise SystemExit(
+                            f"simulated process loss at {stage}"
+                        )
+
+                self.runtime.children._fault_hook = crash
+                try:
+                    with self.assertRaises(SystemExit):
+                        await self.service.apply(
+                            plan["plan_id"], plan["plan_hash"]
+                        )
+                finally:
+                    self.runtime.children._fault_hook = None
+        finally:
+            for item in reversed(patches):
+                item.stop()
+
+        task = self.service.task_repository.get_for_plan(plan["plan_id"])
+        declaration = self.runtime.children.declarations_for_task(
+            task.task_id
+        )[0]
+        return plan, task, declaration
+
+    async def test_expired_v12_f2_v1_post_intent_recovers_by_readback(self):
+        plan, _task, declaration = await self._historical_crash(
+            "after_durable_intent_persistence"
+        )
+        before = self.runtime.children.get(declaration["child_id"])
+        assert before is not None and before.dispatch_intent is not None
+        historical_before = self.service._load_for_projection(plan["plan_id"])
+        decision_before = copy.deepcopy(historical_before.policy_decision)
+        binding_before = copy.deepcopy(
+            historical_before.operational.baseline["dependency_risk"]
+        )
+        self.assertEqual(1, before.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+
+        # Simulate the provider having accepted the durable intent before the
+        # process was lost.  The test clock crosses plan expiry while the
+        # short test lock lease expires and post-dispatch evidence remains
+        # within its independent deadline.
+        self.helper.state = "on"
+        self.helper.last_changed = self.clock().isoformat()
+        self.clock.advance(seconds=31)
+        self.assertGreater(
+            self.clock().isoformat(),
+            self.service._load_for_projection(plan["plan_id"]).expires_at,
+        )
+        identity = before.execution_identity()
+        self.runtime.children.mutate_claimed(
+            declaration["child_id"],
+            owner_id=identity.owner_id,
+            claim_generation=before.claim_generation,
+            mutator=lambda value: setattr(
+                value,
+                "claim_expires_at",
+                (self.clock()).isoformat(),
+            ),
+        )
+
+        restarted = self._runtime()
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        with patch.object(
+            self.helper,
+            "read_state",
+            wraps=self.helper.read_state,
+        ) as readback:
+            result = await restarted.recover_once("startup")
+
+        recovered = restarted.children.get(declaration["child_id"])
+        assert recovered is not None
+        self.assertGreaterEqual(result["active_recovery_transitions"], 1)
+        self.assertEqual("succeeded_verified", recovered.normalized_outcome)
+        self.assertTrue(recovered.terminal)
+        self.assertEqual(1, recovered.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertGreaterEqual(readback.await_count, 1)
+        historical_after = self.service._load_for_projection(plan["plan_id"])
+        self.assertEqual(decision_before, historical_after.policy_decision)
+        self.assertEqual(
+            binding_before,
+            historical_after.operational.baseline["dependency_risk"],
+        )
+
+    async def test_v12_f2_v1_pre_intent_restart_cannot_prepare_or_dispatch(self):
+        plan, _task, declaration = await self._historical_crash(
+            "pre_intent_initialized"
+        )
+        before = self.runtime.children.get(declaration["child_id"])
+        self.assertIsNone(before)
+        self.assertEqual(0, self.helper.dispatch_count)
+
+        self.clock.advance(seconds=31)
+        restarted = self._runtime()
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        await restarted.recover_once("startup")
+
+        after = restarted.children.get(declaration["child_id"])
+        self.assertIsNone(after)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertEqual(
+            "f2-v1",
+            self.service._load_for_projection(plan["plan_id"])
+            .policy_decision.policy_version,
+        )
 
 
 class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):

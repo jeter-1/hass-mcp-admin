@@ -260,6 +260,20 @@ class _LegacyConflictAdapter:
         return result
 
 
+class _ReadbackOnlyRecoveryAdapter:
+    """Expose only observation and verification for a durable old intent."""
+
+    def __init__(self, adapter: Any):
+        self._adapter = adapter
+        self.capabilities = adapter.capabilities
+
+    async def recover(self, prepared: Any, *, context: Any):
+        return await self._adapter.recover(prepared, context=context)
+
+    async def verify(self, prepared: Any, observation: Any):
+        return await self._adapter.verify(prepared, observation)
+
+
 class _AuditedDashboardGateway:
     """Emit bounded provider-boundary events without persisting payloads."""
 
@@ -1000,6 +1014,8 @@ class F3RuntimeIntegration:
         task: Any,
         approval_hash: str,
         provider_identity: dict[str, str] | None = None,
+        *,
+        readback_only: bool = False,
     ):
         plan_hash = self.service.plan_hash(plan)
         if plan.contract_version == 2:
@@ -1065,17 +1081,28 @@ class F3RuntimeIntegration:
             requests = self.dashboard_adapter.lock_requests(prepared)
             sequence_model = "f3-dashboard-sequence-v1"
         else:
-            prepared = await self.operational_adapter.prepare(
-                OperationalPreparationRequest(
-                    plan=self._approved_copy(plan),
-                    expected_plan_hash=plan_hash,
-                    public_task_id=task.task_id,
-                    child_execution_id=child_id,
-                    authoritative_provider_slug=identity["slug"],
-                    provider_identity_evidence_hash=identity["evidence_hash"],
-                )
+            proposal = OperationalPreparationRequest(
+                plan=self._approved_copy(plan),
+                expected_plan_hash=plan_hash,
+                public_task_id=task.task_id,
+                child_execution_id=child_id,
+                authoritative_provider_slug=identity["slug"],
+                provider_identity_evidence_hash=identity["evidence_hash"],
             )
-            requests = self.operational_adapter.lock_requests(prepared)
+            if readback_only:
+                prepared = (
+                    await self.operational_adapter.reconstruct_for_readback(
+                        proposal
+                    )
+                )
+                requests = (
+                    self.operational_adapter.lock_requests_for_readback(
+                        prepared
+                    )
+                )
+            else:
+                prepared = await self.operational_adapter.prepare(proposal)
+                requests = self.operational_adapter.lock_requests(prepared)
             sequence_model = "f3-operational-sequence-v1"
         return (prepared,), requests, stable_hash(
             {
@@ -1191,10 +1218,37 @@ class F3RuntimeIntegration:
         self.service._task_audit(task, "execution_ownership_claimed", "success")
         return task, tuple(prepared), tuple(complete_requests)
 
-    async def _load_prepared(self, plan: Any, task: Any):
+    async def _load_prepared(
+        self,
+        plan: Any,
+        task: Any,
+        *,
+        readback_child_id: str | None = None,
+    ):
         declarations = self.children.declarations_for_task(task.task_id)
         if not declarations:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        readback_only = readback_child_id is not None
+        if readback_only:
+            selected = next(
+                (
+                    item
+                    for item in declarations
+                    if item["child_id"] == readback_child_id
+                ),
+                None,
+            )
+            record = (
+                None
+                if selected is None
+                else self.children.get(selected["child_id"])
+            )
+            if (
+                record is None
+                or record.dispatch_intent is None
+                or record.dispatch_count != 1
+            ):
+                raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
         approval_hash = declarations[0]["approval_bundle_hash"]
         provider_identity = None
         if plan.contract_version == 3:
@@ -1235,7 +1289,11 @@ class F3RuntimeIntegration:
                         details={"reason": "provider_lock_identity_changed"},
                     )
         prepared, requests, sequence_hash = await self._prepare(
-            plan, task, approval_hash, provider_identity
+            plan,
+            task,
+            approval_hash,
+            provider_identity,
+            readback_only=readback_only,
         )
         if sequence_hash != task.legacy_projection.get("sequence_hash"):
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
@@ -1536,8 +1594,19 @@ class F3RuntimeIntegration:
         declaration: dict[str, Any],
         prepared: Any,
         complete_requests: tuple[Any, ...],
+        *,
+        readback_only: bool = False,
     ):
         adapter = self.registry.adapter(declaration["capability_id"])
+        record = self.children.get(declaration["child_id"])
+        if readback_only:
+            if (
+                record is None
+                or record.dispatch_intent is None
+                or record.dispatch_count != 1
+            ):
+                raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
+            adapter = _ReadbackOnlyRecoveryAdapter(adapter)
         evidence_seconds = int(
             getattr(prepared, "evidence_deadline_seconds", 120)
         )
@@ -3365,13 +3434,42 @@ class F3RuntimeIntegration:
                     # non-success terminal outcomes.
                     pass
                 else:
-                    prepared, requests = await self._load_prepared(plan, task)
+                    current_recovery_mode = self._active_recovery_mode(record)
+                    historical_readback = bool(
+                        historical_policy
+                        and current_recovery_mode
+                        == _RECOVERY_MODE_POST_INTENT
+                    )
+                    if historical_readback:
+                        prepared, requests = await self._load_prepared(
+                            plan,
+                            task,
+                            readback_child_id=declaration["child_id"],
+                        )
+                    else:
+                        prepared, requests = await self._load_prepared(
+                            plan, task
+                        )
                     operation = prepared[declaration["operation_ordinal"]]
                     if record is None or record.dispatch_intent is None:
                         task = self._enter_public_preflight(task)
-                    result = await self._execute_child(
-                        plan, task, declaration, operation, requests
-                    )
+                    if historical_readback:
+                        result = await self._execute_child(
+                            plan,
+                            task,
+                            declaration,
+                            operation,
+                            requests,
+                            readback_only=True,
+                        )
+                    else:
+                        result = await self._execute_child(
+                            plan,
+                            task,
+                            declaration,
+                            operation,
+                            requests,
+                        )
                     if result.duplicate_execution:
                         self._sweep_collisions += 1
                 self._project(plan, task)

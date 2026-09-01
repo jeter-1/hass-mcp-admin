@@ -12,6 +12,7 @@ from ..f3_configuration.locks import (
     unconstrained_helper_dependency_lock_key,
 )
 from ..governance.helper_dependency import (
+    HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
     MAX_RELEVANT_AUTOMATIONS,
 )
@@ -28,11 +29,15 @@ from .operational_models import (
 
 def _bound_downstream_automation_resources(
     operation: PreparedOperationalOperation,
+    *,
+    accepted_models: frozenset[str] = (
+        HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+    ),
 ) -> tuple[str, ...]:
     baseline = operation.baseline
     binding = baseline.get("dependency_risk")
     if not isinstance(binding, dict) or (
-        binding.get("model") not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+        binding.get("model") not in accepted_models
     ):
         # Lock projection is execution authority.  A superseded binding is
         # readable and recoverable, but it cannot decide which resources this
@@ -65,10 +70,14 @@ def _bound_downstream_automation_resources(
 
 def _requires_custom_template_reload_lock(
     operation: PreparedOperationalOperation,
+    *,
+    accepted_models: frozenset[str] = (
+        HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+    ),
 ) -> bool:
     binding = operation.baseline.get("dependency_risk")
     if not isinstance(binding, dict) or (
-        binding.get("model") not in HELPER_DEPENDENCY_RISK_EXECUTION_MODELS
+        binding.get("model") not in accepted_models
     ):
         raise ValueError("helper dependency lock evidence is not executable")
     projection = binding.get("dependency_lock_projection")
@@ -125,6 +134,27 @@ class OperationalLockSetCalculator:
     def calculate(
         self, operation: PreparedOperationalOperation
     ) -> tuple[LockRequest, ...]:
+        return self._calculate(
+            operation,
+            accepted_models=HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
+        )
+
+    def calculate_for_readback(
+        self, operation: PreparedOperationalOperation
+    ) -> tuple[LockRequest, ...]:
+        """Reconstruct shipped lock evidence for post-intent recovery only."""
+
+        return self._calculate(
+            operation,
+            accepted_models=HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
+        )
+
+    def _calculate(
+        self,
+        operation: PreparedOperationalOperation,
+        *,
+        accepted_models: frozenset[str],
+    ) -> tuple[LockRequest, ...]:
         operation.validate()
         requests: list[LockRequest] = [
             LockRequest(
@@ -180,7 +210,10 @@ class OperationalLockSetCalculator:
             )
         elif operation.operation == SET_INPUT_BOOLEAN_STATE:
             downstream_automations = (
-                _bound_downstream_automation_resources(operation)
+                _bound_downstream_automation_resources(
+                    operation,
+                    accepted_models=accepted_models,
+                )
             )
             requests.extend(
                 (
@@ -247,7 +280,10 @@ class OperationalLockSetCalculator:
                 )
                 for resource_id in downstream_automations
             )
-            if _requires_custom_template_reload_lock(operation):
+            if _requires_custom_template_reload_lock(
+                operation,
+                accepted_models=accepted_models,
+            ):
                 requests.append(
                     LockRequest(
                         key="reload:custom_templates",
