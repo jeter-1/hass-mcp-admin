@@ -495,6 +495,15 @@ def _single_plan_policy(
                 "exact" if complete else "coverage_failure",
             )
         )
+        evidence_reason = (
+            "helper_dependency_bounded_semantic_opacity"
+            if precision == "bounded_opaque"
+            else (
+                "helper_dependency_coverage_failure"
+                if not complete
+                else "helper_dependency_evidence_complete"
+            )
+        )
         consequence = dependency.get("physical_consequence")
         if eligible and consequence == "none":
             return (
@@ -504,11 +513,7 @@ def _single_plan_policy(
                     PhysicalConsequence.NONE,
                     (
                         "exact_input_boolean_state_standard_policy",
-                        (
-                            "helper_dependency_bounded_semantic_opacity"
-                            if precision == "bounded_opaque"
-                            else "helper_dependency_evidence_complete"
-                        ),
+                        evidence_reason,
                         "no_consequential_dependency_detected",
                     ),
                 ),
@@ -536,11 +541,7 @@ def _single_plan_policy(
                             else "unknown_helper_dependency_effect"
                         ),
                         "exact_input_boolean_state_elevated_policy",
-                        (
-                            "helper_dependency_bounded_semantic_opacity"
-                            if precision == "bounded_opaque"
-                            else "helper_dependency_evidence_complete"
-                        ),
+                        evidence_reason,
                     ),
                 ),
             )
@@ -658,7 +659,10 @@ def _single_plan_policy(
         return (
             configuration_operation_policy(
                 synthetic,
-                owner_authoritative=owner_authoritative,
+                # ADR-022 intentionally authorizes only the current typed
+                # configuration-plan route. The legacy contract-v1 route
+                # retains its historical consequence-policy boundary.
+                owner_authoritative=False,
             ),
         )
     return (

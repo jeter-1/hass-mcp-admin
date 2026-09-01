@@ -46,6 +46,7 @@ from tests import test_beta50_helper_production_target_scope as beta50  # noqa: 
 from tests import test_beta53_helper_registry_deduplication as beta53  # noqa: E402
 from tests import test_dev14_configuration_plans as dev14  # noqa: E402
 from tests import test_f3_runtime_integration as f3tests  # noqa: E402
+from tests import test_governance as governance_tests  # noqa: E402
 
 
 ACCEPTANCE = ROOT / "docs" / "V2_2_0_BETA54_ACCEPTANCE.md"
@@ -167,6 +168,14 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("unknown", decision["physical_consequence"])
         self.assertEqual("elevated_admin", decision["policy_class"])
         self.assertEqual(["plan_approval"], decision["required_acknowledgements"])
+        self.assertIn(
+            "helper_dependency_coverage_failure",
+            decision["reason_codes"],
+        )
+        self.assertNotIn(
+            "helper_dependency_evidence_complete",
+            decision["reason_codes"],
+        )
         self.assertTrue(plan["approval_actionable"])
         self.assertEqual(0, self.helper.dispatch_count)
 
@@ -269,6 +278,61 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, self.helper.dispatch_count)
 
+    async def test_already_desired_still_rejects_consequence_evidence_drift(self):
+        created = await self.service.create_helper_state_plan(
+            entity_id=self.target,
+            desired_state="on",
+        )
+        plan = created["plan"]
+        pending = self.service.approve(plan["plan_id"], plan["plan_hash"])
+        _review, csrf = await self.service.issue_external_csrf(
+            plan["plan_id"], pending["challenge_id"]
+        )
+        await self.service.decide_external_approval(
+            plan_id=plan["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=plan["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal="home_assistant_admin_ingress:beta54-owner",
+        )
+
+        drifted = copy.deepcopy(self.dependency.evidence)
+        binding = drifted["binding"]
+        binding["consequence_uncertainty_reason_codes"] = sorted(
+            {
+                *binding["consequence_uncertainty_reason_codes"],
+                "post_approval_consequence_change",
+            }
+        )
+        fingerprint_material = dict(binding)
+        fingerprint_material.pop("evidence_fingerprint", None)
+        binding["evidence_fingerprint"] = stable_hash(fingerprint_material)
+        drifted_reader = _FrozenDependencyRiskReader(drifted)
+        self.service.helper_dependency_risk_reader = drifted_reader
+        self.runtime.operational_adapter.strategies[
+            "set_input_boolean_state"
+        ].dependency_risk_reader = drifted_reader
+        self.helper.set_observed_state("on", self.clock)
+
+        result = await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        declaration = self.runtime.children.declarations_for_task(
+            result["task_id"]
+        )[0]
+        child = self.runtime.children.get(declaration["child_id"])
+        assert child is not None
+        self.assertEqual("failed_pre_dispatch", result["task_state"])
+        self.assertFalse(result["provider_dispatch_occurred"])
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertTrue(
+            any(
+                "dependency_risk_drift" in event["diagnostic_codes"]
+                for event in child.events
+            )
+        )
+
     async def test_guest_mode_safety_critical_dependencies_are_actionable(self):
         index = DependencyIndex(
             DirectHaDependencyProvider(
@@ -310,6 +374,10 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             ["plan_approval"],
             plan["policy_decision"]["required_acknowledgements"],
+        )
+        self.assertIn(
+            "helper_dependency_evidence_complete",
+            plan["policy_decision"]["reason_codes"],
         )
         self.assertTrue(plan["approval_actionable"])
         self.assertEqual(0, self.helper.dispatch_count)
@@ -453,6 +521,43 @@ class Beta54ExactAutomationOwnerAuthorityTests(
         self.assertTrue(created["risk"]["apply_allowed"])
         self.assertTrue(created["approval_actionable"])
         self.assertEqual(0, sum(call[0] == "write" for call in self.gateway.calls))
+
+
+class Beta54LegacyAutomationAuthorityBoundaryTests(
+    governance_tests.GovernanceTestCase
+):
+    async def test_dynamic_legacy_update_cannot_gain_owner_authority(self):
+        proposed = copy.deepcopy(governance_tests.CURRENT)
+        proposed["description"] = "Legacy dynamic consequence boundary"
+        proposed["action"] = [
+            {
+                "service": "{{ states('input_text.future_service') }}",
+                "target": {"entity_id": "switch.bathroom_vanity"},
+            }
+        ]
+
+        created = await self.service.create_plan(
+            title="Legacy dynamic update",
+            description="Contract-v1 must retain fail-closed policy",
+            operation="update_automation",
+            automation_id="porch",
+            proposed_config=proposed,
+        )
+
+        persisted = self.repository.get(created["plan_id"])
+        assert persisted is not None
+        self.assertEqual(1, persisted.contract_version)
+        self.assertEqual("prohibited", created["policy_decision"]["policy_class"])
+        self.assertFalse(created["approval_actionable"])
+        self.assertIsNone(
+            self.service.task_repository.get_for_plan(created["plan_id"])
+        )
+        with self.assertRaises(GovernanceError):
+            self.service.approve(created["plan_id"], created["plan_hash"])
+        persisted = self.repository.get(created["plan_id"])
+        assert persisted is not None
+        self.assertIsNone(persisted.approval.challenge_id)
+        self.assertEqual(0, self.gateway.write_calls)
 
 
 class Beta54ReleaseAuthorityTests(unittest.TestCase):

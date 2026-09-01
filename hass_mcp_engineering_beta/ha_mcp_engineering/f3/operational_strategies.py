@@ -805,8 +805,6 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
                 "dependency_risk": binding,
             },
         }
-        if state_baseline.get("state") == prepared.requested_name:
-            return False, "already_desired", (), combined
         planned = prepared.baseline
         planned_dependency = planned.get("dependency_risk")
         if (
@@ -831,6 +829,11 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
                 ("dependency_risk_fingerprint",),
                 combined,
             )
+        # A no-op is still an execution outcome bound to the approved
+        # consequence disclosure.  Validate current v13 technical authority
+        # and the complete evidence fingerprint before accepting it.
+        if state_baseline.get("state") == prepared.requested_name:
+            return False, "already_desired", (), combined
         planned_state = {
             key: planned.get(key)
             for key in ("entity_id", "state", "last_changed")

@@ -20,6 +20,7 @@ deliberately excluded from this path.
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 from datetime import datetime, timedelta
 import hashlib
 import json
@@ -881,6 +882,99 @@ class OrphanChildRecoveryTests(ConfigurationPlanTestCase):
                 "dispatch_intent_exists" in event["diagnostic_codes"]
                 for event in after.events
             )
+        )
+
+    async def test_historical_policy_post_intent_recovery_is_readback_only(self):
+        task, declaration = await self._post_intent_active_child(
+            "beta54_historical_post_intent"
+        )
+        record = self.runtime.children.get(declaration["child_id"])
+        assert record is not None and record.dispatch_intent is not None
+        historical = copy.deepcopy(
+            self.service._load(declaration["plan_id"])
+        )
+        assert historical.policy_decision is not None
+        historical.policy_decision = replace(
+            historical.policy_decision,
+            policy_version="f2-v1",
+        )
+        prepared = (
+            self.runtime._prepared_cache[declaration["child_id"]],
+        )
+        requests = self.runtime._sequence_lock_cache[task.task_id]
+        writes_before = sum(
+            call[0] == "write" for call in self.gateway.calls
+        )
+
+        with patch.object(
+            self.service,
+            "_load_for_projection",
+            return_value=historical,
+        ), patch.object(
+            self.runtime,
+            "_load_prepared",
+            return_value=(prepared, requests),
+        ):
+            result = await self.runtime._recover_active_candidates(
+                ((declaration, record),),
+                now=self.service.now(),
+                sweep_started=0.0,
+                transition_limit=1,
+                recovery_mode="post_intent",
+                monotonic=lambda: 0.0,
+            )
+
+        recovered = self.runtime.children.get(declaration["child_id"])
+        assert recovered is not None
+        self.assertEqual(1, result["processed"])
+        self.assertEqual(1, recovered.dispatch_count)
+        self.assertEqual(
+            writes_before,
+            sum(call[0] == "write" for call in self.gateway.calls),
+        )
+
+    async def test_historical_policy_pre_intent_recovery_is_refused(self):
+        plan, task, declarations, _prepared, _requests = (
+            await self._initialized_hvac_sequence()
+        )
+        declaration = declarations[0]
+        historical = copy.deepcopy(plan)
+        assert historical.policy_decision is not None
+        historical.policy_decision = replace(
+            historical.policy_decision,
+            policy_version="f2-v1",
+        )
+        writes_before = sum(
+            call[0] == "write" for call in self.gateway.calls
+        )
+
+        with patch.object(
+            self.service,
+            "_load_for_projection",
+            return_value=historical,
+        ), patch.object(
+            self.runtime,
+            "_load_prepared",
+            side_effect=AssertionError(
+                "historical pre-intent work must not be prepared"
+            ),
+        ):
+            result = await self.runtime._recover_active_candidates(
+                ((declaration, None),),
+                now=self.service.now(),
+                sweep_started=0.0,
+                transition_limit=1,
+                recovery_mode="pre_intent",
+                monotonic=lambda: 0.0,
+            )
+
+        self.assertEqual(0, result["processed"])
+        self.assertEqual(
+            (declaration["child_id"],), result["retry_child_ids"]
+        )
+        self.assertEqual(
+            writes_before,
+            sum(call[0] == "write" for call in self.gateway.calls),
         )
 
     async def test_parent_that_dispatched_is_out_of_scope(self):

@@ -869,9 +869,9 @@ class ChangeGovernanceService:
     def _require_projection_policy_snapshot(self, plan: ChangePlan) -> None:
         """Validate current authority or exact terminal history for reads.
 
-        Historical compatibility deliberately exists only at projection
-        boundaries.  Approval, apply, rollback, and recovery continue through
-        ``_require_policy_snapshot`` and therefore require current policy.
+        Historical compatibility deliberately exists only at projection and
+        readback-only recovery boundaries. Approval, apply, rollback, and
+        pre-intent execution continue through current-policy authority.
         """
 
         if policy_snapshot_matches(plan):

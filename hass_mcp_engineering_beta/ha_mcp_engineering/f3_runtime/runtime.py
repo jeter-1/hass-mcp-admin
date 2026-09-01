@@ -3334,11 +3334,30 @@ class F3RuntimeIntegration:
             transitions += 1
             selected.append(declaration["child_id"])
             try:
-                plan = self.service._load(declaration["plan_id"])
+                plan = self.service._load_for_projection(
+                    declaration["plan_id"]
+                )
                 task = self.service._load_task(
                     declaration["public_task_id"]
                 )
                 record = self.children.get(declaration["child_id"])
+                historical_policy = bool(
+                    plan.policy_decision is not None
+                    and plan.policy_decision.policy_version != POLICY_VERSION
+                )
+                if (
+                    historical_policy
+                    and self._active_recovery_mode(record)
+                    not in {
+                        _RECOVERY_MODE_POST_INTENT,
+                        _RECOVERY_MODE_TERMINAL_PROJECTION,
+                    }
+                ):
+                    # Old policy may retain only readback/reconciliation for
+                    # a durable intent, or projection of an already terminal
+                    # record. It can never initialize or dispatch pre-intent
+                    # work under current authority.
+                    raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
                 if record is not None and record.terminal:
                     # Terminal recovery is projection-only. Keeping this
                     # branch before preparation makes provider preparation
