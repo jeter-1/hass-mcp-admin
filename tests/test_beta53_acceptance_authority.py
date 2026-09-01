@@ -91,22 +91,10 @@ class Beta53AcceptanceAuthorityTests(unittest.TestCase):
                 text,
             )
 
-        self.assertIn('version: "2.2.0-beta.53"', config)
-        self.assertIn(
-            'SERVER_VERSION = "2.2.0-beta.53"',
-            (
-                ROOT
-                / "hass_mcp_engineering_beta"
-                / "ha_mcp_engineering"
-                / "version.py"
-            ).read_text(encoding="utf-8"),
-        )
-        self.assertIn(
-            'BETA_VERSION = "2.2.0-beta.53"',
-            (ROOT / "scripts" / "validate_addon_metadata.py").read_text(
-                encoding="utf-8"
-            ),
-        )
+        # Beta 53 remains exact historical acceptance authority after a newer
+        # Engineering beta is materialized. Current-version consistency is
+        # enforced by the active release tests and metadata validator.
+        self.assertNotIn('version: "2.2.0-beta.52"', config)
 
     def test_fixture_hash_self_fingerprint_and_provenance_are_exact(self):
         raw = FIXTURE.read_bytes()

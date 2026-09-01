@@ -1,10 +1,10 @@
 # Engineering 2.2.0-beta.54 release notes
 
-Beta 54 stages owner-authoritative exact execution for exact
+Beta 54 is materialized with owner-authoritative exact execution for exact
 `SET_INPUT_BOOLEAN_STATE` plans and typed updates of existing automations.
-Engineering remains advertised as 2.2.0-beta.53 until separately authorized
-promotion. Stable v1.1.2, 51 public tools, task schema 1, approval authority 3,
-provider routing, fallback, workflows, containers, and deployment metadata are
+Engineering now advertises 2.2.0-beta.54. Stable v1.1.2, 51 public tools, task
+schema 1, approval authority 3, provider routing, fallback, workflows,
+containers, and deployment metadata other than the Engineering version are
 unchanged.
 
 ## Exact execution versus consequence evidence
@@ -66,7 +66,7 @@ tool or input, a provider, route, or fallback.
 
 ## Release boundary
 
-`.release/next-version` stages exactly `2.2.0-beta.54`; advertised metadata
-remains Beta 53. This change does not materialize, merge, publish, deploy,
-access live Home Assistant, approve/apply a plan, or run HAMCP-089. Those remain
-separate authority boundaries after exact-head validation and review.
+Engineering now advertises 2.2.0-beta.54 and `.release/next-version` is absent.
+This materialization does not merge, publish, deploy, access live Home
+Assistant, approve/apply a plan, or run HAMCP-089. Those remain separate
+authority boundaries after exact-head validation and review.

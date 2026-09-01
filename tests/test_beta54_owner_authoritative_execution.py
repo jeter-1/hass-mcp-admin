@@ -1061,7 +1061,7 @@ class Beta54LegacyAutomationAuthorityBoundaryTests(
 
 
 class Beta54ReleaseAuthorityTests(unittest.TestCase):
-    def test_staged_documents_resolve_exactly_without_advertising_beta54(self):
+    def test_documents_resolve_exactly_when_staged_or_materialized(self):
         context_path = ROOT / "scripts" / "codex-context.py"
         spec = importlib.util.spec_from_file_location(
             "_beta54_context_authority",
@@ -1123,7 +1123,7 @@ class Beta54ReleaseAuthorityTests(unittest.TestCase):
             "provider fallback remains absent",
             "does not independently prohibit",
             "at most one dispatch",
-            "does not materialize",
+            "does not publish",
         ):
             self.assertIn(required.lower(), text.lower())
 

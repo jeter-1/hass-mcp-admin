@@ -1,9 +1,9 @@
 # Engineering 2.2.0-beta.54 acceptance
 
-Beta 54 stages the runtime implementation of ADR-022 on exact base
-`4cb6fcac9f6c94f64110ae5d467787935d234d26`. Engineering continues to
-advertise 2.2.0-beta.53; stable remains 1.1.2. This document is source and
-promotion-candidate authority only. Materialization, merge, publication,
+Beta 54 is materialized as the runtime implementation of ADR-022 on exact base
+`4cb6fcac9f6c94f64110ae5d467787935d234d26`.
+Engineering now advertises 2.2.0-beta.54; stable remains 1.1.2. This document
+is the active source and release acceptance authority. Merge, publication,
 deployment, live Home Assistant access, plan approval or application,
 HAMCP-089, and the bathroom-vanity change remain outside this boundary.
 
@@ -150,16 +150,15 @@ and vulnerability checks; secret and whitespace checks; stable-v1 comparison;
 and exact public/tool/provider/fallback/workflow/container/deployment
 comparisons.
 
-The staged release is exactly `2.2.0-beta.54`. `config.yaml` remains
-2.2.0-beta.53 until a separately authorized promotion materializes the
-candidate. Exact-head code and security review must independently verify that
-no technical-integrity refusal was reclassified as consequence uncertainty,
-that v2 cannot authorize v1 plans, and that no provider, fallback, duplicate
-dispatch, recovery, schema, stable, workflow, container, or deployment boundary
-expanded.
+The advertised release is exactly `2.2.0-beta.54`; no staged release
+declaration remains. Exact-head code and security review must independently
+verify that no technical-integrity refusal was reclassified as consequence
+uncertainty, that v2 cannot authorize v1 plans, and that no provider, fallback,
+duplicate dispatch, recovery, schema, stable, workflow, container, or
+deployment boundary expanded.
 
-This staged source does not materialize, promote, publish, deploy, or mutate a
-live Home Assistant system.
+This materialized source does not publish, merge, deploy, or mutate a live Home
+Assistant system.
 
 ## Post-deployment boundary
 
