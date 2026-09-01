@@ -56,6 +56,8 @@ MAX_FAILURE_REASONS = 32
 JOURNAL_SCHEMA_VERSION = 1
 CACHE_SCHEMA_VERSION = 3
 PENDING_SCHEMA_VERSION = 3
+LIFECYCLE_WITNESS_SCHEMA_VERSION = 1
+LIFECYCLE_WITNESS_MAX_BYTES = 512
 
 _SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -504,7 +506,21 @@ class SignedReleaseRegistry:
         async with self._lock:
             self._last_refresh_monotonic = time.monotonic()
             self._last_refresh_status = "refreshing"
+            witness_started = False
+            candidate_validated = False
             try:
+                if (
+                    self._accepted is not None
+                    and self._authority_journal is not None
+                    and not self._surface_denied
+                ):
+                    self._write_lifecycle_witness(
+                        state="refreshing",
+                        authority_journal_sha256=(
+                            self._authority_journal.content_digest
+                        ),
+                    )
+                    witness_started = True
                 raw = await self._fetcher(REGISTRY_URL, MAX_CACHE_BYTES)
                 journal = _parse_signed_journal(
                     raw,
@@ -512,10 +528,21 @@ class SignedReleaseRegistry:
                 )
                 self._require_current_tip(journal.accepted)
                 status = self._validate_candidate_journal(journal)
+                candidate_validated = True
                 if (
                     status == "idempotent"
                     and not self._surface_denied
                 ):
+                    try:
+                        self._write_lifecycle_witness(
+                            state="committed",
+                            authority_journal_sha256=(
+                                self._authority_journal.content_digest
+                            ),
+                        )
+                    except ReleaseRegistryOperationalError:
+                        self._surface_denied = True
+                        raise
                     self._last_refresh_status = "idempotent"
                     self._last_failure_reason = None
                     return True
@@ -577,17 +604,67 @@ class SignedReleaseRegistry:
                 self._last_failure_reason = None
                 return True
             except ReleaseRegistryOperationalError as exc:
-                self._record_failure(exc.reason_code)
+                self._record_failure(
+                    self._restore_refresh_witness(
+                        witness_started=witness_started,
+                        candidate_validated=candidate_validated,
+                        reason_code=exc.reason_code,
+                    )
+                )
                 return False
             except RegistryValidationError as exc:
-                self._record_failure(exc.code.value)
+                self._record_failure(
+                    self._restore_refresh_witness(
+                        witness_started=witness_started,
+                        candidate_validated=candidate_validated,
+                        reason_code=exc.code.value,
+                    )
+                )
                 return False
             except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
-                self._record_failure("registry_unavailable")
+                self._record_failure(
+                    self._restore_refresh_witness(
+                        witness_started=witness_started,
+                        candidate_validated=candidate_validated,
+                        reason_code="registry_unavailable",
+                    )
+                )
                 return False
             except Exception:
-                self._record_failure("registry_invalid")
+                self._record_failure(
+                    self._restore_refresh_witness(
+                        witness_started=witness_started,
+                        candidate_validated=candidate_validated,
+                        reason_code="registry_invalid",
+                    )
+                )
                 return False
+
+    def _restore_refresh_witness(
+        self,
+        *,
+        witness_started: bool,
+        candidate_validated: bool,
+        reason_code: str,
+    ) -> str:
+        """Restore old cache authority only before a candidate is accepted."""
+
+        if not witness_started or candidate_validated:
+            return reason_code
+        if self._authority_journal is None:
+            self._surface_denied = True
+            return "registry_cache_write_failed"
+        try:
+            self._write_lifecycle_witness(
+                state="committed",
+                authority_journal_sha256=(
+                    self._authority_journal.content_digest
+                ),
+            )
+        except ReleaseRegistryOperationalError:
+            self._surface_denied = True
+            return "registry_cache_write_failed"
+        return reason_code
 
     def authority(self) -> ReleaseRegistryAuthority:
         envelope = self._accepted
@@ -987,15 +1064,35 @@ class SignedReleaseRegistry:
     def _load_cache(self) -> None:
         try:
             if self._pending_cache_path().exists():
+                if self._load_committed_main_cache():
+                    return
                 self._load_interrupted_cache_transaction()
                 return
             journal, sources = self._parse_cache_document(
                 self._cache_path.read_bytes()
             )
-            self._accepted = journal.accepted
-            self._authority_journal = journal
-            self._authority_chain = journal.envelopes
-            self._revocation_sources = sources
+            self._install_cache_journal(journal, sources)
+            try:
+                state, authority_digest = self._parse_lifecycle_witness()
+            except Exception:
+                self._surface_denied = True
+                self._retired_cache_incomplete = True
+                self._cache_status = "invalid"
+                self._record_failure(
+                    "registry_cache_incomplete_transaction"
+                )
+                return
+            if (
+                state != "committed"
+                or authority_digest != journal.content_digest
+            ):
+                self._surface_denied = True
+                self._retired_cache_incomplete = True
+                self._cache_status = "invalid"
+                self._record_failure(
+                    "registry_cache_incomplete_transaction"
+                )
+                return
             self._cache_status = (
                 "valid"
                 if self._positive_is_current(journal.accepted)
@@ -1014,6 +1111,69 @@ class SignedReleaseRegistry:
             self._surface_denied = True
             self._cache_status = "invalid"
             self._record_failure("registry_cache_invalid")
+
+    def _load_committed_main_cache(self) -> bool:
+        """Ignore a stale pending marker only after a committed witness."""
+
+        try:
+            journal, sources = self._parse_cache_document(
+                self._cache_path.read_bytes()
+            )
+            state, authority_digest = self._parse_lifecycle_witness()
+        except Exception:
+            return False
+        if (
+            state != "committed"
+            or authority_digest != journal.content_digest
+        ):
+            return False
+        self._install_cache_journal(journal, sources)
+        self._cache_status = (
+            "valid"
+            if self._positive_is_current(journal.accepted)
+            else "denial_only"
+        )
+        return True
+
+    def _install_cache_journal(
+        self,
+        journal: SignedRegistryJournal,
+        sources: tuple[RegistryEnvelope, ...],
+    ) -> None:
+        self._accepted = journal.accepted
+        self._authority_journal = journal
+        self._authority_chain = journal.envelopes
+        self._revocation_sources = sources
+
+    def _parse_lifecycle_witness(self) -> tuple[str, str]:
+        raw = self._lifecycle_witness_path().read_bytes()
+        if len(raw) > LIFECYCLE_WITNESS_MAX_BYTES:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_invalid"
+            )
+        value = _strict_json_document(raw, "registry_cache_invalid")
+        if not isinstance(value, dict) or set(value) != {
+            "schema_version",
+            "state",
+            "authority_journal_sha256",
+        }:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_invalid"
+            )
+        if (
+            type(value["schema_version"]) is not int
+            or value["schema_version"]
+            != LIFECYCLE_WITNESS_SCHEMA_VERSION
+            or value["state"] not in {"committed", "refreshing"}
+            or not isinstance(value["authority_journal_sha256"], str)
+            or not _SHA256_DIGEST.fullmatch(
+                value["authority_journal_sha256"]
+            )
+        ):
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_invalid"
+            )
+        return value["state"], value["authority_journal_sha256"]
 
     def _parse_cache_document(
         self,
@@ -1051,6 +1211,10 @@ class SignedReleaseRegistry:
     def _load_interrupted_cache_transaction(self) -> None:
         self._surface_denied = True
         self._retired_cache_incomplete = True
+        candidate_journal: SignedRegistryJournal | None = None
+        retained_denial_journals: tuple[
+            SignedRegistryJournal, ...
+        ] = ()
         candidate_revocations: tuple[ReleaseRevocation, ...] = ()
         try:
             (
@@ -1059,35 +1223,63 @@ class SignedReleaseRegistry:
             ) = self._parse_pending_document(
                 self._pending_cache_path().read_bytes()
             )
+        except Exception:
+            pass
+
+        base_journal: SignedRegistryJournal | None = None
+        base_sources: tuple[RegistryEnvelope, ...] = ()
+        for path in (
+            self._previous_cache_path(),
+            self._cache_path,
+        ):
+            try:
+                base_journal, base_sources = self._parse_cache_document(
+                    path.read_bytes()
+                )
+                break
+            except Exception:
+                continue
+        if base_journal is None:
+            self._accepted = None
+            self._authority_journal = None
+            self._authority_chain = ()
+            self._revocation_sources = ()
+        else:
+            self._install_cache_journal(base_journal, base_sources)
+
+        topology_ambiguous = candidate_journal is None
+        if candidate_journal is not None:
             self._volatile_accepted = candidate_journal.accepted
             self._volatile_journal = candidate_journal
             try:
                 self._volatile_denial_journals = (
                     self._minimal_denial_journals(
-                        retained_denial_journals + (candidate_journal,)
+                        retained_denial_journals
+                        + (candidate_journal,)
+                        + ((base_journal,) if base_journal else ())
                     )
                 )
                 candidate_revocations = self._bounded_denial_revocations(
                     self._volatile_denial_journals
                 )
-                self._retired_cache_incomplete = False
             except ReleaseRegistryOperationalError:
-                self._volatile_revocation_overflow = True
-        except Exception:
-            pass
-        try:
-            journal, sources = self._parse_cache_document(
-                self._previous_cache_path().read_bytes()
-            )
-            self._accepted = journal.accepted
-            self._authority_journal = journal
-            self._authority_chain = journal.envelopes
-            self._revocation_sources = sources
-        except Exception:
-            self._accepted = None
-            self._authority_journal = None
-            self._authority_chain = ()
-            self._revocation_sources = ()
+                topology_ambiguous = True
+            if base_journal is not None and not (
+                self._pending_advances_base(
+                    candidate_journal,
+                    base_journal,
+                )
+            ):
+                topology_ambiguous = True
+                if (
+                    base_journal.accepted.sequence
+                    >= candidate_journal.accepted.sequence
+                ):
+                    self._volatile_accepted = base_journal.accepted
+                    self._volatile_journal = base_journal
+            if not topology_ambiguous:
+                self._retired_cache_incomplete = False
+
         retained = {
             item.revocation_identity: item
             for item in candidate_revocations
@@ -1099,6 +1291,41 @@ class SignedReleaseRegistry:
             self._volatile_revocation_overflow = True
         self._cache_status = "invalid"
         self._record_failure("registry_cache_incomplete_transaction")
+
+    @staticmethod
+    def _pending_advances_base(
+        candidate: SignedRegistryJournal,
+        base: SignedRegistryJournal,
+    ) -> bool:
+        """Require a pending tip to be newer and linked to its base."""
+
+        candidate_tip = candidate.accepted
+        base_tip = base.accepted
+        if candidate_tip.sequence <= base_tip.sequence:
+            return False
+        matching = next(
+            (
+                index
+                for index, envelope in enumerate(candidate.envelopes)
+                if envelope.sequence == base_tip.sequence
+            ),
+            None,
+        )
+        if matching is not None:
+            return bool(
+                candidate.envelopes[matching].content_digest
+                == base_tip.content_digest
+                and matching < len(candidate.envelopes) - 1
+            )
+        first = candidate.envelopes[0]
+        if first.sequence <= base_tip.sequence:
+            return False
+        if first.sequence == base_tip.sequence + 1:
+            return (
+                first.previous_registry_sha256
+                == base_tip.content_digest
+            )
+        return True
 
     def _load_retired_cache(self) -> None:
         """Treat a retirement-first cache as denial-only after restart."""
@@ -1345,6 +1572,10 @@ class SignedReleaseRegistry:
                 os.fsync(handle.fileno())
             os.replace(temporary, self._cache_path)
             self._fsync_directory(parent)
+            self._write_lifecycle_witness(
+                state="committed",
+                authority_journal_sha256=journal.content_digest,
+            )
         except OSError as exc:
             raise ReleaseRegistryOperationalError(
                 "registry_cache_write_failed"
@@ -1366,11 +1597,80 @@ class SignedReleaseRegistry:
         except OSError:
             pass
 
+    def _write_lifecycle_witness(
+        self,
+        *,
+        state: str,
+        authority_journal_sha256: str,
+    ) -> None:
+        """Persist refresh intent before a newer registry can be observed."""
+
+        if (
+            state not in {"committed", "refreshing"}
+            or not isinstance(authority_journal_sha256, str)
+            or not _SHA256_DIGEST.fullmatch(authority_journal_sha256)
+        ):
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_invalid"
+            )
+        encoded = canonical_json(
+            {
+                "schema_version": LIFECYCLE_WITNESS_SCHEMA_VERSION,
+                "state": state,
+                "authority_journal_sha256": authority_journal_sha256,
+            }
+        )
+        if len(encoded) > LIFECYCLE_WITNESS_MAX_BYTES:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_oversized"
+            )
+        path = self._lifecycle_witness_path()
+        parent = path.parent
+        temporary: Path | None = None
+        try:
+            parent.mkdir(parents=True, exist_ok=True)
+            if path.exists():
+                with path.open("r+b") as handle:
+                    handle.seek(0)
+                    handle.write(encoded)
+                    handle.truncate()
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                return
+            handle = tempfile.NamedTemporaryFile(
+                mode="wb",
+                prefix=f".{self._cache_path.name}.lifecycle.",
+                dir=parent,
+                delete=False,
+            )
+            temporary = Path(handle.name)
+            with handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+            self._fsync_directory(parent)
+        except OSError as exc:
+            raise ReleaseRegistryOperationalError(
+                "registry_cache_write_failed"
+            ) from exc
+        finally:
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
     def _pending_cache_path(self) -> Path:
         return self._cache_path.with_name(self._cache_path.name + ".pending")
 
     def _previous_cache_path(self) -> Path:
         return self._cache_path.with_name(self._cache_path.name + ".previous")
+
+    def _lifecycle_witness_path(self) -> Path:
+        return self._cache_path.with_name(
+            self._cache_path.name + ".lifecycle"
+        )
 
     @staticmethod
     def _fsync_directory(parent: Path) -> None:

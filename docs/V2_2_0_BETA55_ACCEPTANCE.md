@@ -75,17 +75,20 @@ duplicate, compaction-checkpoint, and revocation checks. A bare tip cannot
 bootstrap or catch up a client.
 
 Accepted state uses temporary write, file fsync, atomic replacement, directory
-fsync, a durable pending signed journal, and a prior checkpoint. A failed persistence
-step cannot activate the candidate's positive entries. Authenticated
+fsync, a journal-bound lifecycle witness written before each refresh, a durable
+pending signed journal, and a prior checkpoint. A failed persistence step cannot
+activate the candidate's positive entries. Authenticated
 revocations remain effective as bounded denial-only state even if candidate
 persistence fails, and the verified candidate remains a sequence/digest barrier
 against conflicting replay. Restart reparses and reverifies every cached outer
-and envelope signature and the bounded journal/checkpoint topology. Unexpired positive authority survives a
-registry outage, expired positive authority becomes unavailable, and retained
-valid revocations remain denial-only across bounded compaction. Malformed, conflicting, interrupted,
-oversized, or capacity-exhausted cache state denies the ha-mcp surface until a
-fresh valid registry is accepted. A valid revocation overrides compiled exact
-authority.
+and envelope signature, the lifecycle witness, and the bounded
+journal/checkpoint topology. A stale pending tip that is not strictly newer than
+its authenticated base is permanently denial-only. Unexpired positive authority
+survives a registry outage, expired positive authority becomes unavailable, and
+retained valid revocations remain denial-only across bounded compaction.
+Malformed, conflicting, interrupted, oversized, or capacity-exhausted cache
+state denies the ha-mcp surface until a fresh valid registry is accepted. A
+valid revocation overrides compiled exact authority.
 
 Only synthetic ephemeral private keys appear in tests. No production private
 key, registry entry, signing workflow, GitHub secret, public trust anchor, or

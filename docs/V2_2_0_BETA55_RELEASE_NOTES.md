@@ -41,9 +41,10 @@ The fixed HTTPS registry refuses redirects and enforces strict parsing,
 signature, identity, schema, bounded signed-journal/checkpoint,
 sequence/digest-chain, expiry, rollback, replay, revocation, and capacity
 checks. A bare tip cannot bootstrap. Its accepted cache uses the verified
-journal, a durable pending signed journal, prior checkpoint, file fsync, and
-directory fsync. Restart reverifies outer and envelope signatures and chain
-topology; interrupted or malformed state denies positive authority. Expired positive authority
+journal, a journal-bound write-ahead lifecycle witness, a durable pending signed
+journal, prior checkpoint, file fsync, and directory fsync. Restart reverifies
+outer and envelope signatures, witness binding, and chain topology; interrupted,
+stale-pending, or malformed state denies positive authority. Expired positive authority
 disappears while valid retained revocations remain denial-only, including
 authenticated revocations whose positive cache transaction could not commit or
 whose original chain segment was compacted.

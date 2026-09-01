@@ -82,8 +82,11 @@ previously retained revocation remains represented as denial-only evidence.
 
 Accepted content is cached in
 `/data/ha-mcp-release-registry-cache.json` with a temporary write, file fsync,
-atomic replacement, and directory fsync. A durable pending journal and prior
-checkpoint make an interrupted replacement denial-only on restart. A cache
+atomic replacement, and directory fsync. A journal-bound lifecycle witness is
+durably changed from committed to refreshing before a newer registry can be
+observed. A durable pending journal and prior checkpoint make an interrupted
+replacement denial-only on restart, and a pending tip that is not strictly newer
+and correctly linked to its authenticated base cannot regain authority. A cache
 write failure prevents the candidate's positive entries from becoming
 accepted, while any already authenticated revocations take effect immediately
 as bounded process-local denial evidence. The verified candidate sequence and
