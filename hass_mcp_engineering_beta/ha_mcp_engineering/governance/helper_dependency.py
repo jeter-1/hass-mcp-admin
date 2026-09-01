@@ -71,6 +71,8 @@ _NON_CAUSAL_RELATIONS = frozenset(
 )
 _CONSERVATIVE_ALL_AUTOMATION_LOCK_REASONS = frozenset(
     {
+        "automation_configuration_read_failure",
+        "automation_inventory_incomplete",
         "blueprint_inventory_incomplete",
         "home_assistant_version_unavailable",
         "home_assistant_version_unreadable",

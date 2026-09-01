@@ -19,6 +19,9 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
+from ha_mcp_engineering.dependency.models import (  # noqa: E402
+    AutomationReadFailure,
+)
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     DirectHaDependencyProvider,
 )
@@ -38,6 +41,7 @@ from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_MODEL,
     HelperDependencyRiskService,
+    build_helper_dependency_risk_binding,
 )
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.governance import policy as policy_module  # noqa: E402
@@ -1066,6 +1070,113 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         end_request(self.context)
         self.temp.cleanup()
 
+    async def _automation_inventory_failure_evidence(
+        self,
+        *,
+        source_id: str,
+        source_entity_id: str | None,
+    ) -> tuple[dict, beta50.SyntheticBeta50Rest]:
+        rest = beta50.SyntheticBeta50Rest()
+        rest.configs = {
+            key: value
+            for key, value in rest.configs.items()
+            if key.startswith("consequential_")
+        }
+        bounded_failure_id = "bounded_unreadable"
+        rest.configs[bounded_failure_id] = {
+            "alias": "Synthetic unreadable automation",
+        }
+        original_request = rest.request
+
+        async def request(method: str, path: str):
+            if path == (
+                "/config/automation/config/" + bounded_failure_id
+            ):
+                raise RuntimeError("synthetic automation read failure")
+            return await original_request(method, path)
+
+        rest.request = request
+        index = DependencyIndex(
+            DirectHaDependencyProvider(
+                rest,
+                beta50.SyntheticBeta50WebSocket(),
+            )
+        )
+        snapshot, rebuilt, _lookup_ms = await index.get(refresh=True)
+        self.assertTrue(rebuilt)
+        self.assertEqual(1, len(snapshot.automation_read_failures))
+        self.assertEqual(
+            bounded_failure_id,
+            snapshot.automation_read_failures[0].source_id,
+        )
+        if (
+            source_id != bounded_failure_id
+            or source_entity_id != f"automation.{bounded_failure_id}"
+        ):
+            snapshot = replace(
+                snapshot,
+                automation_read_failures=(
+                    AutomationReadFailure(
+                        source_id=source_id,
+                        source_entity_id=source_entity_id,
+                        reason_code="automation_config_unreadable",
+                    ),
+                ),
+            )
+        binding = build_helper_dependency_risk_binding(
+            snapshot,
+            entity_id=beta50.STANDARD_TARGET,
+            index_metadata={
+                "freshness": "current",
+                "evidence_stale": False,
+                "invalidated": False,
+            },
+        )
+        return (
+            {
+                "binding": binding,
+                "provenance": {
+                    "provider": "dependency_index",
+                    "completeness": binding["completeness"],
+                    "generation": snapshot.generation,
+                    "fingerprint": snapshot.fingerprint,
+                    "freshness": "current",
+                    "fallback": "none",
+                    "fallback_occurred": False,
+                },
+            },
+            rest,
+        )
+
+    def _install_helper_evidence(
+        self, evidence: dict
+    ) -> _FrozenDependencyRiskReader:
+        reader = _FrozenDependencyRiskReader(evidence)
+        self.helper.entity_id = beta50.STANDARD_TARGET
+        self.service.helper_dependency_risk_reader = reader
+        self.runtime.operational_adapter.strategies[
+            "set_input_boolean_state"
+        ].dependency_risk_reader = reader
+        return reader
+
+    async def _approve_once(self, plan: dict) -> None:
+        pending = self.service.approve(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual("plan_approval", pending["approval_action"])
+        _review, csrf = await self.service.issue_external_csrf(
+            plan["plan_id"], pending["challenge_id"]
+        )
+        granted = await self.service.decide_external_approval(
+            plan_id=plan["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=plan["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal="home_assistant_admin_ingress:beta54-owner",
+        )
+        self.assertEqual("approved", granted["status"])
+
     async def test_captured_consequence_uncertainty_is_one_step_actionable(self):
         binding = self.dependency.evidence["binding"]
         self.assertEqual("helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL)
@@ -1210,6 +1321,164 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
             caught.exception.code,
         )
         self.assertEqual(0, self.helper.dispatch_count)
+
+    async def test_incomplete_automation_inventory_locks_every_bounded_source(
+        self,
+    ):
+        evidence, _rest = await self._automation_inventory_failure_evidence(
+            source_id="bounded_unreadable",
+            source_entity_id="automation.bounded_unreadable",
+        )
+        binding = evidence["binding"]
+        expected_resources = sorted(
+            {
+                "bounded_unreadable",
+                *(f"consequential_{index}" for index in range(7)),
+            },
+            key=lambda value: value.encode("utf-8"),
+        )
+        self.assertIn(
+            "automation_inventory_incomplete",
+            binding["consequence_uncertainty_reason_codes"],
+        )
+        self.assertIn(
+            "automation_configuration_read_failure",
+            binding["consequence_uncertainty_reason_codes"],
+        )
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertEqual([], binding["execution_block_reason_codes"])
+        self.assertTrue(binding["execution_eligible"])
+        self.assertFalse(binding["consequence_evidence_complete"])
+        self.assertEqual(
+            expected_resources,
+            binding["dependency_lock_projection"][
+                "automation_resource_ids"
+            ],
+        )
+        self.assertTrue(
+            binding["dependency_lock_projection"][
+                "conservative_helper_dependency"
+            ]
+        )
+        self.assertTrue(
+            binding["dependency_lock_projection"][
+                "custom_template_reload"
+            ]
+        )
+
+        reader = self._install_helper_evidence(evidence)
+        created = await self.service.create_helper_state_plan(
+            entity_id=beta50.STANDARD_TARGET,
+            desired_state="on",
+        )
+        plan = created["plan"]
+        self.assertEqual("high", plan["risk"]["level"])
+        self.assertEqual(
+            "elevated_admin", plan["policy_decision"]["policy_class"]
+        )
+        self.assertTrue(plan["approval_actionable"])
+        self.assertEqual(0, self.helper.dispatch_count)
+        await self._approve_once(plan)
+        self.assertEqual(0, self.helper.dispatch_count)
+
+        with patch.object(
+            self.helper,
+            "read_state",
+            wraps=self.helper.read_state,
+        ) as readback:
+            applied = await self.service.apply(
+                plan["plan_id"], plan["plan_hash"]
+            )
+        declaration = self.runtime.children.declarations_for_task(
+            applied["task_id"]
+        )[0]
+        child = self.runtime.children.get(declaration["child_id"])
+        assert child is not None
+        self.assertEqual(
+            "succeeded_verified",
+            applied["task_state"],
+            child.to_dict(),
+        )
+        expected_locks = {
+            "home_assistant:core": "shared",
+            f"helper:{beta50.STANDARD_TARGET}": "exclusive",
+            "reload:input_boolean": "shared",
+            "reload:automation": "shared",
+            "reload:custom_templates": "shared",
+            f"helper_dependency:{beta50.STANDARD_TARGET}": "shared",
+            "helper_dependency:input_boolean_dynamic": "shared",
+            **{
+                f"automation:{resource_id}": "shared"
+                for resource_id in expected_resources
+            },
+        }
+        self.assertEqual(
+            expected_locks,
+            {item["key"]: item["mode"] for item in child.lock_tokens},
+        )
+        self.assertTrue(applied["provider_dispatch_occurred"])
+        self.assertEqual(1, child.dispatch_count)
+        self.assertEqual(1, self.helper.dispatch_count)
+        self.assertGreaterEqual(readback.await_count, 2)
+        self.assertGreaterEqual(reader.fenced_read_count, 1)
+
+    async def test_unbounded_automation_read_identity_fails_before_dispatch(
+        self,
+    ):
+        bounded, _rest = await self._automation_inventory_failure_evidence(
+            source_id="bounded_unreadable",
+            source_entity_id="automation.bounded_unreadable",
+        )
+        self._install_helper_evidence(bounded)
+        created = await self.service.create_helper_state_plan(
+            entity_id=beta50.STANDARD_TARGET,
+            desired_state="on",
+        )
+        plan = created["plan"]
+        await self._approve_once(plan)
+        self.assertEqual(0, self.helper.dispatch_count)
+
+        unbounded, _rest = await self._automation_inventory_failure_evidence(
+            source_id="Unbounded/Automation Identity",
+            source_entity_id=None,
+        )
+        binding = unbounded["binding"]
+        self.assertFalse(binding["execution_contract_complete"])
+        self.assertFalse(binding["execution_eligible"])
+        self.assertEqual(
+            ["automation_lock_identity_unavailable"],
+            binding["execution_block_reason_codes"],
+        )
+        self.assertFalse(
+            any(
+                "Unbounded" in resource_id
+                for resource_id in binding["dependency_lock_projection"][
+                    "automation_resource_ids"
+                ]
+            )
+        )
+        reader = self._install_helper_evidence(unbounded)
+
+        applied = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        declaration = self.runtime.children.declarations_for_task(
+            applied["task_id"]
+        )[0]
+        child = self.runtime.children.get(declaration["child_id"])
+        assert child is not None
+        self.assertEqual("failed_pre_dispatch", applied["task_state"])
+        self.assertFalse(applied["provider_dispatch_occurred"])
+        self.assertEqual(0, child.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertGreaterEqual(reader.read_count, 1)
+        self.assertGreaterEqual(reader.fenced_read_count, 1)
+        self.assertTrue(
+            any(
+                "dependency_coverage_failure" in event["diagnostic_codes"]
+                for event in child.events
+            )
+        )
 
     async def test_already_desired_still_rejects_consequence_evidence_drift(self):
         created = await self.service.create_helper_state_plan(
@@ -1520,6 +1789,52 @@ class Beta54ExactAutomationOwnerAuthorityTests(
         self.assertTrue(created["risk"]["apply_allowed"])
         self.assertTrue(created["approval_actionable"])
         self.assertEqual(0, sum(call[0] == "write" for call in self.gateway.calls))
+
+        pending = self.service.approve(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual("plan_approval", pending["approval_action"])
+        _review, csrf = await self.service.issue_external_csrf(
+            created["plan_id"], pending["challenge_id"]
+        )
+        granted = await self.service.decide_external_approval(
+            plan_id=created["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=created["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal=(
+                "home_assistant_admin_ingress:beta54-owner"
+            ),
+        )
+        self.assertEqual("approved", granted["status"])
+        self.assertEqual(0, sum(call[0] == "write" for call in self.gateway.calls))
+        target = (
+            "automation",
+            "bathroom_vanity_restart_reconciliation",
+        )
+        reads_before_apply = self.gateway.read_counts[target]
+
+        applied = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual("succeeded_verified", applied["task_state"])
+        self.assertTrue(applied["provider_dispatch_occurred"])
+        self.assertEqual(1, sum(call[0] == "write" for call in self.gateway.calls))
+        self.assertGreaterEqual(
+            self.gateway.read_counts[target], reads_before_apply + 2
+        )
+        self.assertEqual(
+            proposed["action"], self.gateway.configs[target]["action"]
+        )
+
+        repeated = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual("already_applied", repeated["status"])
+        self.assertEqual(1, sum(call[0] == "write" for call in self.gateway.calls))
 
 
 class Beta54LegacyAutomationAuthorityBoundaryTests(
