@@ -23,7 +23,12 @@ from ha_mcp_engineering.f3.locks import (
     normalize_lock_requests as normalize_durable_lock_requests,
 )
 
-from ..governance.models import ApprovalState, ChangePlan, PlanStatus
+from ..governance.models import (
+    ApprovalActionKind,
+    ApprovalState,
+    ChangePlan,
+    PlanStatus,
+)
 from ..governance.helper_dependency import (
     read_runtime_helper_dependency_risk,
 )
@@ -290,7 +295,11 @@ class OperationalAdministrationAdapter:
         if operational.provider != strategy.capability.provider:
             raise OperationalAdapterError("provider_identity_mismatch")
         elevated = plan.approval.elevated_risk_acknowledgement
-        if policy_values[0] == "elevated_admin" and not (
+        acknowledgement_required = (
+            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
+            in policy.required_acknowledgements
+        )
+        if acknowledgement_required and not (
             elevated is not None
             and elevated.state is ApprovalState.APPROVED
             and elevated.bound_plan_hash == proposal.expected_plan_hash

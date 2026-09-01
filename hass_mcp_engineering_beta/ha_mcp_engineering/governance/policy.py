@@ -20,7 +20,8 @@ from .normalize import stable_hash
 from .risk import SAFETY_CRITICAL_SERVICES
 
 
-POLICY_VERSION = "f2-v1"
+POLICY_VERSION = "f2-v2"
+COMPATIBLE_POLICY_VERSIONS = frozenset({"f2-v1", POLICY_VERSION})
 
 _RISK_RANK = {
     RiskDelta.NONE: 0,
@@ -32,8 +33,9 @@ _RISK_RANK = {
 _CONSEQUENCE_RANK = {
     PhysicalConsequence.NONE: 0,
     PhysicalConsequence.INDIRECT: 1,
-    PhysicalConsequence.DIRECT: 2,
-    PhysicalConsequence.SAFETY_CRITICAL: 3,
+    PhysicalConsequence.UNKNOWN: 2,
+    PhysicalConsequence.DIRECT: 3,
+    PhysicalConsequence.SAFETY_CRITICAL: 4,
 }
 _POLICY_RANK = {
     ApprovalPolicyClass.STANDARD_ADMIN: 0,
@@ -133,6 +135,37 @@ def _risk_services(operation: ConfigurationOperation) -> set[str]:
         and isinstance(item.get("service"), str)
         and item.get("service") in SAFETY_CRITICAL_SERVICES
     }
+
+
+def _exact_existing_automation_update(
+    operation: ConfigurationOperation,
+) -> bool:
+    """Recognize the first exact typed configuration-write authority.
+
+    Action targets inside the stored automation may remain semantically
+    uncertain. They are not the configuration provider's dispatch target:
+    that target is the exact existing automation bound by normalized before
+    and after configurations, optimistic state, validation, and a typed
+    writer/readback contract.
+    """
+
+    return bool(
+        operation.resource_type == "automation"
+        and operation.action == "update"
+        and isinstance(operation.current_config, dict)
+        and isinstance(operation.proposed_config, dict)
+        and isinstance(operation.normalized_current_config, dict)
+        and isinstance(operation.normalized_proposed_config, dict)
+        and isinstance(operation.target_id, str)
+        and bool(operation.target_id)
+        and isinstance(operation.current_state_fingerprint, str)
+        and len(operation.current_state_fingerprint) == 64
+        and isinstance(operation.proposed_config_hash, str)
+        and len(operation.proposed_config_hash) == 64
+        and operation.normalization_version >= 1
+        and operation.validation_results.get("valid") is True
+        and operation.risk.apply_allowed
+    )
 
 
 def _contains_executable_condition_key(value: Any) -> bool:
@@ -249,6 +282,8 @@ def _retained_safety_critical_effect_is_non_risk_increasing(
 
 def configuration_operation_policy(
     operation: ConfigurationOperation,
+    *,
+    owner_authoritative: bool = True,
 ) -> OperationPolicyClassification:
     """Classify one operation for both policy and approval review."""
     triggers = _risk_triggers(operation)
@@ -256,6 +291,10 @@ def configuration_operation_policy(
     risk_delta = _risk_delta(operation.risk.level)
     reasons = {"supported_configuration_change"}
     consequence = PhysicalConsequence.NONE
+    exact_automation_update = bool(
+        owner_authoritative
+        and _exact_existing_automation_update(operation)
+    )
 
     if _retained_safety_critical_effect_is_non_risk_increasing(
         operation,
@@ -292,15 +331,57 @@ def configuration_operation_policy(
         consequence = PhysicalConsequence.DIRECT
         reasons.add("direct_physical_consequence")
 
-    if triggers & _UNCLASSIFIABLE_TRIGGERS or any(
-        "could not be bounded structurally" in warning
-        for warning in operation.risk.warnings
-    ):
+    consequence_uncertain = bool(
+        triggers & _UNCLASSIFIABLE_TRIGGERS
+        or any(
+            "could not be bounded structurally" in warning
+            for warning in operation.risk.warnings
+        )
+    )
+    if consequence_uncertain and exact_automation_update:
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            max(risk_delta, RiskDelta.HIGH, key=lambda item: _RISK_RANK[item]),
+            (
+                consequence
+                if consequence is not PhysicalConsequence.NONE
+                else PhysicalConsequence.UNKNOWN
+            ),
+            tuple(
+                sorted(
+                    {
+                        *reasons,
+                        "automation_consequence_semantics_incomplete",
+                        "exact_existing_automation_update",
+                        "owner_decision_required",
+                    }
+                )
+            ),
+        )
+    if consequence_uncertain:
         return OperationPolicyClassification(
             ApprovalPolicyClass.PROHIBITED,
             risk_delta,
             consequence,
             tuple(sorted({*reasons, "unknown_policy_classification"})),
+        )
+    if (
+        consequence == PhysicalConsequence.SAFETY_CRITICAL
+        and exact_automation_update
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            max(risk_delta, RiskDelta.HIGH, key=lambda item: _RISK_RANK[item]),
+            consequence,
+            tuple(
+                sorted(
+                    {
+                        *reasons,
+                        "exact_existing_automation_update",
+                        "owner_decision_required",
+                    }
+                )
+            ),
         )
     if consequence == PhysicalConsequence.SAFETY_CRITICAL:
         return OperationPolicyClassification(
@@ -342,6 +423,8 @@ def configuration_operation_policy(
 
 def _single_plan_policy(
     plan: ChangePlan,
+    *,
+    owner_authoritative: bool = True,
 ) -> tuple[OperationPolicyClassification, ...]:
     if plan.operation == ChangeOperation.CREATE_FULL_BACKUP:
         return (
@@ -396,8 +479,16 @@ def _single_plan_policy(
                     ("helper_dependency_evidence_missing",),
                 ),
             )
-        complete = dependency.get("evidence_complete") is True
-        eligible = dependency.get("execution_eligible") is True
+        complete = (
+            dependency.get("consequence_evidence_complete") is True
+            if owner_authoritative
+            else dependency.get("evidence_complete") is True
+        )
+        eligible = (
+            dependency.get("execution_contract_complete") is True
+            if owner_authoritative
+            else dependency.get("execution_eligible") is True
+        )
         precision = str(
             dependency.get(
                 "semantic_precision",
@@ -432,7 +523,11 @@ def _single_plan_policy(
                         if consequence == "safety_critical"
                         else PhysicalConsequence.DIRECT
                         if consequence == "direct"
-                        else PhysicalConsequence.INDIRECT
+                        else (
+                            PhysicalConsequence.UNKNOWN
+                            if owner_authoritative
+                            else PhysicalConsequence.INDIRECT
+                        )
                     ),
                     (
                         (
@@ -449,7 +544,7 @@ def _single_plan_policy(
                     ),
                 ),
             )
-        if precision == "bounded_opaque":
+        if not owner_authoritative and precision == "bounded_opaque":
             return (
                 OperationPolicyClassification(
                     ApprovalPolicyClass.ELEVATED_ADMIN,
@@ -468,15 +563,33 @@ def _single_plan_policy(
                     ),
                 ),
             )
+        if not owner_authoritative:
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.ELEVATED_ADMIN,
+                    RiskDelta.HIGH,
+                    PhysicalConsequence.INDIRECT,
+                    (
+                        "exact_input_boolean_state_elevated_policy",
+                        "helper_dependency_coverage_failure",
+                        "low_risk_not_established",
+                    ),
+                ),
+            )
         return (
             OperationPolicyClassification(
-                ApprovalPolicyClass.ELEVATED_ADMIN,
-                RiskDelta.HIGH,
-                PhysicalConsequence.INDIRECT,
+                ApprovalPolicyClass.PROHIBITED,
+                RiskDelta.CRITICAL,
                 (
-                    "exact_input_boolean_state_elevated_policy",
-                    "helper_dependency_coverage_failure",
-                    "low_risk_not_established",
+                    PhysicalConsequence.SAFETY_CRITICAL
+                    if consequence == "safety_critical"
+                    else PhysicalConsequence.DIRECT
+                    if consequence == "direct"
+                    else PhysicalConsequence.UNKNOWN
+                ),
+                (
+                    "helper_execution_contract_incomplete",
+                    "technical_execution_authority_required",
                 ),
             ),
         )
@@ -510,7 +623,10 @@ def _single_plan_policy(
                 ),
             )
         return tuple(
-            configuration_operation_policy(operation)
+            configuration_operation_policy(
+                operation,
+                owner_authoritative=owner_authoritative,
+            )
             for operation in plan.operations
         )
     if plan.operation in {
@@ -539,7 +655,12 @@ def _single_plan_policy(
             risk=plan.risk,
             warnings=plan.warnings,
         )
-        return (configuration_operation_policy(synthetic),)
+        return (
+            configuration_operation_policy(
+                synthetic,
+                owner_authoritative=owner_authoritative,
+            ),
+        )
     return (
         OperationPolicyClassification(
             ApprovalPolicyClass.PROHIBITED,
@@ -684,23 +805,60 @@ def policy_subject_payload(plan: ChangePlan) -> dict[str, Any]:
     }
 
 
-def evaluate_change_policy(plan: ChangePlan) -> ChangePolicyDecision:
+def _evaluate_change_policy_version(
+    plan: ChangePlan,
+    *,
+    policy_version: str,
+    owner_authoritative: bool,
+) -> ChangePolicyDecision:
     classification = aggregate_policy_classifications(
-        _single_plan_policy(plan)
+        _single_plan_policy(
+            plan,
+            owner_authoritative=owner_authoritative,
+        )
+    )
+    dependency_binding = (
+        plan.operational.baseline.get("dependency_risk")
+        if plan.operation == ChangeOperation.SET_INPUT_BOOLEAN_STATE
+        and plan.operational is not None
+        and isinstance(plan.operational.baseline, dict)
+        else None
+    )
+    exact_owner_authoritative = bool(
+        owner_authoritative
+        and (
+            (
+                isinstance(dependency_binding, dict)
+                and dependency_binding.get("execution_contract_complete")
+                is True
+            )
+            or (
+                plan.operation == ChangeOperation.CONFIGURATION_PLAN
+                and bool(plan.operations)
+                and all(
+                    _exact_existing_automation_update(operation)
+                    for operation in plan.operations
+                )
+            )
+        )
     )
     required = {
         ApprovalPolicyClass.STANDARD_ADMIN: (
             ApprovalActionKind.PLAN_APPROVAL,
         ),
         ApprovalPolicyClass.ELEVATED_ADMIN: (
-            ApprovalActionKind.PLAN_APPROVAL,
-            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT,
+            (ApprovalActionKind.PLAN_APPROVAL,)
+            if exact_owner_authoritative
+            else (
+                ApprovalActionKind.PLAN_APPROVAL,
+                ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT,
+            )
         ),
         ApprovalPolicyClass.PROHIBITED: (),
     }[classification.policy_class]
     subject_hash = stable_hash(policy_subject_payload(plan))
     decision_payload = {
-        "policy_version": POLICY_VERSION,
+        "policy_version": policy_version,
         "policy_class": classification.policy_class.value,
         "risk_delta": classification.risk_delta.value,
         "physical_consequence": classification.physical_consequence.value,
@@ -709,7 +867,7 @@ def evaluate_change_policy(plan: ChangePlan) -> ChangePolicyDecision:
         "policy_subject_hash": subject_hash,
     }
     return ChangePolicyDecision(
-        policy_version=POLICY_VERSION,
+        policy_version=policy_version,
         policy_class=classification.policy_class,
         risk_delta=classification.risk_delta,
         physical_consequence=classification.physical_consequence,
@@ -717,6 +875,31 @@ def evaluate_change_policy(plan: ChangePlan) -> ChangePolicyDecision:
         required_acknowledgements=required,
         policy_subject_hash=subject_hash,
         policy_decision_hash=stable_hash(decision_payload),
+    )
+
+
+def evaluate_change_policy(plan: ChangePlan) -> ChangePolicyDecision:
+    """Evaluate a fresh plan under current owner-authoritative policy."""
+
+    return _evaluate_change_policy_version(
+        plan,
+        policy_version=POLICY_VERSION,
+        owner_authoritative=True,
+    )
+
+
+def persisted_f2_v1_policy_snapshot_matches(plan: ChangePlan) -> bool:
+    """Recognize an exact Beta 53 F2 snapshot without granting authority."""
+
+    return bool(
+        plan.policy_decision is not None
+        and plan.policy_decision.policy_version == "f2-v1"
+        and plan.policy_decision
+        == _evaluate_change_policy_version(
+            plan,
+            policy_version="f2-v1",
+            owner_authoritative=False,
+        )
     )
 
 

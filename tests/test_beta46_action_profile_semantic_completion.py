@@ -173,7 +173,9 @@ class Beta46ActionProfileCompletenessTests(unittest.TestCase):
             source_id="action_step_overflow",
         )
         self.assertFalse(binding["coverage_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertFalse(binding["consequence_evidence_complete"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertIn(
             "action_profile_processing_limit_exceeded",
             binding["coverage_failure_reason_codes"],

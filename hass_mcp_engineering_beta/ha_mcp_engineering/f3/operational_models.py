@@ -173,6 +173,7 @@ def operational_policy_expectation_is_valid(
     return (policy, risk_level) in {
         (("standard_admin", "low", "none"), "low"),
         (("elevated_admin", "high", "indirect"), "high"),
+        (("elevated_admin", "high", "unknown"), "high"),
         (("elevated_admin", "high", "direct"), "high"),
         (("elevated_admin", "high", "safety_critical"), "high"),
     }

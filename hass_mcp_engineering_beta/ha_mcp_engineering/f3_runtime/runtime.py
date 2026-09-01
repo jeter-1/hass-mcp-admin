@@ -73,6 +73,7 @@ from ..governance.helper_state import (
     helper_state_provider_evidence,
 )
 from ..governance.normalize import stable_hash
+from ..governance.policy import POLICY_VERSION
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
@@ -1102,6 +1103,11 @@ class F3RuntimeIntegration:
         task.events[0].changes["legacy_projection"] = marker
 
     async def _initialize(self, plan: Any, expected_plan_hash: str):
+        if (
+            plan.policy_decision is None
+            or plan.policy_decision.policy_version != POLICY_VERSION
+        ):
+            raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
         calculated = self.service.plan_hash(plan)
         if (
             not expected_plan_hash
@@ -1895,7 +1901,17 @@ class F3RuntimeIntegration:
             ),
             elevated_acknowledgement_bound=(
                 operation.policy_class != "elevated_admin"
-                or task.approval_reference.get("same_principal_confirmed") is True
+                or (
+                    "elevated_risk_acknowledgement"
+                    not in (
+                        task.approval_reference.get(
+                            "required_acknowledgements"
+                        )
+                        or []
+                    )
+                )
+                or task.approval_reference.get("same_principal_confirmed")
+                is True
             ),
             governance_storage_status="healthy",
             audit_storage_status=("healthy" if audit_healthy else "unavailable"),
@@ -2368,9 +2384,22 @@ class F3RuntimeIntegration:
         )
         if expected_hold_generation_binding != hold_generation_binding:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_INVALID_STATE)
-        plan = self.service._load(declaration["plan_id"])
+        plan = self.service._load_for_projection(declaration["plan_id"])
         task = self.service._load_task(declaration["public_task_id"])
         record = self.children.get(child_id)
+        historical_policy = bool(
+            plan.policy_decision is not None
+            and plan.policy_decision.policy_version != POLICY_VERSION
+        )
+        if historical_policy and (
+            record is None
+            or record.dispatch_intent is None
+            or action == "create_governed_rollback_plan"
+        ):
+            # Historical policy can retain only readback/reconciliation for
+            # an already durable intent. It can never initialize a child,
+            # dispatch another operation, or create new rollback authority.
+            raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
         if action in {"rerun_observation", "rerun_verification"}:
             if record is None or record.dispatch_intent is None:
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_INVALID_STATE)

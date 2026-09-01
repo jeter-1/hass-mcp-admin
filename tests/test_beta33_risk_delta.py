@@ -156,7 +156,7 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
         )
         self.assertEqual(
             decision["required_acknowledgements"],
-            ["plan_approval", "elevated_risk_acknowledgement"],
+            ["plan_approval"],
         )
         self.assertEqual(
             decision["reason_codes"],
@@ -255,14 +255,14 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
             self.service.task_repository.get_for_plan(created["plan_id"])
         )
 
-    async def test_new_or_changed_effect_remains_prohibited_without_dispatch(
+    async def test_new_or_changed_exact_effect_is_owner_actionable_without_dispatch(
         self,
     ):
         proposed = self.proposed_with_guard()
         proposed["action"][0]["service"] = "cover.open_cover"
         created = await self.service.create_configuration_plan(
             title="Changed garage effect",
-            description="Must remain prohibited",
+            description="Disclose the changed effect for one owner decision",
             operations=[
                 {
                     "operation_id": "change_garage_effect",
@@ -274,23 +274,18 @@ class Beta33RiskDeltaTests(ConfigurationPlanTestCase):
                 }
             ],
         )
-        self.assertEqual(
-            created["policy_decision"]["policy_class"], "prohibited"
-        )
-        with self.assertRaises(GovernanceError) as approval_error:
-            self.service.approve(created["plan_id"], created["plan_hash"])
-        self.assertEqual(
-            approval_error.exception.code, ErrorCode.PROHIBITED_CHANGE
-        )
-        with self.assertRaises(GovernanceError) as apply_error:
-            await self.service.apply(created["plan_id"], created["plan_hash"])
-        self.assertEqual(apply_error.exception.code, ErrorCode.PROHIBITED_CHANGE)
+        decision = created["policy_decision"]
+        self.assertEqual(decision["policy_version"], "f2-v2")
+        self.assertEqual(decision["policy_class"], "elevated_admin")
+        self.assertEqual(decision["physical_consequence"], "safety_critical")
+        self.assertEqual(decision["required_acknowledgements"], ["plan_approval"])
+        self.assertTrue(created["approval_actionable"])
+        _pending, _review, granted = await self.approve(created)
+        self.assertEqual(granted["status"], "approved")
         self.assertEqual(
             [call for call in self.gateway.calls if call[0] == "write"], []
         )
-        self.assertIsNone(
-            self.service.task_repository.get_for_plan(created["plan_id"])
-        )
+        self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
 
     def test_only_exact_appended_reviewed_guards_qualify(self):
         current = copy.deepcopy(CURRENT_GARAGE_AUTOMATION)

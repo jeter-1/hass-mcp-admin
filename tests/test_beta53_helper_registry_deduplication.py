@@ -628,7 +628,7 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
         complete_binding = complete[4]["binding"]
         duplicate_binding = duplicate[4]["binding"]
 
-        self.assertEqual("helper-dependency-risk-v12", HELPER_DEPENDENCY_RISK_MODEL)
+        self.assertEqual("helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL)
         self.assertEqual(complete_snapshot.fingerprint, duplicate_snapshot.fingerprint)
         self.assertEqual(
             complete_snapshot.label_memberships,
@@ -691,7 +691,7 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(0, complete[0].calls.count(("POST", "/")))
 
-    async def test_conflict_and_malformed_controls_remain_fail_closed(self):
+    async def test_conflict_and_malformed_consequences_remain_disclosed(self):
         for mode, reason in (
             (
                 "conflicting_duplicate",
@@ -707,8 +707,11 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
                     mode
                 )
                 binding = evidence["binding"]
-                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertEqual([], binding["execution_block_reason_codes"])
+                self.assertTrue(binding["execution_eligible"])
                 self.assertFalse(binding["evidence_complete"])
+                self.assertFalse(binding["consequence_evidence_complete"])
                 self.assertTrue(
                     binding["dependency_lock_projection"]
                     ["conservative_helper_dependency"]
@@ -862,7 +865,7 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertFalse(rejected.eligible)
         self.assertIn(
-            "dependency_risk_execution_eligibility",
+            "dependency_risk_fingerprint",
             rejected.mismatch_fields,
         )
         self.assertEqual(0, rejected_strategy.gateway.provider_dispatches)
@@ -870,7 +873,7 @@ class Beta53ProductionReplayTests(unittest.IsolatedAsyncioTestCase):
 
 
 class Beta53HistoricalFalsificationTests(unittest.TestCase):
-    def test_beta53_raw_overflow_precedes_deduplication_and_cannot_dispatch(self):
+    def test_raw_overflow_precedes_deduplication_and_remains_disclosed(self):
         completed = subprocess.run(
             [
                 sys.executable,
@@ -887,11 +890,11 @@ class Beta53HistoricalFalsificationTests(unittest.TestCase):
             text=True,
         )
         observed = json.loads(completed.stdout)
-        self.assertEqual("helper-dependency-risk-v12", observed["risk_model"])
+        self.assertEqual("helper-dependency-risk-v13", observed["risk_model"])
         self.assertFalse(observed["coverage_complete"])
         self.assertFalse(observed["evidence_complete"])
-        self.assertFalse(observed["execution_eligible"])
-        self.assertFalse(observed["approval_actionable"])
+        self.assertTrue(observed["execution_eligible"])
+        self.assertTrue(observed["approval_actionable"])
         self.assertIn(
             unconstrained_helper_dependency_lock_key(),
             observed["lock_keys"],

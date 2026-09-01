@@ -581,12 +581,12 @@ class ObligationResourceGovernanceAndLockTests(
             (
                 "{% macro f(entity) %}{{ f(entity) }}{% endmacro %}"
                 "{{ f('" + TARGET + "') }}",
-                False,
+                True,
                 "bounded_opaque",
             ),
             (
                 _macro_capture_overflow_template(),
-                False,
+                True,
                 "coverage_failure",
             ),
         )
@@ -676,7 +676,7 @@ class ObligationResourceGovernanceAndLockTests(
                     unconstrained_helper_dependency_lock_key(), locks
                 )
 
-    async def test_coverage_failure_is_nonactionable_and_conservatively_locked(self):
+    async def test_coverage_failure_is_owner_actionable_and_conservatively_locked(self):
         template = _binding_overflow_template()
         configuration = valid_config("automation")
         configuration["condition"] = [
@@ -738,8 +738,9 @@ class ObligationResourceGovernanceAndLockTests(
 
         self.assertFalse(binding["coverage_complete"])
         self.assertEqual("coverage_failure", binding["semantic_precision"])
-        self.assertFalse(binding["execution_eligible"])
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(binding["execution_eligible"])
+        self.assertTrue(risk.apply_allowed)
+        self.assertFalse(binding["consequence_evidence_complete"])
 
         base = valid_config("automation")
         gateway = SyntheticConfigurationGateway()

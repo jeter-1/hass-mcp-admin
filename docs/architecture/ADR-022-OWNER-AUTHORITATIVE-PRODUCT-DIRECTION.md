@@ -1,6 +1,6 @@
 # ADR-022: Owner-authoritative product direction
 
-Status: accepted as product and repository-agent policy
+Status: accepted; Beta 54 runtime implementation staged for review
 
 Date: 2026-08-31
 
@@ -150,9 +150,10 @@ distinct authority or recovery boundary, such as a separately authorized
 rollback, or a separately justified destructive or difficult-to-recover step;
 classifier severity alone is not a reason to collect duplicative approvals.
 
-This distinction does not grant current runtime authority. The shipped policy,
-approval, and provider code remains authoritative for current behavior until a
-separately scoped implementation is reviewed, released, and deployed.
+The advertised Beta 53 policy remains authoritative for deployed behavior.
+Beta 54 stages the separately scoped runtime implementation of this distinction;
+it grants no deployed authority until it is reviewed, promoted, published, and
+deployed through their separate boundaries.
 
 ## Proportional safety
 
@@ -278,8 +279,10 @@ This decision does not:
   legitimate operation.
 - Risk and consequence projections must inform the owner's decision without
   being confused with proof that an exact operation is technically unsafe.
-- Existing runtime behavior is unchanged. This ADR and its corresponding agent
-  rules are documentation-only policy.
+- Advertised and deployed runtime behavior remains unchanged until a separate
+  Beta 54 promotion and deployment. The staged Beta 54 source implements this
+  decision for exact helper-state plans and typed updates of existing
+  automations only.
 
 ## Reconsideration triggers
 

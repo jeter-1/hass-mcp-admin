@@ -52,7 +52,12 @@ class Beta53AcceptanceAuthorityTests(unittest.TestCase):
         config = (
             ROOT / "hass_mcp_engineering_beta" / "config.yaml"
         ).read_text(encoding="utf-8")
-        if next_version.exists():
+        staged_version = (
+            next_version.read_text(encoding="utf-8").strip()
+            if next_version.exists()
+            else None
+        )
+        if staged_version == "2.2.0-beta.53":
             acceptance_text = ACCEPTANCE.read_text(encoding="utf-8")
             release_notes_text = RELEASE_NOTES.read_text(encoding="utf-8")
             self.assertIn("Beta 53 stages", acceptance_text)
@@ -67,7 +72,7 @@ class Beta53AcceptanceAuthorityTests(unittest.TestCase):
             )
             self.assertEqual(
                 "2.2.0-beta.53",
-                next_version.read_text(encoding="utf-8").strip(),
+                staged_version,
             )
             self.assertIn('version: "2.2.0-beta.52"', config)
             return

@@ -809,7 +809,11 @@ class InputBooleanStateOperationStrategy(OperationalStrategy):
             return False, "already_desired", (), combined
         planned = prepared.baseline
         planned_dependency = planned.get("dependency_risk")
-        if binding.get("execution_eligible") is not True:
+        if (
+            binding.get("execution_contract_complete") is not True
+            or binding.get("execution_eligible") is not True
+            or binding.get("execution_block_reason_codes") != []
+        ):
             return (
                 False,
                 "dependency_coverage_failure",

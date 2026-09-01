@@ -253,7 +253,10 @@ class Beta45FiniteProvenanceTests(unittest.TestCase):
                 _config, obligations = _extract(template)
                 binding = _binding(obligations)
                 self.assertFalse(binding["evidence_complete"], obligations)
-                self.assertFalse(binding["execution_eligible"], obligations)
+                self.assertTrue(
+                    binding["execution_contract_complete"], obligations
+                )
+                self.assertTrue(binding["execution_eligible"], obligations)
                 self.assertGreater(binding["opaque_obligation_count"], 0)
                 self.assertEqual(
                     "safety_critical", binding["physical_consequence"]
@@ -261,10 +264,10 @@ class Beta45FiniteProvenanceTests(unittest.TestCase):
                 risk = helper_dependency_risk_assessment(
                     {"binding": binding, "provenance": {"generation": 45}}
                 )
-                self.assertFalse(risk.apply_allowed)
+                self.assertTrue(risk.apply_allowed)
                 self.assertEqual("high", risk.level.value)
 
-    def test_candidate_overflow_remains_nonactionable_coverage_failure(self):
+    def test_candidate_overflow_remains_conservative_coverage_failure(self):
         candidates = ",".join(
             f"'sensor.fixture_{index}'"
             for index in range(MAX_TEMPLATE_CANDIDATES + 1)
@@ -272,7 +275,8 @@ class Beta45FiniteProvenanceTests(unittest.TestCase):
         _config, obligations = _extract("{{ states([" + candidates + "]) }}")
         binding = _binding(obligations)
         self.assertFalse(binding["coverage_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertGreater(binding["coverage_failure_count"], 0)
 
     def test_exact_unrelated_state_time_and_neutral_time_are_proportionate(self):
@@ -611,7 +615,8 @@ class Beta45LiteralLabelTests(unittest.TestCase):
             {"binding": binding, "provenance": {"generation": 45}}
         )
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
         self.assertIn(
             "automation.unrelated_cover",
             binding["relevant_downstream_object_ids"],
@@ -619,7 +624,7 @@ class Beta45LiteralLabelTests(unittest.TestCase):
         self.assertGreater(binding["opaque_obligation_count"], 0)
         self.assertEqual("safety_critical", binding["physical_consequence"])
         self.assertEqual("high", risk.level.value)
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(risk.apply_allowed)
 
     def test_composite_candidate_union_bounds_fail_closed(self):
         members = tuple(
@@ -642,7 +647,8 @@ class Beta45LiteralLabelTests(unittest.TestCase):
         self.assertTrue(_binding(at_limit)["evidence_complete"])
         above_binding = _binding(above_limit)
         self.assertFalse(above_binding["coverage_complete"])
-        self.assertFalse(above_binding["execution_eligible"])
+        self.assertTrue(above_binding["execution_contract_complete"])
+        self.assertTrue(above_binding["execution_eligible"])
         self.assertGreater(above_binding["coverage_failure_count"], 0)
         self.assertTrue(
             any(TARGET in item.exact_entity_ids for item in above_limit)

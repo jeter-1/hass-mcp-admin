@@ -349,7 +349,7 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("high", risk.level.value)
         self.assertTrue(risk.apply_allowed)
 
-    async def test_arbitrary_selector_remains_fail_closed(self):
+    async def test_arbitrary_selector_preserves_consequence_uncertainty(self):
         index = DependencyIndex(
             DirectHaDependencyProvider(
                 SyntheticBeta49Rest(arbitrary_only=True),
@@ -376,7 +376,8 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
 
     async def test_recursive_group_expansion_remains_conservative(self):
         index = DependencyIndex(
@@ -407,7 +408,8 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
 
     @staticmethod
     async def _expanded_index(
@@ -794,7 +796,7 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             duplicate.membership_fingerprint,
         )
 
-    async def test_conflicted_domain_group_is_incomplete_and_locked(self):
+    async def test_conflicted_domain_group_is_disclosed_and_locked(self):
         rest = SyntheticBeta49Rest(
             extra_states=(
                 {
@@ -859,8 +861,9 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             0,
         )
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
+        self.assertTrue(risk.apply_allowed)
         self.assertTrue(
             binding["dependency_lock_projection"][
                 "conservative_helper_dependency"
@@ -894,10 +897,10 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
                 desired_state="on",
             )
             self.assertFalse(created["provider_dispatch_occurred"])
-            self.assertFalse(created["plan"]["approval_actionable"])
+            self.assertTrue(created["plan"]["approval_actionable"])
             self.assertEqual(0, helper.dispatch_count)
 
-    async def test_malformed_source_is_deterministically_incomplete_and_locked(
+    async def test_malformed_source_is_deterministically_disclosed_and_locked(
         self,
     ):
         rest = SyntheticBeta49Rest(
@@ -960,8 +963,9 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             0,
         )
         self.assertFalse(binding["evidence_complete"])
-        self.assertFalse(binding["execution_eligible"])
-        self.assertFalse(risk.apply_allowed)
+        self.assertTrue(binding["execution_contract_complete"])
+        self.assertTrue(binding["execution_eligible"])
+        self.assertTrue(risk.apply_allowed)
         self.assertEqual(
             binding["evidence_fingerprint"],
             second["binding"]["evidence_fingerprint"],
@@ -999,10 +1003,10 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
                 desired_state="on",
             )
             self.assertFalse(created["provider_dispatch_occurred"])
-            self.assertFalse(created["plan"]["approval_actionable"])
+            self.assertTrue(created["plan"]["approval_actionable"])
             self.assertEqual(0, helper.dispatch_count)
 
-    async def test_core_incompatible_underscore_sources_fail_closed_end_to_end(
+    async def test_core_incompatible_underscore_sources_remain_disclosed(
         self,
     ):
         for platform in ("_group", "group_", "gr__oup"):
@@ -1077,8 +1081,9 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
                     0,
                 )
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
-                self.assertFalse(risk.apply_allowed)
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
+                self.assertTrue(risk.apply_allowed)
                 self.assertEqual(
                     binding["evidence_fingerprint"],
                     second["binding"]["evidence_fingerprint"],
@@ -1122,7 +1127,7 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
                         desired_state="on",
                     )
                     self.assertFalse(created["provider_dispatch_occurred"])
-                    self.assertFalse(
+                    self.assertTrue(
                         created["plan"]["approval_actionable"]
                     )
                     self.assertEqual(0, helper.dispatch_count)
@@ -1360,7 +1365,8 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertGreater(cycle["binding"]["opaque_obligation_count"], 0)
         self.assertFalse(cycle["binding"]["evidence_complete"])
-        self.assertFalse(cycle["binding"]["execution_eligible"])
+        self.assertTrue(cycle["binding"]["execution_contract_complete"])
+        self.assertTrue(cycle["binding"]["execution_eligible"])
 
     async def test_missing_malformed_and_overflow_membership_fail_closed(self):
         cases = (
@@ -1421,7 +1427,12 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
                     )
                 )["binding"]
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
+                if group_id == "group.synthetic_overflow":
+                    self.assertTrue(binding["execution_contract_complete"])
+                    self.assertTrue(binding["execution_eligible"])
+                else:
+                    self.assertTrue(binding["execution_contract_complete"])
+                    self.assertTrue(binding["execution_eligible"])
                 self.assertTrue(
                     binding["dependency_lock_projection"][
                         "conservative_helper_dependency"
@@ -1465,7 +1476,8 @@ class Beta49ProducerFalsificationTests(unittest.IsolatedAsyncioTestCase):
             )
         )["binding"]
         self.assertFalse(partial["evidence_complete"])
-        self.assertFalse(partial["execution_eligible"])
+        self.assertTrue(partial["execution_contract_complete"])
+        self.assertTrue(partial["execution_eligible"])
         self.assertTrue(
             partial["dependency_lock_projection"][
                 "conservative_helper_dependency"
@@ -1652,7 +1664,7 @@ class Beta49ProductionPathTests(unittest.IsolatedAsyncioTestCase):
         ]
         standard_summary = standard_observed["canonical_summary"]
         self.assertEqual(
-            "helper-dependency-risk-v12", standard_binding["model"]
+            "helper-dependency-risk-v13", standard_binding["model"]
         )
         self.assertEqual(0, standard_binding["opaque_obligation_count"])
         self.assertEqual([], standard_binding["downstream_profiles"])
@@ -1802,15 +1814,15 @@ class Beta49ProductionPathTests(unittest.IsolatedAsyncioTestCase):
         finally:
             end_request(context)
 
-    def test_v3_through_v11_remain_read_only(self):
+    def test_v3_through_v12_remain_read_only(self):
         self.assertEqual(
-            "helper-dependency-risk-v12", HELPER_DEPENDENCY_RISK_MODEL
+            "helper-dependency-risk-v13", HELPER_DEPENDENCY_RISK_MODEL
         )
         self.assertEqual(
-            frozenset({"helper-dependency-risk-v12"}),
+            frozenset({"helper-dependency-risk-v13"}),
             HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
         )
-        for version in range(3, 12):
+        for version in range(3, 13):
             model = f"helper-dependency-risk-v{version}"
             self.assertIn(model, HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS)
             self.assertNotIn(model, HELPER_DEPENDENCY_RISK_EXECUTION_MODELS)

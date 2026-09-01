@@ -240,7 +240,8 @@ class Beta46TypedTriggerProvenanceTests(unittest.TestCase):
                     source_id=f"typed_selector_{index}",
                 )
                 self.assertFalse(binding["evidence_complete"])
-                self.assertFalse(binding["execution_eligible"])
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
                 self.assertGreater(binding["opaque_obligation_count"], 0)
                 self.assertEqual(
                     "safety_critical", binding["physical_consequence"]
