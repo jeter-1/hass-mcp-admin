@@ -1315,6 +1315,72 @@ class Beta54CapturedHelperAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(plan["approval_actionable"])
         self.assertEqual(0, self.helper.dispatch_count)
 
+        pending = self.service.approve(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual("plan_approval", pending["approval_action"])
+        _review, csrf = await self.service.issue_external_csrf(
+            plan["plan_id"], pending["challenge_id"]
+        )
+        granted = await self.service.decide_external_approval(
+            plan_id=plan["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=plan["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal="home_assistant_admin_ingress:beta54-owner",
+        )
+        self.assertEqual("approved", granted["status"])
+        self.assertEqual(0, self.helper.dispatch_count)
+
+        with patch.object(
+            self.helper,
+            "read_state",
+            wraps=self.helper.read_state,
+        ) as readback:
+            applied = await self.service.apply(
+                plan["plan_id"], plan["plan_hash"]
+            )
+        declaration = self.runtime.children.declarations_for_task(
+            applied["task_id"]
+        )[0]
+        child = self.runtime.children.get(declaration["child_id"])
+        assert child is not None
+        expected_locks = {
+            "home_assistant:core": "shared",
+            f"helper:{beta50.CONSEQUENTIAL_TARGET}": "exclusive",
+            "reload:input_boolean": "shared",
+            "reload:automation": "shared",
+            f"helper_dependency:{beta50.CONSEQUENTIAL_TARGET}": "shared",
+            "helper_dependency:input_boolean_dynamic": "shared",
+            **{
+                f"automation:consequential_{index}": "shared"
+                for index in range(7)
+            },
+        }
+        self.assertEqual(
+            expected_locks,
+            {item["key"]: item["mode"] for item in child.lock_tokens},
+        )
+        self.assertEqual(
+            "succeeded_verified",
+            applied["task_state"],
+            child.to_dict(),
+        )
+        self.assertTrue(applied["provider_dispatch_occurred"])
+        self.assertEqual("succeeded_verified", child.normalized_outcome)
+        self.assertEqual(1, child.dispatch_count)
+        self.assertEqual(1, self.helper.dispatch_count)
+        self.assertEqual("on", self.helper.state)
+        self.assertGreaterEqual(readback.await_count, 2)
+        self.assertGreaterEqual(reader.fenced_read_count, 1)
+
+        repeated = await self.service.apply(
+            plan["plan_id"], plan["plan_hash"]
+        )
+        self.assertEqual("already_applied", repeated["status"])
+        self.assertEqual(1, self.helper.dispatch_count)
+
 
 _CURRENT_VANITY_AUTOMATION = {
     "id": "bathroom_vanity_restart_reconciliation",
