@@ -118,7 +118,7 @@ class HaMcpAuthoritySelector:
         protocol_version: str,
         evaluated_at: datetime | None = None,
     ) -> HaMcpAdmissionSelection:
-        now = evaluated_at or datetime.now(timezone.utc)
+        now = evaluated_at or self._signed.evaluated_at()
         if now.tzinfo is None or now.utcoffset() is None:
             raise HaMcpAuthorityError("authority_clock_invalid")
         evaluated_epoch = int(now.astimezone(timezone.utc).timestamp())

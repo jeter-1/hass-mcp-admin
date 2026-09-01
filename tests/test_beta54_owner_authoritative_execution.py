@@ -1901,17 +1901,17 @@ class Beta54ReleaseAuthorityTests(unittest.TestCase):
             ROOT / "hass_mcp_engineering_beta" / "config.yaml"
         ).read_text(encoding="utf-8")
         if marker.exists():
-            self.assertEqual(
+            self.assertNotEqual(
                 "2.2.0-beta.54",
                 marker.read_text(encoding="utf-8").strip(),
             )
-            self.assertIn('version: "2.2.0-beta.53"', config)
+            self.assertIn('version: "2.2.0-beta.54"', config)
             self.assertIn(
-                "Beta 54 stages",
+                "Beta 54 is materialized",
                 ACCEPTANCE.read_text(encoding="utf-8"),
             )
             self.assertIn(
-                "Engineering remains advertised as 2.2.0-beta.53",
+                "Engineering now advertises 2.2.0-beta.54",
                 RELEASE_NOTES.read_text(encoding="utf-8"),
             )
             return

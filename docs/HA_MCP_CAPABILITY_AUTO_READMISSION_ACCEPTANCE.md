@@ -1,6 +1,6 @@
 # ha-mcp capability-scoped automatic-readmission acceptance
 
-This is the operational acceptance plan for ADR-021. It is not a release
+This is the operational acceptance plan for ADR-023. It is not a release
 declaration, deployment authorization, registry-signing procedure, or approval
 to access a household Home Assistant installation.
 

@@ -6,11 +6,14 @@ from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import inspect
 import json
+import os
 from pathlib import Path
+import stat
 import sys
 import tempfile
 from threading import Barrier
 import unittest
+from unittest.mock import patch
 
 from mcp.server.fastmcp import FastMCP
 
@@ -63,6 +66,9 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 )
 from ha_mcp_engineering.signed_registry import (  # noqa: E402
     RegistryEnvelope,
+)
+from ha_mcp_engineering.tools import (  # noqa: E402
+    ENGINEERING_STATIC_TOOL_COUNT,
 )
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     load_reviewed_upstream_release_registry,
@@ -567,6 +573,98 @@ class OperationalSignedRegistryTests(
                 "registry_cache_write_failed",
             )
 
+    async def test_directory_fsync_failure_never_publishes_candidate(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+
+        async def fetcher(_url, _maximum):
+            return signer.raw(sequence=1, entries=[], revocations=[])
+
+        real_fsync = os.fsync
+
+        def fail_directory_fsync(descriptor):
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                raise OSError("synthetic directory fsync failure")
+            return real_fsync(descriptor)
+
+        with tempfile.TemporaryDirectory() as directory:
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=Path(directory) / "cache.json",
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            with patch(
+                "ha_mcp_engineering.ha_mcp_readmission.registry.os.fsync",
+                side_effect=fail_directory_fsync,
+            ):
+                self.assertFalse(await registry.refresh())
+            self.assertIsNone(registry.authority().envelope)
+            self.assertFalse(registry._cache_path.exists())
+            restarted = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=registry._cache_path,
+                now=lambda: NOW,
+            )
+            self.assertIsNone(restarted.authority().envelope)
+            self.assertEqual(
+                registry.snapshot()["last_failure_reason"],
+                "registry_cache_write_failed",
+            )
+
+    async def test_failed_replacement_preserves_previous_cache(self):
+        signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
+        first = signer.raw(sequence=1, entries=[], revocations=[])
+        first_digest = RegistryEnvelope.from_bytes(first).content_digest
+        second = signer.raw(
+            sequence=2,
+            previous_registry_sha256=first_digest,
+            entries=[],
+            revocations=[],
+            generated_at=NOW,
+        )
+        responses = [first, second]
+
+        async def fetcher(_url, _maximum):
+            return responses.pop(0)
+
+        real_fsync = os.fsync
+        directory_calls = 0
+
+        def fail_final_directory_fsync(descriptor):
+            nonlocal directory_calls
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                directory_calls += 1
+                if directory_calls == 2:
+                    raise OSError("synthetic replacement fsync failure")
+            return real_fsync(descriptor)
+
+        with tempfile.TemporaryDirectory() as directory:
+            cache = Path(directory) / "cache.json"
+            registry = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                fetcher=fetcher,
+                now=lambda: NOW,
+            )
+            self.assertTrue(await registry.refresh())
+            with patch(
+                "ha_mcp_engineering.ha_mcp_readmission.registry.os.fsync",
+                side_effect=fail_final_directory_fsync,
+            ):
+                self.assertFalse(await registry.refresh())
+            self.assertEqual(registry.authority().sequence, 1)
+
+            restarted = SignedReleaseRegistry(
+                enabled=True,
+                public_key=signer.public_key_base64,
+                cache_path=cache,
+                now=lambda: NOW,
+            )
+            self.assertEqual(restarted.authority().sequence, 1)
+
     def test_distinct_trust_configuration_fails_closed(self):
         signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
         valid = replace(
@@ -718,10 +816,12 @@ class _GatewayTransport:
         version: str,
         catalog_complete: bool = True,
         session_id: str = "synthetic-ha-mcp-session",
+        server_name: str = "ha-mcp",
+        protocol_version: str = "2025-03-26",
     ) -> None:
         self.catalog = McpReadCatalog(
-            protocol_version="2025-03-26",
-            server_name="ha-mcp",
+            protocol_version=protocol_version,
+            server_name=server_name,
             server_version=version,
             tools=tuple(deepcopy(tools)),
             connection_latency_ms=1.0,
@@ -885,7 +985,46 @@ class SignedGatewayReadmissionTests(
             },
             {generation},
         )
+        registered = gateway._registered_tool_registry.snapshot()
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 51)
+        self.assertEqual(len(registered), 25)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 76)
+        self.assertNotIn("ha_get_operation_status", registered)
+        for policy_entry in self.release.policy.tools:
+            if policy_entry.classification != "automatic_read":
+                self.assertNotIn(policy_entry.exposed_name, registered)
         self.assertEqual(gateway._held_canaries, {})
+
+    async def test_disabled_registry_preserves_beta54_compiled_exact_behavior(self):
+        transport = _GatewayTransport(
+            self.capture["tools"],
+            version="8.2.0",
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            replace(
+                _settings(self.signer.public_key_base64),
+                ha_mcp_release_registry_enabled=False,
+                ha_mcp_release_registry_public_key="",
+            ),
+            transport=transport,
+            release_registry=self.compiled,
+        )
+        server = FastMCP("compiled-exact-feature-disabled")
+        snapshot = await gateway.initialize(server)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["held_tools"], ["ha_get_operation_status"])
+        self.assertNotIn(
+            "ha_get_operation_status",
+            gateway._registered_tool_registry.snapshot(),
+        )
+        self.assertNotIn("automatic_readmission", snapshot)
+        self.assertNotIn("automatic_readmission_registry", snapshot)
+        self.assertNotIn("readmission_authority_source", snapshot)
+        self.assertIsNone(gateway._readmission_selector)
+        self.assertIsNone(gateway._readmission_coordinator)
+        self.assertEqual(gateway.readmission_audit_snapshot(), ())
+        self.assertEqual(transport.calls, 0)
 
     async def test_changed_signed_read_is_quarantined_but_siblings_return(self):
         version = "8.2.1"
@@ -907,6 +1046,66 @@ class SignedGatewayReadmissionTests(
         self.assertEqual(snapshot["quarantined_automatic_read_count"], 1)
         self.assertNotIn(automatic, snapshot["exposed_tools"])
         self.assertEqual(snapshot["fallback_count"], 0)
+
+    async def test_each_signed_contract_component_is_independently_required(self):
+        version = "8.2.1"
+        automatic = next(
+            item.upstream_name
+            for item in self.release.policy.tools
+            if item.classification == "automatic_read"
+        )
+        fields = (
+            "input_schema_fingerprint",
+            "description_fingerprint",
+            "annotation_fingerprint",
+            "output_contract_fingerprint",
+            "runtime_contract_fingerprint",
+        )
+        for field in fields:
+            with self.subTest(field=field):
+                entry = _signed_entry_for(self.release, version=version)
+                contract = next(
+                    item
+                    for item in entry["tool_contracts"]
+                    if item["tool_name"] == automatic
+                )
+                contract[field] = (
+                    "0" * 64
+                    if contract[field] != "0" * 64
+                    else "1" * 64
+                )
+                _gateway, transport, snapshot = await self._initialize(
+                    raw=self._raw(entry=entry),
+                    version=version,
+                )
+                self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+                self.assertNotIn(automatic, snapshot["exposed_tools"])
+                self.assertEqual(transport.calls, 0)
+
+    async def test_changed_argument_restriction_withholds_only_that_read(self):
+        version = "8.2.1"
+        automatic = next(
+            item.upstream_name
+            for item in self.release.policy.tools
+            if item.classification == "automatic_read"
+        )
+        entry = _signed_entry_for(self.release, version=version)
+        contract = next(
+            item
+            for item in entry["tool_contracts"]
+            if item["tool_name"] == automatic
+        )
+        contract["argument_restrictions"] = [
+            "synthetic_constraint_not_compiled"
+        ]
+        _gateway, transport, snapshot = await self._initialize(
+            raw=self._raw(entry=entry),
+            version=version,
+        )
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertNotIn(automatic, snapshot["exposed_tools"])
+        self.assertEqual(snapshot["fallback_count"], 0)
+        self.assertEqual(transport.calls, 0)
 
     async def test_unknown_addition_never_becomes_callable(self):
         version = "8.2.1"
@@ -1018,6 +1217,49 @@ class SignedGatewayReadmissionTests(
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 
+    async def test_unexpired_signed_cache_survives_restart_fetch_failure(self):
+        version = "8.2.1"
+        entry = _signed_entry_for(self.release, version=version)
+        raw = self._raw(entry=entry)
+        first_registry = self._registry(raw)
+        self.assertTrue(await first_registry.refresh())
+
+        async def unavailable_fetcher(_url, _maximum):
+            raise OSError("synthetic registry outage")
+
+        restarted_registry = SignedReleaseRegistry(
+            enabled=True,
+            public_key=self.signer.public_key_base64,
+            cache_path=first_registry._cache_path,
+            fetcher=unavailable_fetcher,
+            now=lambda: self.now,
+        )
+        transport = _GatewayTransport(
+            self.capture["tools"],
+            version=version,
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=restarted_registry,
+        )
+        snapshot = await gateway.initialize(
+            FastMCP("signed-readmission-restarted-cache")
+        )
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(
+            snapshot["readmission_authority_source"],
+            "signed_registry",
+        )
+        self.assertEqual(
+            snapshot["automatic_readmission_registry"]["refresh_status"],
+            "failed",
+        )
+        self.assertEqual(snapshot["fallback_count"], 0)
+        self.assertEqual(transport.calls, 0)
+
     async def test_signed_entry_cannot_select_unknown_profile_or_protocol(self):
         version = "8.2.1"
         wrong_profile = _signed_entry_for(
@@ -1043,6 +1285,39 @@ class SignedGatewayReadmissionTests(
                     snapshot["dynamically_exposed_count"],
                     0,
                 )
+                self.assertEqual(snapshot["fallback_count"], 0)
+                self.assertEqual(transport.calls, 0)
+
+    async def test_observed_identity_and_protocol_mismatch_fail_closed(self):
+        version = "8.2.1"
+        entry = _signed_entry_for(self.release, version=version)
+        raw = self._raw(entry=entry)
+        cases = (
+            ("other-mcp", "2025-03-26"),
+            ("ha-mcp", "2025-06-18"),
+        )
+        for server_name, protocol_version in cases:
+            with self.subTest(
+                server_name=server_name,
+                protocol_version=protocol_version,
+            ):
+                transport = _GatewayTransport(
+                    self.capture["tools"],
+                    version=version,
+                    server_name=server_name,
+                    protocol_version=protocol_version,
+                )
+                gateway = UpstreamReadGateway()
+                gateway.configure(
+                    _settings(self.signer.public_key_base64),
+                    transport=transport,
+                    release_registry=self.compiled,
+                    signed_release_registry=self._registry(raw),
+                )
+                snapshot = await gateway.initialize(
+                    FastMCP("signed-readmission-identity-refusal")
+                )
+                self.assertEqual(snapshot["dynamically_exposed_count"], 0)
                 self.assertEqual(snapshot["fallback_count"], 0)
                 self.assertEqual(transport.calls, 0)
 
@@ -1078,6 +1353,10 @@ class SignedGatewayReadmissionTests(
         self.now = self.now + timedelta(days=2)
         await tool.run({})
         self.assertEqual(transport.calls, 0)
+        self.assertEqual(
+            gateway._registered_tool_registry.snapshot(),
+            {},
+        )
 
         # A fresh gateway retains positive authority but sees selected-target
         # contract drift in the same MCP exchange. Validation rejects before
@@ -1111,6 +1390,16 @@ class SignedGatewayReadmissionTests(
         )
         await tool.run({})
         self.assertEqual(transport.calls, 0)
+        self.assertEqual(
+            gateway._registered_tool_registry.snapshot(),
+            {},
+        )
+        health = gateway.health_snapshot()
+        self.assertEqual(
+            health["reconciliation_status"],
+            "reprobe_requested",
+        )
+        self.assertEqual(health["dynamically_exposed_count"], 0)
 
     async def test_health_and_audit_projections_are_bounded_and_sanitized(self):
         version = "8.2.1"

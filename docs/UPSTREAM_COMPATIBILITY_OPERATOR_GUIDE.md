@@ -283,7 +283,7 @@ input, safety, output/hash, and runtime contract.
    the key or endpoint in tickets/logs.
 
 The dashboard-attestation trust options above do not authorize automatic
-readmission. ADR-021 uses the separate disabled-by-default
+readmission. ADR-023 uses the separate disabled-by-default
 `ha_mcp_release_registry_enabled` and
 `ha_mcp_release_registry_public_key` options. Its registry location is fixed in
 the binary, redirects are rejected, and signed data may select only an existing

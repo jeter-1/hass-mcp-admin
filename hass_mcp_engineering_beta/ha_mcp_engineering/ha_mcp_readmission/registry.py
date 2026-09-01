@@ -133,6 +133,18 @@ class SignedReleaseRegistry:
     def enabled(self) -> bool:
         return self._enabled
 
+    def evaluated_at(self) -> datetime:
+        """Return the validated clock used for registry freshness decisions."""
+
+        value = self._now()
+        if (
+            not isinstance(value, datetime)
+            or value.tzinfo is None
+            or value.utcoffset() is None
+        ):
+            raise ReleaseRegistryOperationalError("registry_clock_invalid")
+        return value.astimezone(timezone.utc)
+
     def refresh_due(self) -> bool:
         if not self._enabled:
             return False
@@ -286,14 +298,10 @@ class SignedReleaseRegistry:
                 return raw
 
     def _positive_is_current(self, envelope: RegistryEnvelope) -> bool:
-        now = self._now()
-        if (
-            not isinstance(now, datetime)
-            or now.tzinfo is None
-            or now.utcoffset() is None
-        ):
+        try:
+            now = self.evaluated_at()
+        except ReleaseRegistryOperationalError:
             return False
-        now = now.astimezone(timezone.utc)
         generated = parse_utc_timestamp(envelope.generated_at)
         expires = parse_utc_timestamp(envelope.expires_at)
         return generated.timestamp() - now.timestamp() <= 300 and now < expires
@@ -435,8 +443,28 @@ class SignedReleaseRegistry:
         parent = self._cache_path.parent
         handle = None
         temporary: Path | None = None
+        backup: Path | None = None
+        replaced = False
         try:
             parent.mkdir(parents=True, exist_ok=True)
+            if self._cache_path.exists():
+                previous = self._cache_path.read_bytes()
+                if len(previous) > MAX_CACHE_BYTES:
+                    raise ReleaseRegistryOperationalError(
+                        "registry_cache_oversized"
+                    )
+                backup_handle = tempfile.NamedTemporaryFile(
+                    mode="wb",
+                    prefix=f".{self._cache_path.name}.backup.",
+                    dir=parent,
+                    delete=False,
+                )
+                backup = Path(backup_handle.name)
+                with backup_handle:
+                    backup_handle.write(previous)
+                    backup_handle.flush()
+                    os.fsync(backup_handle.fileno())
+                self._fsync_directory(parent)
             handle = tempfile.NamedTemporaryFile(
                 mode="wb",
                 prefix=f".{self._cache_path.name}.",
@@ -449,16 +477,19 @@ class SignedReleaseRegistry:
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, self._cache_path)
-            try:
-                directory = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
-            except (AttributeError, OSError):
-                directory = None
-            if directory is not None:
-                try:
-                    os.fsync(directory)
-                finally:
-                    os.close(directory)
+            replaced = True
+            self._fsync_directory(parent)
         except OSError as exc:
+            if replaced:
+                try:
+                    if backup is not None:
+                        os.replace(backup, self._cache_path)
+                        backup = None
+                    else:
+                        self._cache_path.unlink(missing_ok=True)
+                    self._fsync_directory(parent)
+                except OSError:
+                    pass
             raise ReleaseRegistryOperationalError(
                 "registry_cache_write_failed"
             ) from exc
@@ -468,6 +499,22 @@ class SignedReleaseRegistry:
                     temporary.unlink(missing_ok=True)
                 except OSError:
                     pass
+            if backup is not None:
+                try:
+                    backup.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
+    @staticmethod
+    def _fsync_directory(parent: Path) -> None:
+        directory = os.open(
+            parent,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0),
+        )
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
 
     def _record_failure(self, reason: str) -> None:
         safe = (

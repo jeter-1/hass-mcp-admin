@@ -1,8 +1,7 @@
-# ADR-021: Production ha-mcp capability-scoped automatic readmission
+# ADR-023: Production ha-mcp capability-scoped automatic readmission
 
-Status: implemented on an isolated operational branch; release staging and
-production registry publication are deferred until the Beta 48 integration
-boundary is complete
+Status: implemented for the Beta 55 release candidate; production registry
+publication and trust-anchor activation remain separately governed operations
 
 ## Context
 
@@ -11,6 +10,12 @@ contract. Its reference package remains test-only and non-authoritative. This
 decision implements the first operational surface: the configured read-only
 ha-mcp gateway. Home Assistant Core, configured proxy lifecycle, semantic
 readmission, actions, mixed tools, and writes remain outside this decision.
+
+ADR-021 governs the exact upstream source evidence used to compile ha-mcp
+profiles; a live catalog remains observation rather than authority. ADR-022
+places the internal provider behind the one supported client-facing Engineering
+connector and preserves the owner's direction that compatible capability should
+return without weakening exact provider or execution boundaries.
 
 The compiled reviewed release registry remains sufficient authority for exact
 known releases. A manual ha-mcp update otherwise remains unavailable until a
@@ -151,4 +156,6 @@ deployment, and live acceptance are separate governed steps.
 
 - [ADR-009](ADR-009-SIGNED-COMPATIBILITY-REGISTRY-FOUNDATION.md)
 - [ADR-020](ADR-020-CAPABILITY-SCOPED-AUTOMATIC-READMISSION.md)
+- [ADR-021](ADR-021-HOME-ASSISTANT-SOURCE-AUTHORITY.md)
+- [ADR-022](ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md)
 - [ha-mcp automatic-readmission acceptance](../HA_MCP_CAPABILITY_AUTO_READMISSION_ACCEPTANCE.md)

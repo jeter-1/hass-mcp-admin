@@ -143,7 +143,7 @@ execution task, configuration write, service call, or Home Assistant mutation.
    Capability-scoped ha-mcp readmission uses separate disabled-by-default
    `ha_mcp_release_registry_enabled` and
    `ha_mcp_release_registry_public_key` options. Enable them only after the
-   fixed ADR-021 release registry and its separately reviewed public trust
+   fixed ADR-023 release registry and its separately reviewed public trust
    anchor exist. Signed data can select only binary-owned read profiles; it
    cannot add tools, code, writes, or fallback. Never place a private release-
    registry signing key in the add-on configuration.

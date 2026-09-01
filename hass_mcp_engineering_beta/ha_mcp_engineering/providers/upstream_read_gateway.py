@@ -620,10 +620,6 @@ class UpstreamReadGateway:
             "compatibility_status": "unavailable",
             "last_compatible_version": None,
             "compatibility_registry_status": "compiled_reviewed_release_registry",
-            "readmission_authority_source": None,
-            "readmission_profile_id": None,
-            "readmission_adapter_id": None,
-            "readmission_generation": None,
             "recommended_action": "Wait for the configured upstream provider.",
             "reconciliation_active": False,
             "reconciliation_status": "idle",
@@ -698,7 +694,7 @@ class UpstreamReadGateway:
         self._readmission_coordinator = None
         self._readmission_audit = ()
         if self._release_registry is not None:
-            self._signed_release_registry = (
+            candidate_signed_registry = (
                 signed_release_registry
                 or SignedReleaseRegistry(
                     enabled=(
@@ -709,10 +705,12 @@ class UpstreamReadGateway:
                     ),
                 )
             )
-            self._readmission_selector = HaMcpAuthoritySelector(
-                self._release_registry,
-                self._signed_release_registry,
-            )
+            if candidate_signed_registry.enabled:
+                self._signed_release_registry = candidate_signed_registry
+                self._readmission_selector = HaMcpAuthoritySelector(
+                    self._release_registry,
+                    candidate_signed_registry,
+                )
         self._admission_validator = admission_validator
         self._admission_generation = 0
         self._live_observation_epoch = 0
@@ -1227,6 +1225,22 @@ class UpstreamReadGateway:
         self._admission_generation = generation
         self._policy = policy
         self._active_release = release
+        readmission_state = (
+            {
+                "readmission_authority_source": (
+                    readmission_selection.authority_source.value
+                ),
+                "readmission_profile_id": (
+                    readmission_selection.profile.profile_id
+                ),
+                "readmission_adapter_id": (
+                    readmission_selection.profile.adapter_id
+                ),
+                "readmission_generation": generation,
+            }
+            if readmission_selection is not None
+            else {}
+        )
         with self._lock:
             self._state.update(
                 {
@@ -1261,22 +1275,7 @@ class UpstreamReadGateway:
                         if release is not None
                         else None
                     ),
-                    "readmission_authority_source": (
-                        readmission_selection.authority_source.value
-                        if readmission_selection is not None
-                        else None
-                    ),
-                    "readmission_profile_id": (
-                        readmission_selection.profile.profile_id
-                        if readmission_selection is not None
-                        else None
-                    ),
-                    "readmission_adapter_id": (
-                        readmission_selection.profile.adapter_id
-                        if readmission_selection is not None
-                        else None
-                    ),
-                    "readmission_generation": generation,
+                    **readmission_state,
                     "reviewed_source_commit": (
                         readmission_selection.signed_entry.source_commit
                         if readmission_selection is not None
@@ -2400,11 +2399,9 @@ class UpstreamReadGateway:
                         catalog,
                         live_selection,
                     )
-                    live_readmission = coordinator.reconcile(
-                        live_observation,
-                        live_selection.authority,
+                    live_generation = coordinator.generation_for(
+                        UpstreamSurface.HA_MCP
                     )
-                    live_generation = live_readmission.generation
                     live_decision = (
                         live_generation.decision_for(
                             policy_entry.upstream_name
@@ -2413,14 +2410,23 @@ class UpstreamReadGateway:
                         else None
                     )
                     if (
-                        not live_readmission.published
-                        or live_generation is None
+                        live_generation is None
                         or live_generation.generation
                         != mapping.generation
+                        or live_generation.observation_fingerprint
+                        != live_observation.fingerprint
+                        or live_generation.authority_fingerprint
+                        != live_selection.authority.fingerprint
                         or live_decision is None
                         or not live_decision.disposition.admitted
                     ):
                         self._advance_live_observation_epoch()
+                        live_contract_failure.update(
+                            {
+                                "disposition": "surface_retired",
+                                "reason": "readmission_generation_drift",
+                            }
+                        )
                         raise DashboardTransportError(
                             "schema_mismatch"
                         )
@@ -3420,7 +3426,56 @@ class UpstreamReadGateway:
         mapping: _AdmittedRoute,
         failure: dict[str, Any],
     ) -> bool:
-        """Remove one live-drifted route and keep unrelated matches available."""
+        """Retire drifted authority and request one atomic replacement."""
+
+        if (
+            mapping.profile_id is not None
+            and failure.get("disposition") == "surface_retired"
+        ):
+            coordinator = self._readmission_coordinator
+            if coordinator is not None:
+                coordinator.retire_surface_authority(
+                    UpstreamSurface.HA_MCP
+                )
+            with self._lock:
+                if self._exposed.get(exposed_name) is not mapping:
+                    return False
+                self._remove_registered_tools()
+                self._active_release = None
+                self._reset_contract_accounting_locked()
+                self._state.update(
+                    {
+                        "initialized": False,
+                        "generic_delegation_available": False,
+                        "admission_complete": False,
+                        "exact_matched_automatic_read_count": 0,
+                        "dynamically_exposed_count": 0,
+                        "collision_count": 0,
+                        "exposed_tools": [],
+                        "collision_mappings": [],
+                        "selected_compatibility_entry_id": None,
+                        "readmission_authority_source": None,
+                        "readmission_profile_id": None,
+                        "readmission_adapter_id": None,
+                        "readmission_generation": None,
+                        "last_discovery_stable": False,
+                        "compatibility_status": "reconciling",
+                        "admission_status": "compatibility_reprobe_pending",
+                        "reconciliation_status": "reprobe_requested",
+                        "compatibility_reprobe_status": "triggered",
+                        "next_compatibility_reprobe_at": None,
+                        "recommended_action": (
+                            "Reconnect or re-list after the changed upstream "
+                            "catalog has been reconciled."
+                        ),
+                    }
+                )
+                self._state["compatibility_reprobe_trigger_count"] += 1
+            self._reprobe_event.set()
+            replace_dynamic_upstream_capabilities(
+                (), self.health_snapshot()
+            )
+            return True
 
         with self._lock:
             if self._exposed.get(exposed_name) is not mapping:
@@ -3808,10 +3863,11 @@ class UpstreamReadGateway:
                 self._state["exposed_tools"] = []
                 self._state["collision_mappings"] = []
                 self._state["selected_compatibility_entry_id"] = None
-                self._state["readmission_authority_source"] = None
-                self._state["readmission_profile_id"] = None
-                self._state["readmission_adapter_id"] = None
-                self._state["readmission_generation"] = None
+                if self._readmission_selector is not None:
+                    self._state["readmission_authority_source"] = None
+                    self._state["readmission_profile_id"] = None
+                    self._state["readmission_adapter_id"] = None
+                    self._state["readmission_generation"] = None
                 self._state["reviewed_source_commit"] = None
                 self._state["reviewed_image_index_digest"] = None
                 self._state["reviewed_architecture_image_digests"] = {}
@@ -3934,49 +3990,8 @@ class UpstreamReadGateway:
                 "fallback_count": 0,
                 "retained_audit_projection_count": audit_count,
             }
-        else:
-            value["automatic_readmission"] = {
-                "model_version": 2,
-                "surface": {
-                    "surface": UpstreamSurface.HA_MCP.value,
-                    "disposition": "unavailable",
-                    "generation": None,
-                    "admitted_count": 0,
-                    "quarantined_count": 0,
-                    "unavailable_count": 0,
-                    "issued_lease_count": 0,
-                    "active_commit_count": 0,
-                    "retained_retirement_diagnostic_count": 0,
-                    "reason_counts": [],
-                },
-                "authority_source": None,
-                "profile_id": None,
-                "adapter_id": None,
-                "decision_generation": None,
-                "issued_lease_count": 0,
-                "active_commit_count": 0,
-                "capacity_exhaustion_count": 0,
-                "capacity_exhaustion_reason": None,
-                "fallback_count": 0,
-                "retained_audit_projection_count": audit_count,
-            }
-        value["automatic_readmission_registry"] = (
-            registry.snapshot()
-            if registry is not None
-            else {
-                "enabled": False,
-                "registry_id_status": "unavailable",
-                "sequence": None,
-                "freshness_status": "unavailable",
-                "refresh_status": "disabled",
-                "cache_status": "not_loaded",
-                "last_failure_reason": None,
-                "failure_reason_counts": [],
-                "retained_revocation_count": 0,
-                "retained_revocation_source_count": 0,
-                "registry_location": "fixed_repository_https",
-            }
-        )
+        if registry is not None:
+            value["automatic_readmission_registry"] = registry.snapshot()
         return value
 
     def readmission_audit_snapshot(self) -> tuple[dict[str, Any], ...]:
