@@ -1,0 +1,99 @@
+{
+  "binding": {
+    "completeness": "complete",
+    "consequential_downstream_object_ids": [],
+    "coverage_diagnostics": [
+      {
+        "completeness": "complete",
+        "failed_item_count": 0,
+        "source_type": "automation",
+        "warning_count": 0
+      },
+      {
+        "completeness": "complete",
+        "failed_item_count": 0,
+        "source_type": "blueprint",
+        "warning_count": 0
+      }
+    ],
+    "downstream_automation_resource_ids": [
+      "beta37_benign_dependency"
+    ],
+    "downstream_profiles": [
+      {
+        "action_domains": [
+          "notify"
+        ],
+        "automation_id": "automation.beta37_benign_dependency",
+        "automation_resource_id": "beta37_benign_dependency",
+        "complete": true,
+        "effect_data": [
+          "action[0].data.message=sha256:6e32e55acc1e3bd8fdab3eccaf3fb435362f804d68d6dd93c09837c0328ff84e"
+        ],
+        "effect_projection_clipped": false,
+        "effect_projection_fingerprint": "89c15b7a2ed1629bffc623732cd8809ff376bf86044e026cde834478a816dff4",
+        "effect_projection_model": "automation-action-effect-v2",
+        "effect_structure_fingerprint": "b2195aad293c40d10297e9805eda21ad6c9c457aa6d50d8e93354c920e3f5be8",
+        "effect_targets": [],
+        "physical_consequence": "none",
+        "profile_fingerprint": "85a65354da8b5a91c37fbeb0deb50f94b3052a41c9d93c95f74e8a01f661c8c9",
+        "reason_codes": [
+          "proven_benign_action_family"
+        ],
+        "relationships": [
+          "trigger"
+        ],
+        "services": [
+          "notify.notify"
+        ],
+        "truncated": false
+      }
+    ],
+    "dynamic_reference_overflow_count": 0,
+    "dynamic_reference_overflow_fingerprint": null,
+    "entity_id": "input_boolean.beta37_exact_action",
+    "evidence_complete": true,
+    "evidence_fingerprint": "589a825314609a8821ca695a94065efbff2d83d38a829e0228e958ad13b971dc",
+    "execution_eligible": true,
+    "model": "helper-dependency-risk-v2",
+    "physical_consequence": "none",
+    "relevant_downstream_object_ids": [
+      "automation.beta37_benign_dependency"
+    ],
+    "target_relevant_dynamic_reference_count": 0,
+    "target_relevant_dynamic_reference_fingerprints": [],
+    "truncated": false,
+    "unreadable_automation_count": 0,
+    "unreadable_automation_fingerprint": "fb844f6793dfbc7573ce7177eae1b05e9b1c1e61e8b11e3d8a94fb8b71ebbf3c",
+    "unreadable_automation_ids": [],
+    "unrelated_dynamic_reference_count": 0,
+    "unresolved_dynamic_reference_count": 0
+  },
+  "fixture_model": "shipped-helper-dependency-risk-v2-binding-v1",
+  "risk": {
+    "apply_allowed": true,
+    "evidence": [
+      {
+        "field": "operation",
+        "trigger": "exact_input_boolean_state"
+      },
+      {
+        "completeness": "complete",
+        "evidence_fingerprint": "589a825314609a8821ca695a94065efbff2d83d38a829e0228e958ad13b971dc",
+        "field": "dependency_index",
+        "generation": "7",
+        "index_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "physical_consequence": "none",
+        "trigger": "helper_dependency_risk_evidence"
+      }
+    ],
+    "level": "low",
+    "reasons": [
+      "Complete bounded dependency evidence found no consequential downstream automation path."
+    ],
+    "warnings": []
+  },
+  "source_commit": "c2f4d9d7e72e59f1ade6e982979bddbf5ef16f21",
+  "source_tag": "v2.2.0-beta.37",
+  "writer": "build_helper_dependency_risk_binding"
+}

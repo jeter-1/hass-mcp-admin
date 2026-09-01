@@ -92,6 +92,16 @@ v13/f2-v2 authority. No historical plan is recomputed, migrated, or silently
 upgraded. Post-intent recovery remains authoritative-readback-first and never
 redispatches.
 
+Shipped Beta 37 and Beta 38 `helper-dependency-risk-v2` bindings predate the
+`dependency_lock_projection` field. A durable v2 post-intent helper record
+therefore reconstructs only its shipped bounded lock graph from the exact
+persisted downstream resource IDs: Home Assistant availability, exact helper,
+matching helper and automation reload, exact and unconstrained dependency
+stability, and known downstream automation locks. This compatibility is
+readback-only, accepts no invented v3 field, grants no approval or dispatch
+authority, and is covered by an exact-writer provenance fixture plus a
+zero-redispatch restart test.
+
 ## Helper-state acceptance
 
 A fresh complete, consequence-free helper plan is exact, low,

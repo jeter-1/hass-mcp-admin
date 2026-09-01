@@ -27,6 +27,9 @@ from .operational_models import (
 )
 
 
+_SHIPPED_HELPER_DEPENDENCY_RISK_V2 = "helper-dependency-risk-v2"
+
+
 def _bound_downstream_automation_resources(
     operation: PreparedOperationalOperation,
     *,
@@ -53,6 +56,15 @@ def _bound_downstream_automation_resources(
         raise ValueError("helper dependency lock resources are invalid")
     for value in values:
         resource_lock_key("automation", value)
+    if binding.get("model") == _SHIPPED_HELPER_DEPENDENCY_RISK_V2:
+        # Beta 37 and Beta 38 persisted this bounded resource list and used it
+        # directly to calculate the complete helper lock graph.  The
+        # dependency_lock_projection field did not exist until v3.  Recovery
+        # may reconstruct that shipped graph after a durable intent, but v2
+        # remains excluded from fresh execution authority above.
+        if "dependency_lock_projection" in binding:
+            raise ValueError("helper dependency v2 lock evidence is invalid")
+        return tuple(values)
     projection = binding.get("dependency_lock_projection")
     if not isinstance(projection, dict):
         raise ValueError("helper dependency lock projection is invalid")
@@ -80,6 +92,11 @@ def _requires_custom_template_reload_lock(
         binding.get("model") not in accepted_models
     ):
         raise ValueError("helper dependency lock evidence is not executable")
+    if binding.get("model") == _SHIPPED_HELPER_DEPENDENCY_RISK_V2:
+        if "dependency_lock_projection" in binding:
+            raise ValueError("helper dependency v2 lock evidence is invalid")
+        # Shipped v2 did not model or acquire a custom-template reload lock.
+        return False
     projection = binding.get("dependency_lock_projection")
     if not isinstance(projection, dict):
         raise ValueError("helper dependency lock projection is invalid")

@@ -36,6 +36,13 @@ plans require replanning; terminal and post-intent recovery records remain
 immutable and readback-first. Existing f2-v1 two-step acknowledgement bundles
 retain their original interpretation.
 
+Post-intent recovery also recognizes the exact shipped v2 helper lock format.
+Beta 37 and Beta 38 persisted bounded downstream automation resource IDs before
+the v3 lock-projection field existed; Beta 54 reconstructs that shipped lock
+graph only for authoritative readback after durable intent. It does not grant
+old plans fresh approval or dispatch authority, and malformed hybrid v2/v3
+evidence remains fail-closed.
+
 ## Conservative execution controls
 
 Consequence-incomplete helper plans retain exact helper and availability locks,

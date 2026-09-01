@@ -33,6 +33,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_beta52_helper_label_target_scope.py",
     "tests/support/replay_hamcp089_beta52_production_path.py",
     "tests/test_beta53_helper_registry_deduplication.py",
+    "tests/test_beta54_owner_authoritative_execution.py",
     "tests/test_f3_adapter_core.py",
     "tests/test_f3_contract.py",
     "tests/test_f3_dashboard_executor_conformance.py",

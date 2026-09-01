@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import replace
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -28,6 +29,11 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
 from ha_mcp_engineering.f3_runtime.repository import (  # noqa: E402
     canonical_hash,
 )
+from ha_mcp_engineering.f3.models import (  # noqa: E402
+    ExecutionIdentity,
+    ExecutorTiming,
+    LockOwner,
+)
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
     HELPER_DEPENDENCY_RISK_MODEL,
@@ -35,6 +41,10 @@ from ha_mcp_engineering.governance.helper_dependency import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.normalize import stable_hash  # noqa: E402
 from ha_mcp_engineering.governance import policy as policy_module  # noqa: E402
+from ha_mcp_engineering.governance.models import (  # noqa: E402
+    ChangeRiskAssessment,
+    RiskLevel,
+)
 from ha_mcp_engineering.governance.policy import (  # noqa: E402
     POLICY_VERSION,
 )
@@ -58,6 +68,19 @@ from tests import test_governance as governance_tests  # noqa: E402
 
 ACCEPTANCE = ROOT / "docs" / "V2_2_0_BETA54_ACCEPTANCE.md"
 RELEASE_NOTES = ROOT / "docs" / "V2_2_0_BETA54_RELEASE_NOTES.md"
+V2_RECOVERY_FIXTURE = (
+    ROOT
+    / "tests"
+    / "fixtures"
+    / "beta37_helper_dependency_risk_v2_binding.json"
+)
+V2_RECOVERY_PROVENANCE = (
+    ROOT / "tests" / "fixtures" / "beta54_v2_helper_recovery_provenance.json"
+)
+V2_RECOVERY_GENERATOR = (
+    ROOT / "scripts" / "generate_beta54_v2_helper_recovery_fixture.py"
+)
+V2_SOURCE_COMMIT = "c2f4d9d7e72e59f1ade6e982979bddbf5ef16f21"
 
 
 class _FrozenDependencyRiskReader:
@@ -88,14 +111,48 @@ def _beta53_policy(plan):
     )
 
 
-def _beta53_helper_plan_is_actionable(plan) -> bool:
+def _historical_helper_plan_is_actionable(plan, expected_model: str) -> bool:
     binding = ChangeGovernanceService._helper_dependency_binding(plan)
     return bool(
         binding is not None
-        and binding.get("model") == "helper-dependency-risk-v12"
+        and binding.get("model") == expected_model
         and binding.get("execution_eligible") is True
         and plan.risk.apply_allowed
     )
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+class Beta54V2RecoveryFixtureProvenanceTests(unittest.TestCase):
+    def test_fixture_is_bound_to_the_exact_shipped_v2_writer(self):
+        fixture = json.loads(V2_RECOVERY_FIXTURE.read_text(encoding="utf-8"))
+        provenance = json.loads(
+            V2_RECOVERY_PROVENANCE.read_text(encoding="utf-8")
+        )
+        self.assertEqual(V2_SOURCE_COMMIT, fixture["source_commit"])
+        self.assertEqual("v2.2.0-beta.37", fixture["source_tag"])
+        self.assertEqual(V2_SOURCE_COMMIT, provenance["source"]["commit"])
+        self.assertEqual(
+            _sha256(V2_RECOVERY_FIXTURE),
+            provenance["fixture"]["sha256"],
+        )
+        self.assertEqual(
+            _sha256(V2_RECOVERY_GENERATOR),
+            provenance["generator_sha256"],
+        )
+        binding = fixture["binding"]
+        risk = fixture["risk"]
+        self.assertEqual("helper-dependency-risk-v2", binding["model"])
+        self.assertNotIn("dependency_lock_projection", binding)
+        self.assertEqual(
+            ["beta37_benign_dependency"],
+            binding["downstream_automation_resource_ids"],
+        )
+        self.assertEqual(0, provenance["fixture"]["provider_write_count"])
+        self.assertEqual("low", risk["level"])
+        self.assertTrue(risk["apply_allowed"])
 
 
 class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
@@ -167,13 +224,15 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
             ),
         )
 
-    def _beta53_authority(self):
-        """Generate the durable record through the v12/f2-v1 writer path."""
+    def _historical_authority(
+        self,
+        model: str,
+        risk_assessment: ChangeRiskAssessment | None = None,
+    ):
+        """Generate a durable record through one exact f2-v1 model path."""
 
-        execution_models = frozenset(
-            {"helper-dependency-risk-v12"}
-        )
-        return (
+        execution_models = frozenset({model})
+        patches = [
             patch(
                 "ha_mcp_engineering.governance.policy."
                 "evaluate_change_policy",
@@ -200,7 +259,11 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 ChangeGovernanceService,
                 "_helper_dependency_plan_is_actionable",
-                new=staticmethod(_beta53_helper_plan_is_actionable),
+                new=staticmethod(
+                    lambda plan: _historical_helper_plan_is_actionable(
+                        plan, model
+                    )
+                ),
             ),
             patch(
                 "ha_mcp_engineering.f3.operational_locks."
@@ -217,10 +280,22 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     poll_interval_seconds=0.01,
                 ),
             ),
-        )
+        ]
+        if risk_assessment is not None:
+            patches.append(
+                patch(
+                    "ha_mcp_engineering.governance.service."
+                    "helper_dependency_risk_assessment",
+                    side_effect=lambda _evidence: copy.deepcopy(
+                        risk_assessment
+                    ),
+                )
+            )
+        return tuple(patches)
 
     async def _historical_crash(self, stage: str):
-        patches = self._beta53_authority()
+        model = "helper-dependency-risk-v12"
+        patches = self._historical_authority(model)
         for item in patches:
             item.start()
         try:
@@ -231,7 +306,7 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
             )
             plan = created["plan"]
             self.assertEqual(
-                "helper-dependency-risk-v12",
+                model,
                 self.service._load(plan["plan_id"])
                 .operational.baseline["dependency_risk"]["model"],
             )
@@ -310,6 +385,107 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
         task = self.service.task_repository.get_for_plan(plan["plan_id"])
         declaration = self.runtime.children.declarations_for_task(task.task_id)[0]
         return plan, task, declaration
+
+    async def _historical_post_intent_fixture(
+        self,
+        *,
+        model: str,
+        dependency_evidence: dict,
+        risk_assessment: ChangeRiskAssessment,
+    ):
+        """Persist an exact approved/locked/consumed post-intent boundary."""
+
+        patches = self._historical_authority(model, risk_assessment)
+        previous_reader = self.service.helper_dependency_risk_reader
+        self.service.helper_dependency_risk_reader = _FrozenDependencyRiskReader(
+            dependency_evidence
+        )
+        for item in patches:
+            item.start()
+        try:
+            created = await self.service.create_helper_state_plan(
+                entity_id=self.helper.entity_id,
+                desired_state="on",
+                expiration_minutes=5,
+            )
+            plan_projection = created["plan"]
+            self.clock.advance(seconds=299)
+            await self._grant(created)
+            plan = self.service._load(plan_projection["plan_id"])
+            task, prepared, requests = await self.runtime._initialize(
+                plan, plan_projection["plan_hash"]
+            )
+            task = self.runtime._enter_public_preflight(task)
+            declaration = self.runtime.children.declarations_for_task(
+                task.task_id
+            )[0]
+            operation = prepared[0]
+            identity = ExecutionIdentity(
+                task_id=declaration["child_id"],
+                plan_id=plan.plan_id,
+                attempt_id=declaration["attempt_id"],
+                request_id=declaration["request_id"],
+                owner_id="beta54-v2-post-intent-fixture",
+            )
+            timing = ExecutorTiming(
+                operation.evidence_deadline_seconds, 120, 32, 32
+            )
+            claim = self.runtime.children.claim(
+                identity=identity,
+                prepared=operation,
+                timing=timing,
+                now=self.service.now(),
+            )
+            lock_timing = replace(
+                PRODUCTION_LOCK_TIMING,
+                lease_seconds=30,
+                renewal_interval_seconds=5,
+                poll_interval_seconds=0.01,
+            )
+            handle = await self.runtime.locks.acquire(
+                requests,
+                owner=LockOwner(
+                    owner_id=identity.owner_id,
+                    task_id=identity.task_id,
+                    plan_id=identity.plan_id,
+                    operation_id=operation.operation,
+                    attempt_id=identity.attempt_id,
+                ),
+                timing=lock_timing,
+                now=self.service.now,
+            )
+            self.runtime.children.record_locks(
+                identity.task_id,
+                owner_id=identity.owner_id,
+                claim_generation=claim.claim_generation,
+                handle=handle,
+                now=self.service.now(),
+            )
+            self.runtime.children.record_preflight(
+                identity.task_id,
+                owner_id=identity.owner_id,
+                claim_generation=claim.claim_generation,
+                now=self.service.now(),
+            )
+            await self.runtime._consume_approval(plan, task, declaration)
+            provider_operation, provider_arguments_hash = (
+                self.runtime._prepared_provider_binding(operation)
+            )
+            self.runtime.children.commit_dispatch_intent(
+                identity.task_id,
+                owner_id=identity.owner_id,
+                claim_generation=claim.claim_generation,
+                request_id=identity.request_id,
+                provider_operation=provider_operation,
+                provider_arguments_hash=provider_arguments_hash,
+                timing=timing,
+                now=self.service.now(),
+            )
+        finally:
+            for item in reversed(patches):
+                item.stop()
+            self.service.helper_dependency_risk_reader = previous_reader
+        return plan_projection, task, declaration
 
     def _mutate_crashed_record(self, declaration, mutator) -> None:
         record = self.runtime.children.get(declaration["child_id"])
@@ -464,6 +640,141 @@ class Beta54HistoricalHelperRecoveryTests(unittest.IsolatedAsyncioTestCase):
             binding_before,
             historical_after.operational.baseline["dependency_risk"],
         )
+
+    async def test_shipped_v2_post_intent_recovers_with_its_exact_lock_graph(
+        self,
+    ):
+        fixture = json.loads(
+            V2_RECOVERY_FIXTURE.read_text(encoding="utf-8")
+        )
+        binding = fixture["binding"]
+        risk_fixture = fixture["risk"]
+        historical_risk = ChangeRiskAssessment(
+            level=RiskLevel(risk_fixture["level"]),
+            reasons=list(risk_fixture["reasons"]),
+            apply_allowed=risk_fixture["apply_allowed"],
+            evidence=copy.deepcopy(risk_fixture["evidence"]),
+            warnings=list(risk_fixture["warnings"]),
+        )
+        dependency_evidence = {
+            "binding": copy.deepcopy(binding),
+            "provenance": {
+                "provider": "dependency_index",
+                "completeness": binding["completeness"],
+                "generation": 7,
+                "fingerprint": "a" * 64,
+                "freshness": "current",
+                "fallback": "none",
+                "fallback_occurred": False,
+            },
+        }
+        plan, _task, declaration = await self._historical_post_intent_fixture(
+            model="helper-dependency-risk-v2",
+            dependency_evidence=dependency_evidence,
+            risk_assessment=historical_risk,
+        )
+        before = self.runtime.children.get(declaration["child_id"])
+        assert before is not None and before.dispatch_intent is not None
+        self.assertEqual(1, before.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertEqual(
+            {
+                "automation:beta37_benign_dependency": "shared",
+                "helper:input_boolean.beta37_exact_action": "exclusive",
+                "helper_dependency:input_boolean.beta37_exact_action": (
+                    "shared"
+                ),
+                "helper_dependency:input_boolean_dynamic": "shared",
+                "home_assistant:core": "shared",
+                "reload:automation": "shared",
+                "reload:input_boolean": "shared",
+            },
+            {item["key"]: item["mode"] for item in before.lock_tokens},
+        )
+        persisted_before = self.service._load_for_projection(plan["plan_id"])
+        binding_before = copy.deepcopy(
+            persisted_before.operational.baseline["dependency_risk"]
+        )
+        self.assertEqual(binding, binding_before)
+        self.assertNotIn("dependency_lock_projection", binding_before)
+
+        self._expire_post_intent(plan, declaration)
+        restarted = self._runtime()
+        self.service.f3_runtime = restarted
+        self.runtime = restarted
+        adapter = restarted.registry.adapter(declaration["capability_id"])
+        with (
+            patch.object(
+                adapter,
+                "preflight",
+                side_effect=AssertionError("preflight must be unreachable"),
+            ),
+            patch.object(
+                adapter,
+                "dispatch",
+                side_effect=AssertionError("dispatch must be unreachable"),
+            ),
+            patch.object(
+                self.helper,
+                "read_state",
+                wraps=self.helper.read_state,
+            ) as readback,
+        ):
+            result = await restarted.recover_once("startup")
+
+        recovered = restarted.children.get(declaration["child_id"])
+        assert recovered is not None
+        self.assertGreaterEqual(result["active_recovery_transitions"], 1)
+        self.assertTrue(recovered.terminal)
+        self.assertEqual("succeeded_verified", recovered.normalized_outcome)
+        self.assertEqual(1, recovered.dispatch_count)
+        self.assertEqual(0, self.helper.dispatch_count)
+        self.assertGreaterEqual(readback.await_count, 1)
+        persisted_after = self.service._load_for_projection(plan["plan_id"])
+        self.assertEqual(
+            binding_before,
+            persisted_after.operational.baseline["dependency_risk"],
+        )
+
+    async def test_unshipped_v2_projection_fails_before_durable_intent(self):
+        fixture = json.loads(
+            V2_RECOVERY_FIXTURE.read_text(encoding="utf-8")
+        )
+        binding = copy.deepcopy(fixture["binding"])
+        binding["dependency_lock_projection"] = {
+            "exact_helper_dependency": True,
+            "conservative_helper_dependency": True,
+            "automation_resource_ids": ["beta37_benign_dependency"],
+            "custom_template_reload": False,
+        }
+        dependency_evidence = {
+            "binding": binding,
+            "provenance": {
+                "provider": "dependency_index",
+                "completeness": binding["completeness"],
+                "generation": 7,
+                "fingerprint": "a" * 64,
+                "freshness": "current",
+                "fallback": "none",
+                "fallback_occurred": False,
+            },
+        }
+        risk_fixture = fixture["risk"]
+        historical_risk = ChangeRiskAssessment(
+            level=RiskLevel(risk_fixture["level"]),
+            reasons=list(risk_fixture["reasons"]),
+            apply_allowed=risk_fixture["apply_allowed"],
+            evidence=copy.deepcopy(risk_fixture["evidence"]),
+            warnings=list(risk_fixture["warnings"]),
+        )
+
+        with self.assertRaises((GovernanceError, ValueError)):
+            await self._historical_post_intent_fixture(
+                model="helper-dependency-risk-v2",
+                dependency_evidence=dependency_evidence,
+                risk_assessment=historical_risk,
+            )
+        self.assertEqual(0, self.helper.dispatch_count)
 
     async def test_expired_v13_f2_v2_post_intent_recovers_by_readback(self):
         plan, _task, declaration = await self._fresh_v13_crash(
