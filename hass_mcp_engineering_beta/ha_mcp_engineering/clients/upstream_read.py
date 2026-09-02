@@ -144,7 +144,12 @@ class McpReadGatewayTransport:
             return
         operation = self._new_operation("close")
         await self._submit(operation)
-        await self._worker
+        try:
+            await self._worker
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            raise self._copy_operation_error(exc) from None
 
     def _new_operation(
         self,
@@ -167,11 +172,37 @@ class McpReadGatewayTransport:
             )
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._run_worker())
+        worker = self._worker
+        if worker is None:
+            raise DashboardTransportError("provider_unavailable") from None
         try:
             self._operations.put_nowait(operation)
         except asyncio.QueueFull:
             raise DashboardTransportError("provider_unavailable") from None
-        return await operation.future
+        try:
+            done, _pending = await asyncio.wait(
+                (operation.future, worker),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+        except asyncio.CancelledError:
+            if not operation.future.done():
+                operation.future.cancel()
+            raise
+        if operation.future in done:
+            try:
+                return operation.future.result()
+            finally:
+                if worker in done and not worker.cancelled():
+                    worker.exception()
+        if not operation.future.done():
+            operation.future.cancel()
+        try:
+            worker.result()
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            raise self._copy_operation_error(exc) from None
+        raise DashboardTransportError("provider_unavailable") from None
 
     async def _run_isolated(self, operation: _TransportOperation) -> Any:
         """Preserve Beta 54's independent per-operation transport behavior."""
@@ -296,7 +327,9 @@ class McpReadGatewayTransport:
                                     raise
                                 mapped = self._map_operation_error(exc)
                                 if not current.future.done():
-                                    current.future.set_exception(mapped)
+                                    current.future.set_exception(
+                                        self._copy_operation_error(mapped)
+                                    )
                                 break
                             if not retain_connection:
                                 break
@@ -311,7 +344,7 @@ class McpReadGatewayTransport:
                     raise
                 if pending is not None and not pending.future.done():
                     pending.future.set_exception(
-                        self._map_operation_error(exc)
+                        self._copy_operation_error(exc)
                     )
                 pending = None
 
@@ -459,6 +492,31 @@ class McpReadGatewayTransport:
         ):
             return exc
         return DashboardTransportError(_classify_transport_exception(exc))
+
+    @classmethod
+    def _copy_operation_error(cls, exc: BaseException) -> BaseException:
+        """Return a fresh typed error for transfer across an asyncio future."""
+
+        mapped = cls._map_operation_error(exc)
+        if isinstance(mapped, DashboardTransportError):
+            return DashboardTransportError(
+                mapped.category,
+                retryable=mapped.retryable,
+                grouped_categories=mapped.grouped_categories,
+                provider_response_received=(
+                    mapped.provider_response_received
+                ),
+                http_response_received=mapped.http_response_received,
+                failure_kind=mapped.failure_kind,
+                http_status_class=mapped.http_status_class,
+            )
+        if isinstance(mapped, BeforeDispatchFailure):
+            return BeforeDispatchFailure(mapped.cause)
+        if isinstance(mapped, CatalogValidationFailure):
+            return CatalogValidationFailure(mapped.cause)
+        if isinstance(mapped, asyncio.CancelledError):
+            return asyncio.CancelledError(*mapped.args)
+        return DashboardTransportError("internal_error")
 
     @staticmethod
     async def _list_all_tools(session: ClientSession) -> list[dict[str, Any]]:

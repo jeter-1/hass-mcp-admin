@@ -641,9 +641,79 @@ class ReadGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
                 )
             self.assertEqual(caught.exception.category, "protocol_error")
             self.assertEqual(events.count("tools/call:ha_get_state"), 1)
-            await transport.aclose()
+            await asyncio.wait_for(transport.aclose(), timeout=1.0)
         self.assertEqual(events.count("initialize"), 1)
         self.assertEqual(events[-2:], ["session_exit", "transport_exit"])
+
+    async def test_cross_task_transport_error_copy_preserves_evidence(self):
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.2.0-beta.55",
+            retain_session=True,
+        )
+        original = DashboardTransportError(
+            "protocol_error",
+            retryable=False,
+            grouped_categories=("protocol_error", "invalid_response"),
+            provider_response_received=True,
+            http_response_received=True,
+            failure_kind="provider_response_rejected",
+            http_status_class="4xx",
+        )
+
+        copied = transport._copy_operation_error(original)
+
+        self.assertIsNot(copied, original)
+        self.assertIsInstance(copied, DashboardTransportError)
+        self.assertEqual(copied.category, original.category)
+        self.assertEqual(copied.retryable, original.retryable)
+        self.assertEqual(
+            copied.grouped_categories,
+            original.grouped_categories,
+        )
+        self.assertEqual(
+            copied.evidence_details(),
+            original.evidence_details(),
+        )
+        cause = RuntimeError("synthetic private local failure")
+        for typed in (
+            BeforeDispatchFailure(cause),
+            CatalogValidationFailure(cause),
+            asyncio.CancelledError("synthetic cancellation"),
+        ):
+            with self.subTest(error_type=type(typed).__name__):
+                typed_copy = transport._copy_operation_error(typed)
+                self.assertIsNot(typed_copy, typed)
+                self.assertIs(type(typed_copy), type(typed))
+                if isinstance(
+                    typed_copy,
+                    (BeforeDispatchFailure, CatalogValidationFailure),
+                ):
+                    self.assertIs(typed_copy.cause, cause)
+
+    async def test_retained_worker_failure_is_bounded_and_sanitized(self):
+        async def fail_worker():
+            await asyncio.sleep(0)
+            raise RuntimeError("synthetic private worker failure")
+
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.2.0-beta.55",
+            retain_session=True,
+        )
+        with (
+            patch.object(transport, "_run_worker", fail_worker),
+            self.assertRaises(DashboardTransportError) as caught,
+        ):
+            await asyncio.wait_for(transport.discover(), timeout=1.0)
+
+        self.assertEqual(caught.exception.category, "internal_error")
+        self.assertNotIn(
+            "synthetic private worker failure",
+            str(caught.exception),
+        )
 
     async def test_same_session_validator_rejection_prevents_tools_call(self):
         events = []
