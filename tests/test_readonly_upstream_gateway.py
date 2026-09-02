@@ -715,6 +715,105 @@ class ReadGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
             str(caught.exception),
         )
 
+    async def test_retained_queue_wait_uses_end_to_end_operation_budget(self):
+        first_call_started = asyncio.Event()
+        release_first_call = asyncio.Event()
+        calls = []
+
+        @asynccontextmanager
+        async def fake_streamable(_url, **_kwargs):
+            yield ("read", "write", lambda: "actual-session")
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def initialize(self):
+                return types.InitializeResult(
+                    protocolVersion="2025-03-26",
+                    capabilities=types.ServerCapabilities(),
+                    serverInfo=types.Implementation(
+                        name="ha-mcp", version="8.2.0"
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                del cursor
+                return types.ListToolsResult(
+                    tools=[
+                        types.Tool(
+                            name="ha_get_state",
+                            description="Reviewed ha_get_state operation.",
+                            inputSchema=schema(),
+                        )
+                    ]
+                )
+
+            async def call_tool(self, _name, arguments, **_kwargs):
+                calls.append(dict(arguments))
+                if len(calls) == 1:
+                    first_call_started.set()
+                    await release_first_call.wait()
+                return types.CallToolResult(
+                    content=[
+                        types.TextContent(
+                            type="text",
+                            text=json.dumps(arguments),
+                        )
+                    ]
+                )
+
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.2.0-beta.55",
+            retain_session=True,
+        )
+        with (
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.streamablehttp_client",
+                fake_streamable,
+            ),
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                Session,
+            ),
+        ):
+            await transport.discover()
+            first = asyncio.create_task(
+                transport.execute_read(
+                    "ha_get_state",
+                    {"entity_id": "sun.first"},
+                    timeout_seconds=3,
+                    catalog_validator=lambda _catalog: None,
+                )
+            )
+            await asyncio.wait_for(first_call_started.wait(), timeout=1.0)
+
+            with self.assertRaises(DashboardTransportError) as caught:
+                await asyncio.wait_for(
+                    transport.execute_read(
+                        "ha_get_state",
+                        {"entity_id": "sun.second"},
+                        timeout_seconds=1,
+                        catalog_validator=lambda _catalog: None,
+                    ),
+                    timeout=1.5,
+                )
+
+            self.assertEqual(caught.exception.category, "timeout")
+            self.assertEqual(calls, [{"entity_id": "sun.first"}])
+            release_first_call.set()
+            await asyncio.wait_for(first, timeout=1.0)
+            await asyncio.wait_for(transport.aclose(), timeout=1.0)
+        self.assertEqual(calls, [{"entity_id": "sun.first"}])
+
     async def test_same_session_validator_rejection_prevents_tools_call(self):
         events = []
 

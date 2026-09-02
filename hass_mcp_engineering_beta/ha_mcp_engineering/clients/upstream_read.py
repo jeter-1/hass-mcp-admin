@@ -182,12 +182,20 @@ class McpReadGatewayTransport:
         try:
             done, _pending = await asyncio.wait(
                 (operation.future, worker),
+                timeout=self._operation_budget_seconds(operation),
                 return_when=asyncio.FIRST_COMPLETED,
             )
         except asyncio.CancelledError:
             if not operation.future.done():
                 operation.future.cancel()
             raise
+        if not done and operation.future.done():
+            done.add(operation.future)
+        if not done and worker.done():
+            done.add(worker)
+        if not done:
+            operation.future.cancel()
+            raise DashboardTransportError("timeout") from None
         if operation.future in done:
             try:
                 return operation.future.result()
@@ -265,6 +273,9 @@ class McpReadGatewayTransport:
                 if not pending.future.done():
                     pending.future.set_result(None)
                 return
+            if pending.future.cancelled():
+                pending = None
+                continue
             started = time.perf_counter()
             timeout = timedelta(
                 seconds=max(
@@ -492,6 +503,19 @@ class McpReadGatewayTransport:
         ):
             return exc
         return DashboardTransportError(_classify_transport_exception(exc))
+
+    def _operation_budget_seconds(
+        self,
+        operation: _TransportOperation,
+    ) -> float:
+        return max(
+            1.0,
+            float(
+                operation.timeout_seconds
+                if operation.timeout_seconds is not None
+                else self._timeout.total_seconds()
+            ),
+        )
 
     @classmethod
     def _copy_operation_error(cls, exc: BaseException) -> BaseException:
