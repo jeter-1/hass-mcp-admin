@@ -1,4 +1,4 @@
-name: Arm authorized pull request auto-merge
+name: Merge owner-authorized pull request
 
 on:
   issue_comment:
@@ -6,25 +6,27 @@ on:
       - created
   pull_request_target:
     types:
+      - closed
       - converted_to_draft
       - edited
       - ready_for_review
+      - reopened
       - synchronize
 
 permissions: {}
 
-concurrency:
-  group: authorized-auto-merge-${{ github.event.pull_request.number || github.event.issue.number }}
-  cancel-in-progress: true
-
 jobs:
-  revoke-auto-merge-on-head-change:
-    name: revoke-auto-merge-on-authorization-change
+  retire-stale-ready-run:
+    name: retire-stale-ready-run
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       ((github.event.action == 'synchronize' &&
         github.event.pull_request.base.ref == 'main') ||
+       (github.event.action == 'closed' &&
+        github.event.pull_request.base.ref == 'main') ||
        (github.event.action == 'converted_to_draft' &&
+        github.event.pull_request.base.ref == 'main') ||
+       (github.event.action == 'reopened' &&
         github.event.pull_request.base.ref == 'main') ||
        (github.event.action == 'edited' &&
         github.event.changes.base != null &&
@@ -34,8 +36,11 @@ jobs:
     timeout-minutes: 5
     permissions:
       pull-requests: write
+    concurrency:
+      group: authorized-merge-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
     steps:
-      - name: Withdraw stale Ready authorization
+      - name: Retire in-flight and inherited Ready authority
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -53,13 +58,14 @@ jobs:
             gh pr merge "$PR_NUMBER" \
               --repo "$REPOSITORY" \
               --disable-auto
-            echo "Auto-merge was disarmed because the pull-request authorization changed." >> "$GITHUB_STEP_SUMMARY"
+            echo "An inherited persistent auto-merge request was disarmed." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Auto-merge was already disarmed after the pull-request authorization changed." >> "$GITHUB_STEP_SUMMARY"
+            echo "No inherited persistent auto-merge request was armed." >> "$GITHUB_STEP_SUMMARY"
           fi
+          echo "Any in-flight Ready-authorized merge run was cancelled by the shared concurrency group." >> "$GITHUB_STEP_SUMMARY"
 
-  authorize-auto-merge:
-    name: authorize-auto-merge
+  merge-authorized-head:
+    name: merge-authorized-head
     if: >-
       (github.event_name == 'pull_request_target' &&
        github.event.action == 'ready_for_review' &&
@@ -69,10 +75,14 @@ jobs:
       (github.event_name == 'issue_comment' &&
        github.actor == 'jeter-1' &&
        github.event.issue.pull_request != null &&
-       github.event.comment.body == '@codex review')
+       github.event.comment.body == '@merge')
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    concurrency:
+      group: authorized-merge-${{ github.event.pull_request.number || github.event.issue.number }}
+      cancel-in-progress: true
     permissions:
+      checks: read
       contents: write
       issues: read
       pull-requests: write
@@ -92,7 +102,7 @@ jobs:
           if ! jq -e --arg repository "$REPOSITORY" \
             '.state == "open" and .draft == false and .base.ref == "main" and .head.repo.full_name == $repository' \
             <<< "$pr_json" >/dev/null; then
-            echo "::error::The auto-merge request is not an eligible open pull request."
+            echo "::error::The merge request is not an eligible open pull request."
             exit 1
           fi
           head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
@@ -112,10 +122,77 @@ jobs:
           ref: ${{ steps.context.outputs.base_sha }}
           persist-credentials: false
 
-      - name: Verify current-head Ready authorization for retry
-        if: github.event_name == 'issue_comment'
+      - name: Wait for the exact-head deterministic validate check
         shell: bash
         env:
+          AUTHORIZED_BASE_SHA: ${{ steps.context.outputs.base_sha }}
+          AUTHORIZED_HEAD_SHA: ${{ steps.context.outputs.head_sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
+          REPOSITORY: ${{ github.repository }}
+          VALIDATE_MAX_ATTEMPTS: "105"
+          VALIDATE_POLL_SECONDS: "20"
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 "$VALIDATE_MAX_ATTEMPTS"); do
+            current_pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+            if ! jq -e \
+              --arg base_sha "$AUTHORIZED_BASE_SHA" \
+              --arg head_sha "$AUTHORIZED_HEAD_SHA" \
+              '.base.ref == "main" and
+               .base.sha == $base_sha and
+               .head.sha == $head_sha' \
+              <<< "$current_pr_json" >/dev/null; then
+              echo "::error::The pull-request base or head moved while deterministic validation was pending."
+              exit 1
+            fi
+
+            checks_json="$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${REPOSITORY}/commits/${AUTHORIZED_HEAD_SHA}/check-runs?check_name=validate&filter=latest&per_page=100")"
+            check_count="$(jq -r '.total_count' <<< "$checks_json")"
+            if [[ "$check_count" == "1" ]]; then
+              check_binding_count="$(jq -r \
+                --arg base_sha "$AUTHORIZED_BASE_SHA" \
+                --arg head_sha "$AUTHORIZED_HEAD_SHA" \
+                --arg pr_number "$PR_NUMBER" \
+                '[.check_runs[0].pull_requests[]? |
+                  select((.number | tostring) == $pr_number and
+                         .base.ref == "main" and
+                         .base.sha == $base_sha and
+                         .head.sha == $head_sha)] | length' \
+                <<< "$checks_json")"
+              check_head_sha="$(jq -r '.check_runs[0].head_sha // ""' <<< "$checks_json")"
+              if [[ "$check_head_sha" != "$AUTHORIZED_HEAD_SHA" || "$check_binding_count" != "1" ]]; then
+                echo "::error::The deterministic validate check is not bound to the authorized PR base and head."
+                exit 1
+              fi
+              check_status="$(jq -r '.check_runs[0].status' <<< "$checks_json")"
+              check_conclusion="$(jq -r '.check_runs[0].conclusion // ""' <<< "$checks_json")"
+              if [[ "$check_status" == "completed" && "$check_conclusion" == "success" ]]; then
+                break
+              fi
+              if [[ "$check_status" == "completed" ]]; then
+                echo "::error::The exact-head deterministic validate check did not succeed."
+                exit 1
+              fi
+            elif [[ "$check_count" != "0" ]]; then
+              echo "::error::The exact-head deterministic validate check was ambiguous."
+              exit 1
+            fi
+
+            if [[ "$attempt" -eq "$VALIDATE_MAX_ATTEMPTS" ]]; then
+              echo "::error::The exact-head deterministic validate check did not finish within 35 minutes."
+              exit 1
+            fi
+            sleep "$VALIDATE_POLL_SECONDS"
+          done
+
+      - name: Revalidate Ready authority and merge the exact head
+        shell: bash
+        env:
+          AUTHORIZED_BASE_SHA: ${{ steps.context.outputs.base_sha }}
+          AUTHORIZED_HEAD_SHA: ${{ steps.context.outputs.head_sha }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.context.outputs.pr_number }}
           REPOSITORY: ${{ github.repository }}
@@ -131,93 +208,29 @@ jobs:
             --timeline /tmp/ready-authorization-timeline.json \
             --output /tmp/ready-authorization.json
 
-      - name: Arm GitHub native auto-merge for the authorized exact head
-        shell: bash
-        env:
-          AUTHORIZED_HEAD_SHA: ${{ steps.context.outputs.head_sha }}
-          BASE_SHA: ${{ steps.context.outputs.base_sha }}
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ steps.context.outputs.pr_number }}
-          RECEIPT_MAX_ATTEMPTS: "105"
-          RECEIPT_POLL_SECONDS: "20"
-          REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          if [[ "$(git rev-parse HEAD)" != "$BASE_SHA" ]]; then
-            echo "::error::Trusted auto-merge policy did not match the PR base."
+          if [[ "$(git rev-parse HEAD)" != "$AUTHORIZED_BASE_SHA" ]]; then
+            echo "::error::Trusted merge policy did not match the PR base."
             exit 1
           fi
 
-          current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-          if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
-            echo "::error::The pull-request head moved after Ready for review was authorized."
+          pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+          if ! jq -e \
+            --arg repository "$REPOSITORY" \
+            --arg base_sha "$AUTHORIZED_BASE_SHA" \
+            --arg head_sha "$AUTHORIZED_HEAD_SHA" \
+            '.state == "open" and
+             .draft == false and
+             .base.ref == "main" and
+             .base.sha == $base_sha and
+             .head.repo.full_name == $repository and
+             .head.sha == $head_sha' \
+            <<< "$pr_json" >/dev/null; then
+            echo "::error::The pull-request eligibility or exact head changed after Ready authorization."
             exit 1
           fi
-
-          for attempt in $(seq 1 "$RECEIPT_MAX_ATTEMPTS"); do
-            current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-            if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
-              echo "::error::The pull-request head moved while review authorization was pending."
-              exit 1
-            fi
-
-            if ! gh api --paginate \
-              "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
-              | jq -s 'add' > /tmp/auto-merge-codex-comments.json; then
-              echo "::error::Could not read native Codex review comments."
-              exit 1
-            fi
-            if ! gh api --paginate \
-              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" \
-              | jq -s 'add' > /tmp/auto-merge-codex-reviews.json; then
-              echo "::error::Could not read native Codex reviews."
-              exit 1
-            fi
-            if ! gh api --paginate \
-              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" \
-              | jq -s 'add' > /tmp/auto-merge-codex-review-comments.json; then
-              echo "::error::Could not read native Codex review comments."
-              exit 1
-            fi
-
-            set +e
-            python3 scripts/validate_native_codex_review.py \
-              --head "$AUTHORIZED_HEAD_SHA" \
-              --comments /tmp/auto-merge-codex-comments.json \
-              --reviews /tmp/auto-merge-codex-reviews.json \
-              --review-comments /tmp/auto-merge-codex-review-comments.json \
-              --output /tmp/auto-merge-codex-receipt.json
-            validation_exit=$?
-            set -e
-
-            if [[ "$validation_exit" -eq 0 ]]; then
-              exact="$(python3 -c 'import json; print(str(json.load(open("/tmp/auto-merge-codex-receipt.json", encoding="utf-8"))["exact"]).lower())')"
-              if [[ "$exact" != "true" ]]; then
-                commit_ref="$(python3 -c 'import json; print(json.load(open("/tmp/auto-merge-codex-receipt.json", encoding="utf-8"))["commit_ref"])')"
-                resolved_sha="$(gh api "repos/${REPOSITORY}/commits/${commit_ref}" --jq '.sha')"
-                if [[ "$resolved_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
-                  echo "::error::Native Codex evidence resolved to a different commit."
-                  exit 1
-                fi
-              fi
-              break
-            fi
-
-            if [[ "$validation_exit" -ne 75 ]]; then
-              echo "::error::Native Codex review evidence was invalid or failed."
-              exit 1
-            fi
-            if [[ "$attempt" -eq "$RECEIPT_MAX_ATTEMPTS" ]]; then
-              echo "::error::Native Codex did not finish review within 35 minutes."
-              exit 1
-            fi
-            sleep "$RECEIPT_POLL_SECONDS"
-          done
 
           gh pr merge "$PR_NUMBER" \
             --repo "$REPOSITORY" \
-            --auto \
             --merge \
             --match-head-commit "$AUTHORIZED_HEAD_SHA"
-          echo "Trusted exact-head Codex evidence succeeded; auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Josh's Ready authorization and deterministic checks are current; pull request #${PR_NUMBER} was merged at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"

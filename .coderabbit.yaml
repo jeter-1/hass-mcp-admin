@@ -14,13 +14,12 @@ reviews:
   abort_on_close: true
   disable_cache: true
   auto_review:
-    enabled: true
+    enabled: false
     drafts: false
-    auto_incremental_review: true
+    auto_incremental_review: false
     auto_pause_after_reviewed_commits: 0
     base_branches: []
-    labels:
-      - "!do-not-review"
+    labels: []
     ignore_title_keywords:
       - "WIP"
       - "DO NOT MERGE"
@@ -46,10 +45,21 @@ reviews:
       enabled: false
     simplify:
       enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
     custom: []
 
 chat:
   auto_reply: false
+  integrations:
+    jira:
+      usage: "disabled"
+    linear:
+      usage: "disabled"
 
 knowledge_base:
   opt_out: true

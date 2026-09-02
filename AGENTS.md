@@ -101,20 +101,36 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Make the smallest coherent change and add regression coverage for defects.
 - Prepare draft pull requests by default. Review the complete final diff before
   declaring completion.
+- Complete Full/Evidence validation on a stable review candidate before
+  independent review. The implementer must not act as its own repeated
+  independent reviewer. The default budget is one read-only review in a
+  separate Codex session or worktree, one batch of accepted corrections, and
+  at most one focused delta rereview. Require a full rereview only when the
+  corrections materially change architecture or scope. Provider, write,
+  workflow, cryptographic, persistence, and release-authority changes require a
+  security section; a second specialized reviewer is exceptional rather than
+  routine.
 - A `Ready for review` action performed by Josh (`jeter-1`) on a same-repository
-  pull request targeting `main` is explicit standing authorization for GitHub
-  native auto-merge after the exact current head passes all required validation,
-  the native Codex review receipt gate, and all applicable review-thread
-  resolution requirements. CodeRabbit remains an additional reviewer when its
-  repository eligibility permits a review. Automation and agents must not mark
-  a draft ready on Josh's behalf. Any later head change withdraws that Ready
-  authorization and disarms stored auto-merge; Josh must mark the revised pull
-  request Ready again.
+  pull request targeting `main` attests that the bounded independent review is
+  complete and acceptable, and is explicit standing authorization for the
+  protected-base workflow to wait for the exact head's deterministic `validate`
+  check and then perform one non-administrative, head-matched merge after final
+  Ready, repository, base, draft, and head revalidation. GitHub enforces the
+  remaining ruleset requirements at that final merge boundary. Do not retain a
+  persistent native auto-merge request across that wait. Native Codex and
+  CodeRabbit reviews are optional manual escalation tools, not automatic merge
+  gates.
+  Automation and agents must not mark a draft ready on Josh's behalf. Any later
+  head or lifecycle change withdraws that Ready authorization and cancels the
+  in-flight merge run. A corrected head requires the bounded delta rereview
+  before Josh marks it Ready again.
 - If that authorized pull request contains a fully materialized Engineering
   version transition, the same Ready action authorizes publication of the exact
   protected `main` merge commit as the version image, immutable commit image,
-  annotated tag, and GitHub Release. It does not authorize deployment or any
-  live Home Assistant change.
+  annotated tag, and GitHub Release. Publication does not trigger another model
+  review when the materialized release state was included in the reviewed pull
+  request. Ready does not authorize deployment or any live Home Assistant
+  change.
 - Do not merge, release, publish, promote, deploy, or change live systems without
   explicit authorization for that distinct action or the bounded Ready action
   above.

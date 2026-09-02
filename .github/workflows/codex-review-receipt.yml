@@ -4,31 +4,22 @@ on:
   issue_comment:
     types:
       - created
-  pull_request_target:
-    types:
-      - opened
-      - reopened
-      - synchronize
-      - ready_for_review
 
 permissions: {}
 
 concurrency:
-  group: codex-review-receipt-${{ github.event.pull_request.number || github.event.issue.number }}
+  # A bot summary is also an issue_comment event. Key the observer to Josh's
+  # triggering comment so that the summary it is waiting for cannot cancel it.
+  group: codex-review-receipt-${{ github.event.issue.number }}-${{ github.event.comment.id }}
   cancel-in-progress: true
 
 jobs:
   codex-review-receipt:
     name: codex-review-receipt-observer
     if: >-
-      (github.event_name == 'pull_request_target' &&
-       github.event.pull_request.draft == false &&
-       github.event.pull_request.base.ref == 'main' &&
-       github.event.pull_request.head.repo.full_name == github.repository) ||
-      (github.event_name == 'issue_comment' &&
-       github.actor == 'jeter-1' &&
-       github.event.issue.pull_request != null &&
-       github.event.comment.body == '@codex review')
+      github.actor == 'jeter-1' &&
+      github.event.issue.pull_request != null &&
+      github.event.comment.body == '@codex review'
     runs-on: ubuntu-latest
     timeout-minutes: 35
     permissions:
@@ -41,10 +32,8 @@ jobs:
         id: context
         shell: bash
         env:
-          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+          PR_NUMBER: ${{ github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -57,10 +46,6 @@ jobs:
           fi
           head_sha="$(jq -r '.head.sha' <<< "$pr_json")"
           base_sha="$(jq -r '.base.sha' <<< "$pr_json")"
-          if [[ "$EVENT_NAME" == "pull_request_target" && "$head_sha" != "$EVENT_HEAD_SHA" ]]; then
-            echo "::error::The pull-request head moved beyond the triggering lifecycle event."
-            exit 1
-          fi
           {
             echo "head_sha=$head_sha"
             echo "base_sha=$base_sha"
