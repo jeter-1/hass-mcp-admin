@@ -112,14 +112,18 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
   routine.
 - A `Ready for review` action performed by Josh (`jeter-1`) on a same-repository
   pull request targeting `main` attests that the bounded independent review is
-  complete and acceptable, and is explicit standing authorization for GitHub
-  native auto-merge after the exact current head passes all required
-  deterministic validation and applicable review-thread resolution
-  requirements. Native Codex and CodeRabbit reviews are optional manual
-  escalation tools, not automatic merge gates. Automation and agents must not
-  mark a draft ready on Josh's behalf. Any later head change withdraws that
-  Ready authorization and disarms stored auto-merge. A corrected head requires
-  the bounded delta rereview before Josh marks it Ready again.
+  complete and acceptable, and is explicit standing authorization for the
+  protected-base workflow to wait for the exact head's deterministic `validate`
+  check and then perform one non-administrative, head-matched merge after final
+  Ready, repository, base, draft, and head revalidation. GitHub enforces the
+  remaining ruleset requirements at that final merge boundary. Do not retain a
+  persistent native auto-merge request across that wait. Native Codex and
+  CodeRabbit reviews are optional manual escalation tools, not automatic merge
+  gates.
+  Automation and agents must not mark a draft ready on Josh's behalf. Any later
+  head or lifecycle change withdraws that Ready authorization and cancels the
+  in-flight merge run. A corrected head requires the bounded delta rereview
+  before Josh marks it Ready again.
 - If that authorized pull request contains a fully materialized Engineering
   version transition, the same Ready action authorizes publication of the exact
   protected `main` merge commit as the version image, immutable commit image,

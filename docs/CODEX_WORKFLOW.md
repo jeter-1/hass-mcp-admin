@@ -127,7 +127,8 @@ executable validation.
 8. Push only the named task branch and open a draft pull request. Agents stop
    before marking it ready, merging, publication, or deployment. Josh may mark
    the same-repository pull request ready after its final state is reviewable;
-   that action arms the bounded review and auto-merge contract described below.
+   that action authorizes the bounded review and exact-head merge contract
+   described below.
 
 For a pull request that declares `.release/next-version`, materialize the release
 state in that same branch before the pull request is marked ready:
@@ -168,30 +169,40 @@ Native Codex and CodeRabbit remain available as optional manual escalation
 tools. Neither runs automatically and neither is a merge prerequisite. Josh may
 request native Codex by posting the exact comment `@codex review`; the optional
 `codex-review-receipt` observer then validates GitHub evidence for the exact
-current head. It does not run a model itself, arm auto-merge, replace Josh's
+current head. It does not run a model itself, authorize merge, replace Josh's
 Ready action, parse review prose as executable data, accept stale evidence, or
 count a setup notice as completed review. The observer and validator load only
 from the protected base commit, never candidate code. CodeRabbit automatic and
 incremental reviews are disabled; `@coderabbitai review` remains available for
 a manual review. CodeRabbit Autofix, CI fixing, merge-conflict resolution,
 branch-writing finishing touches, unsolicited chat, web search, knowledge
-retention, and code-generation features remain disabled.
+retention, Jira/Linear integrations, and code-generation features remain
+disabled.
 
 Josh's `Ready for review` action on a same-repository `jeter-1` pull request
 targeting `main` attests that the independent review is complete and acceptable.
 The protected-base authorization workflow verifies the repository, base, actor,
-and exact authorized head, then immediately arms GitHub native auto-merge with
-head matching. Required deterministic checks and review-thread resolution remain
-enforced by the GitHub ruleset. The automation has no administrative bypass and
-never force-pushes.
+and exact authorized head, waits only for that head's deterministic `validate`
+check, then revalidates the complete Ready lifecycle, open/non-draft disposition,
+protected base commit, same-repository head, and exact head immediately before
+one non-administrative, head-matched merge. Remaining required statuses and
+review-thread resolution stay enforced by GitHub at that merge boundary. The
+workflow never force-pushes and never polls model-review evidence.
 
-A push, force-push, draft conversion, head restoration, or base change withdraws
-Ready authorization and disarms auto-merge. The corrected head must receive the
-bounded delta rereview before Josh marks it Ready again. An exact Josh-authored
-`@merge` comment may retry a transient auto-merge workflow failure only when the
-latest applicable Ready action still authorizes the unchanged current head. It
-does not request or wait for a model review. `@codex review` requests only the
-optional review receipt and cannot arm merge.
+The workflow deliberately does not leave a persistent native auto-merge request
+armed while checks run. GitHub guarantees automatic revocation after a head push
+only when the pusher lacks write permission; therefore persistent auto-merge is
+not a commit-bound authorization for this same-repository owner workflow. See
+GitHub's [auto-merge behavior](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/automatically-merging-a-pull-request).
+
+A push, force-push, draft conversion, closure/reopening, head restoration, or
+base change withdraws Ready authorization and cancels the in-flight merge run.
+The corrected head must receive the bounded delta rereview before Josh marks it
+Ready again. An exact Josh-authored `@merge` comment may retry a transient merge
+workflow failure only when the latest applicable Ready action still authorizes
+the unchanged current head. It does not request or directly inspect model review
+evidence. `@codex review` requests only the optional review receipt and cannot
+authorize merge.
 
 If the reviewed merge includes a final Engineering version transition, the
 protected-main publication workflow validates and publishes that exact merge
@@ -210,7 +221,7 @@ fully active.
 
 GitHub does not start new workflow runs for most events created with the
 repository `GITHUB_TOKEN`. Consequently, a merge performed by the protected
-auto-merge workflow can reach `main` without starting the publication workflow's
+merge workflow can reach `main` without starting the publication workflow's
 ordinary `push` event. This is a GitHub event-suppression boundary, not evidence
 that the reviewed release failed validation. See GitHub's
 [workflow-trigger documentation](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow).
@@ -319,8 +330,9 @@ authorize Home Assistant backup, update, restart, deployment or canary work.
 
 Only Josh may mark the draft ready. Converting the pull request back to draft,
 closing it, or pushing a new head withdraws the immediate merge path. The
-protected-base workflow disarms any stored auto-merge request on every
-`synchronize` event. Josh must mark the revised pull request Ready again so the
+protected-base workflow cancels any in-flight merge run on every `synchronize`,
+draft, close/reopen, or relevant base-change event and retains no persistent
+auto-merge request. Josh must mark the revised pull request Ready again so the
 new exact head receives fresh authorization after the bounded delta rereview.
 
 If `python` is not on PATH, pass the trusted interpreter explicitly to

@@ -13,12 +13,14 @@ AUTHORIZING_ACTOR = "jeter-1"
 HEAD_LIFECYCLE_EVENTS = {
     "automatic_base_change_succeeded",
     "base_ref_changed",
+    "closed",
     "committed",
     "convert_to_draft",
     "head_ref_deleted",
     "head_ref_force_pushed",
     "head_ref_restored",
     "ready_for_review",
+    "reopened",
 }
 
 

@@ -48,6 +48,9 @@ class CodeRabbitConfigurationTests(unittest.TestCase):
             self.configuration["knowledge_base"]["web_search"]["enabled"]
         )
         self.assertFalse(self.configuration["chat"]["auto_reply"])
+        integrations = self.configuration["chat"]["integrations"]
+        self.assertEqual("disabled", integrations["jira"]["usage"])
+        self.assertEqual("disabled", integrations["linear"]["usage"])
 
     def test_code_generation_features_are_disabled(self) -> None:
         reviews = self.configuration["reviews"]

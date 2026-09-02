@@ -114,7 +114,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn("gh pr merge", script)
         self.assertNotIn("--admin", script)
 
-    def test_owner_ready_arms_exact_head_auto_merge_without_model_polling(self):
+    def test_owner_ready_merges_exact_head_after_checks_without_model_polling(self):
         events = workflow_events(self.auto_merge)
         self.assertEqual(
             events,
@@ -122,15 +122,17 @@ class ReviewWorkflowTests(unittest.TestCase):
                 "issue_comment": {"types": ["created"]},
                 "pull_request_target": {
                     "types": [
+                        "closed",
                         "converted_to_draft",
                         "edited",
                         "ready_for_review",
+                        "reopened",
                         "synchronize",
                     ]
                 },
             },
         )
-        job = self.auto_merge["jobs"]["authorize-auto-merge"]
+        job = self.auto_merge["jobs"]["merge-authorized-head"]
         condition = job["if"]
         self.assertIn("github.event.action == 'ready_for_review'", condition)
         self.assertIn("github.actor == 'jeter-1'", condition)
@@ -138,6 +140,15 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertIn("head.repo.full_name == github.repository", condition)
         self.assertIn("github.event.comment.body == '@merge'", condition)
         self.assertNotIn("@codex review", condition)
+        self.assertEqual(
+            job["permissions"],
+            {
+                "checks": "read",
+                "contents": "write",
+                "issues": "read",
+                "pull-requests": "write",
+            },
+        )
 
         context = next(step for step in job["steps"] if step.get("id") == "context")
         self.assertIn("EVENT_HEAD_SHA", context["run"])
@@ -150,34 +161,126 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(checkout["with"]["ref"], "${{ steps.context.outputs.base_sha }}")
         self.assertFalse(checkout["with"]["persist-credentials"])
 
-        retry_guard = next(
+        wait_step = next(
             step
             for step in job["steps"]
             if step.get("name")
-            == "Verify current-head Ready authorization for merge retry"
+            == "Wait for the exact-head deterministic validate check"
         )
-        self.assertEqual(retry_guard["if"], "github.event_name == 'issue_comment'")
-        self.assertIn("issues/${PR_NUMBER}/timeline?per_page=100", retry_guard["run"])
-        self.assertIn("scripts/validate_ready_authorization.py", retry_guard["run"])
+        wait_script = str(wait_step["run"])
+        self.assertIn("check-runs?check_name=validate&filter=latest", wait_script)
+        self.assertIn("AUTHORIZED_HEAD_SHA", wait_script)
+        self.assertIn("VALIDATE_MAX_ATTEMPTS", wait_script)
+        self.assertIn("The pull-request head moved", wait_script)
+        self.assertNotIn("gh pr checks", wait_script)
+        self.assertNotIn("validate_native_codex_review", wait_script)
+        self.assertNotIn("codex-review-receipt", wait_script)
 
-        arm_script = str(job["steps"][-1]["run"])
-        self.assertIn('git rev-parse HEAD)" != "$BASE_SHA"', arm_script)
-        self.assertIn("current_head_sha", arm_script)
-        self.assertIn("AUTHORIZED_HEAD_SHA", arm_script)
-        self.assertIn("gh pr merge", arm_script)
-        self.assertIn("--auto", arm_script)
-        self.assertIn("--merge", arm_script)
-        self.assertIn("--match-head-commit", arm_script)
-        self.assertNotIn("validate_native_codex_review", arm_script)
-        self.assertNotIn("codex-review-receipt", arm_script)
-        self.assertNotIn("RECEIPT_", arm_script)
-        self.assertNotIn("sleep ", arm_script)
-        self.assertNotIn("--admin", arm_script)
-        self.assertNotIn("--force", arm_script)
+        merge_script = str(job["steps"][-1]["run"])
+        self.assertIn("issues/${PR_NUMBER}/timeline?per_page=100", merge_script)
+        self.assertIn("scripts/validate_ready_authorization.py", merge_script)
+        self.assertIn('git rev-parse HEAD)" != "$AUTHORIZED_BASE_SHA"', merge_script)
+        self.assertIn('.state == "open"', merge_script)
+        self.assertIn(".draft == false", merge_script)
+        self.assertIn('.base.ref == "main"', merge_script)
+        self.assertIn(".base.sha == $base_sha", merge_script)
+        self.assertIn(".head.repo.full_name == $repository", merge_script)
+        self.assertIn(".head.sha == $head_sha", merge_script)
+        self.assertIn("gh pr merge", merge_script)
+        self.assertIn("--merge", merge_script)
+        self.assertIn("--match-head-commit", merge_script)
+        self.assertNotIn("--auto", merge_script)
+        self.assertNotIn("validate_native_codex_review", merge_script)
+        self.assertNotIn("codex-review-receipt", merge_script)
+        self.assertNotIn("RECEIPT_", merge_script)
+        self.assertNotIn("sleep ", merge_script)
+        self.assertNotIn("--admin", merge_script)
+        self.assertNotIn("--force", merge_script)
 
-    def test_auto_merge_script_reaches_only_the_authorized_exact_head(self):
+    def test_validate_wait_is_exact_head_deterministic_and_fail_closed(self):
+        job = self.auto_merge["jobs"]["merge-authorized-head"]
         script = str(
-            self.auto_merge["jobs"]["authorize-auto-merge"]["steps"][-1]["run"]
+            next(
+                step
+                for step in job["steps"]
+                if step.get("name")
+                == "Wait for the exact-head deterministic validate check"
+            )["run"]
+        )
+        authorized_head = "4deb1d30edc7ccb8ced7c8438930ca1310c3775b"
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_gh = root / "gh"
+            gh_log = root / "gh.log"
+            fake_gh.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
+if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
+  printf '%s\\n' "$MOCK_CURRENT_HEAD"
+elif [[ "$1" == "api" && "$*" == *"check-runs?check_name=validate&filter=latest"* ]]; then
+  printf '%s\\n' "$MOCK_CHECKS_JSON"
+else
+  printf 'unexpected gh invocation: %s\\n' "$*" >&2
+  exit 2
+fi
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o700)
+
+            cases = (
+                (
+                    authorized_head,
+                    {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "success"}]},
+                    0,
+                    2,
+                ),
+                (
+                    authorized_head,
+                    {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]},
+                    1,
+                    2,
+                ),
+                (authorized_head, {"total_count": 2, "check_runs": [{}, {}]}, 1, 2),
+                (authorized_head, {"total_count": 0, "check_runs": []}, 1, 2),
+                ("a" * 40, {"total_count": 1, "check_runs": []}, 1, 1),
+            )
+            for current_head, checks_payload, returncode, call_count in cases:
+                with self.subTest(
+                    current_head=current_head, checks_payload=checks_payload
+                ):
+                    gh_log.write_text("", encoding="utf-8")
+                    result = subprocess.run(
+                        ["bash", "-c", script],
+                        cwd=ROOT,
+                        env={
+                            "AUTHORIZED_HEAD_SHA": authorized_head,
+                            "GH_TOKEN": "test-token",
+                            "MOCK_CHECKS_JSON": json.dumps(checks_payload),
+                            "MOCK_CURRENT_HEAD": current_head,
+                            "MOCK_GH_LOG": str(gh_log),
+                            "PATH": f"{root}:/usr/bin:/bin",
+                            "PR_NUMBER": "164",
+                            "REPOSITORY": "jeter-1/hass-mcp-admin",
+                            "VALIDATE_MAX_ATTEMPTS": "1",
+                            "VALIDATE_POLL_SECONDS": "0",
+                        },
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, returncode, result.stderr)
+                    calls = gh_log.read_text(encoding="utf-8").splitlines()
+                    self.assertEqual(len(calls), call_count)
+                    self.assertFalse(
+                        any("codex" in call.lower() for call in calls), calls
+                    )
+
+    def test_merge_script_reaches_only_the_authorized_exact_head(self):
+        script = str(
+            self.auto_merge["jobs"]["merge-authorized-head"]["steps"][-1]["run"]
         )
         base_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -197,8 +300,10 @@ class ReviewWorkflowTests(unittest.TestCase):
                 """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
-if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
-  printf '%s\\n' "$MOCK_CURRENT_HEAD"
+if [[ "$1" == "api" && "$2" == "--paginate" ]]; then
+  printf '%s\\n' '[{"event":"committed","sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},{"id":22,"event":"ready_for_review","actor":{"login":"jeter-1"}}]'
+elif [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
+  printf '%s\\n' "$MOCK_PR_JSON"
 elif [[ "$1" == "pr" && "$2" == "merge" ]]; then
   exit 0
 else
@@ -210,22 +315,57 @@ fi
             )
             fake_gh.chmod(0o700)
 
-            for current_head, expected_returncode, merge_expected in (
-                (authorized_head, 0, True),
-                ("a" * 40, 1, False),
-            ):
-                with self.subTest(current_head=current_head):
+            eligible = {
+                "state": "open",
+                "draft": False,
+                "base": {"ref": "main", "sha": base_sha},
+                "head": {
+                    "sha": authorized_head,
+                    "repo": {"full_name": "jeter-1/hass-mcp-admin"},
+                },
+            }
+            cases = (
+                (eligible, 0, True),
+                (eligible | {"state": "closed"}, 1, False),
+                (eligible | {"draft": True}, 1, False),
+                (eligible | {"base": {"ref": "other", "sha": base_sha}}, 1, False),
+                (eligible | {"base": {"ref": "main", "sha": "b" * 40}}, 1, False),
+                (
+                    eligible
+                    | {
+                        "head": {
+                            "sha": "a" * 40,
+                            "repo": {"full_name": "jeter-1/hass-mcp-admin"},
+                        }
+                    },
+                    1,
+                    False,
+                ),
+                (
+                    eligible
+                    | {
+                        "head": {
+                            "sha": authorized_head,
+                            "repo": {"full_name": "untrusted/fork"},
+                        }
+                    },
+                    1,
+                    False,
+                ),
+            )
+            for pr_payload, expected_returncode, merge_expected in cases:
+                with self.subTest(pr_payload=pr_payload):
                     gh_log.write_text("", encoding="utf-8")
                     result = subprocess.run(
                         ["bash", "-c", script],
                         cwd=ROOT,
                         env={
                             "AUTHORIZED_HEAD_SHA": authorized_head,
-                            "BASE_SHA": base_sha,
+                            "AUTHORIZED_BASE_SHA": base_sha,
                             "GH_TOKEN": "test-token",
                             "GITHUB_STEP_SUMMARY": str(summary),
-                            "MOCK_CURRENT_HEAD": current_head,
                             "MOCK_GH_LOG": str(gh_log),
+                            "MOCK_PR_JSON": json.dumps(pr_payload),
                             "PATH": f"{root}:/usr/bin:/bin",
                             "PR_NUMBER": "164",
                             "REPOSITORY": "jeter-1/hass-mcp-admin",
@@ -241,24 +381,30 @@ fi
                     )
                     self.assertEqual(merge_was_reached, merge_expected)
                     if merge_expected:
-                        self.assertEqual(len(calls), 2)
+                        self.assertEqual(len(calls), 3)
                         self.assertIn("--match-head-commit", calls[-1])
+                        self.assertNotIn("--auto", calls[-1])
 
-    def test_head_change_withdraws_ready_authorization_and_disarms_auto_merge(self):
-        job = self.auto_merge["jobs"]["revoke-auto-merge-on-head-change"]
-        self.assertEqual(job["name"], "revoke-auto-merge-on-authorization-change")
+    def test_lifecycle_change_cancels_without_persistent_auto_merge_authority(self):
+        job = self.auto_merge["jobs"]["retire-stale-ready-run"]
+        self.assertEqual(job["name"], "retire-stale-ready-run")
         self.assertIn("github.event.action == 'synchronize'", job["if"])
+        self.assertIn("github.event.action == 'closed'", job["if"])
         self.assertIn("github.event.action == 'converted_to_draft'", job["if"])
+        self.assertIn("github.event.action == 'reopened'", job["if"])
         self.assertIn("github.event.action == 'edited'", job["if"])
         self.assertIn("github.event.changes.base != null", job["if"])
         self.assertIn("github.event.changes.base.ref.from == 'main'", job["if"])
         self.assertIn("base.ref == 'main'", job["if"])
         self.assertIn("head.repo.full_name == github.repository", job["if"])
-        self.assertEqual(job["permissions"], {"pull-requests": "write"})
+        self.assertEqual(job["permissions"], {})
+        self.assertTrue(job["concurrency"]["cancel-in-progress"])
         self.assertFalse(any("uses" in step for step in job["steps"]))
         script = str(job["steps"][0]["run"])
-        self.assertIn("autoMergeRequest", script)
-        self.assertIn("--disable-auto", script)
+        self.assertIn("No persistent auto-merge request", script)
+        workflow_text = AUTO_MERGE_WORKFLOW.read_text(encoding="utf-8")
+        self.assertNotIn("--auto", workflow_text)
+        self.assertNotIn("--disable-auto", workflow_text)
         self.assertNotIn("--admin", script)
         self.assertNotIn("--force", script)
 
@@ -559,12 +705,19 @@ class ReadyAuthorizationValidationTests(unittest.TestCase):
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
         self.assertEqual(recovered_payload["event_id"], 2)
 
-    def test_force_push_draft_base_change_restore_or_nonowner_fails_closed(self):
+    def test_invalidating_lifecycle_or_nonowner_fails_closed(self):
         cases = (
             [self.committed("a" * 40), self.ready(), {"event": "head_ref_force_pushed"}],
             [self.committed("a" * 40), self.ready(), {"event": "convert_to_draft"}],
             [self.committed("a" * 40), self.ready(), {"event": "base_ref_changed"}],
             [self.committed("a" * 40), self.ready(), {"event": "head_ref_restored"}],
+            [self.committed("a" * 40), self.ready(), {"event": "closed"}],
+            [
+                self.committed("a" * 40),
+                self.ready(),
+                {"event": "closed"},
+                {"event": "reopened"},
+            ],
             [self.committed("a" * 40), self.ready(actor="untrusted-contributor")],
             [],
         )
@@ -573,6 +726,18 @@ class ReadyAuthorizationValidationTests(unittest.TestCase):
                 result, payload = self.run_validator(timeline)
                 self.assertEqual(result.returncode, 1)
                 self.assertIsNone(payload)
+
+        recovered, recovered_payload = self.run_validator(
+            [
+                self.committed("a" * 40),
+                self.ready(),
+                {"event": "closed"},
+                {"event": "reopened"},
+                self.ready(event_id=3),
+            ]
+        )
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual(recovered_payload["event_id"], 3)
 
 
 if __name__ == "__main__":

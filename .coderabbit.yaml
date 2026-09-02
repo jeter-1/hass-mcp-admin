@@ -55,6 +55,11 @@ reviews:
 
 chat:
   auto_reply: false
+  integrations:
+    jira:
+      usage: "disabled"
+    linear:
+      usage: "disabled"
 
 knowledge_base:
   opt_out: true
