@@ -106,6 +106,7 @@ jobs:
       - name: Wait for the exact-head deterministic validate check
         shell: bash
         env:
+          AUTHORIZED_BASE_SHA: ${{ steps.context.outputs.base_sha }}
           AUTHORIZED_HEAD_SHA: ${{ steps.context.outputs.head_sha }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.context.outputs.pr_number }}
@@ -115,9 +116,15 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 "$VALIDATE_MAX_ATTEMPTS"); do
-            current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-            if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
-              echo "::error::The pull-request head moved while deterministic validation was pending."
+            current_pr_json="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}")"
+            if ! jq -e \
+              --arg base_sha "$AUTHORIZED_BASE_SHA" \
+              --arg head_sha "$AUTHORIZED_HEAD_SHA" \
+              '.base.ref == "main" and
+               .base.sha == $base_sha and
+               .head.sha == $head_sha' \
+              <<< "$current_pr_json" >/dev/null; then
+              echo "::error::The pull-request base or head moved while deterministic validation was pending."
               exit 1
             fi
 
@@ -126,6 +133,21 @@ jobs:
               "repos/${REPOSITORY}/commits/${AUTHORIZED_HEAD_SHA}/check-runs?check_name=validate&filter=latest&per_page=100")"
             check_count="$(jq -r '.total_count' <<< "$checks_json")"
             if [[ "$check_count" == "1" ]]; then
+              check_binding_count="$(jq -r \
+                --arg base_sha "$AUTHORIZED_BASE_SHA" \
+                --arg head_sha "$AUTHORIZED_HEAD_SHA" \
+                --arg pr_number "$PR_NUMBER" \
+                '[.check_runs[0].pull_requests[]? |
+                  select((.number | tostring) == $pr_number and
+                         .base.ref == "main" and
+                         .base.sha == $base_sha and
+                         .head.sha == $head_sha)] | length' \
+                <<< "$checks_json")"
+              check_head_sha="$(jq -r '.check_runs[0].head_sha // ""' <<< "$checks_json")"
+              if [[ "$check_head_sha" != "$AUTHORIZED_HEAD_SHA" || "$check_binding_count" != "1" ]]; then
+                echo "::error::The deterministic validate check is not bound to the authorized PR base and head."
+                exit 1
+              fi
               check_status="$(jq -r '.check_runs[0].status' <<< "$checks_json")"
               check_conclusion="$(jq -r '.check_runs[0].conclusion // ""' <<< "$checks_json")"
               if [[ "$check_status" == "completed" && "$check_conclusion" == "success" ]]; then

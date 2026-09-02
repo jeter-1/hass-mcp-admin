@@ -65,6 +65,10 @@ class ReviewWorkflowTests(unittest.TestCase):
         events = workflow_events(self.receipt)
         self.assertEqual(events, {"issue_comment": {"types": ["created"]}})
         self.assertNotIn("pull_request_target", events)
+        concurrency = self.receipt["concurrency"]
+        self.assertIn("github.event.issue.number", concurrency["group"])
+        self.assertIn("github.event.comment.id", concurrency["group"])
+        self.assertTrue(concurrency["cancel-in-progress"])
 
         job = self.receipt["jobs"]["codex-review-receipt"]
         condition = job["if"]
@@ -169,9 +173,14 @@ class ReviewWorkflowTests(unittest.TestCase):
         )
         wait_script = str(wait_step["run"])
         self.assertIn("check-runs?check_name=validate&filter=latest", wait_script)
+        self.assertIn("AUTHORIZED_BASE_SHA", wait_script)
         self.assertIn("AUTHORIZED_HEAD_SHA", wait_script)
+        self.assertIn(".check_runs[0].pull_requests[]?", wait_script)
+        self.assertIn(".base.sha == $base_sha", wait_script)
+        self.assertIn(".head.sha == $head_sha", wait_script)
+        self.assertIn(".number | tostring", wait_script)
         self.assertIn("VALIDATE_MAX_ATTEMPTS", wait_script)
-        self.assertIn("The pull-request head moved", wait_script)
+        self.assertIn("The pull-request base or head moved", wait_script)
         self.assertNotIn("gh pr checks", wait_script)
         self.assertNotIn("validate_native_codex_review", wait_script)
         self.assertNotIn("codex-review-receipt", wait_script)
@@ -207,7 +216,40 @@ class ReviewWorkflowTests(unittest.TestCase):
                 == "Wait for the exact-head deterministic validate check"
             )["run"]
         )
+        authorized_base = "b" * 40
         authorized_head = "4deb1d30edc7ccb8ced7c8438930ca1310c3775b"
+
+        def pr_payload(*, base: str = authorized_base, head: str = authorized_head):
+            return {
+                "base": {"ref": "main", "sha": base},
+                "head": {"sha": head},
+            }
+
+        def check_payload(
+            *,
+            base: str = authorized_base,
+            head: str = authorized_head,
+            number: int = 164,
+            status: str = "completed",
+            conclusion: str = "success",
+        ):
+            return {
+                "total_count": 1,
+                "check_runs": [
+                    {
+                        "head_sha": head,
+                        "status": status,
+                        "conclusion": conclusion,
+                        "pull_requests": [
+                            {
+                                "number": number,
+                                "base": {"ref": "main", "sha": base},
+                                "head": {"sha": head},
+                            }
+                        ],
+                    }
+                ],
+            }
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -218,7 +260,7 @@ class ReviewWorkflowTests(unittest.TestCase):
 set -euo pipefail
 printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
 if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
-  printf '%s\\n' "$MOCK_CURRENT_HEAD"
+  printf '%s\\n' "$MOCK_PR_JSON"
 elif [[ "$1" == "api" && "$*" == *"check-runs?check_name=validate&filter=latest"* ]]; then
   printf '%s\\n' "$MOCK_CHECKS_JSON"
 else
@@ -231,35 +273,40 @@ fi
             fake_gh.chmod(0o700)
 
             cases = (
+                (pr_payload(), check_payload(), 0, 2),
                 (
-                    authorized_head,
-                    {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "success"}]},
-                    0,
-                    2,
-                ),
-                (
-                    authorized_head,
-                    {"total_count": 1, "check_runs": [{"status": "completed", "conclusion": "failure"}]},
+                    pr_payload(),
+                    check_payload(conclusion="failure"),
                     1,
                     2,
                 ),
-                (authorized_head, {"total_count": 2, "check_runs": [{}, {}]}, 1, 2),
-                (authorized_head, {"total_count": 0, "check_runs": []}, 1, 2),
-                ("a" * 40, {"total_count": 1, "check_runs": []}, 1, 1),
+                (pr_payload(), {"total_count": 2, "check_runs": [{}, {}]}, 1, 2),
+                (pr_payload(), {"total_count": 0, "check_runs": []}, 1, 2),
+                (pr_payload(head="a" * 40), check_payload(), 1, 1),
+                (pr_payload(base="c" * 40), check_payload(), 1, 1),
+                (
+                    pr_payload(),
+                    check_payload(base="c" * 40),
+                    1,
+                    2,
+                ),
+                (pr_payload(), check_payload(number=999), 1, 2),
+                (pr_payload(), check_payload(head="a" * 40), 1, 2),
             )
-            for current_head, checks_payload, returncode, call_count in cases:
+            for current_pr, checks_payload, returncode, call_count in cases:
                 with self.subTest(
-                    current_head=current_head, checks_payload=checks_payload
+                    current_pr=current_pr, checks_payload=checks_payload
                 ):
                     gh_log.write_text("", encoding="utf-8")
                     result = subprocess.run(
                         ["bash", "-c", script],
                         cwd=ROOT,
                         env={
+                            "AUTHORIZED_BASE_SHA": authorized_base,
                             "AUTHORIZED_HEAD_SHA": authorized_head,
                             "GH_TOKEN": "test-token",
                             "MOCK_CHECKS_JSON": json.dumps(checks_payload),
-                            "MOCK_CURRENT_HEAD": current_head,
+                            "MOCK_PR_JSON": json.dumps(current_pr),
                             "MOCK_GH_LOG": str(gh_log),
                             "PATH": f"{root}:/usr/bin:/bin",
                             "PR_NUMBER": "164",

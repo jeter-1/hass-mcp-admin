@@ -172,7 +172,9 @@ request native Codex by posting the exact comment `@codex review`; the optional
 current head. It does not run a model itself, authorize merge, replace Josh's
 Ready action, parse review prose as executable data, accept stale evidence, or
 count a setup notice as completed review. The observer and validator load only
-from the protected base commit, never candidate code. CodeRabbit automatic and
+from the protected base commit, never candidate code. Each observer is isolated
+by the exact Josh-authored request comment, so the native Codex summary comment
+cannot cancel the observer that is waiting for it. CodeRabbit automatic and
 incremental reviews are disabled; `@coderabbitai review` remains available for
 a manual review. CodeRabbit Autofix, CI fixing, merge-conflict resolution,
 branch-writing finishing touches, unsolicited chat, web search, knowledge
@@ -183,11 +185,13 @@ Josh's `Ready for review` action on a same-repository `jeter-1` pull request
 targeting `main` attests that the independent review is complete and acceptable.
 The protected-base authorization workflow verifies the repository, base, actor,
 and exact authorized head, waits only for that head's deterministic `validate`
-check, then revalidates the complete Ready lifecycle, open/non-draft disposition,
+check whose pull-request association is bound to the same protected base and
+head, then revalidates the complete Ready lifecycle, open/non-draft disposition,
 protected base commit, same-repository head, and exact head immediately before
-one non-administrative, head-matched merge. Remaining required statuses and
-review-thread resolution stay enforced by GitHub at that merge boundary. The
-workflow never force-pushes and never polls model-review evidence.
+one non-administrative, head-matched merge. A new base therefore requires a new
+base-bound validation result. Remaining required statuses and review-thread
+resolution stay enforced by GitHub at that merge boundary. The workflow never
+force-pushes and never polls model-review evidence.
 
 The workflow deliberately does not leave a persistent native auto-merge request
 armed while checks run. GitHub guarantees automatic revocation after a head push

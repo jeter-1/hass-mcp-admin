@@ -8,7 +8,9 @@ on:
 permissions: {}
 
 concurrency:
-  group: codex-review-receipt-${{ github.event.pull_request.number || github.event.issue.number }}
+  # A bot summary is also an issue_comment event. Key the observer to Josh's
+  # triggering comment so that the summary it is waiting for cannot cancel it.
+  group: codex-review-receipt-${{ github.event.issue.number }}-${{ github.event.comment.id }}
   cancel-in-progress: true
 
 jobs:
