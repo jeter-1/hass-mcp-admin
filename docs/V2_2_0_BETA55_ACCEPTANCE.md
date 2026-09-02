@@ -1,13 +1,13 @@
 # Engineering 2.2.0-beta.55 acceptance
 
-Beta 55 is the staged source candidate for ADR-023 ha-mcp
+Beta 55 is the materialized source candidate for ADR-023 ha-mcp
 capability-scoped automatic readmission, based on exact protected main
-`2429a457e533ab370a1b341be09e80e591f99272`. Engineering continues to
-advertise 2.2.0-beta.54 until a separately authorized promotion. Stable
-remains 1.1.2.
+`b077b5c43c24c7f34987fbccfd77ce64c2976b39`. This pull request advertises
+2.2.0-beta.55 for exact-head validation but remains unmerged and unpublished.
+Stable remains 1.1.2.
 
-This document is the exact staged acceptance authority. Merge,
-materialization, publication, deployment, production trust-anchor
+This document is the exact release-candidate acceptance authority. Merge,
+publication, deployment, production trust-anchor
 configuration, registry signing or publication, live Home Assistant access,
 and every read or write canary remain outside this source boundary.
 
@@ -146,9 +146,9 @@ comparisons.
 
 Exact-head CI must pass central validation, every disposable Home Assistant
 lane, exact ha-mcp 8.0.0 through 8.2.0 lanes, exact-image/readmission lanes,
-packaging, and architecture checks. Separate exact-head code, security, and
-provider-boundary reviews must resolve every Critical and High finding before
-ready state. The pull request remains unmerged.
+packaging, and architecture checks. One bounded independent exact-head review
+must cover code, security, and provider boundaries and resolve every Critical
+and High finding before ready state. The pull request remains unmerged.
 
 ## Later activation boundary
 

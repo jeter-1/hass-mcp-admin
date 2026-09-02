@@ -1,13 +1,13 @@
 # Engineering 2.2.0-beta.55 release notes
 
-Beta 55 is staged with the first capability-scoped automatic-readmission
-implementation for delegated ha-mcp reads. Engineering remains client-facing;
-ha-mcp remains an internal read provider.
+Beta 55 is materialized as the source candidate for the first capability-scoped
+automatic-readmission implementation for delegated ha-mcp reads. Engineering
+remains client-facing; ha-mcp remains an internal read provider.
 
-Engineering still advertises 2.2.0-beta.54 until a separately authorized
-promotion. Stable remains 1.1.2. This staging change does not merge, promote,
-publish, deploy, configure production trust, access live Home Assistant, or run
-a canary.
+This pull request advertises 2.2.0-beta.55 for exact-head validation but remains
+unmerged and unpublished. Stable remains 1.1.2. This source change does not
+merge, publish, deploy, configure production trust, access live Home Assistant,
+or run a canary.
 
 ## Compatible manual updates
 
