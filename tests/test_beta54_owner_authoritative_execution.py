@@ -1900,27 +1900,36 @@ class Beta54ReleaseAuthorityTests(unittest.TestCase):
         config = (
             ROOT / "hass_mcp_engineering_beta" / "config.yaml"
         ).read_text(encoding="utf-8")
-        if marker.exists():
-            self.assertNotEqual(
+        staged_version = (
+            marker.read_text(encoding="utf-8").strip()
+            if marker.exists()
+            else None
+        )
+        if staged_version == "2.2.0-beta.54":
+            self.assertEqual(
                 "2.2.0-beta.54",
-                marker.read_text(encoding="utf-8").strip(),
+                staged_version,
             )
-            self.assertIn('version: "2.2.0-beta.54"', config)
+            self.assertIn('version: "2.2.0-beta.53"', config)
             self.assertIn(
-                "Beta 54 is materialized",
+                "Beta 54 stages",
                 ACCEPTANCE.read_text(encoding="utf-8"),
             )
             self.assertIn(
-                "Engineering now advertises 2.2.0-beta.54",
+                "Engineering remains advertised as 2.2.0-beta.53",
                 RELEASE_NOTES.read_text(encoding="utf-8"),
             )
             return
 
-        self.assertIn('version: "2.2.0-beta.54"', config)
         for path in (ACCEPTANCE, RELEASE_NOTES):
             text = path.read_text(encoding="utf-8")
             self.assertIn("Beta 54 is materialized", text)
             self.assertIn("Engineering now advertises 2.2.0-beta.54", text)
+
+        # Beta 54 remains exact historical acceptance authority after a newer
+        # Engineering beta is materialized. Current-version consistency is
+        # enforced by the active release tests and metadata validator.
+        self.assertNotIn('version: "2.2.0-beta.53"', config)
 
     def test_acceptance_binds_new_authority_and_non_actions(self):
         text = ACCEPTANCE.read_text(encoding="utf-8")
