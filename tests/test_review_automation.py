@@ -527,12 +527,16 @@ fi
         ):
             self.assertNotIn(forbidden, combined)
 
-    def test_ci_runs_once_per_pull_request_and_is_reused_on_main(self):
+    def test_ci_runs_once_per_head_and_ready_reuses_exact_head_result(self):
         events = workflow_events(self.ci)
         self.assertNotIn("push", events)
         self.assertIn("pull_request", events)
         self.assertIn("workflow_call", events)
-        self.assertIn("ready_for_review", events["pull_request"]["types"])
+        self.assertEqual(
+            events["pull_request"]["types"],
+            ["opened", "reopened", "synchronize"],
+        )
+        self.assertNotIn("ready_for_review", events["pull_request"]["types"])
 
     def test_bounded_independent_review_contract_is_documented(self):
         guide = WORKFLOW_GUIDE.read_text(encoding="utf-8")
@@ -545,6 +549,7 @@ fi
         self.assertIn("`@merge` comment may retry", flattened)
         self.assertIn("load only from the protected base commit", flattened)
         self.assertIn("publication does not trigger another model review", flattened)
+        self.assertIn("Ready does not start another CI run", flattened)
         self.assertIn("one final time", flattened)
         self.assertIn("separate administrative actions", flattened)
         self.assertIn("attests that the bounded independent review", instructions)
