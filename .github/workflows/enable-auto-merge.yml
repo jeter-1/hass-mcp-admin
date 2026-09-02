@@ -69,7 +69,7 @@ jobs:
       (github.event_name == 'issue_comment' &&
        github.actor == 'jeter-1' &&
        github.event.issue.pull_request != null &&
-       github.event.comment.body == '@codex review')
+       github.event.comment.body == '@merge')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -112,7 +112,7 @@ jobs:
           ref: ${{ steps.context.outputs.base_sha }}
           persist-credentials: false
 
-      - name: Verify current-head Ready authorization for retry
+      - name: Verify current-head Ready authorization for merge retry
         if: github.event_name == 'issue_comment'
         shell: bash
         env:
@@ -138,8 +138,6 @@ jobs:
           BASE_SHA: ${{ steps.context.outputs.base_sha }}
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ steps.context.outputs.pr_number }}
-          RECEIPT_MAX_ATTEMPTS: "105"
-          RECEIPT_POLL_SECONDS: "20"
           REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
@@ -155,69 +153,9 @@ jobs:
             exit 1
           fi
 
-          for attempt in $(seq 1 "$RECEIPT_MAX_ATTEMPTS"); do
-            current_head_sha="$(gh api "repos/${REPOSITORY}/pulls/${PR_NUMBER}" --jq '.head.sha')"
-            if [[ "$current_head_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
-              echo "::error::The pull-request head moved while review authorization was pending."
-              exit 1
-            fi
-
-            if ! gh api --paginate \
-              "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments?per_page=100" \
-              | jq -s 'add' > /tmp/auto-merge-codex-comments.json; then
-              echo "::error::Could not read native Codex review comments."
-              exit 1
-            fi
-            if ! gh api --paginate \
-              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/reviews?per_page=100" \
-              | jq -s 'add' > /tmp/auto-merge-codex-reviews.json; then
-              echo "::error::Could not read native Codex reviews."
-              exit 1
-            fi
-            if ! gh api --paginate \
-              "repos/${REPOSITORY}/pulls/${PR_NUMBER}/comments?per_page=100" \
-              | jq -s 'add' > /tmp/auto-merge-codex-review-comments.json; then
-              echo "::error::Could not read native Codex review comments."
-              exit 1
-            fi
-
-            set +e
-            python3 scripts/validate_native_codex_review.py \
-              --head "$AUTHORIZED_HEAD_SHA" \
-              --comments /tmp/auto-merge-codex-comments.json \
-              --reviews /tmp/auto-merge-codex-reviews.json \
-              --review-comments /tmp/auto-merge-codex-review-comments.json \
-              --output /tmp/auto-merge-codex-receipt.json
-            validation_exit=$?
-            set -e
-
-            if [[ "$validation_exit" -eq 0 ]]; then
-              exact="$(python3 -c 'import json; print(str(json.load(open("/tmp/auto-merge-codex-receipt.json", encoding="utf-8"))["exact"]).lower())')"
-              if [[ "$exact" != "true" ]]; then
-                commit_ref="$(python3 -c 'import json; print(json.load(open("/tmp/auto-merge-codex-receipt.json", encoding="utf-8"))["commit_ref"])')"
-                resolved_sha="$(gh api "repos/${REPOSITORY}/commits/${commit_ref}" --jq '.sha')"
-                if [[ "$resolved_sha" != "$AUTHORIZED_HEAD_SHA" ]]; then
-                  echo "::error::Native Codex evidence resolved to a different commit."
-                  exit 1
-                fi
-              fi
-              break
-            fi
-
-            if [[ "$validation_exit" -ne 75 ]]; then
-              echo "::error::Native Codex review evidence was invalid or failed."
-              exit 1
-            fi
-            if [[ "$attempt" -eq "$RECEIPT_MAX_ATTEMPTS" ]]; then
-              echo "::error::Native Codex did not finish review within 35 minutes."
-              exit 1
-            fi
-            sleep "$RECEIPT_POLL_SECONDS"
-          done
-
           gh pr merge "$PR_NUMBER" \
             --repo "$REPOSITORY" \
             --auto \
             --merge \
             --match-head-commit "$AUTHORIZED_HEAD_SHA"
-          echo "Trusted exact-head Codex evidence succeeded; auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Josh's Ready authorization is current; auto-merge is armed for pull request #${PR_NUMBER} at ${AUTHORIZED_HEAD_SHA}." >> "$GITHUB_STEP_SUMMARY"

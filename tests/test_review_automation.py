@@ -1,5 +1,4 @@
 import json
-import os
 from pathlib import Path
 import subprocess
 import sys
@@ -62,13 +61,20 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn("OPENAI_API_KEY", repository_text)
         self.assertNotIn("openai/codex-action", repository_text)
 
-    def test_native_codex_receipt_gate_has_read_only_authority(self):
+    def test_native_codex_receipt_runs_only_for_an_exact_owner_comment(self):
         events = workflow_events(self.receipt)
-        self.assertEqual(
-            set(events["pull_request_target"]["types"]),
-            {"opened", "reopened", "synchronize", "ready_for_review"},
-        )
-        self.assertEqual(events["issue_comment"]["types"], ["created"])
+        self.assertEqual(events, {"issue_comment": {"types": ["created"]}})
+        self.assertNotIn("pull_request_target", events)
+
+        job = self.receipt["jobs"]["codex-review-receipt"]
+        condition = job["if"]
+        self.assertIn("github.actor == 'jeter-1'", condition)
+        self.assertIn("github.event.issue.pull_request != null", condition)
+        self.assertIn("github.event.comment.body == '@codex review'", condition)
+        self.assertNotIn("ready_for_review", condition)
+        self.assertNotIn("synchronize", condition)
+
+    def test_optional_receipt_is_read_only_and_uses_protected_base_policy(self):
         job = self.receipt["jobs"]["codex-review-receipt"]
         self.assertEqual(job["name"], "codex-review-receipt-observer")
         self.assertEqual(self.receipt["permissions"], {})
@@ -81,42 +87,34 @@ class ReviewWorkflowTests(unittest.TestCase):
                 "statuses": "write",
             },
         )
-        self.assertIn("draft == false", job["if"])
-        self.assertIn("base.ref == 'main'", job["if"])
-        self.assertIn("head.repo.full_name == github.repository", job["if"])
-        self.assertIn("github.event.comment.body == '@codex review'", job["if"])
-        self.assertIn("github.actor == 'jeter-1'", job["if"])
 
         context = next(step for step in job["steps"] if step.get("id") == "context")
         context_script = str(context["run"])
         self.assertIn('.state == "open"', context_script)
-        self.assertIn("EVENT_HEAD_SHA", context_script)
-        self.assertIn(
-            "${{ github.event.pull_request.number || github.event.issue.number }}",
-            context["env"]["PR_NUMBER"],
-        )
+        self.assertIn(".draft == false", context_script)
+        self.assertIn(".base.ref == \"main\"", context_script)
+        self.assertIn(".head.repo.full_name == $repository", context_script)
+        self.assertEqual(context["env"]["PR_NUMBER"], "${{ github.event.issue.number }}")
 
         checkout = next(
-            step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/checkout@")
+            step
+            for step in job["steps"]
+            if str(step.get("uses", "")).startswith("actions/checkout@")
         )
         self.assertRegex(checkout["uses"], r"^actions/checkout@[0-9a-f]{40}$")
         self.assertEqual(checkout["with"]["ref"], "${{ steps.context.outputs.base_sha }}")
         self.assertFalse(checkout["with"]["persist-credentials"])
 
         script = str(job["steps"][-1]["run"])
-        self.assertEqual(
-            job["steps"][-1]["env"]["RECEIPT_MAX_ATTEMPTS"],
-            "90",
-        )
-        self.assertEqual(job["steps"][-1]["env"]["RECEIPT_POLL_SECONDS"], "20")
-        self.assertIn("BASE_SHA", script)
+        self.assertIn('git rev-parse HEAD)" != "$BASE_SHA"', script)
         self.assertIn("EXPECTED_HEAD_SHA", script)
         self.assertIn("scripts/validate_native_codex_review.py", script)
-        self.assertIn("context=\"codex-review-receipt\"", script)
+        self.assertIn('context="codex-review-receipt"', script)
         self.assertEqual(script.count("gh api --paginate"), 3)
-        self.assertEqual(script.count("jq -s 'add'"), 3)
+        self.assertNotIn("gh pr merge", script)
+        self.assertNotIn("--admin", script)
 
-    def test_ready_event_arms_native_auto_merge_from_protected_base_policy(self):
+    def test_owner_ready_arms_exact_head_auto_merge_without_model_polling(self):
         events = workflow_events(self.auto_merge)
         self.assertEqual(
             events,
@@ -129,30 +127,20 @@ class ReviewWorkflowTests(unittest.TestCase):
                         "ready_for_review",
                         "synchronize",
                     ]
-                }
+                },
             },
         )
         job = self.auto_merge["jobs"]["authorize-auto-merge"]
-        self.assertIn("github.event.action == 'ready_for_review'", job["if"])
-        self.assertIn("github.actor == 'jeter-1'", job["if"])
-        self.assertIn("base.ref == 'main'", job["if"])
-        self.assertIn("github.event.comment.body == '@codex review'", job["if"])
-        self.assertEqual(
-            job["permissions"],
-            {
-                "contents": "write",
-                "issues": "read",
-                "pull-requests": "write",
-            },
-        )
+        condition = job["if"]
+        self.assertIn("github.event.action == 'ready_for_review'", condition)
+        self.assertIn("github.actor == 'jeter-1'", condition)
+        self.assertIn("base.ref == 'main'", condition)
+        self.assertIn("head.repo.full_name == github.repository", condition)
+        self.assertIn("github.event.comment.body == '@merge'", condition)
+        self.assertNotIn("@codex review", condition)
+
         context = next(step for step in job["steps"] if step.get("id") == "context")
-        context_script = str(context["run"])
-        self.assertIn('.state == "open"', context_script)
-        self.assertIn("EVENT_HEAD_SHA", context_script)
-        self.assertIn(
-            "${{ github.event.pull_request.number || github.event.issue.number }}",
-            context["env"]["PR_NUMBER"],
-        )
+        self.assertIn("EVENT_HEAD_SHA", context["run"])
         checkout = next(
             step
             for step in job["steps"]
@@ -162,43 +150,35 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(checkout["with"]["ref"], "${{ steps.context.outputs.base_sha }}")
         self.assertFalse(checkout["with"]["persist-credentials"])
 
-        ready_guard = next(
-            candidate
-            for candidate in job["steps"]
-            if candidate.get("name") == "Verify current-head Ready authorization for retry"
+        retry_guard = next(
+            step
+            for step in job["steps"]
+            if step.get("name")
+            == "Verify current-head Ready authorization for merge retry"
         )
-        self.assertEqual(ready_guard["if"], "github.event_name == 'issue_comment'")
-        self.assertIn("issues/${PR_NUMBER}/timeline?per_page=100", ready_guard["run"])
-        self.assertIn("scripts/validate_ready_authorization.py", ready_guard["run"])
+        self.assertEqual(retry_guard["if"], "github.event_name == 'issue_comment'")
+        self.assertIn("issues/${PR_NUMBER}/timeline?per_page=100", retry_guard["run"])
+        self.assertIn("scripts/validate_ready_authorization.py", retry_guard["run"])
 
-        step = job["steps"][-1]
-        self.assertEqual(step["env"]["RECEIPT_MAX_ATTEMPTS"], "105")
-        self.assertEqual(step["env"]["RECEIPT_POLL_SECONDS"], "20")
-        script = str(step["run"])
-        self.assertIn("BASE_SHA", script)
-        self.assertIn("current_head_sha", script)
-        self.assertIn("AUTHORIZED_HEAD_SHA", script)
-        self.assertIn("scripts/validate_native_codex_review.py", script)
-        self.assertEqual(script.count("gh api --paginate"), 3)
-        self.assertEqual(script.count("jq -s 'add'"), 3)
-        self.assertIn("gh pr merge", script)
-        self.assertIn("--auto", script)
-        self.assertIn("--merge", script)
-        self.assertIn("--match-head-commit", script)
-        self.assertNotIn("/status", script)
-        self.assertNotIn("receipt_state", script)
-        self.assertLess(
-            script.index("scripts/validate_native_codex_review.py"),
-            script.index("gh pr merge"),
+        arm_script = str(job["steps"][-1]["run"])
+        self.assertIn('git rev-parse HEAD)" != "$BASE_SHA"', arm_script)
+        self.assertIn("current_head_sha", arm_script)
+        self.assertIn("AUTHORIZED_HEAD_SHA", arm_script)
+        self.assertIn("gh pr merge", arm_script)
+        self.assertIn("--auto", arm_script)
+        self.assertIn("--merge", arm_script)
+        self.assertIn("--match-head-commit", arm_script)
+        self.assertNotIn("validate_native_codex_review", arm_script)
+        self.assertNotIn("codex-review-receipt", arm_script)
+        self.assertNotIn("RECEIPT_", arm_script)
+        self.assertNotIn("sleep ", arm_script)
+        self.assertNotIn("--admin", arm_script)
+        self.assertNotIn("--force", arm_script)
+
+    def test_auto_merge_script_reaches_only_the_authorized_exact_head(self):
+        script = str(
+            self.auto_merge["jobs"]["authorize-auto-merge"]["steps"][-1]["run"]
         )
-        self.assertNotIn("--admin", script)
-        self.assertNotIn("--force", script)
-
-    def test_untrusted_success_status_cannot_replace_native_codex_evidence(self):
-        job = self.auto_merge["jobs"]["authorize-auto-merge"]
-        step = job["steps"][-1]
-        script = str(step["run"])
-        head = "4deb1d30edc7ccb8ced7c8438930ca1310c3775b"
         base_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
             cwd=ROOT,
@@ -206,53 +186,19 @@ class ReviewWorkflowTests(unittest.TestCase):
             capture_output=True,
             check=True,
         ).stdout.strip()
+        authorized_head = "4deb1d30edc7ccb8ced7c8438930ca1310c3775b"
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            comments = root / "comments.json"
-            gh_log = root / "gh.log"
-            review_comments = root / "review-comments.json"
-            reviews = root / "reviews.json"
-            status_payload = root / "status.json"
-            summary = root / "summary.md"
             fake_gh = root / "gh"
-            comments.write_text("[]", encoding="utf-8")
-            review_comments.write_text("[]", encoding="utf-8")
-            status_payload.write_text(
-                json.dumps(
-                    {
-                        "statuses": [
-                            {
-                                "state": "success",
-                                "creator": {"login": "github-actions[bot]"},
-                                "target_url": "https://github.example/candidate-run",
-                            },
-                            {
-                                "state": "pending",
-                                "creator": {"login": "github-actions[bot]"},
-                                "target_url": "https://github.example/trusted-run",
-                            },
-                        ]
-                    }
-                ),
-                encoding="utf-8",
-            )
+            gh_log = root / "gh.log"
+            summary = root / "summary.md"
             fake_gh.write_text(
                 """#!/usr/bin/env bash
 set -euo pipefail
 printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
 if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
-  printf '%s\\n' "$AUTHORIZED_HEAD_SHA"
-elif [[ "$1" == "api" && "$2" == "--method" && "$3" == "POST" && "$4" == *"/statuses/"* ]]; then
-  exit 0
-elif [[ "$1" == "api" && "$2" == "--paginate" && "$3" == *"/issues/"*"/comments?"* ]]; then
-  cat "$MOCK_COMMENTS_FILE"
-elif [[ "$1" == "api" && "$2" == "--paginate" && "$3" == *"/pulls/"*"/reviews?"* ]]; then
-  cat "$MOCK_REVIEWS_FILE"
-elif [[ "$1" == "api" && "$2" == "--paginate" && "$3" == *"/pulls/"*"/comments?"* ]]; then
-  cat "$MOCK_REVIEW_COMMENTS_FILE"
-elif [[ "$1" == "api" && "$2" == *"/commits/"*"/status" ]]; then
-  cat "$MOCK_STATUS_FILE"
+  printf '%s\\n' "$MOCK_CURRENT_HEAD"
 elif [[ "$1" == "pr" && "$2" == "merge" ]]; then
   exit 0
 else
@@ -264,152 +210,39 @@ fi
             )
             fake_gh.chmod(0o700)
 
-            operational_notice = {
-                "pull_request_review_id": 5058935360,
-                "commit_id": head,
-                "user": {"login": "chatgpt-codex-connector[bot]"},
-                "body": (
-                    "To use Codex here, [create an environment for this repo]"
-                    "(https://chatgpt.com/codex/cloud/settings/environments)."
-                ),
-            }
-            submitted_review = {
-                "id": 5058935360,
-                "user": {"login": "chatgpt-codex-connector[bot]"},
-                "commit_id": head,
-                "state": "COMMENTED",
-            }
-
-            for (
-                evidence_kind,
-                review_payload,
-                inline_payload,
-                expected_returncode,
-            ) in (
-                ("timed-out-before-review", [], [], 1),
-                ("operational-notice", [submitted_review], [operational_notice], 1),
-                (
-                    "retriggered-after-exact-review",
-                    [submitted_review],
-                    [],
-                    0,
-                ),
+            for current_head, expected_returncode, merge_expected in (
+                (authorized_head, 0, True),
+                ("a" * 40, 1, False),
             ):
-                with self.subTest(evidence_kind=evidence_kind):
+                with self.subTest(current_head=current_head):
                     gh_log.write_text("", encoding="utf-8")
-                    reviews.write_text(json.dumps(review_payload), encoding="utf-8")
-                    review_comments.write_text(
-                        json.dumps(inline_payload), encoding="utf-8"
-                    )
                     result = subprocess.run(
                         ["bash", "-c", script],
                         cwd=ROOT,
                         env={
-                            **os.environ,
-                            "AUTHORIZED_HEAD_SHA": head,
+                            "AUTHORIZED_HEAD_SHA": authorized_head,
                             "BASE_SHA": base_sha,
                             "GH_TOKEN": "test-token",
                             "GITHUB_STEP_SUMMARY": str(summary),
-                            "MOCK_COMMENTS_FILE": str(comments),
+                            "MOCK_CURRENT_HEAD": current_head,
                             "MOCK_GH_LOG": str(gh_log),
-                            "MOCK_REVIEW_COMMENTS_FILE": str(review_comments),
-                            "MOCK_REVIEWS_FILE": str(reviews),
-                            "MOCK_STATUS_FILE": str(status_payload),
-                            "PATH": f"{root}:{os.environ['PATH']}",
+                            "PATH": f"{root}:/usr/bin:/bin",
                             "PR_NUMBER": "164",
-                            "RECEIPT_MAX_ATTEMPTS": "1",
-                            "RECEIPT_POLL_SECONDS": "0",
                             "REPOSITORY": "jeter-1/hass-mcp-admin",
                         },
                         text=True,
                         capture_output=True,
                         check=False,
                     )
-                    self.assertEqual(
-                        result.returncode,
-                        expected_returncode,
-                        result.stderr,
-                    )
+                    self.assertEqual(result.returncode, expected_returncode, result.stderr)
+                    calls = gh_log.read_text(encoding="utf-8").splitlines()
                     merge_was_reached = any(
-                        line.startswith("pr merge ")
-                        for line in gh_log.read_text(encoding="utf-8").splitlines()
+                        line.startswith("pr merge ") for line in calls
                     )
-                    self.assertEqual(
-                        merge_was_reached,
-                        evidence_kind == "retriggered-after-exact-review",
-                    )
-                    self.assertNotIn(
-                        "/status",
-                        gh_log.read_text(encoding="utf-8"),
-                    )
-
-            receipt_script = str(
-                self.receipt["jobs"]["codex-review-receipt"]["steps"][-1]["run"]
-            )
-            for (
-                evidence_kind,
-                review_payload,
-                inline_payload,
-                expected_returncode,
-                status_state,
-            ) in (
-                ("timed-out-before-review", [], [], 1, "failure"),
-                (
-                    "operational-notice",
-                    [submitted_review],
-                    [operational_notice],
-                    1,
-                    "failure",
-                ),
-                (
-                    "retriggered-after-exact-review",
-                    [submitted_review],
-                    [],
-                    0,
-                    "success",
-                ),
-            ):
-                with self.subTest(receipt_recovery=evidence_kind):
-                    gh_log.write_text("", encoding="utf-8")
-                    reviews.write_text(json.dumps(review_payload), encoding="utf-8")
-                    review_comments.write_text(
-                        json.dumps(inline_payload), encoding="utf-8"
-                    )
-                    result = subprocess.run(
-                        ["bash", "-c", receipt_script],
-                        cwd=ROOT,
-                        env={
-                            **os.environ,
-                            "AUTHORIZED_HEAD_SHA": head,
-                            "BASE_SHA": base_sha,
-                            "EXPECTED_HEAD_SHA": head,
-                            "GH_TOKEN": "test-token",
-                            "GITHUB_STEP_SUMMARY": str(summary),
-                            "MOCK_COMMENTS_FILE": str(comments),
-                            "MOCK_GH_LOG": str(gh_log),
-                            "MOCK_REVIEW_COMMENTS_FILE": str(review_comments),
-                            "MOCK_REVIEWS_FILE": str(reviews),
-                            "MOCK_STATUS_FILE": str(status_payload),
-                            "PATH": f"{root}:{os.environ['PATH']}",
-                            "PR_NUMBER": "164",
-                            "RECEIPT_MAX_ATTEMPTS": "1",
-                            "RECEIPT_POLL_SECONDS": "0",
-                            "REPOSITORY": "jeter-1/hass-mcp-admin",
-                            "RUN_URL": "https://github.example/trusted-run",
-                        },
-                        text=True,
-                        capture_output=True,
-                        check=False,
-                    )
-                    self.assertEqual(
-                        result.returncode,
-                        expected_returncode,
-                        result.stderr,
-                    )
-                    self.assertIn(
-                        f"state={status_state}",
-                        gh_log.read_text(encoding="utf-8"),
-                    )
+                    self.assertEqual(merge_was_reached, merge_expected)
+                    if merge_expected:
+                        self.assertEqual(len(calls), 2)
+                        self.assertIn("--match-head-commit", calls[-1])
 
     def test_head_change_withdraws_ready_authorization_and_disarms_auto_merge(self):
         job = self.auto_merge["jobs"]["revoke-auto-merge-on-head-change"]
@@ -429,6 +262,21 @@ fi
         self.assertNotIn("--admin", script)
         self.assertNotIn("--force", script)
 
+    def test_workflows_add_no_bypass_publication_or_deployment_authority(self):
+        combined = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (CODEX_RECEIPT_WORKFLOW, AUTO_MERGE_WORKFLOW)
+        )
+        for forbidden in (
+            "--admin",
+            "--force",
+            "workflow_dispatch",
+            "docker push",
+            "gh release create",
+            "homeassistant",
+        ):
+            self.assertNotIn(forbidden, combined)
+
     def test_ci_runs_once_per_pull_request_and_is_reused_on_main(self):
         events = workflow_events(self.ci)
         self.assertNotIn("push", events)
@@ -436,20 +284,21 @@ fi
         self.assertIn("workflow_call", events)
         self.assertIn("ready_for_review", events["pull_request"]["types"])
 
-    def test_native_review_activation_and_exact_head_contract_are_documented(self):
+    def test_bounded_independent_review_contract_is_documented(self):
         guide = WORKFLOW_GUIDE.read_text(encoding="utf-8")
-        self.assertIn("Codex cloud repository access", guide)
-        self.assertIn("`@codex review`", guide)
-        self.assertIn("does not use\nan OpenAI API key or API billing", guide)
-        self.assertIn("exact current head", guide)
+        instructions = ROOT_INSTRUCTIONS.read_text(encoding="utf-8")
         flattened = " ".join(guide.split())
+        self.assertIn("one full independent review", flattened)
+        self.assertIn("at most one delta rereview", flattened)
+        self.assertIn("must not serve as its own repeated independent reviewer", flattened)
+        self.assertIn("`@codex review` requests only the optional review", flattened)
+        self.assertIn("`@merge` comment may retry", flattened)
         self.assertIn("load only from the protected base commit", flattened)
-        self.assertIn("service-side eligibility policy", flattened)
-        self.assertIn("ruleset still requires only `validate`", flattened)
-        self.assertIn(
-            "does not trust a candidate-head commit status as authorization",
-            flattened,
-        )
+        self.assertIn("publication does not trigger another model review", flattened)
+        self.assertIn("one final time", flattened)
+        self.assertIn("separate administrative actions", flattened)
+        self.assertIn("attests that the bounded independent review", instructions)
+        self.assertNotIn("native Codex review receipt gate", instructions)
 
 
 class NativeCodexReceiptValidationTests(unittest.TestCase):
@@ -568,11 +417,15 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(payload["evidence_kind"], case["evidence_kind"])
 
-    def test_running_or_missing_current_head_is_pending(self):
+    def test_running_missing_stale_or_untrusted_evidence_is_pending(self):
         cases = (
             [self.summary(status="🔄 **Running** since now")],
             [self.summary(status="✅ **Completed** now", commit_ref="aaaaaaaa")],
             [],
+            [
+                self.summary(status="✅ **Completed** now")
+                | {"user": {"login": "untrusted-contributor"}}
+            ],
         )
         for comments in cases:
             with self.subTest(comments=comments):
@@ -580,29 +433,16 @@ class NativeCodexReceiptValidationTests(unittest.TestCase):
                 self.assertEqual(result.returncode, 75, result.stderr)
                 self.assertEqual(payload["status"], "pending")
 
-    def test_connector_marker_from_an_untrusted_author_is_ignored(self):
-        result, payload = self.run_validator(
-            comments=[
-                self.summary(status="✅ **Completed** now")
-                | {"user": {"login": "untrusted-contributor"}}
-            ],
-            reviews=[],
-        )
-        self.assertEqual(result.returncode, 75, result.stderr)
-        self.assertEqual(payload["status"], "pending")
-
-    def test_unknown_or_failed_connector_state_fails_closed(self):
+    def test_unknown_failed_or_operational_notice_evidence_fails_closed(self):
         for status in ("❌ **Failed**", "✨ **Mystery**"):
             with self.subTest(status=status):
                 result, payload = self.run_validator(
-                    comments=[self.summary(status=status)],
-                    reviews=[],
+                    comments=[self.summary(status=status)], reviews=[]
                 )
                 self.assertEqual(result.returncode, 1)
                 self.assertIsNone(payload)
                 self.assertIn("evidence is invalid", result.stderr)
 
-    def test_linked_operational_notice_with_mismatched_commit_fails_gate(self):
         result, payload = self.run_validator(
             comments=[],
             reviews=[
@@ -698,7 +538,7 @@ class ReadyAuthorizationValidationTests(unittest.TestCase):
             "actor": {"login": actor},
         }
 
-    def test_unchanged_ready_head_allows_comment_retry(self):
+    def test_unchanged_ready_head_allows_merge_retry(self):
         result, payload = self.run_validator(
             [self.committed("a" * 40), self.ready(event_id=22)]
         )
@@ -719,7 +559,7 @@ class ReadyAuthorizationValidationTests(unittest.TestCase):
         self.assertEqual(recovered.returncode, 0, recovered.stderr)
         self.assertEqual(recovered_payload["event_id"], 2)
 
-    def test_force_push_draft_or_nonowner_ready_fails_closed(self):
+    def test_force_push_draft_base_change_restore_or_nonowner_fails_closed(self):
         cases = (
             [self.committed("a" * 40), self.ready(), {"event": "head_ref_force_pushed"}],
             [self.committed("a" * 40), self.ready(), {"event": "convert_to_draft"}],

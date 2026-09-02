@@ -142,66 +142,69 @@ Review and commit the resulting authoritative version updates and deletion of
 CI fails closed while an unmaterialized declaration remains, so a second
 promotion pull request is neither created nor required.
 
-## Ready-for-review automation
+## Independent review and Ready automation
 
-Activation requires Codex cloud repository access and native Code review enabled
-for this repository in
-[Codex settings](https://chatgpt.com/codex/settings/code-review). It does not use
-an OpenAI API key or API billing. Automatic reviews run when a pull request is
-opened for review or marked ready; Josh can request a fresh exact-head review by
-commenting `@codex review` when needed. That exact Josh-authored comment also
-retriggers the protected-base receipt observer and auto-merge authorization for
-the unchanged eligible head when its latest lifecycle action is Josh's Ready
-action, so a prior timeout or transient API failure can recover without rerunning
-candidate code or accepting stale evidence. A later push remains unauthorized
-until Josh marks that revised head Ready again; draft conversion, force-push,
-head restoration, or a base-branch change also withdraws authority. The review
-comment cannot replace that checkpoint.
+Review begins only after implementation reaches a stable candidate and
+Full/Evidence validation has completed. Use this bounded default sequence:
 
-The intended main ruleset requires `validate`, the native Codex receipt check,
-and review-thread resolution. For this bootstrap pull request, the ruleset still
-requires only `validate`; `codex-review-receipt` becomes active only after the
-pull request is merged, the approved ruleset update is applied, and a bounded
-audit verifies the exact required context. Until that audit passes, do not
-describe the receipt as ruleset-enforced.
+1. A separate Codex session or worktree reviews the exact base/head without
+   editing. Findings state severity, file-and-line evidence, impact, cause,
+   correction, and a proving test.
+2. The implementer verifies and batches accepted findings into one correction
+   pass.
+3. One focused delta rereview verifies every accepted finding, the
+   reviewed-head-to-final-head delta, and affected surrounding contracts. A full
+   rereview is warranted only when corrections materially alter architecture or
+   scope.
+4. Provider, write, workflow, cryptographic, persistence, and release-authority
+   changes include a security section in that independent review. A second
+   specialized reviewer is exceptional rather than the default.
 
-The receipt check verifies GitHub evidence produced by the native Codex GitHub
-integration for the exact pull-request head; it does not run a model, parse
-untrusted review prose as executable data, accept a stale review, or count a
-Codex setup/operational notice as a completed code review. Its
-`pull_request_target` observer and validator load only from the protected base
-commit, never from candidate code, and publish the result as the
-`codex-review-receipt` status on the candidate head. The auto-merge authorization
-workflow independently loads the same protected-base validator and validates the
-native evidence directly; it does not trust a candidate-head commit status as
-authorization. CodeRabbit remains an additional reviewer, but its service-side
-eligibility policy can require a manual review trigger for low-activity public
-repositories and therefore is not represented as a false required approval.
+The implementer must not serve as its own repeated independent reviewer. The
+default review budget is one full independent review and at most one delta
+rereview, not a fresh exact-head review after every corrective commit.
 
-Josh's `Ready for review` action on a `jeter-1` branch in this repository,
-targeting `main`, is the single human authorization checkpoint for this bounded
-sequence:
+Native Codex and CodeRabbit remain available as optional manual escalation
+tools. Neither runs automatically and neither is a merge prerequisite. Josh may
+request native Codex by posting the exact comment `@codex review`; the optional
+`codex-review-receipt` observer then validates GitHub evidence for the exact
+current head. It does not run a model itself, arm auto-merge, replace Josh's
+Ready action, parse review prose as executable data, accept stale evidence, or
+count a setup notice as completed review. The observer and validator load only
+from the protected base commit, never candidate code. CodeRabbit automatic and
+incremental reviews are disabled; `@coderabbitai review` remains available for
+a manual review. CodeRabbit Autofix, CI fixing, merge-conflict resolution,
+branch-writing finishing touches, unsolicited chat, web search, knowledge
+retention, and code-generation features remain disabled.
 
-1. Native Codex reviews the pull request in Codex cloud and records its status
-   and reviewed commit on GitHub. Repository `AGENTS.md` supplies the durable
-   review rules; actionable findings are ordinary GitHub review threads.
-2. The `codex-review-receipt` job requires the native review to have completed
-   for the exact current head. A push makes the prior receipt stale and reruns
-   the gate.
-3. CodeRabbit reviews automatically when its repository eligibility permits.
-   Any Request Changes state or unresolved actionable thread still blocks the
-   protected merge path.
-4. `validate` and review-thread resolution must apply to the final head. After
-   the post-merge ruleset bootstrap is audited, `codex-review-receipt` must also
-   apply to the final head as a required status context.
-5. The protected-base authorization workflow independently validates native
-   Codex evidence for the authorized exact head before it arms GitHub native
-   auto-merge. It does not accept the status context itself as proof. After the
-   bootstrap audit, the ruleset separately requires the receipt at merge time.
-   The automation has no administrative bypass and never force-pushes.
-6. If the reviewed merge includes a final Engineering version transition, the
-   protected-main publication workflow validates and publishes that exact merge
-   commit. It does not deploy the add-on or modify Home Assistant.
+Josh's `Ready for review` action on a same-repository `jeter-1` pull request
+targeting `main` attests that the independent review is complete and acceptable.
+The protected-base authorization workflow verifies the repository, base, actor,
+and exact authorized head, then immediately arms GitHub native auto-merge with
+head matching. Required deterministic checks and review-thread resolution remain
+enforced by the GitHub ruleset. The automation has no administrative bypass and
+never force-pushes.
+
+A push, force-push, draft conversion, head restoration, or base change withdraws
+Ready authorization and disarms auto-merge. The corrected head must receive the
+bounded delta rereview before Josh marks it Ready again. An exact Josh-authored
+`@merge` comment may retry a transient auto-merge workflow failure only when the
+latest applicable Ready action still authorizes the unchanged current head. It
+does not request or wait for a model review. `@codex review` requests only the
+optional review receipt and cannot arm merge.
+
+If the reviewed merge includes a final Engineering version transition, the
+protected-main publication workflow validates and publishes that exact merge
+commit. Because materialization occurred before review, publication does not
+trigger another model review. It does not deploy the add-on or modify Home
+Assistant.
+
+This workflow pull request must cross the preexisting receipt-required pipeline
+one final time. After it merges, removing `codex-review-receipt` from the active
+ruleset and changing the repository's native Codex setting from automatic to
+manual/off are separate administrative actions requiring Josh's authorization.
+Until both are verified, do not claim that the manual-review steady state is
+fully active.
 
 ### Missed protected-main publication recovery
 
@@ -318,7 +321,7 @@ Only Josh may mark the draft ready. Converting the pull request back to draft,
 closing it, or pushing a new head withdraws the immediate merge path. The
 protected-base workflow disarms any stored auto-merge request on every
 `synchronize` event. Josh must mark the revised pull request Ready again so the
-new exact head receives fresh authorization and review.
+new exact head receives fresh authorization after the bounded delta rereview.
 
 If `python` is not on PATH, pass the trusted interpreter explicitly to
 `check.ps1` with `-PythonExecutable` and use that same interpreter for the Python
@@ -414,14 +417,18 @@ These are distinct profiles; “Codex access” is not one universal permission.
 
 > Review `<branch or draft PR>` against its exact base. Apply the root Code Review
 > Rules, classify findings Critical/High/Medium/Low, and provide evidence, impact,
-> cause, correction, and a proving test. Do not edit, approve, merge, release, or
-> deploy.
+> cause, correction, and a proving test. Include a security section for provider,
+> write, workflow, cryptographic, persistence, or release-authority changes. Do
+> not edit, approve, merge, release, or deploy. This is the one default full
+> independent review.
 
 ### Corrective Follow-up
 
 > On `<existing draft branch>`, verify each accepted review finding against
 > source, implement only attributable corrections, add regression coverage, rerun
-> the affected Fast area and Full/Evidence, update the draft PR, and stop.
+> the affected Fast area and Full/Evidence, update the draft PR, then request one
+> focused delta rereview of the accepted findings and reviewed-head-to-final-head
+> delta. Request a full rereview only if architecture or scope materially changed.
 
 ### Remote Implementation
 
@@ -448,8 +455,9 @@ A release declaration is an authoring aid on the feature branch, not mergeable
 release state. Before Ready, `promote_next_release.py --apply` updates the three
 authoritative version locations and consumes `.release/next-version` in the
 original pull request. The exact implementation, tests, acceptance documents,
-release notes, and final version state therefore receive the same native Codex,
-applicable CodeRabbit, and CI review.
+release notes, and final version state therefore receive the same independent
+review and CI validation. Publication of that reviewed state does not trigger
+another model review.
 
 After that pull request is merged through the protected path, the publication
 workflow compares the exact new `main` commit with its prior protected commit,

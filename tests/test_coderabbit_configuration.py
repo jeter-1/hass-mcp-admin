@@ -23,13 +23,14 @@ class CodeRabbitConfigurationTests(unittest.TestCase):
         self.assertTrue(reviews["review_status"])
         self.assertFalse(reviews["review_details"])
 
-    def test_automatic_review_tracks_the_ready_pull_request_head(self) -> None:
+    def test_automatic_and_incremental_reviews_are_disabled(self) -> None:
         automatic_review = self.configuration["reviews"]["auto_review"]
 
-        self.assertTrue(automatic_review["enabled"])
+        self.assertFalse(automatic_review["enabled"])
         self.assertFalse(automatic_review["drafts"])
-        self.assertTrue(automatic_review["auto_incremental_review"])
-        self.assertEqual(0, automatic_review["auto_pause_after_reviewed_commits"])
+        self.assertFalse(automatic_review["auto_incremental_review"])
+        self.assertEqual([], automatic_review["labels"])
+        self.assertEqual("", automatic_review["description_keyword"])
 
     def test_actionable_threads_are_reserved_for_blockers(self) -> None:
         instructions = self.configuration["reviews"]["path_instructions"]
@@ -56,6 +57,9 @@ class CodeRabbitConfigurationTests(unittest.TestCase):
         self.assertFalse(finishing_touches["docstrings"]["enabled"])
         self.assertFalse(finishing_touches["unit_tests"]["enabled"])
         self.assertFalse(finishing_touches["simplify"]["enabled"])
+        self.assertFalse(finishing_touches["autofix"]["enabled"])
+        self.assertFalse(finishing_touches["fix_ci"]["enabled"])
+        self.assertFalse(finishing_touches["resolve_merge_conflict"]["enabled"])
         self.assertEqual([], finishing_touches["custom"])
 
 
