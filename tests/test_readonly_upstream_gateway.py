@@ -814,6 +814,79 @@ class ReadGatewayTransportTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.wait_for(transport.aclose(), timeout=1.0)
         self.assertEqual(calls, [{"entity_id": "sun.first"}])
 
+    async def test_retained_missing_upstream_session_id_fails_before_catalog(self):
+        events = []
+
+        @asynccontextmanager
+        async def fake_streamable(_url, **_kwargs):
+            events.append("transport_enter")
+            try:
+                yield ("read", "write", lambda: None)
+            finally:
+                events.append("transport_exit")
+
+        class Session:
+            def __init__(self, *_args, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                events.append("session_enter")
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                events.append("session_exit")
+
+            async def initialize(self):
+                events.append("initialize")
+                return types.InitializeResult(
+                    protocolVersion="2025-03-26",
+                    capabilities=types.ServerCapabilities(),
+                    serverInfo=types.Implementation(
+                        name="ha-mcp", version="8.2.0"
+                    ),
+                )
+
+            async def list_tools(self, cursor=None):
+                del cursor
+                events.append("tools/list")
+                return types.ListToolsResult(tools=[])
+
+            async def call_tool(self, _name, _arguments, **_kwargs):
+                events.append("tools/call")
+                raise AssertionError("tools/call must remain unreachable")
+
+        transport = McpReadGatewayTransport(
+            "http://upstream.invalid/synthetic-secret/mcp",
+            timeout_seconds=3,
+            client_version="2.2.0-beta.55",
+            retain_session=True,
+        )
+        with (
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.streamablehttp_client",
+                fake_streamable,
+            ),
+            patch(
+                "ha_mcp_engineering.clients.upstream_read.ClientSession",
+                Session,
+            ),
+            self.assertRaises(DashboardTransportError) as caught,
+        ):
+            await asyncio.wait_for(transport.discover(), timeout=1.0)
+
+        self.assertEqual(caught.exception.category, "protocol_error")
+        await asyncio.wait_for(transport.aclose(), timeout=1.0)
+        self.assertEqual(
+            events,
+            [
+                "transport_enter",
+                "session_enter",
+                "initialize",
+                "session_exit",
+                "transport_exit",
+            ],
+        )
+
     async def test_same_session_validator_rejection_prevents_tools_call(self):
         events = []
 

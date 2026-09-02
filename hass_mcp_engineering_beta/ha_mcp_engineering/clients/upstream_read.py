@@ -305,7 +305,9 @@ class McpReadGatewayTransport:
                             "ha-mcp-exchange-" + uuid.uuid4().hex
                         )
                         session_id = self._observed_session_id(
-                            get_session_id, fallback_session_id
+                            get_session_id,
+                            fallback_session_id,
+                            require_observed=True,
                         )
                         retain_connection = (
                             self._retain_session
@@ -373,11 +375,17 @@ class McpReadGatewayTransport:
         if operation.future.cancelled():
             raise asyncio.CancelledError
         self._require_same_session(
-            get_session_id, session_id, fallback_session_id
+            get_session_id,
+            session_id,
+            fallback_session_id,
+            require_observed=self._retain_session,
         )
         tools = await self._list_all_tools(session)
         self._require_same_session(
-            get_session_id, session_id, fallback_session_id
+            get_session_id,
+            session_id,
+            fallback_session_id,
+            require_observed=self._retain_session,
         )
         catalog = McpReadCatalog(
             protocol_version=str(initialize.protocolVersion),
@@ -413,7 +421,10 @@ class McpReadGatewayTransport:
         if operation.future.cancelled():
             raise asyncio.CancelledError
         self._require_same_session(
-            get_session_id, session_id, fallback_session_id
+            get_session_id,
+            session_id,
+            fallback_session_id,
+            require_observed=self._retain_session,
         )
         if operation.before_dispatch is not None:
             try:
@@ -428,7 +439,10 @@ class McpReadGatewayTransport:
                     raise
                 raise BeforeDispatchFailure(exc) from None
         self._require_same_session(
-            get_session_id, session_id, fallback_session_id
+            get_session_id,
+            session_id,
+            fallback_session_id,
+            require_observed=self._retain_session,
         )
         connected = time.perf_counter()
         operation_timeout = timedelta(
@@ -472,9 +486,13 @@ class McpReadGatewayTransport:
     def _observed_session_id(
         get_session_id: Callable[[], str | None],
         fallback: str,
+        *,
+        require_observed: bool = False,
     ) -> str:
         value = get_session_id()
         if value is None:
+            if require_observed:
+                raise DashboardTransportError("protocol_error")
             return fallback
         if not isinstance(value, str) or not 1 <= len(value) <= 512:
             raise DashboardTransportError("protocol_error")
@@ -486,8 +504,17 @@ class McpReadGatewayTransport:
         get_session_id: Callable[[], str | None],
         expected: str,
         fallback: str,
+        *,
+        require_observed: bool = False,
     ) -> None:
-        if cls._observed_session_id(get_session_id, fallback) != expected:
+        if (
+            cls._observed_session_id(
+                get_session_id,
+                fallback,
+                require_observed=require_observed,
+            )
+            != expected
+        ):
             raise DashboardTransportError("protocol_error")
 
     @staticmethod
