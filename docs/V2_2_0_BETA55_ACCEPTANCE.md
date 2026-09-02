@@ -76,14 +76,21 @@ bootstrap or catch up a client.
 
 Accepted state uses temporary write, file fsync, atomic replacement, directory
 fsync, a journal-bound lifecycle witness written before each refresh, a durable
-pending signed journal, and a prior checkpoint. A failed persistence step cannot
-activate the candidate's positive entries. Authenticated
+pending signed journal, and a prior checkpoint. Before the first signed fetch,
+a distinct no-signed-authority witness is durably changed to `refreshing`; an
+ordinary fetch failure restores its committed form, while a validated candidate
+whose persistence fails leaves durable denial evidence. A retained witness for
+a missing main cache is not treated as a clean first start. A failed persistence
+step cannot activate the candidate's positive entries. Authenticated
 revocations remain effective as bounded denial-only state even if candidate
 persistence fails, and the verified candidate remains a sequence/digest barrier
 against conflicting replay. Restart reparses and reverifies every cached outer
 and envelope signature, the lifecycle witness, and the bounded
 journal/checkpoint topology. A stale pending tip that is not strictly newer than
-its authenticated base is permanently denial-only. Unexpired positive authority
+its authenticated base is permanently denial-only. A pending file beside a
+committed main cache is accepted as cleanup residue only when it strictly
+verifies, carries the exact committed journal, and adds no uncommitted denial
+evidence. Unexpired positive authority
 survives a registry outage, expired positive authority becomes unavailable, and
 retained valid revocations remain denial-only across bounded compaction.
 Malformed, conflicting, interrupted, oversized, or capacity-exhausted cache

@@ -44,10 +44,16 @@ checks. A bare tip cannot bootstrap. Its accepted cache uses the verified
 journal, a journal-bound write-ahead lifecycle witness, a durable pending signed
 journal, prior checkpoint, file fsync, and directory fsync. Restart reverifies
 outer and envelope signatures, witness binding, and chain topology; interrupted,
-stale-pending, or malformed state denies positive authority. Expired positive authority
-disappears while valid retained revocations remain denial-only, including
-authenticated revocations whose positive cache transaction could not commit or
-whose original chain segment was compacted.
+stale-pending, or malformed state denies positive authority. A durable
+no-signed-authority witness also covers the first fetch: ordinary network failure
+restores compiled-exact continuity, but validated-candidate persistence failure
+and a retained witness with a missing main cache remain denial-only after restart.
+Retained pending data is ignored as cleanup residue only when it strictly
+verifies and exactly matches the committed main journal without adding denial
+evidence. Expired positive authority disappears while valid retained
+revocations remain denial-only, including authenticated revocations whose
+positive cache transaction could not commit or whose original chain segment
+was compacted.
 
 No production key, registry entry, signing workflow, secret, trust-anchor
 activation, or registry publication is included. Tests use synthetic ephemeral

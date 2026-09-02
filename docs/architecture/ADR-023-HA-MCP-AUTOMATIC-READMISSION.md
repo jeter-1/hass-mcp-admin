@@ -84,9 +84,17 @@ Accepted content is cached in
 `/data/ha-mcp-release-registry-cache.json` with a temporary write, file fsync,
 atomic replacement, and directory fsync. A journal-bound lifecycle witness is
 durably changed from committed to refreshing before a newer registry can be
-observed. A durable pending journal and prior checkpoint make an interrupted
+observed. Before the first signed registry observation, the same bounded witness
+uses a distinct no-signed-authority digest. A pre-validation fetch failure may
+restore that committed empty baseline; once a candidate validates, persistence
+failure leaves the refreshing witness as denial evidence. A retained witness
+without its bound main cache is never interpreted as a clean first start. A
+durable pending journal and prior checkpoint make an interrupted
 replacement denial-only on restart, and a pending tip that is not strictly newer
-and correctly linked to its authenticated base cannot regain authority. A cache
+and correctly linked to its authenticated base cannot regain authority. A
+pending file beside a committed main cache is cleanup residue only when it
+strictly verifies, names that exact committed journal, and adds no uncommitted
+denial evidence. A cache
 write failure prevents the candidate's positive entries from becoming
 accepted, while any already authenticated revocations take effect immediately
 as bounded process-local denial evidence. The verified candidate sequence and

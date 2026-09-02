@@ -60,6 +60,9 @@ LIFECYCLE_WITNESS_SCHEMA_VERSION = 1
 LIFECYCLE_WITNESS_MAX_BYTES = 512
 
 _SHA256_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
+_NO_SIGNED_AUTHORITY_SHA256 = sha256_digest(
+    {"state": "no_signed_authority"}
+)
 
 
 class ReleaseRegistryOperationalError(RuntimeError):
@@ -509,17 +512,24 @@ class SignedReleaseRegistry:
             witness_started = False
             candidate_validated = False
             try:
-                if (
-                    self._accepted is not None
-                    and self._authority_journal is not None
-                    and not self._surface_denied
-                ):
-                    self._write_lifecycle_witness(
-                        state="refreshing",
-                        authority_journal_sha256=(
-                            self._authority_journal.content_digest
-                        ),
+                if not self._surface_denied:
+                    authority_digest = (
+                        self._authority_journal.content_digest
+                        if self._authority_journal is not None
+                        else _NO_SIGNED_AUTHORITY_SHA256
                     )
+                    try:
+                        self._write_lifecycle_witness(
+                            state="refreshing",
+                            authority_journal_sha256=authority_digest,
+                        )
+                    except ReleaseRegistryOperationalError:
+                        # No signed response may be observed unless restart
+                        # can distinguish this refresh from a clean first
+                        # start.  Existing compiled authority is denied for
+                        # this process when even that intent is not durable.
+                        self._surface_denied = True
+                        raise
                     witness_started = True
                 raw = await self._fetcher(REGISTRY_URL, MAX_CACHE_BYTES)
                 journal = _parse_signed_journal(
@@ -651,14 +661,13 @@ class SignedReleaseRegistry:
 
         if not witness_started or candidate_validated:
             return reason_code
-        if self._authority_journal is None:
-            self._surface_denied = True
-            return "registry_cache_write_failed"
         try:
             self._write_lifecycle_witness(
                 state="committed",
                 authority_journal_sha256=(
                     self._authority_journal.content_digest
+                    if self._authority_journal is not None
+                    else _NO_SIGNED_AUTHORITY_SHA256
                 ),
             )
         except ReleaseRegistryOperationalError:
@@ -1101,6 +1110,30 @@ class SignedReleaseRegistry:
         except FileNotFoundError:
             if self._previous_cache_path().exists():
                 self._load_retired_cache()
+            elif self._lifecycle_witness_path().exists():
+                try:
+                    state, authority_digest = (
+                        self._parse_lifecycle_witness()
+                    )
+                except Exception:
+                    state = "invalid"
+                    authority_digest = ""
+                if (
+                    state == "committed"
+                    and authority_digest
+                    == _NO_SIGNED_AUTHORITY_SHA256
+                ):
+                    self._cache_status = "missing"
+                else:
+                    # A witness for a signed journal without its cache, or
+                    # any interrupted/invalid bootstrap witness, is durable
+                    # evidence that this is not a clean first start.
+                    self._surface_denied = True
+                    self._retired_cache_incomplete = True
+                    self._cache_status = "invalid"
+                    self._record_failure(
+                        "registry_cache_incomplete_transaction"
+                    )
             else:
                 self._cache_status = "missing"
         except Exception:
@@ -1113,18 +1146,26 @@ class SignedReleaseRegistry:
             self._record_failure("registry_cache_invalid")
 
     def _load_committed_main_cache(self) -> bool:
-        """Ignore a stale pending marker only after a committed witness."""
+        """Accept only an exact committed pending cleanup residue."""
 
         try:
             journal, sources = self._parse_cache_document(
                 self._cache_path.read_bytes()
             )
             state, authority_digest = self._parse_lifecycle_witness()
+            pending, retained = self._parse_pending_document(
+                self._pending_cache_path().read_bytes()
+            )
         except Exception:
             return False
         if (
             state != "committed"
             or authority_digest != journal.content_digest
+            or pending.to_mapping() != journal.to_mapping()
+            or not self._retained_denials_match_committed_journal(
+                journal,
+                retained,
+            )
         ):
             return False
         self._install_cache_journal(journal, sources)
@@ -1133,6 +1174,39 @@ class SignedReleaseRegistry:
             if self._positive_is_current(journal.accepted)
             else "denial_only"
         )
+        return True
+
+    @classmethod
+    def _retained_denials_match_committed_journal(
+        cls,
+        committed: SignedRegistryJournal,
+        retained: tuple[SignedRegistryJournal, ...],
+    ) -> bool:
+        """Require cleanup residue to add no uncommitted denial evidence."""
+
+        committed_revocations = {
+            item.revocation_identity: item
+            for source in cls._sources_in_journal(committed)
+            for item in source.revocations
+        }
+        seen: dict[
+            tuple[str, str, str, str], ReleaseRevocation
+        ] = {}
+        for journal in retained:
+            sources = cls._sources_in_journal(journal)
+            if not sources:
+                return False
+            for source in sources:
+                for item in source.revocations:
+                    identity = item.revocation_identity
+                    if (
+                        identity in seen
+                        and seen[identity] != item
+                    ):
+                        return False
+                    seen[identity] = item
+                    if committed_revocations.get(identity) != item:
+                        return False
         return True
 
     def _install_cache_journal(
