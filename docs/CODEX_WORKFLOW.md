@@ -183,6 +183,10 @@ disabled.
 
 Josh's `Ready for review` action on a same-repository `jeter-1` pull request
 targeting `main` attests that the independent review is complete and acceptable.
+Ready does not start another CI run for an unchanged head. The authorization
+workflow reuses the existing exact-head `validate` result produced when the pull
+request was opened, reopened, or synchronized; a missing, failed, stale-base, or
+ambiguous result remains a hard stop.
 The protected-base authorization workflow verifies the repository, base, actor,
 and exact authorized head, waits only for that head's deterministic `validate`
 check whose pull-request association is bound to the same protected base and
