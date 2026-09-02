@@ -2,7 +2,7 @@
 
 Beta 55 is the materialized source candidate for ADR-023 ha-mcp
 capability-scoped automatic readmission, based on exact protected main
-`b077b5c43c24c7f34987fbccfd77ce64c2976b39`. This pull request advertises
+`21d7bd49c1af070f61ae1a8b42ed6f95bfbdfcbb`. This pull request advertises
 2.2.0-beta.55 for exact-head validation but remains unmerged and unpublished.
 Stable remains 1.1.2.
 
