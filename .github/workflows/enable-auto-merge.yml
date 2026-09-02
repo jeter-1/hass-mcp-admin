@@ -34,16 +34,35 @@ jobs:
          github.event.changes.base.ref.from == 'main')))
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions: {}
+    permissions:
+      pull-requests: write
     concurrency:
       group: authorized-merge-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     steps:
-      - name: Retire the in-flight Ready-authorized run
-        run: >-
-          echo "The pull-request lifecycle changed; any in-flight
-          Ready-authorized merge run has been cancelled. No persistent
-          auto-merge request is retained."
+      - name: Retire in-flight and inherited Ready authority
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          auto_merge_enabled="$(
+            gh pr view "$PR_NUMBER" \
+              --repo "$REPOSITORY" \
+              --json autoMergeRequest \
+              --jq '.autoMergeRequest != null'
+          )"
+          if [[ "$auto_merge_enabled" == "true" ]]; then
+            gh pr merge "$PR_NUMBER" \
+              --repo "$REPOSITORY" \
+              --disable-auto
+            echo "An inherited persistent auto-merge request was disarmed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No inherited persistent auto-merge request was armed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Any in-flight Ready-authorized merge run was cancelled by the shared concurrency group." >> "$GITHUB_STEP_SUMMARY"
 
   merge-authorized-head:
     name: merge-authorized-head

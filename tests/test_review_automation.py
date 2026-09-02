@@ -444,16 +444,73 @@ fi
         self.assertIn("github.event.changes.base.ref.from == 'main'", job["if"])
         self.assertIn("base.ref == 'main'", job["if"])
         self.assertIn("head.repo.full_name == github.repository", job["if"])
-        self.assertEqual(job["permissions"], {})
+        self.assertEqual(job["permissions"], {"pull-requests": "write"})
         self.assertTrue(job["concurrency"]["cancel-in-progress"])
         self.assertFalse(any("uses" in step for step in job["steps"]))
         script = str(job["steps"][0]["run"])
-        self.assertIn("No persistent auto-merge request", script)
+        self.assertIn("autoMergeRequest", script)
+        self.assertIn("--disable-auto", script)
+        self.assertIn("in-flight Ready-authorized merge run", script)
         workflow_text = AUTO_MERGE_WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("--auto", workflow_text)
-        self.assertNotIn("--disable-auto", workflow_text)
         self.assertNotIn("--admin", script)
         self.assertNotIn("--force", script)
+
+    def test_lifecycle_retirement_only_disarms_an_inherited_auto_merge_request(self):
+        script = str(
+            self.auto_merge["jobs"]["retire-stale-ready-run"]["steps"][0]["run"]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            fake_gh = root / "gh"
+            gh_log = root / "gh.log"
+            summary = root / "summary.md"
+            fake_gh.write_text(
+                """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "$MOCK_GH_LOG"
+if [[ "$1" == "pr" && "$2" == "view" ]]; then
+  printf '%s\\n' "$MOCK_AUTO_MERGE_ENABLED"
+elif [[ "$1" == "pr" && "$2" == "merge" && "$*" == *"--disable-auto"* ]]; then
+  exit 0
+else
+  printf 'unexpected gh invocation: %s\\n' "$*" >&2
+  exit 2
+fi
+""",
+                encoding="utf-8",
+            )
+            fake_gh.chmod(0o700)
+
+            for enabled, expected_calls in (("true", 2), ("false", 1)):
+                with self.subTest(enabled=enabled):
+                    gh_log.write_text("", encoding="utf-8")
+                    summary.write_text("", encoding="utf-8")
+                    result = subprocess.run(
+                        ["bash", "-c", script],
+                        cwd=ROOT,
+                        env={
+                            "GH_TOKEN": "test-token",
+                            "GITHUB_STEP_SUMMARY": str(summary),
+                            "MOCK_AUTO_MERGE_ENABLED": enabled,
+                            "MOCK_GH_LOG": str(gh_log),
+                            "PATH": f"{root}:/usr/bin:/bin",
+                            "PR_NUMBER": "175",
+                            "REPOSITORY": "jeter-1/hass-mcp-admin",
+                        },
+                        text=True,
+                        capture_output=True,
+                        check=False,
+                    )
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    calls = gh_log.read_text(encoding="utf-8").splitlines()
+                    self.assertEqual(len(calls), expected_calls)
+                    merge_calls = [line for line in calls if line.startswith("pr merge ")]
+                    if enabled == "true":
+                        self.assertEqual(len(merge_calls), 1)
+                        self.assertIn("--disable-auto", merge_calls[0])
+                    else:
+                        self.assertEqual(merge_calls, [])
 
     def test_workflows_add_no_bypass_publication_or_deployment_authority(self):
         combined = "\n".join(

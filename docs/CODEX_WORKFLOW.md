@@ -200,7 +200,8 @@ not a commit-bound authorization for this same-repository owner workflow. See
 GitHub's [auto-merge behavior](https://docs.github.com/en/pull-requests/how-tos/merge-and-close-pull-requests/automatically-merging-a-pull-request).
 
 A push, force-push, draft conversion, closure/reopening, head restoration, or
-base change withdraws Ready authorization and cancels the in-flight merge run.
+base change withdraws Ready authorization, cancels the in-flight merge run, and
+disarms any persistent auto-merge request inherited from the retired workflow.
 The corrected head must receive the bounded delta rereview before Josh marks it
 Ready again. An exact Josh-authored `@merge` comment may retry a transient merge
 workflow failure only when the latest applicable Ready action still authorizes
