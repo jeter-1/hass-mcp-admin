@@ -28,6 +28,9 @@ def _load_script(name: str):
 
 
 addon_acceptance = _load_script("exact_addon_runtime_acceptance")
+dashboard_authority_acceptance = _load_script(
+    "exact_8_4_1_dashboard_quarantine_acceptance"
+)
 gateway_acceptance = _load_script("exact_image_read_gateway_acceptance")
 readmission = _load_script("exact_image_readmission_acceptance")
 custom_component_shutdown = _load_script(
@@ -104,10 +107,22 @@ class ExactAddonProfileTests(unittest.TestCase):
             addon_acceptance.EXPECTED_NORMALIZED_CATALOG_FINGERPRINT,
             "c5926e759d86557bbe73a46162859b26119b2b76affed0984069019d4d6740c5",
         )
+        self.assertEqual(
+            addon_acceptance.EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT,
+            "51f919d34d8766ac93d663e5937c9db1b8cdb5275de9ad5f367b22d81821a01b",
+        )
         self.assertEqual(addon_acceptance.EXPECTED_AUTOMATIC_READ_COUNT, 25)
         self.assertEqual(addon_acceptance.EXPECTED_DASHBOARD_STATUS, "reviewed")
         self.assertFalse(
             addon_acceptance.EXPECTED_OPERATIONAL_PLANNING_SUPPORTED
+        )
+        self.assertEqual(
+            dashboard_authority_acceptance.EXPECTED_ATTESTATION_FINGERPRINT,
+            "8551a8d62593c3aed07884642374a0511a57968f106bf051893584ef76332952",
+        )
+        self.assertEqual(
+            dashboard_authority_acceptance.EXPECTED_CONSTRAINTS_FINGERPRINT,
+            "d064d856d6c10d9e023191b6dd08874030dae3df88ccc3cd954be588a4ffeba0",
         )
 
         addon_acceptance._select_exact_addon_profile("8.2.0")
