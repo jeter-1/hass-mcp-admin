@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from typing import Any, Sequence
 
@@ -36,6 +36,102 @@ PROFILE_VERSION = 1
 PROFILE_ID_PREFIX = "ha_mcp_binary_read_profile_"
 ADAPTER_ID_PREFIX = "ha_mcp_read_gateway_adapter_"
 CONTRACT_MODEL = "ha-mcp-binary-capability-contract-v1"
+
+
+@dataclass(frozen=True)
+class _BinaryErrorProbeContract:
+    """One immutable error-envelope contract owned by this binary."""
+
+    probe_id: str
+    capability_id: str
+    structured_code: str
+    shape_fingerprint: str
+
+
+@dataclass(frozen=True)
+class _BinaryErrorContractAdapter:
+    """A reviewed aggregate error contract with capability-local bindings."""
+
+    adapter_id: str
+    aggregate_fingerprint: str
+    probes: tuple[_BinaryErrorProbeContract, ...]
+
+    @property
+    def probes_by_capability(
+        self,
+    ) -> dict[str, tuple[_BinaryErrorProbeContract, ...]]:
+        values: dict[str, list[_BinaryErrorProbeContract]] = {}
+        for probe in self.probes:
+            values.setdefault(probe.capability_id, []).append(probe)
+        return {
+            capability_id: tuple(sorted(items, key=lambda item: item.probe_id))
+            for capability_id, items in values.items()
+        }
+
+
+_LEGACY_ERROR_PROBES = (
+    _BinaryErrorProbeContract(
+        probe_id="invalid_search",
+        capability_id="ha_search",
+        structured_code="VALIDATION_FAILED",
+        shape_fingerprint=(
+            "63e37a2f037ff46e9908c41745aca0e368c0cb6811a28104c990113055abdfee"
+        ),
+    ),
+    _BinaryErrorProbeContract(
+        probe_id="missing_automation",
+        capability_id="ha_config_get_automation",
+        structured_code="RESOURCE_NOT_FOUND",
+        shape_fingerprint=(
+            "965faf0ef1864aad32d79da308763a92f024cf2d70cde40344832e76dbe85ba5"
+        ),
+    ),
+    _BinaryErrorProbeContract(
+        probe_id="missing_registry_entity",
+        capability_id="ha_get_entity",
+        structured_code="SERVICE_CALL_FAILED",
+        shape_fingerprint=(
+            "3e1148ad27428880af39facca3605d530996850931d3e55c5d908f69ecc2d9c8"
+        ),
+    ),
+    _BinaryErrorProbeContract(
+        probe_id="missing_state",
+        capability_id="ha_get_state",
+        structured_code="ENTITY_NOT_FOUND",
+        shape_fingerprint=(
+            "8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c"
+        ),
+    ),
+)
+_ERROR_ADAPTERS = (
+    _BinaryErrorContractAdapter(
+        adapter_id="ha_mcp_error_contract_7_14_1_through_8_2_0_v1",
+        aggregate_fingerprint=(
+            "b1134b2e121e7f1827970ef5c7bac7f9437272e1c0a030d458167f9c2b2d0a9b"
+        ),
+        probes=_LEGACY_ERROR_PROBES,
+    ),
+    _BinaryErrorContractAdapter(
+        adapter_id="ha_mcp_error_contract_8_4_1_v1",
+        aggregate_fingerprint=(
+            "03000635a7b0a506c12a6f99ce86433a09683693a0e61d4265b1f11ec52b2d46"
+        ),
+        probes=tuple(
+            replace(
+                probe,
+                shape_fingerprint=(
+                    "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939"
+                ),
+            )
+            if probe.probe_id == "invalid_search"
+            else probe
+            for probe in _LEGACY_ERROR_PROBES
+        ),
+    ),
+)
+_ERROR_PROBE_CAPABILITIES = frozenset(
+    probe.capability_id for probe in _LEGACY_ERROR_PROBES
+)
 
 
 class HaMcpAuthorityError(ValueError):
@@ -517,17 +613,12 @@ def _signed_matching_capabilities(
     release: ReviewedUpstreamRelease,
     profile: CapabilityProfile,
 ) -> tuple[str, ...]:
-    # These fields select binary-owned response/error semantics.  A signed
-    # release may select an existing compiled adapter, but it cannot redefine
-    # that adapter's behavior.  A disagreement is therefore release-wide and
-    # no capability may use the selected profile.
-    if (
+    selected_error_adapter = _error_adapter(
+        release.error_contract_fingerprint
+    )
+    observed_error_adapter = _error_adapter(
         entry.error_contract_fingerprint
-        != release.error_contract_fingerprint
-        or entry.entity_lookup_missing_resource_status
-        != release.entity_lookup_missing_resource_status
-    ):
-        return ()
+    )
     signed = {item.tool_name: item for item in entry.tool_contracts}
     compiled = release.tool_contracts_by_name
     policy = release.policy.by_name
@@ -543,6 +634,18 @@ def _signed_matching_capabilities(
         known = compiled.get(name)
         policy_entry = policy.get(name)
         if remote is None or known is None or policy_entry is None:
+            continue
+        if not _error_contract_matches_capability(
+            capability_id=name,
+            selected_adapter=selected_error_adapter,
+            observed_adapter=observed_error_adapter,
+            selected_entity_status=(
+                release.entity_lookup_missing_resource_status
+            ),
+            observed_entity_status=(
+                entry.entity_lookup_missing_resource_status
+            ),
+        ):
             continue
         declared_provider_constraints = provider_constraints.get(name, [])
         provider_constraints_match = not declared_provider_constraints or (
@@ -578,6 +681,44 @@ def _signed_matching_capabilities(
         ):
             matched.append(name)
     return tuple(sorted(matched))
+
+
+def _error_adapter(
+    aggregate_fingerprint: str,
+) -> _BinaryErrorContractAdapter | None:
+    """Select only a compiled error adapter; signed data supplies no logic."""
+
+    return next(
+        (
+            adapter
+            for adapter in _ERROR_ADAPTERS
+            if adapter.aggregate_fingerprint == aggregate_fingerprint
+        ),
+        None,
+    )
+
+
+def _error_contract_matches_capability(
+    *,
+    capability_id: str,
+    selected_adapter: _BinaryErrorContractAdapter | None,
+    observed_adapter: _BinaryErrorContractAdapter | None,
+    selected_entity_status: str,
+    observed_entity_status: str,
+) -> bool:
+    """Compare only the binary-owned error probes bound to one capability."""
+
+    if capability_id not in _ERROR_PROBE_CAPABILITIES:
+        return True
+    if selected_adapter is None or observed_adapter is None:
+        return False
+    selected = selected_adapter.probes_by_capability.get(capability_id, ())
+    observed = observed_adapter.probes_by_capability.get(capability_id, ())
+    if not selected or selected != observed:
+        return False
+    if capability_id == "ha_get_entity":
+        return selected_entity_status == observed_entity_status
+    return True
 
 
 def _authority_decision(

@@ -2918,25 +2918,61 @@ class SignedGatewayReadmissionTests(
                 self.assertNotIn(automatic, snapshot["exposed_tools"])
                 self.assertEqual(transport.calls, 0)
 
-    async def test_release_level_adapter_semantics_are_exactly_bound(self):
+    async def test_error_adapter_semantics_are_capability_scoped(self):
         version = "8.2.1"
-        cases = {
-            "error_contract_fingerprint": "0" * 64,
-            "entity_lookup_missing_resource_status": (
-                "deterministic_entity_not_found"
-            ),
-        }
-        for field, value in cases.items():
-            with self.subTest(field=field):
-                entry = _signed_entry_for(self.release, version=version)
-                entry[field] = value
-                _gateway, transport, snapshot = await self._initialize(
-                    raw=self._raw(entry=entry),
-                    version=version,
-                )
-                self.assertEqual(snapshot["dynamically_exposed_count"], 0)
-                self.assertEqual(snapshot["fallback_count"], 0)
-                self.assertEqual(transport.calls, 0)
+        entry = _signed_entry_for(self.release, version=version)
+        entry["error_contract_fingerprint"] = (
+            "03000635a7b0a506c12a6f99ce86433a09683693a0e61d4265b1f11ec52b2d46"
+        )
+        gateway, transport, snapshot = await self._initialize(
+            raw=self._raw(entry=entry),
+            version=version,
+        )
+        registered = gateway._registered_tool_registry.snapshot()
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertNotIn("ha_search", registered)
+        self.assertIn("ha_get_state", registered)
+        self.assertIn("ha_config_get_automation", registered)
+        self.assertIn("ha_get_entity", registered)
+        self.assertEqual(snapshot["fallback_count"], 0)
+        self.assertEqual(transport.calls, 0)
+
+    async def test_unknown_error_adapter_withholds_only_bound_reads(self):
+        version = "8.2.1"
+        entry = _signed_entry_for(self.release, version=version)
+        entry["error_contract_fingerprint"] = "0" * 64
+        gateway, transport, snapshot = await self._initialize(
+            raw=self._raw(entry=entry),
+            version=version,
+        )
+        registered = gateway._registered_tool_registry.snapshot()
+        self.assertEqual(snapshot["dynamically_exposed_count"], 21)
+        for affected in (
+            "ha_search",
+            "ha_get_state",
+            "ha_config_get_automation",
+            "ha_get_entity",
+        ):
+            self.assertNotIn(affected, registered)
+        self.assertEqual(snapshot["fallback_count"], 0)
+        self.assertEqual(transport.calls, 0)
+
+    async def test_entity_error_disposition_withholds_only_entity_lookup(self):
+        version = "8.2.1"
+        entry = _signed_entry_for(self.release, version=version)
+        entry["entity_lookup_missing_resource_status"] = (
+            "deterministic_entity_not_found"
+        )
+        gateway, transport, snapshot = await self._initialize(
+            raw=self._raw(entry=entry),
+            version=version,
+        )
+        registered = gateway._registered_tool_registry.snapshot()
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertNotIn("ha_get_entity", registered)
+        self.assertIn("ha_search", registered)
+        self.assertEqual(snapshot["fallback_count"], 0)
+        self.assertEqual(transport.calls, 0)
 
     async def test_provider_constraint_drift_withholds_only_affected_read(self):
         version = "8.2.1"
