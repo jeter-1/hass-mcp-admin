@@ -183,11 +183,13 @@ EXACT_ADDON_PROFILES = {
         "normalized_catalog_fingerprint": (
             "c5926e759d86557bbe73a46162859b26119b2b76affed0984069019d4d6740c5"
         ),
-        "dashboard_runtime_fingerprint": None,
+        "dashboard_runtime_fingerprint": (
+            "e206909dd9795dfc3947fa63ebccb851ea150d8403afe4468ef0707f3148e736"
+        ),
         "addon_detail_profile": "live-8.4.1",
         "automatic_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
-        "dashboard_status": "quarantined",
+        "dashboard_status": "reviewed",
         "operational_planning_supported": False,
     },
 }

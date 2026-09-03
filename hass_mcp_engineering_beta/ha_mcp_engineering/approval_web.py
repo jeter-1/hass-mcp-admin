@@ -26,6 +26,10 @@ from starlette.responses import HTMLResponse, Response
 from starlette.routing import Route
 
 from .errors import GovernanceError
+from .f3_dashboard.approval_projection import (
+    validate_dashboard_approval_projection,
+)
+from .f3_dashboard.errors import ApprovalProjectionError
 from .governance.semantic_projection import (
     MAX_SEMANTIC_PROJECTION_BYTES_PER_OPERATION,
     MAX_SEMANTIC_PROJECTION_BYTES_PER_PLAN,
@@ -1076,6 +1080,26 @@ def _review_snapshot_is_valid(value: Any) -> bool:
     return True
 
 
+def _bounded_dashboard_review(
+    review: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Validate complete persisted dashboard authority before rendering."""
+
+    dashboard_review = review.get("dashboard_review")
+    if not isinstance(dashboard_review, dict):
+        return [], "The complete dashboard approval projection is unavailable."
+    try:
+        operations = validate_dashboard_approval_projection(
+            dashboard_review.get("approval_projection")
+        )
+    except ApprovalProjectionError:
+        return [], (
+            "The plan cannot be approved because its complete dashboard "
+            "projection is malformed, incomplete, unbound, or oversized."
+        )
+    return [dict(operation) for operation in operations], None
+
+
 def _summary_scalar(value: Any, limit: int) -> str:
     if isinstance(value, (dict, list, tuple, set)):
         return "[structured value omitted]"
@@ -1205,6 +1229,36 @@ def _render_complete_semantic_projection(
     )
 
 
+def _render_complete_dashboard_projection(
+    operations: list[dict[str, Any]],
+) -> str:
+    """Render complete inert JSON for every declared dashboard patch unit."""
+
+    rows: list[str] = []
+    for operation in operations:
+        rows.append(
+            "<li><table>"
+            "<tr><th>Operation ID</th><td><code>{}</code></td></tr>"
+            "<tr><th>Operation</th><td><code>{}</code></td></tr>"
+            "<tr><th>Exact path</th><td><code>{}</code></td></tr>"
+            "</table><h4>Existing target</h4>{}"
+            "<h4>Approved target</h4>{}</li>".format(
+                escape(str(operation.get("operation_id"))),
+                escape(str(operation.get("operation"))),
+                escape(str(operation.get("path"))),
+                _render_projection_snapshot(operation.get("previous", {})),
+                _render_projection_snapshot(operation.get("proposed", {})),
+            )
+        )
+    return (
+        "<h2>Complete declared dashboard changes</h2>"
+        "<p>Dashboard values below are untrusted inert data. They are displayed "
+        "completely for approval and are not executed by this page.</p><ol>"
+        + "".join(rows)
+        + "</ol>"
+    )
+
+
 def _render_operation_summaries(operations: list[dict[str, Any]]) -> str:
     rendered: list[str] = []
     for ordinal, operation in enumerate(operations, start=1):
@@ -1293,8 +1347,18 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
     def row(label: str, value: Any) -> str:
         return f"<tr><th>{escape(label)}</th><td><code>{escape(_text(value, 2_000))}</code></td></tr>"
 
-    operation_summaries, projection_error = _bounded_operation_summaries(review)
+    operation_summaries, operation_projection_error = (
+        _bounded_operation_summaries(review)
+    )
     has_operation_projection = "operation_summaries" in review
+    has_dashboard_projection = "dashboard_review" in review
+    dashboard_operations: list[dict[str, Any]] = []
+    dashboard_projection_error: str | None = None
+    if has_dashboard_projection:
+        dashboard_operations, dashboard_projection_error = (
+            _bounded_dashboard_review(review)
+        )
+    projection_error = operation_projection_error or dashboard_projection_error
     rows = [
         row("Title", review.get("title")),
         row("Description", review.get("description")),
@@ -1314,11 +1378,15 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
             "Target",
             (
                 f"{len(operation_summaries)} typed operations"
-                if has_operation_projection and not projection_error
+                if has_operation_projection and not operation_projection_error
                 else (
-                    "review projection unavailable"
-                    if has_operation_projection
-                    else f"{review.get('target_type')}: {review.get('target_id')}"
+                    f"{len(dashboard_operations)} dashboard patch operations"
+                    if has_dashboard_projection and not dashboard_projection_error
+                    else (
+                        "review projection unavailable"
+                        if has_operation_projection or has_dashboard_projection
+                        else f"{review.get('target_type')}: {review.get('target_id')}"
+                    )
                 )
             ),
         ),
@@ -1357,6 +1425,16 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
         change_table = (
             "<h2>Ordered configuration operations</h2>"
             f"<p class=\"danger\"><strong>{escape(projection_error or 'The review projection is unavailable.')}</strong> "
+            "Approval is disabled. Reject this plan and create a new bounded plan.</p>"
+        )
+    elif has_dashboard_projection and not projection_error:
+        change_table = _render_complete_dashboard_projection(
+            dashboard_operations
+        )
+    elif has_dashboard_projection:
+        change_table = (
+            "<h2>Complete declared dashboard changes</h2>"
+            f"<p class=\"danger\"><strong>{escape(projection_error or 'The dashboard review projection is unavailable.')}</strong> "
             "Approval is disabled. Reject this plan and create a new bounded plan.</p>"
         )
     elif changes:

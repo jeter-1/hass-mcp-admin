@@ -6,6 +6,7 @@ import asyncio
 import base64
 from copy import deepcopy
 from contextlib import AsyncExitStack
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
@@ -34,6 +35,10 @@ from ..request_context import (
     current_request_id,
 )
 from ..sanitization import sanitize_untrusted_data
+from ..f3_dashboard.approval_projection import (
+    build_dashboard_approval_projection,
+    validate_dashboard_approval_projection,
+)
 from ..f3_dashboard.artifact_store import DashboardArtifactStore
 from ..f3_dashboard.errors import DashboardFoundationError
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
@@ -3935,16 +3940,11 @@ class ChangeGovernanceService:
         if (
             self.dashboard_gateway is None
             or self.dashboard_artifacts is None
-            or self.provider_identity_reader is None
         ):
             raise GovernanceError(
                 ErrorCode.UPSTREAM_DASHBOARD_NOT_CONFIGURED
             )
         try:
-            provider_identity = await self.provider_identity_reader()
-            provider_slug = provider_identity.get("slug")
-            if not isinstance(provider_slug, str) or not provider_slug:
-                raise ValueError("provider identity unavailable")
             proposal = await build_dashboard_update(
                 reader=self.dashboard_gateway,
                 url_path=url_path,
@@ -3953,7 +3953,6 @@ class ChangeGovernanceService:
                 description=description,
                 expiration_minutes=expiration_minutes,
                 requested_by=current_caller_id(),
-                authoritative_provider_slug=provider_slug,
                 now=self.now(),
                 plan_id=self._new_id(),
             )
@@ -3980,6 +3979,16 @@ class ChangeGovernanceService:
                 ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                 details={"reason": "dashboard_contains_prohibited_sensitive_data"},
             )
+        try:
+            approval_projection = build_dashboard_approval_projection(
+                proposal.compilation,
+                known_secrets=tuple(self.sensitive_values),
+            )
+        except DashboardFoundationError as exc:
+            raise GovernanceError(
+                ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                details=exc.diagnostic_details(),
+            ) from None
         public_projection = public_proposal_projection(proposal)
         sanitation = sanitize_untrusted_data(
             public_projection,
@@ -3994,6 +4003,10 @@ class ChangeGovernanceService:
         public_projection = sanitation.value
         if not isinstance(public_projection, dict):
             raise GovernanceError(ErrorCode.INTERNAL_INVARIANT_VIOLATION)
+        # This complete projection is private approval evidence. Contract-v3
+        # MCP plan output strips proposed_config, while the authenticated
+        # review page renders every exact declared before/after value inertly.
+        public_projection["approval_projection"] = approval_projection
         try:
             artifact = self.dashboard_artifacts.create(proposal)
         except DashboardFoundationError:
@@ -4052,6 +4065,9 @@ class ChangeGovernanceService:
             "semantic_diff_sha256": (
                 proposal.semantic_diff.semantic_diff_sha256
             ),
+            "approval_projection_sha256": (
+                approval_projection["binding"]["projection_sha256"]
+            ),
             "compatibility_entry": (
                 proposal.raw_evidence.compatibility_entry
             ),
@@ -4060,6 +4076,12 @@ class ChangeGovernanceService:
             "storage_mode_confirmed": True,
             "non_atomic": True,
             "operator_policy": "bounded_dashboard_update_non_atomic_v1",
+            "dashboard_operational_identity": asdict(
+                proposal.raw_evidence.operational_identity
+            ),
+            "dashboard_provider_identity_hash": (
+                proposal.raw_evidence.operational_identity.evidence_hash
+            ),
         }
         operational = OperationalPlanDetails(
             schema_version=1,
@@ -4071,6 +4093,9 @@ class ChangeGovernanceService:
                 "tool": "ha_config_set_dashboard",
                 "compatibility_entry": proposal.provider_admission.compatibility_entry,
                 "provider_contract_hash": proposal.provider_admission.provider_contract_hash,
+                "dashboard_provider_identity_hash": (
+                    proposal.raw_evidence.operational_identity.evidence_hash
+                ),
                 "classification": "persistent_write",
                 "argument_model": "exact_full_result_with_config_hash_v1",
                 "fallback": "none",
@@ -4137,6 +4162,7 @@ class ChangeGovernanceService:
                 "storage_mode_confirmed": True,
                 "exact_provider_contract_admitted": True,
                 "operator_non_atomic_policy_accepted": True,
+                "approval_projection_complete": True,
             },
             dry_run_results={
                 "provider_dispatch_occurred": False,
@@ -4145,6 +4171,9 @@ class ChangeGovernanceService:
                     proposal.compilation.semantic_leaf_change_count
                 ),
                 "semantic_diff": public_projection.get("semantic_diff"),
+                "approval_projection_sha256": (
+                    approval_projection["binding"]["projection_sha256"]
+                ),
                 "non_atomic": True,
             },
             rollback=ChangeRollback(available=False, status="unavailable"),
@@ -5862,6 +5891,7 @@ class ChangeGovernanceService:
         # Final preparation is the last semantic recomputation. A failure here
         # cannot create an approval challenge or any durable execution task.
         self._require_configuration_projection(plan, recompute=True)
+        self._require_dashboard_approval_projection(plan)
         self._require_current_normalization(plan)
         calculated = self.plan_hash(plan)
         if expected_plan_hash != calculated:
@@ -6174,6 +6204,61 @@ class ChangeGovernanceService:
             },
         )
 
+    def _dashboard_approval_projection_error(
+        self, plan: ChangePlan
+    ) -> str | None:
+        """Validate persisted complete dashboard review authority."""
+
+        if plan.operation is not ChangeOperation.UPDATE_DASHBOARD:
+            return None
+        proposal = plan.proposed_config.get("dashboard_update")
+        baseline = (
+            plan.operational.baseline
+            if plan.operational is not None
+            and isinstance(plan.operational.baseline, dict)
+            else {}
+        )
+        if not isinstance(proposal, dict):
+            return "approval_projection_unavailable"
+        projection = proposal.get("approval_projection")
+        try:
+            validate_dashboard_approval_projection(
+                projection,
+                known_secrets=tuple(self.sensitive_values),
+                expected_preread_sha256=baseline.get(
+                    "current_engineering_sha256"
+                ),
+                expected_patch_sha256=baseline.get(
+                    "canonical_patch_sha256"
+                ),
+                expected_resulting_sha256=baseline.get(
+                    "resulting_engineering_sha256"
+                ),
+            )
+        except DashboardFoundationError as exc:
+            return exc.reason
+        if (
+            not isinstance(projection, dict)
+            or not isinstance(projection.get("binding"), dict)
+            or projection["binding"].get("projection_sha256")
+            != baseline.get("approval_projection_sha256")
+        ):
+            return "approval_projection_binding_mismatch"
+        return None
+
+    def _require_dashboard_approval_projection(self, plan: ChangePlan) -> None:
+        reason = self._dashboard_approval_projection_error(plan)
+        if reason is None:
+            return
+        raise GovernanceError(
+            ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+            details={
+                "resource_id": plan.plan_id,
+                "reason": reason,
+                "replan_required": True,
+            },
+        )
+
     def _review_summary(self, plan: ChangePlan) -> dict[str, Any]:
         self._require_v2_persisted_plan_safe(plan)
         changed_fields = []
@@ -6440,6 +6525,7 @@ class ChangeGovernanceService:
             if plan.approval.state == ApprovalState.EXPIRED:
                 raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
             self._require_configuration_projection(plan)
+            self._require_dashboard_approval_projection(plan)
             calculated = self.plan_hash(plan)
             action, active_challenge, _requested, _expires = (
                 self._active_challenge_projection(plan)
@@ -6494,6 +6580,7 @@ class ChangeGovernanceService:
                 raise GovernanceError(ErrorCode.EXTERNAL_APPROVAL_EXPIRED)
             self._require_policy_snapshot(plan)
             self._require_configuration_projection(plan)
+            self._require_dashboard_approval_projection(plan)
             calculated = self.plan_hash(plan)
             approval = plan.approval
             (

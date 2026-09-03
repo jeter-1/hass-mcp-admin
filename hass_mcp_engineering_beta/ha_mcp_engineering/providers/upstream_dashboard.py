@@ -8,7 +8,7 @@ locking, exact preflight, and durable dispatch intent.
 from __future__ import annotations
 
 from collections import Counter, deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import hmac
@@ -18,6 +18,7 @@ import statistics
 import threading
 import time
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from ..clients.mcp import (
     DashboardTransportError,
@@ -146,6 +147,7 @@ FAILURE_CATEGORIES = (
     "internal_error",
 )
 CANONICAL_DASHBOARD_PATH = re.compile(r"^[a-z0-9_-]{1,256}$")
+CANONICAL_PROVIDER_HOST = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
 MAX_IDENTITY_CHARS = 128
 MAX_WARNING_CHARS = 512
 SAFE_UPSTREAM_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
@@ -221,6 +223,7 @@ class DashboardProviderResult:
     warnings: list[str]
     metadata: dict[str, Any]
     completeness: str
+    provider_authority: dict[str, Any] | None
 
 
 @dataclass(frozen=True)
@@ -330,6 +333,7 @@ class UpstreamDashboardProvider:
         self._state = DashboardProviderState()
         self._lock = threading.Lock()
         self._registry = UpstreamTrustRegistry(enabled=False, public_key="")
+        self._configured_endpoint_host: str | None = None
 
     def configure(
         self,
@@ -340,6 +344,13 @@ class UpstreamDashboardProvider:
     ) -> None:
         endpoint = parse_upstream_dashboard_endpoint(
             settings.upstream_dashboard_mcp_url
+        )
+        endpoint_host = urlsplit(endpoint.url).hostname if endpoint else None
+        self._configured_endpoint_host = (
+            endpoint_host
+            if isinstance(endpoint_host, str)
+            and CANONICAL_PROVIDER_HOST.fullmatch(endpoint_host)
+            else None
         )
         self._known_secrets = tuple(
             dict.fromkeys(
@@ -490,6 +501,9 @@ class UpstreamDashboardProvider:
                 warnings=warnings[:20],
                 metadata=self._metadata(exchange.handshake, completeness),
                 completeness=completeness,
+                provider_authority=self._optional_dashboard_provider_authority(
+                    exchange.handshake
+                ),
             )
 
         return await self._execute(
@@ -610,6 +624,9 @@ class UpstreamDashboardProvider:
                 warnings=warnings[:20],
                 metadata=self._metadata(exchange.handshake, completeness),
                 completeness=completeness,
+                provider_authority=self._optional_dashboard_provider_authority(
+                    exchange.handshake
+                ),
             )
 
         arguments: dict[str, Any] = {
@@ -631,10 +648,24 @@ class UpstreamDashboardProvider:
         """Require the complete exact catalog and two fixed write-path tools."""
 
         self._validate_handshake(handshake)
+        self._dashboard_provider_authority(handshake)
+
+    def _dashboard_provider_authority(
+        self, handshake: McpDashboardHandshake
+    ) -> dict[str, Any]:
+        """Return exact binary-owned provider authority for this catalog."""
+
         release = load_reviewed_upstream_release_registry().by_version.get(
             handshake.server_version
         )
-        if release is None:
+        if (
+            release is None
+            or release.dashboard_attestation_status != "reviewed"
+            or not release.dashboard_attestation_entry_id
+            or not release.dashboard_attestation_fingerprint
+            or not release.dashboard_compiled_constraints_fingerprint
+            or self._configured_endpoint_host is None
+        ):
             raise DashboardTransportError("upstream_version_mismatch")
         validation = validate_reviewed_release_catalog(
             release,
@@ -644,16 +675,74 @@ class UpstreamDashboardProvider:
             tools=handshake.tools,
         )
         contracts = release.tool_contracts_by_name
+        getter = contracts.get(REQUIRED_DASHBOARD_TOOL)
+        setter = contracts.get(REQUIRED_DASHBOARD_WRITE_TOOL)
         if (
             not validation.valid
-            or contracts.get(REQUIRED_DASHBOARD_WRITE_TOOL) is None
-            or contracts[REQUIRED_DASHBOARD_WRITE_TOOL].policy_classification
-            != "persistent_write"
+            or getter is None
+            or setter is None
+            or setter.policy_classification != "persistent_write"
             or contracts.get(REQUIRED_BEST_PRACTICES_TOOL) is None
             or contracts[REQUIRED_BEST_PRACTICES_TOOL].policy_classification
             != "automatic_read"
         ):
             raise DashboardTransportError("reviewed_contract_mismatch")
+        from ..f3_dashboard.identity import (
+            build_provider_authority,
+            reviewed_tool_contract_hash,
+        )
+        from ..f3_dashboard.provider import EXACT_CONTRACTS, admit_provider_contract
+
+        exact_setter = EXACT_CONTRACTS.get(handshake.server_version)
+        if exact_setter is None:
+            raise DashboardTransportError("reviewed_contract_mismatch")
+        expected_setter = {
+            "input_schema_fingerprint": exact_setter.input_schema_fingerprint,
+            "annotation_fingerprint": exact_setter.annotation_fingerprint,
+            "description_fingerprint": exact_setter.description_fingerprint,
+            "output_contract_fingerprint": exact_setter.output_contract_fingerprint,
+            "runtime_contract_fingerprint": exact_setter.runtime_contract_fingerprint,
+            "policy_classification": exact_setter.policy_classification,
+        }
+        if any(
+            getattr(setter, field) != expected
+            for field, expected in expected_setter.items()
+        ):
+            raise DashboardTransportError("reviewed_contract_mismatch")
+        setter_admission = admit_provider_contract(exact_setter)
+        authority = build_provider_authority(
+            # Supervisor DNS replaces the canonical add-on slug underscore
+            # with a hyphen. Mirror the reviewed lifecycle identity mapping so
+            # dashboard and reload operations contend on the same lock key.
+            provider_slug=self._configured_endpoint_host.replace("-", "_"),
+            server_name=handshake.server_name,
+            upstream_version=handshake.server_version,
+            protocol_version=handshake.protocol_version,
+            compatibility_entry=release.entry_id,
+            source_commit=release.source_commit,
+            image_index_digest=release.image_index_digest,
+            contract_family=expected_contract_family(handshake.server_version),
+            dashboard_attestation_fingerprint=(
+                release.dashboard_attestation_fingerprint
+            ),
+            compiled_constraints_fingerprint=(
+                release.dashboard_compiled_constraints_fingerprint
+            ),
+            getter_contract_hash=reviewed_tool_contract_hash(getter),
+            setter_contract_hash=setter_admission.provider_contract_hash,
+            catalog_fingerprint=release.catalog_fingerprint,
+        )
+        return asdict(authority)
+
+    def _optional_dashboard_provider_authority(
+        self, handshake: McpDashboardHandshake
+    ) -> dict[str, Any] | None:
+        """Return internal write authority without changing read availability."""
+
+        try:
+            return self._dashboard_provider_authority(handshake)
+        except (DashboardTransportError, ValueError, TypeError):
+            return None
 
     async def best_practices_acknowledgement_key(self) -> str:
         """Read the public rotating strict-BPS receipt before write intent."""

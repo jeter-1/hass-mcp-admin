@@ -56,9 +56,23 @@ SEVEN_THIRTEEN = CONTRACTS / "ha_mcp_7_13_dashboard_read_v1.json"
 SEVEN_FOURTEEN = CONTRACTS / "ha_mcp_7_14_dashboard_read_v2.json"
 EIGHT_ZERO = CONTRACTS / "ha_mcp_8_0_dashboard_read_v3.json"
 EIGHT_ONE = CONTRACTS / "ha_mcp_8_1_dashboard_read_v3.json"
+EIGHT_FOUR = (
+    ROOT
+    / "docs"
+    / "evidence"
+    / "upstream-read-compatibility"
+    / "ha-mcp-8.4.1.json"
+)
 
 
 def tool_for(version):
+    if version == "8.4.1":
+        evidence = json.loads(EIGHT_FOUR.read_text(encoding="utf-8"))
+        return next(
+            tool
+            for tool in evidence["tools"]
+            if tool.get("name") == "ha_config_get_dashboard"
+        )
     path = (
         SEVEN_THIRTEEN
         if version == "7.13.0"
@@ -172,6 +186,7 @@ class ContractFamilyTests(unittest.TestCase):
                 "8.1.0",
                 "8.1.1",
                 "8.2.0",
+                "8.4.1",
             },
         )
         for version in entries:

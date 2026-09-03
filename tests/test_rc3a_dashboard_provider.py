@@ -1045,6 +1045,8 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["data"]["truncated"])
         self.assertEqual(result["metadata"]["provider"], PROVIDER_ID)
         self.assertEqual(result["metadata"]["completeness"], "partial")
+        self.assertNotIn("dashboard_provider_authority", result["metadata"])
+        self.assertNotIn("provider_slug", json.dumps(result))
         self.assertNotIn("unexpected", json.dumps(result))
         self.assertEqual(transport.tool_dispatch_count, 1)
         self.assertEqual(

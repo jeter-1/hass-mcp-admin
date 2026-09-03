@@ -35,7 +35,7 @@ from .models import PatchCompilation, PatchEffect, PatchKind, PatchOperation
 
 
 _OPERATION_KEYS = frozenset({"operation_id", "operation", "path", "value"})
-_FUZZY_TOKENS = frozenset({"*", "**", "-", ".", ".."})
+_FUZZY_TOKENS = frozenset({"*", "**", ".", ".."})
 
 
 def _decode_token(token: str) -> str:
@@ -58,8 +58,10 @@ def _encode_token(token: str) -> str:
     return token.replace("~", "~0").replace("/", "~1")
 
 
-def parse_pointer(path: str) -> tuple[str, ...]:
-    """Parse one canonical non-root JSON Pointer without selector extensions."""
+def parse_pointer(
+    path: str, *, operation: PatchKind | str | None = None
+) -> tuple[str, ...]:
+    """Parse one canonical pointer with only RFC 6902 final append syntax."""
 
     if not isinstance(path, str) or not path or not path.startswith("/"):
         raise PatchValidationError("Patch paths must be non-root RFC 6901 pointers")
@@ -71,7 +73,14 @@ def parse_pointer(path: str) -> tuple[str, ...]:
     tokens = tuple(_decode_token(token) for token in encoded_tokens)
     if any(not token for token in tokens):
         raise PatchValidationError("Empty pointer tokens are prohibited")
-    for token in tokens:
+    append_allowed = operation in {PatchKind.ADD, PatchKind.ADD.value}
+    for index, token in enumerate(tokens):
+        if token == "-":
+            if append_allowed and index == len(tokens) - 1:
+                continue
+            raise PatchValidationError(
+                "The array append token is valid only as the final token of add"
+            )
         if (
             token in _FUZZY_TOKENS
             or "*" in token
@@ -104,7 +113,7 @@ def _canonical_operation(raw: Mapping[str, Any]) -> PatchOperation:
     except (TypeError, ValueError) as exc:
         raise PatchValidationError("Only add, replace, and remove are supported") from exc
     path = raw["path"]
-    tokens = parse_pointer(path)
+    tokens = parse_pointer(path, operation=operation)
     value_present = "value" in raw
     if operation is PatchKind.REMOVE and value_present:
         raise PatchValidationError("Remove operations must not include a value")
@@ -166,21 +175,21 @@ def patch_projection(operations: Iterable[PatchOperation]) -> list[dict[str, Any
     return projected
 
 
-def _list_index(token: str, *, length: int) -> int:
+def _list_index(token: str, *, length: int, allow_end: bool = False) -> int:
     if token.startswith("-"):
-        raise PatchCompilationError("Negative and append list indices are prohibited")
+        raise PatchCompilationError("Negative list indices are prohibited")
     if not token.isdigit():
         raise PatchCompilationError("List paths require canonical numeric indices")
     if len(token) > 1 and token.startswith("0"):
         raise PatchCompilationError("Leading-zero list indices are prohibited")
     index = int(token)
-    if index >= length:
-        raise PatchCompilationError("List index is outside the existing collection")
+    if index > length or (index == length and not allow_end):
+        raise PatchCompilationError("List index is outside the allowed collection boundary")
     return index
 
 
 def _resolve_parent(
-    document: dict[str, Any], tokens: tuple[str, ...]
+    document: dict[str, Any], tokens: tuple[str, ...], operation: PatchKind
 ) -> tuple[Any, str | int]:
     current: Any = document
     for token in tokens[:-1]:
@@ -195,9 +204,19 @@ def _resolve_parent(
             raise PatchCompilationError("Patch parent is not a collection")
     final_token = tokens[-1]
     if isinstance(current, dict):
+        if final_token == "-":
+            raise PatchCompilationError("The append token requires a list parent")
         return current, final_token
     if isinstance(current, list):
-        index = _list_index(final_token, length=len(current))
+        if final_token == "-":
+            if operation is not PatchKind.ADD:
+                raise PatchCompilationError("The append token is supported only for add")
+            return current, len(current)
+        index = _list_index(
+            final_token,
+            length=len(current),
+            allow_end=operation is PatchKind.ADD,
+        )
         return current, index
     raise PatchCompilationError("Patch target parent is not a collection")
 
@@ -264,18 +283,22 @@ def semantic_leaf_difference(
 def _apply_one(
     document: dict[str, Any], operation: PatchOperation
 ) -> PatchEffect:
-    parent, target = _resolve_parent(document, operation.tokens)
+    parent, target = _resolve_parent(
+        document, operation.tokens, operation.operation
+    )
     is_mapping = isinstance(parent, dict)
-    present = target in parent if is_mapping else True
-    previous = deepcopy(parent[target]) if present else None
     if operation.operation is PatchKind.ADD:
-        if not is_mapping:
-            raise PatchCompilationError("List insertion and append are prohibited")
-        if present:
-            raise PatchCompilationError("Add requires an absent mapping member")
         proposed = clone_json(operation.value)
-        leaf_count = _leaf_weight(proposed)
-        parent[target] = proposed
+        if is_mapping:
+            if target in parent:
+                raise PatchCompilationError("Add requires an absent mapping member")
+            parent[target] = proposed
+            leaf_count = _leaf_weight(proposed)
+        elif isinstance(parent, list) and isinstance(target, int):
+            parent.insert(target, proposed)
+            leaf_count = _leaf_weight(proposed) + 1
+        else:
+            raise PatchCompilationError("Array add requires a list parent")
         return PatchEffect(
             operation.operation_id,
             operation.operation,
@@ -287,6 +310,8 @@ def _apply_one(
             leaf_count,
         )
 
+    present = target in parent if is_mapping else True
+    previous = deepcopy(parent[target]) if present else None
     if not present:
         raise PatchCompilationError("Replace and remove require an existing target")
     if operation.operation is PatchKind.REPLACE:

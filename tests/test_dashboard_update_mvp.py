@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 import json
 from pathlib import Path
@@ -29,6 +30,13 @@ from ha_mcp_engineering.errors import (  # noqa: E402
 )
 from ha_mcp_engineering.f3_dashboard.errors import (  # noqa: E402
     ArtifactStorageError,
+    RawEvidenceError,
+)
+from ha_mcp_engineering.f3_dashboard.gateway import (  # noqa: E402
+    DashboardExecutionGateway,
+)
+from ha_mcp_engineering.f3_dashboard.json_codec import (  # noqa: E402
+    upstream_config_hash,
 )
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     F3RuntimeIntegration,
@@ -66,7 +74,8 @@ class _UnusedConfigurationGateway(ConfigurationResourceGateway):
 
 
 class _DashboardGateway:
-    def __init__(self) -> None:
+    def __init__(self, *, version: str = "8.4.1") -> None:
+        self.version = version
         self.configuration = {"title": "Before", "views": []}
         self.preread_count = 0
         self.best_practice_count = 0
@@ -81,7 +90,7 @@ class _DashboardGateway:
         return make_preread(
             deepcopy(self.configuration),
             url_path=url_path,
-            version="8.1.1",
+            version=self.version,
         )
 
     async def best_practice_key(self) -> str:
@@ -122,16 +131,37 @@ class _DashboardGateway:
 
 
 class _ExactProviderTransport:
-    def __init__(self, *, omit_tool: str | None = None) -> None:
+    def __init__(
+        self, *, version: str = "8.1.1", omit_tool: str | None = None
+    ) -> None:
         capture = json.loads(
             (
                 ROOT
                 / "docs"
                 / "evidence"
                 / "upstream-read-compatibility"
-                / "ha-mcp-8.1.1.json"
+                / f"ha-mcp-{version}.json"
             ).read_text(encoding="utf-8")
         )
+        review_path = (
+            ROOT
+            / "docs"
+            / "evidence"
+            / "upstream-read-compatibility"
+            / f"ha-mcp-{version}-contract-review.json"
+        )
+        if review_path.exists():
+            review = json.loads(review_path.read_text(encoding="utf-8"))
+            runtime_order = review.get("runtime_catalog", {}).get(
+                "runtime_tool_order"
+            )
+            if isinstance(runtime_order, list):
+                captured_by_name = {
+                    tool["name"]: tool for tool in capture["tools"]
+                }
+                capture["tools"] = [
+                    captured_by_name[name] for name in runtime_order
+                ]
         tools = [
             tool for tool in capture["tools"]
             if tool.get("name") != omit_tool
@@ -139,12 +169,14 @@ class _ExactProviderTransport:
         self.handshake = McpDashboardHandshake(
             protocol_version="2025-03-26",
             server_name="ha-mcp",
-            server_version="8.1.1",
+            server_version=version,
             tools=tuple(tools),
             connection_latency_ms=1.0,
         )
         self.guide_count = 0
         self.write_count = 0
+        self.read_count = 0
+        self.configuration = {"title": "Before", "views": []}
         self.write_is_error = False
         self.write_payload = {
             "success": True,
@@ -154,6 +186,40 @@ class _ExactProviderTransport:
             "config_updated": True,
             "metadata_updated": False,
         }
+
+    async def execute_dashboard_read(self, arguments, validator):
+        validator(self.handshake)
+        self.read_count += 1
+        if arguments.get("list_only") is True:
+            payload = {
+                "success": True,
+                "action": "list",
+                "dashboards": [
+                    {
+                        "id": "operations",
+                        "url_path": "operations",
+                        "mode": "storage",
+                        "title": "Operations",
+                    }
+                ],
+                "count": 1,
+            }
+        else:
+            payload = {
+                "success": True,
+                "action": "get",
+                "url_path": arguments["url_path"],
+                "config": deepcopy(self.configuration),
+                "config_hash": upstream_config_hash(self.configuration),
+            }
+        return McpDashboardRead(
+            self.handshake,
+            {
+                "content": [{"type": "text", "text": json.dumps(payload)}],
+                "isError": False,
+            },
+            tool_call_latency_ms=1.0,
+        )
 
     async def execute_best_practices_read(self, validator):
         validator(self.handshake)
@@ -179,6 +245,7 @@ class _ExactProviderTransport:
         validator(self.handshake)
         self.write_count += 1
         self.arguments = deepcopy(arguments)
+        self.configuration = deepcopy(arguments["config"])
         return McpDashboardRead(
             self.handshake,
             {
@@ -194,11 +261,10 @@ class _ExactProviderTransport:
         )
 
 
-async def _provider_identity():
-    return {
-        "slug": "ha-mcp",
-        "evidence_hash": "a" * 64,
-    }
+async def _unrelated_lifecycle_provider_identity():
+    raise AssertionError(
+        "dashboard authority must not be reconstructed from lifecycle health"
+    )
 
 
 class DashboardWriteArgumentTests(unittest.TestCase):
@@ -230,10 +296,89 @@ class DashboardWriteArgumentTests(unittest.TestCase):
 
 
 class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exact_8_4_1_inventory_configuration_and_authority_succeed(self):
+        transport = _ExactProviderTransport(version="8.4.1")
+        provider = UpstreamDashboardProvider()
+        provider._transport = transport
+        provider._configured_endpoint_host = "hass-mcp-engineering"
+        gateway = DashboardExecutionGateway(provider, response_limit=60_000)
+
+        preread = await gateway.preread(url_path="operations")
+
+        self.assertEqual(preread.upstream_version, "8.4.1")
+        self.assertEqual(preread.compatibility_entry, "ha-mcp-v8.4.1-7823b365")
+        self.assertEqual(preread.operational_identity.target_url_path, "operations")
+        self.assertEqual(
+            preread.operational_identity.authority.provider_slug,
+            "hass_mcp_engineering",
+        )
+        self.assertEqual(
+            preread.operational_identity.authority.source_commit,
+            "701a7c26ac0e2309c7883a627d31873ab1510077",
+        )
+        self.assertEqual(transport.read_count, 2)
+        self.assertEqual(transport.write_count, 0)
+
+    async def test_getter_without_setter_is_readable_but_not_plannable(self):
+        transport = _ExactProviderTransport(
+            version="8.4.1", omit_tool="ha_config_set_dashboard"
+        )
+        provider = UpstreamDashboardProvider()
+        provider._transport = transport
+        provider._configured_endpoint_host = "hass-mcp-engineering"
+
+        inventory = await provider.list_dashboards(
+            limit=5, response_limit=60_000
+        )
+        self.assertEqual(inventory.completeness, "complete")
+        self.assertIsNone(
+            inventory.provider_authority
+        )
+
+        gateway = DashboardExecutionGateway(provider, response_limit=60_000)
+        with self.assertRaises(RawEvidenceError):
+            await gateway.preread(url_path="operations")
+
+        self.assertEqual(transport.read_count, 3)
+        self.assertEqual(transport.write_count, 0)
+
+    async def test_setter_without_getter_fails_before_provider_call(self):
+        transport = _ExactProviderTransport(
+            version="8.4.1", omit_tool="ha_config_get_dashboard"
+        )
+        provider = UpstreamDashboardProvider()
+        provider._transport = transport
+        provider._configured_endpoint_host = "hass-mcp-engineering"
+
+        with self.assertRaises(DashboardProviderError):
+            await provider.list_dashboards(limit=5, response_limit=60_000)
+
+        self.assertEqual(transport.read_count, 0)
+        self.assertEqual(transport.write_count, 0)
+
+    async def test_exact_8_4_1_setter_is_binary_owned_and_callable_once(self):
+        transport = _ExactProviderTransport(version="8.4.1")
+        provider = UpstreamDashboardProvider()
+        provider._transport = transport
+        provider._configured_endpoint_host = "hass-mcp-engineering"
+
+        key = await provider.best_practices_acknowledgement_key()
+        result = await provider.execute_governed_dashboard_update(
+            url_path="operations",
+            configuration={"title": "After", "views": []},
+            config_hash=upstream_config_hash(transport.configuration),
+            best_practice_key=key,
+        )
+
+        self.assertEqual(transport.guide_count, 1)
+        self.assertEqual(transport.write_count, 1)
+        self.assertEqual(result["provider_operation"], "ha_config_set_dashboard")
+        self.assertFalse(result["fallback_occurred"])
     async def test_exact_catalog_guide_and_setter_contract_succeed_once(self):
         transport = _ExactProviderTransport()
         provider = UpstreamDashboardProvider()
         provider._transport = transport
+        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         key = await provider.best_practices_acknowledgement_key()
         result = await provider.execute_governed_dashboard_update(
@@ -259,6 +404,7 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         )
         provider = UpstreamDashboardProvider()
         provider._transport = transport
+        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         with self.assertRaises(DashboardProviderError):
             await provider.best_practices_acknowledgement_key()
@@ -271,6 +417,7 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         transport.write_payload["config_updated"] = False
         provider = UpstreamDashboardProvider()
         provider._transport = transport
+        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         key = await provider.best_practices_acknowledgement_key()
         with self.assertRaises(DashboardProviderError):
@@ -297,6 +444,7 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         }
         provider = UpstreamDashboardProvider()
         provider._transport = transport
+        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         with self.assertRaises(DashboardProviderError) as caught:
             await provider.execute_governed_dashboard_update(
@@ -336,7 +484,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             _UnusedConfigurationGateway(),
             AuditLogger(str(self.root / "audit.jsonl"), "test-access-secret"),
             dashboard_gateway=self.dashboard,
-            provider_identity_reader=_provider_identity,
+            provider_identity_reader=_unrelated_lifecycle_provider_identity,
         )
         self.runtime = F3RuntimeIntegration(
             service=self.service,
@@ -345,7 +493,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             backup_gateway=None,
             lifecycle_gateway=None,
             dashboard_gateway=self.dashboard,
-            provider_identity_reader=_provider_identity,
+            provider_identity_reader=_unrelated_lifecycle_provider_identity,
             retention_days=90,
         )
         self.service.f3_runtime = self.runtime
@@ -354,7 +502,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.temporary.cleanup()
 
-    async def _plan(self):
+    async def _plan(self, *, proposed_title: str = "After"):
         return await self.service.create_dashboard_update_plan(
             title="Rename operations dashboard",
             description="Bounded existing-dashboard update.",
@@ -364,7 +512,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
                     "operation_id": "rename",
                     "operation": "replace",
                     "path": "/title",
-                    "value": "After",
+                    "value": proposed_title,
                 }
             ],
             expiration_minutes=30,
@@ -380,6 +528,12 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(review["operation"], "update_dashboard")
         self.assertTrue(review["operational_review"]["provider_arguments"]["non_atomic"])
         self.assertIn("dashboard_review", review)
+        projection = review["dashboard_review"]["approval_projection"]
+        self.assertTrue(projection["complete"])
+        self.assertEqual(projection["operation_count"], 1)
+        self.assertEqual(
+            projection["operations"][0]["proposed"]["state"], "value"
+        )
         granted = await self.service.decide_external_approval(
             plan_id=created["plan_id"],
             challenge_id=pending["challenge_id"],
@@ -390,22 +544,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             decision="approve",
             approver_principal="home_assistant_admin_ingress:test-reviewer",
         )
-        if granted["status"] == "approval_pending":
-            _, csrf = await self.service.issue_external_csrf(
-                created["plan_id"], granted["challenge_id"]
-            )
-            granted = await self.service.decide_external_approval(
-                plan_id=created["plan_id"],
-                challenge_id=granted["challenge_id"],
-                expected_plan_hash=created["plan_hash"],
-                approval_kind=granted["approval_kind"],
-                approval_action=granted["approval_action"],
-                csrf_nonce=csrf,
-                decision="approve",
-                approver_principal=(
-                    "home_assistant_admin_ingress:test-reviewer"
-                ),
-            )
+        self.assertNotEqual(granted["status"], "approval_pending")
         return granted
 
     def _execution_evidence(self, task_id: str):
@@ -457,6 +596,109 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second["task_id"], result["task_id"])
         self.assertEqual(self.dashboard.write_count, 1)
 
+    async def test_exact_8_2_0_plan_uses_dashboard_not_lifecycle_authority(self):
+        self.dashboard.version = "8.2.0"
+
+        created = await self._plan()
+
+        self.assertEqual(created["status"], "awaiting_approval")
+        self.assertEqual(
+            created["approval_lifecycle"], "approval_not_requested"
+        )
+        self.assertEqual(self.dashboard.preread_count, 1)
+        self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_exact_action_change_is_elevated_but_owner_actionable(self):
+        self.dashboard.configuration = {
+            "title": "Before",
+            "views": [{"title": "Main", "cards": []}],
+        }
+        created = await self.service.create_dashboard_update_plan(
+            title="Add exact dashboard action",
+            description="A disclosed exact configuration change.",
+            url_path="main-operations",
+            patch_operations=[
+                {
+                    "operation_id": "append-action-card",
+                    "operation": "add",
+                    "path": "/views/0/cards/-",
+                    "value": {
+                        "type": "button",
+                        "entity": "light.synthetic_vanity",
+                        "tap_action": {
+                            "action": "perform-action",
+                            "perform_action": "light.turn_off",
+                            "target": {
+                                "entity_id": "light.synthetic_vanity"
+                            },
+                        },
+                    },
+                }
+            ],
+            expiration_minutes=30,
+        )
+
+        self.assertEqual(
+            created["policy_decision"]["policy_class"], "elevated_admin"
+        )
+        self.assertEqual(
+            created["policy_decision"]["required_acknowledgements"],
+            ["plan_approval"],
+        )
+        self.assertTrue(created["approval_actionable"])
+        granted = await self._approve(created)
+        self.assertEqual(granted["approval_bundle_state"], "fully_approved")
+        self.assertEqual(self.dashboard.write_count, 0)
+
+        result = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        self.assertEqual(self.dashboard.write_count, 1)
+
+    async def test_concurrent_duplicate_apply_commits_at_most_once(self):
+        created = await self._plan()
+        await self._approve(created)
+
+        results = await asyncio.gather(
+            self.service.apply(created["plan_id"], created["plan_hash"]),
+            self.service.apply(created["plan_id"], created["plan_hash"]),
+            return_exceptions=True,
+        )
+
+        self.assertEqual(self.dashboard.write_count, 1)
+        self.assertTrue(
+            any(
+                isinstance(item, dict)
+                and item.get("task_state") == "succeeded_verified"
+                for item in results
+            )
+        )
+
+    async def test_second_plan_restores_original_configuration_exactly(self):
+        original = deepcopy(self.dashboard.configuration)
+        original_hash = upstream_config_hash(original)
+
+        changed = await self._plan()
+        await self._approve(changed)
+        changed_result = await self.service.apply(
+            changed["plan_id"], changed["plan_hash"]
+        )
+        self.assertEqual(changed_result["task_state"], "succeeded_verified")
+
+        restored = await self._plan(proposed_title="Before")
+        await self._approve(restored)
+        restored_result = await self.service.apply(
+            restored["plan_id"], restored["plan_hash"]
+        )
+
+        self.assertEqual(restored_result["task_state"], "succeeded_verified")
+        self.assertEqual(self.dashboard.write_count, 2)
+        self.assertEqual(self.dashboard.configuration, original)
+        self.assertEqual(
+            upstream_config_hash(self.dashboard.configuration), original_hash
+        )
+
     async def test_stale_dashboard_fails_before_dispatch(self):
         created = await self._plan()
         await self._approve(created)
@@ -469,7 +711,20 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["task_state"], "failed_pre_dispatch")
         self.assertEqual(self.dashboard.write_count, 0)
 
+    async def test_provider_authority_drift_fails_before_dispatch(self):
+        created = await self._plan()
+        await self._approve(created)
+        self.dashboard.version = "8.2.0"
+
+        result = await self.service.apply(
+            created["plan_id"], created["plan_hash"]
+        )
+
+        self.assertEqual(result["task_state"], "failed_pre_dispatch")
+        self.assertEqual(self.dashboard.write_count, 0)
+
     async def test_ha_mcp_8_1_1_hyphenless_target_fails_during_planning(self):
+        self.dashboard.version = "8.1.1"
         with self.assertRaises(GovernanceError) as caught:
             await self.service.create_dashboard_update_plan(
                 title="Rename map dashboard",

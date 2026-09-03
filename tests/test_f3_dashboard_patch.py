@@ -87,7 +87,7 @@ class DashboardPatchCompilerTests(unittest.TestCase):
         with self.assertRaises(PatchValidationError):
             parse_pointer("/a~2b")
 
-    def test_root_wildcard_predicate_fuzzy_and_append_are_rejected(self):
+    def test_root_wildcard_predicate_and_fuzzy_forms_are_rejected(self):
         invalid = ("", "/views/*", "/views/[0]", "/views/?title=x", "/views/..", "/views/-")
         for path in invalid:
             with self.subTest(path=path), self.assertRaises(PatchValidationError):
@@ -104,19 +104,55 @@ class DashboardPatchCompilerTests(unittest.TestCase):
             with self.subTest(path=path), self.assertRaises(PatchCompilationError):
                 self.compile(operation("replace", path, "x"))
 
-    def test_collection_semantics_fail_closed(self):
+    def test_mapping_and_missing_target_semantics_fail_closed(self):
         cases = (
             operation("replace", "/missing", 1),
             operation("add", "/title", "duplicate"),
             operation("remove", "/missing"),
-            operation("add", "/views/0", {"title": "insert"}),
-            operation("add", "/views/-", {"title": "append"}),
         )
         for candidate in cases:
             with self.subTest(candidate=candidate), self.assertRaises(
                 (PatchCompilationError, PatchValidationError)
             ):
                 self.compile(candidate)
+
+    def test_array_add_supports_append_and_canonical_insertion(self):
+        config = {"items": ["a", "b", "c"]}
+        cases = (
+            ("/items/-", ["a", "b", "c", "x"]),
+            ("/items/0", ["x", "a", "b", "c"]),
+            ("/items/1", ["a", "x", "b", "c"]),
+            ("/items/3", ["a", "b", "c", "x"]),
+        )
+        for path, expected in cases:
+            with self.subTest(path=path):
+                original = deepcopy(config)
+                compiled = compile_dashboard_patch(
+                    config, [operation("add", path, "x")]
+                )
+                self.assertEqual(compiled.resulting_configuration["items"], expected)
+                self.assertEqual(config, original)
+        self.assertEqual(
+            parse_pointer("/items/-", operation="add"), ("items", "-")
+        )
+
+    def test_invalid_array_add_and_append_forms_fail_closed(self):
+        cases = (
+            ({"items": ["a"]}, operation("add", "/items/2", "x")),
+            ({"items": ["a"]}, operation("add", "/items/-1", "x")),
+            ({"items": ["a"]}, operation("add", "/items/one", "x")),
+            ({"items": ["a"]}, operation("add", "/items/01", "x")),
+            ({"items": [["a"]]}, operation("add", "/items/-/0", "x")),
+            ({"items": ["a"]}, operation("replace", "/items/-", "x")),
+            ({"items": ["a"]}, operation("remove", "/items/-")),
+            ({"items": {}}, operation("add", "/items/-", "x")),
+            ({"items": ["a"]}, operation("add", "/items/key", "x")),
+        )
+        for config, candidate in cases:
+            with self.subTest(candidate=candidate), self.assertRaises(
+                (PatchCompilationError, PatchValidationError)
+            ):
+                compile_dashboard_patch(config, [candidate])
 
     def test_duplicate_alias_and_parent_child_paths_are_rejected(self):
         with self.assertRaises(PatchValidationError):

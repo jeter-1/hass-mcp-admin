@@ -157,7 +157,7 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
 def expected_dashboard_attestation_status(version: str) -> str:
     """Return the exact reviewed dashboard disposition for a release."""
 
-    return "quarantined" if version == "8.4.1" else "reviewed"
+    return "reviewed"
 
 
 class _HeldDispositionRecordingTransport(McpReadGatewayTransport):

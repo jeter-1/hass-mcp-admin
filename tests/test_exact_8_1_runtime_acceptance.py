@@ -105,7 +105,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "c5926e759d86557bbe73a46162859b26119b2b76affed0984069019d4d6740c5",
         )
         self.assertEqual(addon_acceptance.EXPECTED_AUTOMATIC_READ_COUNT, 25)
-        self.assertEqual(addon_acceptance.EXPECTED_DASHBOARD_STATUS, "quarantined")
+        self.assertEqual(addon_acceptance.EXPECTED_DASHBOARD_STATUS, "reviewed")
         self.assertFalse(
             addon_acceptance.EXPECTED_OPERATIONAL_PLANNING_SUPPORTED
         )
@@ -134,7 +134,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             gateway_acceptance.expected_dashboard_attestation_status(
                 "8.4.1"
             ),
-            "quarantined",
+            "reviewed",
         )
         for version in ("8.0.0", "8.1.0", "8.1.1", "8.2.0"):
             with self.subTest(version=version):

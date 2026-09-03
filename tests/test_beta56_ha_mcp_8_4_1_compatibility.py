@@ -23,10 +23,7 @@ from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
 )
 from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardHandshake,
-)
-from ha_mcp_engineering.errors import (  # noqa: E402
-    DashboardProviderError,
-    ErrorCode,
+    McpDashboardRead,
 )
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UpstreamDashboardProvider,
@@ -88,7 +85,7 @@ UNCHANGED_8_4_1_READS = EXACT_8_4_1_READS - {
 }
 
 
-class _HeldDashboardTransport:
+class _ExactDashboardTransport:
     def __init__(self, tools: list[dict]) -> None:
         self.handshake = McpDashboardHandshake(
             protocol_version="2025-03-26",
@@ -104,7 +101,26 @@ class _HeldDashboardTransport:
         self.provider_attempts += 1
         capability_validator(self.handshake)
         self.tool_calls += 1
-        raise AssertionError("held dashboard validation permitted a tool call")
+        return McpDashboardRead(
+            handshake=self.handshake,
+            call_result={
+                "content": [
+                    {
+                        "type": "text",
+                        "text": json.dumps(
+                            {
+                                "success": True,
+                                "action": "list",
+                                "dashboards": [],
+                                "count": 0,
+                            }
+                        ),
+                    }
+                ],
+                "isError": False,
+            },
+            tool_call_latency_ms=1.0,
+        )
 
 
 class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
@@ -223,12 +239,12 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
                 self.capture["error_shapes"][probe],
                 _capture_for_release(self.previous)["error_shapes"][probe],
             )
-        self.assertEqual(self.release.dashboard_attestation_status, "quarantined")
+        self.assertEqual(self.release.dashboard_attestation_status, "reviewed")
         self.assertEqual(
             dict(self.release.provider_dispositions),
             {
                 "backup": "held",
-                "dashboard": "held",
+                "dashboard": "admitted",
                 "lifecycle": "held",
                 "read_gateway": "admitted",
             },
@@ -318,27 +334,22 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 
-    async def test_8_4_1_dashboard_provider_is_held_before_tool_call(self) -> None:
-        transport = _HeldDashboardTransport(self.capture["tools"])
+    async def test_8_4_1_dashboard_provider_is_separately_admitted(self) -> None:
+        transport = _ExactDashboardTransport(self.capture["tools"])
         provider = UpstreamDashboardProvider()
         provider.configure(
             _settings(self.signer.public_key_base64),
             transport=transport,
         )
-        with self.assertRaises(DashboardProviderError) as caught:
-            await provider.list_dashboards(limit=5, response_limit=60_000)
-        self.assertEqual(
-            caught.exception.code,
-            ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
-        )
+        result = await provider.list_dashboards(limit=5, response_limit=60_000)
+        self.assertEqual(result.completeness, "complete")
+        self.assertEqual(result.data, {"count": 0, "dashboards": [], "truncated": False})
         self.assertEqual(transport.provider_attempts, 1)
-        self.assertEqual(transport.tool_calls, 0)
+        self.assertEqual(transport.tool_calls, 1)
         health = provider.health_snapshot()
         self.assertEqual(health["request_count"], 1)
-        self.assertEqual(health["success_count"], 0)
-        self.assertEqual(
-            health["last_failure_category"], "reviewed_contract_mismatch"
-        )
+        self.assertEqual(health["success_count"], 1)
+        self.assertIsNone(health["last_failure_category"])
 
     async def test_truthful_8_4_1_evidence_restores_21_on_8_2_profile(self) -> None:
         entry = _signed_entry_for(self.release, version="8.4.2")

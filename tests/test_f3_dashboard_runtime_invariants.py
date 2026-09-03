@@ -43,9 +43,12 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
         self.assertEqual(
             set(contacts),
             {
+                "hass_mcp_engineering_beta/ha_mcp_engineering/approval_web.py",
                 "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
                 "hass_mcp_engineering_beta/ha_mcp_engineering/governance/runtime.py",
+                "hass_mcp_engineering_beta/ha_mcp_engineering/governance/policy.py",
                 "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+                "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_dashboard.py",
             },
         )
 
