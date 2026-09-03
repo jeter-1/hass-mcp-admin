@@ -62,6 +62,7 @@ from ..request_context import current_request_id, current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
+    CANONICAL_TOOL_ORDER_RELEASES,
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
     REVIEWED_UPSTREAM_SERVER,
     ReviewedUpstreamRelease,
@@ -109,6 +110,11 @@ _REVIEWED_SUCCESS_ENVELOPE_MODELS = {
     ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
     (
         "8.2.0",
+        REVIEWED_PROTOCOL_VERSION,
+        "ha_get_hacs_info",
+    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
+    (
+        "8.4.1",
         REVIEWED_PROTOCOL_VERSION,
         "ha_get_hacs_info",
     ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
@@ -2121,20 +2127,26 @@ class UpstreamReadGateway:
         assert selected_policy is not None
         policy_by_name = selected_policy.by_name
         observed_reviewed: dict[str, list[dict[str, Any]]] = {}
+        observed_reviewed_order: list[str] = []
         unreviewed: list[str] = []
         unreviewed_occurrences: Counter[str] = Counter()
+        catalog_has_invalid_structure = False
         for item in catalog.tools:
             name = item.get("name") if isinstance(item, dict) else None
             if not isinstance(item, dict):
+                catalog_has_invalid_structure = True
                 unreviewed.append("[INVALID_NAME]")
                 continue
             if (
                 not isinstance(name, str)
                 or not _OBSERVED_TOOL_NAME.fullmatch(name)
             ):
+                catalog_has_invalid_structure = True
                 unreviewed.append(self._safe_observed_tool_name(name))
                 continue
             if name in policy_by_name:
+                if name not in observed_reviewed:
+                    observed_reviewed_order.append(name)
                 observed_reviewed.setdefault(name, []).append(item)
                 continue
             unreviewed_occurrences[name] += 1
@@ -2147,6 +2159,17 @@ class UpstreamReadGateway:
         quarantined: list[dict[str, Any]] = []
         quarantine_reasons: Counter[str] = Counter()
         blocked: list[dict[str, str]] = []
+        canonical_catalog_required = (
+            selected_policy.reviewed_upstream_version
+            in CANONICAL_TOOL_ORDER_RELEASES
+        )
+        catalog_structure_invalid = (
+            canonical_catalog_required and catalog_has_invalid_structure
+        )
+        catalog_order_invalid = (
+            canonical_catalog_required
+            and observed_reviewed_order != sorted(observed_reviewed_order)
+        )
         reviewed_descriptions = (
             selected_policy.reviewed_runtime_description_fingerprints_by_name
         )
@@ -2163,6 +2186,48 @@ class UpstreamReadGateway:
                     missing_reviewed_reads.append(entry.upstream_name)
                 continue
             if entry.classification == "automatic_read":
+                if catalog_structure_invalid or catalog_order_invalid:
+                    reference = _compare_tool_contract(
+                        entry,
+                        observed[0],
+                        protocol_version=catalog.protocol_version,
+                        reviewed_runtime_description_fingerprint=(
+                            reviewed_descriptions[entry.upstream_name]
+                        ),
+                        reviewed_runtime_annotation_fingerprint=(
+                            reviewed_annotations[entry.upstream_name]
+                        ),
+                        reviewed_runtime_output_schema_fingerprint=(
+                            reviewed_output_schemas[entry.upstream_name]
+                        ),
+                        reviewed_runtime_contract_fingerprint=(
+                            reviewed_contracts[entry.upstream_name]
+                            .runtime_contract_fingerprint
+                            if reviewed_contracts is not None
+                            else None
+                        ),
+                        reviewed_runtime_contract_field_fingerprints=(
+                            dict(
+                                reviewed_contracts[entry.upstream_name]
+                                .runtime_contract_field_fingerprints
+                            )
+                            if reviewed_contracts is not None
+                            else None
+                        ),
+                        runtime_contract_fingerprint_model=(
+                            runtime_contract_fingerprint_model
+                        ),
+                    )
+                    reason = (
+                        "catalog_structure_invalid"
+                        if catalog_structure_invalid
+                        else "catalog_order_mismatch"
+                    )
+                    quarantine_reasons[reason] += 1
+                    quarantined.append(
+                        _quarantine_record(reference, reason=reason)
+                    )
+                    continue
                 if len(observed) != 1:
                     reference = _compare_tool_contract(
                         entry,

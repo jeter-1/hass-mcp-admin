@@ -140,6 +140,15 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "prohibited": 1,
         "unsupported": 1,
     },
+    "8.4.1": {
+        "automatic_read": 25,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 13,
+        "persistent_write": 33,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
 }
 DELEGATED_READ_CALLS = {
     "ha_config_get_automation": {"identifier": "gateway_fixture"},
@@ -227,6 +236,7 @@ UPSTREAM_ERROR_CALLS = {
     },
     "validation": {
         "tool": "ha_search",
+        "shape_name": "invalid_search",
         "arguments": {"search_types": []},
         "upstream_code": "VALIDATION_FAILED",
         "public_code": "invalid_request",
@@ -236,6 +246,7 @@ UPSTREAM_ERROR_CALLS = {
     },
     "missing_entity": {
         "tool": "ha_get_state",
+        "shape_name": "missing_state",
         "arguments": {"entity_id": "sensor.issue_57_missing_entity"},
         "upstream_code": "ENTITY_NOT_FOUND",
         "public_code": "entity_not_found",
@@ -248,6 +259,7 @@ UPSTREAM_ERROR_CALLS = {
     },
     "missing_automation": {
         "tool": "ha_config_get_automation",
+        "shape_name": "missing_automation",
         "arguments": {"identifier": "issue_57_missing_automation"},
         "upstream_code": "RESOURCE_NOT_FOUND",
         "public_code": "automation_not_found",
@@ -260,6 +272,7 @@ UPSTREAM_ERROR_CALLS = {
     },
     "missing_registry_entity": {
         "tool": "ha_get_entity",
+        "shape_name": "missing_registry_entity",
         "arguments": {
             "entity_id": (
                 "sensor.compatibility_review_missing_registry_entity"
@@ -272,6 +285,31 @@ UPSTREAM_ERROR_CALLS = {
         "fixture_counter": (
             "websocket_reads",
             "config/entity_registry/get",
+        ),
+    },
+}
+EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
+    "invalid_search": {
+        "legacy": (
+            "63e37a2f037ff46e9908c41745aca0e368c0cb6811a28104c990113055abdfee"
+        ),
+        "8.4.1": (
+            "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939"
+        ),
+    },
+    "missing_state": {
+        "legacy": (
+            "8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c"
+        ),
+    },
+    "missing_automation": {
+        "legacy": (
+            "965faf0ef1864aad32d79da308763a92f024cf2d70cde40344832e76dbe85ba5"
+        ),
+    },
+    "missing_registry_entity": {
+        "legacy": (
+            "3e1148ad27428880af39facca3605d530996850931d3e55c5d908f69ecc2d9c8"
         ),
     },
 }
@@ -697,7 +735,28 @@ def decode_tool_result(result: Any) -> dict[str, Any]:
     raise AcceptanceFailure("tool result did not contain a bounded JSON object")
 
 
-def decode_upstream_error_code(result: Any) -> str:
+def _shape_projection(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(name): _shape_projection(item)
+            for name, item in sorted(value.items())
+        }
+    if isinstance(value, list):
+        return [_shape_projection(item) for item in value[:32]]
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return "unsupported"
+
+
+def decode_upstream_error_evidence(result: Any) -> dict[str, str]:
     require(
         getattr(result, "isError", False) is True,
         "pinned upstream error call did not set isError=true",
@@ -725,7 +784,12 @@ def decode_upstream_error_code(result: Any) -> str:
         and isinstance(value["error"].get("code"), str),
         "pinned upstream error envelope shape changed",
     )
-    return value["error"]["code"]
+    return {
+        "structured_code": value["error"]["code"],
+        "shape_fingerprint": schema_fingerprint(
+            _shape_projection(value)
+        ),
+    }
 
 
 def find_values(value: Any, key: str) -> list[Any]:
@@ -827,28 +891,36 @@ async def inspect_upstream(
                 "upstream version mismatch",
             )
             tools = await list_all_tools(session)
-            addon_inventory = decode_tool_result(
-                await session.call_tool(
-                    "ha_get_addon",
-                    UPSTREAM_ADDON_INVENTORY_ARGUMENTS,
+            tool_names = {item.get("name") for item in tools}
+            if expected_upstream_version == "8.4.1":
+                require(
+                    "ha_get_addon" not in tool_names
+                    and {"ha_get_app", "ha_manage_app"} <= tool_names,
+                    "8.4.1 app-tool transition did not match exact evidence",
                 )
-            )
-            require(
-                addon_inventory.get("success") is True,
-                "pinned upstream rejected exact add-on inventory arguments",
-            )
-            addons = addon_inventory.get("addons")
-            require(
-                isinstance(addons, list)
-                and any(
-                    isinstance(addon, dict)
-                    and addon.get("slug") == "abcdef12_ha_mcp"
-                    and addon.get("version")
-                    == expected_upstream_version
-                    for addon in addons
-                ),
-                "pinned upstream add-on inventory identity was incomplete",
-            )
+            else:
+                addon_inventory = decode_tool_result(
+                    await session.call_tool(
+                        "ha_get_addon",
+                        UPSTREAM_ADDON_INVENTORY_ARGUMENTS,
+                    )
+                )
+                require(
+                    addon_inventory.get("success") is True,
+                    "pinned upstream rejected exact add-on inventory arguments",
+                )
+                addons = addon_inventory.get("addons")
+                require(
+                    isinstance(addons, list)
+                    and any(
+                        isinstance(addon, dict)
+                        and addon.get("slug") == "abcdef12_ha_mcp"
+                        and addon.get("version")
+                        == expected_upstream_version
+                        for addon in addons
+                    ),
+                    "pinned upstream add-on inventory identity was incomplete",
+                )
             for name, expected in UPSTREAM_ERROR_CALLS.items():
                 reviewed_versions = expected.get("reviewed_versions")
                 if (
@@ -860,15 +932,32 @@ async def inspect_upstream(
                     expected["tool"],
                     expected["arguments"],
                 )
-                code = decode_upstream_error_code(result)
+                evidence = decode_upstream_error_evidence(result)
+                code = evidence["structured_code"]
                 require(
                     code == expected["upstream_code"],
                     f"pinned upstream {name} error code changed",
                 )
+                shape_name = expected.get("shape_name")
+                if isinstance(shape_name, str):
+                    expected_shapes = EXPECTED_ERROR_SHAPE_FINGERPRINTS[
+                        shape_name
+                    ]
+                    expected_shape = expected_shapes.get(
+                        expected_upstream_version,
+                        expected_shapes.get("legacy"),
+                    )
+                    require(
+                        evidence["shape_fingerprint"] == expected_shape,
+                        f"pinned upstream {name} error shape changed",
+                    )
                 error_envelopes[name] = {
                     "tool": expected["tool"],
                     "is_error": True,
                     "upstream_code": code,
+                    "shape_fingerprint": evidence[
+                        "shape_fingerprint"
+                    ],
                 }
     return tools, catalog_fingerprint(tools), error_envelopes
 

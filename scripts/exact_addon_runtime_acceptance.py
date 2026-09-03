@@ -100,6 +100,8 @@ EXPECTED_LIFECYCLE_ADDON_RESPONSE_ENVELOPE = (
 )
 EXPECTED_SOURCE_DERIVED_MINIMUM_DETAIL_BYTES = 71_986
 EXPECTED_ADDON_DETAIL_PROFILE = "live-8.0.0"
+EXPECTED_DASHBOARD_STATUS = "reviewed"
+EXPECTED_OPERATIONAL_PLANNING_SUPPORTED = True
 ACCEPTANCE_TIMEOUT_SECONDS = 180
 
 EXACT_ADDON_PROFILES = {
@@ -117,6 +119,8 @@ EXACT_ADDON_PROFILES = {
         "addon_detail_profile": "live-8.0.0",
         "automatic_read_count": 24,
         "held_tools": {"ha_get_operation_status", "ha_search"},
+        "dashboard_status": "reviewed",
+        "operational_planning_supported": True,
     },
     "8.1.0": {
         "entry_id": "ha-mcp-v8.1.0-4c07e625",
@@ -132,6 +136,8 @@ EXACT_ADDON_PROFILES = {
         "addon_detail_profile": "live-8.1.0",
         "automatic_read_count": 24,
         "held_tools": {"ha_get_operation_status", "ha_search"},
+        "dashboard_status": "reviewed",
+        "operational_planning_supported": True,
     },
     "8.1.1": {
         "entry_id": "ha-mcp-v8.1.1-e1d76a6e",
@@ -147,6 +153,8 @@ EXACT_ADDON_PROFILES = {
         "addon_detail_profile": "live-8.1.1",
         "automatic_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
+        "dashboard_status": "reviewed",
+        "operational_planning_supported": True,
     },
     "8.2.0": {
         "entry_id": "ha-mcp-v8.2.0-dbcfc0ee",
@@ -162,6 +170,23 @@ EXACT_ADDON_PROFILES = {
         "addon_detail_profile": "live-8.2.0",
         "automatic_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
+        "dashboard_status": "reviewed",
+        "operational_planning_supported": True,
+    },
+    "8.4.1": {
+        "entry_id": "ha-mcp-v8.4.1-7823b365",
+        "raw_catalog_fingerprint": (
+            "9adeb184810701b9186adc1d1db7edb29a29f946db3c95ad1a4e906d9fbd708c"
+        ),
+        "normalized_catalog_fingerprint": (
+            "c5926e759d86557bbe73a46162859b26119b2b76affed0984069019d4d6740c5"
+        ),
+        "dashboard_runtime_fingerprint": None,
+        "addon_detail_profile": "live-8.4.1",
+        "automatic_read_count": 25,
+        "held_tools": {"ha_get_operation_status"},
+        "dashboard_status": "quarantined",
+        "operational_planning_supported": False,
     },
 }
 
@@ -180,6 +205,8 @@ def _select_exact_addon_profile(version: str) -> None:
     global EXPECTED_ADDON_DETAIL_PROFILE
     global EXPECTED_AUTOMATIC_READ_COUNT
     global EXPECTED_HELD_TOOLS
+    global EXPECTED_DASHBOARD_STATUS
+    global EXPECTED_OPERATIONAL_PLANNING_SUPPORTED
     EXPECTED_UPSTREAM_VERSION = version
     EXPECTED_ENTRY_ID = str(profile["entry_id"])
     EXPECTED_RAW_CATALOG_FINGERPRINT = str(
@@ -194,6 +221,10 @@ def _select_exact_addon_profile(version: str) -> None:
     EXPECTED_ADDON_DETAIL_PROFILE = str(profile["addon_detail_profile"])
     EXPECTED_AUTOMATIC_READ_COUNT = int(profile["automatic_read_count"])
     EXPECTED_HELD_TOOLS = set(profile["held_tools"])
+    EXPECTED_DASHBOARD_STATUS = str(profile["dashboard_status"])
+    EXPECTED_OPERATIONAL_PLANNING_SUPPORTED = bool(
+        profile["operational_planning_supported"]
+    )
 
 
 class AcceptanceFailure(RuntimeError):
@@ -329,7 +360,7 @@ async def _automatic_read_acceptance(
     require(metadata.get("upstream_version") == EXPECTED_UPSTREAM_VERSION, "automatic read used the wrong release")
     require(metadata.get("fallback") == "none", "automatic read used fallback")
     promoted_search = None
-    if EXPECTED_UPSTREAM_VERSION in {"8.1.1", "8.2.0"}:
+    if EXPECTED_UPSTREAM_VERSION in {"8.1.1", "8.2.0", "8.4.1"}:
         search_tool = published.get("ha_search")
         require(search_tool is not None, "promoted ha_search was not exposed")
         search_response = json.loads(
@@ -414,6 +445,52 @@ async def _dashboard_acceptance(
         "exact_config_returned": exact.data.get("configuration_returned"),
         "screenshots_allowed": health.get("screenshots_allowed"),
         "preference_writes_allowed": health.get("preference_writes_allowed"),
+    }
+
+
+def _dashboard_quarantine_acceptance() -> dict[str, Any]:
+    """Prove the exact release supplies no dashboard dispatch authority."""
+
+    release = load_reviewed_upstream_release_registry().by_version[
+        EXPECTED_UPSTREAM_VERSION
+    ]
+    require(
+        release.dashboard_attestation_status == "quarantined",
+        "dashboard release evidence was not explicitly quarantined",
+    )
+    require(
+        release.provider_disposition("dashboard") == "held",
+        "dashboard provider authority was not held",
+    )
+    return {
+        "admission_status": "quarantined",
+        "release_evidence_status": release.dashboard_attestation_status,
+        "provider_disposition": release.provider_disposition("dashboard"),
+        "provider_dispatch_count": 0,
+        "fallback_count": 0,
+    }
+
+
+def _operational_quarantine_acceptance() -> dict[str, Any]:
+    """Prove unreviewed operational surfaces remain outside Beta 56."""
+
+    release = load_reviewed_upstream_release_registry().by_version[
+        EXPECTED_UPSTREAM_VERSION
+    ]
+    dispositions = {
+        surface: release.provider_disposition(surface)
+        for surface in ("backup", "lifecycle")
+    }
+    require(
+        set(dispositions.values()) == {"held"},
+        "unreviewed operational provider authority was not held",
+    )
+    return {
+        "status": "quarantined",
+        "provider_dispositions": dispositions,
+        "persisted_plan_count": 0,
+        "provider_dispatch_count": 0,
+        "fallback_count": 0,
     }
 
 
@@ -657,16 +734,22 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 client_version=SERVER_VERSION,
             ),
         )
-        dashboard = await _dashboard_acceptance(
-            settings,
-            args.upstream_endpoint,
-        )
-        planning = await _planning_acceptance(
-            settings,
-            args.upstream_endpoint,
-            root,
-            raw_fingerprint,
-        )
+        if EXPECTED_DASHBOARD_STATUS == "reviewed":
+            dashboard = await _dashboard_acceptance(
+                settings,
+                args.upstream_endpoint,
+            )
+        else:
+            dashboard = _dashboard_quarantine_acceptance()
+        if EXPECTED_OPERATIONAL_PLANNING_SUPPORTED:
+            planning = await _planning_acceptance(
+                settings,
+                args.upstream_endpoint,
+                root,
+                raw_fingerprint,
+            )
+        else:
+            planning = _operational_quarantine_acceptance()
 
     after = fixture_stats(args.fixture_stats_url)
     require(

@@ -803,6 +803,7 @@ def _addon_detail(addon: dict[str, Any]) -> dict[str, Any]:
         "live-8.1.0",
         "live-8.1.1",
         "live-8.2.0",
+        "live-8.4.1",
     }:
         return detail
     detail.update(
@@ -1032,6 +1033,7 @@ def main() -> None:
             "8.1.0",
             "8.1.1",
             "8.2.0",
+            "8.4.1",
         ),
         required=True,
     )
@@ -1043,6 +1045,7 @@ def main() -> None:
             "live-8.1.0",
             "live-8.1.1",
             "live-8.2.0",
+            "live-8.4.1",
         ),
         default="compact",
     )
