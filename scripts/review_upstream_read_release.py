@@ -43,6 +43,10 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
 MAX_CATALOG_PAGES = 16
 MAX_CATALOG_TOOLS = 512
 MAX_ERROR_BYTES = 16_384
+PROVIDER_SURFACES = frozenset(
+    {"backup", "dashboard", "lifecycle", "read_gateway"}
+)
+PROVIDER_DISPOSITIONS = frozenset({"admitted", "partial", "held"})
 ERROR_PROBES = {
     "invalid_search": (
         "ha_search",
@@ -103,6 +107,37 @@ def _require_sha256_digest(value: str, *, field: str) -> str:
     ):
         raise SystemExit(f"{field} must be an exact lowercase SHA-256 digest")
     return value
+
+
+def _require_git_object(value: str, *, field: str) -> str:
+    """Validate one exact lowercase Git SHA-1 object identifier."""
+
+    if len(value) != 40 or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise SystemExit(f"{field} must be an exact lowercase Git SHA-1")
+    return value
+
+
+def _provider_dispositions(values: list[str]) -> dict[str, str] | None:
+    """Parse one complete, explicit provider-surface disposition map."""
+
+    if not values:
+        return None
+    result: dict[str, str] = {}
+    for value in values:
+        surface, separator, disposition = value.partition("=")
+        if (
+            separator != "="
+            or surface not in PROVIDER_SURFACES
+            or disposition not in PROVIDER_DISPOSITIONS
+            or surface in result
+        ):
+            raise SystemExit("provider dispositions are invalid or duplicated")
+        result[surface] = disposition
+    if set(result) != PROVIDER_SURFACES:
+        raise SystemExit("provider dispositions must cover every provider surface")
+    return dict(sorted(result.items()))
 
 
 def _strict_full_contract_fingerprint(
@@ -836,6 +871,9 @@ def candidate_entry(args: argparse.Namespace) -> None:
     capture_digest = (
         "sha256:" + hashlib.sha256(args.capture.read_bytes()).hexdigest()
     )
+    provider_dispositions = _provider_dispositions(
+        args.provider_disposition
+    )
     entry = {
         "entry_id": (
             f"ha-mcp-v{args.version}-"
@@ -900,6 +938,18 @@ def candidate_entry(args: argparse.Namespace) -> None:
         ),
         "tool_contracts": contracts,
     }
+    if args.source_tag_object is not None:
+        entry["source_tag_object"] = _require_git_object(
+            args.source_tag_object,
+            field="source tag object",
+        )
+    if args.source_tree is not None:
+        entry["source_tree"] = _require_git_object(
+            args.source_tree,
+            field="source tree",
+        )
+    if provider_dispositions is not None:
+        entry["provider_dispositions"] = provider_dispositions
     if artifact_evidence_resource is not None:
         entry["artifact_evidence_resource"] = artifact_evidence_resource
         entry["artifact_evidence_sha256"] = artifact_evidence_sha256
@@ -1006,6 +1056,14 @@ def parse_args() -> argparse.Namespace:
     candidate.add_argument("--base-policy", type=Path, required=True)
     candidate.add_argument("--version", required=True)
     candidate.add_argument("--source-commit", required=True)
+    candidate.add_argument("--source-tag-object")
+    candidate.add_argument("--source-tree")
+    candidate.add_argument(
+        "--provider-disposition",
+        action="append",
+        default=[],
+        metavar="SURFACE=DISPOSITION",
+    )
     candidate.add_argument("--image-index-digest", required=True)
     candidate.add_argument("--amd64-digest", required=True)
     candidate.add_argument("--arm64-digest", required=True)

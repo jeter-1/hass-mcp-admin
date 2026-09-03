@@ -62,6 +62,7 @@ RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1 = (
 REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-reviewed-normalized-catalog-v1"
 )
+CANONICAL_TOOL_ORDER_RELEASES = frozenset({"8.4.1"})
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )
@@ -928,6 +929,7 @@ def validate_reviewed_release_catalog(
     descriptors_by_name: dict[str, list[dict[str, Any]]] = {}
     invalid_descriptor_count = 0
     raw_tools: list[dict[str, Any]] = []
+    observed_name_order: list[str] = []
     for item in tools:
         if not isinstance(item, dict):
             invalid_descriptor_count += 1
@@ -937,7 +939,12 @@ def validate_reviewed_release_catalog(
         if not isinstance(name, str) or not _TOOL_NAME.fullmatch(name):
             invalid_descriptor_count += 1
             continue
+        observed_name_order.append(name)
         descriptors_by_name.setdefault(name, []).append(item)
+    observed_order_valid = (
+        release.version not in CANONICAL_TOOL_ORDER_RELEASES
+        or observed_name_order == sorted(observed_name_order)
+    )
 
     observed_names = set(descriptors_by_name)
     missing = sorted(expected_names - observed_names)
@@ -1078,6 +1085,7 @@ def validate_reviewed_release_catalog(
         and not additional
         and not duplicated
         and invalid_descriptor_count == 0
+        and observed_order_valid
         and len(observed_entries) == len(expected_entries)
     ):
         normalized_fingerprint = _normalized_catalog_fingerprint(
@@ -1101,6 +1109,7 @@ def validate_reviewed_release_catalog(
         and not additional
         and not duplicated
         and invalid_descriptor_count == 0
+        and observed_order_valid
         and not classification_mismatches
         and all(value == 0 for value in component_counts.values())
         and accounted == release.advertised_tool_count
@@ -1828,7 +1837,7 @@ def _load_reviewed_release(
     dispositions_raw = value.get("provider_dispositions")
     family_admission = None
     provider_dispositions: tuple[tuple[str, str], ...] = ()
-    if (family_raw is None) != (dispositions_raw is None):
+    if family_raw is not None and dispositions_raw is None:
         raise UpstreamToolPolicyError(
             "release_registry_family_admission_incomplete"
         )
@@ -1852,6 +1861,16 @@ def _load_reviewed_release(
         except Exception as exc:
             raise UpstreamToolPolicyError(
                 "release_registry_family_admission_invalid"
+            ) from exc
+    if dispositions_raw is not None:
+        try:
+            from .compatibility_family import (
+                PROVIDER_DISPOSITIONS,
+                PROVIDER_SURFACES,
+            )
+        except Exception as exc:
+            raise UpstreamToolPolicyError(
+                "release_registry_provider_dispositions_invalid"
             ) from exc
         if (
             not isinstance(dispositions_raw, dict)
@@ -2329,7 +2348,15 @@ def _reviewed_artifact_evidence(
             )
         )
         or dashboard["contract_family"] != "ha_mcp_dashboard_read_v3"
-        or dashboard["descriptor_equal_to_8_0_0_standalone"] is not True
+        or type(
+            dashboard["descriptor_equal_to_8_0_0_standalone"]
+        ) is not bool
+        or (
+            release.dashboard_attestation_status == "reviewed"
+            and dashboard[
+                "descriptor_equal_to_8_0_0_standalone"
+            ] is not True
+        )
         or not isinstance(dashboard["runtime_fingerprint"], str)
         or not _HEX_64.fullmatch(dashboard["runtime_fingerprint"])
         or not isinstance(evidence["changed_runtime_descriptors"], dict)

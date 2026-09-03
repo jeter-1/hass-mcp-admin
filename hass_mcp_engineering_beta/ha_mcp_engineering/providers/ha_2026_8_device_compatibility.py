@@ -16,7 +16,9 @@ ADAPTER_IDS_BY_HA_VERSION = MappingProxyType(
         "2026.8.1": HA_2026_8_1_ADAPTER_ID,
     }
 )
-REVIEWED_UPSTREAM_VERSIONS = frozenset({"8.1.0", "8.1.1", "8.2.0"})
+REVIEWED_UPSTREAM_VERSIONS = frozenset(
+    {"8.1.0", "8.1.1", "8.2.0", "8.4.1"}
+)
 
 
 class CompositeDeviceCompatibilityError(RuntimeError):
@@ -85,7 +87,7 @@ async def adapt_ha_get_device_composite_result(
 ) -> tuple[Any, str | None]:
     """Restore the reviewed entity join for one exact composite lookup.
 
-    ha-mcp 8.1.0/8.1.1/8.2.0 receives correct split entity rows from its
+    ha-mcp 8.1.0/8.1.1/8.2.0/8.4.1 receives correct split entity rows from its
     component on the separately reviewed Home Assistant 2026.8.0 and 2026.8.1
     contracts, but keys those rows by their live split ids before reading the
     map with the old composite id. Adapter identity is selected by exact Core
