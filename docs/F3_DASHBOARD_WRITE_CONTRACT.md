@@ -42,7 +42,7 @@ The executable provider contract is admitted only for an exact reviewed
 compatibility entry. Current compiled support covers 8.1.1, 8.2.0, and 8.4.1.
 The 8.4.1 entry is `ha-mcp-v8.4.1-7823b365`, source tag `v8.4.1`, commit
 `701a7c26ac0e2309c7883a627d31873ab1510077`, and immutable image index
-`sha256:7823b36587a6e62efed271f26f3f72380b49f47364e5385580584e7ab2c60722`.
+`sha256:7823b36587a6e62efed271b26f3f72380b49f47364e5385580584e7ab2c60722`.
 The known existing-hyphenless-target pre-plan rejection remains exact to
 8.1.1. Exact 8.2.0 accepts such a target only after its upstream registry read
 proves the exact `url_path` already exists; new hyphenless creation remains
