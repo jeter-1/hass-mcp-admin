@@ -706,7 +706,11 @@ async def list_all_tools(session: ClientSession) -> list[dict[str, Any]]:
         seen.add(cursor)
 
 
-def decode_tool_result(result: Any) -> dict[str, Any]:
+def decode_tool_result(
+    result: Any,
+    *,
+    context: str = "unspecified_tool_result",
+) -> dict[str, Any]:
     structured = getattr(result, "structuredContent", None)
     if isinstance(structured, dict) and "result" not in structured:
         return structured
@@ -732,7 +736,10 @@ def decode_tool_result(result: Any) -> dict[str, Any]:
                 continue
             if isinstance(value, dict):
                 return value
-    raise AcceptanceFailure("tool result did not contain a bounded JSON object")
+    raise AcceptanceFailure(
+        "tool result did not contain a bounded JSON object",
+        diagnostics={"result_context": context[:128]},
+    )
 
 
 def _shape_projection(value: Any) -> Any:
@@ -1061,7 +1068,10 @@ async def inspect_engineering(
             health_before_result = await session.call_tool(
                 "get_server_health", {}
             )
-            health_before = decode_tool_result(health_before_result)
+            health_before = decode_tool_result(
+                health_before_result,
+                context="engineering_health_before_calls",
+            )
             if not base_names <= names or not automatic <= names:
                 raise AcceptanceFailure(
                     "The first accepted Engineering catalog is incomplete.",
@@ -1109,7 +1119,10 @@ async def inspect_engineering(
             calls: dict[str, dict[str, Any]] = {}
             for name, arguments in delegated_read_calls.items():
                 result = await session.call_tool(name, arguments)
-                value = decode_tool_result(result)
+                value = decode_tool_result(
+                    result,
+                    context=f"delegated_read:{name}",
+                )
                 require(value.get("success") is True, f"{name} did not succeed: {value.get('error_code')}")
                 metadata = value.get("metadata") or {}
                 require(metadata.get("provider") == "upstream_read_gateway", f"{name} provider mismatch")
@@ -1153,7 +1166,8 @@ async def inspect_engineering(
                             "search_types": ["automation"],
                             "limit": 5,
                         },
-                    )
+                    ),
+                    context="delegated_read:ha_search_partial",
                 )
                 partial_metadata = partial_search.get("metadata") or {}
                 partial_data = partial_search.get("data") or {}
@@ -1190,7 +1204,8 @@ async def inspect_engineering(
 
             stats_before_invalid = fixture_stats(fixture_stats_url)
             invalid = decode_tool_result(
-                await session.call_tool("ha_get_state", {"unknown": "value"})
+                await session.call_tool("ha_get_state", {"unknown": "value"}),
+                context="prevalidation:ha_get_state",
             )
             require(invalid.get("success") is False, "invalid arguments unexpectedly succeeded")
             require(invalid.get("error_code") == "invalid_request", "invalid arguments were not prevalidated")
@@ -1200,7 +1215,8 @@ async def inspect_engineering(
             )
 
             health_before_errors = decode_tool_result(
-                await session.call_tool("get_server_health", {})
+                await session.call_tool("get_server_health", {}),
+                context="engineering_health_before_errors",
             )
             routing_before_errors = next(
                 (
@@ -1235,7 +1251,8 @@ async def inspect_engineering(
                     await session.call_tool(
                         expected["tool"],
                         expected["arguments"],
-                    )
+                    ),
+                    context=f"error_contract:{error_name}",
                 )
                 stats_after_error = fixture_stats(fixture_stats_url)
                 require(
@@ -1327,7 +1344,8 @@ async def inspect_engineering(
                 await session.call_tool(
                     "get_audit_log",
                     {"event": "tool_call", "lines": 200},
-                )
+                ),
+                context="engineering_audit_after_calls",
             )
             audit_text = json.dumps(audit, sort_keys=True)
             for name, evidence in calls.items():
@@ -1382,7 +1400,8 @@ async def inspect_engineering(
                 )
 
             health_after = decode_tool_result(
-                await session.call_tool("get_server_health", {})
+                await session.call_tool("get_server_health", {}),
+                context="engineering_health_after_calls",
             )
             direct_after = find_values(health_after, "requests_by_provider")
             fallback_after = find_values(health_after, "fallback_count")

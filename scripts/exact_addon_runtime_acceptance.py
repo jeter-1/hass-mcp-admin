@@ -847,6 +847,11 @@ def main() -> None:
         failure = {
             "result": "FAIL",
             "failure_type": type(exc).__name__[:128],
+            "failure_reason": (
+                str(exc)[:128]
+                if isinstance(exc, AcceptanceFailure)
+                else "The bounded exact add-on acceptance did not complete."
+            ),
         }
         args.output.write_text(
             json.dumps(failure, indent=2, sort_keys=True) + "\n",
