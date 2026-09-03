@@ -7,7 +7,7 @@
   },
   "capture_schema_version": 1,
   "manifest_version": 2,
-  "manifest_digest": "sha256:141adc8d9603e909926080a05347b4f61c8669c74e5ea6bef2eeb6428c044fab",
+  "manifest_digest": "sha256:500f163e0e3a32667ef0a6c17ff400e0fd4c5c123ddf27a5546636bee5e80ad5",
   "captured_at": "2026-08-19T12:00:00Z",
   "captured_by": "synthetic offline fixture maintainer",
   "session_id": "fixture-beta39-current-state-v2",

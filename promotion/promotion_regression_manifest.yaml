@@ -869,7 +869,7 @@ sentinels:
         error_code is provider_error, failure_category is upstream_error, and
         retryable is true. Held status, dispatch evidence, and fallback remain correct.
     desired_checks:
-      - {path: error_code, operator: equals, value: RESOURCE_NOT_FOUND}
+      - {path: error_code, operator: equals, value: resource_not_found}
       - {path: details.failure_category, operator: equals, value: resource_not_found}
       - {path: retryable, operator: equals, value: false}
     known_failure_checks:

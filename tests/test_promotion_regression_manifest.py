@@ -1160,7 +1160,7 @@ class SentinelFidelityTests(unittest.TestCase):
     def test_held_status_and_top_level_taxonomy_are_independent(self):
         capture = load_fixture()
         evidence = observation(capture, "held_read_canary_not_found")["evidence"]
-        evidence["error_code"] = "RESOURCE_NOT_FOUND"
+        evidence["error_code"] = "resource_not_found"
         evidence["details.failure_category"] = "resource_not_found"
         evidence["retryable"] = False
         report = evaluate(capture)
