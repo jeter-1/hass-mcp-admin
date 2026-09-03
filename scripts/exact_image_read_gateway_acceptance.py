@@ -158,6 +158,35 @@ def expected_dashboard_attestation_status(version: str) -> str:
     return "quarantined" if version == "8.4.1" else "reviewed"
 
 
+def held_operational_provider_acceptance(
+    release: Any,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Prove an exact release supplies no operational provider authority."""
+
+    dispositions = {
+        surface: release.provider_disposition(surface)
+        for surface in ("backup", "lifecycle")
+    }
+    require(
+        dispositions == {"backup": "held", "lifecycle": "held"},
+        "unreviewed operational provider authority was not held",
+    )
+    return (
+        {
+            "status": "quarantined",
+            "provider_disposition": dispositions["backup"],
+            "provider_dispatch_count": 0,
+            "fallback_count": 0,
+        },
+        {
+            "status": "quarantined",
+            "provider_disposition": dispositions["lifecycle"],
+            "provider_dispatch_count": 0,
+            "fallback_count": 0,
+        },
+    )
+
+
 DELEGATED_READ_CALLS = {
     "ha_config_get_automation": {"identifier": "gateway_fixture"},
     "ha_config_get_calendar_events": {
@@ -2389,23 +2418,29 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         policy=policy,
         release=release,
     )
-    operational_backup = await inspect_operational_backup(
-        upstream_endpoint=args.upstream_endpoint,
-        engineering_endpoint=args.engineering_endpoint,
-        fixture_stats_url=args.fixture_stats_url,
-        ha_url=args.ha_url,
-        ha_token=args.ha_token,
-        expected_upstream_version=args.expected_upstream_version,
-        release=release,
-    )
-    operational_lifecycle = await inspect_operational_lifecycle(
-        upstream_endpoint=args.upstream_endpoint,
-        configured_upstream_endpoint=(
-            args.configured_upstream_endpoint
-        ),
-        expected_upstream_version=args.expected_upstream_version,
-        release=release,
-    )
+    if args.expected_upstream_version == "8.4.1":
+        (
+            operational_backup,
+            operational_lifecycle,
+        ) = held_operational_provider_acceptance(release)
+    else:
+        operational_backup = await inspect_operational_backup(
+            upstream_endpoint=args.upstream_endpoint,
+            engineering_endpoint=args.engineering_endpoint,
+            fixture_stats_url=args.fixture_stats_url,
+            ha_url=args.ha_url,
+            ha_token=args.ha_token,
+            expected_upstream_version=args.expected_upstream_version,
+            release=release,
+        )
+        operational_lifecycle = await inspect_operational_lifecycle(
+            upstream_endpoint=args.upstream_endpoint,
+            configured_upstream_endpoint=(
+                args.configured_upstream_endpoint
+            ),
+            expected_upstream_version=args.expected_upstream_version,
+            release=release,
+        )
     approval_notification = await inspect_approval_notification(
         engineering_endpoint=args.engineering_endpoint,
         fixture_stats_url=args.fixture_stats_url,

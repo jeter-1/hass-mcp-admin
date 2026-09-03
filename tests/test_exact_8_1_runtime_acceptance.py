@@ -145,6 +145,39 @@ class ExactAddonProfileTests(unittest.TestCase):
                     "reviewed",
                 )
 
+    def test_gateway_acceptance_keeps_8_4_operational_providers_held(self):
+        releases = (
+            gateway_acceptance.load_reviewed_upstream_release_registry()
+            .by_version
+        )
+        backup, lifecycle = (
+            gateway_acceptance.held_operational_provider_acceptance(
+                releases["8.4.1"]
+            )
+        )
+        self.assertEqual(
+            backup,
+            {
+                "status": "quarantined",
+                "provider_disposition": "held",
+                "provider_dispatch_count": 0,
+                "fallback_count": 0,
+            },
+        )
+        self.assertEqual(
+            lifecycle,
+            {
+                "status": "quarantined",
+                "provider_disposition": "held",
+                "provider_dispatch_count": 0,
+                "fallback_count": 0,
+            },
+        )
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure):
+            gateway_acceptance.held_operational_provider_acceptance(
+                releases["8.2.0"]
+            )
+
     def test_addon_runtime_uses_authoritative_exact_local_accounting(self):
         self.assertEqual(
             addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 51
