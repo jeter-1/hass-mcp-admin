@@ -47,6 +47,10 @@ class Settings:
     upstream_dashboard_mcp_url: str = field(default="", repr=False)
     upstream_trust_registry_enabled: bool = False
     upstream_trust_registry_public_key: str = field(default="", repr=False)
+    ha_mcp_release_registry_enabled: bool = False
+    ha_mcp_release_registry_public_key: str = field(
+        default="", repr=False
+    )
     # ``dependency_index_prewarm`` is retained as an options compatibility alias.
     dependency_index_prewarm: bool = False
     prewarm_enabled: bool = True
@@ -213,6 +217,19 @@ def load_settings() -> Settings:
             options.get(
                 "upstream_trust_registry_public_key",
                 os.environ.get("UPSTREAM_TRUST_REGISTRY_PUBLIC_KEY", ""),
+            )
+            or ""
+        ).strip(),
+        ha_mcp_release_registry_enabled=bool(
+            options.get("ha_mcp_release_registry_enabled", False)
+        ),
+        ha_mcp_release_registry_public_key=str(
+            options.get(
+                "ha_mcp_release_registry_public_key",
+                os.environ.get(
+                    "HA_MCP_RELEASE_REGISTRY_PUBLIC_KEY",
+                    "",
+                ),
             )
             or ""
         ).strip(),

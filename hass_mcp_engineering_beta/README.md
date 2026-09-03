@@ -79,7 +79,10 @@ held reads. Exact 8.1.1 adds 25 for 74 registered tools and keeps only
 `ha_get_operation_status` held. Held reads are accounted but never registered
 as delegated upstream tools. One missing or quarantined read
 leaves other matches available. A client that cached an earlier list must re-list or reconnect; the
-stateless transport does not broadcast `tools/list_changed`.
+Beta 54-compatible disabled mode remains stateless. Enabled automatic
+readmission uses a stateful authenticated inbound MCP session to bind each
+`tools/list` generation to later delegated calls, without advertising or
+broadcasting `tools/list_changed`.
 
 Unlisted, mixed, write, action, prohibited, and unsupported tools are never
 registered. A changed reviewed contract is quarantined individually, and
@@ -140,6 +143,13 @@ execution task, configuration write, service call, or Home Assistant mutation.
    been initialized; when enabled, configure only the non-secret Ed25519 public
    key in `upstream_trust_registry_public_key`. Never place the private signing
    seed in add-on options.
+   Capability-scoped ha-mcp readmission uses separate disabled-by-default
+   `ha_mcp_release_registry_enabled` and
+   `ha_mcp_release_registry_public_key` options. Enable them only after the
+   fixed ADR-023 release registry and its separately reviewed public trust
+   anchor exist. Signed data can select only binary-owned read profiles; it
+   cannot add tools, code, writes, or fallback. Never place a private release-
+   registry signing key in the add-on configuration.
 6. To receive advisory governed-approval pushes on one Companion App device,
    set `approval_notification_service` to that device's exact existing service
    in the form `notify.mobile_app_<device>`. Leave it empty to disable pushes.

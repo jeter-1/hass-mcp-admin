@@ -22,7 +22,7 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
-BETA_VERSION = "2.2.0-beta.54"
+BETA_VERSION = "2.2.0-beta.55"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION_PATH = Path(".release/next-version")
 NON_RELEASE_BETA_PATHS = frozenset({"hass_mcp_engineering_beta/AGENTS.md"})
@@ -37,6 +37,8 @@ EXPECTED_BETA_SCHEMA = {
     "upstream_dashboard_mcp_url": "password",
     "upstream_trust_registry_enabled": "bool",
     "upstream_trust_registry_public_key": "str",
+    "ha_mcp_release_registry_enabled": "bool",
+    "ha_mcp_release_registry_public_key": "str",
     "dependency_index_prewarm": "bool",
     "prewarm_enabled": "bool",
     "prewarm_startup_delay_seconds": "float",
@@ -232,6 +234,14 @@ def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length:
     if options["approval_notification_service"] != "":
         raise MetadataValidationError(
             "Approval notification service must default to disabled"
+        )
+    if options["ha_mcp_release_registry_enabled"] is not False:
+        raise MetadataValidationError(
+            "ha-mcp release registry must default to disabled"
+        )
+    if options["ha_mcp_release_registry_public_key"] != "":
+        raise MetadataValidationError(
+            "ha-mcp release registry public key must default to empty"
         )
     if options["redaction_enabled"] is not True:
         raise MetadataValidationError("Beta redaction must remain enabled")

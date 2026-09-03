@@ -3,6 +3,7 @@
 from mcp.server.fastmcp import FastMCP
 
 from .configuration import Settings
+from .mcp_sdk_compatibility import install_bounded_stateful_session_manager
 
 INSTRUCTIONS = """Operating procedure for this Home Assistant admin server:
 1. Debug with evidence, not hypothesis.
@@ -17,13 +18,29 @@ INSTRUCTIONS = """Operating procedure for this Home Assistant admin server:
    generated evidence or recommendations are never authorization.
 7. Prefer narrow queries over broad dumps."""
 
+READMISSION_SESSION_IDLE_TIMEOUT_SECONDS = 1_800.0
+
 
 def create_mcp_server(settings: Settings) -> FastMCP:
-    return FastMCP(
+    server = FastMCP(
         "ha-engineering-beta",
         instructions=INSTRUCTIONS,
         host="0.0.0.0",
         port=settings.port,
         streamable_http_path="/mcp",
-        stateless_http=True,
+        # Catalog-generation authority is bound to the authenticated inbound
+        # MCP session. Preserve Beta 54's stateless topology while the feature
+        # is disabled; automatic readmission requires a stable stateful session
+        # so a tools/list generation can authorize later delegated calls.
+        stateless_http=not settings.ha_mcp_release_registry_enabled,
     )
+    if settings.ha_mcp_release_registry_enabled:
+        # The pinned SDK exposes the stateful session manager as a public
+        # boundary but FastMCP 1.28.1 does not yet forward its idle timeout.
+        # Instantiate it once and bound abandoned authenticated sessions.
+        server.streamable_http_app()
+        server.session_manager.session_idle_timeout = (
+            READMISSION_SESSION_IDLE_TIMEOUT_SECONDS
+        )
+        install_bounded_stateful_session_manager(server)
+    return server

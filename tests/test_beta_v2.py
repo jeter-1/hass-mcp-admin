@@ -4,6 +4,7 @@ from contextlib import redirect_stderr
 import copy
 from dataclasses import replace
 import importlib.util
+import inspect
 import io
 import json
 import logging
@@ -1575,9 +1576,14 @@ class BetaApplicationTests(unittest.TestCase):
                 *,
                 timeout_seconds,
                 catalog_validator,
+                before_dispatch=None,
             ):
                 del timeout_seconds
                 catalog_validator(self.catalog)
+                if before_dispatch is not None:
+                    prepared = before_dispatch()
+                    if inspect.isawaitable(prepared):
+                        await prepared
                 self.calls.append((tool_name, copy.deepcopy(arguments)))
                 return McpReadResult(
                     protocol_version=self.catalog.protocol_version,

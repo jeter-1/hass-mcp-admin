@@ -1713,9 +1713,10 @@ class BoundsProjectionAndInertnessTests(unittest.TestCase):
                             for forbidden in forbidden_modules
                         ), path)
                 text = path.read_text(encoding="utf-8")
-                self.assertNotIn("automatic_readmission", text, path)
                 self.assertNotIn("OfflineUpdateHarness", text, path)
-                self.assertNotIn("CapabilityAdmissionCoordinator", text, path)
+        self.assertTrue(
+            (RUNTIME / "ha_mcp_readmission" / "coordinator.py").is_file()
+        )
 
     def test_runtime_export_and_import_surface_excludes_reference_model(self):
         script = """

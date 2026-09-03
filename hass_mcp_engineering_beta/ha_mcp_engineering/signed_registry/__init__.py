@@ -1,7 +1,8 @@
-"""Inert signed compatibility-registry format and verification primitives.
+"""Bounded signed compatibility-registry verification primitives.
 
-Nothing in the Engineering runtime imports this package during startup or
-admission. It is a data-only foundation for a separately reviewed integration.
+The ha-mcp readmission path imports these data-only models and validators during
+startup and admission. Signed data may select only already compiled profiles
+and adapters; it cannot supply executable behavior or new reachability.
 """
 
 from .canonical import canonical_json, sha256_digest
@@ -22,6 +23,7 @@ from .verification import (
     TrustAnchorStore,
     ValidationIssue,
     ValidationStatus,
+    parse_verified_registry_envelope,
     validate_registry_envelope,
 )
 
@@ -41,6 +43,7 @@ __all__ = [
     "ValidationIssue",
     "ValidationStatus",
     "canonical_json",
+    "parse_verified_registry_envelope",
     "sha256_digest",
     "validate_registry_envelope",
 ]

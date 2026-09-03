@@ -168,6 +168,24 @@ class TrustAnchorStore:
         return self._anchors.get(key_id)
 
 
+def parse_verified_registry_envelope(
+    raw: bytes,
+    *,
+    trust_anchors: TrustAnchorStore,
+) -> RegistryEnvelope:
+    """Parse and authenticate an envelope without granting positive authority.
+
+    Operational cache loading uses this boundary to retain signed revocations
+    after positive authority expires. Callers must separately validate time,
+    registry identity, sequence, and chain before using an envelope to admit
+    any capability.
+    """
+
+    envelope = RegistryEnvelope.from_bytes(raw)
+    _verify_signature(envelope, trust_anchors)
+    return envelope
+
+
 def validate_registry_envelope(
     raw: bytes,
     *,

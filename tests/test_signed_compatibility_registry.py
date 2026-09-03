@@ -203,8 +203,8 @@ class SignatureAndTrustTests(unittest.TestCase):
         self.assertNotIn("private_bytes", sources)
         self.assertNotRegex(sources, r"\bdef sign\(")
 
-    def test_runtime_does_not_load_registry_foundation(self):
-        importers = []
+    def test_runtime_registry_imports_are_limited_to_operational_readmission(self):
+        importers = set()
         for path in sorted(RUNTIME_PACKAGE.rglob("*.py")):
             if SIGNED_PACKAGE in path.parents:
                 continue
@@ -214,7 +214,7 @@ class SignatureAndTrustTests(unittest.TestCase):
                     "signed_registry" in item.name
                     for item in node.names
                 ):
-                    importers.append(
+                    importers.add(
                         path.relative_to(ROOT).as_posix()
                     )
                 if (
@@ -222,10 +222,17 @@ class SignatureAndTrustTests(unittest.TestCase):
                     and node.module is not None
                     and "signed_registry" in node.module
                 ):
-                    importers.append(
+                    importers.add(
                         path.relative_to(ROOT).as_posix()
                     )
-        self.assertEqual(importers, [])
+        self.assertEqual(
+            importers,
+            {
+                "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
+                "hass_mcp_engineering_beta/ha_mcp_engineering/ha_mcp_readmission/ha_mcp.py",
+                "hass_mcp_engineering_beta/ha_mcp_engineering/ha_mcp_readmission/registry.py",
+            },
+        )
 
 
 class OrderingAndTimeTests(unittest.TestCase):
