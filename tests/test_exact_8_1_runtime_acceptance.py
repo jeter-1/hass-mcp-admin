@@ -129,6 +129,22 @@ class ExactAddonProfileTests(unittest.TestCase):
         with self.assertRaises(addon_acceptance.AcceptanceFailure):
             addon_acceptance._select_exact_addon_profile("8.1.2")
 
+    def test_gateway_acceptance_requires_exact_dashboard_disposition(self):
+        self.assertEqual(
+            gateway_acceptance.expected_dashboard_attestation_status(
+                "8.4.1"
+            ),
+            "quarantined",
+        )
+        for version in ("8.0.0", "8.1.0", "8.1.1", "8.2.0"):
+            with self.subTest(version=version):
+                self.assertEqual(
+                    gateway_acceptance.expected_dashboard_attestation_status(
+                        version
+                    ),
+                    "reviewed",
+                )
+
     def test_addon_runtime_uses_authoritative_exact_local_accounting(self):
         self.assertEqual(
             addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 51

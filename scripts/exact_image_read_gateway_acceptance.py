@@ -150,6 +150,14 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "unsupported": 1,
     },
 }
+
+
+def expected_dashboard_attestation_status(version: str) -> str:
+    """Return the exact reviewed dashboard disposition for a release."""
+
+    return "quarantined" if version == "8.4.1" else "reviewed"
+
+
 DELEGATED_READ_CALLS = {
     "ha_config_get_automation": {"identifier": "gateway_fixture"},
     "ha_config_get_calendar_events": {
@@ -1617,10 +1625,15 @@ async def inspect_engineering(
                 "runtime artifact provenance was falsely claimed",
             )
             require(
-                gateway_state.get("catalog_comparison_status") == "exact"
-                and gateway_state.get("dashboard_attestation_status")
-                == "reviewed",
-                "active compatibility diagnostics are not exact",
+                gateway_state.get("catalog_comparison_status") == "exact",
+                "active catalog compatibility diagnostics are not exact",
+            )
+            require(
+                gateway_state.get("dashboard_attestation_status")
+                == expected_dashboard_attestation_status(
+                    expected_upstream_version
+                ),
+                "active dashboard compatibility disposition is not exact",
             )
             require(
                 gateway_state.get("observed_catalog_matches_reviewed_stock_fixture") is True,
