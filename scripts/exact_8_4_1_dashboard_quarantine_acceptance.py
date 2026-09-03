@@ -63,6 +63,30 @@ def require(condition: bool, message: str) -> None:
         raise DashboardAuthorityFailure(message)
 
 
+FAILURE_REASON_CODES = {
+    "release entry changed": "release_entry_changed",
+    "source changed": "source_changed",
+    "immutable image authority changed": "image_authority_changed",
+    "dashboard attestation is not reviewed": "attestation_not_reviewed",
+    "dashboard provider disposition is not admitted": "provider_not_admitted",
+    "dashboard attestation fingerprint changed": "attestation_fingerprint_changed",
+    "dashboard compiled constraints changed": "constraints_fingerprint_changed",
+    "exact 8.4.1 catalog validation failed": "catalog_validation_failed",
+    "exact dashboard protocol changed": "protocol_changed",
+    "exact dashboard descriptors are missing": "descriptors_missing",
+    "dashboard getter classification changed": "getter_classification_changed",
+    "dashboard setter classification changed": "setter_classification_changed",
+    "exact synthetic dashboard is absent from inventory": "inventory_target_missing",
+    "exact dashboard configuration read failed": "configuration_read_failed",
+    "dashboard reads did not publish one exact provider authority": "provider_authority_mismatch",
+    "dashboard provider authority omitted reviewed release evidence": "provider_authority_incomplete",
+    "dashboard provider authority hashes are malformed": "provider_authority_hash_malformed",
+    "reviewed dashboard provider accounting changed": "provider_accounting_changed",
+    "dashboard provider boundary broadened": "provider_boundary_broadened",
+    "planning-only dashboard authority acceptance mutated Home Assistant": "unexpected_mutation",
+}
+
+
 def fixture_stats(url: str) -> dict[str, Any]:
     with urlopen(url, timeout=5) as response:  # noqa: S310 - fixed CI fixture
         value = json.load(response)
@@ -275,11 +299,17 @@ def main() -> None:
             )
         )
     except Exception as exc:
+        reason_code = (
+            FAILURE_REASON_CODES.get(str(exc), "unknown_authority_failure")
+            if isinstance(exc, DashboardAuthorityFailure)
+            else "unexpected_exception"
+        )
         args.output.write_text(
             json.dumps(
                 {
                     "result": "FAIL",
                     "failure_type": type(exc).__name__[:96],
+                    "failure_reason_code": reason_code,
                 },
                 indent=2,
                 sort_keys=True,

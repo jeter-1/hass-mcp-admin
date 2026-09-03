@@ -23,6 +23,7 @@ from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     McpDashboardRead,
     validate_dashboard_write_arguments,
 )
+from ha_mcp_engineering.configuration import Settings  # noqa: E402
 from ha_mcp_engineering.errors import (  # noqa: E402
     DashboardProviderError,
     ErrorCode,
@@ -299,8 +300,22 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
     async def test_exact_8_4_1_inventory_configuration_and_authority_succeed(self):
         transport = _ExactProviderTransport(version="8.4.1")
         provider = UpstreamDashboardProvider()
-        provider._transport = transport
-        provider._configured_endpoint_host = "hass-mcp-engineering"
+        provider.configure(
+            Settings(
+                ha_url="http://supervisor/core",
+                ha_token="synthetic-dashboard-token",
+                access_secret="synthetic-dashboard-access-secret",
+                port=0,
+                audit_path="synthetic-dashboard-audit.jsonl",
+                rate_limit_per_minute=120,
+                rate_limit_burst=25,
+                destructive_services=frozenset(),
+                upstream_dashboard_mcp_url=(
+                    "http://127.0.0.1:18086/synthetic-upstream-secret/mcp"
+                ),
+            ),
+            transport=transport,
+        )
         gateway = DashboardExecutionGateway(provider, response_limit=60_000)
 
         preread = await gateway.preread(url_path="operations")
@@ -310,7 +325,7 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preread.operational_identity.target_url_path, "operations")
         self.assertEqual(
             preread.operational_identity.authority.provider_slug,
-            "hass_mcp_engineering",
+            "ha_mcp",
         )
         self.assertEqual(
             preread.operational_identity.authority.source_commit,
@@ -325,7 +340,6 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         )
         provider = UpstreamDashboardProvider()
         provider._transport = transport
-        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         inventory = await provider.list_dashboards(
             limit=5, response_limit=60_000
@@ -348,7 +362,6 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         )
         provider = UpstreamDashboardProvider()
         provider._transport = transport
-        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         with self.assertRaises(DashboardProviderError):
             await provider.list_dashboards(limit=5, response_limit=60_000)
@@ -360,7 +373,6 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         transport = _ExactProviderTransport(version="8.4.1")
         provider = UpstreamDashboardProvider()
         provider._transport = transport
-        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         key = await provider.best_practices_acknowledgement_key()
         result = await provider.execute_governed_dashboard_update(
@@ -378,7 +390,6 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         transport = _ExactProviderTransport()
         provider = UpstreamDashboardProvider()
         provider._transport = transport
-        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         key = await provider.best_practices_acknowledgement_key()
         result = await provider.execute_governed_dashboard_update(
@@ -404,7 +415,6 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         )
         provider = UpstreamDashboardProvider()
         provider._transport = transport
-        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         with self.assertRaises(DashboardProviderError):
             await provider.best_practices_acknowledgement_key()
@@ -417,7 +427,6 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         transport.write_payload["config_updated"] = False
         provider = UpstreamDashboardProvider()
         provider._transport = transport
-        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         key = await provider.best_practices_acknowledgement_key()
         with self.assertRaises(DashboardProviderError):
@@ -444,7 +453,6 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         }
         provider = UpstreamDashboardProvider()
         provider._transport = transport
-        provider._configured_endpoint_host = "hass-mcp-engineering"
 
         with self.assertRaises(DashboardProviderError) as caught:
             await provider.execute_governed_dashboard_update(

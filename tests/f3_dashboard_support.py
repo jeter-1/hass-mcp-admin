@@ -71,7 +71,7 @@ def make_preread(
     getter = release.tool_contracts_by_name["ha_config_get_dashboard"]
     setter = EXACT_CONTRACTS[version]
     authority = build_provider_authority(
-        provider_slug="hass_mcp_engineering",
+        provider_slug="ha_mcp",
         server_name="ha-mcp",
         upstream_version=version,
         protocol_version="2025-03-26",
@@ -153,7 +153,7 @@ async def make_proposal(
         expiration_minutes=30,
         requested_by="test.operator",
         provider_evidence=EXACT_CONTRACTS[exact.upstream_version],
-        authoritative_provider_slug="hass_mcp_engineering",
+        authoritative_provider_slug="ha_mcp",
         artifact_store=artifact_store,
         now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),
         plan_id=plan_id,

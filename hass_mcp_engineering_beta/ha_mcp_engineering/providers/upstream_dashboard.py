@@ -18,7 +18,6 @@ import statistics
 import threading
 import time
 from typing import Any, Callable
-from urllib.parse import urlsplit
 
 from ..clients.mcp import (
     DashboardTransportError,
@@ -147,7 +146,7 @@ FAILURE_CATEGORIES = (
     "internal_error",
 )
 CANONICAL_DASHBOARD_PATH = re.compile(r"^[a-z0-9_-]{1,256}$")
-CANONICAL_PROVIDER_HOST = re.compile(r"^[a-z0-9][a-z0-9-]{0,127}$")
+HA_MCP_PROVIDER_LOCK_SLUG = "ha_mcp"
 MAX_IDENTITY_CHARS = 128
 MAX_WARNING_CHARS = 512
 SAFE_UPSTREAM_ERROR_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
@@ -333,7 +332,6 @@ class UpstreamDashboardProvider:
         self._state = DashboardProviderState()
         self._lock = threading.Lock()
         self._registry = UpstreamTrustRegistry(enabled=False, public_key="")
-        self._configured_endpoint_host: str | None = None
 
     def configure(
         self,
@@ -344,13 +342,6 @@ class UpstreamDashboardProvider:
     ) -> None:
         endpoint = parse_upstream_dashboard_endpoint(
             settings.upstream_dashboard_mcp_url
-        )
-        endpoint_host = urlsplit(endpoint.url).hostname if endpoint else None
-        self._configured_endpoint_host = (
-            endpoint_host
-            if isinstance(endpoint_host, str)
-            and CANONICAL_PROVIDER_HOST.fullmatch(endpoint_host)
-            else None
         )
         self._known_secrets = tuple(
             dict.fromkeys(
@@ -664,7 +655,6 @@ class UpstreamDashboardProvider:
             or not release.dashboard_attestation_entry_id
             or not release.dashboard_attestation_fingerprint
             or not release.dashboard_compiled_constraints_fingerprint
-            or self._configured_endpoint_host is None
         ):
             raise DashboardTransportError("upstream_version_mismatch")
         validation = validate_reviewed_release_catalog(
@@ -711,10 +701,11 @@ class UpstreamDashboardProvider:
             raise DashboardTransportError("reviewed_contract_mismatch")
         setter_admission = admit_provider_contract(exact_setter)
         authority = build_provider_authority(
-            # Supervisor DNS replaces the canonical add-on slug underscore
-            # with a hyphen. Mirror the reviewed lifecycle identity mapping so
-            # dashboard and reload operations contend on the same lock key.
-            provider_slug=self._configured_endpoint_host.replace("-", "_"),
+            # This is the binary-owned logical provider identity used by the
+            # shared F3 lock graph.  Endpoint hosts may be IP literals, local
+            # test names, or Supervisor DNS aliases; none is authority for an
+            # add-on identity and none may select a different lock domain.
+            provider_slug=HA_MCP_PROVIDER_LOCK_SLUG,
             server_name=handshake.server_name,
             upstream_version=handshake.server_version,
             protocol_version=handshake.protocol_version,
