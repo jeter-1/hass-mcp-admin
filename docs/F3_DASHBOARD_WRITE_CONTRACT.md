@@ -37,10 +37,12 @@ sequence, locking, and F3 checks pass.
 
 ## Exact upstream admission
 
-The executable provider contract is admitted only for exact reviewed
-`ha-mcp` 8.1.1 or 8.2.0, protocol `2025-03-26`, and the corresponding exact
-compatibility entry. The 8.2.0 entry is `ha-mcp-v8.2.0-dbcfc0ee`, source tag
-`v8.2.0`, commit `54c492510d05b1f33c777f1c94bfb6a50a7d7c42`.
+The executable provider contract is admitted only for an exact reviewed
+`ha-mcp` release, protocol `2025-03-26`, and the corresponding exact
+compatibility entry. Current compiled support covers 8.1.1, 8.2.0, and 8.4.1.
+The 8.4.1 entry is `ha-mcp-v8.4.1-7823b365`, source tag `v8.4.1`, commit
+`701a7c26ac0e2309c7883a627d31873ab1510077`, and immutable image index
+`sha256:7823b36587a6e62efed271f26f3f72380b49f47364e5385580584e7ab2c60722`.
 The known existing-hyphenless-target pre-plan rejection remains exact to
 8.1.1. Exact 8.2.0 accepts such a target only after its upstream registry read
 proves the exact `url_path` already exists; new hyphenless creation remains
@@ -69,20 +71,47 @@ rejected. A missing target is never treated as permission to create it.
 The patch representation is `f3-dashboard-json-pointer-patch-v1`:
 
 - only canonical RFC 6901 pointers are accepted;
-- the empty root pointer, array append `-`, wildcard and predicate selectors,
-  executable expressions, `move`, and `copy` are prohibited;
+- the empty root pointer, wildcard and predicate selectors, executable
+  expressions, `move`, and `copy` are prohibited;
+- for `add` only, a final `-` appends to an existing array and a canonical
+  numeric index from zero through the current array length inserts at that
+  exact position;
+- negative, leading-zero, nonnumeric, intermediate-`-`, and out-of-range array
+  selectors are prohibited;
 - `replace` and `remove` require an existing exact path;
 - `add` requires an existing unambiguous parent and cannot overwrite;
 - recursive semantic leaf changes must fit the 16-change approval projection;
 - the result is built from a deep copy of the complete raw configuration; and
 - undeclared structure, including custom-card fields, must remain equal.
 
-The full input and result are private artifacts. Public approval review may
-show bounded, sanitized before/after previews for the declared changed paths so
-an administrator can make a meaningful decision. It never exposes the complete
+The full input and result are private artifacts. The authenticated approval
+review shows the complete bounded before/after value for every declared patch
+operation, rendered as inert HTML-escaped JSON. That projection is hash-bound
+to the exact preread, canonical patch, result, and plan; missing, malformed,
+protected, tampered, or oversized projections cannot create or consume
+approval authority. The ordinary MCP plan surface never exposes the complete
 dashboard or compiled setter payload. Audit, health, and errors expose only
 bounded paths, change kinds, counts, hashes, typed categories, and reviewed
 provider identity.
+
+One authenticated owner plan approval authorizes a fresh exact f2-v2 dashboard
+operation. High or uncertain frontend consequence remains disclosed and
+elevated, but classifier severity alone does not create a second acknowledgement.
+Historical approval bundles retain their original interpretation.
+
+## Canonical operational provider identity
+
+Inventory, configuration, planning, approval, F3 locks, dispatch, and readback
+use one immutable provider identity. It binds the compiled release entry,
+upstream identity and version, protocol, source and image, exact catalog,
+dashboard attestation and constraints, exact getter and setter contracts,
+provider generation, fresh-session validation model, target storage identity,
+and baseline configuration hashes. Lifecycle health and version strings cannot
+be reconstructed into dashboard write authority.
+
+The getter may remain usable when setter authority is unavailable. In that
+state its bounded read metadata carries no actionable dashboard provider
+identity, and governed planning fails before approval or setter dispatch.
 
 ## Exact provider evidence boundary
 
@@ -198,7 +227,8 @@ Each is a separate product and security decision.
 
 Acceptance must prove the positive path and the safety boundary:
 
-- exact 8.1.1 admission, one setter call, exact reread, and verified result;
+- exact 8.1.1, 8.2.0, and 8.4.1 admission, one setter call, exact reread, and
+  verified result;
 - stale hash, missing target, YAML target, schema drift, contract drift,
   unreviewed release, invalid patch, and artifact tamper all fail closed;
 - no setter dispatch occurs before durable intent;
