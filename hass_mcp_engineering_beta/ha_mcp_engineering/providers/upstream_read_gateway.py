@@ -94,6 +94,7 @@ COMPATIBILITY_REPROBE_INTERVAL_SECONDS = 900.0
 MAX_QUARANTINE_RECORDS = 26
 MAX_RUNTIME_CONTRACT_DIFF_FIELDS = 16
 MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
+MAX_HELD_READ_CANARY_BATCH_ITEMS = 64
 OPERATIONAL_CATALOG_FINGERPRINT_MODEL = "mcp-sorted-full-tool-catalog-v1"
 HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1 = (
     "ha-mcp-hacs-info-top-level-success-v1"
@@ -218,10 +219,10 @@ _UPSTREAM_INTERNAL_CODES = frozenset(
     }
 )
 # Reviewed domain outcomes are keyed by both the exact admitted tool and the
-# exact structured code emitted by pinned ha-mcp 7.14.1.  The same upstream
+# exact structured code emitted by a compiled ha-mcp profile. The same upstream
 # code has different meanings for different tools, so codes are never promoted
-# globally.  CONFIG_NOT_FOUND and ENTITY_INVALID_ID have no established
-# automatic-read emitter in the pinned source and intentionally have no entry.
+# globally. CONFIG_NOT_FOUND and ENTITY_INVALID_ID have no established
+# automatic-read emitter in the reviewed source and intentionally have no entry.
 _UPSTREAM_DOMAIN_OUTCOMES = {
     ("ha_config_get_automation", "RESOURCE_NOT_FOUND"): "automation_not_found",
     ("ha_config_get_calendar_events", "ENTITY_NOT_FOUND"): "entity_not_found",
@@ -234,6 +235,7 @@ _UPSTREAM_DOMAIN_OUTCOMES = {
     ("ha_get_device", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_entity", "ENTITY_NOT_FOUND"): "entity_not_found",
     ("ha_get_hacs_info", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_get_operation_status", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_skill_guide", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_state", "ENTITY_NOT_FOUND"): "entity_not_found",
     ("ha_get_zone", "RESOURCE_NOT_FOUND"): "resource_not_found",
@@ -271,6 +273,9 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ),
     ("ha_get_hacs_info", "resource_not_found"): (
         "The requested HACS repository was not found."
+    ),
+    ("ha_get_operation_status", "resource_not_found"): (
+        "The requested operation was not found or is no longer retained."
     ),
     ("ha_get_skill_guide", "resource_not_found"): (
         "The requested skill guide resource was not found."
@@ -3265,6 +3270,7 @@ class UpstreamReadGateway:
         dispatched = False
         core_authority = None
         core_commits = None
+        batch_item_outcomes: list[dict[str, Any]] | None = None
         observed_identity: dict[str, str | None] = {
             "server": None,
             "version": None,
@@ -3346,7 +3352,7 @@ class UpstreamReadGateway:
                 and observed_output_fingerprint
                 == route.runtime_output_schema_fingerprint
             )
-            return {
+            report = {
                 "upstream_tool": upstream_tool_name[:128],
                 "expected_compatibility_entry_id": (
                     expected_compatibility_entry_id[:160]
@@ -3398,6 +3404,10 @@ class UpstreamReadGateway:
                 "truncated": truncation,
                 "promotion_performed": False,
             }
+            if batch_item_outcomes is not None:
+                report["batch_item_count"] = len(batch_item_outcomes)
+                report["batch_item_outcomes"] = batch_item_outcomes
+            return report
 
         def set_audit_context(value: dict[str, Any]) -> None:
             if telemetry is None:
@@ -3445,11 +3455,20 @@ class UpstreamReadGateway:
                 telemetry.result_status = "failure"
                 telemetry.completeness = "failed"
             if dispatched:
-                METRICS.record_provider_result(
-                    PROVIDER_ID,
-                    "failed",
-                    dispatched=True,
-                )
+                classified_outcome = _EXPECTED_PROVIDER_OUTCOMES.get(normalized)
+                if classified_outcome is not None:
+                    METRICS.record_classified_outcome(classified_outcome)
+                    METRICS.record_provider_result(
+                        PROVIDER_ID,
+                        "complete",
+                        dispatched=True,
+                    )
+                else:
+                    METRICS.record_provider_result(
+                        PROVIDER_ID,
+                        "failed",
+                        dispatched=True,
+                    )
             response_limit = min(
                 route.entry.response_limit_bytes
                 if route is not None
@@ -3544,6 +3563,15 @@ class UpstreamReadGateway:
         )
         if errors:
             return await fail("argument_validation")
+        operation_ids = arguments.get("operation_id")
+        if (
+            isinstance(operation_ids, list)
+            and len(operation_ids) > MAX_HELD_READ_CANARY_BATCH_ITEMS
+        ):
+            return await fail(
+                "argument_validation",
+                reason="held_canary_batch_limit_exceeded",
+            )
         if transport is None:
             return await fail("not_configured")
 
@@ -3700,6 +3728,9 @@ class UpstreamReadGateway:
                     "invalid_response",
                     reason="output_contract_validation_failed",
                 )
+            batch_item_outcomes, batch_partial = (
+                _held_operation_status_batch_outcomes(payload, arguments)
+            )
             response_limit = min(
                 route.entry.response_limit_bytes,
                 self._settings.response_size_limit
@@ -3734,6 +3765,12 @@ class UpstreamReadGateway:
             upstream_partial, warnings = _upstream_completeness(
                 route.entry, sanitation.value
             )
+            if batch_partial:
+                upstream_partial = True
+                warnings.append(
+                    "The held operation-status batch contains incomplete or "
+                    "non-success application outcomes."
+                )
             truncated = bool(
                 sanitation.truncated_field_count or summarized
             )
@@ -5160,33 +5197,23 @@ def _classify_upstream_tool_error(
     call_result: dict[str, Any],
     arguments: dict[str, Any] | None = None,
 ) -> str:
-    """Classify only the reviewed 7.14.1 structured error discriminator."""
+    """Classify only an exact reviewed structured error discriminator."""
 
-    content = call_result.get("content")
-    if not isinstance(content, list) or len(content) != 1:
+    payload = _reviewed_upstream_error_payload(call_result)
+    if payload is None:
         return "upstream_error"
-    item = content[0]
-    if (
-        not isinstance(item, dict)
-        or item.get("type") != "text"
-        or not isinstance(item.get("text"), str)
-    ):
-        return "upstream_error"
-    text = item["text"]
-    try:
-        if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
-            return "upstream_error"
-        payload = json.loads(
-            text,
-            object_pairs_hook=_reject_duplicate_json_members,
-            parse_constant=_reject_non_finite_json_constant,
-        )
-    except (RecursionError, TypeError, UnicodeError, ValueError):
-        return "upstream_error"
-    if (
-        not isinstance(payload, dict)
-        or payload.get("success") is not False
-        or not isinstance(payload.get("error"), dict)
+    return _classify_upstream_error_payload(upstream_tool, payload, arguments)
+
+
+def _classify_upstream_error_payload(
+    upstream_tool: str,
+    payload: dict[str, Any],
+    arguments: dict[str, Any] | None = None,
+) -> str:
+    """Map one already-decoded, reviewed error object to binary-owned policy."""
+
+    if payload.get("success") is not False or not isinstance(
+        payload.get("error"), dict
     ):
         return "upstream_error"
     code = payload["error"].get("code")
@@ -5222,6 +5249,82 @@ def _classify_upstream_tool_error(
     return "upstream_error"
 
 
+def _bounded_canonical_error_payload(value: Any) -> tuple[dict[str, Any], str] | None:
+    """Return a strict bounded object and its canonical JSON, or fail closed."""
+
+    try:
+        canonical = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        if len(canonical.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
+            return None
+        decoded = json.loads(
+            canonical,
+            object_pairs_hook=_reject_duplicate_json_members,
+            parse_constant=_reject_non_finite_json_constant,
+        )
+    except (RecursionError, TypeError, UnicodeError, ValueError):
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    return decoded, canonical
+
+
+def _reviewed_upstream_error_payload(
+    call_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Decode text and structured MCP error representations without ambiguity."""
+
+    structured_value: tuple[dict[str, Any], str] | None = None
+    if "structuredContent" in call_result:
+        structured_value = _bounded_canonical_error_payload(
+            call_result.get("structuredContent")
+        )
+        if structured_value is None:
+            return None
+
+    text_value: tuple[dict[str, Any], str] | None = None
+    if "content" in call_result:
+        content = call_result.get("content")
+        if (
+            not isinstance(content, list)
+            or len(content) != 1
+            or not isinstance(content[0], dict)
+            or content[0].get("type") != "text"
+            or not isinstance(content[0].get("text"), str)
+        ):
+            return None
+        text = content[0]["text"]
+        try:
+            if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
+                return None
+            decoded = json.loads(
+                text,
+                object_pairs_hook=_reject_duplicate_json_members,
+                parse_constant=_reject_non_finite_json_constant,
+            )
+        except (RecursionError, TypeError, UnicodeError, ValueError):
+            return None
+        text_value = _bounded_canonical_error_payload(decoded)
+        if text_value is None:
+            return None
+
+    if structured_value is None and text_value is None:
+        return None
+    if (
+        structured_value is not None
+        and text_value is not None
+        and structured_value[1] != text_value[1]
+    ):
+        return None
+    selected = structured_value if structured_value is not None else text_value
+    return selected[0] if selected is not None else None
+
+
 def _shape_projection(value: Any) -> Any:
     """Project an untrusted result to bounded structural evidence."""
 
@@ -5250,31 +5353,8 @@ def _shape_projection(value: Any) -> Any:
 def _upstream_error_evidence(call_result: dict[str, Any]) -> dict[str, Any]:
     """Return code-and-shape evidence without reflecting error payload data."""
 
-    content = call_result.get("content")
-    if (
-        not isinstance(content, list)
-        or len(content) != 1
-        or not isinstance(content[0], dict)
-        or content[0].get("type") != "text"
-        or not isinstance(content[0].get("text"), str)
-    ):
-        return {
-            "is_error": True,
-            "structured_code": None,
-            "shape_fingerprint": schema_fingerprint(
-                _shape_projection(call_result)
-            ),
-        }
-    text = content[0]["text"]
-    try:
-        if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
-            raise ValueError("error envelope exceeds evidence bound")
-        payload = json.loads(
-            text,
-            object_pairs_hook=_reject_duplicate_json_members,
-            parse_constant=_reject_non_finite_json_constant,
-        )
-    except (RecursionError, TypeError, UnicodeError, ValueError):
+    payload = _reviewed_upstream_error_payload(call_result)
+    if payload is None:
         return {
             "is_error": True,
             "structured_code": None,
@@ -5282,7 +5362,7 @@ def _upstream_error_evidence(call_result: dict[str, Any]) -> dict[str, Any]:
                 {"unparseable_bounded_error": True}
             ),
         }
-    error = payload.get("error") if isinstance(payload, dict) else None
+    error = payload.get("error")
     code = error.get("code") if isinstance(error, dict) else None
     return {
         "is_error": True,
@@ -5291,6 +5371,109 @@ def _upstream_error_evidence(call_result: dict[str, Any]) -> dict[str, Any]:
         ),
         "shape_fingerprint": schema_fingerprint(_shape_projection(payload)),
     }
+
+
+def _held_operation_status_batch_outcomes(
+    payload: Any,
+    arguments: dict[str, Any],
+) -> tuple[list[dict[str, Any]] | None, bool]:
+    """Validate and classify the reviewed operation-status batch envelope.
+
+    This projection deliberately omits operation identifiers and error messages.
+    The raw sanitized result remains available only in the authenticated canary
+    response; health and audit consume the bounded canary evidence instead.
+    """
+
+    operation_ids = arguments.get("operation_id")
+    if not isinstance(operation_ids, list):
+        return None, False
+    if not operation_ids or len(operation_ids) > MAX_HELD_READ_CANARY_BATCH_ITEMS:
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    detailed = payload.get("detailed_results")
+    if (
+        payload.get("total_operations") != len(operation_ids)
+        or not isinstance(detailed, list)
+        or len(detailed) != len(operation_ids)
+    ):
+        raise _GatewayFailure("invalid_response", dispatched=True)
+
+    counts = {
+        name: 0
+        for name in ("completed", "failed", "timeout", "not_found", "pending")
+    }
+    outcomes: list[dict[str, Any]] = []
+    for index, (expected_id, item) in enumerate(
+        zip(operation_ids, detailed, strict=True)
+    ):
+        if (
+            not isinstance(expected_id, str)
+            or not isinstance(item, dict)
+            or item.get("operation_id") != expected_id
+        ):
+            raise _GatewayFailure("invalid_response", dispatched=True)
+        status = item.get("status")
+        if status not in counts:
+            raise _GatewayFailure("invalid_response", dispatched=True)
+        counts[status] += 1
+        projection: dict[str, Any] = {
+            "item_index": index,
+            "status": status,
+            "structured_code": None,
+            "error_code": None,
+            "failure_category": None,
+            "retryable": False,
+        }
+        if status == "completed":
+            if item.get("success") is not True or "error" in item:
+                raise _GatewayFailure("invalid_response", dispatched=True)
+        elif status == "pending":
+            if "error" in item or item.get("success") is False:
+                raise _GatewayFailure("invalid_response", dispatched=True)
+        else:
+            if item.get("success") is not False or not isinstance(
+                item.get("error"), dict
+            ):
+                raise _GatewayFailure("invalid_response", dispatched=True)
+            code = item["error"].get("code")
+            if not isinstance(code, str) or len(code) > 128:
+                raise _GatewayFailure("invalid_response", dispatched=True)
+            expected_status = {
+                "RESOURCE_NOT_FOUND": "not_found",
+                "TIMEOUT_OPERATION": "timeout",
+                "SERVICE_CALL_FAILED": "failed",
+            }.get(code)
+            if expected_status is not None and status != expected_status:
+                raise _GatewayFailure("invalid_response", dispatched=True)
+            category = _classify_upstream_error_payload(
+                "ha_get_operation_status",
+                item,
+                {"operation_id": expected_id},
+            )
+            public_code, retryable = _public_failure(category)
+            projection.update(
+                {
+                    "structured_code": code,
+                    "error_code": public_code,
+                    "failure_category": category,
+                    "retryable": retryable,
+                }
+            )
+        outcomes.append(projection)
+
+    expected_counts = {
+        "completed": counts["completed"],
+        "failed": counts["failed"] + counts["timeout"],
+        "not_found": counts["not_found"],
+        "pending": counts["pending"],
+    }
+    if any(payload.get(name) != value for name, value in expected_counts.items()):
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    if payload.get("all_complete") != (counts["pending"] == 0):
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    partial = any(status != "completed" for status in counts if counts[status])
+    return outcomes, partial
 
 
 def _reviewed_single_entity_registry_lookup(

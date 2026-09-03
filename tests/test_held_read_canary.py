@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from copy import deepcopy
 from dataclasses import replace
 import json
@@ -14,13 +15,7 @@ from mcp.server.fastmcp import FastMCP
 
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
-CAPTURE = (
-    ROOT
-    / "docs"
-    / "evidence"
-    / "upstream-read-compatibility"
-    / "ha-mcp-8.1.1.json"
-)
+CAPTURE_ROOT = ROOT / "docs" / "evidence" / "upstream-read-compatibility"
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
@@ -52,11 +47,60 @@ from tests.test_readonly_upstream_gateway import (  # noqa: E402
 )
 
 
-ENTRY_ID = "ha-mcp-v8.1.1-e1d76a6e"
+ENTRY_IDS = {
+    "8.0.0": "ha-mcp-v8.0.0-d65630f6",
+    "8.1.0": "ha-mcp-v8.1.0-4c07e625",
+    "8.1.1": "ha-mcp-v8.1.1-e1d76a6e",
+    "8.2.0": "ha-mcp-v8.2.0-dbcfc0ee",
+    "8.4.1": "ha-mcp-v8.4.1-7823b365",
+}
+ENTRY_ID = ENTRY_IDS["8.1.1"]
 
 
-def captured_tools() -> list[dict]:
-    return deepcopy(json.loads(CAPTURE.read_text(encoding="utf-8"))["tools"])
+def captured_tools(version: str = "8.1.1") -> list[dict]:
+    capture = CAPTURE_ROOT / f"ha-mcp-{version}.json"
+    tools = deepcopy(json.loads(capture.read_text(encoding="utf-8"))["tools"])
+    if version == "8.4.1":
+        review = json.loads(
+            (CAPTURE_ROOT / "ha-mcp-8.4.1-contract-review.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        by_name = {item["name"]: item for item in tools}
+        tools = [
+            by_name[name]
+            for name in review["runtime_catalog"]["runtime_tool_order"]
+        ]
+    return tools
+
+
+def error_payload(code: object = "RESOURCE_NOT_FOUND") -> dict:
+    return {
+        "success": False,
+        "error": {
+            "code": code,
+            "message": "synthetic secret-free error",
+        },
+    }
+
+
+def error_result(
+    *,
+    code: object = "RESOURCE_NOT_FOUND",
+    representation: str = "text",
+    structured_payload: dict | None = None,
+) -> dict:
+    payload = error_payload(code)
+    result: dict = {"isError": True}
+    if representation in {"text", "both"}:
+        result["content"] = [
+            {"type": "text", "text": json.dumps(payload)}
+        ]
+    if representation in {"structured", "both"}:
+        result["structuredContent"] = (
+            payload if structured_payload is None else structured_payload
+        )
+    return result
 
 
 def decoded(value: str) -> dict:
@@ -151,14 +195,17 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
     async def gateway(
         self,
         *,
+        version: str = "8.1.1",
         tools: list[dict] | None = None,
         result: dict | None = None,
+        error: str | None = None,
     ) -> tuple[UpstreamReadGateway, FakeTransport, FastMCP]:
         self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
         transport = FakeTransport(
-            tools or captured_tools(),
-            version="8.1.1",
+            tools or captured_tools(version),
+            version=version,
             result=result,
+            error=error,
         )
         gateway = UpstreamReadGateway()
         gateway.configure(
@@ -174,6 +221,21 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             "admitted_exact",
         )
         return gateway, transport, server
+
+    async def run_status_canary(
+        self,
+        gateway: UpstreamReadGateway,
+        *,
+        version: str = "8.1.1",
+        operation_id: object = "synthetic-missing-operation",
+    ) -> dict:
+        return decoded(
+            await gateway.run_held_read_canary(
+                upstream_tool_name="ha_get_operation_status",
+                expected_compatibility_entry_id=ENTRY_IDS[version],
+                arguments={"operation_id": operation_id},
+            )
+        )
 
     async def test_promoted_search_is_rejected_by_held_canary(self):
         gateway, transport, server = await self.gateway()
@@ -214,24 +276,10 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_upstream_error_is_truthful_and_preserves_admission(self):
         gateway, transport, server = await self.gateway(
-            result={
-                "content": [
-                    {
-                        "type": "text",
-                        "text": json.dumps(
-                            {
-                                "success": False,
-                                "error": {
-                                    "code": "RESOURCE_NOT_FOUND",
-                                    "message": "synthetic secret-free error",
-                                },
-                            }
-                        ),
-                    }
-                ],
-                "isError": True,
-            }
+            result=error_result()
         )
+        gateway._ha_rest_client = AsyncMock()
+        gateway._ha_websocket_client = AsyncMock()
         before = self.admission_surface_snapshot(gateway, server)
 
         telemetry, token = begin_request("held-canary-not-found")
@@ -249,9 +297,10 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
             end_request(token)
 
         self.assertFalse(result["success"])
-        self.assertEqual(result["error_code"], "provider_error")
+        self.assertEqual(result["error_code"], "resource_not_found")
+        self.assertFalse(result["retryable"])
         evidence = result["details"]["canary_evidence"]
-        self.assertEqual(evidence["failure_category"], "upstream_error")
+        self.assertEqual(evidence["failure_category"], "resource_not_found")
         self.assertEqual(
             evidence["error_contract"]["structured_code"],
             "RESOURCE_NOT_FOUND",
@@ -264,12 +313,272 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(evidence["promotion_performed"])
         self.assertEqual(transport.calls[0][0], "ha_get_operation_status")
         self.assertEqual(telemetry.provider_dispatch_count, 1)
-        self.assertEqual(telemetry.provider_success_count, 0)
-        self.assertEqual(telemetry.provider_failure_count, 1)
+        self.assertEqual(telemetry.provider_success_count, 1)
+        self.assertEqual(telemetry.provider_failure_count, 0)
         self.assertEqual(
             self.admission_surface_snapshot(gateway, server),
             before,
         )
+        self.assertEqual(gateway._ha_rest_client.mock_calls, [])
+        self.assertEqual(gateway._ha_websocket_client.mock_calls, [])
+
+    async def test_resource_not_found_taxonomy_is_exact_across_held_profiles(self):
+        for version, entry_id in ENTRY_IDS.items():
+            with self.subTest(version=version):
+                gateway, transport, server = await self.gateway(
+                    version=version,
+                    result=error_result(),
+                )
+                result = await self.run_status_canary(gateway, version=version)
+                self.assertFalse(result["success"])
+                self.assertEqual(result["error_code"], "resource_not_found")
+                self.assertFalse(result["retryable"])
+                evidence = result["details"]["canary_evidence"]
+                self.assertEqual(evidence["failure_category"], "resource_not_found")
+                self.assertEqual(
+                    evidence["error_contract"]["structured_code"],
+                    "RESOURCE_NOT_FOUND",
+                )
+                self.assertEqual(evidence["active_compatibility_entry_id"], entry_id)
+                self.assertEqual(evidence["reviewed_classification_before"], "held_for_canary")
+                self.assertEqual(evidence["reviewed_classification_after"], "held_for_canary")
+                self.assertTrue(evidence["dispatch_occurred"])
+                self.assertFalse(evidence["promotion_performed"])
+                self.assertFalse(evidence["fallback_occurred"])
+                self.assertNotIn("ha_get_operation_status", registered_tools(server))
+                expected_reads = 24 if version in {"8.0.0", "8.1.0"} else 25
+                self.assertEqual(
+                    gateway.health_snapshot()["dynamically_exposed_count"],
+                    expected_reads,
+                )
+                self.assertEqual(len(transport.calls), 1)
+
+    async def test_text_and_structured_error_representations_agree(self):
+        fingerprints = set()
+        for representation in ("text", "structured", "both"):
+            with self.subTest(representation=representation):
+                gateway, _transport, _server = await self.gateway(
+                    result=error_result(representation=representation)
+                )
+                result = await self.run_status_canary(gateway)
+                self.assertEqual(result["error_code"], "resource_not_found")
+                self.assertFalse(result["retryable"])
+                contract = result["details"]["canary_evidence"]["error_contract"]
+                self.assertEqual(contract["structured_code"], "RESOURCE_NOT_FOUND")
+                fingerprints.add(contract["shape_fingerprint"])
+        self.assertEqual(len(fingerprints), 1)
+
+    async def test_untrusted_error_discriminators_fail_closed(self):
+        cases = {
+            "unknown": error_result(code="SYNTHETIC_UNKNOWN"),
+            "missing": error_result(structured_payload={
+                "success": False,
+                "error": {"message": "synthetic"},
+            }, representation="structured"),
+            "wrong_type": error_result(code=7),
+            "malformed_error": error_result(structured_payload={
+                "success": False,
+                "error": "RESOURCE_NOT_FOUND",
+            }, representation="structured"),
+            "conflicting": error_result(
+                representation="both",
+                structured_payload=error_payload("SYNTHETIC_CONFLICT"),
+            ),
+            "invalid_json": {
+                "isError": True,
+                "content": [{"type": "text", "text": "{not-json"}],
+            },
+            "oversized": {
+                "isError": True,
+                "content": [{
+                    "type": "text",
+                    "text": json.dumps({
+                        "success": False,
+                        "error": {
+                            "code": "RESOURCE_NOT_FOUND",
+                            "message": "x" * 20_000,
+                        },
+                    }),
+                }],
+            },
+        }
+        for name, upstream_result in cases.items():
+            with self.subTest(case=name):
+                gateway, transport, _server = await self.gateway(
+                    result=upstream_result
+                )
+                result = await self.run_status_canary(gateway)
+                self.assertFalse(result["success"])
+                self.assertEqual(result["error_code"], "provider_error")
+                self.assertEqual(
+                    result["details"]["failure_category"], "upstream_error"
+                )
+                self.assertTrue(result["retryable"])
+                self.assertEqual(len(transport.calls), 1)
+
+    async def test_transport_failures_keep_transport_taxonomy(self):
+        cases = (
+            ("connection_failed", "provider_unavailable", True),
+            ("timeout", "provider_timeout", True),
+        )
+        for category, error_code, retryable in cases:
+            with self.subTest(category=category):
+                gateway, transport, _server = await self.gateway(error=category)
+                result = await self.run_status_canary(gateway)
+                self.assertFalse(result["success"])
+                self.assertEqual(result["error_code"], error_code)
+                self.assertEqual(result["retryable"], retryable)
+                self.assertEqual(result["details"]["failure_category"], category)
+                self.assertFalse(
+                    result["details"]["canary_evidence"]["dispatch_occurred"]
+                )
+                self.assertEqual(transport.calls, [])
+
+    async def test_live_identity_protocol_and_version_drift_stop_before_dispatch(self):
+        mutations = {
+            "identity": {"server_name": "unexpected-mcp"},
+            "version": {"server_version": "8.4.2"},
+            "protocol": {"protocol_version": "2099-01-01"},
+        }
+        for name, changes in mutations.items():
+            with self.subTest(change=name):
+                gateway, transport, _server = await self.gateway()
+                transport.catalog = replace(transport.catalog, **changes)
+                result = await self.run_status_canary(gateway)
+                self.assertFalse(result["success"])
+                self.assertFalse(
+                    result["details"]["canary_evidence"]["dispatch_occurred"]
+                )
+                self.assertEqual(transport.calls, [])
+
+    async def test_batch_partial_result_classifies_items_without_identifier_evidence(self):
+        operation_ids = ["synthetic-complete", "synthetic-missing"]
+        batch = {
+            "success": True,
+            "total_operations": 2,
+            "completed": 1,
+            "failed": 0,
+            "not_found": 1,
+            "pending": 0,
+            "all_complete": True,
+            "summary": {"success_rate": "1/2", "completion_percentage": 100.0},
+            "detailed_results": [
+                {
+                    "operation_id": operation_ids[0],
+                    "status": "completed",
+                    "success": True,
+                },
+                {
+                    **error_payload(),
+                    "operation_id": operation_ids[1],
+                    "status": "not_found",
+                },
+            ],
+        }
+        gateway, transport, server = await self.gateway(
+            result={
+                "content": [{"type": "text", "text": json.dumps(batch)}],
+                "isError": False,
+            }
+        )
+        before = self.admission_surface_snapshot(gateway, server)
+        telemetry, token = begin_request("held-canary-batch-partial")
+        try:
+            result = await self.run_status_canary(
+                gateway,
+                operation_id=operation_ids,
+            )
+        finally:
+            end_request(token)
+
+        self.assertTrue(result["success"])
+        evidence = result["data"]["canary_evidence"]
+        self.assertEqual(evidence["outcome"], "partial")
+        self.assertEqual(evidence["completeness"], "partial")
+        self.assertEqual(evidence["batch_item_count"], 2)
+        self.assertEqual(
+            evidence["batch_item_outcomes"][1],
+            {
+                "item_index": 1,
+                "status": "not_found",
+                "structured_code": "RESOURCE_NOT_FOUND",
+                "error_code": "resource_not_found",
+                "failure_category": "resource_not_found",
+                "retryable": False,
+            },
+        )
+        serialized_evidence = json.dumps(evidence, sort_keys=True)
+        self.assertNotIn(operation_ids[0], serialized_evidence)
+        self.assertNotIn(operation_ids[1], serialized_evidence)
+        serialized_audit = json.dumps(telemetry.audit_context, sort_keys=True)
+        serialized_health = json.dumps(gateway.health_snapshot(), sort_keys=True)
+        self.assertNotIn(operation_ids[0], serialized_audit + serialized_health)
+        self.assertNotIn(operation_ids[1], serialized_audit + serialized_health)
+        self.assertEqual(len(transport.calls), 1)
+        self.assertEqual(self.admission_surface_snapshot(gateway, server), before)
+
+    async def test_malformed_batch_item_fails_provider_contract(self):
+        operation_ids = ["synthetic-complete", "synthetic-missing"]
+        batch = {
+            "success": True,
+            "total_operations": 2,
+            "completed": 1,
+            "failed": 0,
+            "not_found": 1,
+            "pending": 0,
+            "all_complete": True,
+            "detailed_results": [
+                {
+                    "operation_id": operation_ids[0],
+                    "status": "completed",
+                    "success": True,
+                },
+                {
+                    "operation_id": operation_ids[1],
+                    "status": "not_found",
+                    "success": True,
+                    "error": {"code": "RESOURCE_NOT_FOUND"},
+                },
+            ],
+        }
+        gateway, transport, _server = await self.gateway(
+            result={
+                "content": [{"type": "text", "text": json.dumps(batch)}],
+                "isError": False,
+            }
+        )
+        result = await self.run_status_canary(gateway, operation_id=operation_ids)
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "provider_error")
+        self.assertEqual(result["details"]["failure_category"], "invalid_response")
+        self.assertEqual(len(transport.calls), 1)
+
+    async def test_batch_bound_stops_before_dispatch(self):
+        gateway, transport, _server = await self.gateway()
+        result = await self.run_status_canary(
+            gateway,
+            operation_id=[f"synthetic-{index}" for index in range(65)],
+        )
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "invalid_request")
+        self.assertFalse(
+            result["details"]["canary_evidence"]["dispatch_occurred"]
+        )
+        self.assertEqual(transport.calls, [])
+
+    async def test_concurrent_canaries_do_not_mutate_admission(self):
+        gateway, transport, server = await self.gateway(result=error_result())
+        before = self.admission_surface_snapshot(gateway, server)
+        results = await asyncio.gather(
+            self.run_status_canary(gateway, operation_id="synthetic-missing-a"),
+            self.run_status_canary(gateway, operation_id="synthetic-missing-b"),
+        )
+        self.assertEqual(
+            [item["error_code"] for item in results],
+            ["resource_not_found", "resource_not_found"],
+        )
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(self.admission_surface_snapshot(gateway, server), before)
 
     async def test_binding_schema_and_nonheld_rejections_precede_dispatch(self):
         gateway, transport, _server = await self.gateway()
