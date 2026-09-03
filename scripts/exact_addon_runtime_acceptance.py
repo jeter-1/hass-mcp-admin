@@ -281,6 +281,41 @@ class _LifecycleEnvelopeRecordingTransport(McpReadGatewayTransport):
         return observed
 
 
+class _HeldDispositionRecordingTransport(McpReadGatewayTransport):
+    """Record the exact local authority refusal before MCP session teardown."""
+
+    validator_invoked: bool = False
+    validator_refusal_category: str | None = None
+    validator_refusal_dispatched: bool | None = None
+
+    async def execute_read(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        catalog_validator: Any,
+        **kwargs: Any,
+    ):
+        def record_refusal(catalog: Any) -> None:
+            self.validator_invoked = True
+            try:
+                catalog_validator(catalog)
+            except (
+                OperationalBackupProviderError,
+                OperationalLifecycleProviderError,
+            ) as exc:
+                self.validator_refusal_category = exc.category
+                self.validator_refusal_dispatched = exc.dispatched
+                raise
+
+        return await super().execute_read(
+            tool_name,
+            arguments,
+            catalog_validator=record_refusal,
+            **kwargs,
+        )
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AcceptanceFailure(message)
@@ -492,14 +527,15 @@ async def _operational_quarantine_acceptance(
         "unreviewed operational provider authority was not held",
     )
     before = fixture_stats(fixture_stats_url)
+    backup_transport = _HeldDispositionRecordingTransport(
+        endpoint,
+        timeout_seconds=30.0,
+        client_version=SERVER_VERSION,
+    )
     backup = ReviewedOperationalBackupProvider()
     backup.configure(
         settings,
-        transport=McpReadGatewayTransport(
-            endpoint,
-            timeout_seconds=30.0,
-            client_version=SERVER_VERSION,
-        ),
+        transport=backup_transport,
     )
     backup_dispatch_prepared = False
 
@@ -514,21 +550,21 @@ async def _operational_quarantine_acceptance(
         )
     except OperationalBackupProviderError as exc:
         require(
-            exc.category == "upstream_version_mismatch"
-            and exc.dispatched is False,
+            exc.dispatched is False,
             "held backup provider did not fail before dispatch",
         )
     else:
         raise AcceptanceFailure("held backup provider became actionable")
 
+    lifecycle_transport = _HeldDispositionRecordingTransport(
+        endpoint,
+        timeout_seconds=30.0,
+        client_version=SERVER_VERSION,
+    )
     lifecycle = ReviewedOperationalLifecycleProvider()
     lifecycle.configure(
         settings,
-        transport=McpReadGatewayTransport(
-            endpoint,
-            timeout_seconds=30.0,
-            client_version=SERVER_VERSION,
-        ),
+        transport=lifecycle_transport,
     )
     lifecycle_dispatch_prepared = False
 
@@ -543,8 +579,7 @@ async def _operational_quarantine_acceptance(
         )
     except OperationalLifecycleProviderError as exc:
         require(
-            exc.category == "upstream_version_mismatch"
-            and exc.dispatched is False,
+            exc.dispatched is False,
             "held lifecycle provider did not fail before dispatch",
         )
     else:
@@ -552,6 +587,20 @@ async def _operational_quarantine_acceptance(
 
     backup_health = backup.health_snapshot()
     lifecycle_health = lifecycle.health_snapshot()
+    require(
+        backup_transport.validator_invoked
+        and backup_transport.validator_refusal_category
+        == "upstream_version_mismatch"
+        and backup_transport.validator_refusal_dispatched is False,
+        "backup provider did not enforce the held release disposition",
+    )
+    require(
+        lifecycle_transport.validator_invoked
+        and lifecycle_transport.validator_refusal_category
+        == "upstream_version_mismatch"
+        and lifecycle_transport.validator_refusal_dispatched is False,
+        "lifecycle provider did not enforce the held release disposition",
+    )
     require(
         backup_health.get("request_count") == 1
         and backup_health.get("dispatch_count") == 0

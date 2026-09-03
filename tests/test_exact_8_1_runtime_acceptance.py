@@ -157,6 +157,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             self.assertIn("await lifecycle.restart_addon(", value)
             self.assertIn("backup_dispatch_prepared is False", value)
             self.assertIn("lifecycle_dispatch_prepared is False", value)
+            self.assertIn("validator_refusal_category", value)
 
     def test_addon_runtime_uses_authoritative_exact_local_accounting(self):
         self.assertEqual(
