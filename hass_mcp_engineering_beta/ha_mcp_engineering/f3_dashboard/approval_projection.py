@@ -244,12 +244,15 @@ def validate_dashboard_approval_projection(
             )
         previous_state = _validate_snapshot(row.get("previous"))
         proposed_state = _validate_snapshot(row.get("proposed"))
-        expected_states = {
-            PatchKind.ADD: ("absent", "value"),
-            PatchKind.REPLACE: ("value", "value"),
-            PatchKind.REMOVE: ("value", "absent"),
+        allowed_states = {
+            # Array insertion projects the complete displaced suffix before and
+            # after the insertion, while mapping adds and array appends retain
+            # the ordinary absent/value form.
+            PatchKind.ADD: {("absent", "value"), ("value", "value")},
+            PatchKind.REPLACE: {("value", "value")},
+            PatchKind.REMOVE: {("value", "absent")},
         }[kind]
-        if (previous_state, proposed_state) != expected_states:
+        if (previous_state, proposed_state) not in allowed_states:
             raise _failure(
                 "Dashboard approval operation is semantically incomplete",
                 reason="approval_projection_incomplete",

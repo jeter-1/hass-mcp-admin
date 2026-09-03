@@ -109,6 +109,42 @@ class DashboardApprovalProjectionTests(unittest.TestCase):
         self.assertIn("&quot;complete&quot;: true", html)
         self.assertIn("Approve exact plan", html)
 
+    def test_numeric_array_insertion_projects_complete_displaced_suffix(self):
+        compilation = compile_dashboard_patch(
+            {"items": ["existing", {"nested": [1, 2]}]},
+            [
+                {
+                    "operation_id": "insert-first",
+                    "operation": "add",
+                    "path": "/items/0",
+                    "value": "inserted",
+                }
+            ],
+        )
+        projection = build_dashboard_approval_projection(compilation)
+        operation = projection["operations"][0]
+
+        self.assertEqual(
+            operation["previous"],
+            {"state": "value", "value": ["existing", {"nested": [1, 2]}]},
+        )
+        self.assertEqual(
+            operation["proposed"],
+            {
+                "state": "value",
+                "value": ["inserted", "existing", {"nested": [1, 2]}],
+            },
+        )
+        self.assertEqual(
+            validate_dashboard_approval_projection(
+                projection,
+                expected_preread_sha256=compilation.preread_sha256,
+                expected_patch_sha256=compilation.canonical_patch_sha256,
+                expected_resulting_sha256=compilation.resulting_sha256,
+            ),
+            (operation,),
+        )
+
     def test_projection_tamper_or_incompleteness_disables_approval(self):
         projection = build_dashboard_approval_projection(self._compilation())
         for mutation in ("value", "missing"):

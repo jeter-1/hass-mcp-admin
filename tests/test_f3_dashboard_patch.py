@@ -132,6 +132,19 @@ class DashboardPatchCompilerTests(unittest.TestCase):
                 )
                 self.assertEqual(compiled.resulting_configuration["items"], expected)
                 self.assertEqual(config, original)
+                effect = compiled.effects[0]
+                if path == "/items/0":
+                    self.assertTrue(effect.previous_present)
+                    self.assertEqual(effect.previous_value, ["a", "b", "c"])
+                    self.assertEqual(effect.proposed_value, ["x", "a", "b", "c"])
+                elif path == "/items/1":
+                    self.assertTrue(effect.previous_present)
+                    self.assertEqual(effect.previous_value, ["b", "c"])
+                    self.assertEqual(effect.proposed_value, ["x", "b", "c"])
+                else:
+                    self.assertFalse(effect.previous_present)
+                    self.assertIsNone(effect.previous_value)
+                    self.assertEqual(effect.proposed_value, "x")
         self.assertEqual(
             parse_pointer("/items/-", operation="add"), ("items", "-")
         )

@@ -294,19 +294,28 @@ def _apply_one(
                 raise PatchCompilationError("Add requires an absent mapping member")
             parent[target] = proposed
             leaf_count = _leaf_weight(proposed)
+            previous_present = False
+            previous_value = None
+            proposed_value = deepcopy(proposed)
         elif isinstance(parent, list) and isinstance(target, int):
+            displaced = deepcopy(parent[target:])
             parent.insert(target, proposed)
             leaf_count = _leaf_weight(proposed) + 1
+            previous_present = bool(displaced)
+            previous_value = displaced if displaced else None
+            proposed_value = (
+                deepcopy(parent[target:]) if displaced else deepcopy(proposed)
+            )
         else:
             raise PatchCompilationError("Array add requires a list parent")
         return PatchEffect(
             operation.operation_id,
             operation.operation,
             operation.path,
-            False,
-            None,
+            previous_present,
+            previous_value,
             True,
-            deepcopy(proposed),
+            proposed_value,
             leaf_count,
         )
 
