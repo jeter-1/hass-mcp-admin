@@ -16,7 +16,9 @@ ADAPTER_IDS_BY_HA_VERSION = MappingProxyType(
         "2026.8.1": HA_2026_8_1_ADAPTER_ID,
     }
 )
-REVIEWED_UPSTREAM_VERSIONS = frozenset({"8.1.0", "8.1.1", "8.2.0"})
+REVIEWED_UPSTREAM_VERSIONS = frozenset(
+    {"8.1.0", "8.1.1", "8.2.0"}
+)
 
 
 class CompositeDeviceCompatibilityError(RuntimeError):

@@ -74,7 +74,7 @@ class HomeAssistant20268DeviceCompatibilityTests(
         ]
         return rest, websocket
 
-    def test_exact_reviewed_upstream_versions_include_8_2_0(self):
+    def test_exact_reviewed_upstream_versions_exclude_unproven_8_4_1(self):
         self.assertEqual(
             REVIEWED_UPSTREAM_VERSIONS,
             frozenset({"8.1.0", "8.1.1", "8.2.0"}),
@@ -93,38 +93,51 @@ class HomeAssistant20268DeviceCompatibilityTests(
     async def test_each_exact_adapter_restores_split_entity_memberships(self):
         for version, expected_adapter in ADAPTER_IDS_BY_HA_VERSION.items():
             with self.subTest(version=version):
-                rest, websocket = self._clients(version)
-
-                adapted, adapter = await adapt_ha_get_device_composite_result(
-                    empty_composite_payload(),
-                    arguments={"device_id": "legacy-composite-id"},
+                await self._assert_adapter_restores_memberships(
+                    version=version,
                     upstream_version="8.2.0",
-                    rest_client=rest,
-                    websocket_client=websocket,
+                    expected_adapter=expected_adapter,
                 )
 
-                self.assertEqual(adapter, expected_adapter)
-                self.assertEqual(adapted["entity_count"], 2)
-                self.assertEqual(
-                    [item["entity_id"] for item in adapted["entities"]],
-                    ["switch.fixture_a", "switch.fixture_b"],
-                )
-                self.assertEqual(
-                    adapted["device"]["device_id"], "legacy-composite-id"
-                )
-                self.assertEqual(
-                    adapted["device"]["entities"], adapted["entities"]
-                )
-                self.assertEqual(
-                    [
-                        call.args[0]["type"]
-                        for call in websocket.command.await_args_list
-                    ],
-                    [
-                        "config/device_registry/list_composite_splits",
-                        "config/entity_registry/list",
-                    ],
-                )
+    async def _assert_adapter_restores_memberships(
+        self,
+        *,
+        version,
+        upstream_version,
+        expected_adapter,
+    ):
+        rest, websocket = self._clients(version)
+
+        adapted, adapter = await adapt_ha_get_device_composite_result(
+            empty_composite_payload(),
+            arguments={"device_id": "legacy-composite-id"},
+            upstream_version=upstream_version,
+            rest_client=rest,
+            websocket_client=websocket,
+        )
+
+        self.assertEqual(adapter, expected_adapter)
+        self.assertEqual(adapted["entity_count"], 2)
+        self.assertEqual(
+            [item["entity_id"] for item in adapted["entities"]],
+            ["switch.fixture_a", "switch.fixture_b"],
+        )
+        self.assertEqual(
+            adapted["device"]["device_id"], "legacy-composite-id"
+        )
+        self.assertEqual(
+            adapted["device"]["entities"], adapted["entities"]
+        )
+        self.assertEqual(
+            [
+                call.args[0]["type"]
+                for call in websocket.command.await_args_list
+            ],
+            [
+                "config/device_registry/list_composite_splits",
+                "config/entity_registry/list",
+            ],
+        )
 
     async def test_other_home_assistant_version_does_not_apply(self):
         rest = AsyncMock()
@@ -171,6 +184,24 @@ class HomeAssistant20268DeviceCompatibilityTests(
             payload,
             arguments={"device_id": "legacy-composite-id"},
             upstream_version="8.1.2",
+            rest_client=rest,
+            websocket_client=websocket,
+        )
+
+        self.assertIs(adapted, payload)
+        self.assertIsNone(adapter)
+        rest.request.assert_not_awaited()
+        websocket.command.assert_not_awaited()
+
+    async def test_8_4_1_does_not_inherit_composite_response_adapter(self):
+        rest = AsyncMock()
+        websocket = AsyncMock()
+        payload = empty_composite_payload()
+
+        adapted, adapter = await adapt_ha_get_device_composite_result(
+            payload,
+            arguments={"device_id": "legacy-composite-id"},
+            upstream_version="8.4.1",
             rest_client=rest,
             websocket_client=websocket,
         )

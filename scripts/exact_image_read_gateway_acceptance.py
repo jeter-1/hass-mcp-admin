@@ -64,9 +64,11 @@ from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     ExecutionTaskState,
 )
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
+    OperationalBackupProviderError,
     ReviewedOperationalBackupProvider,
 )
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
+    OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
 )
 from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
@@ -140,7 +142,204 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "prohibited": 1,
         "unsupported": 1,
     },
+    "8.4.1": {
+        "automatic_read": 25,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 13,
+        "persistent_write": 33,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
 }
+
+
+def expected_dashboard_attestation_status(version: str) -> str:
+    """Return the exact reviewed dashboard disposition for a release."""
+
+    return "quarantined" if version == "8.4.1" else "reviewed"
+
+
+class _HeldDispositionRecordingTransport(McpReadGatewayTransport):
+    """Record the exact local authority refusal before MCP session teardown."""
+
+    validator_invoked: bool = False
+    validator_refusal_category: str | None = None
+    validator_refusal_dispatched: bool | None = None
+
+    async def execute_read(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        catalog_validator: Any,
+        **kwargs: Any,
+    ):
+        def record_refusal(catalog: Any) -> None:
+            self.validator_invoked = True
+            try:
+                catalog_validator(catalog)
+            except (
+                OperationalBackupProviderError,
+                OperationalLifecycleProviderError,
+            ) as exc:
+                self.validator_refusal_category = exc.category
+                self.validator_refusal_dispatched = exc.dispatched
+                raise
+
+        return await super().execute_read(
+            tool_name,
+            arguments,
+            catalog_validator=record_refusal,
+            **kwargs,
+        )
+
+
+async def held_operational_provider_acceptance(
+    release: Any,
+    *,
+    endpoint: str,
+    fixture_stats_url: str,
+    settings: Settings,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Exercise held providers and prove they cannot reach a tool call."""
+
+    dispositions = {
+        surface: release.provider_disposition(surface)
+        for surface in ("backup", "lifecycle")
+    }
+    require(
+        dispositions == {"backup": "held", "lifecycle": "held"},
+        "unreviewed operational provider authority was not held",
+    )
+    before = fixture_stats(fixture_stats_url)
+    backup_transport = _HeldDispositionRecordingTransport(
+        endpoint,
+        timeout_seconds=30.0,
+        client_version=SERVER_VERSION,
+    )
+    backup = ReviewedOperationalBackupProvider()
+    backup.configure(
+        settings,
+        transport=backup_transport,
+    )
+    backup_dispatch_prepared = False
+
+    async def prepare_backup_dispatch() -> None:
+        nonlocal backup_dispatch_prepared
+        backup_dispatch_prepared = True
+
+    try:
+        await backup.create_full_backup(
+            "Exact held 8.4.1 backup",
+            before_dispatch=prepare_backup_dispatch,
+        )
+    except OperationalBackupProviderError as exc:
+        require(
+            exc.dispatched is False,
+            "held backup provider did not fail before dispatch",
+        )
+    else:
+        raise AcceptanceFailure("held backup provider became actionable")
+
+    lifecycle_transport = _HeldDispositionRecordingTransport(
+        endpoint,
+        timeout_seconds=30.0,
+        client_version=SERVER_VERSION,
+    )
+    lifecycle = ReviewedOperationalLifecycleProvider()
+    lifecycle.configure(
+        settings,
+        transport=lifecycle_transport,
+    )
+    lifecycle_dispatch_prepared = False
+
+    async def prepare_lifecycle_dispatch() -> None:
+        nonlocal lifecycle_dispatch_prepared
+        lifecycle_dispatch_prepared = True
+
+    try:
+        await lifecycle.restart_addon(
+            "abcdef12_ha_mcp",
+            before_dispatch=prepare_lifecycle_dispatch,
+        )
+    except OperationalLifecycleProviderError as exc:
+        require(
+            exc.dispatched is False,
+            "held lifecycle provider did not fail before dispatch",
+        )
+    else:
+        raise AcceptanceFailure("held lifecycle provider became actionable")
+
+    backup_health = backup.health_snapshot()
+    lifecycle_health = lifecycle.health_snapshot()
+    require(
+        backup_transport.validator_invoked
+        and backup_transport.validator_refusal_category
+        == "upstream_version_mismatch"
+        and backup_transport.validator_refusal_dispatched is False,
+        "backup provider did not enforce the held release disposition",
+    )
+    require(
+        lifecycle_transport.validator_invoked
+        and lifecycle_transport.validator_refusal_category
+        == "upstream_version_mismatch"
+        and lifecycle_transport.validator_refusal_dispatched is False,
+        "lifecycle provider did not enforce the held release disposition",
+    )
+    require(
+        backup_health.get("request_count") == 1
+        and backup_health.get("dispatch_count") == 0
+        and backup_health.get("fallback_count") == 0
+        and backup_dispatch_prepared is False,
+        "held backup provider accounting changed",
+    )
+    require(
+        (lifecycle_health.get("request_counts") or {}).get(
+            "restart_addon"
+        )
+        == 1
+        and sum(
+            (lifecycle_health.get("dispatch_counts") or {}).values()
+        )
+        == 0
+        and lifecycle_health.get("fallback_count") == 0
+        and lifecycle_dispatch_prepared is False,
+        "held lifecycle provider accounting changed",
+    )
+    after = fixture_stats(fixture_stats_url)
+    require(
+        before.get("rest_reads") == after.get("rest_reads")
+        and before.get("websocket_reads")
+        == after.get("websocket_reads")
+        and before.get("http_mutations")
+        == after.get("http_mutations")
+        and before.get("websocket_mutations")
+        == after.get("websocket_mutations"),
+        "held operational provider reached Home Assistant",
+    )
+    return (
+        {
+            "status": "quarantined",
+            "provider_disposition": dispositions["backup"],
+            "provider_attempt_count": 1,
+            "provider_dispatch_count": backup_health.get(
+                "dispatch_count"
+            ),
+            "fallback_count": backup_health.get("fallback_count"),
+        },
+        {
+            "status": "quarantined",
+            "provider_disposition": dispositions["lifecycle"],
+            "provider_attempt_count": 1,
+            "provider_dispatch_count": sum(
+                (lifecycle_health.get("dispatch_counts") or {}).values()
+            ),
+            "fallback_count": lifecycle_health.get("fallback_count"),
+        },
+    )
+
+
 DELEGATED_READ_CALLS = {
     "ha_config_get_automation": {"identifier": "gateway_fixture"},
     "ha_config_get_calendar_events": {
@@ -227,6 +426,7 @@ UPSTREAM_ERROR_CALLS = {
     },
     "validation": {
         "tool": "ha_search",
+        "shape_name": "invalid_search",
         "arguments": {"search_types": []},
         "upstream_code": "VALIDATION_FAILED",
         "public_code": "invalid_request",
@@ -236,6 +436,7 @@ UPSTREAM_ERROR_CALLS = {
     },
     "missing_entity": {
         "tool": "ha_get_state",
+        "shape_name": "missing_state",
         "arguments": {"entity_id": "sensor.issue_57_missing_entity"},
         "upstream_code": "ENTITY_NOT_FOUND",
         "public_code": "entity_not_found",
@@ -248,6 +449,7 @@ UPSTREAM_ERROR_CALLS = {
     },
     "missing_automation": {
         "tool": "ha_config_get_automation",
+        "shape_name": "missing_automation",
         "arguments": {"identifier": "issue_57_missing_automation"},
         "upstream_code": "RESOURCE_NOT_FOUND",
         "public_code": "automation_not_found",
@@ -260,6 +462,7 @@ UPSTREAM_ERROR_CALLS = {
     },
     "missing_registry_entity": {
         "tool": "ha_get_entity",
+        "shape_name": "missing_registry_entity",
         "arguments": {
             "entity_id": (
                 "sensor.compatibility_review_missing_registry_entity"
@@ -272,6 +475,31 @@ UPSTREAM_ERROR_CALLS = {
         "fixture_counter": (
             "websocket_reads",
             "config/entity_registry/get",
+        ),
+    },
+}
+EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
+    "invalid_search": {
+        "legacy": (
+            "63e37a2f037ff46e9908c41745aca0e368c0cb6811a28104c990113055abdfee"
+        ),
+        "8.4.1": (
+            "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939"
+        ),
+    },
+    "missing_state": {
+        "legacy": (
+            "8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c"
+        ),
+    },
+    "missing_automation": {
+        "legacy": (
+            "965faf0ef1864aad32d79da308763a92f024cf2d70cde40344832e76dbe85ba5"
+        ),
+    },
+    "missing_registry_entity": {
+        "legacy": (
+            "3e1148ad27428880af39facca3605d530996850931d3e55c5d908f69ecc2d9c8"
         ),
     },
 }
@@ -668,7 +896,11 @@ async def list_all_tools(session: ClientSession) -> list[dict[str, Any]]:
         seen.add(cursor)
 
 
-def decode_tool_result(result: Any) -> dict[str, Any]:
+def decode_tool_result(
+    result: Any,
+    *,
+    context: str = "unspecified_tool_result",
+) -> dict[str, Any]:
     structured = getattr(result, "structuredContent", None)
     if isinstance(structured, dict) and "result" not in structured:
         return structured
@@ -694,10 +926,34 @@ def decode_tool_result(result: Any) -> dict[str, Any]:
                 continue
             if isinstance(value, dict):
                 return value
-    raise AcceptanceFailure("tool result did not contain a bounded JSON object")
+    raise AcceptanceFailure(
+        "tool result did not contain a bounded JSON object",
+        diagnostics={"result_context": context[:128]},
+    )
 
 
-def decode_upstream_error_code(result: Any) -> str:
+def _shape_projection(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(name): _shape_projection(item)
+            for name, item in sorted(value.items())
+        }
+    if isinstance(value, list):
+        return [_shape_projection(item) for item in value[:32]]
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    return "unsupported"
+
+
+def decode_upstream_error_evidence(result: Any) -> dict[str, str]:
     require(
         getattr(result, "isError", False) is True,
         "pinned upstream error call did not set isError=true",
@@ -725,7 +981,12 @@ def decode_upstream_error_code(result: Any) -> str:
         and isinstance(value["error"].get("code"), str),
         "pinned upstream error envelope shape changed",
     )
-    return value["error"]["code"]
+    return {
+        "structured_code": value["error"]["code"],
+        "shape_fingerprint": schema_fingerprint(
+            _shape_projection(value)
+        ),
+    }
 
 
 def find_values(value: Any, key: str) -> list[Any]:
@@ -827,28 +1088,36 @@ async def inspect_upstream(
                 "upstream version mismatch",
             )
             tools = await list_all_tools(session)
-            addon_inventory = decode_tool_result(
-                await session.call_tool(
-                    "ha_get_addon",
-                    UPSTREAM_ADDON_INVENTORY_ARGUMENTS,
+            tool_names = {item.get("name") for item in tools}
+            if expected_upstream_version == "8.4.1":
+                require(
+                    "ha_get_addon" not in tool_names
+                    and {"ha_get_app", "ha_manage_app"} <= tool_names,
+                    "8.4.1 app-tool transition did not match exact evidence",
                 )
-            )
-            require(
-                addon_inventory.get("success") is True,
-                "pinned upstream rejected exact add-on inventory arguments",
-            )
-            addons = addon_inventory.get("addons")
-            require(
-                isinstance(addons, list)
-                and any(
-                    isinstance(addon, dict)
-                    and addon.get("slug") == "abcdef12_ha_mcp"
-                    and addon.get("version")
-                    == expected_upstream_version
-                    for addon in addons
-                ),
-                "pinned upstream add-on inventory identity was incomplete",
-            )
+            else:
+                addon_inventory = decode_tool_result(
+                    await session.call_tool(
+                        "ha_get_addon",
+                        UPSTREAM_ADDON_INVENTORY_ARGUMENTS,
+                    )
+                )
+                require(
+                    addon_inventory.get("success") is True,
+                    "pinned upstream rejected exact add-on inventory arguments",
+                )
+                addons = addon_inventory.get("addons")
+                require(
+                    isinstance(addons, list)
+                    and any(
+                        isinstance(addon, dict)
+                        and addon.get("slug") == "abcdef12_ha_mcp"
+                        and addon.get("version")
+                        == expected_upstream_version
+                        for addon in addons
+                    ),
+                    "pinned upstream add-on inventory identity was incomplete",
+                )
             for name, expected in UPSTREAM_ERROR_CALLS.items():
                 reviewed_versions = expected.get("reviewed_versions")
                 if (
@@ -860,15 +1129,32 @@ async def inspect_upstream(
                     expected["tool"],
                     expected["arguments"],
                 )
-                code = decode_upstream_error_code(result)
+                evidence = decode_upstream_error_evidence(result)
+                code = evidence["structured_code"]
                 require(
                     code == expected["upstream_code"],
                     f"pinned upstream {name} error code changed",
                 )
+                shape_name = expected.get("shape_name")
+                if isinstance(shape_name, str):
+                    expected_shapes = EXPECTED_ERROR_SHAPE_FINGERPRINTS[
+                        shape_name
+                    ]
+                    expected_shape = expected_shapes.get(
+                        expected_upstream_version,
+                        expected_shapes.get("legacy"),
+                    )
+                    require(
+                        evidence["shape_fingerprint"] == expected_shape,
+                        f"pinned upstream {name} error shape changed",
+                    )
                 error_envelopes[name] = {
                     "tool": expected["tool"],
                     "is_error": True,
                     "upstream_code": code,
+                    "shape_fingerprint": evidence[
+                        "shape_fingerprint"
+                    ],
                 }
     return tools, catalog_fingerprint(tools), error_envelopes
 
@@ -972,7 +1258,10 @@ async def inspect_engineering(
             health_before_result = await session.call_tool(
                 "get_server_health", {}
             )
-            health_before = decode_tool_result(health_before_result)
+            health_before = decode_tool_result(
+                health_before_result,
+                context="engineering_health_before_calls",
+            )
             if not base_names <= names or not automatic <= names:
                 raise AcceptanceFailure(
                     "The first accepted Engineering catalog is incomplete.",
@@ -1020,7 +1309,10 @@ async def inspect_engineering(
             calls: dict[str, dict[str, Any]] = {}
             for name, arguments in delegated_read_calls.items():
                 result = await session.call_tool(name, arguments)
-                value = decode_tool_result(result)
+                value = decode_tool_result(
+                    result,
+                    context=f"delegated_read:{name}",
+                )
                 require(value.get("success") is True, f"{name} did not succeed: {value.get('error_code')}")
                 metadata = value.get("metadata") or {}
                 require(metadata.get("provider") == "upstream_read_gateway", f"{name} provider mismatch")
@@ -1064,7 +1356,8 @@ async def inspect_engineering(
                             "search_types": ["automation"],
                             "limit": 5,
                         },
-                    )
+                    ),
+                    context="delegated_read:ha_search_partial",
                 )
                 partial_metadata = partial_search.get("metadata") or {}
                 partial_data = partial_search.get("data") or {}
@@ -1101,7 +1394,8 @@ async def inspect_engineering(
 
             stats_before_invalid = fixture_stats(fixture_stats_url)
             invalid = decode_tool_result(
-                await session.call_tool("ha_get_state", {"unknown": "value"})
+                await session.call_tool("ha_get_state", {"unknown": "value"}),
+                context="prevalidation:ha_get_state",
             )
             require(invalid.get("success") is False, "invalid arguments unexpectedly succeeded")
             require(invalid.get("error_code") == "invalid_request", "invalid arguments were not prevalidated")
@@ -1111,7 +1405,8 @@ async def inspect_engineering(
             )
 
             health_before_errors = decode_tool_result(
-                await session.call_tool("get_server_health", {})
+                await session.call_tool("get_server_health", {}),
+                context="engineering_health_before_errors",
             )
             routing_before_errors = next(
                 (
@@ -1146,7 +1441,8 @@ async def inspect_engineering(
                     await session.call_tool(
                         expected["tool"],
                         expected["arguments"],
-                    )
+                    ),
+                    context=f"error_contract:{error_name}",
                 )
                 stats_after_error = fixture_stats(fixture_stats_url)
                 require(
@@ -1238,7 +1534,8 @@ async def inspect_engineering(
                 await session.call_tool(
                     "get_audit_log",
                     {"event": "tool_call", "lines": 200},
-                )
+                ),
+                context="engineering_audit_after_calls",
             )
             audit_text = json.dumps(audit, sort_keys=True)
             for name, evidence in calls.items():
@@ -1293,7 +1590,8 @@ async def inspect_engineering(
                 )
 
             health_after = decode_tool_result(
-                await session.call_tool("get_server_health", {})
+                await session.call_tool("get_server_health", {}),
+                context="engineering_health_after_calls",
             )
             direct_after = find_values(health_after, "requests_by_provider")
             fallback_after = find_values(health_after, "fallback_count")
@@ -1509,10 +1807,15 @@ async def inspect_engineering(
                 "runtime artifact provenance was falsely claimed",
             )
             require(
-                gateway_state.get("catalog_comparison_status") == "exact"
-                and gateway_state.get("dashboard_attestation_status")
-                == "reviewed",
-                "active compatibility diagnostics are not exact",
+                gateway_state.get("catalog_comparison_status") == "exact",
+                "active catalog compatibility diagnostics are not exact",
+            )
+            require(
+                gateway_state.get("dashboard_attestation_status")
+                == expected_dashboard_attestation_status(
+                    expected_upstream_version
+                ),
+                "active dashboard compatibility disposition is not exact",
             )
             require(
                 gateway_state.get("observed_catalog_matches_reviewed_stock_fixture") is True,
@@ -2268,23 +2571,45 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         policy=policy,
         release=release,
     )
-    operational_backup = await inspect_operational_backup(
-        upstream_endpoint=args.upstream_endpoint,
-        engineering_endpoint=args.engineering_endpoint,
-        fixture_stats_url=args.fixture_stats_url,
-        ha_url=args.ha_url,
-        ha_token=args.ha_token,
-        expected_upstream_version=args.expected_upstream_version,
-        release=release,
-    )
-    operational_lifecycle = await inspect_operational_lifecycle(
-        upstream_endpoint=args.upstream_endpoint,
-        configured_upstream_endpoint=(
-            args.configured_upstream_endpoint
-        ),
-        expected_upstream_version=args.expected_upstream_version,
-        release=release,
-    )
+    if args.expected_upstream_version == "8.4.1":
+        held_settings = Settings(
+            ha_url=args.ha_url,
+            ha_token=args.ha_token,
+            access_secret="synthetic-exact-image-engineering-secret",
+            port=0,
+            audit_path="/tmp/synthetic-held-provider-audit.jsonl",
+            rate_limit_per_minute=1,
+            rate_limit_burst=1,
+            destructive_services=frozenset(),
+            upstream_dashboard_mcp_url=args.upstream_endpoint,
+        )
+        (
+            operational_backup,
+            operational_lifecycle,
+        ) = await held_operational_provider_acceptance(
+            release,
+            endpoint=args.upstream_endpoint,
+            fixture_stats_url=args.fixture_stats_url,
+            settings=held_settings,
+        )
+    else:
+        operational_backup = await inspect_operational_backup(
+            upstream_endpoint=args.upstream_endpoint,
+            engineering_endpoint=args.engineering_endpoint,
+            fixture_stats_url=args.fixture_stats_url,
+            ha_url=args.ha_url,
+            ha_token=args.ha_token,
+            expected_upstream_version=args.expected_upstream_version,
+            release=release,
+        )
+        operational_lifecycle = await inspect_operational_lifecycle(
+            upstream_endpoint=args.upstream_endpoint,
+            configured_upstream_endpoint=(
+                args.configured_upstream_endpoint
+            ),
+            expected_upstream_version=args.expected_upstream_version,
+            release=release,
+        )
     approval_notification = await inspect_approval_notification(
         engineering_endpoint=args.engineering_endpoint,
         fixture_stats_url=args.fixture_stats_url,

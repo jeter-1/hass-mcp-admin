@@ -1,4 +1,4 @@
-"""Probe exact ha-mcp 8.2.0 dashboard target resolution against a refusing fixture.
+"""Probe an exact reviewed ha-mcp dashboard setter against a refusing fixture.
 
 The fixture rejects every save/create frame, so this proves which requests reach
 the authoritative Home Assistant mutation boundary without mutating a dashboard.
@@ -28,7 +28,7 @@ from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
 )
 
 
-EXPECTED_VERSION = "8.2.0"
+SUPPORTED_VERSIONS = frozenset({"8.2.0", "8.4.1"})
 EXPECTED_PROTOCOL = "2025-03-26"
 MAX_RESPONSE_BYTES = 32_768
 ACK_KEY_PATTERN = re.compile(
@@ -98,6 +98,7 @@ async def probe(
     *,
     upstream_endpoint: str,
     fixture_stats_url: str,
+    expected_version: str,
 ) -> dict[str, Any]:
     cases = (
         ("existing_map", "map", True),
@@ -115,14 +116,14 @@ async def probe(
             read,
             write,
             client_info=types.Implementation(
-                name="hass-mcp-engineering-exact-8.2-dashboard-review",
+                name="hass-mcp-engineering-exact-dashboard-review",
                 version="1",
             ),
         ) as session:
             initialized = await session.initialize()
             require(
                 initialized.serverInfo.name == "ha-mcp"
-                and initialized.serverInfo.version == EXPECTED_VERSION,
+                and initialized.serverInfo.version == expected_version,
                 "exact upstream identity changed",
             )
             require(
@@ -181,9 +182,14 @@ async def probe(
                     "fixture_mutation_attempt_delta": delta,
                     "upstream_error_code": error_code,
                 }
+    model = (
+        "ha-mcp-8.2.0-dashboard-setter-runtime-acceptance-v1"
+        if expected_version == "8.2.0"
+        else "ha-mcp-8.4.1-dashboard-setter-runtime-acceptance-v1"
+    )
     return {
-        "model": "ha-mcp-8.2.0-dashboard-setter-runtime-acceptance-v1",
-        "upstream_version": EXPECTED_VERSION,
+        "model": model,
+        "upstream_version": expected_version,
         "protocol_version": EXPECTED_PROTOCOL,
         "cases": results,
         "successful_fixture_mutations": 0,
@@ -195,12 +201,18 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--upstream-endpoint", required=True)
     parser.add_argument("--fixture-stats-url", required=True)
+    parser.add_argument(
+        "--expected-version",
+        choices=sorted(SUPPORTED_VERSIONS),
+        default="8.2.0",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     result = asyncio.run(
         probe(
             upstream_endpoint=args.upstream_endpoint,
             fixture_stats_url=args.fixture_stats_url,
+            expected_version=args.expected_version,
         )
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)

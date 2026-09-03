@@ -47,6 +47,7 @@ POLICY_8000 = RUNTIME / "upstream_tool_policy_8_0_0.json"
 POLICY_8100 = RUNTIME / "upstream_tool_policy_8_1_0.json"
 POLICY_8111 = RUNTIME / "upstream_tool_policy_8_1_1.json"
 POLICY_8200 = RUNTIME / "upstream_tool_policy_8_2_0.json"
+POLICY_8410 = RUNTIME / "upstream_tool_policy_8_4_1.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
@@ -58,6 +59,9 @@ ARTIFACT_EVIDENCE_8111 = (
 )
 ARTIFACT_EVIDENCE_8200 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.2.0-contract-review.json"
+)
+ARTIFACT_EVIDENCE_8410 = (
+    CAPTURE_DIRECTORY / "ha-mcp-8.4.1-contract-review.json"
 )
 FAMILY_DECISION_8111 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.1.1-family-decision.json"
@@ -77,7 +81,15 @@ def captured_tools(version: str) -> list[dict]:
             encoding="utf-8"
         )
     )
-    return value["tools"]
+    tools = value["tools"]
+    if version == "8.4.1":
+        review = json.loads(
+            ARTIFACT_EVIDENCE_8410.read_text(encoding="utf-8")
+        )
+        order = review["runtime_catalog"]["runtime_tool_order"]
+        by_name = {item["name"]: item for item in tools}
+        return [by_name[name] for name in order]
+    return tools
 
 
 def server_with_native_tools(count: int = 42) -> FastMCP:
@@ -108,6 +120,7 @@ class RegistryFixture:
             POLICY_8100,
             POLICY_8111,
             POLICY_8200,
+            POLICY_8410,
             FAMILY_POLICY,
         ):
             shutil.copy2(path, self.runtime / path.name)
@@ -126,6 +139,7 @@ class RegistryFixture:
             "8.1.0",
             "8.1.1",
             "8.2.0",
+            "8.4.1",
         ):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
@@ -143,6 +157,10 @@ class RegistryFixture:
         shutil.copy2(
             ARTIFACT_EVIDENCE_8200,
             self.capture_directory / ARTIFACT_EVIDENCE_8200.name,
+        )
+        shutil.copy2(
+            ARTIFACT_EVIDENCE_8410,
+            self.capture_directory / ARTIFACT_EVIDENCE_8410.name,
         )
         self.dashboard_attestations = (
             self.runtime
@@ -209,7 +227,15 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
         )
         self.assertEqual(
             registry.supported_versions,
-            ("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1", "8.2.0"),
+            (
+                "7.14.1",
+                "7.14.2",
+                "8.0.0",
+                "8.1.0",
+                "8.1.1",
+                "8.2.0",
+                "8.4.1",
+            ),
         )
         self.assertEqual(registry.default_version, "7.14.1")
         self.assertEqual(
@@ -226,6 +252,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.1.0": 24,
                 "8.1.1": 25,
                 "8.2.0": 25,
+                "8.4.1": 25,
             }
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
@@ -240,6 +267,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                         "8.1.0",
                         "8.1.1",
                         "8.2.0",
+                        "8.4.1",
                     }
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
@@ -259,14 +287,25 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             self.assertRegex(
                 release.capture_sha256, r"^sha256:[0-9a-f]{64}$"
             )
-            self.assertRegex(
-                release.dashboard_attestation_fingerprint or "",
-                r"^[0-9a-f]{64}$",
-            )
-            self.assertRegex(
-                release.dashboard_compiled_constraints_fingerprint or "",
-                r"^[0-9a-f]{64}$",
-            )
+            if release.dashboard_attestation_status == "reviewed":
+                self.assertRegex(
+                    release.dashboard_attestation_fingerprint or "",
+                    r"^[0-9a-f]{64}$",
+                )
+                self.assertRegex(
+                    release.dashboard_compiled_constraints_fingerprint or "",
+                    r"^[0-9a-f]{64}$",
+                )
+            else:
+                self.assertEqual(
+                    release.dashboard_attestation_status, "quarantined"
+                )
+                self.assertIsNone(
+                    release.dashboard_attestation_fingerprint
+                )
+                self.assertIsNone(
+                    release.dashboard_compiled_constraints_fingerprint
+                )
         self.assertEqual(
             generated_reviewed_release_registry(
                 REGISTRY,
@@ -855,6 +894,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.1.0": 24,
                 "8.1.1": 25,
                 "8.2.0": 25,
+                "8.4.1": 25,
             }
             self.assertEqual(
                 len(automatic_names),

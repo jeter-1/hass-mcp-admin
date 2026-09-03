@@ -58,7 +58,15 @@ class Beta11ReleaseEvidenceTests(unittest.TestCase):
         )
         self.assertEqual(
             registry.supported_versions,
-            ("7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1", "8.2.0"),
+            (
+                "7.14.1",
+                "7.14.2",
+                "8.0.0",
+                "8.1.0",
+                "8.1.1",
+                "8.2.0",
+                "8.4.1",
+            ),
         )
         seven = registry.by_version["7.14.2"]
         eight = registry.by_version["8.0.0"]
