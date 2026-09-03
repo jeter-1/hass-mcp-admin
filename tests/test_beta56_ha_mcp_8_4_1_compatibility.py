@@ -28,6 +28,7 @@ from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
 )
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
     load_reviewed_upstream_release_registry,
     schema_fingerprint,
 )
@@ -83,6 +84,18 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
         self.release = self.compiled.by_version["8.4.1"]
         self.previous = self.compiled.by_version["8.2.0"]
         self.capture = _capture_for_release(self.release)
+        review = json.loads(
+            (ROOT / self.release.artifact_evidence_resource).read_text(
+                encoding="utf-8"
+            )
+        )
+        runtime_order = review["runtime_catalog"]["runtime_tool_order"]
+        captured_by_name = {
+            item["name"]: item for item in self.capture["tools"]
+        }
+        self.capture["tools"] = [
+            captured_by_name[name] for name in runtime_order
+        ]
         self.signer = RegistrySigner(key_id=TRUST_ANCHOR_KEY_ID)
         self.now = datetime(2026, 9, 2, 22, tzinfo=timezone.utc)
         self.temporary = tempfile.TemporaryDirectory()
@@ -152,6 +165,12 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.release.allowed_protocol_versions, ("2025-03-26",))
         self.assertEqual(self.capture["tool_count"], 78)
+        self.assertEqual(
+            schema_fingerprint(
+                [item["name"] for item in self.capture["tools"]]
+            ),
+            EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS["8.4.1"],
+        )
         self.assertEqual(
             self.capture["catalog_fingerprint"],
             "4303ead3f32c46658530a422ae37eec0d34d3f2e494a2122a7011593a568bf59",

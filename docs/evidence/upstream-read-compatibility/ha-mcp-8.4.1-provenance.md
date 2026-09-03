@@ -19,6 +19,17 @@ contract generation, and reviewed-registry validation. The normalized capture
 was generated twice from the same immutable image observation and compared
 byte-for-byte before it became evidence.
 
+The normalized capture sorts descriptors by tool name for deterministic
+source review. Exact-image acceptance separately preserved the OCI runtime's
+registration order. Both the standalone and App artifacts produced the same
+78-name order, bound by the binary-owned canonical-JSON fingerprint
+`b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34`.
+The corresponding order-sensitive strict contract fingerprints are
+`eac26329c51d57f33f02e1861227843c83cb1dd161f71a67f4c5f818483199dd`
+for standalone and
+`43f7372a8398227ed2eecf977778cb3be904dbbb0665ad80cbda5db68314b0e8`
+for the App.
+
 The exact standalone architecture manifests are:
 
 - linux/amd64:
@@ -49,7 +60,7 @@ Committed evidence digests are:
 - normalized runtime capture:
   `sha256:16c5a16b3f7289ae1bbf4246f272a7fc6b4293ac988fe298029114f5cc15a05a`
 - exact artifact/contract review:
-  `sha256:ab555b128d2e93efe844bf3779110af20bd3917f0ca4190ba94b7615c4eef269`
+  `sha256:062f53a2b0a295025bca49abcbc024d80093882af7fc24cf1496cb612d37ed88`
 - compiled 8.4.1 per-tool policy:
   `sha256:97a857f437675b760a71bb120f0725e8349a4fef10b7d4215d10da0017a54441`
 

@@ -62,7 +62,7 @@ from ..request_context import current_request_id, current_telemetry
 from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
-    CANONICAL_TOOL_ORDER_RELEASES,
+    EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
     RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1,
     REVIEWED_UPSTREAM_SERVER,
     ReviewedUpstreamRelease,
@@ -2159,16 +2159,19 @@ class UpstreamReadGateway:
         quarantined: list[dict[str, Any]] = []
         quarantine_reasons: Counter[str] = Counter()
         blocked: list[dict[str, str]] = []
-        canonical_catalog_required = (
-            selected_policy.reviewed_upstream_version
-            in CANONICAL_TOOL_ORDER_RELEASES
+        expected_order_fingerprint = (
+            EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS.get(
+                selected_policy.reviewed_upstream_version
+            )
         )
+        exact_catalog_order_required = expected_order_fingerprint is not None
         catalog_structure_invalid = (
-            canonical_catalog_required and catalog_has_invalid_structure
+            exact_catalog_order_required and catalog_has_invalid_structure
         )
         catalog_order_invalid = (
-            canonical_catalog_required
-            and observed_reviewed_order != sorted(observed_reviewed_order)
+            exact_catalog_order_required
+            and schema_fingerprint(observed_reviewed_order)
+            != expected_order_fingerprint
         )
         reviewed_descriptions = (
             selected_policy.reviewed_runtime_description_fingerprints_by_name

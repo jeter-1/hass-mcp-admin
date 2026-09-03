@@ -81,7 +81,15 @@ def captured_tools(version: str) -> list[dict]:
             encoding="utf-8"
         )
     )
-    return value["tools"]
+    tools = value["tools"]
+    if version == "8.4.1":
+        review = json.loads(
+            ARTIFACT_EVIDENCE_8410.read_text(encoding="utf-8")
+        )
+        order = review["runtime_catalog"]["runtime_tool_order"]
+        by_name = {item["name"]: item for item in tools}
+        return [by_name[name] for name in order]
+    return tools
 
 
 def server_with_native_tools(count: int = 42) -> FastMCP:

@@ -62,7 +62,15 @@ RUNTIME_POLICY_STATE_FINGERPRINT_MODEL_V1 = (
 REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-reviewed-normalized-catalog-v1"
 )
-CANONICAL_TOOL_ORDER_RELEASES = frozenset({"8.4.1"})
+# Exact runtime order is part of the 8.4.1 binary-owned catalog profile.  The
+# committed review capture is deliberately name-sorted for deterministic
+# source review, while both reviewed OCI runtime forms advertise this exact
+# registration order.  Production validation therefore binds the observed
+# sequence to this fingerprint instead of treating alphabetical order as an
+# upstream contract.
+EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
+    "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
+}
 STRICT_FULL_CONTRACT_FINGERPRINT_MODEL_V1 = (
     "ha-mcp-strict-full-contract-v1"
 )
@@ -941,9 +949,13 @@ def validate_reviewed_release_catalog(
             continue
         observed_name_order.append(name)
         descriptors_by_name.setdefault(name, []).append(item)
+    expected_order_fingerprint = EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS.get(
+        release.version
+    )
     observed_order_valid = (
-        release.version not in CANONICAL_TOOL_ORDER_RELEASES
-        or observed_name_order == sorted(observed_name_order)
+        expected_order_fingerprint is None
+        or schema_fingerprint(observed_name_order)
+        == expected_order_fingerprint
     )
 
     observed_names = set(descriptors_by_name)
@@ -2236,13 +2248,6 @@ def _reviewed_artifact_evidence(
         for item in release.policy.tools
         if item.classification == "held_for_canary"
     )
-    catalog_validation = validate_reviewed_release_catalog(
-        release,
-        observed_server_name=release.server_name,
-        observed_upstream_version=release.version,
-        observed_protocol_version=REVIEWED_UPSTREAM_PROTOCOL,
-        tools=capture_value["tools"],
-    )
     runtime_tool_order = runtime_catalog["runtime_tool_order"]
     captured_by_name = {
         tool["name"]: tool for tool in capture_value["tools"]
@@ -2260,6 +2265,13 @@ def _reviewed_artifact_evidence(
     standalone_tools = [
         captured_by_name[name] for name in runtime_tool_order
     ]
+    catalog_validation = validate_reviewed_release_catalog(
+        release,
+        observed_server_name=release.server_name,
+        observed_upstream_version=release.version,
+        observed_protocol_version=REVIEWED_UPSTREAM_PROTOCOL,
+        tools=standalone_tools,
+    )
     addon_tools = json.loads(canonical_json(standalone_tools))
     for tool in addon_tools:
         policy_state = tool["_meta"]["ha_mcp"]["policy"]
