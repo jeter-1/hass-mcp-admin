@@ -64,9 +64,11 @@ from ha_mcp_engineering.governance.task_models import (  # noqa: E402
     ExecutionTaskState,
 )
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
+    OperationalBackupProviderError,
     ReviewedOperationalBackupProvider,
 )
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
+    OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
 )
 from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
@@ -158,10 +160,14 @@ def expected_dashboard_attestation_status(version: str) -> str:
     return "quarantined" if version == "8.4.1" else "reviewed"
 
 
-def held_operational_provider_acceptance(
+async def held_operational_provider_acceptance(
     release: Any,
+    *,
+    endpoint: str,
+    fixture_stats_url: str,
+    settings: Settings,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Prove an exact release supplies no operational provider authority."""
+    """Exercise held providers and prove they cannot reach a tool call."""
 
     dispositions = {
         surface: release.provider_disposition(surface)
@@ -171,18 +177,116 @@ def held_operational_provider_acceptance(
         dispositions == {"backup": "held", "lifecycle": "held"},
         "unreviewed operational provider authority was not held",
     )
+    before = fixture_stats(fixture_stats_url)
+    backup = ReviewedOperationalBackupProvider()
+    backup.configure(
+        settings,
+        transport=McpReadGatewayTransport(
+            endpoint,
+            timeout_seconds=30.0,
+            client_version=SERVER_VERSION,
+        ),
+    )
+    backup_dispatch_prepared = False
+
+    async def prepare_backup_dispatch() -> None:
+        nonlocal backup_dispatch_prepared
+        backup_dispatch_prepared = True
+
+    try:
+        await backup.create_full_backup(
+            "Exact held 8.4.1 backup",
+            before_dispatch=prepare_backup_dispatch,
+        )
+    except OperationalBackupProviderError as exc:
+        require(
+            exc.category == "upstream_version_mismatch"
+            and exc.dispatched is False,
+            "held backup provider did not fail before dispatch",
+        )
+    else:
+        raise AcceptanceFailure("held backup provider became actionable")
+
+    lifecycle = ReviewedOperationalLifecycleProvider()
+    lifecycle.configure(
+        settings,
+        transport=McpReadGatewayTransport(
+            endpoint,
+            timeout_seconds=30.0,
+            client_version=SERVER_VERSION,
+        ),
+    )
+    lifecycle_dispatch_prepared = False
+
+    async def prepare_lifecycle_dispatch() -> None:
+        nonlocal lifecycle_dispatch_prepared
+        lifecycle_dispatch_prepared = True
+
+    try:
+        await lifecycle.restart_addon(
+            "abcdef12_ha_mcp",
+            before_dispatch=prepare_lifecycle_dispatch,
+        )
+    except OperationalLifecycleProviderError as exc:
+        require(
+            exc.category == "upstream_version_mismatch"
+            and exc.dispatched is False,
+            "held lifecycle provider did not fail before dispatch",
+        )
+    else:
+        raise AcceptanceFailure("held lifecycle provider became actionable")
+
+    backup_health = backup.health_snapshot()
+    lifecycle_health = lifecycle.health_snapshot()
+    require(
+        backup_health.get("request_count") == 1
+        and backup_health.get("dispatch_count") == 0
+        and backup_health.get("fallback_count") == 0
+        and backup_dispatch_prepared is False,
+        "held backup provider accounting changed",
+    )
+    require(
+        (lifecycle_health.get("request_counts") or {}).get(
+            "restart_addon"
+        )
+        == 1
+        and sum(
+            (lifecycle_health.get("dispatch_counts") or {}).values()
+        )
+        == 0
+        and lifecycle_health.get("fallback_count") == 0
+        and lifecycle_dispatch_prepared is False,
+        "held lifecycle provider accounting changed",
+    )
+    after = fixture_stats(fixture_stats_url)
+    require(
+        before.get("rest_reads") == after.get("rest_reads")
+        and before.get("websocket_reads")
+        == after.get("websocket_reads")
+        and before.get("http_mutations")
+        == after.get("http_mutations")
+        and before.get("websocket_mutations")
+        == after.get("websocket_mutations"),
+        "held operational provider reached Home Assistant",
+    )
     return (
         {
             "status": "quarantined",
             "provider_disposition": dispositions["backup"],
-            "provider_dispatch_count": 0,
-            "fallback_count": 0,
+            "provider_attempt_count": 1,
+            "provider_dispatch_count": backup_health.get(
+                "dispatch_count"
+            ),
+            "fallback_count": backup_health.get("fallback_count"),
         },
         {
             "status": "quarantined",
             "provider_disposition": dispositions["lifecycle"],
-            "provider_dispatch_count": 0,
-            "fallback_count": 0,
+            "provider_attempt_count": 1,
+            "provider_dispatch_count": sum(
+                (lifecycle_health.get("dispatch_counts") or {}).values()
+            ),
+            "fallback_count": lifecycle_health.get("fallback_count"),
         },
     )
 
@@ -2419,10 +2523,26 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         release=release,
     )
     if args.expected_upstream_version == "8.4.1":
+        held_settings = Settings(
+            ha_url=args.ha_url,
+            ha_token=args.ha_token,
+            access_secret="synthetic-exact-image-engineering-secret",
+            port=0,
+            audit_path="/tmp/synthetic-held-provider-audit.jsonl",
+            rate_limit_per_minute=1,
+            rate_limit_burst=1,
+            destructive_services=frozenset(),
+            upstream_dashboard_mcp_url=args.upstream_endpoint,
+        )
         (
             operational_backup,
             operational_lifecycle,
-        ) = held_operational_provider_acceptance(release)
+        ) = await held_operational_provider_acceptance(
+            release,
+            endpoint=args.upstream_endpoint,
+            fixture_stats_url=args.fixture_stats_url,
+            settings=held_settings,
+        )
     else:
         operational_backup = await inspect_operational_backup(
             upstream_endpoint=args.upstream_endpoint,

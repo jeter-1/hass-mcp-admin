@@ -75,3 +75,9 @@ backup, and lifecycle surfaces are held. Dashboard remains explicitly
 quarantined because its exact getter/setter contract changed and complete
 Engineering provider identity and readback authority was not established in
 this change.
+
+The `ha_get_device` descriptor is admitted through the ordinary delegated-read
+gateway. The separate Engineering-owned Home Assistant 2026.8 composite-device
+response adapter remains limited to the exact 8.1.0, 8.1.1, and 8.2.0 evidence
+set. No exact 8.4.1 single-device response capture established that the older
+response transformation is still valid, so Beta 56 does not apply it to 8.4.1.

@@ -493,6 +493,7 @@ jobs:
             --output "$RUNNER_TEMP/exact-8.4.1-dashboard-setter-result.json"
           python scripts/exact_8_4_1_dashboard_quarantine_acceptance.py \
             --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
+            --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
             --output "$RUNNER_TEMP/exact-8.4.1-dashboard-quarantine-result.json"
       - name: Verify exact 8.1+ stdio lifecycle
         if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1'

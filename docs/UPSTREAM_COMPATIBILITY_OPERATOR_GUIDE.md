@@ -44,7 +44,8 @@ runtime decision is
 7. Require zero generic writes, arbitrary forwarding, direct-HA fallback, and
    provider fallback.
 
-With the current 51 Engineering-native tools, the exact 7.14.x 26-read profile
+With the current 51 static tools (25 canonical and 26 Engineering-native), the
+exact 7.14.x 26-read profile
 produces 77 registered tools. The exact 8.0.0 and 8.1.0 24-read profiles each
 produce 75
 and hold exactly `ha_search` and `ha_get_operation_status`. Exact 8.1.1 and

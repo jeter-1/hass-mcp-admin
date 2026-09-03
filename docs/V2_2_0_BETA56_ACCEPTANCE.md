@@ -1,13 +1,12 @@
 # Engineering 2.2.0-beta.56 acceptance
 
-Beta 56 is the staged source candidate for exact ha-mcp 8.4.1 compatibility,
+Beta 56 is the materialized source candidate for exact ha-mcp 8.4.1 compatibility,
 based on protected main
 `27d687f15a0337924b216d7009e87320d887db6b`. The advertised Engineering
-release remains 2.2.0-beta.55 until a separately authorized promotion. Stable
-remains 1.1.2.
+release is 2.2.0-beta.56. Stable remains 1.1.2.
 
-This document is the exact staged release acceptance authority. Merge,
-promotion, publication, deployment, production registry signing or trust
+This document is the exact materialized release acceptance authority. Merge,
+publication, deployment, production registry signing or trust
 activation, Nabu Casa operation, live Home Assistant access, and canary work
 remain outside this source boundary.
 
@@ -42,8 +41,9 @@ reads. Twenty-one retain their complete 8.2.0 descriptors. The changed
 profile after individual input, description, annotation, output, runtime,
 argument, bounded-response, and no-write review.
 
-With this exact profile, the client catalog is 51 Engineering-native tools plus
-25 delegated reads, for 76 total. `ha_get_operation_status` remains held and
+With this exact profile, the client catalog is 51 static tools (25 canonical
+and 26 Engineering-native) plus 25 delegated reads, for 76 total.
+`ha_get_operation_status` remains held and
 unregistered. `ha_get_app`, `ha_manage_app`, `ha_call_service`, every mixed,
 action, write, destructive, prohibited, unsupported, unknown, and generic
 forwarding capability remains unreachable. Fallback remains zero.
@@ -81,6 +81,12 @@ descriptors changed, and Beta 56 does not bundle the separate provider-identity
 defect or infer write authority from the read profile. Backup and lifecycle
 provider surfaces are likewise held. Their isolation does not suppress exact
 delegated reads.
+
+The `ha_get_device` delegated-read descriptor is admitted, but the distinct
+Engineering-owned Home Assistant 2026.8 composite-device response adapter is
+not applied to 8.4.1. Its prior exact evidence ends at ha-mcp 8.2.0; Beta 56
+therefore returns the exact upstream 8.4.1 read result without the older
+response transformation.
 
 The upstream add-on-to-App terminology and tool transition grants no authority
 to newly named app-management capabilities. Beta 56 adds no public tool,

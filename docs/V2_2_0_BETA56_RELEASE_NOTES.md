@@ -1,8 +1,8 @@
 # Engineering 2.2.0-beta.56 release notes
 
-Beta 56 is staged for exact ha-mcp 8.4.1 compatibility. The advertised
-Engineering release remains 2.2.0-beta.55 until separately authorized
-promotion, and stable remains 1.1.2. This source candidate does not merge,
+Beta 56 is materialized for exact ha-mcp 8.4.1 compatibility. The advertised
+Engineering release is 2.2.0-beta.56, and stable remains 1.1.2. This source
+candidate does not merge,
 publish, deploy, access live Home Assistant, operate Nabu Casa, or activate a
 production registry.
 
@@ -17,7 +17,8 @@ All 21 delegated reads whose complete descriptors remain identical to 8.2.0
 return. Four changed reads—`ha_config_list_helpers`, `ha_get_overview`,
 `ha_get_skill_guide`, and `ha_search`—were reviewed independently and are
 admitted only by the exact 8.4.1 profile. The resulting catalog remains 51
-Engineering-native plus 25 delegated reads, or 76 total.
+static tools (25 canonical and 26 Engineering-native) plus 25 delegated reads,
+or 76 total.
 
 `ha_get_operation_status` remains held. New App management tools, generic
 service forwarding, and every mixed, action, write, destructive, unknown, or
@@ -46,3 +47,8 @@ Dashboard, backup, and lifecycle provider authority is explicitly quarantined
 for 8.4.1. The dashboard provider-identity defect is not bundled. There is no
 public-schema, provider-write, workflow-permission, deployment, container,
 stable-v1, or fallback expansion.
+
+The delegated `ha_get_device` read remains admitted, while the separate
+Engineering-owned Home Assistant 2026.8 composite-device response adapter is
+not extended beyond its exact ha-mcp 8.1.0–8.2.0 evidence. Beta 56 does not
+infer 8.4.1 response-transform authority from descriptor compatibility alone.

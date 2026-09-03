@@ -21,6 +21,16 @@ from ha_mcp_engineering.ha_mcp_readmission.registry import (  # noqa: E402
     SignedReleaseRegistry,
     TRUST_ANCHOR_KEY_ID,
 )
+from ha_mcp_engineering.clients.mcp import (  # noqa: E402
+    McpDashboardHandshake,
+)
+from ha_mcp_engineering.errors import (  # noqa: E402
+    DashboardProviderError,
+    ErrorCode,
+)
+from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
+    UpstreamDashboardProvider,
+)
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
@@ -76,6 +86,25 @@ UNCHANGED_8_4_1_READS = EXACT_8_4_1_READS - {
     "ha_get_skill_guide",
     "ha_search",
 }
+
+
+class _HeldDashboardTransport:
+    def __init__(self, tools: list[dict]) -> None:
+        self.handshake = McpDashboardHandshake(
+            protocol_version="2025-03-26",
+            server_name="ha-mcp",
+            server_version="8.4.1",
+            tools=tuple(deepcopy(tools)),
+            connection_latency_ms=1.0,
+        )
+        self.provider_attempts = 0
+        self.tool_calls = 0
+
+    async def execute_dashboard_read(self, arguments, capability_validator):
+        self.provider_attempts += 1
+        capability_validator(self.handshake)
+        self.tool_calls += 1
+        raise AssertionError("held dashboard validation permitted a tool call")
 
 
 class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
@@ -288,6 +317,28 @@ class Beta56HaMcp841CompatibilityTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn(unreachable, registered)
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
+
+    async def test_8_4_1_dashboard_provider_is_held_before_tool_call(self) -> None:
+        transport = _HeldDashboardTransport(self.capture["tools"])
+        provider = UpstreamDashboardProvider()
+        provider.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+        )
+        with self.assertRaises(DashboardProviderError) as caught:
+            await provider.list_dashboards(limit=5, response_limit=60_000)
+        self.assertEqual(
+            caught.exception.code,
+            ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
+        )
+        self.assertEqual(transport.provider_attempts, 1)
+        self.assertEqual(transport.tool_calls, 0)
+        health = provider.health_snapshot()
+        self.assertEqual(health["request_count"], 1)
+        self.assertEqual(health["success_count"], 0)
+        self.assertEqual(
+            health["last_failure_category"], "reviewed_contract_mismatch"
+        )
 
     async def test_truthful_8_4_1_evidence_restores_21_on_8_2_profile(self) -> None:
         entry = _signed_entry_for(self.release, version="8.4.2")

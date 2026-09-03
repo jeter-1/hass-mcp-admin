@@ -50,9 +50,11 @@ from ha_mcp_engineering.governance.storage import (  # noqa: E402
     ChangePlanRepository,
 )
 from ha_mcp_engineering.providers.operational_backup import (  # noqa: E402
+    OperationalBackupProviderError,
     ReviewedOperationalBackupProvider,
 )
 from ha_mcp_engineering.providers.operational_lifecycle import (  # noqa: E402
+    OperationalLifecycleProviderError,
     ReviewedOperationalLifecycleProvider,
 )
 from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
@@ -471,8 +473,12 @@ def _dashboard_quarantine_acceptance() -> dict[str, Any]:
     }
 
 
-def _operational_quarantine_acceptance() -> dict[str, Any]:
-    """Prove unreviewed operational surfaces remain outside Beta 56."""
+async def _operational_quarantine_acceptance(
+    settings: Settings,
+    endpoint: str,
+    fixture_stats_url: str,
+) -> dict[str, Any]:
+    """Exercise held providers and prove they cannot reach a tool call."""
 
     release = load_reviewed_upstream_release_registry().by_version[
         EXPECTED_UPSTREAM_VERSION
@@ -485,12 +491,113 @@ def _operational_quarantine_acceptance() -> dict[str, Any]:
         set(dispositions.values()) == {"held"},
         "unreviewed operational provider authority was not held",
     )
+    before = fixture_stats(fixture_stats_url)
+    backup = ReviewedOperationalBackupProvider()
+    backup.configure(
+        settings,
+        transport=McpReadGatewayTransport(
+            endpoint,
+            timeout_seconds=30.0,
+            client_version=SERVER_VERSION,
+        ),
+    )
+    backup_dispatch_prepared = False
+
+    async def prepare_backup_dispatch() -> None:
+        nonlocal backup_dispatch_prepared
+        backup_dispatch_prepared = True
+
+    try:
+        await backup.create_full_backup(
+            "Exact held 8.4.1 backup",
+            before_dispatch=prepare_backup_dispatch,
+        )
+    except OperationalBackupProviderError as exc:
+        require(
+            exc.category == "upstream_version_mismatch"
+            and exc.dispatched is False,
+            "held backup provider did not fail before dispatch",
+        )
+    else:
+        raise AcceptanceFailure("held backup provider became actionable")
+
+    lifecycle = ReviewedOperationalLifecycleProvider()
+    lifecycle.configure(
+        settings,
+        transport=McpReadGatewayTransport(
+            endpoint,
+            timeout_seconds=30.0,
+            client_version=SERVER_VERSION,
+        ),
+    )
+    lifecycle_dispatch_prepared = False
+
+    async def prepare_lifecycle_dispatch() -> None:
+        nonlocal lifecycle_dispatch_prepared
+        lifecycle_dispatch_prepared = True
+
+    try:
+        await lifecycle.restart_addon(
+            "abcdef12_ha_mcp",
+            before_dispatch=prepare_lifecycle_dispatch,
+        )
+    except OperationalLifecycleProviderError as exc:
+        require(
+            exc.category == "upstream_version_mismatch"
+            and exc.dispatched is False,
+            "held lifecycle provider did not fail before dispatch",
+        )
+    else:
+        raise AcceptanceFailure("held lifecycle provider became actionable")
+
+    backup_health = backup.health_snapshot()
+    lifecycle_health = lifecycle.health_snapshot()
+    require(
+        backup_health.get("request_count") == 1
+        and backup_health.get("dispatch_count") == 0
+        and backup_health.get("fallback_count") == 0
+        and backup_dispatch_prepared is False,
+        "held backup provider accounting changed",
+    )
+    require(
+        (lifecycle_health.get("request_counts") or {}).get(
+            "restart_addon"
+        )
+        == 1
+        and sum(
+            (lifecycle_health.get("dispatch_counts") or {}).values()
+        )
+        == 0
+        and lifecycle_health.get("fallback_count") == 0
+        and lifecycle_dispatch_prepared is False,
+        "held lifecycle provider accounting changed",
+    )
+    after = fixture_stats(fixture_stats_url)
+    require(
+        before.get("rest_reads") == after.get("rest_reads")
+        and before.get("websocket_reads")
+        == after.get("websocket_reads")
+        and before.get("http_mutations")
+        == after.get("http_mutations")
+        and before.get("websocket_mutations")
+        == after.get("websocket_mutations"),
+        "held operational provider reached Home Assistant",
+    )
     return {
         "status": "quarantined",
         "provider_dispositions": dispositions,
         "persisted_plan_count": 0,
-        "provider_dispatch_count": 0,
-        "fallback_count": 0,
+        "provider_attempt_count": 2,
+        "provider_dispatch_count": (
+            backup_health.get("dispatch_count", 0)
+            + sum(
+                (lifecycle_health.get("dispatch_counts") or {}).values()
+            )
+        ),
+        "fallback_count": (
+            backup_health.get("fallback_count", 0)
+            + lifecycle_health.get("fallback_count", 0)
+        ),
     }
 
 
@@ -749,7 +856,11 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
                 raw_fingerprint,
             )
         else:
-            planning = _operational_quarantine_acceptance()
+            planning = await _operational_quarantine_acceptance(
+                settings,
+                args.upstream_endpoint,
+                args.fixture_stats_url,
+            )
 
     after = fixture_stats(args.fixture_stats_url)
     require(
