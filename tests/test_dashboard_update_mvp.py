@@ -85,6 +85,7 @@ class _DashboardGateway:
         self.fail_before_write = False
         self.structured_rejection = False
         self.last_write: dict[str, object] | None = None
+        self.best_practice_authority_hash: str | None = None
 
     async def preread(self, *, url_path: str):
         self.preread_count += 1
@@ -94,8 +95,13 @@ class _DashboardGateway:
             version=self.version,
         )
 
-    async def best_practice_key(self) -> str:
+    async def best_practice_key(
+        self, *, expected_provider_authority_evidence_hash: str
+    ) -> str:
         self.best_practice_count += 1
+        self.best_practice_authority_hash = (
+            expected_provider_authority_evidence_hash
+        )
         return "I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd"
 
     async def write(self, **arguments):
@@ -297,6 +303,12 @@ class DashboardWriteArgumentTests(unittest.TestCase):
 
 
 class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _authority_hash(provider, transport) -> str:
+        return provider._dashboard_provider_authority(transport.handshake)[
+            "evidence_hash"
+        ]
+
     async def test_exact_8_4_1_inventory_configuration_and_authority_succeed(self):
         transport = _ExactProviderTransport(version="8.4.1")
         provider = UpstreamDashboardProvider()
@@ -380,6 +392,9 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
             configuration={"title": "After", "views": []},
             config_hash=upstream_config_hash(transport.configuration),
             best_practice_key=key,
+            expected_provider_authority_evidence_hash=self._authority_hash(
+                provider, transport
+            ),
         )
 
         self.assertEqual(transport.guide_count, 1)
@@ -397,6 +412,9 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
             configuration={"title": "After", "views": []},
             config_hash="0" * 16,
             best_practice_key=key,
+            expected_provider_authority_evidence_hash=self._authority_hash(
+                provider, transport
+            ),
         )
 
         self.assertEqual(transport.guide_count, 1)
@@ -435,6 +453,9 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
                 configuration={"title": "After", "views": []},
                 config_hash="0" * 16,
                 best_practice_key=key,
+                expected_provider_authority_evidence_hash=self._authority_hash(
+                    provider, transport
+                ),
             )
 
         self.assertEqual(transport.write_count, 1)
@@ -462,6 +483,9 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
                 best_practice_key=(
                     "I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd"
                 ),
+                expected_provider_authority_evidence_hash=self._authority_hash(
+                    provider, transport
+                ),
             )
 
         self.assertEqual(transport.write_count, 1)
@@ -478,6 +502,36 @@ class DashboardWriteProviderTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(
             "synthetic rejected payload",
             json.dumps(caught.exception.details),
+        )
+
+    async def test_reviewed_handshake_swap_is_rejected_before_setter_call(self):
+        transport = _ExactProviderTransport(version="8.4.1")
+        provider = UpstreamDashboardProvider()
+        provider._transport = transport
+        gateway = DashboardExecutionGateway(provider, response_limit=60_000)
+        preflight = await gateway.preread(url_path="operations")
+        authority_hash = preflight.operational_identity.authority.evidence_hash
+        key = await gateway.best_practice_key(
+            expected_provider_authority_evidence_hash=authority_hash
+        )
+
+        transport.handshake = _ExactProviderTransport(
+            version="8.2.0"
+        ).handshake
+        with self.assertRaises(DashboardProviderError) as caught:
+            await gateway.write(
+                url_path="operations",
+                configuration={"title": "After", "views": []},
+                config_hash=preflight.config_hash,
+                best_practice_key=key,
+                expected_provider_authority_evidence_hash=authority_hash,
+            )
+
+        self.assertEqual(transport.write_count, 0)
+        self.assertFalse(caught.exception.details["upstream_dispatch_occurred"])
+        self.assertEqual(
+            caught.exception.code,
+            ErrorCode.UPSTREAM_DASHBOARD_REVIEWED_CONTRACT_MISMATCH,
         )
 
 
@@ -592,7 +646,14 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 "configuration",
                 "config_hash",
                 "best_practice_key",
+                "expected_provider_authority_evidence_hash",
             },
+        )
+        self.assertEqual(
+            self.dashboard.best_practice_authority_hash,
+            self.dashboard.last_write[
+                "expected_provider_authority_evidence_hash"
+            ],
         )
         self.assertNotIn(
             "I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd",

@@ -146,6 +146,7 @@ FAILURE_CATEGORIES = (
     "internal_error",
 )
 CANONICAL_DASHBOARD_PATH = re.compile(r"^[a-z0-9_-]{1,256}$")
+PROVIDER_AUTHORITY_EVIDENCE_HASH = re.compile(r"^[0-9a-f]{64}$")
 HA_MCP_PROVIDER_LOCK_SLUG = "ha_mcp"
 MAX_IDENTITY_CHARS = 128
 MAX_WARNING_CHARS = 512
@@ -634,12 +635,20 @@ class UpstreamDashboardProvider:
         )
 
     def _validate_write_handshake(
-        self, handshake: McpDashboardHandshake
+        self,
+        handshake: McpDashboardHandshake,
+        *,
+        expected_provider_authority_evidence_hash: str | None = None,
     ) -> None:
         """Require the complete exact catalog and two fixed write-path tools."""
 
         self._validate_handshake(handshake)
-        self._dashboard_provider_authority(handshake)
+        authority = self._dashboard_provider_authority(handshake)
+        if expected_provider_authority_evidence_hash is not None and not hmac.compare_digest(
+            authority["evidence_hash"],
+            expected_provider_authority_evidence_hash,
+        ):
+            raise DashboardTransportError("reviewed_contract_mismatch")
 
     def _dashboard_provider_authority(
         self, handshake: McpDashboardHandshake
@@ -735,15 +744,31 @@ class UpstreamDashboardProvider:
         except (DashboardTransportError, ValueError, TypeError):
             return None
 
-    async def best_practices_acknowledgement_key(self) -> str:
+    async def best_practices_acknowledgement_key(
+        self,
+        *,
+        expected_provider_authority_evidence_hash: str | None = None,
+    ) -> str:
         """Read the public rotating strict-BPS receipt before write intent."""
 
         if not self._transport:
             self._raise("not_configured", dispatched=False)
+        if (
+            expected_provider_authority_evidence_hash is not None
+            and not PROVIDER_AUTHORITY_EVIDENCE_HASH.fullmatch(
+                expected_provider_authority_evidence_hash
+            )
+        ):
+            self._raise("reviewed_contract_mismatch", dispatched=False)
         started = self._begin_request()
         try:
             exchange = await self._transport.execute_best_practices_read(
-                self._validate_write_handshake
+                lambda handshake: self._validate_write_handshake(
+                    handshake,
+                    expected_provider_authority_evidence_hash=(
+                        expected_provider_authority_evidence_hash
+                    ),
+                )
             )
             content = exchange.call_result.get("content")
             if (
@@ -808,11 +833,18 @@ class UpstreamDashboardProvider:
         configuration: dict[str, Any],
         config_hash: str,
         best_practice_key: str,
+        expected_provider_authority_evidence_hash: str,
     ) -> dict[str, Any]:
         """Make one exact, non-retrying setter call for an approved result."""
 
         if not self._transport:
             self._raise("not_configured", dispatched=False)
+        if not isinstance(
+            expected_provider_authority_evidence_hash, str
+        ) or not PROVIDER_AUTHORITY_EVIDENCE_HASH.fullmatch(
+            expected_provider_authority_evidence_hash
+        ):
+            self._raise("reviewed_contract_mismatch", dispatched=False)
         arguments = {
             "url_path": url_path,
             "config": configuration,
@@ -826,9 +858,23 @@ class UpstreamDashboardProvider:
         except DashboardTransportError:
             self._raise("prohibited_argument", dispatched=False)
         started = self._begin_request()
+        setter_admitted = False
+
+        def validate_bound_write_handshake(
+            handshake: McpDashboardHandshake,
+        ) -> None:
+            nonlocal setter_admitted
+            self._validate_write_handshake(
+                handshake,
+                expected_provider_authority_evidence_hash=(
+                    expected_provider_authority_evidence_hash
+                ),
+            )
+            setter_admitted = True
+
         try:
             exchange = await self._transport.execute_dashboard_write(
-                arguments, self._validate_write_handshake
+                arguments, validate_bound_write_handshake
             )
             payload = self._decode_call_result(
                 exchange.call_result, expected_url_path=url_path
@@ -865,20 +911,20 @@ class UpstreamDashboardProvider:
             }
         except DashboardProviderError as exc:
             category = _category_for_code(exc.code)
-            self._record_failure(category, dispatched=True)
+            self._record_failure(category, dispatched=setter_admitted)
             METRICS.record_provider_result(
-                PROVIDER_ID, "failed", dispatched=True
+                PROVIDER_ID, "failed", dispatched=setter_admitted
             )
             raise
         except DashboardTransportError as exc:
             category = _normalized_category(exc.category)
-            self._record_failure(category, dispatched=True)
+            self._record_failure(category, dispatched=setter_admitted)
             METRICS.record_provider_result(
-                PROVIDER_ID, "failed", dispatched=True
+                PROVIDER_ID, "failed", dispatched=setter_admitted
             )
             self._raise(
                 category,
-                dispatched=True,
+                dispatched=setter_admitted,
                 details=exc.evidence_details(),
             )
         finally:

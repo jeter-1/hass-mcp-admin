@@ -124,8 +124,14 @@ class DashboardExecutionGateway:
             operational_identity=operational_identity,
         )
 
-    async def best_practice_key(self) -> str:
-        return await self.provider.best_practices_acknowledgement_key()
+    async def best_practice_key(
+        self, *, expected_provider_authority_evidence_hash: str
+    ) -> str:
+        return await self.provider.best_practices_acknowledgement_key(
+            expected_provider_authority_evidence_hash=(
+                expected_provider_authority_evidence_hash
+            )
+        )
 
     async def write(
         self,
@@ -134,12 +140,16 @@ class DashboardExecutionGateway:
         configuration: dict[str, Any],
         config_hash: str,
         best_practice_key: str,
+        expected_provider_authority_evidence_hash: str,
     ) -> dict[str, Any]:
         return await self.provider.execute_governed_dashboard_update(
             url_path=url_path,
             configuration=configuration,
             config_hash=config_hash,
             best_practice_key=best_practice_key,
+            expected_provider_authority_evidence_hash=(
+                expected_provider_authority_evidence_hash
+            ),
         )
 
 

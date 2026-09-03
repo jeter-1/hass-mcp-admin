@@ -290,9 +290,15 @@ class _AuditedDashboardGateway:
         self.auditor("provider_ha_config_get_dashboard")
         return await self.delegate.preread(url_path=url_path)
 
-    async def best_practice_key(self):
+    async def best_practice_key(
+        self, *, expected_provider_authority_evidence_hash: str
+    ):
         self.auditor("provider_ha_get_skill_guide")
-        return await self.delegate.best_practice_key()
+        return await self.delegate.best_practice_key(
+            expected_provider_authority_evidence_hash=(
+                expected_provider_authority_evidence_hash
+            )
+        )
 
     async def write(self, **arguments):
         self.auditor("provider_ha_config_set_dashboard")

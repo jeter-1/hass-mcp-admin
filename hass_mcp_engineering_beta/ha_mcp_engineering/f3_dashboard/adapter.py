@@ -390,7 +390,11 @@ class DashboardUpdateAdapter:
                     "stale_or_provider_contract_mismatch",
                     observed=current.engineering_config_sha256,
                 )
-            key = await self.gateway.best_practice_key()
+            key = await self.gateway.best_practice_key(
+                expected_provider_authority_evidence_hash=(
+                    operation.provider_authority_evidence_hash
+                )
+            )
         except (RawEvidenceError, DashboardProviderError, ValueError):
             return self._preflight_rejection(
                 operation, "dashboard_provider_unavailable_or_unreviewed"
@@ -477,6 +481,9 @@ class DashboardUpdateAdapter:
                 configuration=json.loads(operation.resulting_configuration_json),
                 config_hash=operation.current_upstream_config_hash,
                 best_practice_key=key,
+                expected_provider_authority_evidence_hash=(
+                    operation.provider_authority_evidence_hash
+                ),
             )
         except DashboardProviderError as exc:
             response_received, diagnostics, evidence_hash = (
