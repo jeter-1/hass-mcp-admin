@@ -57,6 +57,7 @@ from ..ha_mcp_readmission.registry import (
     MISSING_RELEASE_REFRESH_INTERVAL_SECONDS,
     SignedReleaseRegistry,
 )
+from ..ha_core_readmission.routes import delegated_requirements
 from ..observability import METRICS
 from ..request_context import current_request_id, current_telemetry
 from ..sanitization import sanitize_untrusted_data
@@ -513,6 +514,8 @@ class _RouteLease:
     dispatch_committed: bool = False
     readmission_lease: RouteLease | None = None
     readmission_commit: DispatchCommit | None = None
+    core_authority: Any | None = None
+    core_commits: tuple[Any, ...] | None = None
 
 
 class UpstreamReadGateway:
@@ -535,6 +538,7 @@ class UpstreamReadGateway:
         ) = None
         self._readmission_audit: tuple[dict[str, Any], ...] = ()
         self._active_release: ReviewedUpstreamRelease | None = None
+        self._core_runtime: Any | None = None
         self._admission_validator: AdmissionValidator | None = None
         self._registered_server: Any = None
         self._registered_tool_registry: McpSdkToolRegistry | None = None
@@ -612,6 +616,8 @@ class UpstreamReadGateway:
             "automatic_read_count": 0,
             "held_read_count": 0,
             "held_tools": [],
+            "core_withheld_read_count": 0,
+            "core_withheld_tools": [],
             "live_canary_required_tools": [],
             "static_review_completed": False,
             "reviewed_automatic_read_count": 0,
@@ -697,11 +703,13 @@ class UpstreamReadGateway:
         admission_validator: AdmissionValidator | None = None,
         ha_rest_client: HomeAssistantRestClient | Any | None = None,
         ha_websocket_client: HomeAssistantWebSocketClient | Any | None = None,
+        core_runtime: Any | None = None,
     ) -> None:
         self._remove_registered_tools()
         replace_dynamic_upstream_capabilities((), self._empty_state())
         endpoint = parse_upstream_dashboard_endpoint(settings.upstream_dashboard_mcp_url)
         self._settings = settings
+        self._core_runtime = core_runtime
         self._ha_rest_client = ha_rest_client or HomeAssistantRestClient(settings)
         self._ha_websocket_client = (
             ha_websocket_client or HomeAssistantWebSocketClient(settings)
@@ -1031,6 +1039,30 @@ class UpstreamReadGateway:
             observed_strict_fingerprint = _safe_strict_catalog_fingerprint(
                 list(catalog.tools)
             )
+            with self._lock:
+                previous_exposed = dict(self._exposed)
+                previous_held_canaries = dict(self._held_canaries)
+                if (
+                    readmission_selection is None
+                    and self._admission_generation > 0
+                    and self._active_release is not None
+                    and selected_release is not None
+                    and self._active_release.entry_id == selected_release.entry_id
+                    and self._state.get("observed_upstream_server_version")
+                    == catalog.server_version
+                    and self._state.get("observed_protocol_version")
+                    == catalog.protocol_version
+                    and self._state.get(
+                        "observed_strict_full_contract_fingerprint"
+                    )
+                    == observed_strict_fingerprint
+                ):
+                    # A Core-only availability change may require a fresh
+                    # client catalog without changing ha-mcp authority. Keep
+                    # the independent upstream generation and every unaffected
+                    # route binding stable when the exact upstream contract is
+                    # byte-for-byte unchanged.
+                    generation = self._admission_generation
             catalog_diff_field_counts = _catalog_diff_field_counts(
                 list(catalog.tools), reviewed_contracts
             )
@@ -1050,9 +1082,25 @@ class UpstreamReadGateway:
             dynamic_tools: dict[str, ReviewedUpstreamReadTool] = {}
             capabilities: list[dict[str, Any]] = []
             collisions: list[dict[str, str]] = []
+            core_withheld: list[dict[str, Any]] = []
             for decision in evaluation.matched:
                 entry = decision.entry
                 tool = decision.observed_tool
+                requirements = delegated_requirements(entry.upstream_name)
+                if self._core_runtime is not None and requirements:
+                    core_status = self._core_runtime.route_status(
+                        requirements,
+                        delegated_tool=entry.upstream_name,
+                    )
+                    if not core_status["available"]:
+                        core_withheld.append(
+                            {
+                                "tool": entry.upstream_name,
+                                "disposition": core_status["disposition"],
+                                "reason_codes": list(core_status["reason_codes"]),
+                            }
+                        )
+                        continue
                 exposed_name = entry.exposed_name
                 if exposed_name in base_names:
                     exposed_name = f"{ALIAS_PREFIX}{entry.upstream_name}"
@@ -1073,7 +1121,7 @@ class UpstreamReadGateway:
                     contract_fingerprint=decision.expected_fingerprint,
                 )
                 dynamic_tools[exposed_name] = dynamic_tool
-                exposed[exposed_name] = _AdmittedRoute(
+                candidate_route = _AdmittedRoute(
                     entry=entry,
                     observed_tool=tool,
                     generation=generation,
@@ -1137,6 +1185,11 @@ class UpstreamReadGateway:
                         else None
                     ),
                 )
+                exposed[exposed_name] = (
+                    previous_exposed[exposed_name]
+                    if previous_exposed.get(exposed_name) == candidate_route
+                    else candidate_route
+                )
                 capabilities.append(
                     {
                         "tool": exposed_name,
@@ -1165,9 +1218,21 @@ class UpstreamReadGateway:
                 ),
                 generation=generation,
             )
-            full_admission = len(exposed) == selected_policy.classification_counts[
-                "automatic_read"
-            ]
+            held_canaries = {
+                name: (
+                    previous_held_canaries[name]
+                    if previous_held_canaries.get(name) == route
+                    else route
+                )
+                for name, route in held_canaries.items()
+            }
+            # Upstream contract admission and Core route availability are
+            # independent authorities.  A Core hold withdraws only the
+            # affected client-visible routes; it must not misreport an exact
+            # ha-mcp catalog as a partial upstream admission.
+            full_admission = len(evaluation.matched) == (
+                selected_policy.classification_counts["automatic_read"]
+            )
             compatibility_status = (
                 "exact"
                 if full_admission
@@ -1255,6 +1320,7 @@ class UpstreamReadGateway:
                     policy=selected_policy,
                     release=selected_release,
                     readmission_selection=readmission_selection,
+                    core_withheld=tuple(core_withheld),
                 )
             replace_dynamic_upstream_capabilities(
                 self._dynamic_capabilities, self.health_snapshot()
@@ -1330,9 +1396,18 @@ class UpstreamReadGateway:
         policy: UpstreamToolPolicy,
         release: ReviewedUpstreamRelease | None,
         readmission_selection: HaMcpAdmissionSelection | None,
+        core_withheld: tuple[dict[str, Any], ...],
     ) -> None:
         """Publish one copy-on-write route generation under the state lock."""
 
+        previous_core_withheld = {
+            str(item.get("tool", ""))
+            for item in self._state.get("core_withheld_tools", ())
+            if isinstance(item, dict)
+        }
+        next_core_withheld = {
+            str(item.get("tool", "")) for item in core_withheld
+        }
         automatic_count = policy.classification_counts[
             "automatic_read"
         ]
@@ -1572,6 +1647,10 @@ class UpstreamReadGateway:
                         for entry in policy.tools
                         if entry.classification == "held_for_canary"
                     ),
+                    "core_withheld_read_count": len(core_withheld),
+                    "core_withheld_tools": [
+                        dict(item) for item in core_withheld[:MAX_QUARANTINE_RECORDS]
+                    ],
                     "live_canary_required_tools": sorted(
                         entry.upstream_name
                         for entry in policy.tools
@@ -1722,6 +1801,19 @@ class UpstreamReadGateway:
             self._latest_live_contract_token = None
             self._stale_reprobe_retry_armed = False
             self._reprobe_event.clear()
+        if self._core_runtime is not None:
+            withdrawn = len(next_core_withheld - previous_core_withheld)
+            restored = len(previous_core_withheld - next_core_withheld)
+            if withdrawn:
+                self._core_runtime.record_catalog_change(
+                    restored=False,
+                    count=withdrawn,
+                )
+            if restored:
+                self._core_runtime.record_catalog_change(
+                    restored=True,
+                    count=restored,
+                )
 
     async def _finish_discovery_failure(
         self,
@@ -2787,6 +2879,17 @@ class UpstreamReadGateway:
                         raise DashboardTransportError(
                             "prohibited_delegation"
                         )
+                requirements = delegated_requirements(
+                    policy_entry.upstream_name
+                )
+                if self._core_runtime is not None and requirements:
+                    lease.core_authority = self._core_runtime.acquire(
+                        requirements,
+                    )
+                    if lease.core_authority is None:
+                        raise DashboardTransportError(
+                            "prohibited_delegation"
+                        )
                 if telemetry:
                     telemetry.audit_context[
                         "upstream_identity_status"
@@ -2824,6 +2927,15 @@ class UpstreamReadGateway:
                             raise DashboardTransportError(
                                 "prohibited_delegation"
                             )
+                if lease.core_authority is not None:
+                    core_commits = self._core_runtime.consume(
+                        lease.core_authority
+                    )
+                    if core_commits is None:
+                        raise DashboardTransportError(
+                            "prohibited_delegation"
+                        )
+                    lease.core_commits = core_commits
                 lease.dispatch_committed = True
 
             exchange = await transport.execute_read(
@@ -2854,6 +2966,11 @@ class UpstreamReadGateway:
                 dispatched=False,
             ) from None
         finally:
+            if self._core_runtime is not None:
+                if lease.core_commits is not None:
+                    self._core_runtime.finish(lease.core_commits)
+                elif lease.core_authority is not None:
+                    self._core_runtime.release(lease.core_authority)
             coordinator = self._readmission_coordinator
             if coordinator is not None:
                 if lease.readmission_commit is not None:
@@ -3146,6 +3263,8 @@ class UpstreamReadGateway:
         telemetry = current_telemetry()
         route: _HeldCanaryRoute | None = None
         dispatched = False
+        core_authority = None
+        core_commits = None
         observed_identity: dict[str, str | None] = {
             "server": None,
             "version": None,
@@ -3428,6 +3547,27 @@ class UpstreamReadGateway:
         if transport is None:
             return await fail("not_configured")
 
+        core_requirements = delegated_requirements(upstream_tool_name)
+        if self._core_runtime is not None and core_requirements:
+            core_authority = self._core_runtime.acquire(core_requirements)
+            if core_authority is None:
+                return await fail(
+                    "prohibited_delegation",
+                    reason="core_capability_unavailable",
+                )
+
+        def finish_core_authority() -> None:
+            nonlocal core_authority
+            nonlocal core_commits
+            if self._core_runtime is None:
+                return
+            if core_commits is not None:
+                self._core_runtime.finish(core_commits)
+            elif core_authority is not None:
+                self._core_runtime.release(core_authority)
+            core_commits = None
+            core_authority = None
+
         validator_ran = False
 
         def validate_live_catalog(catalog: McpReadCatalog) -> None:
@@ -3496,6 +3636,7 @@ class UpstreamReadGateway:
 
         def before_dispatch() -> None:
             nonlocal dispatched
+            nonlocal core_commits
             with self._lock:
                 if (
                     self._active_release is not active_release
@@ -3505,6 +3646,11 @@ class UpstreamReadGateway:
                     or self._state.get("admission_status") != "admitted_exact"
                 ):
                     raise DashboardTransportError("prohibited_delegation")
+            if core_authority is not None:
+                core_commits = self._core_runtime.consume(core_authority)
+                if core_commits is None:
+                    raise DashboardTransportError("prohibited_delegation")
+            with self._lock:
                 dispatched = True
 
         try:
@@ -3516,14 +3662,18 @@ class UpstreamReadGateway:
                 before_dispatch=before_dispatch,
             )
         except DashboardTransportError as exc:
+            finish_core_authority()
             return await fail(exc.category)
         except Exception as exc:
+            finish_core_authority()
             category = getattr(getattr(exc, "cause", None), "category", None)
             return await fail(category or "internal_error")
         if not validator_ran or not dispatched:
+            finish_core_authority()
             return await fail("prohibited_delegation")
         if exchange.call_result.get("isError") is True:
             error_contract = _upstream_error_evidence(exchange.call_result)
+            finish_core_authority()
             return await fail(
                 _classify_upstream_tool_error(
                     upstream_tool_name,
@@ -3631,6 +3781,8 @@ class UpstreamReadGateway:
             return await fail(exc.category)
         except (SchemaError, TypeError, ValueError, OverflowError):
             return await fail("invalid_response")
+        finally:
+            finish_core_authority()
 
     def _remove_registered_tools(self) -> None:
         with self._lock:
@@ -3917,6 +4069,11 @@ class UpstreamReadGateway:
                 self._live_observation_epoch
             )
             self._latest_live_contract_token = None
+
+    def request_core_reconciliation(self) -> None:
+        """Re-enumerate delegated routes after a Core authority change."""
+
+        self._reprobe_event.set()
 
     def _record_live_contract_observation_locked(
         self, live_contract_token: str

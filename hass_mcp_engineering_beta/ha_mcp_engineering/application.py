@@ -39,6 +39,7 @@ from .providers.operational_lifecycle import (
 )
 from .providers.upstream_registry import RegistryValidationError, UpstreamTrustRegistry
 from .ha_mcp_readmission.registry import TRUST_ANCHOR_KEY_ID
+from .ha_core_readmission.runtime import CORE_READMISSION
 from .signed_registry import (
     RegistryValidationError as SignedRegistryValidationError,
     TrustAnchorStore,
@@ -142,7 +143,11 @@ def validate_settings(settings: Settings) -> None:
         )
 
 
-def create_application(settings: Settings | None = None):
+def create_application(
+    settings: Settings | None = None,
+    *,
+    core_snapshot_source=None,
+):
     settings = settings or load_settings()
     server = get_registered_server()
     audit = AuditLogger(
@@ -150,6 +155,11 @@ def create_application(settings: Settings | None = None):
         settings.access_secret,
         enabled=settings.audit_enabled,
         max_payload_chars=settings.audit_max_payload_chars,
+    )
+    CORE_READMISSION.configure(
+        settings,
+        source=core_snapshot_source,
+        audit_sink=audit.write,
     )
     gateway = AuthenticatedMcpGateway(
         server.streamable_http_app(),
@@ -166,6 +176,7 @@ def create_application(settings: Settings | None = None):
                 "execution_ready"
             )
         ),
+        core_runtime=CORE_READMISSION,
     )
     UPSTREAM_OPERATIONAL_BACKUP.configure(settings)
     UPSTREAM_OPERATIONAL_LIFECYCLE.configure(settings)
@@ -179,6 +190,7 @@ def create_application(settings: Settings | None = None):
         from .version import BUILD_SHA, SERVER_VERSION
 
         upstream = UPSTREAM_READ_GATEWAY.health_snapshot()
+        core = CORE_READMISSION.health_snapshot()
         governance = GOVERNANCE.health_summary()
         audit_state = audit.state()
         dependency = DEPENDENCY_ANALYSIS.health()
@@ -217,6 +229,9 @@ def create_application(settings: Settings | None = None):
                 "observed_catalog_fingerprint"
             ),
             "upstream_admission_status": upstream.get("admission_status"),
+            "core_version": core.get("observed_core_version"),
+            "core_generation": core.get("current_generation"),
+            "core_identity_agreement": core.get("identity_agreement"),
             "fallback_count": upstream.get("fallback_count", 0),
         }
 
@@ -230,6 +245,7 @@ def create_application(settings: Settings | None = None):
         UPSTREAM_OPERATIONAL_LIFECYCLE,
         runtime_snapshot=operational_runtime_snapshot,
         dashboard_provider=UPSTREAM_DASHBOARD,
+        core_runtime=CORE_READMISSION,
     )
     DEPENDENCY_ANALYSIS.configure(
         HomeAssistantRestClient(settings),
@@ -284,7 +300,12 @@ def create_application(settings: Settings | None = None):
     # Generic pure reads are admitted independently per tool. The dashboard
     # provider retains its own stricter mixed-tool contract and cannot disable
     # unrelated generic reads when only that contract is unavailable.
-    UPSTREAM_READ_GATEWAY.configure(settings)
+    UPSTREAM_READ_GATEWAY.configure(
+        settings, core_runtime=CORE_READMISSION
+    )
+    CORE_READMISSION.register_reconciliation_listener(
+        UPSTREAM_READ_GATEWAY.request_core_reconciliation
+    )
     HEALTH.configure(
         settings,
         audit,
@@ -298,6 +319,7 @@ def create_application(settings: Settings | None = None):
         HANDOFF_GENERATION,
         UPSTREAM_DASHBOARD,
         UPSTREAM_READ_GATEWAY,
+        CORE_READMISSION,
     )
     return gateway
 
@@ -384,6 +406,16 @@ async def _serve(settings: Settings) -> None:
     """Run distinct MCP and Ingress listeners in one supervised process."""
 
     gateway = create_application(settings)
+    # Tests and embedding callers may replace ``create_application`` with a
+    # pre-built gateway.  The production composition above always configures
+    # Core authority before this point; an intentionally unconfigured test
+    # double has no Core endpoint to probe.
+    core_reconciliation_enabled = (
+        isinstance(gateway, AuthenticatedMcpGateway)
+        and CORE_READMISSION.configured
+    )
+    if core_reconciliation_enabled:
+        await CORE_READMISSION.reconcile_until_initialized()
     # No public listener exists until stores, registry, ownership, and the
     # initial cheap recovery pass have all succeeded.
     if isinstance(gateway, AuthenticatedMcpGateway):
@@ -432,6 +464,14 @@ async def _serve(settings: Settings) -> None:
         _supervise_upstream_reconciliation(gateway),
         name="upstream-read-gateway-reconciliation",
     )
+    core_reconciliation_task = (
+        asyncio.create_task(
+            CORE_READMISSION.supervise(),
+            name="home-assistant-core-capability-reconciliation",
+        )
+        if core_reconciliation_enabled
+        else None
+    )
     operational_reconciliation_task = asyncio.create_task(
         _supervise_f3_recovery(perform_startup=False),
         name="f3-central-recovery-coordinator",
@@ -450,13 +490,16 @@ async def _serve(settings: Settings) -> None:
         else None
     )
     try:
+        supervised_tasks = {
+            mcp_task,
+            approval_task,
+            upstream_reconciliation_task,
+            operational_reconciliation_task,
+        }
+        if core_reconciliation_task is not None:
+            supervised_tasks.add(core_reconciliation_task)
         done, _ = await asyncio.wait(
-            {
-                mcp_task,
-                approval_task,
-                upstream_reconciliation_task,
-                operational_reconciliation_task,
-            },
+            supervised_tasks,
             return_when=asyncio.FIRST_COMPLETED,
         )
         # Either listener ending is a process-level event. A failed private
@@ -470,11 +513,17 @@ async def _serve(settings: Settings) -> None:
         mcp_server.should_exit = True
         approval_server.should_exit = True
         upstream_reconciliation_task.cancel()
+        if core_reconciliation_task is not None:
+            core_reconciliation_task.cancel()
         operational_reconciliation_task.cancel()
         if notification_task is not None:
             notification_task.cancel()
         await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
         await asyncio.gather(upstream_reconciliation_task, return_exceptions=True)
+        if core_reconciliation_task is not None:
+            await asyncio.gather(
+                core_reconciliation_task, return_exceptions=True
+            )
         await asyncio.gather(
             operational_reconciliation_task, return_exceptions=True
         )

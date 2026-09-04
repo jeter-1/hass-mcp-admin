@@ -15,7 +15,12 @@ from typing import Any, Awaitable, Callable
 
 from ..errors import ErrorCode, GovernanceError
 from ..f3.executor import PreIntentRetryRequired, SharedOperationExecutor
-from ..f3.contracts import LockMode, LockScope, NormalizedOperationOutcome
+from ..f3.contracts import (
+    LockMode,
+    LockScope,
+    NormalizedOperationOutcome,
+    ObservationResult,
+)
 from ..f3.locks import (
     DurableLockStore,
     StaleRecoveryAction,
@@ -108,6 +113,36 @@ _RECOVERY_MODE_TERMINAL_PROJECTION = "terminal_projection"
 _ACTIVE_F3_CHILD: ContextVar[str | None] = ContextVar(
     "f3_active_child", default=None
 )
+
+
+class _CoreDispatchAuthorityGuard:
+    """Bind one F3 dispatch to the exact current Core authority generation."""
+
+    def __init__(self, runtime: Any, plan_created_at: str):
+        self.runtime = runtime
+        self.plan_created_at = plan_created_at
+
+    async def acquire(
+        self, prepared: object, preflight: object
+    ) -> object | None:
+        del preflight
+        # A mutation may not rely on the periodic snapshot alone.  Re-run the
+        # bounded two-observation contract after final adapter preflight and
+        # before approval consumption; any Core drift retires the old lease.
+        await self.runtime.reconcile_once("mutation_pre_dispatch")
+        return self.runtime.acquire_f3(
+            prepared,
+            plan_created_at=self.plan_created_at,
+        )
+
+    def consume(self, authority: object) -> object | None:
+        return self.runtime.consume(authority)
+
+    def release(self, authority: object) -> bool:
+        return self.runtime.release(authority)
+
+    def finish(self, commits: object) -> bool:
+        return self.runtime.finish(commits)
 
 
 def _persisted_audit_event_id(
@@ -277,6 +312,68 @@ class _ReadbackOnlyRecoveryAdapter:
 
     async def verify(self, prepared: Any, observation: Any):
         return await self._adapter.verify(prepared, observation)
+
+
+class _CoreVerificationAdapter:
+    """Require current Core readback authority without enabling redispatch."""
+
+    def __init__(self, adapter: Any, core_runtime: Any):
+        self._adapter = adapter
+        self._core_runtime = core_runtime
+        self.capabilities = adapter.capabilities
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._adapter, name)
+
+    @staticmethod
+    def _held_observation() -> ObservationResult:
+        return ObservationResult(
+            outcome=NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
+            attempt_count=1,
+            observation_complete=False,
+            provider_reachable=None,
+            target_reachable=None,
+            readback_state_fingerprint=None,
+            intended_result_observed=None,
+            evidence_hash=stable_hash(
+                {"category": "core_verification_authority_unavailable"}
+            ),
+            diagnostic_codes=(
+                "core_verification_authority_unavailable",
+            ),
+        )
+
+    async def _observe_with_authority(
+        self,
+        prepared: Any,
+        callback: Callable[[], Awaitable[Any]],
+    ) -> Any:
+        # Readback is authority-bearing evidence.  Refresh Core identity before
+        # invoking the existing provider, but recovery remains observation-only.
+        await self._core_runtime.reconcile_once("mutation_verification")
+        authority = self._core_runtime.acquire_f3(prepared)
+        if authority is None:
+            return self._held_observation()
+        commits = self._core_runtime.consume(authority)
+        if commits is None:
+            self._core_runtime.release(authority)
+            return self._held_observation()
+        try:
+            return await callback()
+        finally:
+            self._core_runtime.finish(commits)
+
+    async def recover(self, prepared: Any, *, context: Any):
+        return await self._observe_with_authority(
+            prepared,
+            lambda: self._adapter.recover(prepared, context=context),
+        )
+
+    async def observe(self, prepared: Any, dispatch: Any):
+        return await self._observe_with_authority(
+            prepared,
+            lambda: self._adapter.observe(prepared, dispatch),
+        )
 
 
 class _AuditedDashboardGateway:
@@ -595,8 +692,10 @@ class F3RuntimeIntegration:
         retention_days: int,
         helper_state_gateway: Any = None,
         dashboard_gateway: Any | None = None,
+        core_runtime: Any | None = None,
     ):
         self.service = service
+        self.core_runtime = core_runtime
         self.children = ChildExecutionRepository(
             storage_root, retention_days=retention_days
         )
@@ -1767,6 +1866,8 @@ class F3RuntimeIntegration:
         adapter = _LegacyConflictAdapter(
             adapter, self._has_active_legacy_conflict
         )
+        if self.core_runtime is not None:
+            adapter = _CoreVerificationAdapter(adapter, self.core_runtime)
         if readback_only:
             # Keep the reduced recovery protocol outermost so none of the
             # normal sequence/conflict wrappers can re-expose preflight or
@@ -1787,6 +1888,13 @@ class F3RuntimeIntegration:
                 identity=identity,
                 approval_consumption=lambda: self._consume_approval_counted(
                     plan, task, declaration
+                ),
+                dispatch_authority=(
+                    _CoreDispatchAuthorityGuard(
+                        self.core_runtime, plan.created_at
+                    )
+                    if self.core_runtime is not None and not readback_only
+                    else None
                 ),
             )
         finally:

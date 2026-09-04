@@ -29,6 +29,7 @@ class HealthRegistry:
     handoff: Any = None
     upstream_dashboard: Any = None
     upstream_read_gateway: Any = None
+    core_readmission: Any = None
 
     def configure(
         self,
@@ -44,6 +45,7 @@ class HealthRegistry:
         handoff=None,
         upstream_dashboard=None,
         upstream_read_gateway=None,
+        core_readmission=None,
     ) -> None:
         self.settings = settings
         self.audit = audit
@@ -58,6 +60,7 @@ class HealthRegistry:
         self.handoff = handoff
         self.upstream_dashboard = upstream_dashboard
         self.upstream_read_gateway = upstream_read_gateway
+        self.core_readmission = core_readmission
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -146,6 +149,17 @@ class HealthRegistry:
                     "dynamically_exposed_count": 0,
                     "writes_allowed": False,
                     "direct_ha_fallback_allowed": False,
+                }
+            ),
+            "home_assistant_core_authority": (
+                self.core_readmission.health_snapshot()
+                if self.core_readmission
+                else {
+                    "configured": False,
+                    "initialized": False,
+                    "observed_core_version": None,
+                    "identity_agreement": False,
+                    "fallback_count": 0,
                 }
             ),
             "dependency_analysis": {

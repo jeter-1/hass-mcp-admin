@@ -22,6 +22,7 @@ from .audit import (
 from .capabilities import capability_for_tool
 from .configuration import Settings
 from .errors import ErrorCode, error_definition
+from .ha_core_readmission.routes import static_tool_requirements
 from .logging_config import get_logger, log_event
 from .models import FailureResponse, Timing
 from .observability import METRICS
@@ -171,6 +172,7 @@ class AuthenticatedMcpGateway:
         *,
         require_initial_catalog_reconciliation: bool = False,
         execution_readiness: Callable[[], bool] | None = None,
+        core_runtime=None,
     ):
         self.app = app
         self.settings = settings
@@ -184,6 +186,7 @@ class AuthenticatedMcpGateway:
         )
         self._catalog_readiness_lock = threading.Lock()
         self._execution_readiness = execution_readiness
+        self._core_runtime = core_runtime
         self.clients: OrderedDict[str, TokenBucket] = OrderedDict()
         self.auth_failures: OrderedDict[str, TokenBucket] = OrderedDict()
         self._bucket_lock = threading.Lock()
@@ -371,6 +374,8 @@ class AuthenticatedMcpGateway:
         operation_started = None
         parameters = {}
         capability = {}
+        core_authority = None
+        core_commits = None
         response_capture = bytearray()
         authenticated_request_accepted = False
         try:
@@ -562,6 +567,52 @@ class AuthenticatedMcpGateway:
                     request_id=request_id,
                 )
                 return
+            core_requirements = (
+                static_tool_requirements(tool_name)
+                if isinstance(tool_name, str)
+                else ()
+            )
+            if self._core_runtime is not None and core_requirements:
+                core_authority = self._core_runtime.acquire(
+                    core_requirements
+                )
+                if core_authority is not None:
+                    core_commits = self._core_runtime.consume(
+                        core_authority
+                    )
+                if core_authority is None or core_commits is None:
+                    if core_authority is not None:
+                        self._core_runtime.release(core_authority)
+                        core_authority = None
+                    definition = error_definition(
+                        ErrorCode.PROVIDER_UNAVAILABLE
+                    )
+                    telemetry.error_code = (
+                        ErrorCode.PROVIDER_UNAVAILABLE.value
+                    )
+                    telemetry.result_status = "failure"
+                    telemetry.completeness = "failed"
+                    telemetry.response_status = 200
+                    failure = FailureResponse(
+                        operation=tool_name,
+                        error="CoreCapabilityUnavailable",
+                        error_code=telemetry.error_code,
+                        message=definition.message,
+                        retryable=definition.retryable,
+                        timing=Timing(
+                            total_ms=telemetry.total_duration_ms
+                        ),
+                        request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send,
+                        rpc_id=rpc.get("id"),
+                        rendered=failure.to_json(
+                            self.settings.response_size_limit
+                        ),
+                        request_id=request_id,
+                    )
+                    return
             await self.app(forwarded, new_receive, correlated_send)
             if tool_name and response_capture:
                 self._apply_mcp_outcome(telemetry, bytes(response_capture))
@@ -580,6 +631,11 @@ class AuthenticatedMcpGateway:
             )
             raise
         finally:
+            if self._core_runtime is not None:
+                if core_commits is not None:
+                    self._core_runtime.finish(core_commits)
+                elif core_authority is not None:
+                    self._core_runtime.release(core_authority)
             # recent_error_counts measures terminal public tool outcomes. The
             # transport, provider, and response-conversion layers may all see
             # the same exception, but one tools/call contributes one count.
