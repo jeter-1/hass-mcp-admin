@@ -208,6 +208,21 @@ class DashboardPatchCompilerTests(unittest.TestCase):
             ):
                 compile_dashboard_patch(beyond_bound, [candidate])
 
+    def test_array_append_growth_counts_against_semantic_bound(self):
+        single = compile_dashboard_patch(
+            {"items": []}, [operation("add", "/items/0", 0)]
+        )
+        self.assertEqual(single.semantic_leaf_change_count, 2)
+
+        sixteen_appends = [
+            operation("add", f"/items/{index}", index, f"append-{index}")
+            for index in range(16)
+        ]
+        with self.assertRaisesRegex(
+            PatchCompilationError, "16-leaf semantic review bound"
+        ):
+            compile_dashboard_patch({"items": []}, sixteen_appends)
+
     def test_duplicate_alias_and_parent_child_paths_are_rejected(self):
         with self.assertRaises(PatchValidationError):
             self.compile(

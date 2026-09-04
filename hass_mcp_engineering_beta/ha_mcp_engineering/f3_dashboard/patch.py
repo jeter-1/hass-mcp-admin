@@ -309,7 +309,7 @@ def _apply_one(
                 )
             else:
                 proposed_value = deepcopy(proposed)
-                leaf_count = _leaf_weight(proposed)
+                leaf_count = semantic_leaf_difference([], [proposed])
         else:
             raise PatchCompilationError("Array add requires a list parent")
         return PatchEffect(
