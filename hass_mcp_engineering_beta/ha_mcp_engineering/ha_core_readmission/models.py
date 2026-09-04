@@ -46,28 +46,42 @@ class CoreReadmissionError(ValueError):
 class CoreCapabilityClass(str, Enum):
     BASIC_REST_READ = "basic_rest_read"
     BASIC_WEBSOCKET_READ = "basic_websocket_read"
-    ENTITY_SERVICE_DISCOVERY = "entity_service_discovery"
-    REGISTRY_READ = "registry_read"
+    STATE_SERVICE_DISCOVERY = "state_service_discovery"
+    NON_DEVICE_REGISTRY_READ = "non_device_registry_read"
+    DIRECT_DEVICE_REGISTRY_READ = "direct_device_registry_read"
+    DELEGATED_DEVICE_EFFECTIVE_AREA = "delegated_device_effective_area"
+    DIRECT_ENTITY_STATE_READ = "direct_entity_state_read"
+    AUTOMATION_CONFIGURATION_READ = "automation_configuration_read"
     DASHBOARD_CONFIGURATION_READ = "dashboard_configuration_read"
     TEMPLATE_SEMANTICS = "template_semantics"
+    CONFIGURATION_VALIDATION = "configuration_validation"
+    DEPENDENCY_HELPER_PLANNING = "dependency_helper_planning"
     TYPED_HELPER_OPERATION = "typed_helper_operation"
-    CONFIGURATION_MUTATION_ACTION = "configuration_mutation_action"
+    F3_MUTATION_VERIFICATION = "f3_mutation_verification"
+    GOVERNED_CONFIGURATION_OPERATION = "governed_configuration_operation"
+    GOVERNANCE_OBSERVABILITY = "governance_observability"
     UNCLASSIFIED = "unclassified"
 
     @property
     def mutation_capable(self) -> bool:
         return self in {
             CoreCapabilityClass.TYPED_HELPER_OPERATION,
-            CoreCapabilityClass.CONFIGURATION_MUTATION_ACTION,
+            CoreCapabilityClass.F3_MUTATION_VERIFICATION,
+            CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
             CoreCapabilityClass.UNCLASSIFIED,
         }
 
     @property
     def semantic(self) -> bool:
         return self in {
+            CoreCapabilityClass.DIRECT_DEVICE_REGISTRY_READ,
+            CoreCapabilityClass.DELEGATED_DEVICE_EFFECTIVE_AREA,
             CoreCapabilityClass.TEMPLATE_SEMANTICS,
+            CoreCapabilityClass.CONFIGURATION_VALIDATION,
+            CoreCapabilityClass.DEPENDENCY_HELPER_PLANNING,
             CoreCapabilityClass.TYPED_HELPER_OPERATION,
-            CoreCapabilityClass.CONFIGURATION_MUTATION_ACTION,
+            CoreCapabilityClass.F3_MUTATION_VERIFICATION,
+            CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
         }
 
 
@@ -76,6 +90,7 @@ class CoreDisposition(str, Enum):
     ADMITTED_EXACT = "admitted_exact"
     ADMITTED_COMPATIBLE = "admitted_compatible"
     PARTIAL = "partial"
+    HELD = "held"
     QUARANTINED = "quarantined"
     UNAVAILABLE = "unavailable"
 
@@ -96,6 +111,7 @@ class CoreAuthorityStatus(str, Enum):
     POSITIVE = "positive"
     REVOKED = "revoked"
     DENY_ONLY = "deny_only"
+    UNAVAILABLE = "unavailable"
     EXPIRED = "expired"
     ROLLBACK = "rollback"
     REPLAY_CONFLICT = "replay_conflict"

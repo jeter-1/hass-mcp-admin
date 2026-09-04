@@ -1,15 +1,16 @@
-"""Home Assistant Core capability-scoped readmission primitives.
-
-This package is intentionally not initialized by the application yet.  Final
-route publication belongs to the shared coordinator after the concurrent
-ha-mcp readmission branch lands.
-"""
+"""Home Assistant Core capability-scoped readmission contracts and runtime."""
 
 from .coordinator import (
     CoreGenerationAllocator,
     CoreReadmissionCoordinator,
     CoreReconciliationAttempt,
     LocalCoreGenerationAllocator,
+)
+from .device_registry import (
+    DeviceRegistryAssessment,
+    assess_device_registry,
+    assess_device_entity_semantics,
+    assess_ha_mcp_device_projection,
 )
 from .models import (
     CORE_IDENTITY,
@@ -38,17 +39,32 @@ from .observation import (
     stable_observation,
 )
 from .profiles import (
+    CORE_2026_9_AUTHORITY,
     CORE_CAPABILITY_PROFILES,
     SUPPORTED_CORE_RELEASES,
     compiled_exact_authority,
 )
+from .routes import (
+    DELEGATED_CORE_REQUIREMENTS,
+    DEVICE_DEPENDENT_DELEGATED_TOOLS,
+    STATIC_TOOL_CORE_REQUIREMENTS,
+    delegated_requirements,
+    f3_requirements,
+    static_tool_requirements,
+)
+from .runtime import CORE_READMISSION, CoreRouteAuthority, CoreRuntime
 
 
 __all__ = [
+    "CORE_2026_9_AUTHORITY",
     "CORE_CAPABILITY_PROFILES",
     "CORE_IDENTITY",
     "CORE_PROTOCOL",
+    "CORE_READMISSION",
+    "DELEGATED_CORE_REQUIREMENTS",
+    "DEVICE_DEPENDENT_DELEGATED_TOOLS",
     "SUPPORTED_CORE_RELEASES",
+    "STATIC_TOOL_CORE_REQUIREMENTS",
     "SURFACE",
     "CoreAuthoritySelection",
     "CoreAuthoritySource",
@@ -67,11 +83,20 @@ __all__ = [
     "CoreReadmissionError",
     "CoreReconciliationAttempt",
     "CoreReconciliationResult",
+    "CoreRouteAuthority",
     "CoreRouteLease",
+    "CoreRuntime",
     "CoreSnapshotSource",
+    "DeviceRegistryAssessment",
     "LocalCoreGenerationAllocator",
+    "assess_device_registry",
+    "assess_device_entity_semantics",
+    "assess_ha_mcp_device_projection",
     "canonical_json",
     "compiled_exact_authority",
+    "delegated_requirements",
+    "f3_requirements",
     "fingerprint",
     "stable_observation",
+    "static_tool_requirements",
 ]

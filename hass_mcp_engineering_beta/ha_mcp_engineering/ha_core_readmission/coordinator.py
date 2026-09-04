@@ -48,6 +48,7 @@ _DENIAL = frozenset(
         CoreAuthorityStatus.DENY_ONLY,
     }
 )
+_EXPLICIT_UNAVAILABLE = frozenset({CoreAuthorityStatus.UNAVAILABLE})
 
 
 class CoreGenerationAllocator(Protocol):
@@ -345,6 +346,47 @@ class CoreReadmissionCoordinator:
             self._issued_leases[lease_id] = lease
             return lease
 
+    def acquire_routes(
+        self,
+        capability_ids: tuple[str, ...],
+        *,
+        session_fingerprint: str,
+        target_fingerprint: str | None = None,
+    ) -> tuple[CoreRouteLease, ...] | None:
+        """Atomically issue the complete, deterministic Core authority set."""
+
+        if (
+            not isinstance(capability_ids, tuple)
+            or not capability_ids
+            or len(capability_ids) > MAX_CAPABILITIES
+            or len(capability_ids) != len(set(capability_ids))
+        ):
+            return None
+        ordered = tuple(sorted(capability_ids, key=lambda item: item.encode("utf-8")))
+        with self._lock:
+            leases: list[CoreRouteLease] = []
+            for capability_id in ordered:
+                profile = self._profile_by_capability.get(capability_id)
+                if profile is None:
+                    for lease in leases:
+                        self._issued_leases.pop(lease.lease_id, None)
+                    return None
+                lease = self.acquire_route(
+                    capability_id,
+                    session_fingerprint=session_fingerprint,
+                    target_fingerprint=(
+                        target_fingerprint
+                        if profile.capability_class.mutation_capable
+                        else None
+                    ),
+                )
+                if lease is None:
+                    for issued in leases:
+                        self._issued_leases.pop(issued.lease_id, None)
+                    return None
+                leases.append(lease)
+            return tuple(leases)
+
     def validate_pre_dispatch(
         self,
         lease: CoreRouteLease,
@@ -393,6 +435,54 @@ class CoreReadmissionCoordinator:
             self._active_commits[commit.commit_id] = commit
             return commit
 
+    def commit_routes(
+        self,
+        leases: tuple[CoreRouteLease, ...],
+        *,
+        observation: CoreObservation,
+        target_fingerprint: str | None = None,
+    ) -> tuple[CoreDispatchCommit, ...] | None:
+        """Atomically validate and consume a complete Core lease set."""
+
+        if (
+            not isinstance(leases, tuple)
+            or not leases
+            or len(leases) > MAX_CAPABILITIES
+            or len({item.lease_id for item in leases}) != len(leases)
+        ):
+            return None
+        with self._lock:
+            for lease in leases:
+                profile = self._profile_by_capability.get(lease.capability_id)
+                if profile is None or not self._valid_lease_locked(
+                    lease,
+                    observation=observation,
+                    target_fingerprint=(
+                        target_fingerprint
+                        if profile.capability_class.mutation_capable
+                        else None
+                    ),
+                ):
+                    return None
+            if len(self._active_commits) + len(leases) > MAX_ACTIVE_COMMITS:
+                self._record_capacity_locked("active_commit_capacity_exhausted")
+                return None
+            commits: list[CoreDispatchCommit] = []
+            for lease in leases:
+                self._issued_leases.pop(lease.lease_id, None)
+                commit = CoreDispatchCommit(
+                    commit_id=fingerprint(
+                        {
+                            "model": "ha-core-dispatch-commit-v1",
+                            "lease_id": lease.lease_id,
+                        }
+                    ),
+                    lease=lease,
+                )
+                self._active_commits[commit.commit_id] = commit
+                commits.append(commit)
+            return tuple(commits)
+
     def release_route(self, lease: CoreRouteLease) -> bool:
         with self._lock:
             if self._issued_leases.get(getattr(lease, "lease_id", None)) != lease:
@@ -400,11 +490,37 @@ class CoreReadmissionCoordinator:
             self._issued_leases.pop(lease.lease_id, None)
             return True
 
+    def release_routes(self, leases: tuple[CoreRouteLease, ...]) -> bool:
+        """Release an unconsumed complete set without partial success."""
+
+        with self._lock:
+            if any(
+                self._issued_leases.get(getattr(item, "lease_id", None)) != item
+                for item in leases
+            ):
+                return False
+            for lease in leases:
+                self._issued_leases.pop(lease.lease_id, None)
+            return True
+
     def finish_commit(self, commit: CoreDispatchCommit) -> bool:
         with self._lock:
             if self._active_commits.get(getattr(commit, "commit_id", None)) != commit:
                 return False
             self._active_commits.pop(commit.commit_id, None)
+            return True
+
+    def finish_commits(self, commits: tuple[CoreDispatchCommit, ...]) -> bool:
+        """Finish a complete committed set without accepting stale members."""
+
+        with self._lock:
+            if any(
+                self._active_commits.get(getattr(item, "commit_id", None)) != item
+                for item in commits
+            ):
+                return False
+            for commit in commits:
+                self._active_commits.pop(commit.commit_id, None)
             return True
 
     def update_assessment(self) -> dict[str, Any]:
@@ -419,8 +535,18 @@ class CoreReadmissionCoordinator:
                 item for item in decisions if item.disposition.admitted
             )
             held = tuple(
-                item for item in decisions if not item.disposition.admitted
+                item for item in decisions
+                if item.disposition is CoreDisposition.HELD
             )
+            quarantined = tuple(
+                item for item in decisions
+                if item.disposition is CoreDisposition.QUARANTINED
+            )
+            unavailable = tuple(
+                item for item in decisions
+                if item.disposition is CoreDisposition.UNAVAILABLE
+            )
+            withheld = (*held, *quarantined, *unavailable)
             code_change_reasons = {
                 "capability_contract_changed",
                 "capability_not_compiled",
@@ -431,7 +557,7 @@ class CoreReadmissionCoordinator:
                 "authority_identity_or_protocol_disagreement",
                 "authority_bundle_invalid",
             }
-            reason_codes = {item.reason_code for item in held}
+            reason_codes = {item.reason_code for item in withheld}
             categories = self._change_categories(reason_codes)
             projection = {
                 "model_version": MODEL_VERSION,
@@ -451,6 +577,9 @@ class CoreReadmissionCoordinator:
                 ),
                 "compatible_count": len(compatible),
                 "held_count": len(held),
+                "quarantined_count": len(quarantined),
+                "unavailable_count": len(unavailable),
+                "withheld_count": len(withheld),
                 "compatible_capabilities": [
                     item.capability_id for item in compatible
                 ],
@@ -460,6 +589,20 @@ class CoreReadmissionCoordinator:
                         "reason_code": item.reason_code,
                     }
                     for item in held
+                ],
+                "quarantined_capabilities": [
+                    {
+                        "capability_id": item.capability_id,
+                        "reason_code": item.reason_code,
+                    }
+                    for item in quarantined
+                ],
+                "unavailable_capabilities": [
+                    {
+                        "capability_id": item.capability_id,
+                        "reason_code": item.reason_code,
+                    }
+                    for item in unavailable
                 ],
                 "engineering_code_change_required": bool(
                     reason_codes & code_change_reasons
@@ -491,6 +634,9 @@ class CoreReadmissionCoordinator:
                 "disposition",
                 "compatible_count",
                 "held_count",
+                "quarantined_count",
+                "unavailable_count",
+                "withheld_count",
                 "issued_lease_count",
                 "active_commit_count",
                 "retained_retirement_count",
@@ -629,6 +775,28 @@ class CoreReadmissionCoordinator:
             )
         if global_reason is not None:
             return self._decision(profile, CoreDisposition.UNAVAILABLE, global_reason)
+        denial = self._denial(profile, observation, authority)
+        if denial is not None:
+            return self._decision(
+                profile,
+                (
+                    CoreDisposition.HELD
+                    if denial.status is CoreAuthorityStatus.DENY_ONLY
+                    else CoreDisposition.QUARANTINED
+                ),
+                denial.reason_code,
+                source=denial.source,
+            )
+        unavailable = self._explicit_unavailable(
+            profile, observation, authority
+        )
+        if unavailable is not None:
+            return self._decision(
+                profile,
+                CoreDisposition.UNAVAILABLE,
+                unavailable.reason_code,
+                source=unavailable.source,
+            )
         if len(evidence) > 1:
             return self._decision(
                 profile,
@@ -655,14 +823,6 @@ class CoreReadmissionCoordinator:
                 profile,
                 CoreDisposition.QUARANTINED,
                 reason,
-            )
-        denial = self._denial(profile, observation, authority)
-        if denial is not None:
-            return self._decision(
-                profile,
-                CoreDisposition.QUARANTINED,
-                denial.reason_code,
-                source=denial.source,
             )
         positive = self._positive(profile, observation, authority)
         if positive is None:
@@ -768,6 +928,26 @@ class CoreReadmissionCoordinator:
             default=None,
         )
 
+    def _explicit_unavailable(
+        self,
+        profile: CoreCapabilityProfile,
+        observation: CoreObservation,
+        authority: tuple[CoreAuthoritySelection, ...],
+    ) -> CoreAuthoritySelection | None:
+        candidates = tuple(
+            item
+            for item in authority
+            if item.status in _EXPLICIT_UNAVAILABLE
+            and self._selects(item, profile)
+            and item.matches(observation)
+            and profile.capability_id in item.capability_ids
+        )
+        return min(
+            candidates,
+            key=lambda item: canonical_json(item.to_mapping()),
+            default=None,
+        )
+
     @staticmethod
     def _selects(
         authority: CoreAuthoritySelection,
@@ -855,6 +1035,11 @@ class CoreReadmissionCoordinator:
             for item in aggregate_decisions
         ):
             return CoreDisposition.QUARANTINED
+        if any(
+            item.disposition is CoreDisposition.HELD
+            for item in aggregate_decisions
+        ):
+            return CoreDisposition.HELD
         return CoreDisposition.UNAVAILABLE
 
     @staticmethod

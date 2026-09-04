@@ -1,8 +1,8 @@
-"""Binary-owned Home Assistant Core capability profiles.
+"""Binary-owned Home Assistant Core capability profiles and exact authority.
 
-The profiles describe contracts already implemented by Engineering.  A
-verified compatibility decision may select these identifiers, but cannot add a
-profile, adapter, check, route, or capability.
+The compatibility table can select only profiles and adapters compiled into the
+Engineering image. Observed version strings and response shapes are evidence;
+neither can create authority or widen a route.
 """
 
 from __future__ import annotations
@@ -21,6 +21,32 @@ from .models import (
 )
 
 
+CORE_2026_9_AUTHORITY: dict[str, Any] = {
+    "version": "2026.9.0",
+    "tag": "refs/tags/2026.9.0",
+    "tag_type": "lightweight_signed_commit",
+    "source_commit": "dfb5a9e690daaf204b542896e4b595e61a11a401",
+    "source_tree": "47d4178cc071773032fd6446c569dc21caf08f1e",
+    "source_archive_sha256": (
+        "ca6ee91306eb48f9ef237c08863744636a416fa27fb4ae3010223b22f2af9793"
+    ),
+    "source_commit_signature": "verified",
+    "image_index_digest": (
+        "sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293"
+    ),
+    "architecture_manifests": {
+        "linux/amd64": (
+            "sha256:bd39459e8d84fbbbd9a40fdccf7ab029f20d92340263b93db00887c3d5dcdaf6"
+        ),
+        "linux/arm64": (
+            "sha256:2a7eb678f984c9983d36435c12e124f406c4eedd70fb5780d8488b1c777f0d95"
+        ),
+    },
+    "image_version": "2026.9.0",
+    "provenance": "slsa_v1_attestations_observed_for_both_manifests",
+}
+
+
 SUPPORTED_CORE_RELEASES: tuple[tuple[str, str, str], ...] = (
     (
         "2026.7.2",
@@ -37,6 +63,11 @@ SUPPORTED_CORE_RELEASES: tuple[tuple[str, str, str], ...] = (
         "53998d7710b4ac280658511c24a2a3e2651f9873",
         "sha256:6340a3de3917a9b19368e767310a96dd090f6a19aca8aeadf87fd1145cec9682",
     ),
+    (
+        CORE_2026_9_AUTHORITY["version"],
+        CORE_2026_9_AUTHORITY["source_commit"],
+        CORE_2026_9_AUTHORITY["image_index_digest"],
+    ),
 )
 
 
@@ -49,11 +80,10 @@ def _contract(
     provider_boundary: str,
     response_contract: dict[str, Any],
     predispatch: tuple[str, ...] = (),
-    auto_eligible: bool = True,
 ) -> CoreCapabilityProfile:
     profile_id = capability_id.replace(".", "_") + "_v1"
     material = {
-        "model": "ha-core-binary-capability-contract-v1",
+        "model": "ha-core-binary-capability-contract-v2",
         "surface": "home_assistant_core",
         "capability_id": capability_id,
         "capability_class": capability_class.value,
@@ -74,7 +104,6 @@ def _contract(
         adapter_id=adapter_id,
         contract_fingerprint=fingerprint(material),
         required_checks=required_checks,
-        auto_eligible=auto_eligible,
     )
 
 
@@ -83,11 +112,7 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
         "core.basic_rest_read",
         CoreCapabilityClass.BASIC_REST_READ,
         "compiled-core-rest-read-v1",
-        (
-            "rest_config_mapping",
-            "rest_states_list",
-            "rest_state_entity_shape",
-        ),
+        ("rest_config_mapping", "rest_states_list", "rest_state_entity_shape"),
         provider_boundary="direct_ha_api",
         response_contract={
             "config": {"version": "nonempty_string"},
@@ -110,14 +135,10 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
         },
     ),
     _contract(
-        "core.entity_service_discovery",
-        CoreCapabilityClass.ENTITY_SERVICE_DISCOVERY,
-        "compiled-core-entity-service-discovery-v1",
-        (
-            "rest_states_list",
-            "rest_services_list",
-            "service_domain_mapping",
-        ),
+        "core.state_service_discovery",
+        CoreCapabilityClass.STATE_SERVICE_DISCOVERY,
+        "compiled-core-state-service-discovery-v1",
+        ("rest_states_list", "rest_services_list", "service_domain_mapping"),
         provider_boundary="direct_ha_api",
         response_contract={
             "states": "bounded_list_of_entity_state_mappings",
@@ -125,20 +146,81 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
         },
     ),
     _contract(
-        "core.registry_read",
-        CoreCapabilityClass.REGISTRY_READ,
-        "compiled-core-registry-read-v1",
+        "core.non_device_registry_read",
+        CoreCapabilityClass.NON_DEVICE_REGISTRY_READ,
+        "compiled-core-non-device-registry-read-v1",
         (
             "websocket_area_registry_list",
-            "websocket_device_registry_list",
+            "websocket_floor_registry_list",
+            "websocket_label_registry_list",
             "websocket_entity_registry_list",
         ),
         provider_boundary="direct_ha_api",
         response_contract={
-            "area_registry": "bounded_list_of_area_mappings",
-            "device_registry": "bounded_list_of_device_mappings",
-            "entity_registry": "bounded_list_of_entity_registry_mappings",
+            "areas": "bounded_list",
+            "floors": "bounded_list",
+            "labels": "bounded_list",
+            "entities": "bounded_list",
         },
+    ),
+    _contract(
+        "core.direct_device_registry_read",
+        CoreCapabilityClass.DIRECT_DEVICE_REGISTRY_READ,
+        "compiled-core-direct-device-registry-v1",
+        (
+            "websocket_device_registry_list",
+            "child_device_reduced_shape",
+            "parent_reference_integrity",
+            "effective_area_inheritance",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "regular_devices": "bounded_complete_device_mappings",
+            "child_devices": "bounded_reduced_child_mappings",
+            "effective_area": "child_then_parent_resolution",
+        },
+    ),
+    _contract(
+        "core.delegated_device_effective_area",
+        CoreCapabilityClass.DELEGATED_DEVICE_EFFECTIVE_AREA,
+        "compiled-core-delegated-device-effective-area-v1",
+        (
+            "websocket_device_registry_list",
+            "child_device_reduced_shape",
+            "parent_reference_integrity",
+            "effective_area_inheritance",
+            "ha_mcp_parent_projection",
+            "ha_mcp_effective_area_projection",
+        ),
+        provider_boundary="reviewed_ha_mcp_read_gateway_adapter",
+        response_contract={
+            "devices": "bounded_parent_and_effective_area_projection",
+            "entities": "bounded_effective_area_projection",
+        },
+    ),
+    _contract(
+        "core.direct_entity_state_read",
+        CoreCapabilityClass.DIRECT_ENTITY_STATE_READ,
+        "compiled-core-direct-entity-state-read-v1",
+        (
+            "rest_state_entity_shape",
+            "rest_state_json_types",
+            "rest_state_not_found_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={"state": "bounded_exact_entity_state_mapping"},
+    ),
+    _contract(
+        "core.automation_configuration_read",
+        CoreCapabilityClass.AUTOMATION_CONFIGURATION_READ,
+        "compiled-core-automation-configuration-read-v1",
+        (
+            "automation_configuration_command_contract",
+            "automation_configuration_mapping",
+            "automation_configuration_not_found_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={"configuration": "bounded_automation_mapping"},
     ),
     _contract(
         "core.dashboard_configuration_read",
@@ -171,6 +253,30 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
         },
     ),
     _contract(
+        "core.configuration_validation",
+        CoreCapabilityClass.CONFIGURATION_VALIDATION,
+        "compiled-core-configuration-validation-v1",
+        (
+            "check_config_endpoint_contract",
+            "check_config_result_taxonomy",
+            "probatio_semantics_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={"validation": "bounded_valid_or_errors_mapping"},
+    ),
+    _contract(
+        "core.dependency_helper_planning",
+        CoreCapabilityClass.DEPENDENCY_HELPER_PLANNING,
+        "compiled-core-dependency-helper-planning-v1",
+        (
+            "dependency_index_contract_exact",
+            "template_semantics_exact",
+            "effective_area_semantics_exact",
+        ),
+        provider_boundary="engineering_dependency_analysis",
+        response_contract={"planning": "read_only_bounded_evidence"},
+    ),
+    _contract(
         "core.typed_helper_operation",
         CoreCapabilityClass.TYPED_HELPER_OPERATION,
         "compiled-core-typed-helper-operation-v1",
@@ -179,7 +285,7 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
             "typed_helper_service_contract_exact",
             "typed_helper_readback_contract_exact",
         ),
-        provider_boundary="direct_home_assistant_state",
+        provider_boundary="existing_governed_helper_adapter",
         response_contract={
             "target": "exact_existing_typed_helper",
             "readback": "authoritative_exact_state",
@@ -193,9 +299,28 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
         ),
     ),
     _contract(
-        "core.configuration_mutation_action",
-        CoreCapabilityClass.CONFIGURATION_MUTATION_ACTION,
-        "compiled-core-configuration-mutation-action-v1",
+        "core.f3_mutation_verification",
+        CoreCapabilityClass.F3_MUTATION_VERIFICATION,
+        "compiled-core-f3-mutation-verification-v1",
+        (
+            "f3_exact_target_readback",
+            "f3_mismatch_taxonomy_exact",
+            "f3_no_provider_response_only_success",
+        ),
+        provider_boundary="f3_operation_adapter_v1",
+        response_contract={"verification": "authoritative_exact_readback"},
+        predispatch=(
+            "core_identity",
+            "capability_contract",
+            "target_fingerprint",
+            "session_fingerprint",
+            "generation",
+        ),
+    ),
+    _contract(
+        "core.governed_configuration_operation",
+        CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
+        "compiled-core-governed-configuration-operation-v1",
         (
             "configuration_target_exact",
             "configuration_provider_contract_exact",
@@ -213,15 +338,60 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
             "session_fingerprint",
             "generation",
         ),
-        # This generic family cannot be admitted automatically.  Concrete
-        # configuration adapters remain independently reviewed capabilities.
-        auto_eligible=False,
+    ),
+    _contract(
+        "core.governance_observability",
+        CoreCapabilityClass.GOVERNANCE_OBSERVABILITY,
+        "compiled-core-governance-observability-v1",
+        (
+            "persisted_evidence_no_core_call",
+            "bounded_health_projection",
+            "bounded_pagination_projection",
+        ),
+        provider_boundary="engineering_local_persisted_evidence",
+        response_contract={"projection": "bounded_local_evidence_only"},
     ),
 )
 
 
+_CORE_2026_9_DECISIONS: dict[str, tuple[CoreAuthorityStatus, str]] = {
+    "core.direct_device_registry_read": (
+        CoreAuthorityStatus.DENY_ONLY,
+        "direct_child_device_adapter_unproven",
+    ),
+    "core.delegated_device_effective_area": (
+        CoreAuthorityStatus.DENY_ONLY,
+        "ha_mcp_child_device_contract_unproven",
+    ),
+    "core.template_semantics": (
+        CoreAuthorityStatus.DENY_ONLY,
+        "template_semantics_unproven",
+    ),
+    "core.configuration_validation": (
+        CoreAuthorityStatus.DENY_ONLY,
+        "probatio_semantics_unproven",
+    ),
+    "core.dependency_helper_planning": (
+        CoreAuthorityStatus.UNAVAILABLE,
+        "helper_planning_semantics_unavailable",
+    ),
+    "core.typed_helper_operation": (
+        CoreAuthorityStatus.UNAVAILABLE,
+        "typed_helper_semantics_unavailable",
+    ),
+    "core.f3_mutation_verification": (
+        CoreAuthorityStatus.DENY_ONLY,
+        "exact_readback_semantics_unproven",
+    ),
+    "core.governed_configuration_operation": (
+        CoreAuthorityStatus.UNAVAILABLE,
+        "mutation_core_authority_unavailable",
+    ),
+}
+
+
 def compiled_exact_authority(version: str) -> tuple[CoreAuthoritySelection, ...]:
-    """Return compiled exact selections for one repository-reviewed release."""
+    """Return compiled per-capability decisions for one exact release."""
 
     release = next(
         (item for item in SUPPORTED_CORE_RELEASES if item[0] == version),
@@ -230,33 +400,53 @@ def compiled_exact_authority(version: str) -> tuple[CoreAuthoritySelection, ...]
     if release is None:
         return ()
     source_version, source_commit, image_digest = release
-    return tuple(
-        CoreAuthoritySelection(
-            source=CoreAuthoritySource.COMPILED_EXACT,
-            status=CoreAuthorityStatus.POSITIVE,
-            profile_id=profile.profile_id,
-            profile_version=profile.profile_version,
-            adapter_id=profile.adapter_id,
-            subject_identity=CORE_IDENTITY,
-            subject_version=source_version,
-            protocol=CORE_PROTOCOL,
-            capability_ids=(profile.capability_id,),
-            reason_code="compiled_exact_release",
-            evidence_fingerprint=fingerprint(
-                {
-                    "model": "compiled-core-release-authority-v1",
-                    "version": source_version,
-                    "source_commit": source_commit,
-                    "image_digest": image_digest,
-                    "profile": profile.to_mapping(),
-                }
-            ),
+    result: list[CoreAuthoritySelection] = []
+    for profile in CORE_CAPABILITY_PROFILES:
+        if version == "2026.9.0":
+            status, reason = _CORE_2026_9_DECISIONS.get(
+                profile.capability_id,
+                (CoreAuthorityStatus.POSITIVE, "compiled_exact_release"),
+            )
+        else:
+            status, reason = (
+                CoreAuthorityStatus.POSITIVE,
+                "compiled_exact_release",
+            )
+        result.append(
+            CoreAuthoritySelection(
+                source=CoreAuthoritySource.COMPILED_EXACT,
+                status=status,
+                profile_id=profile.profile_id,
+                profile_version=profile.profile_version,
+                adapter_id=profile.adapter_id,
+                subject_identity=CORE_IDENTITY,
+                subject_version=source_version,
+                protocol=CORE_PROTOCOL,
+                capability_ids=(profile.capability_id,),
+                reason_code=reason,
+                evidence_fingerprint=fingerprint(
+                    {
+                        "model": "compiled-core-release-authority-v2",
+                        "version": source_version,
+                        "source_commit": source_commit,
+                        "image_digest": image_digest,
+                        "source_tree": (
+                            CORE_2026_9_AUTHORITY["source_tree"]
+                            if version == "2026.9.0"
+                            else None
+                        ),
+                        "profile": profile.to_mapping(),
+                        "status": status.value,
+                        "reason_code": reason,
+                    }
+                ),
+            )
         )
-        for profile in CORE_CAPABILITY_PROFILES
-    )
+    return tuple(result)
 
 
 __all__ = [
+    "CORE_2026_9_AUTHORITY",
     "CORE_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",
