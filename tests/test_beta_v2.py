@@ -81,6 +81,13 @@ from ha_mcp_engineering.providers.supervisor_self import (  # noqa: E402
 from ha_mcp_engineering.tools import compatibility, registered_tools  # noqa: E402
 from ha_mcp_engineering.tools.registry import get_registered_server  # noqa: E402
 from ha_mcp_engineering.version import SERVER_VERSION  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.runtime import (  # noqa: E402
+    CORE_READMISSION,
+)
+from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
+    _evidence as core_capability_evidence,
+    _snapshot as core_snapshot,
+)
 
 
 SECRET = "beta-regression-access-secret"
@@ -720,9 +727,24 @@ class ToolParityTests(unittest.TestCase):
 class BetaApplicationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        class SyntheticCoreSource:
+            async def capture_core_snapshot(self):
+                return core_snapshot(
+                    "2026.8.1",
+                    evidence=core_capability_evidence(),
+                )
+
         cls.tempdir = tempfile.TemporaryDirectory()
         settings = beta_settings(str(Path(cls.tempdir.name) / "audit.jsonl"))
-        gateway = create_application(settings)
+        gateway = create_application(
+            settings,
+            core_snapshot_source=SyntheticCoreSource(),
+        )
+        asyncio.run(
+            CORE_READMISSION.reconcile_once(
+                "synthetic-application-startup"
+            )
+        )
         asyncio.run(
             GOVERNANCE.require().f3_runtime.recover_once(
                 "synthetic-application-startup"

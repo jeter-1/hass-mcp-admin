@@ -420,6 +420,7 @@ async def initialize(
     reviewed_output_schemas=None,
     ha_rest_client=None,
     ha_websocket_client=None,
+    core_runtime=None,
 ):
     server = server or FastMCP("gateway-test")
     transport = transport or FakeTransport(tools, version=version)
@@ -437,6 +438,7 @@ async def initialize(
         admission_validator=lambda _catalog: None,
         ha_rest_client=ha_rest_client,
         ha_websocket_client=ha_websocket_client,
+        core_runtime=core_runtime,
     )
     await gateway.initialize(server)
     return gateway, server, transport
@@ -2018,7 +2020,8 @@ class PolicyInventoryTests(unittest.TestCase):
         application = (
             BETA / "ha_mcp_engineering" / "application.py"
         ).read_text(encoding="utf-8")
-        self.assertIn("UPSTREAM_READ_GATEWAY.configure(settings)", application)
+        self.assertIn("core_runtime=CORE_READMISSION", application)
+        self.assertIn("UPSTREAM_READ_GATEWAY.configure(", application)
         self.assertNotIn(
             "admission_validator=UPSTREAM_DASHBOARD.validate_read_gateway_catalog",
             application,

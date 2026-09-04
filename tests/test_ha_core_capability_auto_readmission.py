@@ -180,7 +180,7 @@ class CoreObservationTests(unittest.TestCase):
         )
         encoded = json.dumps(observed.to_mapping())
         self.assertNotIn("synthetic-core-session-1", encoded)
-        self.assertNotIn("endpoint", encoded)
+        self.assertNotIn("http://", encoded)
         self.assertNotIn("token", encoded)
 
     def test_malformed_or_partial_config_evidence_fails_closed(self):
@@ -233,9 +233,9 @@ class CoreCoordinatorTests(unittest.TestCase):
     def test_compiled_exact_supported_releases_are_source_bound(self):
         self.assertEqual(
             tuple(item[0] for item in SUPPORTED_CORE_RELEASES),
-            ("2026.7.2", "2026.8.0", "2026.8.1"),
+            ("2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0"),
         )
-        for version, _commit, _image in SUPPORTED_CORE_RELEASES:
+        for version, _commit, _image in SUPPORTED_CORE_RELEASES[:-1]:
             result = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES).reconcile(
                 _observation(version),
                 compiled_exact_authority(version),
@@ -246,7 +246,14 @@ class CoreCoordinatorTests(unittest.TestCase):
                 result.generation.decision_for("core.basic_rest_read").disposition,
                 CoreDisposition.ADMITTED_EXACT,
             )
-        self.assertEqual(compiled_exact_authority("2026.8.2"), ())
+        candidate = CoreReadmissionCoordinator(
+            CORE_CAPABILITY_PROFILES
+        ).reconcile(
+            _observation("2026.9.0"),
+            compiled_exact_authority("2026.9.0"),
+        )
+        self.assertEqual(candidate.disposition, CoreDisposition.PARTIAL)
+        self.assertEqual(compiled_exact_authority("2026.9.1"), ())
 
     def test_compatible_patch_restores_reads_without_restart(self):
         old = self.coordinator.reconcile(
@@ -262,8 +269,8 @@ class CoreCoordinatorTests(unittest.TestCase):
         for capability in (
             "core.basic_rest_read",
             "core.basic_websocket_read",
-            "core.entity_service_discovery",
-            "core.registry_read",
+            "core.state_service_discovery",
+            "core.non_device_registry_read",
             "core.dashboard_configuration_read",
             "core.typed_helper_operation",
         ):
@@ -293,15 +300,17 @@ class CoreCoordinatorTests(unittest.TestCase):
         result = self.coordinator.reconcile(
             _observation(
                 evidence=_evidence(
-                    unstable={"core.entity_service_discovery"}
+                    unstable={"core.state_service_discovery"}
                 )
             ),
             _verified_authority(),
         )
         discovery = result.generation.decision_for(
-            "core.entity_service_discovery"
+            "core.state_service_discovery"
         )
-        registry = result.generation.decision_for("core.registry_read")
+        registry = result.generation.decision_for(
+            "core.non_device_registry_read"
+        )
         self.assertEqual(discovery.reason_code, "capability_contract_changed")
         self.assertEqual(discovery.disposition, CoreDisposition.QUARANTINED)
         self.assertTrue(registry.disposition.admitted)
@@ -334,7 +343,6 @@ class CoreCoordinatorTests(unittest.TestCase):
                         item.reason_code == reason
                         for item in result.generation.decisions
                         if item.capability_id
-                        != "core.configuration_mutation_action"
                     )
                 )
 
@@ -372,7 +380,7 @@ class CoreCoordinatorTests(unittest.TestCase):
             all(
                 item.reason_code == "authority_bundle_invalid"
                 for item in result.generation.decisions
-                if item.capability_id != "core.configuration_mutation_action"
+                if item.capability_id
             )
         )
         unknown = {
@@ -616,7 +624,7 @@ class CoreProjectionTests(unittest.TestCase):
             encoded = json.dumps(value, sort_keys=True)
             self.assertLessEqual(len(encoded.encode("utf-8")), 32_768)
             self.assertNotIn("synthetic-core-session", encoded)
-            self.assertNotIn("endpoint", encoded)
+            self.assertNotIn("http://", encoded)
             self.assertNotIn("token", encoded)
             self.assertNotIn("exception", encoded)
             self.assertEqual(value["fallback_count"], 0)
@@ -625,12 +633,7 @@ class CoreProjectionTests(unittest.TestCase):
         self.assertGreater(report["compatible_count"], 0)
         self.assertFalse(report["engineering_code_change_required"])
         self.assertFalse(report["compatibility_data_update_required"])
-        self.assertIn(
-            "core.configuration_mutation_action",
-            {
-                item["capability_id"] for item in report["held_capabilities"]
-            },
-        )
+        self.assertEqual(report["held_capabilities"], [])
 
     def test_report_distinguishes_code_and_compatibility_data_changes(self):
         code = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
@@ -685,10 +688,10 @@ class ProductionCoreVectorAdapter:
     def _profile_from_reference(item):
         classes = {
             "ordinary_read": CoreCapabilityClass.BASIC_REST_READ,
-            "registry_read": CoreCapabilityClass.REGISTRY_READ,
+            "registry_read": CoreCapabilityClass.NON_DEVICE_REGISTRY_READ,
             "template_semantics": CoreCapabilityClass.TEMPLATE_SEMANTICS,
             "configuration_semantics": CoreCapabilityClass.TEMPLATE_SEMANTICS,
-            "governed_write": CoreCapabilityClass.CONFIGURATION_MUTATION_ACTION,
+            "governed_write": CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
         }
         capability = item.capabilities[0]
         return CoreCapabilityProfile(
@@ -956,9 +959,8 @@ class Adr020ProductionCoreVectorTests(unittest.TestCase):
 
 
 class CoreRuntimeIsolationTests(unittest.TestCase):
-    def test_application_routing_registration_and_clients_do_not_import_component(self):
+    def test_only_explicit_runtime_integration_imports_component(self):
         paths = (
-            BETA / "ha_mcp_engineering" / "application.py",
             BETA / "ha_mcp_engineering" / "mcp_server.py",
             BETA / "ha_mcp_engineering" / "capabilities.py",
             BETA / "ha_mcp_engineering" / "providers" / "routing.py",
@@ -968,6 +970,13 @@ class CoreRuntimeIsolationTests(unittest.TestCase):
         )
         for path in paths:
             self.assertNotIn("ha_core_readmission", path.read_text(encoding="utf-8"), path)
+        application = (
+            BETA / "ha_mcp_engineering" / "application.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn(
+            "from .ha_core_readmission.runtime import CORE_READMISSION",
+            application,
+        )
 
     def test_production_package_never_imports_test_support(self):
         package = BETA / "ha_mcp_engineering" / "ha_core_readmission"

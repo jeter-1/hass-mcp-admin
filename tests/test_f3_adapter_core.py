@@ -167,6 +167,209 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.counters.dispatch_invocations, 0)
         self.assertEqual(self.approval.invocations, 0)
 
+    async def test_external_authority_is_acquired_after_preflight_and_before_approval(self):
+        events = []
+        adapter = SyntheticOperationAdapter()
+
+        class Guard:
+            async def acquire(self, _prepared, _preflight):
+                self.assert_preflight = adapter.counters.preflight_invocations
+                events.append("authority_acquired")
+                return "registered-authority"
+
+            def consume(self, authority):
+                self.assert_authority = authority
+                events.append("authority_consumed")
+                return ("authority-commit",)
+
+            def release(self, _authority):
+                events.append("authority_released")
+                return True
+
+            def finish(self, _commits):
+                events.append("authority_finished")
+                return True
+
+        guard = Guard()
+
+        async def approval():
+            events.append("approval_consumed")
+            await self.approval()
+
+        result = await self.executor().execute(
+            adapter=adapter,
+            prepared=prepared_dashboard_operation(),
+            identity=_identity(),
+            approval_consumption=approval,
+            dispatch_authority=guard,
+        )
+        self.assertEqual(result.outcome, "succeeded_verified")
+        self.assertEqual(guard.assert_preflight, 1)
+        self.assertEqual(guard.assert_authority, "registered-authority")
+        self.assertEqual(
+            events,
+            [
+                "authority_acquired",
+                "approval_consumed",
+                "authority_consumed",
+                "authority_finished",
+            ],
+        )
+        self.assertEqual(adapter.counters.dispatch_invocations, 1)
+        self.assertEqual(adapter.counters.simulated_mutations, 1)
+
+    async def test_external_authority_rejection_consumes_no_approval_or_provider(self):
+        adapter = SyntheticOperationAdapter()
+
+        class Guard:
+            async def acquire(self, _prepared, _preflight):
+                return None
+
+            def consume(self, _authority):
+                raise AssertionError("unavailable authority cannot be consumed")
+
+            def release(self, _authority):
+                raise AssertionError("no unavailable authority was acquired")
+
+            def finish(self, _commits):
+                raise AssertionError("no unavailable authority was committed")
+
+        result = await self.executor().execute(
+            adapter=adapter,
+            prepared=prepared_dashboard_operation(),
+            identity=_identity(),
+            approval_consumption=self.approval,
+            dispatch_authority=Guard(),
+        )
+        self.assertEqual(result.outcome, "provider_unavailable_pre_dispatch")
+        self.assertEqual(result.dispatch_count, 0)
+        self.assertEqual(adapter.counters.preflight_invocations, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(adapter.counters.simulated_mutations, 0)
+        self.assertEqual(self.approval.invocations, 0)
+
+    async def test_retired_external_authority_after_approval_never_reaches_provider(self):
+        adapter = SyntheticOperationAdapter()
+
+        class Guard:
+            def __init__(self):
+                self.acquire_count = 0
+                self.consume_count = 0
+                self.release_count = 0
+
+            async def acquire(self, _prepared, _preflight):
+                self.acquire_count += 1
+                return f"authority-{self.acquire_count}"
+
+            def consume(self, _authority):
+                self.consume_count += 1
+                return None if self.consume_count == 1 else ("authority-commit",)
+
+            def release(self, _authority):
+                self.release_count += 1
+                return True
+
+            def finish(self, _commits):
+                return True
+
+        guard = Guard()
+        executor = self.executor()
+        with self.assertRaises(PreIntentRetryRequired) as raised:
+            await executor.execute(
+                adapter=adapter,
+                prepared=prepared_dashboard_operation(),
+                identity=_identity(),
+                approval_consumption=self.approval,
+                dispatch_authority=guard,
+            )
+        self.assertEqual(
+            raised.exception.diagnostic_code,
+            "approval_consumed_intent_not_recorded",
+        )
+        durable = self.executions.get("task-synthetic")
+        self.assertIsNotNone(durable)
+        self.assertIsNone(durable.dispatch_intent)
+        self.assertEqual(durable.dispatch_count, 0)
+        self.assertEqual(self.approval.consumptions, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(adapter.counters.simulated_mutations, 0)
+        self.assertEqual(guard.release_count, 1)
+
+        result = await executor.execute(
+            adapter=adapter,
+            prepared=prepared_dashboard_operation(),
+            identity=_identity(),
+            approval_consumption=self.approval,
+            dispatch_authority=guard,
+        )
+        self.assertEqual(result.outcome, "succeeded_verified")
+        self.assertEqual(self.approval.invocations, 2)
+        self.assertEqual(self.approval.consumptions, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 1)
+        self.assertEqual(adapter.counters.simulated_mutations, 1)
+
+    async def test_process_loss_after_core_authority_consumption_reconstructs_without_redispatch(self):
+        adapter = SyntheticOperationAdapter()
+
+        class Guard:
+            def __init__(self):
+                self.acquired = 0
+                self.consumed = 0
+                self.finished = 0
+
+            async def acquire(self, _prepared, _preflight):
+                self.acquired += 1
+                return f"authority-{self.acquired}"
+
+            def consume(self, _authority):
+                self.consumed += 1
+                return (f"commit-{self.consumed}",)
+
+            def release(self, _authority):
+                return True
+
+            def finish(self, _commits):
+                self.finished += 1
+                return True
+
+        guard = Guard()
+
+        def lose(stage: str) -> None:
+            if stage == "after_dispatch_authority_before_durable_intent":
+                raise SimulatedProcessLoss()
+
+        with self.assertRaises(SimulatedProcessLoss):
+            await self.executor(fault_hook=lose).execute(
+                adapter=adapter,
+                prepared=prepared_dashboard_operation(),
+                identity=_identity(),
+                approval_consumption=self.approval,
+                dispatch_authority=guard,
+            )
+        durable = self.executions.get("task-synthetic")
+        self.assertIsNotNone(durable)
+        self.assertIsNone(durable.dispatch_intent)
+        self.assertEqual(durable.dispatch_count, 0)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(adapter.counters.simulated_mutations, 0)
+        self.assertEqual(self.approval.consumptions, 1)
+        self.assertEqual(guard.finished, 1)
+
+        self.clock.advance(61)
+        result = await self.executor().execute(
+            adapter=adapter,
+            prepared=prepared_dashboard_operation(),
+            identity=_identity(),
+            approval_consumption=self.approval,
+            dispatch_authority=guard,
+        )
+        self.assertEqual(result.outcome, "succeeded_verified")
+        self.assertEqual(self.approval.consumptions, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 1)
+        self.assertEqual(adapter.counters.simulated_mutations, 1)
+        self.assertEqual(guard.acquired, 2)
+        self.assertEqual(guard.consumed, 2)
+
     async def test_lock_conflict_prevents_preflight_and_dispatch(self):
         blocker = self.locks.acquire_once(
             (
