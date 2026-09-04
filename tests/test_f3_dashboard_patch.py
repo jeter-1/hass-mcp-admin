@@ -189,6 +189,24 @@ class DashboardPatchCompilerTests(unittest.TestCase):
             effect.proposed_value,
             [{"nested": [1, 2]}, "tail"],
         )
+        self.assertEqual(effect.leaf_change_count, 6)
+
+    def test_shifted_array_suffix_counts_against_semantic_bound(self):
+        within_bound = {"items": list(range(7))}
+        compiled = compile_dashboard_patch(
+            within_bound, [operation("add", "/items/0", -1)]
+        )
+        self.assertEqual(compiled.semantic_leaf_change_count, 9)
+
+        beyond_bound = {"items": list(range(16))}
+        for candidate in (
+            operation("add", "/items/0", -1),
+            operation("remove", "/items/0"),
+        ):
+            with self.subTest(operation=candidate["operation"]), self.assertRaisesRegex(
+                PatchCompilationError, "16-leaf semantic review bound"
+            ):
+                compile_dashboard_patch(beyond_bound, [candidate])
 
     def test_duplicate_alias_and_parent_child_paths_are_rejected(self):
         with self.assertRaises(PatchValidationError):

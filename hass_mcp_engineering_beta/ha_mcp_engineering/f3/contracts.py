@@ -15,6 +15,10 @@ from typing import Protocol, TypeAlias, TypeVar
 
 F3_ADAPTER_CONTRACT_MODEL = "f3-operation-adapter-v1"
 F3_MAX_MUTATING_PROVIDER_INVOCATIONS_PER_OPERATION = 1
+# Canonical cross-adapter resource identity for the selected ha-mcp provider.
+# Exact installed add-on slugs remain separate lock evidence; this key ensures
+# every adapter contends with a governed restart of that selected provider.
+HA_MCP_PROVIDER_LOCK_KEY = "addon:ha_mcp"
 
 
 class OperationAdapterPhase(str, Enum):
@@ -274,6 +278,7 @@ class OperationAdapter(Protocol[ProposalT, PreparedT]):
 __all__ = [
     "F3_ADAPTER_CONTRACT_MODEL",
     "F3_MAX_MUTATING_PROVIDER_INVOCATIONS_PER_OPERATION",
+    "HA_MCP_PROVIDER_LOCK_KEY",
     "OperationAdapterPhase",
     "NormalizedOperationOutcome",
     "LockScope",

@@ -245,6 +245,31 @@ class ApprovalThemeTests(unittest.TestCase):
         self.assertNotIn("onclick=", html)
         self.assertNotIn("formaction=", html)
 
+    def test_approval_copy_matches_stored_acknowledgement_sequence(self):
+        single_step = _render_review(
+            "/api/hassio_ingress/testtoken123",
+            _review_fixture(),
+            "beta35-csrf",
+        )
+        self.assertIn(
+            "No separate elevated-risk acknowledgement is required.",
+            single_step,
+        )
+        self.assertNotIn("subsequent page", single_step)
+
+        historical_two_step = _review_fixture()
+        historical_two_step["same_principal_requirement"] = True
+        two_step = _render_review(
+            "/api/hassio_ingress/testtoken123",
+            historical_two_step,
+            "beta35-csrf",
+        )
+        self.assertIn(
+            "A separate elevated-risk acknowledgement will be required on "
+            "the subsequent page.",
+            two_step,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

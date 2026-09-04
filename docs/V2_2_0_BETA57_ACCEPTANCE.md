@@ -67,7 +67,9 @@ severity-only acknowledgement. Historical f2-v1 approval bundles are not
 reinterpreted.
 
 Planning performs zero writes. Apply reacquires the exact dashboard, core, and
-provider locks; revalidates provider authority, target, storage mode, baseline,
+canonical provider locks; a governed restart of the selected installed ha-mcp
+provider takes that same provider lock exclusively. Apply revalidates provider
+authority, target, storage mode, baseline,
 plan, and approval; persists durable intent; permits one setter call; and
 requires authoritative exact reread for `succeeded_verified`. Sequential and
 concurrent duplicates cannot create a second dispatch. Post-intent response

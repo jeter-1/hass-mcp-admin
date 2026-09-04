@@ -300,12 +300,16 @@ def _apply_one(
         elif isinstance(parent, list) and isinstance(target, int):
             displaced = deepcopy(parent[target:])
             parent.insert(target, proposed)
-            leaf_count = _leaf_weight(proposed) + 1
             previous_present = bool(displaced)
             previous_value = displaced if displaced else None
-            proposed_value = (
-                deepcopy(parent[target:]) if displaced else deepcopy(proposed)
-            )
+            if displaced:
+                proposed_value = deepcopy(parent[target:])
+                leaf_count = semantic_leaf_difference(
+                    displaced, proposed_value
+                )
+            else:
+                proposed_value = deepcopy(proposed)
+                leaf_count = _leaf_weight(proposed)
         else:
             raise PatchCompilationError("Array add requires a list parent")
         return PatchEffect(
@@ -338,10 +342,10 @@ def _apply_one(
             leaf_count,
         )
 
-    leaf_count = _leaf_weight(previous) + (1 if isinstance(parent, list) else 0)
     if isinstance(parent, list) and isinstance(target, int):
         previous_suffix = deepcopy(parent[target:])
         del parent[target]
+        proposed_suffix = deepcopy(parent[target:])
         return PatchEffect(
             operation.operation_id,
             operation.operation,
@@ -349,9 +353,10 @@ def _apply_one(
             True,
             previous_suffix,
             True,
-            deepcopy(parent[target:]),
-            leaf_count,
+            proposed_suffix,
+            semantic_leaf_difference(previous_suffix, proposed_suffix),
         )
+    leaf_count = _leaf_weight(previous)
     del parent[target]
     return PatchEffect(
         operation.operation_id,

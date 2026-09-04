@@ -1479,8 +1479,14 @@ def _render_review(prefix: str, review: dict[str, Any], csrf: str) -> str:
         "the plan must separately acknowledge the displayed elevated risk "
         "and physical consequence."
         if elevated_acknowledgement
-        else "This action approves the exact plan. Elevated plans require a "
-        "separate acknowledgement on a subsequent page."
+        else (
+            "This action approves the exact plan. A separate elevated-risk "
+            "acknowledgement will be required on the subsequent page."
+            if review.get("same_principal_requirement") is True
+            else "This action approves the exact plan and completes the "
+            "required owner decision. No separate elevated-risk "
+            "acknowledgement is required."
+        )
     )
     approve_form = (
         f'<p>{escape(action_explanation)}</p>'

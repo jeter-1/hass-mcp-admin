@@ -164,7 +164,10 @@ The operation requests:
 
 - exclusive `dashboard:<url_path>` resource lock;
 - shared `home_assistant:core` availability lock; and
-- shared lock for the exact authoritative `ha-mcp` add-on identity.
+- shared canonical `addon:ha_mcp` provider lock. Governed restart of the exact
+  installed add-on retains its exact-slug lock and also takes this canonical
+  provider lock exclusively, so a prefixed Supervisor slug cannot bypass
+  dashboard-write exclusion.
 
 Preflight while holding those locks repeats the exact inventory/configuration
 read, compatibility-entry and provider checks, storage identity proof, and both

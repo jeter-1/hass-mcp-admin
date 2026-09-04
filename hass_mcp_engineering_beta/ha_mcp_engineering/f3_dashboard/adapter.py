@@ -10,6 +10,7 @@ from typing import Any
 from ..errors import DashboardProviderError
 from ..f3.contracts import (
     F3_ADAPTER_CONTRACT_MODEL,
+    HA_MCP_PROVIDER_LOCK_KEY,
     AdapterCapabilityDescriptor,
     DispatchResult,
     LockMode,
@@ -335,7 +336,7 @@ class DashboardUpdateAdapter:
                         ("home_assistant_availability_dependency",),
                     ),
                     LockRequest(
-                        f"addon:{operation.authoritative_provider_slug}",
+                        HA_MCP_PROVIDER_LOCK_KEY,
                         (LockScope.PROVIDER,),
                         LockMode.SHARED,
                         ("upstream_provider_dependency",),
