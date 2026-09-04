@@ -677,53 +677,127 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.dashboard.preread_count, 1)
         self.assertEqual(self.dashboard.write_count, 0)
 
-    async def test_exact_action_change_is_elevated_but_owner_actionable(self):
-        self.dashboard.configuration = {
-            "title": "Before",
-            "views": [{"title": "Main", "cards": []}],
-        }
-        created = await self.service.create_dashboard_update_plan(
-            title="Add exact dashboard action",
-            description="A disclosed exact configuration change.",
-            url_path="main-operations",
-            patch_operations=[
+    async def test_disclosed_consequence_classes_remain_owner_actionable(self):
+        cases = (
+            (
+                "high",
+                "service_or_action_invocation",
                 {
-                    "operation_id": "append-action-card",
-                    "operation": "add",
-                    "path": "/views/0/cards/-",
-                    "value": {
-                        "type": "button",
-                        "entity": "light.synthetic_vanity",
-                        "tap_action": {
-                            "action": "perform-action",
-                            "perform_action": "light.turn_off",
-                            "target": {
-                                "entity_id": "light.synthetic_vanity"
-                            },
+                    "type": "button",
+                    "entity": "light.synthetic_vanity",
+                    "tap_action": {
+                        "action": "perform-action",
+                        "perform_action": "light.turn_off",
+                        "target": {
+                            "entity_id": "light.synthetic_vanity"
                         },
                     },
+                },
+            ),
+            (
+                "critical",
+                "destructive_administrative_action",
+                {
+                    "type": "button",
+                    "tap_action": {
+                        "action": "perform-action",
+                        "perform_action": "homeassistant.restart",
+                    },
+                },
+            ),
+            (
+                "safety_critical",
+                "high_consequence_action",
+                {
+                    "type": "button",
+                    "entity": "lock.synthetic_entry",
+                    "tap_action": {
+                        "action": "perform-action",
+                        "perform_action": "lock.unlock",
+                        "target": {
+                            "entity_id": "lock.synthetic_entry"
+                        },
+                    },
+                },
+            ),
+            (
+                "unknown",
+                "unknown_action_semantics",
+                {
+                    "type": "button",
+                    "tap_action": {"action": "assist"},
+                },
+            ),
+            (
+                "incompletely_analyzed",
+                "templated_or_conditional_action",
+                {
+                    "type": "button",
+                    "entity": "light.synthetic_vanity",
+                    "tap_action": {
+                        "action": "perform-action",
+                        "perform_action": "light.turn_on",
+                        "data": {"brightness": "{{ synthetic_level }}"},
+                    },
+                },
+            ),
+        )
+
+        for consequence_class, expected_category, card in cases:
+            with self.subTest(consequence_class=consequence_class):
+                self.dashboard.configuration = {
+                    "title": "Before",
+                    "views": [{"title": "Main", "cards": []}],
                 }
-            ],
-            expiration_minutes=30,
-        )
+                writes_before = self.dashboard.write_count
+                created = await self.service.create_dashboard_update_plan(
+                    title=f"Add {consequence_class} dashboard action",
+                    description="A disclosed exact configuration change.",
+                    url_path="main-operations",
+                    patch_operations=[
+                        {
+                            "operation_id": "append-action-card",
+                            "operation": "add",
+                            "path": "/views/0/cards/-",
+                            "value": card,
+                        }
+                    ],
+                    expiration_minutes=30,
+                )
 
-        self.assertEqual(
-            created["policy_decision"]["policy_class"], "elevated_admin"
-        )
-        self.assertEqual(
-            created["policy_decision"]["required_acknowledgements"],
-            ["plan_approval"],
-        )
-        self.assertTrue(created["approval_actionable"])
-        granted = await self._approve(created)
-        self.assertEqual(granted["approval_bundle_state"], "fully_approved")
-        self.assertEqual(self.dashboard.write_count, 0)
+                stored = self.repository.get(created["plan_id"])
+                self.assertIsNotNone(stored)
+                risk = stored.proposed_config["dashboard_update"]["risk"]
+                changed_categories = {
+                    finding["category"]
+                    for finding in risk["findings"]
+                    if finding["introduced_or_changed"]
+                }
+                self.assertIn(expected_category, changed_categories)
+                self.assertEqual(
+                    created["policy_decision"]["policy_class"],
+                    "elevated_admin",
+                )
+                self.assertEqual(
+                    created["policy_decision"]["required_acknowledgements"],
+                    ["plan_approval"],
+                )
+                self.assertTrue(created["approval_actionable"])
+                granted = await self._approve(created)
+                self.assertEqual(
+                    granted["approval_bundle_state"], "fully_approved"
+                )
+                self.assertEqual(self.dashboard.write_count, writes_before)
 
-        result = await self.service.apply(
-            created["plan_id"], created["plan_hash"]
-        )
-        self.assertEqual(result["task_state"], "succeeded_verified")
-        self.assertEqual(self.dashboard.write_count, 1)
+                result = await self.service.apply(
+                    created["plan_id"], created["plan_hash"]
+                )
+                self.assertEqual(
+                    result["task_state"], "succeeded_verified"
+                )
+                self.assertEqual(
+                    self.dashboard.write_count, writes_before + 1
+                )
 
     async def test_concurrent_duplicate_apply_commits_at_most_once(self):
         created = await self._plan()
