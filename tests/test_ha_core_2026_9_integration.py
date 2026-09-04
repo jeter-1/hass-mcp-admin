@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import subprocess
 import sys
 import unittest
 
@@ -850,6 +851,29 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
                 delegated_requirements(tool),
                 ("core.delegated_device_effective_area",),
             )
+
+    def test_repository_context_reports_current_exact_catalog(self):
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / "scripts" / "codex-context.py"),
+                "--repo-root",
+                str(ROOT),
+                "--format",
+                "json",
+            ],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        counts = json.loads(result.stdout)["tool_counts"]
+        self.assertEqual(counts["reviewed_upstream_version"], "8.4.1")
+        self.assertEqual(counts["reviewed_stock_catalog"], 78)
+        self.assertEqual(counts["expected_delegated_reads"], 25)
+        self.assertEqual(counts["expected_connector_total"], 76)
 
     async def test_catalog_withdrawal_and_restoration_are_capability_local(self):
         runtime, source = await Core20269RuntimeTests()._runtime(

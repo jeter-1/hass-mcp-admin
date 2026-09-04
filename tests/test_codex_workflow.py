@@ -403,6 +403,78 @@ class ContextToolTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, output)
 
+    def test_tool_counts_use_newest_exact_reviewed_policy_not_legacy_default(self):
+        fixture = RepositoryFixture()
+        try:
+            policy_root = (
+                "hass_mcp_engineering_beta/ha_mcp_engineering/"
+            )
+            fixture.write(
+                policy_root + "upstream_tool_policy_8_4_1.json",
+                json.dumps(
+                    {
+                        "reviewed_upstream_version": "8.4.1",
+                        "reviewed_stock_catalog_tool_count": 3,
+                        "tools": [
+                            {"classification": "automatic_read"},
+                            {"classification": "automatic_read"},
+                            {"classification": "held_for_canary"},
+                        ],
+                    }
+                ),
+            )
+            fixture.write(
+                policy_root + "upstream_release_registry.json",
+                json.dumps(
+                    {
+                        "default_version": "1.2.3",
+                        "releases": [
+                            {
+                                "approval_status": "reviewed",
+                                "release_tag": "v1.2.3",
+                                "policy_resource": "upstream_tool_policy.json",
+                            },
+                            {
+                                "approval_status": "reviewed",
+                                "release_tag": "v8.4.1",
+                                "policy_resource": (
+                                    "upstream_tool_policy_8_4_1.json"
+                                ),
+                            },
+                            {
+                                "approval_status": "pending",
+                                "release_tag": "v9.0.0",
+                                "policy_resource": "unreviewed.json",
+                            },
+                        ],
+                    }
+                ),
+            )
+            payload = json.loads(
+                run(
+                    [
+                        sys.executable,
+                        str(CONTEXT_SCRIPT),
+                        "--repo-root",
+                        str(fixture.root),
+                        "--format",
+                        "json",
+                    ],
+                    cwd=fixture.root,
+                ).stdout
+            )
+            counts = payload["tool_counts"]
+            self.assertEqual(counts["reviewed_upstream_version"], "8.4.1")
+            self.assertEqual(counts["reviewed_stock_catalog"], 3)
+            self.assertEqual(counts["expected_delegated_reads"], 2)
+            self.assertEqual(counts["expected_connector_total"], 4)
+            self.assertEqual(
+                payload["sources"]["upstream_policy"],
+                policy_root + "upstream_tool_policy_8_4_1.json",
+            )
+        finally:
+            fixture.close()
+
     def test_markdown_contains_required_major_sections(self):
         output = self.context("markdown").stdout
         for heading in (
