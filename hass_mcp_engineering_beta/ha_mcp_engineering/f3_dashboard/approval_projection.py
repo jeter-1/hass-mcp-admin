@@ -14,7 +14,12 @@ from .constants import (
     SHA256,
 )
 from .errors import ApprovalProjectionError
-from .json_codec import canonical_json_bytes, engineering_sha256, validate_json_value
+from .json_codec import (
+    canonical_json_bytes,
+    engineering_sha256,
+    strict_json_equal,
+    validate_json_value,
+)
 from .models import PatchCompilation, PatchKind
 from .patch import parse_pointer
 
@@ -246,11 +251,12 @@ def validate_dashboard_approval_projection(
         proposed_state = _validate_snapshot(row.get("proposed"))
         allowed_states = {
             # Array insertion projects the complete displaced suffix before and
-            # after the insertion, while mapping adds and array appends retain
-            # the ordinary absent/value form.
+            # after the insertion. Array removal likewise projects the complete
+            # shifted suffix, while mapping operations and array appends retain
+            # the ordinary absent/value or value/absent form.
             PatchKind.ADD: {("absent", "value"), ("value", "value")},
             PatchKind.REPLACE: {("value", "value")},
-            PatchKind.REMOVE: {("value", "absent")},
+            PatchKind.REMOVE: {("value", "absent"), ("value", "value")},
         }[kind]
         if (previous_state, proposed_state) not in allowed_states:
             raise _failure(
@@ -258,6 +264,22 @@ def validate_dashboard_approval_projection(
                 reason="approval_projection_incomplete",
                 constraint="operation_snapshot",
             )
+        if kind is PatchKind.REMOVE and proposed_state == "value":
+            previous_value = row["previous"].get("value")
+            proposed_value = row["proposed"].get("value")
+            if (
+                not isinstance(previous_value, list)
+                or not previous_value
+                or not isinstance(proposed_value, list)
+                or not strict_json_equal(
+                    previous_value[1:], proposed_value
+                )
+            ):
+                raise _failure(
+                    "Dashboard array removal projection is incomplete",
+                    reason="approval_projection_incomplete",
+                    constraint="operation_snapshot",
+                )
         identities.add(operation_id)
         paths.add(tokens)
         validated.append(row)

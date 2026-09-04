@@ -339,6 +339,19 @@ def _apply_one(
         )
 
     leaf_count = _leaf_weight(previous) + (1 if isinstance(parent, list) else 0)
+    if isinstance(parent, list) and isinstance(target, int):
+        previous_suffix = deepcopy(parent[target:])
+        del parent[target]
+        return PatchEffect(
+            operation.operation_id,
+            operation.operation,
+            operation.path,
+            True,
+            previous_suffix,
+            True,
+            deepcopy(parent[target:]),
+            leaf_count,
+        )
     del parent[target]
     return PatchEffect(
         operation.operation_id,

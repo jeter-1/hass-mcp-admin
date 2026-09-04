@@ -167,6 +167,29 @@ class DashboardPatchCompilerTests(unittest.TestCase):
             ):
                 compile_dashboard_patch(config, [candidate])
 
+    def test_array_remove_projects_complete_shifted_suffix(self):
+        config = {"items": ["remove", {"nested": [1, 2]}, "tail"]}
+
+        compiled = compile_dashboard_patch(
+            config, [operation("remove", "/items/0")]
+        )
+        effect = compiled.effects[0]
+
+        self.assertEqual(
+            compiled.resulting_configuration["items"],
+            [{"nested": [1, 2]}, "tail"],
+        )
+        self.assertTrue(effect.previous_present)
+        self.assertEqual(
+            effect.previous_value,
+            ["remove", {"nested": [1, 2]}, "tail"],
+        )
+        self.assertTrue(effect.proposed_present)
+        self.assertEqual(
+            effect.proposed_value,
+            [{"nested": [1, 2]}, "tail"],
+        )
+
     def test_duplicate_alias_and_parent_child_paths_are_rejected(self):
         with self.assertRaises(PatchValidationError):
             self.compile(

@@ -145,6 +145,73 @@ class DashboardApprovalProjectionTests(unittest.TestCase):
             (operation,),
         )
 
+    def test_numeric_array_removal_projects_and_renders_shifted_suffix(self):
+        compilation = compile_dashboard_patch(
+            {
+                "items": [
+                    "remove-me",
+                    {"shifted": "<next>", "nested": [1, 2]},
+                    "tail",
+                ]
+            },
+            [
+                {
+                    "operation_id": "remove-first",
+                    "operation": "remove",
+                    "path": "/items/0",
+                }
+            ],
+        )
+        projection = build_dashboard_approval_projection(compilation)
+        operation = projection["operations"][0]
+
+        self.assertEqual(
+            operation["previous"],
+            {
+                "state": "value",
+                "value": [
+                    "remove-me",
+                    {"shifted": "<next>", "nested": [1, 2]},
+                    "tail",
+                ],
+            },
+        )
+        self.assertEqual(
+            operation["proposed"],
+            {
+                "state": "value",
+                "value": [
+                    {"shifted": "<next>", "nested": [1, 2]},
+                    "tail",
+                ],
+            },
+        )
+        self.assertEqual(
+            validate_dashboard_approval_projection(
+                projection,
+                expected_preread_sha256=compilation.preread_sha256,
+                expected_patch_sha256=compilation.canonical_patch_sha256,
+                expected_resulting_sha256=compilation.resulting_sha256,
+            ),
+            (operation,),
+        )
+
+        html = _render_review(
+            "",
+            {
+                "operation": "update_dashboard",
+                "target_type": "dashboard",
+                "target_id": "synthetic-dashboard",
+                "dashboard_review": {"approval_projection": projection},
+            },
+            "csrf",
+        )
+        self.assertIn("Complete declared dashboard changes", html)
+        self.assertIn("&quot;remove-me&quot;", html)
+        self.assertIn("&quot;shifted&quot;: &quot;&lt;next&gt;&quot;", html)
+        self.assertNotIn("<next>", html)
+        self.assertIn("Approve exact plan", html)
+
     def test_projection_tamper_or_incompleteness_disables_approval(self):
         projection = build_dashboard_approval_projection(self._compilation())
         for mutation in ("value", "missing"):
