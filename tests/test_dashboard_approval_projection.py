@@ -212,6 +212,50 @@ class DashboardApprovalProjectionTests(unittest.TestCase):
         self.assertNotIn("<next>", html)
         self.assertIn("Approve exact plan", html)
 
+    def test_final_array_removal_projects_and_renders_absence(self):
+        compilation = compile_dashboard_patch(
+            {"items": ["keep", "<remove-final>"]},
+            [
+                {
+                    "operation_id": "remove-final",
+                    "operation": "remove",
+                    "path": "/items/1",
+                }
+            ],
+        )
+        projection = build_dashboard_approval_projection(compilation)
+        operation = projection["operations"][0]
+
+        self.assertEqual(
+            operation["previous"],
+            {"state": "value", "value": ["<remove-final>"]},
+        )
+        self.assertEqual(operation["proposed"], {"state": "absent"})
+        self.assertEqual(
+            validate_dashboard_approval_projection(
+                projection,
+                expected_preread_sha256=compilation.preread_sha256,
+                expected_patch_sha256=compilation.canonical_patch_sha256,
+                expected_resulting_sha256=compilation.resulting_sha256,
+            ),
+            (operation,),
+        )
+
+        html = _render_review(
+            "",
+            {
+                "operation": "update_dashboard",
+                "target_type": "dashboard",
+                "target_id": "synthetic-dashboard",
+                "dashboard_review": {"approval_projection": projection},
+            },
+            "csrf",
+        )
+        self.assertIn("&lt;remove-final&gt;", html)
+        self.assertNotIn("<remove-final>", html)
+        self.assertIn("<em>absent</em>", html)
+        self.assertIn("Approve exact plan", html)
+
     def test_projection_tamper_or_incompleteness_disables_approval(self):
         projection = build_dashboard_approval_projection(self._compilation())
         for mutation in ("value", "missing"):

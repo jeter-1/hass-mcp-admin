@@ -352,8 +352,8 @@ def _apply_one(
             operation.path,
             True,
             previous_suffix,
-            True,
-            proposed_suffix,
+            bool(proposed_suffix),
+            proposed_suffix if proposed_suffix else None,
             semantic_leaf_difference(previous_suffix, proposed_suffix),
         )
     leaf_count = _leaf_weight(previous)
