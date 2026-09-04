@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import asdict
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -13,7 +14,15 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
-from ha_mcp_engineering.f3_dashboard.json_codec import upstream_config_hash
+from ha_mcp_engineering.f3_dashboard.identity import (  # noqa: E402
+    build_operational_identity,
+    build_provider_authority,
+    reviewed_tool_contract_hash,
+)
+from ha_mcp_engineering.f3_dashboard.json_codec import (  # noqa: E402
+    engineering_sha256,
+    upstream_config_hash,
+)
 from ha_mcp_engineering.f3_dashboard.models import (
     DashboardInventoryRow,
     DashboardPreread,
@@ -21,6 +30,9 @@ from ha_mcp_engineering.f3_dashboard.models import (
 )
 from ha_mcp_engineering.f3_dashboard.planning import create_dashboard_update_plan
 from ha_mcp_engineering.f3_dashboard.provider import EXACT_CONTRACTS
+from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    load_reviewed_upstream_release_registry,
+)
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "f3_dashboard" / "storage_dashboard.json"
@@ -53,12 +65,43 @@ def make_preread(
         "8.0.0": "ha-mcp-v8.0.0-d65630f6",
         "8.1.1": "ha-mcp-v8.1.1-e1d76a6e",
         "8.2.0": "ha-mcp-v8.2.0-dbcfc0ee",
+        "8.4.1": "ha-mcp-v8.4.1-7823b365",
     }[version]
+    release = load_reviewed_upstream_release_registry().by_version[version]
+    getter = release.tool_contracts_by_name["ha_config_get_dashboard"]
+    setter = EXACT_CONTRACTS[version]
+    authority = build_provider_authority(
+        provider_slug="ha_mcp",
+        server_name="ha-mcp",
+        upstream_version=version,
+        protocol_version="2025-03-26",
+        compatibility_entry=compatibility,
+        source_commit=release.source_commit,
+        image_index_digest=release.image_index_digest,
+        contract_family=contract,
+        dashboard_attestation_fingerprint=(
+            release.dashboard_attestation_fingerprint or "0" * 64
+        ),
+        compiled_constraints_fingerprint=(
+            release.dashboard_compiled_constraints_fingerprint or "0" * 64
+        ),
+        getter_contract_hash=reviewed_tool_contract_hash(getter),
+        setter_contract_hash=engineering_sha256(asdict(setter)),
+        catalog_fingerprint=release.catalog_fingerprint,
+    )
+    upstream_hash = config_hash or upstream_config_hash(config)
+    operational_identity = build_operational_identity(
+        authority,
+        target_url_path=url_path,
+        storage_mode="storage",
+        baseline_upstream_config_hash=upstream_hash,
+        baseline_engineering_sha256=engineering_sha256(config),
+    )
     return DashboardPreread(
         inventory=(DashboardInventoryRow(url_path=url_path, mode=mode),),
         canonical_url_path=url_path,
         configuration=config,
-        config_hash=config_hash or upstream_config_hash(config),
+        config_hash=upstream_hash,
         completeness=completeness,
         configuration_returned=configuration_returned,
         sanitized=sanitized,
@@ -68,6 +111,7 @@ def make_preread(
         protocol_version="2025-03-26",
         compatibility_entry=compatibility,
         dashboard_contract_model=contract,
+        operational_identity=operational_identity,
     )
 
 
@@ -109,7 +153,7 @@ async def make_proposal(
         expiration_minutes=30,
         requested_by="test.operator",
         provider_evidence=EXACT_CONTRACTS[exact.upstream_version],
-        authoritative_provider_slug="hass-mcp-engineering",
+        authoritative_provider_slug="ha_mcp",
         artifact_store=artifact_store,
         now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),
         plan_id=plan_id,

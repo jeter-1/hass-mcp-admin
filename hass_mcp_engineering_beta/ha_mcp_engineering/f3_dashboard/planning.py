@@ -67,7 +67,7 @@ async def create_dashboard_update_plan(
     description: str,
     expiration_minutes: int,
     requested_by: str,
-    authoritative_provider_slug: str,
+    authoritative_provider_slug: str | None = None,
     provider_evidence: ProviderRuntimeEvidence | None = None,
     artifact_store: DashboardArtifactStore | None = None,
     observability: DashboardWriteObservability | None = None,
@@ -91,8 +91,9 @@ async def create_dashboard_update_plan(
         raise PlanningError("Plan expiration is outside the existing governance bound")
     if not isinstance(requested_by, str) or not _CANONICAL_CALLER.fullmatch(requested_by):
         raise PlanningError("Caller identity is not canonical")
-    if not isinstance(authoritative_provider_slug, str) or not _CANONICAL_ADDON_SLUG.fullmatch(
-        authoritative_provider_slug
+    if authoritative_provider_slug is not None and (
+        not isinstance(authoritative_provider_slug, str)
+        or not _CANONICAL_ADDON_SLUG.fullmatch(authoritative_provider_slug)
     ):
         raise PlanningError("Authoritative provider slug is not canonical")
     plan_id = plan_id or secrets.token_hex(16)
@@ -115,6 +116,12 @@ async def create_dashboard_update_plan(
         if "storage-mode" in str(exc):
             metrics.record("planning.non_storage_rejections", target=url_path)
         raise
+    provider_slug = raw.operational_identity.authority.provider_slug
+    if (
+        authoritative_provider_slug is not None
+        and authoritative_provider_slug != provider_slug
+    ):
+        raise PlanningError("Dashboard provider identity differs from preread")
 
     if (
         raw.upstream_version
@@ -163,6 +170,16 @@ async def create_dashboard_update_plan(
             "provider.admission_failures", target=url_path, codes=(exc.code,)
         )
         raise
+    authority = raw.operational_identity.authority
+    if (
+        authority.source_commit != provider_evidence.source_commit
+        or authority.compatibility_entry != admission.compatibility_entry
+        or authority.setter_contract_hash != admission.provider_contract_hash
+        or authority.contract_family != raw.dashboard_contract_model
+    ):
+        raise ProviderAdmissionError(
+            "Dashboard operational identity differs from provider admission"
+        )
     atomicity = assess_atomicity(raw.upstream_version)
     metrics.record(
         "atomicity.atomicity_gate_rejections",
@@ -202,7 +219,7 @@ async def create_dashboard_update_plan(
                 {
                     f"dashboard:{url_path}",
                     "home_assistant:core",
-                    f"addon:{authoritative_provider_slug}",
+                    f"addon:{provider_slug}",
                 }
             )
         ),

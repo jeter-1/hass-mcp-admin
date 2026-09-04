@@ -63,6 +63,7 @@ from ..f3_dashboard.adapter import (
     DashboardPreparationRequest,
     DashboardUpdateAdapter,
 )
+from ..f3_dashboard.identity import operational_identity_from_mapping
 from ..governance.models import (
     ApprovalState,
     ChangeOperation,
@@ -289,9 +290,15 @@ class _AuditedDashboardGateway:
         self.auditor("provider_ha_config_get_dashboard")
         return await self.delegate.preread(url_path=url_path)
 
-    async def best_practice_key(self):
+    async def best_practice_key(
+        self, *, expected_provider_authority_evidence_hash: str
+    ):
         self.auditor("provider_ha_get_skill_guide")
-        return await self.delegate.best_practice_key()
+        return await self.delegate.best_practice_key(
+            expected_provider_authority_evidence_hash=(
+                expected_provider_authority_evidence_hash
+            )
+        )
 
     async def write(self, **arguments):
         self.auditor("provider_ha_config_set_dashboard")
@@ -1003,6 +1010,27 @@ class F3RuntimeIntegration:
         return value
 
     @staticmethod
+    def _dashboard_provider_identity(plan: Any) -> dict[str, str]:
+        operational = getattr(plan, "operational", None)
+        baseline = getattr(operational, "baseline", None)
+        if not isinstance(baseline, dict):
+            raise GovernanceError(ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE)
+        value = baseline.get("dashboard_operational_identity")
+        if not isinstance(value, dict):
+            raise GovernanceError(ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE)
+        try:
+            identity = operational_identity_from_mapping(value)
+        except ValueError:
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE,
+                details={"reason": "dashboard_provider_identity_invalid"},
+            ) from None
+        return {
+            "slug": identity.authority.provider_slug,
+            "evidence_hash": identity.evidence_hash,
+        }
+
+    @staticmethod
     def _approved_copy(plan: Any) -> Any:
         value = deepcopy(plan)
         value.status = PlanStatus.APPROVED
@@ -1066,6 +1094,10 @@ class F3RuntimeIntegration:
                     helper_state_provider_evidence()
                 ),
             }
+        elif plan.operation is ChangeOperation.UPDATE_DASHBOARD:
+            identity = provider_identity or self._dashboard_provider_identity(
+                plan
+            )
         else:
             identity = provider_identity or await self._provider_identity()
         operation_id = plan.operation.value
@@ -1262,6 +1294,8 @@ class F3RuntimeIntegration:
                     ),
                 }
                 if plan.operation is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                else self._dashboard_provider_identity(plan)
+                if plan.operation is ChangeOperation.UPDATE_DASHBOARD
                 else {
                     "slug": provider_key.split(":", 1)[1],
                     "evidence_hash": declarations[0][
@@ -1281,7 +1315,10 @@ class F3RuntimeIntegration:
                 current_identity = (
                     provider_identity
                     if plan.operation
-                    is ChangeOperation.SET_INPUT_BOOLEAN_STATE
+                    in {
+                        ChangeOperation.SET_INPUT_BOOLEAN_STATE,
+                        ChangeOperation.UPDATE_DASHBOARD,
+                    }
                     else await self._provider_identity()
                 )
                 if current_identity != provider_identity:

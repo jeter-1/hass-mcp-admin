@@ -19,7 +19,10 @@ from ha_mcp_engineering.f3.operational_adapter import (
     validate_execution_binding,
 )
 from ha_mcp_engineering.f3.contracts import (
+    HA_MCP_PROVIDER_LOCK_KEY,
     LockMode,
+    LockRequest,
+    LockScope,
     RecoveryContext,
 )
 from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict
@@ -685,6 +688,52 @@ class OperationalLockAndPreflightTests(unittest.IsolatedAsyncioTestCase):
             request.reason_codes,
             ("installed_addon_restart", "upstream_provider_dependency"),
         )
+        canonical = {
+            item.key: item for item in context.adapter.lock_requests(prepared)
+        }[HA_MCP_PROVIDER_LOCK_KEY]
+        self.assertEqual(canonical.mode.value, "exclusive")
+        self.assertEqual(
+            canonical.reason_codes,
+            ("selected_upstream_provider_restart",),
+        )
+
+    async def test_installed_provider_restart_conflicts_with_dashboard_provider_lock(self):
+        context = make_context(
+            self.root,
+            RESTART_ADDON,
+            target_id=PROVIDER_SLUG,
+            target_class="upstream_ha_mcp_addon",
+        )
+        prepared = await prepare_context(context)
+        restart_locks = context.adapter.lock_requests(prepared)
+        dashboard_locks = (
+            LockRequest(
+                key=HA_MCP_PROVIDER_LOCK_KEY,
+                scopes=(LockScope.PROVIDER,),
+                mode=LockMode.SHARED,
+                reason_codes=("upstream_provider_dependency",),
+            ),
+        )
+        timing = LockTiming(60, 10, 0)
+        for first, second, first_name, second_name in (
+            (dashboard_locks, restart_locks, "dashboard", "restart"),
+            (restart_locks, dashboard_locks, "restart", "dashboard"),
+        ):
+            with self.subTest(first=first_name):
+                with tempfile.TemporaryDirectory() as temporary:
+                    store = DurableLockStore(temporary)
+                    handle = store.acquire_once(
+                        first,
+                        owner=self._lock_owner(first_name),
+                        timing=timing,
+                    )
+                    with self.assertRaises(LockConflict):
+                        store.acquire_once(
+                            second,
+                            owner=self._lock_owner(second_name),
+                            timing=timing,
+                        )
+                    store.release(handle)
 
     async def test_reload_keys_exactly_conflict_with_beta18_configuration_writes(self):
         for domain in RELOAD_PROVIDER_TARGETS:

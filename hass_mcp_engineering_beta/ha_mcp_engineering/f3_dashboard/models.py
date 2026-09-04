@@ -56,6 +56,42 @@ class DashboardInventoryRow:
 
 
 @dataclass(frozen=True)
+class DashboardProviderAuthority:
+    """Exact binary-owned dashboard provider authority for one catalog."""
+
+    model: str
+    provider_slug: str
+    server_name: str
+    upstream_version: str
+    protocol_version: str
+    compatibility_entry: str
+    source_commit: str
+    image_index_digest: str
+    contract_family: str
+    dashboard_attestation_fingerprint: str
+    compiled_constraints_fingerprint: str
+    getter_contract_hash: str
+    setter_contract_hash: str
+    catalog_fingerprint: str
+    provider_generation: str
+    session_binding_model: str
+    evidence_hash: str
+
+
+@dataclass(frozen=True)
+class DashboardOperationalIdentity:
+    """Provider, target, storage mode, and baseline bound as one identity."""
+
+    model: str
+    authority: DashboardProviderAuthority
+    target_url_path: str
+    storage_mode: str
+    baseline_upstream_config_hash: str
+    baseline_engineering_sha256: str
+    evidence_hash: str
+
+
+@dataclass(frozen=True)
 class DashboardPreread:
     """Exact internal read result; never a public sanitized projection."""
 
@@ -72,6 +108,7 @@ class DashboardPreread:
     protocol_version: str
     compatibility_entry: str
     dashboard_contract_model: str
+    operational_identity: DashboardOperationalIdentity
 
 
 @dataclass(frozen=True)
@@ -89,6 +126,7 @@ class RawDashboardEvidence:
     compatibility_entry: str
     dashboard_contract_model: str
     completeness: str
+    operational_identity: DashboardOperationalIdentity
 
 
 @dataclass(frozen=True)

@@ -2190,6 +2190,17 @@ def _reviewed_artifact_evidence(
     runtime_catalog = evidence["runtime_catalog"]
     upstream = evidence["upstream"]
     dashboard = evidence["dashboard"]
+    dashboard_base_fields = {
+        "contract_family",
+        "descriptor_equal_to_8_0_0_standalone",
+        "runtime_fingerprint",
+    }
+    dashboard_exact_review_fields = {
+        "exact_provider_review_status",
+        "getter_runtime_contract_fingerprint",
+        "provider_identity_model",
+        "setter_runtime_contract_fingerprint",
+    }
     if (
         type(evidence["review_format_version"]) is not int
         or evidence["review_format_version"]
@@ -2230,11 +2241,10 @@ def _reviewed_artifact_evidence(
             "version",
         }
         or not isinstance(dashboard, dict)
-        or set(dashboard)
-        != {
-            "contract_family",
-            "descriptor_equal_to_8_0_0_standalone",
-            "runtime_fingerprint",
+        or frozenset(dashboard)
+        not in {
+            frozenset(dashboard_base_fields),
+            frozenset(dashboard_base_fields | dashboard_exact_review_fields),
         }
     ):
         raise UpstreamToolPolicyError(
@@ -2368,6 +2378,24 @@ def _reviewed_artifact_evidence(
             and dashboard[
                 "descriptor_equal_to_8_0_0_standalone"
             ] is not True
+            and not (
+                dashboard.get("exact_provider_review_status")
+                == "reviewed_getter_setter"
+                and dashboard.get("provider_identity_model")
+                == "f3-dashboard-provider-authority-v1"
+                and dashboard.get(
+                    "getter_runtime_contract_fingerprint"
+                )
+                == release.tool_contracts_by_name[
+                    "ha_config_get_dashboard"
+                ].runtime_contract_fingerprint
+                and dashboard.get(
+                    "setter_runtime_contract_fingerprint"
+                )
+                == release.tool_contracts_by_name[
+                    "ha_config_set_dashboard"
+                ].runtime_contract_fingerprint
+            )
         )
         or not isinstance(dashboard["runtime_fingerprint"], str)
         or not _HEX_64.fullmatch(dashboard["runtime_fingerprint"])

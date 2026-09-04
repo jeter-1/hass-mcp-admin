@@ -10,6 +10,7 @@ from typing import Any
 from ..errors import DashboardProviderError
 from ..f3.contracts import (
     F3_ADAPTER_CONTRACT_MODEL,
+    HA_MCP_PROVIDER_LOCK_KEY,
     AdapterCapabilityDescriptor,
     DispatchResult,
     LockMode,
@@ -30,6 +31,7 @@ from .artifact_store import (
     artifact_resulting_configuration,
 )
 from .errors import ArtifactStorageError, RawEvidenceError
+from .identity import operational_identity_from_mapping
 from .json_codec import canonical_json_bytes, engineering_sha256
 from .raw_evidence import build_raw_dashboard_evidence
 
@@ -50,16 +52,24 @@ _PROVIDER_FAILURE_DIAGNOSTICS = {
 
 def _provider_failure_projection(
     error: DashboardProviderError,
-) -> tuple[bool, tuple[str, ...], str]:
+) -> tuple[bool, bool, tuple[str, ...], str]:
     """Project bounded provider evidence into durable F3 diagnostics."""
 
     details = error.details
     response_received = details.get("provider_response_received") is True
+    dispatch_evidence = details.get("upstream_dispatch_occurred")
+    dispatch_confirmed_absent = dispatch_evidence is False
     failure_kind = details.get("provider_failure_kind")
     diagnostic = _PROVIDER_FAILURE_DIAGNOSTICS.get(
         failure_kind, "unclassified_provider_failure"
     )
-    codes = [diagnostic, "readback_only_recovery", "fallback_none"]
+    codes = [diagnostic]
+    codes.append(
+        "provider_confirmed_no_mutation"
+        if dispatch_confirmed_absent
+        else "readback_only_recovery"
+    )
+    codes.append("fallback_none")
     upstream_code: str | None = None
     candidate_code = details.get("upstream_error_code")
     if (
@@ -90,6 +100,11 @@ def _provider_failure_projection(
         {
             "provider_failure_kind": failure_kind,
             "provider_response_received": response_received,
+            "upstream_dispatch_occurred": (
+                dispatch_evidence
+                if isinstance(dispatch_evidence, bool)
+                else None
+            ),
             "upstream_error_code": upstream_code,
             "upstream_action": action,
             "http_response_received": (
@@ -98,7 +113,12 @@ def _provider_failure_projection(
             "http_status_class": details.get("http_status_class"),
         }
     )
-    return response_received, tuple(codes), evidence_hash
+    return (
+        response_received,
+        dispatch_confirmed_absent,
+        tuple(codes),
+        evidence_hash,
+    )
 
 
 @dataclass(frozen=True)
@@ -125,6 +145,7 @@ class PreparedDashboardOperation(PreparedOperation):
     plan_expires_at: str
     authoritative_provider_slug: str
     provider_identity_evidence_hash: str
+    provider_authority_evidence_hash: str
     compatibility_entry: str
     upstream_version: str
     protocol_version: str
@@ -196,6 +217,24 @@ class DashboardUpdateAdapter:
             or baseline.get("storage_mode_confirmed") is not True
         ):
             raise ValueError("dashboard_operator_policy_mismatch")
+        identity_value = baseline.get("dashboard_operational_identity")
+        if not isinstance(identity_value, dict):
+            raise ValueError("dashboard_provider_identity_missing")
+        identity = operational_identity_from_mapping(identity_value)
+        if (
+            identity.target_url_path != plan.target_id
+            or identity.authority.provider_slug
+            != request.authoritative_provider_slug
+            or identity.evidence_hash
+            != request.provider_identity_evidence_hash
+            or identity.evidence_hash
+            != baseline.get("dashboard_provider_identity_hash")
+            or identity.baseline_engineering_sha256
+            != baseline.get("current_engineering_sha256")
+            or identity.baseline_upstream_config_hash
+            != baseline.get("current_upstream_config_hash")
+        ):
+            raise ValueError("dashboard_provider_identity_mismatch")
         artifact = self.artifacts.get(plan.plan_id)
         if artifact is None:
             raise ArtifactStorageError("Dashboard artifact is missing")
@@ -211,6 +250,14 @@ class DashboardUpdateAdapter:
         compilation = payload.get("compilation")
         if not isinstance(raw, dict) or not isinstance(compilation, dict):
             raise ArtifactStorageError("Dashboard artifact authority is malformed")
+        artifact_identity = raw.get("operational_identity")
+        if (
+            not isinstance(artifact_identity, dict)
+            or operational_identity_from_mapping(artifact_identity) != identity
+        ):
+            raise ArtifactStorageError(
+                "Dashboard artifact provider identity drifted"
+            )
         resulting = artifact_resulting_configuration(artifact)
         resulting_json = canonical_json_bytes(resulting).decode("utf-8")
         provider_arguments_hash = stable_hash(
@@ -256,6 +303,7 @@ class DashboardUpdateAdapter:
             "plan_expires_at": plan.expires_at,
             "authoritative_provider_slug": request.authoritative_provider_slug,
             "provider_identity_evidence_hash": request.provider_identity_evidence_hash,
+            "provider_authority_evidence_hash": identity.authority.evidence_hash,
             "compatibility_entry": str(raw.get("compatibility_entry")),
             "upstream_version": str(raw.get("upstream_version")),
             "protocol_version": str(raw.get("protocol_version")),
@@ -306,7 +354,7 @@ class DashboardUpdateAdapter:
                         ("home_assistant_availability_dependency",),
                     ),
                     LockRequest(
-                        f"addon:{operation.authoritative_provider_slug}",
+                        HA_MCP_PROVIDER_LOCK_KEY,
                         (LockScope.PROVIDER,),
                         LockMode.SHARED,
                         ("upstream_provider_dependency",),
@@ -349,6 +397,8 @@ class DashboardUpdateAdapter:
                 current.upstream_version != operation.upstream_version
                 or current.protocol_version != operation.protocol_version
                 or current.compatibility_entry != operation.compatibility_entry
+                or current.operational_identity.evidence_hash
+                != operation.provider_identity_evidence_hash
                 or current.upstream_config_hash
                 != operation.current_upstream_config_hash
                 or current.engineering_config_sha256
@@ -359,7 +409,11 @@ class DashboardUpdateAdapter:
                     "stale_or_provider_contract_mismatch",
                     observed=current.engineering_config_sha256,
                 )
-            key = await self.gateway.best_practice_key()
+            key = await self.gateway.best_practice_key(
+                expected_provider_authority_evidence_hash=(
+                    operation.provider_authority_evidence_hash
+                )
+            )
         except (RawEvidenceError, DashboardProviderError, ValueError):
             return self._preflight_rejection(
                 operation, "dashboard_provider_unavailable_or_unreviewed"
@@ -446,14 +500,22 @@ class DashboardUpdateAdapter:
                 configuration=json.loads(operation.resulting_configuration_json),
                 config_hash=operation.current_upstream_config_hash,
                 best_practice_key=key,
+                expected_provider_authority_evidence_hash=(
+                    operation.provider_authority_evidence_hash
+                ),
             )
         except DashboardProviderError as exc:
-            response_received, diagnostics, evidence_hash = (
-                _provider_failure_projection(exc)
-            )
+            (
+                response_received,
+                dispatch_confirmed_absent,
+                diagnostics,
+                evidence_hash,
+            ) = _provider_failure_projection(exc)
             return DispatchResult(
                 outcome=(
-                    NormalizedOperationOutcome.OBSERVING
+                    NormalizedOperationOutcome.DISPATCH_FAILED_CONFIRMED
+                    if dispatch_confirmed_absent
+                    else NormalizedOperationOutcome.OBSERVING
                     if "structured_provider_rejection_received" in diagnostics
                     else NormalizedOperationOutcome.DISPATCH_INDETERMINATE
                 ),
@@ -524,6 +586,27 @@ class DashboardUpdateAdapter:
                 readback_state_fingerprint=None,
                 intended_result_observed=None,
                 diagnostic_codes=("dashboard_readback_unavailable", "fallback_none"),
+            )
+        if (
+            observed.operational_identity.authority.evidence_hash
+            != operation.provider_authority_evidence_hash
+        ):
+            return ObservationResult(
+                outcome=NormalizedOperationOutcome.VERIFICATION_MISMATCH,
+                attempt_count=1,
+                observation_complete=True,
+                provider_reachable=True,
+                target_reachable=True,
+                readback_state_fingerprint=observed.engineering_config_sha256,
+                intended_result_observed=False,
+                mismatch_fields=("dashboard_provider_identity",),
+                evidence_hash=stable_hash(
+                    {"category": "dashboard_provider_identity_changed"}
+                ),
+                diagnostic_codes=(
+                    "dashboard_provider_identity_changed",
+                    "fallback_none",
+                ),
             )
         exact = (
             observed.engineering_config_sha256

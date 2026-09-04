@@ -168,6 +168,88 @@ def _exact_existing_automation_update(
     )
 
 
+def _exact_existing_dashboard_update(plan: ChangePlan) -> bool:
+    """Recognize a fresh typed dashboard write with complete execution authority.
+
+    Dashboard action semantics remain consequence evidence. They do not alter
+    the exact provider target, compiled full configuration, optimistic
+    baseline, lock graph, one-dispatch ownership, or authoritative reread.
+    """
+
+    operational = plan.operational
+    baseline = (
+        operational.baseline
+        if operational is not None
+        and isinstance(operational.baseline, dict)
+        else {}
+    )
+    capability = (
+        operational.provider_capability_evidence
+        if operational is not None
+        and isinstance(operational.provider_capability_evidence, dict)
+        else {}
+    )
+    identity_value = baseline.get("dashboard_operational_identity")
+    proposal = plan.proposed_config.get("dashboard_update")
+    projection = (
+        proposal.get("approval_projection")
+        if isinstance(proposal, dict)
+        else None
+    )
+    try:
+        from ..f3_dashboard.approval_projection import (
+            validate_dashboard_approval_projection,
+        )
+        from ..f3_dashboard.identity import operational_identity_from_mapping
+
+        identity = operational_identity_from_mapping(identity_value)
+        validate_dashboard_approval_projection(
+            projection,
+            expected_preread_sha256=baseline.get(
+                "current_engineering_sha256"
+            ),
+            expected_patch_sha256=baseline.get("canonical_patch_sha256"),
+            expected_resulting_sha256=baseline.get(
+                "resulting_engineering_sha256"
+            ),
+        )
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        plan.operation == ChangeOperation.UPDATE_DASHBOARD
+        and plan.contract_version == 3
+        and plan.target.target_type == "dashboard"
+        and isinstance(plan.target.target_id, str)
+        and bool(plan.target.target_id)
+        and plan.risk.apply_allowed
+        and plan.validation_results.get("valid") is True
+        and plan.validation_results.get("storage_mode_confirmed") is True
+        and plan.validation_results.get("exact_provider_contract_admitted")
+        is True
+        and plan.validation_results.get("approval_projection_complete") is True
+        and operational is not None
+        and operational.family == "dashboard_update"
+        and operational.operation == ChangeOperation.UPDATE_DASHBOARD.value
+        and operational.requested_name == plan.target.target_id
+        and operational.provider == "upstream_dashboard"
+        and capability.get("tool") == "ha_config_set_dashboard"
+        and baseline.get("storage_mode_confirmed") is True
+        and baseline.get("non_atomic") is True
+        and identity.target_url_path == plan.target.target_id
+        and identity.authority.compatibility_entry
+        == capability.get("compatibility_entry")
+        and identity.authority.setter_contract_hash
+        == capability.get("provider_contract_hash")
+        and identity.evidence_hash
+        == baseline.get("dashboard_provider_identity_hash")
+        and isinstance(baseline.get("approval_projection_sha256"), str)
+        and isinstance(projection, dict)
+        and isinstance(projection.get("binding"), dict)
+        and projection["binding"].get("projection_sha256")
+        == baseline["approval_projection_sha256"]
+    )
+
+
 def _contains_executable_condition_key(value: Any) -> bool:
     if isinstance(value, dict):
         if _EXECUTABLE_CONDITION_KEYS.intersection(value):
@@ -844,6 +926,7 @@ def _evaluate_change_policy_version(
                     for operation in plan.operations
                 )
             )
+            or _exact_existing_dashboard_update(plan)
         )
     )
     required = {

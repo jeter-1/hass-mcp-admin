@@ -29,8 +29,8 @@ from f3_dashboard_support import FakeExactReader, load_dashboard, make_preread, 
 
 
 class RawDashboardEvidenceTests(unittest.TestCase):
-    def test_exact_storage_prereads_are_accepted_for_both_reviewed_releases(self):
-        for version in ("7.14.2", "8.0.0"):
+    def test_exact_storage_prereads_are_accepted_for_reviewed_releases(self):
+        for version in ("7.14.2", "8.0.0", "8.1.1", "8.2.0", "8.4.1"):
             with self.subTest(version=version):
                 source = make_preread(version=version)
                 evidence = build_raw_dashboard_evidence(
@@ -118,7 +118,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             proposal.lock_keys,
             (
-                "addon:hass-mcp-engineering",
+                "addon:ha_mcp",
                 "dashboard:synthetic-dashboard",
                 "home_assistant:core",
             ),
@@ -148,7 +148,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
             expiration_minutes=30,
             requested_by="test.operator",
             provider_evidence=EXACT_CONTRACTS["8.1.1"],
-            authoritative_provider_slug="hass-mcp-engineering",
+            authoritative_provider_slug="ha_mcp",
             now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),
             plan_id="plan000000000002",
         )
@@ -213,7 +213,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
                     expiration_minutes=30,
                     requested_by="test.operator",
                     provider_evidence=EXACT_CONTRACTS["8.1.1"],
-                    authoritative_provider_slug="hass-mcp-engineering",
+                    authoritative_provider_slug="ha_mcp",
                     plan_id=f"plan00000000{index + 10:04d}",
                 )
             self.assertEqual(reader.mutation_count, 0)
@@ -230,7 +230,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
                 expiration_minutes=30,
                 requested_by="test.operator",
                 provider_evidence=EXACT_CONTRACTS["8.1.1"],
-                authoritative_provider_slug="hass-mcp-engineering",
+                authoritative_provider_slug="ha_mcp",
             )
         self.assertEqual(reader.preread_count, 0)
         self.assertEqual(reader.mutation_count, 0)
@@ -254,7 +254,7 @@ class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
             expiration_minutes=30,
             requested_by="test.operator",
             provider_evidence=EXACT_CONTRACTS["8.1.1"],
-            authoritative_provider_slug="hass-mcp-engineering",
+            authoritative_provider_slug="ha_mcp",
             observability=metrics,
             now=datetime(2026, 8, 4, 12, 5, tzinfo=timezone.utc),
             plan_id="plan000000000004",

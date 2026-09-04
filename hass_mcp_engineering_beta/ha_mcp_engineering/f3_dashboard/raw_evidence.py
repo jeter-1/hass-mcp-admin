@@ -15,6 +15,7 @@ from .constants import (
     UPSTREAM_CONFIG_HASH,
 )
 from .errors import RawEvidenceError
+from .identity import validate_operational_identity
 from .json_codec import clone_json, engineering_sha256, serialized_size, upstream_config_hash
 from .models import DashboardPreread, RawDashboardEvidence
 
@@ -34,6 +35,10 @@ EXPECTED_RELEASES: Final = {
     ),
     "8.2.0": (
         "ha-mcp-v8.2.0-dbcfc0ee",
+        "ha_mcp_dashboard_read_v3",
+    ),
+    "8.4.1": (
+        "ha-mcp-v8.4.1-7823b365",
         "ha_mcp_dashboard_read_v3",
     ),
 }
@@ -76,6 +81,14 @@ def build_raw_dashboard_evidence(
         raise RawEvidenceError("Compatibility entry does not match the exact release")
     if preread.dashboard_contract_model != expected_contract:
         raise RawEvidenceError("Dashboard read contract does not match the release")
+    identity = validate_operational_identity(preread.operational_identity)
+    if (
+        identity.target_url_path != requested_url_path
+        or identity.authority.upstream_version != preread.upstream_version
+        or identity.authority.protocol_version != preread.protocol_version
+        or identity.authority.compatibility_entry != preread.compatibility_entry
+    ):
+        raise RawEvidenceError("Dashboard operational identity does not match preread")
     if preread.completeness != "complete":
         raise RawEvidenceError("Partial dashboard prereads are prohibited")
     if not preread.configuration_returned:
@@ -106,6 +119,12 @@ def build_raw_dashboard_evidence(
         raise RawEvidenceError("Dashboard configuration is not exact JSON data") from exc
     if not hmac.compare_digest(preread.config_hash, expected_upstream_hash):
         raise RawEvidenceError("Upstream config_hash does not match the raw configuration")
+    if (
+        identity.storage_mode != exact_rows[0].mode
+        or identity.baseline_upstream_config_hash != preread.config_hash
+        or identity.baseline_engineering_sha256 != evidence_hash
+    ):
+        raise RawEvidenceError("Dashboard operational identity baseline drifted")
     if size > MAX_RAW_CONFIG_BYTES:
         raise RawEvidenceError("Raw dashboard configuration exceeds the reviewed bound")
 
@@ -123,4 +142,5 @@ def build_raw_dashboard_evidence(
         compatibility_entry=preread.compatibility_entry,
         dashboard_contract_model=preread.dashboard_contract_model,
         completeness=preread.completeness,
+        operational_identity=identity,
     )

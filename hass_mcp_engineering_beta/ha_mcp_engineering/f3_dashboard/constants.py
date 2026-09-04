@@ -23,7 +23,7 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 PROTOCOL_VERSION = "2025-03-26"
 SUPPORTED_UPSTREAM_VERSIONS = frozenset(
-    {"7.14.2", "8.0.0", "8.1.1", "8.2.0"}
+    {"7.14.2", "8.0.0", "8.1.1", "8.2.0", "8.4.1"}
 )
 
 # The current Engineering dashboard provider defaults to a 60,000-byte MCP
@@ -39,6 +39,12 @@ MAX_CONFIG_GROWTH_BYTES = 16_384
 MAX_PATCH_BYTES = 16_384
 MAX_SEMANTIC_DIFF_BYTES = 16_384
 MAX_INDIVIDUAL_VALUE_BYTES = 8_192
+
+# The authenticated approval surface contains every declared before/after
+# operation value, not the complete dashboard.  This matches the existing
+# reviewed per-operation configuration-projection ceiling and stays below the
+# immutable dashboard artifact bound.
+MAX_DASHBOARD_APPROVAL_PROJECTION_BYTES = 131_072
 
 # The existing signed-registry reader accepts at most 256 KiB.  One immutable
 # dashboard artifact must remain below that already-tested repository storage

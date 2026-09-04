@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
+from ha_mcp_engineering.f3.contracts import (
+    HA_MCP_PROVIDER_LOCK_KEY,
+    LockMode,
+    LockRequest,
+    LockScope,
+)
 
 from ..f3_configuration.locks import (
     helper_dependency_lock_key,
@@ -225,6 +230,18 @@ class OperationalLockSetCalculator:
                     reason_codes=("installed_addon_restart",),
                 )
             )
+            if (
+                operation.target.target_id
+                == operation.authoritative_provider_slug
+            ):
+                requests.append(
+                    LockRequest(
+                        key=HA_MCP_PROVIDER_LOCK_KEY,
+                        scopes=(LockScope.PROVIDER,),
+                        mode=LockMode.EXCLUSIVE,
+                        reason_codes=("selected_upstream_provider_restart",),
+                    )
+                )
         elif operation.operation == SET_INPUT_BOOLEAN_STATE:
             downstream_automations = (
                 _bound_downstream_automation_resources(
