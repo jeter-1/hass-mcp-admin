@@ -52,16 +52,24 @@ _PROVIDER_FAILURE_DIAGNOSTICS = {
 
 def _provider_failure_projection(
     error: DashboardProviderError,
-) -> tuple[bool, tuple[str, ...], str]:
+) -> tuple[bool, bool, tuple[str, ...], str]:
     """Project bounded provider evidence into durable F3 diagnostics."""
 
     details = error.details
     response_received = details.get("provider_response_received") is True
+    dispatch_evidence = details.get("upstream_dispatch_occurred")
+    dispatch_confirmed_absent = dispatch_evidence is False
     failure_kind = details.get("provider_failure_kind")
     diagnostic = _PROVIDER_FAILURE_DIAGNOSTICS.get(
         failure_kind, "unclassified_provider_failure"
     )
-    codes = [diagnostic, "readback_only_recovery", "fallback_none"]
+    codes = [diagnostic]
+    codes.append(
+        "provider_confirmed_no_mutation"
+        if dispatch_confirmed_absent
+        else "readback_only_recovery"
+    )
+    codes.append("fallback_none")
     upstream_code: str | None = None
     candidate_code = details.get("upstream_error_code")
     if (
@@ -92,6 +100,11 @@ def _provider_failure_projection(
         {
             "provider_failure_kind": failure_kind,
             "provider_response_received": response_received,
+            "upstream_dispatch_occurred": (
+                dispatch_evidence
+                if isinstance(dispatch_evidence, bool)
+                else None
+            ),
             "upstream_error_code": upstream_code,
             "upstream_action": action,
             "http_response_received": (
@@ -100,7 +113,12 @@ def _provider_failure_projection(
             "http_status_class": details.get("http_status_class"),
         }
     )
-    return response_received, tuple(codes), evidence_hash
+    return (
+        response_received,
+        dispatch_confirmed_absent,
+        tuple(codes),
+        evidence_hash,
+    )
 
 
 @dataclass(frozen=True)
@@ -487,12 +505,17 @@ class DashboardUpdateAdapter:
                 ),
             )
         except DashboardProviderError as exc:
-            response_received, diagnostics, evidence_hash = (
-                _provider_failure_projection(exc)
-            )
+            (
+                response_received,
+                dispatch_confirmed_absent,
+                diagnostics,
+                evidence_hash,
+            ) = _provider_failure_projection(exc)
             return DispatchResult(
                 outcome=(
-                    NormalizedOperationOutcome.OBSERVING
+                    NormalizedOperationOutcome.DISPATCH_FAILED_CONFIRMED
+                    if dispatch_confirmed_absent
+                    else NormalizedOperationOutcome.OBSERVING
                     if "structured_provider_rejection_received" in diagnostics
                     else NormalizedOperationOutcome.DISPATCH_INDETERMINATE
                 ),

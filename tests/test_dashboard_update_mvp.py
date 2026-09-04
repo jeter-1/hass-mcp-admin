@@ -185,6 +185,7 @@ class _ExactProviderTransport:
         self.read_count = 0
         self.configuration = {"title": "Before", "views": []}
         self.write_is_error = False
+        self.handshake_after_guide: McpDashboardHandshake | None = None
         self.write_payload = {
             "success": True,
             "action": "update",
@@ -229,10 +230,11 @@ class _ExactProviderTransport:
         )
 
     async def execute_best_practices_read(self, validator):
-        validator(self.handshake)
+        reviewed_handshake = self.handshake
+        validator(reviewed_handshake)
         self.guide_count += 1
-        return McpDashboardRead(
-            self.handshake,
+        result = McpDashboardRead(
+            reviewed_handshake,
             {
                 "content": [
                     {
@@ -247,6 +249,9 @@ class _ExactProviderTransport:
             },
             tool_call_latency_ms=1.0,
         )
+        if self.handshake_after_guide is not None:
+            self.handshake = self.handshake_after_guide
+        return result
 
     async def execute_dashboard_write(self, arguments, validator):
         validator(self.handshake)
@@ -865,6 +870,95 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["task_state"], "failed_pre_dispatch")
         self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_setter_handshake_drift_is_confirmed_without_dispatch(self):
+        transport = _ExactProviderTransport(version="8.4.1")
+        provider = UpstreamDashboardProvider()
+        provider._transport = transport
+        dashboard_gateway = DashboardExecutionGateway(
+            provider, response_limit=60_000
+        )
+        repository = ChangePlanRepository(self.root / "drift-plans")
+        service = ChangeGovernanceService(
+            repository,
+            _UnusedConfigurationGateway(),
+            AuditLogger(
+                str(self.root / "drift-audit.jsonl"),
+                "test-access-secret",
+            ),
+            dashboard_gateway=dashboard_gateway,
+            provider_identity_reader=_unrelated_lifecycle_provider_identity,
+        )
+        runtime = F3RuntimeIntegration(
+            service=service,
+            storage_root=str(self.root / "drift-plans"),
+            configuration_gateway=_UnusedConfigurationGateway(),
+            backup_gateway=None,
+            lifecycle_gateway=None,
+            dashboard_gateway=dashboard_gateway,
+            provider_identity_reader=_unrelated_lifecycle_provider_identity,
+            retention_days=90,
+        )
+        service.f3_runtime = runtime
+        await runtime.recover_once("startup")
+        created = await service.create_dashboard_update_plan(
+            title="Rename operations dashboard",
+            description="Bounded existing-dashboard update.",
+            url_path="operations",
+            patch_operations=[
+                {
+                    "operation_id": "rename",
+                    "operation": "replace",
+                    "path": "/title",
+                    "value": "After",
+                }
+            ],
+            expiration_minutes=30,
+        )
+        pending = service.approve(created["plan_id"], created["plan_hash"])
+        _review, csrf = await service.issue_external_csrf(
+            created["plan_id"], pending["challenge_id"]
+        )
+        await service.decide_external_approval(
+            plan_id=created["plan_id"],
+            challenge_id=pending["challenge_id"],
+            expected_plan_hash=created["plan_hash"],
+            approval_kind=pending["approval_kind"],
+            approval_action=pending["approval_action"],
+            csrf_nonce=csrf,
+            decision="approve",
+            approver_principal=(
+                "home_assistant_admin_ingress:test-reviewer"
+            ),
+        )
+        transport.handshake_after_guide = _ExactProviderTransport(
+            version="8.2.0"
+        ).handshake
+
+        result = await service.apply(created["plan_id"], created["plan_hash"])
+
+        self.assertEqual(result["task_state"], "failed_post_dispatch")
+        self.assertEqual(transport.write_count, 0)
+        self.assertEqual(transport.configuration["title"], "Before")
+        declarations = runtime.children.declarations_for_task(
+            result["task_id"]
+        )
+        self.assertEqual(len(declarations), 1)
+        child = runtime.children.get(declarations[0]["child_id"]).to_dict()
+        self.assertEqual(
+            child["normalized_outcome"], "dispatch_failed_confirmed"
+        )
+        self.assertTrue(child["terminal"])
+        diagnostics = {
+            code
+            for event in child["events"]
+            for code in event["diagnostic_codes"]
+        }
+        self.assertIn("provider_confirmed_no_mutation", diagnostics)
+        self.assertNotIn("exact_readback_mismatch", diagnostics)
+        with self.assertRaises(GovernanceError):
+            await service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(transport.write_count, 0)
 
     async def test_ha_mcp_8_1_1_hyphenless_target_fails_during_planning(self):
         self.dashboard.version = "8.1.1"
