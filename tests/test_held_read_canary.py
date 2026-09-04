@@ -16,6 +16,13 @@ from mcp.server.fastmcp import FastMCP
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 CAPTURE_ROOT = ROOT / "docs" / "evidence" / "upstream-read-compatibility"
+TAXONOMY_FIXTURE_PATH = (
+    ROOT
+    / "tests"
+    / "fixtures"
+    / "held_read_canary"
+    / "resource_not_found_taxonomy.json"
+)
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
@@ -55,6 +62,9 @@ ENTRY_IDS = {
     "8.4.1": "ha-mcp-v8.4.1-7823b365",
 }
 ENTRY_ID = ENTRY_IDS["8.1.1"]
+CURRENT_TAXONOMY_FIXTURE = json.loads(
+    TAXONOMY_FIXTURE_PATH.read_text(encoding="utf-8")
+)
 
 
 def captured_tools(version: str = "8.1.1") -> list[dict]:
@@ -323,21 +333,34 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(gateway._ha_websocket_client.mock_calls, [])
 
     async def test_resource_not_found_taxonomy_is_exact_across_held_profiles(self):
+        fixture = CURRENT_TAXONOMY_FIXTURE
+        provenance = fixture["_fixture_provenance"]
+        self.assertEqual(provenance["kind"], "synthetic_offline_fixture")
+        self.assertTrue(provenance["not_a_production_record"])
+        self.assertFalse(provenance["historical_capture_modified"])
+        expected = fixture["expected"]
         for version, entry_id in ENTRY_IDS.items():
             with self.subTest(version=version):
                 gateway, transport, server = await self.gateway(
                     version=version,
-                    result=error_result(),
+                    result=deepcopy(fixture["upstream_call_result"]),
                 )
-                result = await self.run_status_canary(gateway, version=version)
+                result = await self.run_status_canary(
+                    gateway,
+                    version=version,
+                    operation_id=fixture["request"]["operation_id"],
+                )
                 self.assertFalse(result["success"])
-                self.assertEqual(result["error_code"], "resource_not_found")
-                self.assertFalse(result["retryable"])
+                self.assertEqual(result["error_code"], expected["error_code"])
+                self.assertEqual(result["retryable"], expected["retryable"])
                 evidence = result["details"]["canary_evidence"]
-                self.assertEqual(evidence["failure_category"], "resource_not_found")
+                self.assertEqual(
+                    evidence["failure_category"],
+                    expected["failure_category"],
+                )
                 self.assertEqual(
                     evidence["error_contract"]["structured_code"],
-                    "RESOURCE_NOT_FOUND",
+                    expected["structured_upstream_code"],
                 )
                 self.assertEqual(evidence["active_compatibility_entry_id"], entry_id)
                 self.assertEqual(evidence["reviewed_classification_before"], "held_for_canary")
@@ -351,7 +374,9 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                     gateway.health_snapshot()["dynamically_exposed_count"],
                     expected_reads,
                 )
-                self.assertEqual(len(transport.calls), 1)
+                self.assertEqual(
+                    len(transport.calls), expected["provider_dispatch_count"]
+                )
 
     async def test_text_and_structured_error_representations_agree(self):
         fingerprints = set()

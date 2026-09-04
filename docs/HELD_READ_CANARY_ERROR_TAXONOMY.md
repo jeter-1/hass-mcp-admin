@@ -35,7 +35,10 @@ the admitted catalog is unchanged. A positive operation-status result still
 requires a legitimate naturally occurring operation identifier and separate
 authorization; this correction establishes negative-result truthfulness only.
 
-The Beta 39 promotion capture remains historical evidence of the old
-misclassification. Its expected-failure status must not be rewritten until a
+The Beta 39 promotion capture remains byte-for-byte historical synthetic
+evidence of the old misclassification. It is not exact-writer output and is not
+rewritten by this correction. Current behavior is covered by a separate,
+deterministic synthetic fixture that runs through the production canary path.
+The historical sentinel's expected-failure status must not be changed until a
 future staged release is deployed and a separately authorized read-only
 capture confirms the corrected runtime behavior.

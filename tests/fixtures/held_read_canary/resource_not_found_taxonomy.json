@@ -1,0 +1,39 @@
+{
+  "_fixture_provenance": {
+    "kind": "synthetic_offline_fixture",
+    "not_a_production_record": true,
+    "historical_capture_modified": false,
+    "source": "Reviewed ha-mcp operation-status error contracts for compiled profiles 8.0.0, 8.1.0, 8.1.1, 8.2.0, and 8.4.1.",
+    "generation": "Canonical synthetic MCP error evidence loaded through the production held-read canary path; no Home Assistant, deployed MCP, credential, or production record was used."
+  },
+  "fixture_schema_version": 1,
+  "request": {
+    "upstream_tool_name": "ha_get_operation_status",
+    "operation_id": "synthetic-missing-operation"
+  },
+  "upstream_call_result": {
+    "isError": true,
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"error\":{\"code\":\"RESOURCE_NOT_FOUND\",\"message\":\"synthetic secret-free error\"},\"success\":false}"
+      }
+    ],
+    "structuredContent": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "message": "synthetic secret-free error"
+      },
+      "success": false
+    }
+  },
+  "expected": {
+    "error_code": "resource_not_found",
+    "failure_category": "resource_not_found",
+    "retryable": false,
+    "structured_upstream_code": "RESOURCE_NOT_FOUND",
+    "provider_dispatch_count": 1,
+    "promotion_performed": false,
+    "fallback_occurred": false
+  }
+}
