@@ -1,8 +1,9 @@
 # Engineering 2.2.0-beta.57 release notes
 
-Beta 57 is staged to restore the existing governed dashboard-update path for
-exact ha-mcp 8.4.1. The advertised Engineering version remains beta.56 until a
-separately authorized promotion; stable remains 1.1.2.
+Beta 57 materializes the reviewed source transition that restores the existing
+governed dashboard-update path for exact ha-mcp 8.4.1. The advertised
+Engineering version is 2.2.0-beta.57, the staged declaration has been consumed,
+and stable remains 1.1.2. Materialization does not publish or deploy the release.
 
 ## Dashboard provider restoration
 
@@ -46,9 +47,10 @@ fallback are unchanged.
 Exact ha-mcp delegated-read admission remains 25 reads, yielding 76 combined
 tools with the 51 Engineering tools. `ha_get_operation_status` remains held.
 No public input schema, general delegated-read route, Core readmission, Nabu
-transport, workflow, container, deployment metadata, stable-v1 behavior,
-dashboard creation/deletion/resource/metadata authority, arbitrary forwarding,
-or fallback changes in this candidate.
+transport, workflow, container, stable-v1 behavior, dashboard
+creation/deletion/resource/metadata authority, arbitrary forwarding, or
+fallback changes in this candidate. Deployment metadata changes only for the
+authorized 2.2.0-beta.56 to 2.2.0-beta.57 materialization.
 
-This source staging does not merge, promote, publish, deploy, access live Home
+This source materialization does not merge, publish, deploy, access live Home
 Assistant, or run the reversible dashboard canary.

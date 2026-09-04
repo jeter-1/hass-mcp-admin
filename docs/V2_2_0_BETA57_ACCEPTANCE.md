@@ -1,14 +1,15 @@
 # Engineering 2.2.0-beta.57 acceptance
 
-Beta 57 is the staged source candidate for restoring the existing governed
-dashboard-update capability against exact ha-mcp 8.4.1. It is based on
-protected main `4b5bb8cbb91cf929fd7ff45d541c68ce4e616098`. The advertised
-Engineering release remains 2.2.0-beta.56 until a separately authorized
-promotion. Stable remains 1.1.2.
+Beta 57 is the materialized source candidate for restoring the existing
+governed dashboard-update capability against exact ha-mcp 8.4.1. It is based
+on protected main `4b5bb8cbb91cf929fd7ff45d541c68ce4e616098`. The advertised
+Engineering release is 2.2.0-beta.57, the staged declaration has been consumed,
+and stable remains 1.1.2. Materialization does not publish or deploy the
+release.
 
-This document authorizes source review only. Merge, promotion, publication,
-deployment, live Home Assistant access, and the reversible dashboard canary
-remain separate owner decisions.
+This document authorizes source review only. Merge, publication, deployment,
+live Home Assistant access, and the reversible dashboard canary remain separate
+owner decisions.
 
 ## Baseline falsification
 
@@ -90,8 +91,8 @@ loss is recovered by reread and never by blind redispatch.
 Acceptance requires focused dashboard admission, identity, planner, compiler,
 approval, F3, recovery, and historical compatibility tests; exact ha-mcp
 8.0.0 through 8.4.1 and disposable Home Assistant lanes; complete unittest
-discovery; Fast, protected Full, and clean-head Evidence; promotion-candidate
-validation without applying promotion; exact-image/App, packaging, and
+discovery; Fast, protected Full, and clean-head Evidence; materialized-release
+validation with `--require-materialized`; exact-image/App, packaging, and
 architecture checks; compilation and structured-file checks; dependency and
 strict vulnerability audits; secrets and whitespace checks; stable-v1
 comparison; and exact tool, task-schema, approval-authority, routing, and
