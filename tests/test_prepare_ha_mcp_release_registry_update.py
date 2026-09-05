@@ -153,6 +153,8 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
 
     def test_denial_only_revocation_is_retained_and_cannot_be_readded(self) -> None:
         MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        evidence = self.evidence / "ha-mcp-8.4.3.json"
+        evidence_before = evidence.read_bytes()
         MODULE.prepare(
             version="8.4.3",
             operation="revoke",
@@ -163,8 +165,139 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         self.assertEqual(journal.accepted.entries, ())
         self.assertEqual(len(journal.accepted.revocations), 1)
         self.assertEqual(journal.accepted.revocations[0].version, "8.4.3")
+        self.assertEqual(evidence.read_bytes(), evidence_before)
         with self.assertRaisesRegex(SystemExit, "revoked release cannot be re-added"):
             MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        with self.assertRaisesRegex(SystemExit, "one exact positive entry"):
+            MODULE.prepare(
+                version="8.4.3",
+                operation="revoke",
+                revocation_reason="Duplicate synthetic revocation.",
+                now=self.now,
+            )
+
+    def test_revocation_without_positive_authority_fails_closed(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "one exact positive entry"):
+            MODULE.prepare(
+                version="8.4.3",
+                operation="revoke",
+                revocation_reason="Synthetic bounded revocation.",
+                now=self.now,
+            )
+        self.assertFalse(self.registry.exists())
+        self.assertFalse(self.index.exists())
+
+    def test_unsigned_existing_authority_cannot_be_revoked(self) -> None:
+        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        malformed = json.loads(self.registry.read_text(encoding="utf-8"))
+        malformed.pop("signature")
+        self.registry.write_text(
+            json.dumps(malformed, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        index_before = self.index.read_bytes()
+        with self.assertRaisesRegex(RuntimeError, "registry_journal_invalid"):
+            MODULE.prepare(
+                version="8.4.3",
+                operation="revoke",
+                revocation_reason="Synthetic bounded revocation.",
+                now=self.now,
+            )
+        self.assertEqual(self.index.read_bytes(), index_before)
+
+    def test_add_and_revoke_change_only_their_exact_allowed_files(self) -> None:
+        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        evidence = self.evidence / "ha-mcp-8.4.3.json"
+        add_outputs = {
+            path.relative_to(self.root).as_posix()
+            for path in self.root.rglob("*")
+            if path.is_file() and self.compat not in path.parents
+        }
+        self.assertEqual(
+            add_outputs,
+            {
+                "upstream-trust/registry.json",
+                "docs/evidence/ha-mcp-8.4.3.json",
+                "docs/index.md",
+            },
+        )
+        before = {
+            path: path.read_bytes()
+            for path in self.root.rglob("*")
+            if path.is_file() and self.compat not in path.parents
+        }
+        MODULE.prepare(
+            version="8.4.3",
+            operation="revoke",
+            revocation_reason="Synthetic bounded revocation.",
+            now=self.now,
+        )
+        changed = {
+            path.relative_to(self.root).as_posix()
+            for path in self.root.rglob("*")
+            if path.is_file()
+            and self.compat not in path.parents
+            and before.get(path) != path.read_bytes()
+        }
+        self.assertEqual(
+            changed,
+            {"upstream-trust/registry.json", "docs/index.md"},
+        )
+
+    def test_revocation_never_reads_release_or_runtime_evidence(self) -> None:
+        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        with (
+            patch.object(
+                MODULE,
+                "_release_evidence",
+                side_effect=AssertionError("source evidence reached"),
+            ),
+            patch.object(
+                MODULE,
+                "_capture",
+                side_effect=AssertionError("runtime capture reached"),
+            ),
+            patch.object(
+                MODULE,
+                "_select_entry",
+                side_effect=AssertionError("profile selection reached"),
+            ),
+        ):
+            MODULE.prepare(
+                version="8.4.3",
+                operation="revoke",
+                revocation_reason="Synthetic bounded revocation.",
+                now=self.now,
+            )
+
+    def test_revocation_reason_is_bounded_single_line_utf8(self) -> None:
+        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        for reason, message in (
+            (None, "bounded revocation reason"),
+            ("", "bounded revocation reason"),
+            ("   ", "bounded revocation reason"),
+            ("x" * 513, "bounded revocation reason"),
+            ("x\ny", "control character"),
+            ("x\x01y", "control character"),
+            ("x\u2028y", "one line"),
+            ("\ud800", "not valid UTF-8"),
+        ):
+            with self.subTest(reason=repr(reason)), self.assertRaisesRegex(
+                SystemExit, message
+            ):
+                MODULE.prepare(
+                    version="8.4.3",
+                    operation="revoke",
+                    revocation_reason=reason,
+                    now=self.now,
+                )
+        with self.assertRaisesRegex(SystemExit, "must be empty for add"):
+            MODULE.prepare(
+                version="8.4.4",
+                operation="add",
+                revocation_reason="not applicable",
+                now=self.now,
+            )
 
     def test_invalid_version_key_and_ambiguous_profile_fail_closed(self) -> None:
         with self.assertRaisesRegex(SystemExit, "exact stable semantic version"):
@@ -197,17 +330,78 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         self.assertFalse(self.registry.exists())
 
     def test_registry_persistence_failure_cannot_activate_authority(self) -> None:
-        original_atomic_write = MODULE._atomic_write
+        real_replace = MODULE.os.replace
+        calls = 0
 
-        def fail_registry_write(path: Path, data: bytes) -> None:
-            if path == self.registry:
+        def fail_registry_write(source: Path, destination: Path) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
                 raise OSError("synthetic registry persistence failure")
-            original_atomic_write(path, data)
+            real_replace(source, destination)
 
-        with patch.object(MODULE, "_atomic_write", side_effect=fail_registry_write):
+        with patch.object(MODULE.os, "replace", side_effect=fail_registry_write):
             with self.assertRaisesRegex(OSError, "persistence failure"):
                 MODULE.prepare(version="8.4.3", operation="add", now=self.now)
         self.assertFalse(self.registry.exists())
+        self.assertFalse(self.index.exists())
+
+    def test_failed_revocation_restores_registry_and_index(self) -> None:
+        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        registry_before = self.registry.read_bytes()
+        index_before = self.index.read_bytes()
+        real_replace = MODULE.os.replace
+        calls = 0
+
+        def fail_registry_write(source: Path, destination: Path) -> None:
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("synthetic revocation persistence failure")
+            real_replace(source, destination)
+
+        with patch.object(MODULE.os, "replace", side_effect=fail_registry_write):
+            with self.assertRaisesRegex(OSError, "revocation persistence failure"):
+                MODULE.prepare(
+                    version="8.4.3",
+                    operation="revoke",
+                    revocation_reason="Synthetic bounded revocation.",
+                    now=self.now,
+                )
+        self.assertEqual(self.registry.read_bytes(), registry_before)
+        self.assertEqual(self.index.read_bytes(), index_before)
+
+    def test_failed_staging_leaves_no_partial_state_or_temporary_file(self) -> None:
+        MODULE.prepare(version="8.4.3", operation="add", now=self.now)
+        registry_before = self.registry.read_bytes()
+        index_before = self.index.read_bytes()
+        real_mkstemp = MODULE.tempfile.mkstemp
+        calls = 0
+
+        def fail_second_stage(*args, **kwargs):
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("synthetic staging failure")
+            return real_mkstemp(*args, **kwargs)
+
+        with patch.object(MODULE.tempfile, "mkstemp", side_effect=fail_second_stage):
+            with self.assertRaisesRegex(OSError, "staging failure"):
+                MODULE.prepare(
+                    version="8.4.3",
+                    operation="revoke",
+                    revocation_reason="Synthetic bounded revocation.",
+                    now=self.now,
+                )
+        self.assertEqual(self.registry.read_bytes(), registry_before)
+        self.assertEqual(self.index.read_bytes(), index_before)
+        temporary_files = [
+            path
+            for directory in (self.registry.parent, self.index.parent)
+            for path in directory.iterdir()
+            if path.name.startswith(".")
+        ]
+        self.assertEqual(temporary_files, [])
 
 
 if __name__ == "__main__":

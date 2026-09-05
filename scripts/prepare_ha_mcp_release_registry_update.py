@@ -20,6 +20,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+import unicodedata
 from typing import Any
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -68,6 +69,7 @@ MAX_JOURNAL_ENVELOPES = min(32, MAX_AUTHORITY_CHAIN_ENVELOPES)
 EXPIRY_DAYS = 90
 MAX_CAPTURE_BYTES = 4 * 1024 * 1024
 MAX_RELEASE_EVIDENCE_BYTES = 64 * 1024
+MAX_REVOCATION_REASON_BYTES = 512
 EXPECTED_ERROR_PROBES = frozenset(
     {
         "invalid_search",
@@ -154,6 +156,90 @@ def _atomic_write(path: Path, data: bytes) -> None:
     finally:
         if temporary.exists():
             temporary.unlink()
+
+
+def _transactional_registry_write(
+    *, registry_data: bytes, index_data: bytes
+) -> None:
+    """Replace the derived index and authority journal as one operation.
+
+    The signed journal is replaced last so a failure cannot activate authority
+    before the corresponding bounded index exists. Any ordinary write failure
+    restores both pre-operation snapshots.
+    """
+
+    writes = ((INDEX_PATH, index_data), (REGISTRY_PATH, registry_data))
+    originals: dict[Path, bytes | None] = {}
+    staged: list[tuple[Path, Path]] = []
+    committed: list[Path] = []
+    try:
+        for path, data in writes:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            originals[path] = path.read_bytes() if path.exists() else None
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{path.name}.", dir=path.parent
+            )
+            temporary = Path(temporary_name)
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    stream.write(data)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            except BaseException:
+                temporary.unlink(missing_ok=True)
+                raise
+            staged.append((temporary, path))
+
+        try:
+            for temporary, path in staged:
+                os.replace(temporary, path)
+                committed.append(path)
+            for directory in sorted({path.parent for path, _data in writes}):
+                descriptor = os.open(directory, os.O_RDONLY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+        except BaseException:
+            for path in reversed(committed):
+                original = originals[path]
+                if original is None:
+                    path.unlink(missing_ok=True)
+                    descriptor = os.open(path.parent, os.O_RDONLY)
+                    try:
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+                else:
+                    _atomic_write(path, original)
+            raise
+    finally:
+        for temporary, _path in staged:
+            temporary.unlink(missing_ok=True)
+
+
+def _validated_revocation_reason(
+    *, operation: str, reason: str | None
+) -> str | None:
+    if operation == "add":
+        if reason not in (None, ""):
+            raise SystemExit("revocation reason must be empty for add")
+        return None
+    if not isinstance(reason, str):
+        raise SystemExit("a bounded revocation reason is required")
+    try:
+        encoded = reason.encode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise SystemExit("revocation reason is not valid UTF-8") from exc
+    if not 1 <= len(encoded) <= MAX_REVOCATION_REASON_BYTES:
+        raise SystemExit("a bounded revocation reason is required")
+    if not reason.strip():
+        raise SystemExit("a bounded revocation reason is required")
+    if any(unicodedata.category(character).startswith("C") for character in reason):
+        raise SystemExit("revocation reason contains a control character")
+    if any(character in {"\u2028", "\u2029"} for character in reason):
+        raise SystemExit("revocation reason must be one line")
+    return reason
 
 
 def _release_evidence(version: str) -> dict[str, Any]:
@@ -519,6 +605,9 @@ def prepare(
         raise SystemExit("version must be one exact stable semantic version")
     if operation not in {"add", "revoke"}:
         raise SystemExit("operation is invalid")
+    revocation_reason = _validated_revocation_reason(
+        operation=operation, reason=revocation_reason
+    )
     timestamp = now or datetime.now(timezone.utc)
     if timestamp.tzinfo is None or timestamp.utcoffset() is None:
         raise SystemExit("registry clock is invalid")
@@ -593,8 +682,6 @@ def prepare(
         evidence_path = EVIDENCE_DIRECTORY / f"ha-mcp-{version}.json"
         _atomic_write(evidence_path, canonical_json(evidence) + b"\n")
     else:
-        if not revocation_reason or not 1 <= len(revocation_reason) <= 512:
-            raise SystemExit("a bounded revocation reason is required")
         matching = [item for item in current_entries if item["version"] == version]
         if len(matching) != 1:
             raise SystemExit("revocation requires one exact positive entry")
@@ -613,21 +700,25 @@ def prepare(
         current_revocations = [
             item for item in current_revocations if item["version"] != version
         ]
-        current_revocations.append(ReleaseRevocation.from_mapping(tombstone).to_mapping())
+        current_revocations.append(
+            ReleaseRevocation.from_mapping(tombstone).to_mapping()
+        )
 
     journal = _build_journal(
         key=key,
         current=current,
-        entries=sorted(current_entries, key=lambda item: (item["server_name"], item["version"])),
+        entries=sorted(
+            current_entries,
+            key=lambda item: (item["server_name"], item["version"]),
+        ),
         revocations=sorted(
             current_revocations,
             key=lambda item: (item["server_name"], item["version"]),
         ),
         now=timestamp,
     )
-    _atomic_write(REGISTRY_PATH, canonical_json(journal) + b"\n")
     accepted = _parse_signed_journal(
-        REGISTRY_PATH.read_bytes(),
+        canonical_json(journal),
         trust_anchors=TrustAnchorStore(
             {TRUST_ANCHOR_KEY_ID: key.public_key()}
         ),
@@ -639,16 +730,17 @@ def prepare(
         f"| {item.version} | `{item.entry_id}` | revoked |\n"
         for item in accepted.revocations
     )
-    _atomic_write(
-        INDEX_PATH,
-        (
-            "# ha-mcp release registry index\n\n"
-            f"Sequence: `{accepted.sequence}`  \n"
-            f"Generated: `{accepted.generated_at}`  \n\n"
-            "| Version | Entry | Authority |\n"
-            "|---|---|---|\n"
-            f"{rows}"
-        ).encode("utf-8"),
+    index_data = (
+        "# ha-mcp release registry index\n\n"
+        f"Sequence: `{accepted.sequence}`  \n"
+        f"Generated: `{accepted.generated_at}`  \n\n"
+        "| Version | Entry | Authority |\n"
+        "|---|---|---|\n"
+        f"{rows}"
+    ).encode("utf-8")
+    _transactional_registry_write(
+        registry_data=canonical_json(journal) + b"\n",
+        index_data=index_data,
     )
 
 
@@ -658,10 +750,15 @@ def main() -> None:
     parser.add_argument("--operation", choices=("add", "revoke"), default="add")
     parser.add_argument("--revocation-reason")
     arguments = parser.parse_args()
+    revocation_reason = arguments.revocation_reason
+    if revocation_reason is None:
+        revocation_reason = os.environ.get(
+            "HA_MCP_RELEASE_REGISTRY_REVOCATION_REASON"
+        )
     prepare(
         version=arguments.version,
         operation=arguments.operation,
-        revocation_reason=arguments.revocation_reason,
+        revocation_reason=revocation_reason,
     )
 
 

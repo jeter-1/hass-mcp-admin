@@ -1,15 +1,19 @@
 # Engineering 2.2.0-beta.58 acceptance
 
-Beta 58 is the staged source candidate for exact ha-mcp 8.4.3 continuity and
-the protected ADR-023 release-registry preparation path. It is based on
+Beta 58 is the materialized source candidate for exact ha-mcp 8.4.3 continuity
+and the protected ADR-023 release-registry preparation path. It is based on
 protected main `8b4eae426d42f49e9bfc39e2d31c09cfcee86c17`. The advertised
-Engineering release remains 2.2.0-beta.57, stable remains 1.1.2, and this
-staging does not materialize, publish, or deploy Beta 58.
+Engineering version is 2.2.0-beta.58, stable remains 1.1.2, and
+`.release/next-version` was consumed. Materialization has occurred. Beta 57 is
+the prior and rollback release.
 
-This document authorizes source review only. Materialization, merge,
-publication, deployment, production-key creation, registry publication,
-trust-anchor activation, live ha-mcp update, and live Home Assistant access
-remain separate owner decisions.
+Materialization did not merge, publish, deploy, restart anything or access a
+live system. This document authorizes source review only. The remaining
+separately owner-authorized actions are merge, publication, deployment,
+production-key creation, environment/secret configuration, registry
+publication, trust-anchor activation, and live updates. No production key,
+environment, secret, registry, trust anchor, upstream App, or live Home
+Assistant system was changed by materialization.
 
 ## Beta 57 falsification
 
@@ -87,14 +91,23 @@ provider, direct-HA route, or fallback is added.
 ## Signed registry preparation and dashboard separation
 
 The manual `Prepare ha-mcp release-registry update` workflow runs only from
-protected main and accepts one exact stable version. The protected environment
-holds the Ed25519 seed only for the signing step. Fixed official source and OCI
-locations are resolved, source/image linkage and architecture manifests are
-verified, the exact runtime catalog and four error probes are captured twice,
-and the disposable fixture must report zero mutations. The workflow opens only
-a draft data PR containing the signed journal, bounded compatibility evidence,
-and generated index. It cannot merge, publish an Engineering image, deploy,
-restart, or mutate Home Assistant.
+protected main and provides closed `add` and `revoke` operations. For `add`,
+one exact stable version tag is observed once to resolve its OCI index digest;
+raw-index inspection, architecture extraction, pull, label inspection, runtime
+capture, and evidence generation then use only the immutable digest reference.
+Fixed official source/image linkage is verified, the exact runtime catalog and
+four error probes are captured twice, and the disposable fixture must report
+zero mutations. The protected environment holds the Ed25519 seed only for the
+signing step. The workflow opens only a draft data PR containing the signed
+journal, bounded compatibility evidence, and generated index.
+
+For `revoke`, the workflow requires one exact existing positive signed entry,
+does not observe source or OCI state, preserves compatibility evidence, and
+produces only the updated signed journal and generated index. The resulting
+tombstone is denial-only and prevents re-addition of the revoked version. Both
+operations retain the existing permissions and cannot merge, publish an
+Engineering image, deploy, restart, mutate Home Assistant, or alter runtime
+routes.
 
 The journal supports initial bootstrap, monotonic sequence and digest linkage,
 90-day expiry, bounded signed checkpoints, retained denial-only revocations,

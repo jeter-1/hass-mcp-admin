@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 import yaml
 
@@ -27,13 +30,34 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
         cls.script = SCRIPT_PATH.read_text(encoding="utf-8")
         cls.fixture = FIXTURE_PATH.read_text(encoding="utf-8")
 
+    def _parse_architecture_index(self, value: object) -> dict[str, str]:
+        steps = self.workflow["jobs"]["prepare"]["steps"]
+        run = next(step for step in steps if step.get("id") == "image")["run"]
+        marker = 'python - "$raw" "$RUNNER_TEMP/platforms.json" <<\'PY\'\n'
+        code = run.split(marker, 1)[1].split("\nPY\n", 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "index.json"
+            output = Path(directory) / "platforms.json"
+            source.write_text(json.dumps(value), encoding="utf-8")
+            with patch.object(sys, "argv", ["-", str(source), str(output)]):
+                exec(compile(code, "<workflow-platform-parser>", "exec"), {})
+            return json.loads(output.read_text(encoding="utf-8"))
+
     def test_workflow_is_manual_protected_main_only(self) -> None:
         triggers = self.workflow.get("on", self.workflow.get(True))
         self.assertEqual(set(triggers), {"workflow_dispatch"})
         self.assertEqual(
             set(triggers["workflow_dispatch"]["inputs"]),
-            {"upstream_version"},
+            {"operation", "revocation_reason", "upstream_version"},
         )
+        operation = triggers["workflow_dispatch"]["inputs"]["operation"]
+        self.assertEqual(operation["type"], "choice")
+        self.assertEqual(operation["options"], ["add", "revoke"])
+        self.assertEqual(operation["default"], "add")
+        reason = triggers["workflow_dispatch"]["inputs"]["revocation_reason"]
+        self.assertEqual(reason["type"], "string")
+        self.assertFalse(reason["required"])
+        self.assertEqual(reason["default"], "")
         job = self.workflow["jobs"]["prepare"]
         self.assertEqual(job["if"], "github.ref == 'refs/heads/main'")
         self.assertEqual(
@@ -76,7 +100,12 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
             == "Sign and verify data-only release-registry update"
         )
         self.assertEqual(
-            set(signing["env"]), {"HA_MCP_RELEASE_REGISTRY_SIGNING_KEY"}
+            set(signing["env"]),
+            {
+                "HA_MCP_RELEASE_REGISTRY_REVOCATION_REASON",
+                "HA_MCP_RELEASE_REGISTRY_SIGNING_KEY",
+                "OPERATION",
+            },
         )
         for step in steps:
             if step is signing:
@@ -97,6 +126,120 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
         self.assertIn('stats["websocket_mutations"]', self.source)
         self.assertIn('stats["operational_backup_creates"]', self.source)
         self.assertIn('stats["approval_notification_calls"]', self.source)
+
+    def test_mutable_tag_is_resolved_once_then_never_reused(self) -> None:
+        steps = self.workflow["jobs"]["prepare"]["steps"]
+        image = next(step for step in steps if step.get("id") == "image")
+        run = image["run"]
+        self.assertEqual(
+            len(re.findall(r'imagetools inspect(?: --raw)? "\$tagged"', run)),
+            1,
+        )
+        self.assertIn('imagetools inspect "$tagged"', run)
+        self.assertNotIn('imagetools inspect --raw "$tagged"', run)
+        self.assertIn('immutable="${UPSTREAM_IMAGE_REPOSITORY}@${index_digest}"', run)
+        self.assertIn('imagetools inspect "$immutable"', run)
+        self.assertIn('imagetools inspect --raw "$immutable"', run)
+        self.assertIn('docker pull --platform linux/amd64 "$immutable"', run)
+        self.assertIn('test "$reported_digest" = "$index_digest"', run)
+
+        capture = next(
+            step
+            for step in steps
+            if step.get("name") == "Capture exact runtime catalog twice"
+        )["run"]
+        self.assertIn(
+            "immutable=\"${UPSTREAM_IMAGE_REPOSITORY}"
+            "@${{ steps.image.outputs.index_digest }}\"",
+            capture,
+        )
+        self.assertIn('"$immutable" ha-mcp-web', capture)
+        self.assertNotIn('${UPSTREAM_IMAGE_REPOSITORY}:${VERSION}', capture)
+
+    def test_architecture_manifest_extraction_fails_closed(self) -> None:
+        amd64 = {
+            "platform": {"os": "linux", "architecture": "amd64"},
+            "digest": "sha256:" + "1" * 64,
+        }
+        arm64 = {
+            "platform": {"os": "linux", "architecture": "arm64"},
+            "digest": "sha256:" + "2" * 64,
+        }
+        self.assertEqual(
+            self._parse_architecture_index({"manifests": [amd64, arm64]}),
+            {
+                "linux/amd64": "sha256:" + "1" * 64,
+                "linux/arm64": "sha256:" + "2" * 64,
+            },
+        )
+        cases = {
+            "missing": {"manifests": [amd64]},
+            "duplicate": {"manifests": [amd64, dict(amd64), arm64]},
+            "malformed": {
+                "manifests": [
+                    {**amd64, "digest": "sha256:not-a-digest"},
+                    arm64,
+                ]
+            },
+        }
+        for name, value in cases.items():
+            with self.subTest(name=name), self.assertRaises(SystemExit):
+                self._parse_architecture_index(value)
+
+    def test_revocation_is_denial_only_and_skips_upstream_observation(self) -> None:
+        steps = self.workflow["jobs"]["prepare"]["steps"]
+        add_only = {
+            "Resolve exact official source tag",
+            "Set up Docker Buildx",
+            "Resolve exact official image",
+            "Start disposable read-only Home Assistant fixture",
+            "Capture exact runtime catalog twice",
+            "Generate bounded immutable release evidence",
+            "Clean up disposable runtime",
+        }
+        for step in steps:
+            if step.get("name") in add_only:
+                condition = step.get("if")
+                if step.get("name") == "Clean up disposable runtime":
+                    self.assertEqual(
+                        condition, "${{ always() && inputs.operation == 'add' }}"
+                    )
+                else:
+                    self.assertEqual(condition, "inputs.operation == 'add'")
+
+        signing = next(
+            step
+            for step in steps
+            if step.get("name")
+            == "Sign and verify data-only release-registry update"
+        )
+        self.assertIn("HA_MCP_RELEASE_REGISTRY_REVOCATION_REASON", signing["env"])
+        self.assertIn('--operation "$OPERATION"', signing["run"])
+        self.assertNotIn("--revocation-reason", signing["run"])
+        validation = next(
+            step
+            for step in steps
+            if step.get("name") == "Validate protected-main request"
+        )["run"]
+        self.assertIn("reason.encode", validation)
+        self.assertIn("reason.strip", validation)
+        self.assertIn("unicodedata.category", validation)
+        self.assertIn('character in {"\\u2028", "\\u2029"}', validation)
+
+        branch = next(step for step in steps if step.get("id") == "branch")["run"]
+        self.assertIn('if [[ "$OPERATION" == "add" ]]', branch)
+        self.assertIn('expected_count=3', branch)
+        self.assertIn('expected_count=2', branch)
+        self.assertIn('data/ha-mcp-release-${OPERATION}-${VERSION}', branch)
+        self.assertIn("Revoke ha-mcp ${VERSION} compatible-read authority", branch)
+        self.assertIn('test "$staged" = "$expected"', branch)
+        self.assertIn('test "$changed" = "$expected"', branch)
+        summary = next(
+            step
+            for step in steps
+            if step.get("name") == "Write bounded preparation summary"
+        )["run"]
+        self.assertNotIn("REVOCATION_REASON", summary)
 
     def test_workflow_creates_only_bounded_data_pr(self) -> None:
         self.assertIn("gh pr create --draft", self.source)
