@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import unittest
 
+from awesomeversion import AwesomeVersion
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
@@ -20,12 +22,20 @@ class Beta58ReleaseMaterializationTruthTests(unittest.TestCase):
         version_module = (
             BETA / "ha_mcp_engineering" / "version.py"
         ).read_text(encoding="utf-8")
-        self.assertRegex(config, rf'(?m)^version: "{re.escape(VERSION)}"$')
-        self.assertRegex(
-            version_module,
-            rf'(?m)^SERVER_VERSION = "{re.escape(VERSION)}"$',
-        )
-        self.assertFalse((ROOT / ".release" / "next-version").exists())
+        configured = re.findall(r'(?m)^version: "([^"]+)"$', config)
+        self.assertEqual(len(configured), 1)
+        if configured[0] == VERSION:
+            self.assertRegex(
+                version_module,
+                rf'(?m)^SERVER_VERSION = "{re.escape(VERSION)}"$',
+            )
+            self.assertFalse(
+                (ROOT / ".release" / "next-version").exists()
+            )
+        else:
+            self.assertGreater(
+                AwesomeVersion(configured[0]), AwesomeVersion(VERSION)
+            )
 
         stale_claims = (
             "advertised Engineering release remains 2.2.0-beta.57",

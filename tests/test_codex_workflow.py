@@ -524,24 +524,24 @@ class ContextToolTests(unittest.TestCase):
         )
 
     def test_context_remains_consistent_after_candidate_is_applied(self):
-        current = "2.0.0-rc2-dev12"
-        candidate = "2.0.0-rc2-dev13"
+        current = "2.2.0-beta.58"
+        candidate = "2.2.0-rc.1"
         fixture = RepositoryFixture()
         try:
             fixture.set_engineering_version(current)
             fixture.write(".release/next-version", candidate + "\n")
             fixture.write(
-                "docs/RC2DEV13_RELEASE_NOTES.md",
+                "docs/V2_2_0_RC1_RELEASE_NOTES.md",
                 self.version_document("release notes", candidate),
             )
             fixture.write(
-                "docs/RC2DEV13_ACCEPTANCE.md",
+                "docs/V2_2_0_RC1_ACCEPTANCE.md",
                 self.version_document("acceptance", candidate),
             )
             fixture.write(
                 "README.md",
-                "RC2dev12 is immutable failed history. "
-                "RC2dev13 is its corrective release target.\n",
+                "Beta 58 is immutable release history. "
+                "RC1 is its corrective release target.\n",
             )
 
             spec = importlib.util.spec_from_file_location(
@@ -574,11 +574,11 @@ class ContextToolTests(unittest.TestCase):
             self.assertEqual(payload["documents"]["resolution_status"], "exact")
             self.assertEqual(
                 payload["documents"]["active_release_notes"],
-                "docs/RC2DEV13_RELEASE_NOTES.md",
+                "docs/V2_2_0_RC1_RELEASE_NOTES.md",
             )
             self.assertEqual(
                 payload["documents"]["active_acceptance_document"],
-                "docs/RC2DEV13_ACCEPTANCE.md",
+                "docs/V2_2_0_RC1_ACCEPTANCE.md",
             )
             self.assertEqual(payload["staged_release"]["version"], "unknown")
             self.assertEqual(payload["staged_release"]["declaration"], "unknown")
