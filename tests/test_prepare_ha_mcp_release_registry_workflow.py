@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -240,6 +242,108 @@ class PrepareHaMcpReleaseRegistryWorkflowTests(unittest.TestCase):
             if step.get("name") == "Write bounded preparation summary"
         )["run"]
         self.assertNotIn("REVOCATION_REASON", summary)
+
+    def test_add_removes_ephemeral_inputs_before_exact_file_gate(self) -> None:
+        steps = self.workflow["jobs"]["prepare"]["steps"]
+        cleanup = next(
+            step
+            for step in steps
+            if step.get("name") == "Remove bounded add preparation inputs"
+        )
+        branch = next(step for step in steps if step.get("id") == "branch")
+        cleanup_index = steps.index(cleanup)
+        branch_index = steps.index(branch)
+        self.assertLess(cleanup_index, branch_index)
+        self.assertEqual(cleanup["if"], "inputs.operation == 'add'")
+        self.assertIn(
+            "test -f .compat/ha-mcp-runtime-capture.json", cleanup["run"]
+        )
+        self.assertIn(
+            "test -f .compat/ha-mcp-release-evidence.json", cleanup["run"]
+        )
+        self.assertIn("rmdir -- .compat", cleanup["run"])
+
+        final_cleanup = next(
+            step
+            for step in steps
+            if step.get("name") == "Clean up disposable runtime"
+        )
+        self.assertEqual(
+            final_cleanup["if"],
+            "${{ always() && inputs.operation == 'add' }}",
+        )
+        self.assertIn("rm -rf .compat", final_cleanup["run"])
+
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+
+            def run(*arguments: str, script: str | None = None) -> None:
+                command = (
+                    ["git", *arguments]
+                    if script is None
+                    else ["bash", "-c", script]
+                )
+                subprocess.run(
+                    command,
+                    cwd=repository,
+                    env={
+                        **os.environ,
+                        "GITHUB_RUN_ID": "12345",
+                        "OPERATION": "add",
+                        "VERSION": "8.4.4",
+                    },
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+
+            run("init")
+            run("config", "user.name", "fixture")
+            run("config", "user.email", "fixture@example.invalid")
+            baseline = {
+                "upstream-trust/ha-mcp-release-registry.json": "{}\n",
+                "docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md": "baseline\n",
+            }
+            for relative, value in baseline.items():
+                path = repository / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(value, encoding="utf-8")
+            run("add", ".")
+            run("commit", "-m", "baseline")
+
+            generated = {
+                "upstream-trust/ha-mcp-release-registry.json": '{"updated":true}\n',
+                "docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md": "updated\n",
+                "docs/evidence/ha-mcp-release-registry/ha-mcp-8.4.4.json": "{}\n",
+                ".compat/ha-mcp-runtime-capture.json": "{}\n",
+                ".compat/ha-mcp-release-evidence.json": "{}\n",
+            }
+            for relative, value in generated.items():
+                path = repository / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(value, encoding="utf-8")
+
+            enforce_before_push = branch["run"].split(
+                'git push origin "HEAD:refs/heads/${branch}"', 1
+            )[0]
+            run(script=cleanup["run"] + "\n" + enforce_before_push)
+
+            committed = subprocess.run(
+                ["git", "show", "--pretty=", "--name-only", "HEAD"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.splitlines()
+            self.assertEqual(
+                sorted(filter(None, committed)),
+                [
+                    "docs/evidence/ha-mcp-release-registry/ha-mcp-8.4.4.json",
+                    "docs/generated/HA_MCP_RELEASE_REGISTRY_INDEX.md",
+                    "upstream-trust/ha-mcp-release-registry.json",
+                ],
+            )
+            self.assertFalse((repository / ".compat").exists())
 
     def test_workflow_creates_only_bounded_data_pr(self) -> None:
         self.assertIn("gh pr create --draft", self.source)

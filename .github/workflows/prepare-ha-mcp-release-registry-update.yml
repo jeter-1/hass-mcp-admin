@@ -291,6 +291,18 @@ jobs:
             --version "$VERSION" \
             --operation "$OPERATION"
 
+      - name: Remove bounded add preparation inputs
+        if: inputs.operation == 'add'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .compat/ha-mcp-runtime-capture.json
+          test -f .compat/ha-mcp-release-evidence.json
+          rm -- \
+            .compat/ha-mcp-runtime-capture.json \
+            .compat/ha-mcp-release-evidence.json
+          rmdir -- .compat
+
       - name: Enforce data-only diff
         id: branch
         env:
