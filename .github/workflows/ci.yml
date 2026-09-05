@@ -482,21 +482,22 @@ jobs:
             --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
             --output "$RUNNER_TEMP/exact-8.2.0-dashboard-setter-result.json"
-      - name: Verify exact 8.4.1 dashboard quarantine
-        if: matrix.upstream_version == '8.4.1'
+      - name: Verify exact reviewed dashboard authority
+        if: matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3'
         shell: bash
         run: |
           python scripts/exact_8_2_dashboard_setter_acceptance.py \
-            --expected-version 8.4.1 \
+            --expected-version "$UPSTREAM_VERSION" \
             --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
-            --output "$RUNNER_TEMP/exact-8.4.1-dashboard-setter-result.json"
+            --output "$RUNNER_TEMP/exact-${UPSTREAM_VERSION}-dashboard-setter-result.json"
           python scripts/exact_8_4_1_dashboard_quarantine_acceptance.py \
+            --expected-version "$UPSTREAM_VERSION" \
             --upstream-endpoint http://127.0.0.1:18086/synthetic-upstream-secret/mcp \
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
-            --output "$RUNNER_TEMP/exact-8.4.1-dashboard-quarantine-result.json"
+            --output "$RUNNER_TEMP/exact-${UPSTREAM_VERSION}-dashboard-authority-result.json"
       - name: Verify exact 8.1+ stdio lifecycle
-        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1'
+        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3'
         shell: bash
         run: |
           set -euo pipefail
@@ -530,7 +531,7 @@ jobs:
             --expected-source-commit "$source_commit" \
             --output "$RUNNER_TEMP/exact-custom-component-shutdown-result.json"
       - name: Verify exact 8.1+ disconnect and readmission
-        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1'
+        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3'
         shell: bash
         run: |
           set -euo pipefail
@@ -580,18 +581,18 @@ jobs:
           path: ${{ runner.temp }}/exact-8.2.0-dashboard-setter-result.json
           if-no-files-found: error
           retention-days: 14
-      - name: Upload exact 8.4.1 dashboard quarantine evidence
-        if: always() && matrix.upstream_version == '8.4.1'
+      - name: Upload exact reviewed dashboard authority evidence
+        if: always() && (matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: exact-8.4.1-dashboard-quarantine
+          name: exact-${{ matrix.upstream_version }}-dashboard-authority
           path: |
-            ${{ runner.temp }}/exact-8.4.1-dashboard-setter-result.json
-            ${{ runner.temp }}/exact-8.4.1-dashboard-quarantine-result.json
+            ${{ runner.temp }}/exact-${{ matrix.upstream_version }}-dashboard-setter-result.json
+            ${{ runner.temp }}/exact-${{ matrix.upstream_version }}-dashboard-authority-result.json
           if-no-files-found: error
           retention-days: 14
       - name: Upload bounded 8.1+ lifecycle evidence
-        if: always() && (matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1')
+        if: always() && (matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3')
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: exact-image-readmission-${{ matrix.upstream_version }}
@@ -655,6 +656,13 @@ jobs:
             addon_amd64_manifest_digest: sha256:3fbe577a9e50ecdb91291b7c1346fff8a2f46a515e29f4a21cfebd8de7e588c3
             addon_arm64_index_digest: sha256:40f6762f85fe7f228c929c9fe6185eaf4bd23ce28887a7e52027bcd068c3dc78
             addon_arm64_manifest_digest: sha256:69a738be869064819788d5db84691045ae78f60e092335e3c194f5dfe7ba5031
+          - upstream_version: "8.4.3"
+            addon_detail_profile: live-8.4.3
+            secret_path: /beta58-synthetic/mcp
+            addon_amd64_index_digest: sha256:366361a088089f3cb55b51318d86eeb968f3deb913a41397d741075da879c2fb
+            addon_amd64_manifest_digest: sha256:13ed061af93d539b0872564ea340e4e683b5d437e5a520a3ac5d4e9732442b32
+            addon_arm64_index_digest: sha256:90e850213882d6c83dd4b2076546d34873b90e83800eadaccd94558936dd74b3
+            addon_arm64_manifest_digest: sha256:a51107e1a1f1f9dec9c52b9a9e714362a3f2374e80613d8c4810e8f54e43c41e
     env:
       UPSTREAM_VERSION: ${{ matrix.upstream_version }}
       ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}

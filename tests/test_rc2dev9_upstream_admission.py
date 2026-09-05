@@ -63,11 +63,19 @@ EIGHT_FOUR = (
     / "upstream-read-compatibility"
     / "ha-mcp-8.4.1.json"
 )
+EIGHT_FOUR_THREE = (
+    ROOT
+    / "docs"
+    / "evidence"
+    / "upstream-read-compatibility"
+    / "ha-mcp-8.4.3.json"
+)
 
 
 def tool_for(version):
-    if version == "8.4.1":
-        evidence = json.loads(EIGHT_FOUR.read_text(encoding="utf-8"))
+    if version in {"8.4.1", "8.4.3"}:
+        path = EIGHT_FOUR if version == "8.4.1" else EIGHT_FOUR_THREE
+        evidence = json.loads(path.read_text(encoding="utf-8"))
         return next(
             tool
             for tool in evidence["tools"]
@@ -187,6 +195,7 @@ class ContractFamilyTests(unittest.TestCase):
                 "8.1.1",
                 "8.2.0",
                 "8.4.1",
+                "8.4.3",
             },
         )
         for version in entries:

@@ -118,6 +118,11 @@ _REVIEWED_SUCCESS_ENVELOPE_MODELS = {
         REVIEWED_PROTOCOL_VERSION,
         "ha_get_hacs_info",
     ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
+    (
+        "8.4.3",
+        REVIEWED_PROTOCOL_VERSION,
+        "ha_get_hacs_info",
+    ): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
 }
 _TRANSIENT_DISCOVERY_FAILURES = frozenset({"connection_failed", "timeout"})
 _STARTUP_ORDERING_FAILURES = frozenset({"endpoint_rejected"})
@@ -938,6 +943,11 @@ class UpstreamReadGateway:
                 catalog,
                 policy=selected_policy,
                 reviewed_contracts=reviewed_contracts,
+                require_exact_order=(
+                    readmission_selection is None
+                    or readmission_selection.authority_source.value
+                    == "compiled_exact"
+                ),
                 runtime_contract_fingerprint_model=(
                     selected_release.runtime_contract_fingerprint_model
                     if selected_release is not None
@@ -2119,6 +2129,7 @@ class UpstreamReadGateway:
         *,
         policy: UpstreamToolPolicy | None = None,
         reviewed_contracts: dict[str, Any] | None = None,
+        require_exact_order: bool = True,
         runtime_contract_fingerprint_model: str = (
             RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
         ),
@@ -2164,7 +2175,9 @@ class UpstreamReadGateway:
                 selected_policy.reviewed_upstream_version
             )
         )
-        exact_catalog_order_required = expected_order_fingerprint is not None
+        exact_catalog_order_required = (
+            require_exact_order and expected_order_fingerprint is not None
+        )
         catalog_structure_invalid = (
             exact_catalog_order_required and catalog_has_invalid_structure
         )
@@ -2581,6 +2594,11 @@ class UpstreamReadGateway:
                             live_release.tool_contracts_by_name
                             if live_release is not None
                             else None
+                        ),
+                        require_exact_order=(
+                            live_selection is None
+                            or live_selection.authority_source.value
+                            == "compiled_exact"
                         ),
                         runtime_contract_fingerprint_model=(
                             live_release.runtime_contract_fingerprint_model

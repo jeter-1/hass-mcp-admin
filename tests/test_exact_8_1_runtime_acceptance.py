@@ -43,13 +43,14 @@ packaging_acceptance = _load_script("verify_ha_mcp_8_1_1_packaging")
 class ExactAddonProfileTests(unittest.TestCase):
     def tearDown(self) -> None:
         addon_acceptance._select_exact_addon_profile("8.0.0")
+        dashboard_authority_acceptance.select_exact_release("8.4.1")
         fixture.ADDON_DETAIL_PROFILE = "compact"
         fixture.INSTALLED_ADDONS[0]["version"] = "7.14.2"
 
     def test_exact_profiles_retain_8_0_and_bind_all_8_1_identities(self):
         self.assertEqual(
             set(addon_acceptance.EXACT_ADDON_PROFILES),
-            {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1"},
+            {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3"},
         )
 
         addon_acceptance._select_exact_addon_profile("8.1.0")
@@ -125,6 +126,25 @@ class ExactAddonProfileTests(unittest.TestCase):
             "d064d856d6c10d9e023191b6dd08874030dae3df88ccc3cd954be588a4ffeba0",
         )
 
+        addon_acceptance._select_exact_addon_profile("8.4.3")
+        self.assertEqual(
+            addon_acceptance.EXPECTED_ENTRY_ID,
+            "ha-mcp-v8.4.3-d5cea47a",
+        )
+        self.assertEqual(
+            addon_acceptance.EXPECTED_RAW_CATALOG_FINGERPRINT,
+            "15400c1fc6e86e618805040ff4dcd848cd960185b254492d257d1b1a9dddbee6",
+        )
+        self.assertEqual(
+            addon_acceptance.EXPECTED_NORMALIZED_CATALOG_FINGERPRINT,
+            "b752e582d2c9b34a747447e46ee5f22cef243bc4f9b6ccff7a3ae646a4d84a39",
+        )
+        dashboard_authority_acceptance.select_exact_release("8.4.3")
+        self.assertEqual(
+            dashboard_authority_acceptance.EXPECTED_ATTESTATION_FINGERPRINT,
+            "6d9198ed97c239390c565a532cd76a25c7bb0ad80625a709b820449af2eb78be",
+        )
+
         addon_acceptance._select_exact_addon_profile("8.2.0")
         self.assertEqual(
             addon_acceptance.EXPECTED_ENTRY_ID,
@@ -151,7 +171,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             ),
             "reviewed",
         )
-        for version in ("8.0.0", "8.1.0", "8.1.1", "8.2.0"):
+        for version in ("8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.3"):
             with self.subTest(version=version):
                 self.assertEqual(
                     gateway_acceptance.expected_dashboard_attestation_status(
@@ -184,6 +204,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             ("8.1.1", 25),
             ("8.2.0", 25),
             ("8.4.1", 25),
+            ("8.4.3", 25),
         ):
             with self.subTest(version=version):
                 addon_acceptance._select_exact_addon_profile(version)
@@ -214,7 +235,14 @@ class ExactAddonProfileTests(unittest.TestCase):
             packaging_acceptance.canonical_dependency_name("@ invalid")
 
     def test_live_profiles_preserve_exact_identity_and_detail_bound(self):
-        for version in ("8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1"):
+        for version in (
+            "8.0.0",
+            "8.1.0",
+            "8.1.1",
+            "8.2.0",
+            "8.4.1",
+            "8.4.3",
+        ):
             with self.subTest(version=version):
                 fixture.ADDON_DETAIL_PROFILE = f"live-{version}"
                 fixture.INSTALLED_ADDONS[0]["version"] = version
@@ -266,13 +294,18 @@ class ExactAddonProfileTests(unittest.TestCase):
             "sha256:3fbe577a9e50ecdb91291b7c1346fff8a2f46a515e29f4a21cfebd8de7e588c3",
             "sha256:40f6762f85fe7f228c929c9fe6185eaf4bd23ce28887a7e52027bcd068c3dc78",
             "sha256:69a738be869064819788d5db84691045ae78f60e092335e3c194f5dfe7ba5031",
+            "sha256:366361a088089f3cb55b51318d86eeb968f3deb913a41397d741075da879c2fb",
+            "sha256:13ed061af93d539b0872564ea340e4e683b5d437e5a520a3ac5d4e9732442b32",
+            "sha256:90e850213882d6c83dd4b2076546d34873b90e83800eadaccd94558936dd74b3",
+            "sha256:a51107e1a1f1f9dec9c52b9a9e714362a3f2374e80613d8c4810e8f54e43c41e",
         ):
             self.assertIn(value, workflow)
         self.assertIn(
             "matrix.upstream_version == '8.1.0' || "
             "matrix.upstream_version == '8.1.1' || "
             "matrix.upstream_version == '8.2.0' || "
-            "matrix.upstream_version == '8.4.1'",
+            "matrix.upstream_version == '8.4.1' || "
+            "matrix.upstream_version == '8.4.3'",
             workflow,
         )
         self.assertIn("exact_image_readmission_acceptance.py", workflow)
@@ -348,7 +381,8 @@ class ExactAddonProfileTests(unittest.TestCase):
             "always() && (matrix.upstream_version == '8.1.0' || "
             "matrix.upstream_version == '8.1.1' || "
             "matrix.upstream_version == '8.2.0' || "
-            "matrix.upstream_version == '8.4.1')",
+            "matrix.upstream_version == '8.4.1' || "
+            "matrix.upstream_version == '8.4.3')",
             workflow,
         )
         self.assertNotIn("--delete-branch", workflow)
@@ -362,6 +396,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "8.1.1": "upstream_tool_policy_8_1_1.json",
             "8.2.0": "upstream_tool_policy_8_2_0.json",
             "8.4.1": "upstream_tool_policy_8_4_1.json",
+            "8.4.3": "upstream_tool_policy_8_4_3.json",
         }
         expected_counts = {
             "7.14.1": 26,
@@ -371,6 +406,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "8.1.1": 25,
             "8.2.0": 25,
             "8.4.1": 25,
+            "8.4.3": 25,
         }
         for version, filename in policy_paths.items():
             with self.subTest(version=version):

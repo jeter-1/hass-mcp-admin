@@ -66,6 +66,7 @@ class Beta11ReleaseEvidenceTests(unittest.TestCase):
                 "8.1.1",
                 "8.2.0",
                 "8.4.1",
+                "8.4.3",
             ),
         )
         seven = registry.by_version["7.14.2"]

@@ -23,7 +23,7 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 PROTOCOL_VERSION = "2025-03-26"
 SUPPORTED_UPSTREAM_VERSIONS = frozenset(
-    {"7.14.2", "8.0.0", "8.1.1", "8.2.0", "8.4.1"}
+    {"7.14.2", "8.0.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3"}
 )
 
 # The current Engineering dashboard provider defaults to a 60,000-byte MCP

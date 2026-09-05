@@ -1,4 +1,4 @@
-"""Prove exact ha-mcp 8.4.1 dashboard authority is reviewed and bounded.
+"""Prove exact reviewed ha-mcp dashboard authority is bounded.
 
 The legacy filename remains because the protected CI workflow invokes it. The
 acceptance now proves the Beta 57 reviewed getter/setter authority. It performs
@@ -47,6 +47,24 @@ EXPECTED_ATTESTATION_FINGERPRINT = (
 EXPECTED_CONSTRAINTS_FINGERPRINT = (
     "d064d856d6c10d9e023191b6dd08874030dae3df88ccc3cd954be588a4ffeba0"
 )
+EXACT_RELEASES: dict[str, dict[str, str]] = {
+    "8.4.1": {
+        "entry_id": EXPECTED_ENTRY_ID,
+        "source_commit": EXPECTED_SOURCE_COMMIT,
+        "image_index_digest": EXPECTED_IMAGE_INDEX_DIGEST,
+        "attestation_fingerprint": EXPECTED_ATTESTATION_FINGERPRINT,
+    },
+    "8.4.3": {
+        "entry_id": "ha-mcp-v8.4.3-d5cea47a",
+        "source_commit": "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
+        "image_index_digest": (
+            "sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456"
+        ),
+        "attestation_fingerprint": (
+            "6d9198ed97c239390c565a532cd76a25c7bb0ad80625a709b820449af2eb78be"
+        ),
+    },
+}
 EXPECTED_DASHBOARD_TOOLS = {
     "ha_config_get_dashboard",
     "ha_config_set_dashboard",
@@ -71,7 +89,7 @@ FAILURE_REASON_CODES = {
     "dashboard provider disposition is not admitted": "provider_not_admitted",
     "dashboard attestation fingerprint changed": "attestation_fingerprint_changed",
     "dashboard compiled constraints changed": "constraints_fingerprint_changed",
-    "exact 8.4.1 catalog validation failed": "catalog_validation_failed",
+    "exact dashboard catalog validation failed": "catalog_validation_failed",
     "exact dashboard protocol changed": "protocol_changed",
     "exact dashboard descriptors are missing": "descriptors_missing",
     "dashboard getter classification changed": "getter_classification_changed",
@@ -85,6 +103,22 @@ FAILURE_REASON_CODES = {
     "dashboard provider boundary broadened": "provider_boundary_broadened",
     "planning-only dashboard authority acceptance mutated Home Assistant": "unexpected_mutation",
 }
+
+
+def select_exact_release(version: str) -> None:
+    profile = EXACT_RELEASES[version]
+    global EXPECTED_VERSION
+    global EXPECTED_ENTRY_ID
+    global EXPECTED_SOURCE_COMMIT
+    global EXPECTED_IMAGE_INDEX_DIGEST
+    global EXPECTED_ATTESTATION_FINGERPRINT
+    EXPECTED_VERSION = version
+    EXPECTED_ENTRY_ID = profile["entry_id"]
+    EXPECTED_SOURCE_COMMIT = profile["source_commit"]
+    EXPECTED_IMAGE_INDEX_DIGEST = profile["image_index_digest"]
+    EXPECTED_ATTESTATION_FINGERPRINT = profile[
+        "attestation_fingerprint"
+    ]
 
 
 def fixture_stats(url: str) -> dict[str, Any]:
@@ -149,7 +183,7 @@ async def run(endpoint: str, fixture_stats_url: str) -> dict[str, Any]:
         observed_protocol_version=catalog.protocol_version,
         tools=catalog.tools,
     )
-    require(validation.valid, "exact 8.4.1 catalog validation failed")
+    require(validation.valid, "exact dashboard catalog validation failed")
     require(
         catalog.protocol_version == EXPECTED_PROTOCOL,
         "exact dashboard protocol changed",
@@ -266,7 +300,7 @@ async def run(endpoint: str, fixture_stats_url: str) -> dict[str, Any]:
     )
     return {
         "result": "PASS",
-        "model": "ha-mcp-8.4.1-dashboard-authority-v1",
+        "model": f"ha-mcp-{EXPECTED_VERSION}-dashboard-authority-v1",
         "entry_id": release.entry_id,
         "version": catalog.server_version,
         "protocol": catalog.protocol_version,
@@ -289,8 +323,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--upstream-endpoint", required=True)
     parser.add_argument("--fixture-stats-url", required=True)
+    parser.add_argument(
+        "--expected-version",
+        choices=tuple(sorted(EXACT_RELEASES)),
+        default="8.4.1",
+    )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    select_exact_release(args.expected_version)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     try:
         result = asyncio.run(
@@ -318,13 +358,13 @@ def main() -> None:
             encoding="utf-8",
         )
         raise SystemExit(
-            "exact 8.4.1 dashboard authority acceptance failed"
+            "exact dashboard authority acceptance failed"
         ) from None
     args.output.write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    print("exact 8.4.1 dashboard authority acceptance: PASS")
+    print("exact dashboard authority acceptance: PASS")
 
 
 if __name__ == "__main__":

@@ -693,7 +693,17 @@ class UpstreamDashboardProvider:
         from ..f3_dashboard.provider import EXACT_CONTRACTS, admit_provider_contract
 
         exact_setter = EXACT_CONTRACTS.get(handshake.server_version)
-        if exact_setter is None:
+        selected_attestation = _matching_release_attestation(
+            self._registry.effective_attestations(),
+            server_name=handshake.server_name,
+            server_version=handshake.server_version,
+        )
+        if (
+            exact_setter is None
+            or selected_attestation is None
+            or selected_attestation.entry_id
+            != release.dashboard_attestation_entry_id
+        ):
             raise DashboardTransportError("reviewed_contract_mismatch")
         expected_setter = {
             "input_schema_fingerprint": exact_setter.input_schema_fingerprint,
@@ -721,7 +731,7 @@ class UpstreamDashboardProvider:
             compatibility_entry=release.entry_id,
             source_commit=release.source_commit,
             image_index_digest=release.image_index_digest,
-            contract_family=expected_contract_family(handshake.server_version),
+            contract_family=selected_attestation.contract_family,
             dashboard_attestation_fingerprint=(
                 release.dashboard_attestation_fingerprint
             ),
@@ -1084,8 +1094,16 @@ class UpstreamDashboardProvider:
             raise DashboardTransportError("invalid_response")
 
         schema = tool.get("inputSchema")
-        contract_family = expected_contract_family(
-            handshake.server_version
+        attestations = self._registry.effective_attestations()
+        informational_attestation = _matching_release_attestation(
+            attestations,
+            server_name=handshake.server_name,
+            server_version=handshake.server_version,
+        )
+        contract_family = (
+            informational_attestation.contract_family
+            if informational_attestation is not None
+            else expected_contract_family(handshake.server_version)
         )
         runtime_policy_projection: dict[str, Any] | None = None
         if contract_family == CONTRACT_FAMILY_V3:
@@ -1109,9 +1127,7 @@ class UpstreamDashboardProvider:
             security_contract_fingerprint = _stable_hash(
                 _reviewed_security_contract_projection(
                     tool,
-                    contract_family=expected_contract_family(
-                        handshake.server_version
-                    ),
+                    contract_family=contract_family,
                 )
             )
             reviewed_release = (
@@ -1181,12 +1197,6 @@ class UpstreamDashboardProvider:
                 if runtime_policy_projection is not None
                 else None
             )
-        attestations = self._registry.effective_attestations()
-        informational_attestation = _matching_release_attestation(
-            attestations,
-            server_name=handshake.server_name,
-            server_version=handshake.server_version,
-        )
         expected_input_schema_fingerprint = (
             informational_attestation.raw_input_schema_fingerprint
             if informational_attestation
@@ -2286,17 +2296,13 @@ def _matching_release_attestation(
 ) -> ReleaseAttestation | None:
     """Select informational evidence without participating in admission."""
 
-    return next(
-        (
-            entry
-            for entry, _source in attestations
-            if entry.server_name == server_name
-            and entry.upstream_version == server_version
-            and entry.contract_family
-            == expected_contract_family(server_version)
-        ),
-        None,
+    matches = tuple(
+        entry
+        for entry, _source in attestations
+        if entry.server_name == server_name
+        and entry.upstream_version == server_version
     )
+    return matches[0] if len(matches) == 1 else None
 
 
 def _latency_summary(values: deque[float]) -> dict[str, float | int | None]:

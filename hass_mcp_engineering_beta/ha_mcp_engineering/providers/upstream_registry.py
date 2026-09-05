@@ -20,7 +20,6 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from .upstream_contracts import (
-    expected_contract_family,
     ContractValidationError,
     ReleaseAttestation,
     _validate_unique_attestations,
@@ -125,12 +124,13 @@ class UpstreamTrustRegistry:
         return self.health.last_failure_category
 
     def has_exact_attestation(self, server_name: str, version: str) -> bool:
-        return any(
-            entry.server_name == server_name
-            and entry.upstream_version == version
-            and entry.contract_family == expected_contract_family(version)
+        matches = tuple(
+            entry
             for entry, _source in self.effective_attestations()
+            if entry.server_name == server_name
+            and entry.upstream_version == version
         )
+        return len(matches) == 1
 
     def effective_attestations(self) -> tuple[tuple[ReleaseAttestation, str], ...]:
         keyed = {

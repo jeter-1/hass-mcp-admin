@@ -99,6 +99,19 @@ EXACT_CONTRACTS: Final = {
         runtime_contract_fingerprint="3951f06937c499f62096263c5a6b1f924537f32c6f8306062ce7ca89c90cdf94",
         policy_classification="persistent_write",
     ),
+    "8.4.3": ProviderRuntimeEvidence(
+        upstream_version="8.4.3",
+        protocol_version=PROTOCOL_VERSION,
+        compatibility_entry="ha-mcp-v8.4.3-d5cea47a",
+        source_commit="eac7a3aa7063432e9af17e7d7726040e909c7b8f",
+        tool_name=TOOL_NAME,
+        input_schema_fingerprint="73bf16ccb3fcb38f02834968670fb7ba63021ce7d73cbcd834e0103070cc552f",
+        annotation_fingerprint=COMMON_ANNOTATION_FINGERPRINT,
+        description_fingerprint="b89f720b3969838c7742222c262a21fcb6521c1e102eafea12f5d70cb95fffd5",
+        output_contract_fingerprint=COMMON_OUTPUT_CONTRACT_FINGERPRINT,
+        runtime_contract_fingerprint="3951f06937c499f62096263c5a6b1f924537f32c6f8306062ce7ca89c90cdf94",
+        policy_classification="persistent_write",
+    ),
 }
 
 POTENTIAL_EPHEMERAL_ARGUMENT_NAMES = ("BestPracticeKey",)

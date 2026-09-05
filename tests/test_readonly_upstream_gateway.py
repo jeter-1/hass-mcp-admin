@@ -1995,16 +1995,17 @@ class PolicyInventoryTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn("automation.gateway_fixture_unreadable", fixture)
         self.assertIn("issue_57_synthetic_provider_failure", fixture)
+        self.assertIn("STABLE_VERSION.fullmatch(value)", fixture)
+        self.assertIn("type=_stable_version", fixture)
         for version in (
-            "7.14.1",
-            "7.14.2",
             "8.0.0",
             "8.1.0",
             "8.1.1",
             "8.2.0",
             "8.4.1",
+            "8.4.3",
         ):
-            self.assertIn(f'"{version}"', fixture)
+            self.assertIn(f'"live-{version}"', fixture)
         self.assertIn(
             'INSTALLED_ADDONS[0]["version"] = args.upstream_version',
             fixture,
