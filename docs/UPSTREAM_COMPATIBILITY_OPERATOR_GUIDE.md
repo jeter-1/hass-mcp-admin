@@ -12,7 +12,7 @@ runtime decision is
    `observed_identity_status`. The endpoint must identify as `ha-mcp`, match an
    explicit reviewed release entry, and negotiate the supported MCP protocol.
    The compiled registry currently authorizes exact 7.14.1, 7.14.2, 8.0.0,
-   and reviewed immutable-OCI 8.1.0, 8.1.1, 8.2.0, and 8.4.1 entries. Release-page
+   and reviewed immutable-OCI 8.1.0, 8.1.1, 8.2.0, 8.4.1, and 8.4.3 entries. Release-page
    executables and MCPB are excluded because they report 8.0.0 at runtime.
    Identity, unreviewed-version, malformed-version, or protocol failure is
    global and must not be worked around with a self-advertised schema match.
@@ -50,9 +50,10 @@ produces 77 registered tools. The exact 8.0.0 and 8.1.0 24-read profiles each
 produce 75
 and hold exactly `ha_search` and `ha_get_operation_status`. Exact 8.1.1 and
 8.2.0 each produce 76 with 25 delegated reads and hold only
-`ha_get_operation_status`. Exact 8.4.1 also produces 76: its 21 unchanged reads
-and four independently reviewed changed reads are admitted by its exact binary
-profile, while `ha_get_operation_status` remains held. One missing or
+`ha_get_operation_status`. Exact 8.4.1 and 8.4.3 also produce 76. The exact
+8.4.3 profile independently admits its 25 reads, including the stricter
+read-only `ha_search` time-budget contract, while `ha_get_operation_status`
+remains held. One missing or
 quarantined read reduces the corresponding total by one. Additional blocked,
 held, or unreviewed tools do not increase the registered count.
 
@@ -99,11 +100,12 @@ reviewed contract with the currently registered route. Missing, duplicate,
 changed-target, or unreviewed-version evidence stops before `tools/call`.
 
 A different but syntactically valid upstream version is observed evidence only.
-Even if the selected target self-advertises an exact match, Engineering stops
-before dispatch, enters `blocked_incompatible_upstream`, and waits for the slow
-periodic reconciliation because the release/profile is not authorized. It does
-not enter the fast transport-retry lane. A malformed version, different server
-name, or unsupported protocol is likewise a global pre-dispatch failure.
+Without a current valid signed release entry selecting one compiled profile,
+Engineering stops before dispatch, enters `blocked_incompatible_upstream`, and
+waits for the slow periodic reconciliation. A signed entry still cannot
+authorize a live descriptor by self-attestation: only independently matching
+binary-known capabilities return. A malformed version, different server name,
+or unsupported protocol is a global pre-dispatch failure.
 
 The call-time check is target-local. Unrelated new, changed, malformed, or
 duplicate unreviewed descriptors cannot authorize a route and do not block an
@@ -194,9 +196,11 @@ release merely because a new version is available. Use this sequence:
    range, wildcard, or self-discovery mode. Review its drift classification and
    canonical decision. Unknown drift rejects; material drift requires explicit
    human handling or selective holds.
-5. Add the complete reviewed release entry, exact per-tool policy, immutable
-   source/image evidence, and an exact dashboard attestation or explicit
-   quarantine. Run `validate`; never edit fingerprints merely to satisfy it.
+5. When the release selects an existing binary profile, run the protected
+   `Prepare ha-mcp release-registry update` workflow from main. It repeats the
+   exact image capture, rejects any mutation, and opens a signed data-only draft
+   PR. Otherwise add a new compiled profile through an Engineering release.
+   Dashboard authority always uses its separate exact-attestation path.
 6. Upgrade `ha-mcp` only after the target has applicable exact reviewed
    authority and its disposable contract evidence passes. Retain the exact
    prior image as the rollback target.
@@ -213,9 +217,9 @@ contract check is evidence for review; it cannot authorize its own release.
 The compiled registry is source-controlled and contains human-owned policy; it
 does not fetch policy or automatically track an upstream latest tag.
 
-Rolling between reviewed 7.14.1, 7.14.2, 8.0.0, and the exact immutable-OCI
-8.1.0 or 8.1.1 profile triggers fresh discovery and atomic route replacement in the
-same Engineering image. Unknown releases admit no
+Rolling between compiled releases through exact 8.4.3, or to a valid signed
+release selecting one compiled profile, triggers fresh discovery and atomic
+route replacement in the same Engineering image. Unknown unsigned releases admit no
 delegated reads. An exact reviewed release may still expose a safe exact subset:
 changed reads are quarantined, new tools remain unreviewed, removed tools are
 reported, and write or mixed classifications remain blocked. A full-catalog
@@ -236,11 +240,11 @@ defect. Do not claim that a live artifact digest or source revision was verified
 from MCP discovery; deployment artifact verification remains an operator
 responsibility.
 
-For exact 8.1.0, 8.1.1, 8.2.0, and 8.4.1, treat MCP `tools/list` as catalog authority. Source-only,
+For exact 8.1.0, 8.1.1, 8.2.0, 8.4.1, and 8.4.3, treat MCP `tools/list` as catalog observation. Source-only,
 conditional, hidden, and nonadvertised declarations are review diagnostics,
 not additional runtime tools. Require 78 unique advertised names and complete
 classification. `ha_manage_hacs` is one persistent-write tool because its
-8.1.0 action enum includes `remove`; 8.2.0 and 8.4.1 additionally include
+8.1.0 action enum includes `remove`; 8.2.0, 8.4.1, and 8.4.3 additionally include
 `update_information`, which remains classified as a persistent write. None of
 those actions is an Engineering route. `ha_get_hacs_info` alone uses the exact
 top-level-success response model.
@@ -257,12 +261,19 @@ For 8.1.1, the tagged add-on value is stale at 8.1.0 while the published add-on
 package, labels, MCP initialize identity, and Supervisor inventory are exact
 8.1.1.
 
-For 8.4.1, the exact published-image catalog contains 78 tools and uses App
+For 8.4.1 and 8.4.3, the exact published-image catalogs contain 78 tools and use App
 terminology. The source-checkout-only catalog fingerprint is not artifact
 authority. Error contracts are evaluated per bound capability: the changed
 search validation envelope can quarantine `ha_search` without disabling
-unrelated reads. Dashboard, backup, and lifecycle provider surfaces remain
-held for this release and must not inherit delegated-read admission.
+unrelated reads. Exact dashboard getter/setter authority is separately reviewed
+for both releases; backup and lifecycle provider surfaces remain held and must
+not inherit delegated-read admission.
+
+The generic release registry is fixed at
+`upstream-trust/ha-mcp-release-registry.json`. Its workflow writes only that
+signed journal, one bounded evidence record, and its generated index. Production
+environment/key creation, registry publication, and the add-on public-key and
+enable options are distinct later operations.
 
 ## Dashboard exact-attestation path
 
