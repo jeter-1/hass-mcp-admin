@@ -30,7 +30,14 @@ from f3_dashboard_support import FakeExactReader, load_dashboard, make_preread, 
 
 class RawDashboardEvidenceTests(unittest.TestCase):
     def test_exact_storage_prereads_are_accepted_for_reviewed_releases(self):
-        for version in ("7.14.2", "8.0.0", "8.1.1", "8.2.0", "8.4.1"):
+        for version in (
+            "7.14.2",
+            "8.0.0",
+            "8.1.1",
+            "8.2.0",
+            "8.4.1",
+            "8.4.3",
+        ):
             with self.subTest(version=version):
                 source = make_preread(version=version)
                 evidence = build_raw_dashboard_evidence(

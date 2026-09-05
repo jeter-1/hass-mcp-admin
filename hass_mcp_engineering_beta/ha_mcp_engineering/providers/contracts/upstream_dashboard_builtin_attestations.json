@@ -233,6 +233,32 @@
       "source_commit": "701a7c26ac0e2309c7883a627d31873ab1510077",
       "source_tag": "v8.4.1",
       "upstream_version": "8.4.1"
+    },
+    {
+      "catalog_fingerprint": "4b75e198df50a633ab94d51f006961c5fc31a1edfcf524b4dc925a48799e98f7",
+      "contract_family": "ha_mcp_dashboard_read_v3",
+      "entry_id": "ha-mcp-v8.4.3-d5cea47a",
+      "fixture_runtime_descriptor_fingerprint": "4c5bd345f5f254894ad8abf2c23d90e699cf229a4d3fd8bfa4ef096a16892665",
+      "image_index_digest": "sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
+      "image_revision": "47582a700b0889a355033ade36de7c3077780b48",
+      "input_contract_fingerprint": "91b0d1f6a5113591c8c02e9576bdc2e3664ace91d72a5ef4827729162a7ac90a",
+      "output_contract_fingerprint": "9db14b83579f9ec897cc6d97640a3ad67899055b57d18c815c4119192a04dbb7",
+      "platform_digests": {
+        "linux/amd64": "sha256:56b631cbebc795d6c4f381be72c3ea98055033162acea5e9abe414b2dd213253",
+        "linux/arm64": "sha256:f7bb181a8b244e2ae94669d7b6a42a187f6446d949defbdcec60bc807340dbda"
+      },
+      "published_runtime_descriptor_fingerprint": "4c5bd345f5f254894ad8abf2c23d90e699cf229a4d3fd8bfa4ef096a16892665",
+      "raw_input_schema_fingerprint": "8e6936b2748052fd507225dba998f396c8802a286ba8cc93404ea72aeb90adb9",
+      "review_evidence_digest": "sha256:109f59790c0e1a600a1d7146c8d5a1458e1898c63087ea08c2307bb1771a4172",
+      "reviewed_at": "2026-09-04T00:00:00Z",
+      "reviewed_security_descriptor_fingerprint": "2cdfc8a83cd1f2ab1f2477e4687d941dc4885f14420ea79fb26f5e6d9ad1d1f5",
+      "revoked": false,
+      "runtime_contract_fingerprint": "e206909dd9795dfc3947fa63ebccb851ea150d8403afe4468ef0707f3148e736",
+      "security_contract_fingerprint": "f1f03110ee84abc017287ebfdc12706dd2368668414ba082efd593e89b583c95",
+      "server_name": "ha-mcp",
+      "source_commit": "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
+      "source_tag": "v8.4.3",
+      "upstream_version": "8.4.3"
     }
   ],
   "schema_version": 1

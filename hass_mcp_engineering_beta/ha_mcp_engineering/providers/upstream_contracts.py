@@ -196,7 +196,8 @@ def expected_contract_family(upstream_version: str) -> str:
 
     return (
         CONTRACT_FAMILY_V3
-        if upstream_version in {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1"}
+        if upstream_version
+        in {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3"}
         else CONTRACT_FAMILY
     )
 
@@ -696,15 +697,23 @@ def decide_admission(
         )
 
     available_attestations = tuple(attestations)
-    expected_family = expected_contract_family(server_version)
     exact_release = [
         (entry, source)
         for entry, source in available_attestations
         if entry.server_name == server_name
         and entry.upstream_version == server_version
-        and entry.contract_family == expected_family
         and source in _ATTESTATION_SOURCES
     ]
+    if len(exact_release) > 1:
+        return AdmissionDecision(
+            False,
+            "rejected_contract_mismatch",
+            "conflicting_attestation_entry",
+            None,
+            None,
+            None,
+            None,
+        )
     if exact_release:
         # An exact observed-release attestation is authoritative. In
         # particular, a revoked or mismatched exact entry must not fall back to

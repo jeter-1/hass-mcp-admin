@@ -28,7 +28,7 @@ from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
 )
 
 
-SUPPORTED_VERSIONS = frozenset({"8.2.0", "8.4.1"})
+SUPPORTED_VERSIONS = frozenset({"8.2.0", "8.4.1", "8.4.3"})
 EXPECTED_PROTOCOL = "2025-03-26"
 MAX_RESPONSE_BYTES = 32_768
 ACK_KEY_PATTERN = re.compile(
@@ -182,11 +182,7 @@ async def probe(
                     "fixture_mutation_attempt_delta": delta,
                     "upstream_error_code": error_code,
                 }
-    model = (
-        "ha-mcp-8.2.0-dashboard-setter-runtime-acceptance-v1"
-        if expected_version == "8.2.0"
-        else "ha-mcp-8.4.1-dashboard-setter-runtime-acceptance-v1"
-    )
+    model = f"ha-mcp-{expected_version}-dashboard-setter-runtime-acceptance-v1"
     return {
         "model": model,
         "upstream_version": expected_version,

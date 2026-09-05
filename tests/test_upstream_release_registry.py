@@ -48,6 +48,7 @@ POLICY_8100 = RUNTIME / "upstream_tool_policy_8_1_0.json"
 POLICY_8111 = RUNTIME / "upstream_tool_policy_8_1_1.json"
 POLICY_8200 = RUNTIME / "upstream_tool_policy_8_2_0.json"
 POLICY_8410 = RUNTIME / "upstream_tool_policy_8_4_1.json"
+POLICY_8430 = RUNTIME / "upstream_tool_policy_8_4_3.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
@@ -62,6 +63,9 @@ ARTIFACT_EVIDENCE_8200 = (
 )
 ARTIFACT_EVIDENCE_8410 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.4.1-contract-review.json"
+)
+ARTIFACT_EVIDENCE_8430 = (
+    CAPTURE_DIRECTORY / "ha-mcp-8.4.3-contract-review.json"
 )
 FAMILY_DECISION_8111 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.1.1-family-decision.json"
@@ -82,9 +86,13 @@ def captured_tools(version: str) -> list[dict]:
         )
     )
     tools = value["tools"]
-    if version == "8.4.1":
+    if version in {"8.4.1", "8.4.3"}:
         review = json.loads(
-            ARTIFACT_EVIDENCE_8410.read_text(encoding="utf-8")
+            (
+                ARTIFACT_EVIDENCE_8410
+                if version == "8.4.1"
+                else ARTIFACT_EVIDENCE_8430
+            ).read_text(encoding="utf-8")
         )
         order = review["runtime_catalog"]["runtime_tool_order"]
         by_name = {item["name"]: item for item in tools}
@@ -121,6 +129,7 @@ class RegistryFixture:
             POLICY_8111,
             POLICY_8200,
             POLICY_8410,
+            POLICY_8430,
             FAMILY_POLICY,
         ):
             shutil.copy2(path, self.runtime / path.name)
@@ -140,6 +149,7 @@ class RegistryFixture:
             "8.1.1",
             "8.2.0",
             "8.4.1",
+            "8.4.3",
         ):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
@@ -161,6 +171,10 @@ class RegistryFixture:
         shutil.copy2(
             ARTIFACT_EVIDENCE_8410,
             self.capture_directory / ARTIFACT_EVIDENCE_8410.name,
+        )
+        shutil.copy2(
+            ARTIFACT_EVIDENCE_8430,
+            self.capture_directory / ARTIFACT_EVIDENCE_8430.name,
         )
         self.dashboard_attestations = (
             self.runtime
@@ -235,6 +249,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.1.1",
                 "8.2.0",
                 "8.4.1",
+                "8.4.3",
             ),
         )
         self.assertEqual(registry.default_version, "7.14.1")
@@ -253,6 +268,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.1.1": 25,
                 "8.2.0": 25,
                 "8.4.1": 25,
+                "8.4.3": 25,
             }
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
@@ -268,6 +284,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                         "8.1.1",
                         "8.2.0",
                         "8.4.1",
+                        "8.4.3",
                     }
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
@@ -895,6 +912,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.1.1": 25,
                 "8.2.0": 25,
                 "8.4.1": 25,
+                "8.4.3": 25,
             }
             self.assertEqual(
                 len(automatic_names),

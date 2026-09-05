@@ -28,6 +28,9 @@ APPROVAL_INGRESS_PATH = re.compile(
     r"/hassio/ingress/df26dea6_hass_mcp_engineering_beta/"
     r"plans/[a-f0-9]{32}"
 )
+STABLE_VERSION = re.compile(
+    r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"
+)
 APPROVAL_NOTIFICATION_TITLE = "Home Assistant approval requested"
 APPROVAL_NOTIFICATION_MESSAGE = (
     "A governed Home Assistant change is waiting for administrator review."
@@ -423,6 +426,14 @@ class FixtureState:
 STATE = FixtureState()
 
 
+def _stable_version(value: str) -> str:
+    if not STABLE_VERSION.fullmatch(value):
+        raise argparse.ArgumentTypeError(
+            "upstream version must be one exact stable semantic version"
+        )
+    return value
+
+
 @web.middleware
 async def read_only_guard(request: web.Request, handler):
     if request.path.startswith("/__fixture__/"):
@@ -804,6 +815,7 @@ def _addon_detail(addon: dict[str, Any]) -> dict[str, Any]:
         "live-8.1.1",
         "live-8.2.0",
         "live-8.4.1",
+        "live-8.4.3",
     }:
         return detail
     detail.update(
@@ -1026,15 +1038,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=18123)
     parser.add_argument(
         "--upstream-version",
-        choices=(
-            "7.14.1",
-            "7.14.2",
-            "8.0.0",
-            "8.1.0",
-            "8.1.1",
-            "8.2.0",
-            "8.4.1",
-        ),
+        type=_stable_version,
         required=True,
     )
     parser.add_argument(
@@ -1046,6 +1050,7 @@ def main() -> None:
             "live-8.1.1",
             "live-8.2.0",
             "live-8.4.1",
+            "live-8.4.3",
         ),
         default="compact",
     )

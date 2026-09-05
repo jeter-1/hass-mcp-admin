@@ -1,7 +1,8 @@
 # ADR-023: Production ha-mcp capability-scoped automatic readmission
 
-Status: implemented for the Beta 55 release candidate; production registry
-publication and trust-anchor activation remain separately governed operations
+Status: implemented in Beta 55; exact 8.4.3 authority and protected registry
+preparation are staged for Beta 58; production key creation, registry
+publication, and trust-anchor activation remain separately governed operations
 
 ## Context
 
@@ -112,9 +113,18 @@ This registry uses the distinct add-on options
 `ha_mcp_release_registry_public_key`. It does not reuse the dashboard
 attestation enable switch or trust key. The public key is not secret. No private
 key exists in production code, fixtures, configuration, logs, or documentation.
-Tests use ephemeral keys marked synthetic. Creating the production registry and
-protected signing workflow requires separate authorization and is not part of
-this implementation branch.
+Tests use ephemeral keys marked synthetic. Beta 58 adds the manual
+protected-main preparation workflow, but does not create its protected
+environment, private key, secret, production journal, or live trust anchor.
+Those remain a separate operator ceremony.
+
+The preparation workflow accepts one exact stable version and resolves only the
+fixed official source and OCI locations. It captures the complete bounded
+runtime catalog and error probes twice against a rejecting disposable fixture,
+selects one existing binary profile, signs a chained journal, and opens a draft
+data-only PR. Generic entries always quarantine dashboard authority. The
+workflow has no package, merge, release, deployment, restart, or live-system
+authority.
 
 ### Generation and dispatch boundary
 
@@ -168,8 +178,11 @@ descriptions, registry bodies, signatures, sessions, and exception text.
 
 A compatible manually updated ha-mcp release can restore matching delegated
 reads without an Engineering restart or code release after trusted registry
-publication. Changed siblings remain quarantined. Unknown releases without a
-valid signed entry remain unavailable even when their catalog looks identical.
+publication. Changed siblings remain quarantined. Full catalog ordering is
+required for compiled-exact releases but is not release-wide authority for a
+signed future release; each binary-known capability still requires its exact
+descriptor and arguments. Unknown releases without a valid signed entry remain
+unavailable even when their catalog looks identical.
 Core changes cannot retire ha-mcp authority because this runtime coordinator is
 instantiated only for `ha_mcp` by the read gateway.
 

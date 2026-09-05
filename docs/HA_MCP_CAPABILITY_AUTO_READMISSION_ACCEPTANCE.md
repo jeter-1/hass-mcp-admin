@@ -29,13 +29,17 @@ At the exact release-candidate head:
 11. Run complete unit, Fast, Full, Evidence, exact-image, exact ha-mcp, disposable
     update, dependency, secret, YAML, PowerShell, whitespace, metadata, public
     contract, and stable-v1 gates required by the staged release.
-12. For exact 8.4.1, require capability-scoped error compatibility: a changed
+12. For exact 8.4.1 and 8.4.3, require capability-scoped error compatibility: a changed
     `invalid_search` envelope may affect `ha_search` but cannot suppress the 21
     unchanged reads or other independently accepted changed reads.
-13. Require `ha_get_operation_status` and all App, dashboard, mixed, action,
-    write, destructive, unknown, and generic-forwarding capabilities to remain
-    unreachable. Dashboard authority must be exactly attested or explicitly
-    quarantined; Beta 56 chooses quarantine.
+13. Require `ha_get_operation_status` and all App, mixed, action, write,
+    destructive, unknown, and generic-forwarding capabilities to remain
+    unreachable. Dashboard authority is separate from generic reads and must be
+    exactly attested or explicitly quarantined; Beta 58 retains exact 8.4.3
+    getter/setter authority.
+14. Prove a synthetic future catalog can remove a reviewed blueprint getter and
+    add a mixed read/write blueprint manager while retaining every unrelated
+    exact read and exposing neither blueprint capability.
 
 ## Disposable update scenarios
 

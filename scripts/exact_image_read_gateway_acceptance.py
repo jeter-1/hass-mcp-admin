@@ -151,6 +151,15 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "prohibited": 1,
         "unsupported": 1,
     },
+    "8.4.3": {
+        "automatic_read": 25,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 13,
+        "persistent_write": 33,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
 }
 
 
@@ -484,6 +493,9 @@ EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
             "63e37a2f037ff46e9908c41745aca0e368c0cb6811a28104c990113055abdfee"
         ),
         "8.4.1": (
+            "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939"
+        ),
+        "8.4.3": (
             "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939"
         ),
     },
@@ -1089,11 +1101,11 @@ async def inspect_upstream(
             )
             tools = await list_all_tools(session)
             tool_names = {item.get("name") for item in tools}
-            if expected_upstream_version == "8.4.1":
+            if expected_upstream_version in {"8.4.1", "8.4.3"}:
                 require(
                     "ha_get_addon" not in tool_names
                     and {"ha_get_app", "ha_manage_app"} <= tool_names,
-                    "8.4.1 app-tool transition did not match exact evidence",
+                    "reviewed app-tool transition did not match exact evidence",
                 )
             else:
                 addon_inventory = decode_tool_result(
@@ -2571,7 +2583,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         policy=policy,
         release=release,
     )
-    if args.expected_upstream_version == "8.4.1":
+    if args.expected_upstream_version in {"8.4.1", "8.4.3"}:
         held_settings = Settings(
             ha_url=args.ha_url,
             ha_token=args.ha_token,

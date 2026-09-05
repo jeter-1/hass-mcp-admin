@@ -41,6 +41,10 @@ EXPECTED_RELEASES: Final = {
         "ha-mcp-v8.4.1-7823b365",
         "ha_mcp_dashboard_read_v3",
     ),
+    "8.4.3": (
+        "ha-mcp-v8.4.3-d5cea47a",
+        "ha_mcp_dashboard_read_v3",
+    ),
 }
 
 

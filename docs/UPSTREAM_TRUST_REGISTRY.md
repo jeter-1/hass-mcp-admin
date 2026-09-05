@@ -4,8 +4,9 @@ The RC2dev9 registry is a signed data channel for exact upstream release
 attestations. It is not a plugin system and cannot change executable policy.
 Under
 [`ADR-006`](architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md),
-the current registry remains dashboard-specific. It is not a signed registry
-for the 26 generic reads.
+the original registry remains dashboard-specific. It is not generic-read
+authority. ADR-023 defines a separate signed journal for binary-owned delegated
+read profiles; neither registry can create executable behavior.
 
 ## Authority boundary
 
@@ -92,9 +93,10 @@ to match. A catalog fingerprint remains unrelated-tool observability and is
 never a required-tool compatibility gate.
 
 The compiled generic/provider release registry separately binds exact runtime
-authority. Its reviewed 8.1.0, 8.1.1, 8.2.0, and 8.4.1 entries record the tag target, standalone index
-and platform manifests, add-on index/image manifests, strict full-contract
-fingerprint, full 78-tool policy, and release-declared runtime model. Its raw
+authority. Its reviewed 8.1.0, 8.1.1, 8.2.0, 8.4.1, and 8.4.3 entries record the
+tag target, standalone index and platform manifests, add-on index/image
+manifests, strict full-contract fingerprint, full 78-tool policy, and
+release-declared runtime model. Its raw
 standalone catalog fingerprint is diagnostic; complete per-tool semantic
 validation remains authoritative. The entry excludes release-page executables
 and MCPB that advertise 8.0.0 and cannot inherit 8.1.0 trust from their asset
@@ -111,14 +113,16 @@ standalone and add-on OCI identities, the complete 78-tool catalog, and the
 corrected existing-hyphenless-dashboard resolver behavior. It grants no
 authority to 8.2.x ranges or future patches.
 
-The exact 8.4.1 entry independently binds the annotated tag object, source
-commit and tree, standalone and Home Assistant App OCI identities, exact
-78-tool image catalog, four error-envelope probes, and per-tool policy. Error
+The exact 8.4.1 and 8.4.3 entries independently bind their annotated tag
+objects, source commits and trees, standalone and Home Assistant App OCI
+identities, exact 78-tool image catalogs, four error-envelope probes, and
+per-tool policies. Error
 compatibility is capability-scoped under a binary-owned adapter: a changed
 search validation envelope cannot suppress unrelated reads. Registry data may
-select that compiled behavior but cannot define error mappings. Dashboard,
-backup, and lifecycle surfaces are explicitly held for 8.4.1; only the reviewed
-read-gateway surface is admitted.
+select that compiled behavior but cannot define error mappings. Dashboard
+authority remains separately reviewed and attested for each exact release.
+Backup and lifecycle surfaces remain held; only reviewed read-gateway and
+dashboard surfaces are admitted.
 
 The source tag's Home Assistant add-on `config.yaml` also remains diagnostic
 build input. For operational lifecycle identity, Supervisor's exact
@@ -161,17 +165,27 @@ tag, release, or deployment. Normal review must verify the evidence/diff and run
 CI before the data PR is merged. Promotion remains owned by the existing
 Engineering release workflow.
 
-## Deferred generic registry and automation
+`Prepare ha-mcp release-registry update` is a separate manual workflow for the
+ADR-023 generic-read journal. It runs only from protected `main`, accepts one
+exact stable version, resolves fixed official source and image locations, and
+uses a protected environment for human approval and the Ed25519 private key.
+The private key is scoped to the signing step. Before signing, the workflow
+captures the exact image catalog twice against a disposable read-only Home
+Assistant fixture and rejects any mutation evidence.
 
-Dev15 does not reuse this dashboard registry as generic-read authority. Dev16
-may define a separately reviewed signed evidence and revocation format for
-binary-owned generic contract families, including monotonic sequence, cache and
-expiry behavior, rollback/replay protection, revocation, and runtime refresh.
-Dev17 may automate immutable source/image inspection, disposable runtime
-extraction, catalog and annotation diffing, semantic fixtures, dashboard
-contract checks, zero-write verification, compatibility reports, and draft
-evidence updates. Neither generic registry authority nor that automation is
-implemented by Dev15.
+The resulting draft pull request may contain only the signed journal, one
+bounded compatibility-evidence record, and its generated index. The signed
+entry selects one already compiled profile; unmatched capabilities remain held
+and unknown capabilities remain unsupported. It explicitly quarantines
+dashboard authority, which requires its separate exact-release attestation.
+The workflow cannot merge, publish an Engineering image, deploy, restart, or
+mutate Home Assistant.
 
-Signed data must remain unable to add a tool, change a classification, permit a
-write or action, expand arguments, select a provider, or enable fallback.
+## Separate generic registry
+
+The ADR-023 generic journal uses monotonic sequence and digest linkage, bounded
+checkpointing, expiry, rollback/replay protection, denial-only revocations, and
+atomic cache replacement. Signed data remains unable to add a tool, change a
+classification, permit a write or action, expand arguments, select a provider,
+or enable fallback. A new schema, semantic contract, provider behavior, or
+adapter still requires an Engineering release.
