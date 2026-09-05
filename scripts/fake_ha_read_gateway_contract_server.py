@@ -24,9 +24,8 @@ from aiohttp import WSMsgType, web
 
 TOKEN = "synthetic-read-gateway-token"
 NOW = "2026-07-21T12:00:00+00:00"
-APPROVAL_INGRESS_PATH = re.compile(
-    r"/hassio/ingress/df26dea6_hass_mcp_engineering_beta/"
-    r"plans/[a-f0-9]{32}"
+APPROVAL_APP_PANEL_PATH = re.compile(
+    r"/app/df26dea6_hass_mcp_engineering_beta"
 )
 STABLE_VERSION = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"
@@ -507,13 +506,7 @@ async def approval_notification(request: web.Request) -> web.Response:
     )
     title = body.get("title") if isinstance(body, dict) else None
     message = body.get("message") if isinstance(body, dict) else None
-    ingress_path = (
-        url.removeprefix("homeassistant://navigate")
-        if isinstance(url, str)
-        and url.startswith("homeassistant://navigate")
-        else None
-    )
-    android_target = f"deep-link://{url}" if isinstance(url, str) else None
+    review_path = url if isinstance(url, str) else None
     inspected_payload = {
         "title": title,
         "message": message,
@@ -536,14 +529,14 @@ async def approval_notification(request: web.Request) -> web.Response:
         )
     )
     action_uri_matches_cross_platform_target = bool(
-        isinstance(action, dict) and action.get("uri") == ingress_path
+        isinstance(action, dict) and action.get("uri") == review_path
     )
     if (
         not isinstance(url, str)
         or len(url) > 1024
-        or not isinstance(ingress_path, str)
-        or APPROVAL_INGRESS_PATH.fullmatch(ingress_path) is None
-        or click_action != android_target
+        or not isinstance(review_path, str)
+        or APPROVAL_APP_PANEL_PATH.fullmatch(review_path) is None
+        or click_action != review_path
         or title != APPROVAL_NOTIFICATION_TITLE
         or message != APPROVAL_NOTIFICATION_MESSAGE
         or not isinstance(tag, str)
@@ -563,7 +556,7 @@ async def approval_notification(request: web.Request) -> web.Response:
         {
             "operation": "notify",
             "ingress_path_sha256": hashlib.sha256(
-                ingress_path.encode()
+                review_path.encode()
             ).hexdigest(),
             "ios_url_sha256": hashlib.sha256(url.encode()).hexdigest(),
             "android_click_action_sha256": hashlib.sha256(

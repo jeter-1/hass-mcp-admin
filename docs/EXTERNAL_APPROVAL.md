@@ -160,22 +160,24 @@ Home Assistant service.
 
 After persistence of a new challenge, the adapter asynchronously submits a
 privacy-minimal normal-priority notification with one URI action: **Open
-Approval Panel**. All navigation forms derive from one canonical authenticated
-Ingress route:
+Approval Panel**. RC1 uses one canonical relative Home Assistant app-panel
+route for every notification interaction:
 
 ```text
-/hassio/ingress/{verified_addon_slug}/plans/{plan_id}
+/app/{verified_addon_slug}
 ```
 
-The iOS body `url` is
-`homeassistant://navigate{canonical_ingress_route}`. The Android body
-`clickAction` is
-`deep-link://homeassistant://navigate{canonical_ingress_route}`. The shared
-**Open Approval Panel** action `uri` is the canonical relative Ingress route
-itself. Current Companion clients resolve a relative URI-action target against
-the configured Home Assistant frontend, while Android's body-tap notification
-contract requires its additional `deep-link://` wrapper. The service name is
-not used to guess a platform.
+The iOS body `url`, Android body `clickAction`, and **Open Approval Panel**
+action `uri` all contain that exact relative path. Android resolves the path
+inside the Home Assistant server that delivered the notification; an external
+`deep-link://` intent is not used. The route opens the approval inbox, where
+the authenticated administrator selects the exact pending plan. The service
+name is not used to guess a platform.
+
+Beta 35 and Beta 36 historically emitted a plan-specific
+`/hassio/ingress/...` target wrapped in platform-specific URL forms. Those
+release records remain truthful history, but RC1 does not generate that retired
+navigation contract.
 
 The payload does not include platform-specific action fields that the Android
 Companion contract rejects.
@@ -190,8 +192,7 @@ retained. Options, configuration, translations, long descriptions, tokens, and
 the raw response are discarded as untrusted data and are never logged or
 persisted. A response above the ceiling fails closed with no notification and
 no inferred or fallback identity.
-The canonical route contains the opaque plan ID so Ingress can open the exact
-review. It contains no approval decision, challenge ID, hash,
+The canonical route contains no plan ID, approval decision, challenge ID, hash,
 CSRF nonce, credential, authenticated URL, diff, or unrestricted plan content.
 The Ingress application must still authenticate an administrator, resolve the
 active persisted challenge, validate the exact authority, and issue a fresh

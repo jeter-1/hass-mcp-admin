@@ -166,23 +166,20 @@ class NotificationGovernanceTests(unittest.IsolatedAsyncioTestCase):
             body["data"]["actions"][0]["title"], "Open Approval Panel"
         )
         self.assertEqual(
-            body["data"]["clickAction"],
-            f"deep-link://{body['data']['url']}",
+            body["data"]["url"],
+            "/app/repository_hass_mcp_engineering_beta",
         )
         self.assertEqual(
-            body["data"]["actions"][0]["uri"],
-            body["data"]["url"].removeprefix(
-                "homeassistant://navigate"
-            ),
+            body["data"]["clickAction"], body["data"]["url"]
+        )
+        self.assertEqual(
+            body["data"]["actions"][0]["uri"], body["data"]["url"]
         )
         self.assertNotIn(
             "authenticationRequired", body["data"]["actions"][0]
         )
-        self.assertIn(
-            f"/hassio/ingress/repository_hass_mcp_engineering_beta/plans/{created['plan_id']}",
-            body["data"]["url"],
-        )
         encoded = json.dumps(body, sort_keys=True)
+        self.assertNotIn(created["plan_id"], encoded)
         self.assertNotIn(pending["challenge_id"], encoded)
         self.assertNotIn(created["plan_hash"], encoded)
         self.assertNotIn("Approve exact plan", encoded)

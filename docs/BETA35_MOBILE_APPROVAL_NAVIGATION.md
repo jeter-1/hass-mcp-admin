@@ -1,17 +1,18 @@
 # Beta 35 mobile approval navigation
 
-This workstream corrects mobile navigation to a governed approval review. It
-does not change approval authority, challenge lifecycle, or decision handling.
+This document records the historical Beta 35 notification contract and its
+RC1 replacement. Neither contract changes approval authority, challenge
+lifecycle, or decision handling.
 
-## Canonical target and platform representations
+## Historical Beta 35 behavior
 
-Engineering constructs one local authenticated Ingress target:
+Beta 35 emitted one local Ingress target containing the exact plan ID:
 
 ```text
 /hassio/ingress/{verified_addon_slug}/plans/{plan_id}
 ```
 
-Every notification navigation value is derived from that target:
+Its notification navigation fields were derived from that target:
 
 - iOS `url`:
   `homeassistant://navigate/hassio/ingress/{verified_addon_slug}/plans/{plan_id}`
@@ -20,21 +21,30 @@ Every notification navigation value is derived from that target:
 - shared explicit `URI` action:
   `/hassio/ingress/{verified_addon_slug}/plans/{plan_id}`
 
-The Android wrapper follows the Companion notification contract for sending a
-specific deep link to another app. The nested Home Assistant URL follows the
-Companion URL-handler contract and enters its exported navigation path instead
-of relying on the notification's relative-path body launch behavior. The
-shared action deliberately uses the canonical relative frontend path: current
-Android and iOS Companion action handlers both resolve that form against the
-configured Home Assistant frontend. Android does not treat an unwrapped
-`homeassistant://navigate...` action URI as an external action target, so that
-scheme is not used for the shared button. No platform is inferred from the
-`notify.mobile_app_*` service name.
+This is immutable release history. Current Frontend app-panel routing and the
+deployed failure showed that the historical `/hassio/ingress/...` navigation
+target is no longer the correct notification entry point.
+
+## RC1 replacement
+
+RC1 emits one relative same-server target for the notification body, Android
+`clickAction`, and explicit URI action:
+
+```text
+/app/{verified_addon_slug}
+```
+
+The target opens the authenticated approval inbox. It deliberately omits the
+plan ID, external URL schemes, hostnames, Nabu Casa URLs, and Ingress session
+material. Android binds a relative notification path to the Home Assistant
+server that delivered the notification. Exact plan selection occurs only
+inside the authenticated approval panel.
 
 The installed add-on slug still comes only from verified Supervisor self-info.
-The plan identity is required to be the existing lower-case 32-character hex
-form. Invalid identity or navigation components fail before notification
-dispatch; no fallback or guessed identity is permitted.
+The plan identity remains required to be the existing lower-case 32-character
+hex form even though it is no longer carried in the notification URL. Invalid
+identity or navigation components fail before notification dispatch; no
+fallback or guessed identity is permitted.
 
 ## Authority and result semantics
 
@@ -49,13 +59,12 @@ clear without independently observable evidence.
 
 ## Live acceptance still required
 
-Source and deterministic tests prove exact target construction, platform payload
-derivation, authority exclusion, fail-closed identity handling, distinct plan
-identity, and notification-clear correlation. They cannot prove Companion app
-lifecycle behavior. After the corrective artifact is separately deployed,
-fresh unconsumed plans must exercise both notification body tap and action
-button with the app cold, backgrounded, and foregrounded on every supported
-platform. Android and iOS require independent six-case matrices. Success
-requires the exact plan review to load without manual refresh, stale navigation,
-or a duplicate navigation loop. iOS support remains unaccepted until all six
-iOS cases have actually been exercised on an iOS device.
+Source and deterministic tests prove exact target construction, authority
+exclusion, fail-closed identity handling, distinct notification tags, and
+notification-clear correlation. They cannot prove Companion app lifecycle
+behavior. After RC1 is separately deployed, a fresh unconsumed plan must
+exercise both notification body tap and **Open Approval Panel** on Android with
+the app backgrounded and cold. Success requires the authenticated approval
+inbox to load on the correct server without a 404, connection dialog, external
+browser, or manual refresh. iOS remains unverified until it is physically
+tested.
