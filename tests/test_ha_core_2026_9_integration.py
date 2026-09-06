@@ -363,6 +363,53 @@ class Core20269AuthorityTests(unittest.TestCase):
         self.assertNotIn("core.direct_entity_state_read", admitted)
         self.assertNotIn("core.dashboard_configuration_read", admitted)
 
+    def test_malformed_device_registry_withholds_dependency_planning_only(self):
+        registry = _fixture(DEVICE_FIXTURE)
+        evidence = capability_evidence_for_probes(
+            version="2026.9.1",
+            rest_config={"version": "2026.9.1"},
+            states=[
+                {
+                    "entity_id": "sensor.synthetic",
+                    "state": "ready",
+                    "attributes": {},
+                }
+            ],
+            services=[{"domain": "light", "services": {}}],
+            websocket_config={"version": "2026.9.1"},
+            websocket_results={
+                "areas": [{"area_id": "garage"}],
+                "floors": [{"floor_id": "ground"}],
+                "labels": [{"label_id": "synthetic"}],
+                "entities": registry["entities"],
+                "devices": [{"id": "malformed-device"}],
+                "dashboards": [{"url_path": "synthetic-dashboard"}],
+                "automation": {"id": "synthetic"},
+                "dashboard": {"views": []},
+            },
+        )
+        admitted = {item["capability_id"] for item in evidence}
+        self.assertNotIn("core.direct_device_registry_read", admitted)
+        self.assertNotIn("core.delegated_device_effective_area", admitted)
+        self.assertNotIn("core.dependency_helper_planning", admitted)
+        self.assertIn("core.basic_rest_read", admitted)
+        self.assertIn("core.basic_websocket_read", admitted)
+        self.assertIn("core.non_device_registry_read", admitted)
+        self.assertIn("core.template_semantics", admitted)
+
+        snapshot = _snapshot("2026.9.1", evidence=evidence)
+        result = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES).reconcile(
+            stable_observation(snapshot, deepcopy(snapshot)),
+            compiled_exact_authority("2026.9.1"),
+        )
+        planning = result.generation.decision_for(
+            "core.dependency_helper_planning"
+        )
+        ordinary = result.generation.decision_for("core.basic_rest_read")
+        self.assertFalse(planning.disposition.admitted)
+        self.assertEqual(planning.reason_code, "capability_evidence_missing")
+        self.assertTrue(ordinary.disposition.admitted)
+
 
 class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
     async def test_connection_monitor_authenticates_without_ha_command(self):

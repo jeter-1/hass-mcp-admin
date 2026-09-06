@@ -126,13 +126,14 @@ def capability_evidence_for_probes(
     legacy_device_shape = _bounded_sequence(device_records) and all(
         isinstance(item, Mapping) for item in device_records
     )
+    device_contract_complete = (
+        device_assessment.complete
+        if version in CORE_2026_9_VERSIONS
+        else legacy_device_shape
+    )
     add(
         "core.direct_device_registry_read",
-        (
-            device_assessment.complete
-            if version in CORE_2026_9_VERSIONS
-            else legacy_device_shape
-        ),
+        device_contract_complete,
         semantic=True,
     )
     # This is Core-side device evidence only.  For Core 2026.9, the delegated
@@ -140,11 +141,7 @@ def capability_evidence_for_probes(
     # implements child-device and effective-area semantics.
     add(
         "core.delegated_device_effective_area",
-        (
-            device_assessment.complete
-            if version in CORE_2026_9_VERSIONS
-            else legacy_device_shape
-        ),
+        device_contract_complete,
         semantic=True,
     )
     add("core.direct_entity_state_read", state_shape)
@@ -175,7 +172,7 @@ def capability_evidence_for_probes(
         add("core.configuration_validation", rest_ok, semantic=True)
         add(
             "core.dependency_helper_planning",
-            rest_ok and websocket_ok,
+            rest_ok and websocket_ok and device_contract_complete,
             semantic=True,
         )
         add("core.typed_helper_operation", state_shape, semantic=True)
