@@ -84,6 +84,9 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
 )
 from ha_mcp_engineering.trace_normalization import fetch_normalized_trace_list  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.device_registry import (  # noqa: E402
+    assess_device_registry,
+)
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
@@ -2435,6 +2438,7 @@ def _assert_device_contract(
     scenario: str,
     *,
     missing_key: str | None = None,
+    diagnostic: dict[str, object] | None = None,
 ) -> None:
     """Raise one bounded, stage-attributed device-contract assertion."""
 
@@ -2446,6 +2450,8 @@ def _assert_device_contract(
     setattr(error, "contract_scenario", scenario)
     if missing_key is not None:
         setattr(error, "contract_missing_key", missing_key)
+    if diagnostic is not None:
+        setattr(error, "contract_diagnostic", diagnostic)
     raise error
 
 
@@ -2958,10 +2964,21 @@ async def _run_core_2026_9_child_contract(
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.initialize(server)
         tools = registered_tools(server)
+        device_assessment = assess_device_registry(devices)
+        core_assessment = core_runtime.health_snapshot()
         _assert_device_contract(
             len(tools) == 25,
             "child_consumer_catalog",
             missing_key="delegated_tool_count",
+            diagnostic={
+                "registered_tool_count": len(tools),
+                "device_registry_complete": device_assessment.complete,
+                "device_registry_reason": device_assessment.reason_code,
+                "device_record_count": device_assessment.record_count,
+                "child_device_count": device_assessment.child_count,
+                "core_compatible_count": core_assessment["compatible_count"],
+                "core_withheld_count": core_assessment["withheld_count"],
+            },
         )
         _assert_device_contract(
             "ha_get_operation_status" not in tools,
