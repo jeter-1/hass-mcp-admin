@@ -1151,45 +1151,46 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         job = self.ci["jobs"]["real-ha-contract-tests"]
         self.assertFalse(job["strategy"]["fail-fast"])
         matrix = job["strategy"]["matrix"]["include"]
+        by_version = {item["ha_version"]: item for item in matrix}
         self.assertEqual(
-            matrix,
-            [
-                {
-                    "lane": "ha-2026-7-2",
-                    "ha_version": "2026.7.2",
-                    "ha_image": (
-                        "ghcr.io/home-assistant/home-assistant:2026.7.2@"
-                        "sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
-                    ),
-                },
-                {
-                    "lane": "ha-2026-8-0",
-                    "ha_version": "2026.8.0",
-                    "ha_image": (
-                        "ghcr.io/home-assistant/home-assistant:2026.8.0@"
-                        "sha256:a21689ef0510df9760ee11bab4d6b2fef3ed5c1a29ed9c3224271597a23729eb"
-                    ),
-                },
-                {
-                    "lane": "ha-2026-8-1",
-                    "ha_version": "2026.8.1",
-                    "ha_image": (
-                        "ghcr.io/home-assistant/home-assistant:2026.8.1@"
-                        "sha256:6340a3de3917a9b19368e767310a96dd090f6a19aca8aeadf87fd1145cec9682"
-                    ),
-                },
-            ],
+            set(by_version),
+            {"2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0", "2026.9.1"},
         )
+        self.assertEqual(
+            by_version["2026.9.0"]["ha_image"],
+            "ghcr.io/home-assistant/home-assistant:2026.9.0@"
+            "sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293",
+        )
+        self.assertEqual(
+            by_version["2026.9.1"]["ha_image"],
+            "ghcr.io/home-assistant/home-assistant:2026.9.1@"
+            "sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918",
+        )
+        for version in ("2026.7.2", "2026.8.0", "2026.8.1"):
+            self.assertEqual(by_version[version]["ha_mcp_version"], "8.2.0")
+            self.assertEqual(
+                by_version[version]["ha_mcp_source_commit"],
+                "098540ba22d495fdb1701daf830d54762350fd46",
+            )
+        for version in ("2026.9.0", "2026.9.1"):
+            self.assertEqual(by_version[version]["ha_mcp_version"], "8.4.3")
+            self.assertEqual(
+                by_version[version]["ha_mcp_source_commit"],
+                "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
+            )
+            self.assertEqual(
+                by_version[version]["ha_mcp_source_sha256"],
+                "4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc",
+            )
         self.assertEqual(job["env"]["HA_CONTRACT_VERSION"], "${{ matrix.ha_version }}")
         self.assertEqual(job["env"]["HA_CONTRACT_IMAGE"], "${{ matrix.ha_image }}")
-        self.assertEqual(
-            job["env"]["HA_FIXTURE_WRITER_IMAGE"], matrix[0]["ha_image"]
-        )
+        self.assertEqual(job["env"]["HA_FIXTURE_WRITER_IMAGE"], matrix[0]["ha_image"])
         self.assertEqual(
             job["env"]["REAL_HA_UPSTREAM_IMAGE"],
-            "ghcr.io/homeassistant-ai/ha-mcp:8.2.0@"
-            "sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1",
+            "${{ matrix.ha_mcp_image }}",
         )
+        self.assertEqual(job["env"]["REAL_HA_UPSTREAM_VERSION"], "${{ matrix.ha_mcp_version }}")
+        self.assertEqual(job["env"]["HA_CONTRACT_NETWORK"], "beta-rc2-contract-${{ matrix.lane }}")
         scripts = [
             str(step["run"])
             for step in job["steps"]
@@ -1208,15 +1209,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             == "Prepare exact source and disposable migration configuration"
         )
         startup_script = str(preparation["run"])
-        self.assertIn(
-            "https://codeload.github.com/homeassistant-ai/ha-mcp/"
-            "legacy.tar.gz/098540ba22d495fdb1701daf830d54762350fd46",
-            startup_script,
-        )
-        self.assertIn(
-            "945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff",
-            startup_script,
-        )
+        self.assertIn("legacy.tar.gz/$REAL_HA_UPSTREAM_SOURCE_COMMIT", startup_script)
+        self.assertIn("$REAL_HA_UPSTREAM_SOURCE_SHA256", startup_script)
         self.assertNotIn("tar.gz/refs/tags/v8.2.0", startup_script)
         self.assertIn(
             "script: !include scripts.yaml",
@@ -1228,6 +1222,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn("input_number: {}", startup_script)
         self.assertIn("beta23_device_fixture", startup_script)
         self.assertIn("custom_components/ha_mcp_tools", startup_script)
+        self.assertIn("docker network create --internal", startup_script)
         self.assertNotIn("runner.temp", str(job["env"]))
         self.assertIn('>> "$GITHUB_ENV"', startup_script)
         for variable in (
@@ -1256,7 +1251,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             if step.get("name")
             == "Start disposable exact target Home Assistant Core"
         )
-        self.assertIn("$HA_CONTRACT_IMAGE", str(target["run"]))
+        target_script = str(target["run"])
+        self.assertIn("$HA_CONTRACT_IMAGE", target_script)
+        self.assertIn("kitchen_sink:", target_script)
         cleanup = next(
             step
             for step in job["steps"]
@@ -1273,6 +1270,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             self.assertIn(f'"${container}"', cleanup_script)
         self.assertIn('rm -f "$REAL_HA_TOKEN_FILE"', cleanup_script)
         self.assertIn('sudo rm -rf "$REAL_HA_CONTRACT_DIR"', cleanup_script)
+        self.assertIn('docker network rm "$HA_CONTRACT_NETWORK"', cleanup_script)
         self.assertFalse(any(step.get("continue-on-error") for step in job["steps"]))
 
     def test_real_ha_device_fixture_is_a_normal_two_entry_switch_platform(self):
@@ -1362,6 +1360,32 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn('stored.get("version") == 1', http_source)
         self.assertIn('stored.get("version") == 2', http_source)
 
+    def test_core_2026_9_contract_uses_production_gateway_for_all_device_consumers(self):
+        runner = self.functions["_run_core_2026_9_child_contract"]
+        call_names = {call_name(call) for call in calls_under(runner)}
+        self.assertTrue(
+            {
+                "CoreRuntime",
+                "UpstreamReadGateway",
+                "registered_tools",
+                "load_reviewed_upstream_release_registry",
+            }.issubset(call_names)
+        )
+        source = ast.get_source_segment(self.source, runner) or ""
+        for tool_name in (
+            "ha_get_device",
+            "ha_get_overview",
+            "ha_search",
+            "ha_get_entity",
+            "ha_get_entity_exposure",
+        ):
+            self.assertIn(f'"{tool_name}"', source)
+        self.assertIn('"config/device_registry/update"', source)
+        self.assertIn('"config/area_registry/delete"', source)
+        self.assertIn('len(tools) == 25', source)
+        self.assertIn('"ha_get_operation_status" not in tools', source)
+        self.assertIn('metadata.get("fallback") == "none"', source)
+
     def test_response_adapter_is_bound_to_the_exact_reviewed_ha_release(self):
         expected_adapter = self.contract._expected_device_response_adapter
         adapter_ids = self.contract.HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION
@@ -1378,8 +1402,10 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                     adapter_id,
                 )
 
+        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.0"))
+        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.1"))
         with self.assertRaises(ValueError):
-            expected_adapter(home_assistant_version="2026.9.0")
+            expected_adapter(home_assistant_version="2026.9.2")
 
     def test_composite_device_contract_evidence_is_bounded_and_structural(self):
         project = self.contract._bounded_device_lookup_shape

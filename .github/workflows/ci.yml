@@ -148,7 +148,7 @@ jobs:
 
   real-ha-contract-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
@@ -156,24 +156,53 @@ jobs:
           - lane: ha-2026-7-2
             ha_version: "2026.7.2"
             ha_image: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+            ha_mcp_version: "8.2.0"
+            ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.2.0@sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1"
+            ha_mcp_source_commit: 098540ba22d495fdb1701daf830d54762350fd46
+            ha_mcp_source_sha256: 945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff
           - lane: ha-2026-8-0
             ha_version: "2026.8.0"
             ha_image: "ghcr.io/home-assistant/home-assistant:2026.8.0@sha256:a21689ef0510df9760ee11bab4d6b2fef3ed5c1a29ed9c3224271597a23729eb"
+            ha_mcp_version: "8.2.0"
+            ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.2.0@sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1"
+            ha_mcp_source_commit: 098540ba22d495fdb1701daf830d54762350fd46
+            ha_mcp_source_sha256: 945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff
           - lane: ha-2026-8-1
             ha_version: "2026.8.1"
             ha_image: "ghcr.io/home-assistant/home-assistant:2026.8.1@sha256:6340a3de3917a9b19368e767310a96dd090f6a19aca8aeadf87fd1145cec9682"
+            ha_mcp_version: "8.2.0"
+            ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.2.0@sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1"
+            ha_mcp_source_commit: 098540ba22d495fdb1701daf830d54762350fd46
+            ha_mcp_source_sha256: 945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff
+          - lane: ha-2026-9-0
+            ha_version: "2026.9.0"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.9.0@sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293"
+            ha_mcp_version: "8.4.3"
+            ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456"
+            ha_mcp_source_commit: eac7a3aa7063432e9af17e7d7726040e909c7b8f
+            ha_mcp_source_sha256: 4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc
+          - lane: ha-2026-9-1
+            ha_version: "2026.9.1"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.9.1@sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918"
+            ha_mcp_version: "8.4.3"
+            ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456"
+            ha_mcp_source_commit: eac7a3aa7063432e9af17e7d7726040e909c7b8f
+            ha_mcp_source_sha256: 4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc
     env:
       HA_CONTRACT_LANE: ${{ matrix.lane }}
       HA_CONTRACT_VERSION: ${{ matrix.ha_version }}
       HA_CONTRACT_IMAGE: ${{ matrix.ha_image }}
       HA_FIXTURE_WRITER_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
       REAL_HA_EXPECTED_VERSION: ${{ matrix.ha_version }}
-      REAL_HA_UPSTREAM_IMAGE: "ghcr.io/homeassistant-ai/ha-mcp:8.2.0@sha256:dbcfc0ee8ad02d2190ebde69e5cc6167175c79608bbf1d55cff9034e256face1"
-      REAL_HA_UPSTREAM_VERSION: "8.2.0"
+      REAL_HA_UPSTREAM_IMAGE: ${{ matrix.ha_mcp_image }}
+      REAL_HA_UPSTREAM_VERSION: ${{ matrix.ha_mcp_version }}
+      REAL_HA_UPSTREAM_SOURCE_COMMIT: ${{ matrix.ha_mcp_source_commit }}
+      REAL_HA_UPSTREAM_SOURCE_SHA256: ${{ matrix.ha_mcp_source_sha256 }}
       REAL_HA_UPSTREAM_CONTAINER: beta25-real-ha-upstream-${{ matrix.lane }}
       REAL_HA_UPSTREAM_PORT: "18086"
       HA_WRITER_CONTAINER: beta25-real-ha-writer-${{ matrix.lane }}
       HA_CONTRACT_CONTAINER: beta25-real-ha-${{ matrix.lane }}
+      HA_CONTRACT_NETWORK: beta-rc2-contract-${{ matrix.lane }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
@@ -187,8 +216,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source_archive="$RUNNER_TEMP/ha-mcp-v8.2.0-source.tar.gz"
-          source_parent="$RUNNER_TEMP/ha-mcp-v8.2.0-source"
+          source_archive="$RUNNER_TEMP/ha-mcp-source-$HA_CONTRACT_LANE.tar.gz"
+          source_parent="$RUNNER_TEMP/ha-mcp-source-$HA_CONTRACT_LANE"
           contract_dir="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE"
           device_fixture="$contract_dir/beta23-device-fixture.json"
           token_file="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE.token"
@@ -199,19 +228,21 @@ jobs:
           } >> "$GITHUB_ENV"
           mkdir -p "$source_parent" "$contract_dir/custom_components"
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
-            https://codeload.github.com/homeassistant-ai/ha-mcp/legacy.tar.gz/098540ba22d495fdb1701daf830d54762350fd46 \
+            "https://codeload.github.com/homeassistant-ai/ha-mcp/legacy.tar.gz/$REAL_HA_UPSTREAM_SOURCE_COMMIT" \
             --output "$source_archive"
           printf '%s  %s\n' \
-            945faf6eb7a10c9b687fd6c45f50b09d997d41f5549784f8835f2b29fda181ff \
+            "$REAL_HA_UPSTREAM_SOURCE_SHA256" \
             "$source_archive" | sha256sum --check --strict
           tar -xzf "$source_archive" -C "$source_parent"
           source_root="$(find "$source_parent" -mindepth 1 -maxdepth 1 -type d -print -quit)"
           test -n "$source_root"
           test "$(find "$source_parent" -mindepth 1 -maxdepth 1 -type d | wc -l)" = 1
-          printf 'HA_MCP_8_2_SOURCE_ROOT=%s\n' "$source_root" >> "$GITHUB_ENV"
-          python scripts/verify_ha_mcp_8_2_0_packaging.py \
-            --source-root "$source_root" \
-            --output "$RUNNER_TEMP/ha-mcp-8.2.0-packaging-$HA_CONTRACT_LANE.json"
+          printf 'HA_MCP_SOURCE_ROOT=%s\n' "$source_root" >> "$GITHUB_ENV"
+          if test "$REAL_HA_UPSTREAM_VERSION" = "8.2.0"; then
+            python scripts/verify_ha_mcp_8_2_0_packaging.py \
+              --source-root "$source_root" \
+              --output "$RUNNER_TEMP/ha-mcp-8.2.0-packaging-$HA_CONTRACT_LANE.json"
+          fi
           cp -R \
             tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture \
             "$contract_dir/custom_components/"
@@ -228,6 +259,7 @@ jobs:
             > "$contract_dir/configuration.yaml"
           : > "$contract_dir/automations.yaml"
           : > "$contract_dir/scripts.yaml"
+          docker network create --internal "$HA_CONTRACT_NETWORK"
       - name: Persist migration fixture with exact Home Assistant 2026.7.2
         shell: bash
         env:
@@ -235,7 +267,8 @@ jobs:
         run: |
           set -euo pipefail
           docker pull "$HA_FIXTURE_WRITER_IMAGE"
-          docker run -d --name "$HA_WRITER_CONTAINER" -p 18123:8123 \
+          docker run -d --name "$HA_WRITER_CONTAINER" \
+            --network "$HA_CONTRACT_NETWORK" -p 127.0.0.1:18123:8123 \
             -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_FIXTURE_WRITER_IMAGE"
           python scripts/real_ha_contract_tests.py --prepare-migration-fixture
           docker stop --time 30 "$HA_WRITER_CONTAINER"
@@ -244,29 +277,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$HA_CONTRACT_VERSION" == 2026.9.* ]]; then
+            printf '%s\n' 'kitchen_sink:' >> "$REAL_HA_CONTRACT_DIR/configuration.yaml"
+          fi
           docker pull "$HA_CONTRACT_IMAGE"
-          docker run -d --name "$HA_CONTRACT_CONTAINER" -p 8123:8123 \
+          docker run -d --name "$HA_CONTRACT_CONTAINER" \
+            --network "$HA_CONTRACT_NETWORK" -p 127.0.0.1:8123:8123 \
             -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_CONTRACT_IMAGE"
           echo "HA contract version: $HA_CONTRACT_VERSION"
           docker image inspect "$HA_CONTRACT_IMAGE" \
             --format='HA contract image digest: {{index .RepoDigests 0}}'
-      - name: Verify exact ha-mcp 8.2.0 packaging inside disposable Home Assistant
+      - name: Verify exact ha-mcp component inside disposable Home Assistant
         shell: bash
         run: |
           set -euo pipefail
-          source_root="$HA_MCP_8_2_SOURCE_ROOT"
+          source_root="$HA_MCP_SOURCE_ROOT"
           docker pull "$REAL_HA_UPSTREAM_IMAGE"
           docker cp "$source_root" \
-            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.2.0-source"
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-source"
           docker cp scripts/disposable_ha_websockets_probe.py \
             "$HA_CONTRACT_CONTAINER:/tmp/disposable_ha_websockets_probe.py"
           docker exec "$HA_CONTRACT_CONTAINER" python \
             /tmp/disposable_ha_websockets_probe.py \
-            --source-root /tmp/ha-mcp-8.2.0-source \
-            --output /tmp/ha-mcp-8.2.0-disposable-ha.json
+            --source-root /tmp/ha-mcp-source \
+            --output /tmp/ha-mcp-disposable-ha.json
           docker cp \
-            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-8.2.0-disposable-ha.json" \
-            "$RUNNER_TEMP/ha-mcp-8.2.0-disposable-$HA_CONTRACT_LANE.json"
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-disposable-ha.json" \
+            "$RUNNER_TEMP/ha-mcp-$REAL_HA_UPSTREAM_VERSION-disposable-$HA_CONTRACT_LANE.json"
       - name: Run real Home Assistant contracts
         env:
           REAL_HA_URL: http://127.0.0.1:8123
@@ -275,10 +312,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ha-mcp-8.2.0-disposable-${{ matrix.lane }}
+          name: ha-mcp-${{ matrix.ha_mcp_version }}-disposable-${{ matrix.lane }}
           path: |
             ${{ runner.temp }}/ha-mcp-8.2.0-packaging-${{ matrix.lane }}.json
-            ${{ runner.temp }}/ha-mcp-8.2.0-disposable-${{ matrix.lane }}.json
+            ${{ runner.temp }}/ha-mcp-${{ matrix.ha_mcp_version }}-disposable-${{ matrix.lane }}.json
           if-no-files-found: error
           retention-days: 14
       - name: Sanitize and remove disposable Home Assistant
@@ -290,6 +327,7 @@ jobs:
           docker rm -f "$HA_WRITER_CONTAINER" >/dev/null 2>&1 || true
           rm -f "$REAL_HA_TOKEN_FILE"
           sudo rm -rf "$REAL_HA_CONTRACT_DIR"
+          docker network rm "$HA_CONTRACT_NETWORK" >/dev/null 2>&1 || true
 
   prepare_exact_image_matrix:
     runs-on: ubuntu-latest

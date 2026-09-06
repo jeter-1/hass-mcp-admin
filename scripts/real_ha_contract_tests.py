@@ -21,6 +21,7 @@ from typing import Any
 import aiohttp
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from mcp.server.fastmcp import FastMCP
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +83,14 @@ from ha_mcp_engineering.request_context import (  # noqa: E402
     end_request,
 )
 from ha_mcp_engineering.trace_normalization import fetch_normalized_trace_list  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission import CoreRuntime  # noqa: E402
+from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
+    UpstreamReadGateway,
+)
+from ha_mcp_engineering.tools import registered_tools  # noqa: E402
+from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
+    load_reviewed_upstream_release_registry,
+)
 
 
 def _environment_path(name: str) -> Path | None:
@@ -106,6 +115,7 @@ HA_CONTRACT_CONTAINER = os.environ.get(
 )
 UPSTREAM_PORT = int(os.environ.get("REAL_HA_UPSTREAM_PORT", "18086"))
 UPSTREAM_SECRET_PATH = "/beta23-real-ha-mcp"
+CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1"})
 MIGRATION_AUTOMATION_ID = "beta23_composite_device_reference"
 FIXTURE_PLATFORM = "beta23_device_fixture"
 RESOURCE_ORDER = (
@@ -736,6 +746,11 @@ def settings(token: str) -> Settings:
         rate_limit_burst=25,
         destructive_services=frozenset(),
         ha_timeout_seconds=30,
+        upstream_dashboard_mcp_url=(
+            f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
+            if UPSTREAM_IMAGE
+            else ""
+        ),
     )
 
 
@@ -2215,7 +2230,7 @@ async def _assert_http_configuration_contract() -> None:
         assert stored.get("has_pending") is False
         assert stored.get("has_stable") is False
         return
-    assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"}
+    assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1", *CORE_2026_9_VERSIONS}
     assert stored.get("version") == 2
     assert stored.get("has_yaml_migration_done") is True
     assert stored.get("yaml_migration_done") is True
@@ -2270,6 +2285,19 @@ async def _start_exact_upstream(token: str) -> None:
 
     if not UPSTREAM_IMAGE:
         raise RuntimeError("The exact upstream image identity is required")
+    network = os.environ.get("HA_CONTRACT_NETWORK", "").strip()
+    upstream_home_assistant_url = HA_URL
+    upstream_host = "127.0.0.1"
+    network_arguments = ["--network", "host"]
+    if network:
+        upstream_home_assistant_url = f"http://{HA_CONTRACT_CONTAINER}:8123"
+        upstream_host = "0.0.0.0"
+        network_arguments = [
+            "--network",
+            network,
+            "--publish",
+            f"127.0.0.1:{UPSTREAM_PORT}:{UPSTREAM_PORT}",
+        ]
     with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
@@ -2278,9 +2306,9 @@ async def _start_exact_upstream(token: str) -> None:
         delete=False,
     ) as handle:
         environment_path = Path(handle.name)
-        handle.write(f"HOMEASSISTANT_URL={HA_URL}\n")
+        handle.write(f"HOMEASSISTANT_URL={upstream_home_assistant_url}\n")
         handle.write(f"HOMEASSISTANT_TOKEN={token}\n")
-        handle.write("MCP_HOST=127.0.0.1\n")
+        handle.write(f"MCP_HOST={upstream_host}\n")
         handle.write(f"MCP_PORT={UPSTREAM_PORT}\n")
         handle.write(f"MCP_SECRET_PATH={UPSTREAM_SECRET_PATH}\n")
         handle.write("HA_MCP_DISABLE_SETTINGS_UI=true\n")
@@ -2289,8 +2317,7 @@ async def _start_exact_upstream(token: str) -> None:
         await _docker_command(
             "run",
             "--detach",
-            "--network",
-            "host",
+            *network_arguments,
             "--name",
             UPSTREAM_CONTAINER,
             "--read-only",
@@ -2313,8 +2340,10 @@ async def _remove_exact_upstream() -> None:
     await _docker_command("rm", "-f", UPSTREAM_CONTAINER, allow_failure=True)
 
 
-async def _call_exact_upstream_get_device(device_id: str) -> dict[str, Any]:
-    """Call public ha_get_device by the pre-migration composite ID."""
+async def _call_exact_upstream_tool(
+    tool_name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Call one exact public ha-mcp tool through the disposable transport."""
 
     endpoint = f"http://127.0.0.1:{UPSTREAM_PORT}{UPSTREAM_SECRET_PATH}"
     for _ in range(60):
@@ -2329,14 +2358,35 @@ async def _call_exact_upstream_get_device(device_id: str) -> dict[str, Any]:
                     assert initialized.serverInfo.name == "ha-mcp"
                     assert initialized.serverInfo.version == UPSTREAM_VERSION
                     return _decode_tool_result(
-                        await session.call_tool(
-                            "ha_get_device",
-                            {"device_id": device_id},
-                        )
+                        await session.call_tool(tool_name, arguments)
                     )
         except Exception:
             await asyncio.sleep(1)
-    raise RuntimeError("Exact upstream ha_get_device did not become available")
+    raise RuntimeError("Exact upstream tool did not become available")
+
+
+async def _call_exact_upstream_get_device(device_id: str) -> dict[str, Any]:
+    """Call public ha_get_device by the pre-migration composite ID."""
+
+    return await _call_exact_upstream_tool(
+        "ha_get_device", {"device_id": device_id}
+    )
+
+
+def _contains_exact_projection(value: Any, expected: str) -> bool:
+    """Return whether one bounded decoded result contains an exact token."""
+
+    if value == expected:
+        return True
+    if isinstance(value, dict):
+        return any(
+            _contains_exact_projection(item, expected)
+            for pair in value.items()
+            for item in pair
+        )
+    if isinstance(value, list):
+        return any(_contains_exact_projection(item, expected) for item in value)
+    return False
 
 
 def _contains_exact_value(value: Any, key: str, expected: str) -> bool:
@@ -2354,6 +2404,10 @@ def _contains_exact_value(value: Any, key: str, expected: str) -> bool:
 _DEVICE_CONTRACT_SCENARIOS = frozenset(
     {
         "component_lookup",
+        "child_consumer",
+        "child_device_registry",
+        "child_effective_area",
+        "child_entity",
         "dependency_index",
         "direct_device_target",
         "impact_analysis",
@@ -2485,7 +2539,7 @@ def _expected_device_response_adapter(
 ) -> str | None:
     """Return the adapter reviewed for the exact Home Assistant release."""
 
-    if home_assistant_version == "2026.7.2":
+    if home_assistant_version == "2026.7.2" or home_assistant_version in CORE_2026_9_VERSIONS:
         return None
     try:
         return HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION[home_assistant_version]
@@ -2804,6 +2858,187 @@ async def _run_device_migration_contract(
     )
 
 
+async def _run_core_2026_9_child_contract(
+    websocket: HomeAssistantWebSocketClient,
+    token: str,
+) -> None:
+    """Prove exact 8.4.3 child-device reads on disposable Core 2026.9."""
+
+    _assert_device_contract(
+        EXPECTED_HA_VERSION in CORE_2026_9_VERSIONS,
+        "child_device_registry",
+    )
+    _assert_device_contract(UPSTREAM_VERSION == "8.4.3", "child_consumer")
+    devices = await websocket.command({"type": "config/device_registry/list"})
+    entities = await websocket.command({"type": "config/entity_registry/list"})
+    _assert_device_contract(isinstance(devices, list), "child_device_registry")
+    _assert_device_contract(isinstance(entities, list), "child_entity")
+    devices_by_id = {
+        item["id"]: item
+        for item in devices
+        if isinstance(item, dict) and isinstance(item.get("id"), str)
+    }
+    switch_entities_by_device: dict[str, list[str]] = {}
+    for item in entities:
+        if not isinstance(item, dict):
+            continue
+        device_id = item.get("device_id")
+        entity_id = item.get("entity_id")
+        if (
+            isinstance(device_id, str)
+            and isinstance(entity_id, str)
+            and entity_id.startswith("switch.")
+        ):
+            switch_entities_by_device.setdefault(device_id, []).append(entity_id)
+    candidates = sorted(
+        (
+            str(item["parent_device_id"]),
+            str(item["id"]),
+            sorted(switch_entities_by_device[str(item["id"])])[0],
+        )
+        for item in devices
+        if isinstance(item, dict)
+        and isinstance(item.get("id"), str)
+        and isinstance(item.get("parent_device_id"), str)
+        and item["parent_device_id"] in devices_by_id
+        and switch_entities_by_device.get(item["id"])
+    )
+    _assert_device_contract(bool(candidates), "child_device_registry")
+    parent_id, child_id, child_entity_id = candidates[0]
+    original_parent_area = devices_by_id[parent_id].get("area_id")
+    created_area_id: str | None = None
+    body_error: BaseException | None = None
+    restore_error: BaseException | None = None
+    try:
+        area_name = "RC2 Disposable Core Contract"
+        area = await websocket.command(
+            {
+                "type": "config/area_registry/create",
+                "name": area_name,
+            }
+        )
+        _assert_device_contract(isinstance(area, dict), "child_effective_area")
+        created_area_id = area.get("area_id")
+        _assert_device_contract(
+            isinstance(created_area_id, str) and bool(created_area_id),
+            "child_effective_area",
+        )
+        await websocket.command(
+            {
+                "type": "config/device_registry/update",
+                "device_id": parent_id,
+                "area_id": created_area_id,
+            }
+        )
+        await _start_exact_upstream(token)
+        configured = settings(token)
+        core_runtime = CoreRuntime()
+        core_runtime.configure(configured)
+        await core_runtime.reconcile_once("startup")
+        read_gateway = UpstreamReadGateway()
+        read_gateway.configure(
+            configured,
+            release_registry=load_reviewed_upstream_release_registry(),
+            core_runtime=core_runtime,
+        )
+        server = FastMCP("rc2-core-2026-9-disposable")
+        await read_gateway.initialize(server)
+        tools = registered_tools(server)
+        _assert_device_contract(len(tools) == 25, "child_consumer")
+        _assert_device_contract(
+            "ha_get_operation_status" not in tools,
+            "child_consumer",
+        )
+        calls = {
+            "ha_get_device": {"device_id": child_id},
+            "ha_get_overview": {
+                "detail_level": "full",
+                "domains": ["switch"],
+                "include_notifications": False,
+                "limit": 200,
+            },
+            "ha_search": {
+                "query": child_entity_id,
+                "domain_filter": "switch",
+                "exact_match": True,
+                "result_fields": ["entity_id", "area", "device_id"],
+                "limit": 20,
+            },
+            "ha_get_entity": {"entity_id": child_entity_id},
+            "ha_get_entity_exposure": {"entity_id": child_entity_id},
+        }
+        results: dict[str, dict[str, Any]] = {}
+        for name, arguments in calls.items():
+            tool = tools.get(name)
+            _assert_device_contract(tool is not None, "child_consumer")
+            assert tool is not None
+            encoded = json.loads(await tool.run(arguments))
+            _assert_device_contract(encoded.get("success") is True, "child_consumer")
+            metadata = encoded.get("metadata")
+            _assert_device_contract(
+                isinstance(metadata, dict)
+                and metadata.get("provider") == "upstream_read_gateway"
+                and metadata.get("upstream_version") == "8.4.3"
+                and metadata.get("fallback") == "none",
+                "child_consumer",
+            )
+            data = encoded.get("data")
+            _assert_device_contract(isinstance(data, dict), "child_consumer")
+            assert isinstance(data, dict)
+            results[name] = data
+        for name, result in results.items():
+            _assert_device_contract(
+                isinstance(result, dict)
+                and result.get("success") is True
+                and read_gateway.health_snapshot()["fallback_count"] == 0,
+                "child_consumer",
+            )
+            _assert_device_contract(
+                _contains_exact_projection(result, child_entity_id),
+                "child_entity",
+            )
+        device_result = results["ha_get_device"]
+        _assert_device_contract(
+            _contains_exact_projection(device_result, child_id),
+            "child_device_registry",
+        )
+        for name in ("ha_get_device", "ha_get_overview", "ha_search", "ha_get_entity"):
+            _assert_device_contract(
+                _contains_exact_projection(results[name], created_area_id)
+                or _contains_exact_projection(results[name], area_name),
+                "child_effective_area",
+            )
+    except BaseException as exc:
+        body_error = exc
+    finally:
+        try:
+            await websocket.command(
+                {
+                    "type": "config/device_registry/update",
+                    "device_id": parent_id,
+                    "area_id": original_parent_area,
+                }
+            )
+            if created_area_id is not None:
+                await websocket.command(
+                    {
+                        "type": "config/area_registry/delete",
+                        "area_id": created_area_id,
+                    }
+                )
+        except BaseException as exc:
+            restore_error = exc
+    if body_error is not None and restore_error is not None:
+        raise ExceptionGroup(
+            "Core child-device contract and restoration both failed",
+            [body_error, restore_error],
+        )
+    if body_error is not None:
+        raise body_error
+    if restore_error is not None:
+        raise restore_error
+
+
 async def _cleanup_configuration_resources(
     gateway: ConfigurationResourceGateway,
 ) -> None:
@@ -2853,8 +3088,12 @@ async def run_contracts() -> None:
         phase = "http_configuration_migration"
         await _assert_http_configuration_contract()
 
-        phase = "device_registry_migration_and_analysis"
-        await _run_device_migration_contract(rest, websocket, token)
+        if EXPECTED_HA_VERSION in CORE_2026_9_VERSIONS:
+            phase = "core_2026_9_child_device_semantics"
+            await _run_core_2026_9_child_contract(websocket, token)
+        else:
+            phase = "device_registry_migration_and_analysis"
+            await _run_device_migration_contract(rest, websocket, token)
 
         phase = "fresh_resource_preflight"
         for resource_type in RESOURCE_ORDER:
