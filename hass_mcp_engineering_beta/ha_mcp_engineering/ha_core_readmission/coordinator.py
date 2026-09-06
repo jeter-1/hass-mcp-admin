@@ -289,6 +289,16 @@ class CoreReadmissionCoordinator:
             self.begin_reconciliation(observation, authority)
         )
 
+    def retire_current_generation(self) -> int | None:
+        """Retire current authority before replacement evidence is collected."""
+
+        with self._lock:
+            generation = self._published
+            if generation is None:
+                return None
+            self._retire_locked(generation.generation)
+            return generation.generation
+
     def acquire_route(
         self,
         capability_id: str,

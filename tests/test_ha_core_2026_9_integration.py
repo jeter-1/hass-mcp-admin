@@ -12,6 +12,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from unittest.mock import patch
 
 from jsonschema import validate
 from mcp.server.fastmcp import FastMCP
@@ -364,6 +365,67 @@ class Core20269AuthorityTests(unittest.TestCase):
 
 
 class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_connection_monitor_authenticates_without_ha_command(self):
+        class LifecycleWebSocket:
+            def __init__(self):
+                self.responses = [
+                    {"type": "auth_required"},
+                    {"type": "auth_ok", "ha_version": "2026.9.1"},
+                ]
+                self.sent = []
+                self.receive_calls = 0
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def receive_json(self):
+                return self.responses.pop(0)
+
+            async def send_json(self, value):
+                self.sent.append(deepcopy(value))
+
+            async def receive(self):
+                self.receive_calls += 1
+                return object()
+
+        class LifecycleSession:
+            def __init__(self, websocket):
+                self.websocket = websocket
+                self.ws_connect_calls = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def ws_connect(self, url, **kwargs):
+                self.ws_connect_calls.append((url, kwargs))
+                return self.websocket
+
+        websocket = LifecycleWebSocket()
+        session = LifecycleSession(websocket)
+        configured = settings()
+        source = AiohttpCoreSnapshotSource(configured)
+        with patch(
+            "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+            return_value=session,
+        ):
+            await source.wait_for_connection_change("2026.9.1")
+
+        self.assertEqual(
+            websocket.sent,
+            [{"type": "auth", "access_token": configured.ha_token}],
+        )
+        self.assertEqual(websocket.receive_calls, 1)
+        self.assertEqual(len(session.ws_connect_calls), 1)
+        self.assertEqual(
+            session.ws_connect_calls[0][0], configured.websocket_url
+        )
+
     async def test_exact_missing_resources_prove_empty_installation_read_contracts(
         self,
     ):
@@ -828,6 +890,132 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
             runtime.acquire(("core.delegated_device_effective_area",))
         )
         self.assertIsNotNone(runtime.acquire(("core.template_semantics",)))
+
+    async def test_connection_monitor_retires_authority_before_reprobe(self):
+        class ConnectionLifecycleSource(_MutableSource):
+            def __init__(self, snapshot):
+                super().__init__(snapshot)
+                self.monitor_started = asyncio.Event()
+                self.connection_lost = asyncio.Event()
+                self.reprobe_started = asyncio.Event()
+                self.release_reprobe = asyncio.Event()
+                self.mark_calls = 0
+
+            async def wait_for_connection_change(self, expected_version):
+                self.assert_expected_version = expected_version
+                self.monitor_started.set()
+                await self.connection_lost.wait()
+                self.connection_lost.clear()
+
+            def mark_connection_changed(self):
+                self.mark_calls += 1
+
+            async def capture_core_snapshot(self):
+                self.calls += 1
+                if self.calls == 3:
+                    self.reprobe_started.set()
+                    await self.release_reprobe.wait()
+                return deepcopy(self.snapshot)
+
+        source = ConnectionLifecycleSource(
+            _snapshot("2026.8.1", evidence=_evidence())
+        )
+        runtime = CoreRuntime()
+        runtime.configure(object(), source=source)
+        await runtime.reconcile_once("startup")
+        old_authority = runtime.acquire(("core.basic_rest_read",))
+        self.assertIsNotNone(old_authority)
+        old_generation = runtime.health_snapshot()["current_generation"]
+
+        supervisor = asyncio.create_task(
+            runtime.supervise(interval_seconds=3_600)
+        )
+        try:
+            await asyncio.wait_for(source.monitor_started.wait(), timeout=1)
+            self.assertEqual(source.assert_expected_version, "2026.8.1")
+            source.snapshot = _core_2026_9_snapshot(
+                version="2026.9.1",
+                session_id="core-session-after-reconnect",
+            )
+            source.connection_lost.set()
+            await asyncio.wait_for(source.reprobe_started.wait(), timeout=1)
+
+            self.assertEqual(source.mark_calls, 1)
+            self.assertIsNone(runtime.consume(old_authority))
+            self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
+
+            source.release_reprobe.set()
+            for _ in range(20):
+                await asyncio.sleep(0)
+                observation = runtime.current_observation
+                if observation is not None and observation.version == "2026.9.1":
+                    break
+            observation = runtime.current_observation
+            self.assertIsNotNone(observation)
+            self.assertEqual(observation.version, "2026.9.1")
+            self.assertGreater(
+                runtime.health_snapshot()["current_generation"],
+                old_generation,
+            )
+            next_authority = runtime.acquire(("core.basic_rest_read",))
+            self.assertIsNotNone(next_authority)
+            self.assertTrue(runtime.release(next_authority))
+        finally:
+            supervisor.cancel()
+            await asyncio.gather(supervisor, return_exceptions=True)
+
+    async def test_connection_change_cannot_publish_inflight_old_snapshot(self):
+        class InflightSnapshotSource(_MutableSource):
+            def __init__(self, snapshot):
+                super().__init__(snapshot)
+                self.capture_started = asyncio.Event()
+                self.release_capture = asyncio.Event()
+
+            async def capture_core_snapshot(self):
+                self.calls += 1
+                captured = deepcopy(self.snapshot)
+                if self.calls == 3:
+                    self.capture_started.set()
+                    await self.release_capture.wait()
+                return captured
+
+        source = InflightSnapshotSource(
+            _snapshot("2026.8.1", evidence=_evidence())
+        )
+        runtime = CoreRuntime()
+        runtime.configure(object(), source=source)
+        await runtime.reconcile_once("startup")
+        old_authority = runtime.acquire(("core.basic_rest_read",))
+        self.assertIsNotNone(old_authority)
+
+        inflight = asyncio.create_task(runtime.reconcile_once("periodic"))
+        await asyncio.wait_for(source.capture_started.wait(), timeout=1)
+        runtime.request_reconciliation(connection_changed=True)
+        source.snapshot = _core_2026_9_snapshot(
+            version="2026.9.1",
+            session_id="core-session-after-stale-capture",
+        )
+        source.release_capture.set()
+        await asyncio.wait_for(inflight, timeout=1)
+
+        self.assertIsNone(runtime.consume(old_authority))
+        self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
+        self.assertIn(
+            {
+                "event_type": "core_reconciliation",
+                "reason_code": "core_connection_generation_stale",
+                "generation": None,
+            },
+            runtime.health_snapshot()["recent_events"],
+        )
+
+        await runtime.reconcile_once("identity_or_connection_change")
+        observation = runtime.current_observation
+        self.assertIsNotNone(observation)
+        self.assertEqual(observation.version, "2026.9.1")
+        replacement = runtime.acquire(("core.basic_rest_read",))
+        self.assertIsNotNone(replacement)
+        self.assertTrue(runtime.release(replacement))
 
     async def test_repeated_reconciliation_is_idempotent_and_redacted(self):
         runtime, source = await self._runtime(_core_2026_9_snapshot())

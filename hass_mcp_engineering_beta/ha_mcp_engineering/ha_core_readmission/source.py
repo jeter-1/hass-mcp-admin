@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import Mapping, Sequence
@@ -198,6 +199,61 @@ class AiohttpCoreSnapshotSource:
         """Retire the observer-session binding after a known connection event."""
 
         self._observer_session_id = uuid.uuid4().hex
+
+    async def wait_for_connection_change(self, expected_version: str) -> None:
+        """Wait for the authenticated Core lifecycle socket to move or close."""
+
+        if (
+            not isinstance(expected_version, str)
+            or not expected_version
+            or len(expected_version) > 64
+        ):
+            return
+        request_timeout = self._settings.ha_timeout_seconds
+        timeout = aiohttp.ClientTimeout(
+            total=None,
+            sock_connect=request_timeout,
+        )
+        websocket_timeout = aiohttp.ClientWSTimeout(
+            ws_receive=None,
+            ws_close=request_timeout,
+        )
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.ws_connect(
+                    self._settings.websocket_url,
+                    timeout=websocket_timeout,
+                    max_msg_size=MAX_CORE_PROBE_BYTES,
+                ) as websocket:
+                    required = await asyncio.wait_for(
+                        self._receive_mapping(websocket),
+                        timeout=request_timeout,
+                    )
+                    if required.get("type") != "auth_required":
+                        return
+                    await websocket.send_json(
+                        {
+                            "type": "auth",
+                            "access_token": self._settings.ha_token,
+                        }
+                    )
+                    auth = await asyncio.wait_for(
+                        self._receive_mapping(websocket),
+                        timeout=request_timeout,
+                    )
+                    if (
+                        auth.get("type") != "auth_ok"
+                        or auth.get("ha_version") != expected_version
+                    ):
+                        return
+                    # This connection subscribes to nothing and issues no HA
+                    # command. Any application frame, close, or transport
+                    # failure means the verified lifecycle binding moved.
+                    await websocket.receive()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            return
 
     async def _rest_json(
         self,

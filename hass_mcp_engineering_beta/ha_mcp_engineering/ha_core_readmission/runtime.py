@@ -52,6 +52,7 @@ class CoreRuntime:
             [str], tuple[CoreAuthoritySelection, ...]
         ] = compiled_exact_authority
         self._observation: CoreObservation | None = None
+        self._connection_epoch = 0
         self._initialized = False
         self._last_material_change_at: datetime | None = None
         self._listeners: list[Callable[[], None]] = []
@@ -101,6 +102,7 @@ class CoreRuntime:
             self._audit_sink = audit_sink
             self._coordinator = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
             self._observation = None
+            self._connection_epoch = 0
             self._initialized = False
             self._last_material_change_at = None
             self._listeners = []
@@ -131,9 +133,35 @@ class CoreRuntime:
 
     def request_reconciliation(self, *, connection_changed: bool = False) -> None:
         source = self._source
-        if connection_changed and hasattr(source, "mark_connection_changed"):
-            source.mark_connection_changed()  # type: ignore[attr-defined]
+        listeners: tuple[Callable[[], None], ...] = ()
+        if connection_changed:
+            with self._lock:
+                self._connection_epoch += 1
+                retired_generation = (
+                    self._coordinator.retire_current_generation()
+                )
+                self._observation = None
+                self._initialized = False
+                self._last_material_change_at = datetime.now(timezone.utc)
+                if retired_generation is not None:
+                    self._counters["retirements"] += 1
+                self._append_event_locked(
+                    "core_connection_changed",
+                    "core_connection_changed",
+                    retired_generation,
+                )
+                listeners = tuple(self._listeners)
+            marker = getattr(source, "mark_connection_changed", None)
+            if callable(marker):
+                try:
+                    marker()
+                except Exception:
+                    # Source lifecycle bookkeeping cannot preserve authority
+                    # after the connection itself has moved.
+                    pass
         self._reprobe_event.set()
+        for listener in listeners:
+            listener()
 
     async def reconcile_once(self, trigger: str = "periodic") -> dict[str, Any]:
         async with self._reconciliation_lock:
@@ -142,6 +170,7 @@ class CoreRuntime:
                 raise RuntimeError("Core readmission is not configured")
             with self._lock:
                 prior_observation = self._observation
+                connection_epoch = self._connection_epoch
                 self._counters["verification_attempts"] += 1
                 if trigger != "startup":
                     self._counters["reprobes"] += 1
@@ -153,6 +182,14 @@ class CoreRuntime:
             )
             now = datetime.now(timezone.utc)
             with self._lock:
+                if connection_epoch != self._connection_epoch:
+                    self._counters["verification_failures"] += 1
+                    self._append_event_locked(
+                        "core_reconciliation",
+                        "core_connection_generation_stale",
+                        None,
+                    )
+                    return self.health_snapshot()
                 # Publish the decision generation and its exact observation
                 # under one runtime lock.  Routes and health must never see a
                 # new generation paired with the prior observation.
@@ -229,16 +266,59 @@ class CoreRuntime:
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("Core reconciliation interval must be positive")
+        source = self._source
+        monitor = getattr(source, "wait_for_connection_change", None)
+        monitor_task = (
+            asyncio.create_task(
+                self._supervise_connection_changes(monitor),
+                name="home-assistant-core-connection-monitor",
+            )
+            if callable(monitor)
+            else None
+        )
+        try:
+            while True:
+                try:
+                    await asyncio.wait_for(
+                        self._reprobe_event.wait(), timeout=interval_seconds
+                    )
+                    self._reprobe_event.clear()
+                    trigger = "identity_or_connection_change"
+                except TimeoutError:
+                    trigger = "periodic"
+                await self.reconcile_once(trigger)
+        finally:
+            if monitor_task is not None:
+                monitor_task.cancel()
+                await asyncio.gather(monitor_task, return_exceptions=True)
+
+    async def _supervise_connection_changes(
+        self,
+        monitor: Callable[[str], Any],
+    ) -> None:
+        """Retire Core authority as soon as its authenticated socket moves."""
+
         while True:
+            with self._lock:
+                observation = self._observation
+            if (
+                observation is None
+                or not observation.connected
+                or not observation.authenticated
+                or not observation.stable
+            ):
+                await asyncio.sleep(0.1)
+                continue
             try:
-                await asyncio.wait_for(
-                    self._reprobe_event.wait(), timeout=interval_seconds
-                )
-                self._reprobe_event.clear()
-                trigger = "identity_or_connection_change"
-            except TimeoutError:
-                trigger = "periodic"
-            await self.reconcile_once(trigger)
+                await monitor(observation.version)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Exception text is not authority or public evidence. Failure
+                # to maintain the authenticated watcher is itself a lifecycle
+                # movement and therefore retires the current generation.
+                pass
+            self.request_reconciliation(connection_changed=True)
 
     def route_status(
         self,
