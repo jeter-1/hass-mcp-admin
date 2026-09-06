@@ -106,7 +106,14 @@ def _binding(version, status):
 class VersionAdmissionDecisionTests(unittest.TestCase):
     def test_registry_is_the_only_source_of_supported_versions(self):
         self.assertEqual(
-            ("2026.7.2", "2026.8.0", "2026.8.1"), SUPPORTED
+            (
+                "2026.7.2",
+                "2026.8.0",
+                "2026.8.1",
+                "2026.9.0",
+                "2026.9.1",
+            ),
+            SUPPORTED,
         )
 
     def test_every_supported_release_is_admitted(self):
@@ -121,7 +128,7 @@ class VersionAdmissionDecisionTests(unittest.TestCase):
 
     def test_negative_cases_are_distinguishable(self):
         cases = (
-            ("2026.9.0", "observed", VERSION_UNSUPPORTED_REASON),
+            ("2026.9.2", "observed", VERSION_UNSUPPORTED_REASON),
             ("2025.1.0", "observed", VERSION_UNSUPPORTED_REASON),
             (None, "unavailable", VERSION_UNAVAILABLE_REASON),
             (None, "unreadable", VERSION_UNREADABLE_REASON),
@@ -177,8 +184,20 @@ class VersionAdmissionBindingTests(unittest.TestCase):
             binding["coverage_failure_reason_codes"],
         )
 
+    def test_every_core_2026_9_release_has_exact_helper_authority(self):
+        for version in ("2026.9.0", "2026.9.1"):
+            with self.subTest(version=version):
+                binding = _binding(version, "observed")
+                self.assertTrue(binding["execution_contract_complete"])
+                self.assertTrue(binding["execution_eligible"])
+                self.assertTrue(binding["coverage_complete"])
+                self.assertTrue(binding["evidence_complete"])
+                self.assertEqual("exact", binding["semantic_precision"])
+                self.assertEqual([], binding["coverage_failure_reason_codes"])
+                self.assertEqual([], binding["execution_block_reason_codes"])
+
     def test_unsupported_release_is_not_execution_eligible(self):
-        binding = _binding("2026.9.0", "observed")
+        binding = _binding("2026.9.2", "observed")
         self.assertFalse(binding["execution_eligible"])
         self.assertFalse(binding["evidence_complete"])
         self.assertEqual("coverage_failure", binding["semantic_precision"])
@@ -236,10 +255,10 @@ class VersionAdmissionDisclosureTests(unittest.TestCase):
         )
 
     def test_unsupported_release_states_both_sides(self):
-        risk = self._assessment("2026.9.0", "observed")
+        risk = self._assessment("2026.9.2", "observed")
         self.assertFalse(risk.apply_allowed)
         text = " ".join(risk.reasons) + " " + " ".join(risk.warnings)
-        self.assertIn("2026.9.0", text)
+        self.assertIn("2026.9.2", text)
         for version in SUPPORTED:
             self.assertIn(version, text)
 
@@ -251,7 +270,7 @@ class VersionAdmissionDisclosureTests(unittest.TestCase):
 
     def test_refusal_never_implies_partial_execution(self):
         for version, status in (
-            ("2026.9.0", "observed"),
+            ("2026.9.2", "observed"),
             (None, "unavailable"),
             (None, "unreadable"),
         ):
@@ -272,13 +291,13 @@ class VersionAdmissionDisclosureTests(unittest.TestCase):
                     self.assertNotIn(forbidden, text)
 
     def test_risk_evidence_carries_the_observed_version(self):
-        risk = self._assessment("2026.9.0", "observed")
+        risk = self._assessment("2026.9.2", "observed")
         entry = next(
             item
             for item in risk.evidence
             if item.get("field") == "home_assistant_version"
         )
-        self.assertEqual("2026.9.0", entry["observed_version"])
+        self.assertEqual("2026.9.2", entry["observed_version"])
         self.assertFalse(entry["admitted"])
         self.assertEqual(list(SUPPORTED), entry["supported_versions"])
 
@@ -329,7 +348,7 @@ class VersionAdmissionProvenanceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(provenance["home_assistant_version_admitted"])
 
     async def test_provenance_records_a_refusal(self):
-        index = DependencyIndex(_VersionProvider("2026.9.0", "observed"))
+        index = DependencyIndex(_VersionProvider("2026.9.2", "observed"))
         evidence = await HelperDependencyRiskService(index).assess(
             ENTITY_ID, refresh=True
         )
@@ -341,7 +360,7 @@ class VersionAdmissionProvenanceTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_fenced_preflight_read_carries_the_gate(self):
         # R2's fence governs freshness of the version too, because the
         # version is read as part of the scan the fence admits.
-        index = DependencyIndex(_VersionProvider("2026.9.0", "observed"))
+        index = DependencyIndex(_VersionProvider("2026.9.2", "observed"))
         evidence = await HelperDependencyRiskService(index).assess(
             ENTITY_ID, refresh=True, fenced=True
         )

@@ -27,6 +27,11 @@ dashboard writes retain exact capability authority. Unknown releases,
 malformed or unstable observations, adapter/identity drift, stale plans, and
 unbounded evidence remain fail-closed.
 
+Core 2026.9 helper and dependency authority is now bound to exact official
+template source blobs, including the `states.py` implementation used by the
+reviewed globals and State-object semantics. Its generated registry is
+byte-deterministic and remains fail-closed for any unlisted Core release.
+
 The current Core 2026.8.1 plus ha-mcp 8.4.3 combination is unchanged: 51
 Engineering-native tools, 25 delegated reads, and 76 total client-visible
 tools. `ha_get_operation_status` remains the only held read, task schema remains

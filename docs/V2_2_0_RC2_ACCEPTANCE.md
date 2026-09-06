@@ -26,6 +26,11 @@ correction.
 
 The complete source, archive, architecture-manifest, and reviewed-file evidence
 is in `tests/fixtures/ha_core_2026_9_authority.json`.
+The dependency analyzer separately binds the exact Core template sources,
+including `homeassistant/helpers/template/states.py`, through semantic-registry
+fingerprint `857e344b0f14ee3088e641ff3b1fd10657b9d1266dda54a1707025de18d5dcdc`.
+Those source blobs were captured from the official immutable 2026.9.0 and
+2026.9.1 tags and locally reverified before deterministic registry generation.
 
 ## Functional acceptance
 

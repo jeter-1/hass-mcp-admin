@@ -16,7 +16,7 @@ SEMANTIC_REGISTRY_FILE = Path(__file__).with_name(
 )
 SEMANTIC_REGISTRY_MODEL = "home-assistant-template-semantic-registry-v1"
 EXPECTED_SEMANTIC_REGISTRY_SHA256 = (
-    "49ad6f56f04371d6ae8fef7c9108e50e1b179d8caf180451dfe3a7a54902f0c1"
+    "857e344b0f14ee3088e641ff3b1fd10657b9d1266dda54a1707025de18d5dcdc"
 )
 SEMANTIC_REGISTRY_CATEGORIES = frozenset(
     {
@@ -43,6 +43,16 @@ SUPPORTED_HOME_ASSISTANT_TEMPLATE_SOURCES = (
         "2026.8.1",
         "53998d7710b4ac280658511c24a2a3e2651f9873",
         "sha256:6340a3de3917a9b19368e767310a96dd090f6a19aca8aeadf87fd1145cec9682",
+    ),
+    (
+        "2026.9.0",
+        "dfb5a9e690daaf204b542896e4b595e61a11a401",
+        "sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293",
+    ),
+    (
+        "2026.9.1",
+        "fc034572d0216a04ed40a07154394908a594dfed",
+        "sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918",
     ),
 )
 _REQUIRED_STATE_GLOBALS = frozenset(
