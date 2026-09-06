@@ -44,6 +44,7 @@ from ha_mcp_engineering.ha_core_readmission.device_registry import (  # noqa: E4
     MAX_DEVICE_RECORDS,
 )
 from ha_mcp_engineering.ha_core_readmission.source import (  # noqa: E402
+    AUTOMATION_CONTRACT_PROBE_ENTITY_ID,
     AiohttpCoreSnapshotSource,
     capability_evidence_for_probes,
 )
@@ -349,6 +350,144 @@ class Core20269AuthorityTests(unittest.TestCase):
 
 
 class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exact_missing_resources_prove_empty_installation_read_contracts(
+        self,
+    ):
+        source = AiohttpCoreSnapshotSource(object())
+        automation_websocket = _SyntheticWebSocket(
+            {
+                "id": 9,
+                "type": "result",
+                "success": False,
+                "error": {"code": "not_found", "message": "Entity not found"},
+            }
+        )
+        dashboard_websocket = _SyntheticWebSocket(
+            {
+                "id": 8,
+                "type": "result",
+                "success": False,
+                "error": {
+                    "code": "config_not_found",
+                    "message": "Unknown config specified: None",
+                },
+            }
+        )
+
+        automation = await source._command(
+            automation_websocket,
+            9,
+            "automation/config",
+            {"entity_id": AUTOMATION_CONTRACT_PROBE_ENTITY_ID},
+            expected_errors=(("not_found", "Entity not found"),),
+        )
+        dashboard = await source._command(
+            dashboard_websocket,
+            8,
+            "lovelace/config",
+            expected_errors=(
+                ("config_not_found", "Unknown config specified: None"),
+                ("config_not_found", "No config found."),
+            ),
+        )
+        evidence = capability_evidence_for_probes(
+            version="2026.9.1",
+            rest_config={"version": "2026.9.1"},
+            states=[],
+            services=[],
+            websocket_config={"version": "2026.9.1"},
+            websocket_results={
+                "areas": [],
+                "floors": [],
+                "labels": [],
+                "entities": [],
+                "devices": [],
+                "dashboards": [],
+                "automation": automation,
+                "dashboard": dashboard,
+            },
+        )
+        admitted = {item["capability_id"] for item in evidence}
+
+        self.assertIn("core.automation_configuration_read", admitted)
+        self.assertIn("core.dashboard_configuration_read", admitted)
+        self.assertEqual(
+            automation_websocket.sent,
+            [
+                {
+                    "id": 9,
+                    "type": "automation/config",
+                    "entity_id": AUTOMATION_CONTRACT_PROBE_ENTITY_ID,
+                }
+            ],
+        )
+        self.assertEqual(
+            dashboard_websocket.sent,
+            [{"id": 8, "type": "lovelace/config"}],
+        )
+        source_snapshot = _snapshot("2026.9.1", evidence=evidence)
+        runtime_source = _MutableSource(source_snapshot)
+        runtime = CoreRuntime()
+        runtime.configure(object(), source=runtime_source)
+        await runtime.reconcile_once("startup")
+        for tool_name in (
+            "list_automations",
+            "get_automation_config",
+            "list_dashboards",
+            "get_dashboard_config",
+            "create_dashboard_update_plan",
+        ):
+            with self.subTest(tool_name=tool_name):
+                authority = runtime.acquire(static_tool_requirements(tool_name))
+                self.assertIsNotNone(authority)
+                self.assertTrue(runtime.release(authority))
+
+    async def test_unexpected_missing_resource_envelopes_remain_withheld(self):
+        source = AiohttpCoreSnapshotSource(object())
+        malformed = (
+            {
+                "id": 9,
+                "type": "result",
+                "success": False,
+                "error": {"code": "unknown", "message": "Entity not found"},
+            },
+            {
+                "id": 9,
+                "type": "result",
+                "success": False,
+                "error": {"code": "not_found", "message": "Changed message"},
+            },
+            {
+                "id": 9,
+                "type": "result",
+                "success": False,
+                "error": {
+                    "code": "not_found",
+                    "message": "Entity not found",
+                    "extra": True,
+                },
+            },
+            {
+                "id": 9,
+                "type": "result",
+                "success": False,
+                "error": {"code": "not_found", "message": "Entity not found"},
+                "extra": True,
+            },
+        )
+        for response in malformed:
+            with self.subTest(response=response):
+                with self.assertRaisesRegex(
+                    RuntimeError, "core_probe_command_failed"
+                ):
+                    await source._command(
+                        _SyntheticWebSocket(response),
+                        9,
+                        "automation/config",
+                        {"entity_id": AUTOMATION_CONTRACT_PROBE_ENTITY_ID},
+                        expected_errors=(("not_found", "Entity not found"),),
+                    )
+
     async def test_unexpected_websocket_frame_fails_without_unbounded_skip(self):
         websocket = _SyntheticWebSocket(
             {"id": 99, "type": "result", "success": True, "result": {}}

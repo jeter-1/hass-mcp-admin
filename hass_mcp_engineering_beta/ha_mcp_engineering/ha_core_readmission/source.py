@@ -18,6 +18,15 @@ from .profiles import CORE_CAPABILITY_PROFILES
 MAX_CORE_PROBE_BYTES = 4_000_000
 MAX_CORE_PROBE_ITEMS = 20_000
 CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1"})
+AUTOMATION_CONTRACT_PROBE_ENTITY_ID = (
+    "automation.ha_mcp_engineering_contract_probe_0000000000000000"
+)
+_EXPECTED_PROBE_ERROR_FIELD = "_ha_mcp_engineering_expected_probe_error"
+_AUTOMATION_NOT_FOUND_ERRORS = (("not_found", "Entity not found"),)
+_DASHBOARD_NOT_FOUND_ERRORS = (
+    ("config_not_found", "Unknown config specified: None"),
+    ("config_not_found", "No config found."),
+)
 
 
 def _profile(capability_id: str):
@@ -227,6 +236,8 @@ class AiohttpCoreSnapshotSource:
         command_id: int,
         command_type: str,
         arguments: Mapping[str, Any] | None = None,
+        *,
+        expected_errors: tuple[tuple[str, str], ...] = (),
     ) -> Any:
         await websocket.send_json(
             {
@@ -239,11 +250,21 @@ class AiohttpCoreSnapshotSource:
         # flight.  An unrelated or duplicate frame is therefore malformed
         # evidence, not something to skip in an unbounded receive loop.
         message = await self._receive_mapping(websocket)
-        if (
-            message.get("id") != command_id
-            or message.get("type") != "result"
-            or message.get("success") is not True
-        ):
+        if message.get("id") != command_id or message.get("type") != "result":
+            raise RuntimeError("core_probe_command_failed")
+        if message.get("success") is False:
+            error = message.get("error")
+            if (
+                expected_errors
+                and set(message) == {"id", "type", "success", "error"}
+                and _bounded_mapping(error)
+                and set(error) == {"code", "message"}
+                and (error.get("code"), error.get("message")) in expected_errors
+            ):
+                json.dumps(error, allow_nan=False)
+                return {_EXPECTED_PROBE_ERROR_FIELD: error["code"]}
+            raise RuntimeError("core_probe_command_failed")
+        if message.get("success") is not True:
             raise RuntimeError("core_probe_command_failed")
         result = message.get("result")
         json.dumps(result, allow_nan=False)
@@ -284,7 +305,6 @@ class AiohttpCoreSnapshotSource:
                     (5, "entities", "config/entity_registry/list"),
                     (6, "devices", "config/device_registry/list"),
                     (7, "dashboards", "lovelace/dashboards/list"),
-                    (8, "dashboard", "lovelace/config"),
                 )
                 results: dict[str, Any] = {}
                 for command_id, name, command_type in commands:
@@ -294,6 +314,20 @@ class AiohttpCoreSnapshotSource:
                         )
                     except RuntimeError:
                         results[name] = None
+                try:
+                    # Core 2026.7.2 through 2026.9.1 use these exact
+                    # config_not_found envelopes when the default Lovelace
+                    # dashboard exists without stored configuration or no
+                    # default dashboard is configured.  That is affirmative
+                    # endpoint-contract evidence, not a malformed response.
+                    results["dashboard"] = await self._command(
+                        websocket,
+                        8,
+                        "lovelace/config",
+                        expected_errors=_DASHBOARD_NOT_FOUND_ERRORS,
+                    )
+                except RuntimeError:
+                    results["dashboard"] = None
                 automation_entity_id = next(
                     (
                         item.get("entity_id")
@@ -302,19 +336,21 @@ class AiohttpCoreSnapshotSource:
                         and isinstance(item.get("entity_id"), str)
                         and item["entity_id"].startswith("automation.")
                     ),
-                    None,
+                    AUTOMATION_CONTRACT_PROBE_ENTITY_ID,
                 )
-                if automation_entity_id is not None:
-                    try:
-                        results["automation"] = await self._command(
-                            websocket,
-                            9,
-                            "automation/config",
-                            {"entity_id": automation_entity_id},
-                        )
-                    except RuntimeError:
-                        results["automation"] = None
-                else:
+                try:
+                    # Absence of a sample automation must not be confused
+                    # with absence of the automation/config contract.  The
+                    # fixed missing entity produces the exact source-reviewed
+                    # not_found envelope on every supported Core release.
+                    results["automation"] = await self._command(
+                        websocket,
+                        9,
+                        "automation/config",
+                        {"entity_id": automation_entity_id},
+                        expected_errors=_AUTOMATION_NOT_FOUND_ERRORS,
+                    )
+                except RuntimeError:
                     results["automation"] = None
 
         version = rest_config.get("version") if isinstance(rest_config, Mapping) else None
