@@ -49,6 +49,7 @@ from ha_mcp_engineering.ha_core_readmission.source import (  # noqa: E402
 from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     AdapterCapabilityDescriptor,
 )
+from ha_mcp_engineering.health import HealthRegistry  # noqa: E402
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     _CoreDispatchAuthorityGuard,
     _CoreVerificationAdapter,
@@ -685,6 +686,33 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("core-session-2026-9", encoded)
         self.assertNotIn("sensor.synthetic", encoded)
         self.assertNotIn("garage", encoded)
+
+    async def test_public_health_uses_bounded_core_projection(self):
+        runtime, _source = await self._runtime(_core_2026_9_snapshot())
+        projection = runtime.health_projection()
+        encoded = json.dumps(projection, sort_keys=True)
+
+        self.assertLessEqual(len(encoded.encode("utf-8")), 4_096)
+        self.assertEqual(projection["compatible_count"], len(CORE_CAPABILITY_PROFILES))
+        self.assertEqual(projection["fallback_count"], 0)
+        self.assertNotIn("authority_profiles", projection)
+        self.assertNotIn("compatible_capabilities", projection)
+        self.assertNotIn("recent_events", projection)
+        self.assertNotIn("core-session-2026-9", encoded)
+        self.assertNotIn("sensor.synthetic", encoded)
+        self.assertNotIn("garage", encoded)
+
+        class ProjectionOnlyCore:
+            def health_projection(self) -> dict:
+                return projection
+
+            def health_snapshot(self) -> dict:
+                raise AssertionError("public health must not expose the full snapshot")
+
+        health = HealthRegistry(core_readmission=ProjectionOnlyCore()).snapshot(
+            {"checked": False, "status": "not_checked"}
+        )
+        self.assertEqual(health["home_assistant_core_authority"], projection)
 
     async def test_material_reconciliation_audit_is_bounded_and_redacted(self):
         source = _MutableSource(_core_2026_9_snapshot())

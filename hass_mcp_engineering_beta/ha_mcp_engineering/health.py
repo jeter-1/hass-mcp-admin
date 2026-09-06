@@ -152,7 +152,7 @@ class HealthRegistry:
                 }
             ),
             "home_assistant_core_authority": (
-                self.core_readmission.health_snapshot()
+                self.core_readmission.health_projection()
                 if self.core_readmission
                 else {
                     "configured": False,

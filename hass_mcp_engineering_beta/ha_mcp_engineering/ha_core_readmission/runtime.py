@@ -523,6 +523,27 @@ class CoreRuntime:
             canonical_json(projection, maximum=MAX_REPORT_BYTES)
             return projection
 
+    def health_projection(self) -> dict[str, Any]:
+        """Return the bounded Core authority summary used by public health."""
+
+        with self._lock:
+            projection = {
+                **self._coordinator.health_projection(),
+                "configured": self._configured,
+                "initialized": self._initialized,
+                "observed_core_version": (
+                    self._observation.version if self._observation else None
+                ),
+                "identity_agreement": bool(
+                    self._observation and self._observation.identity_agrees
+                ),
+                "counters": dict(self._counters),
+                "recent_event_count": len(self._events),
+                "fallback_count": 0,
+            }
+            canonical_json(projection, maximum=MAX_REPORT_BYTES)
+            return projection
+
 
 CORE_READMISSION = CoreRuntime()
 
