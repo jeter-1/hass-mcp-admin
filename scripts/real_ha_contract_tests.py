@@ -2404,7 +2404,12 @@ def _contains_exact_value(value: Any, key: str, expected: str) -> bool:
 _DEVICE_CONTRACT_SCENARIOS = frozenset(
     {
         "component_lookup",
-        "child_consumer",
+        "child_consumer_catalog",
+        "child_consumer_ha_get_device",
+        "child_consumer_ha_get_entity",
+        "child_consumer_ha_get_entity_exposure",
+        "child_consumer_ha_get_overview",
+        "child_consumer_ha_search",
         "child_device_registry",
         "child_effective_area",
         "child_entity",
@@ -2425,7 +2430,12 @@ _DEVICE_CONTRACT_SCENARIOS = frozenset(
 )
 
 
-def _assert_device_contract(condition: bool, scenario: str) -> None:
+def _assert_device_contract(
+    condition: bool,
+    scenario: str,
+    *,
+    missing_key: str | None = None,
+) -> None:
     """Raise one bounded, stage-attributed device-contract assertion."""
 
     if scenario not in _DEVICE_CONTRACT_SCENARIOS:
@@ -2434,6 +2444,8 @@ def _assert_device_contract(condition: bool, scenario: str) -> None:
         return
     error = AssertionError()
     setattr(error, "contract_scenario", scenario)
+    if missing_key is not None:
+        setattr(error, "contract_missing_key", missing_key)
     raise error
 
 
@@ -2868,7 +2880,9 @@ async def _run_core_2026_9_child_contract(
         EXPECTED_HA_VERSION in CORE_2026_9_VERSIONS,
         "child_device_registry",
     )
-    _assert_device_contract(UPSTREAM_VERSION == "8.4.3", "child_consumer")
+    _assert_device_contract(
+        UPSTREAM_VERSION == "8.4.3", "child_consumer_catalog"
+    )
     devices = await websocket.command({"type": "config/device_registry/list"})
     entities = await websocket.command({"type": "config/entity_registry/list"})
     _assert_device_contract(isinstance(devices, list), "child_device_registry")
@@ -2944,10 +2958,15 @@ async def _run_core_2026_9_child_contract(
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.initialize(server)
         tools = registered_tools(server)
-        _assert_device_contract(len(tools) == 25, "child_consumer")
+        _assert_device_contract(
+            len(tools) == 25,
+            "child_consumer_catalog",
+            missing_key="delegated_tool_count",
+        )
         _assert_device_contract(
             "ha_get_operation_status" not in tools,
-            "child_consumer",
+            "child_consumer_catalog",
+            missing_key="held_tool_absence",
         )
         calls = {
             "ha_get_device": {"device_id": child_id},
@@ -2969,29 +2988,48 @@ async def _run_core_2026_9_child_contract(
         }
         results: dict[str, dict[str, Any]] = {}
         for name, arguments in calls.items():
+            consumer_scenario = f"child_consumer_{name}"
             tool = tools.get(name)
-            _assert_device_contract(tool is not None, "child_consumer")
+            _assert_device_contract(
+                tool is not None,
+                consumer_scenario,
+                missing_key="registration",
+            )
             assert tool is not None
             encoded = json.loads(await tool.run(arguments))
-            _assert_device_contract(encoded.get("success") is True, "child_consumer")
+            _assert_device_contract(
+                encoded.get("success") is True,
+                consumer_scenario,
+                missing_key="engineering_envelope_success",
+            )
             metadata = encoded.get("metadata")
             _assert_device_contract(
                 isinstance(metadata, dict)
                 and metadata.get("provider") == "upstream_read_gateway"
                 and metadata.get("upstream_version") == "8.4.3"
                 and metadata.get("fallback") == "none",
-                "child_consumer",
+                consumer_scenario,
+                missing_key="engineering_metadata",
             )
             data = encoded.get("data")
-            _assert_device_contract(isinstance(data, dict), "child_consumer")
+            _assert_device_contract(
+                isinstance(data, dict),
+                consumer_scenario,
+                missing_key="upstream_data_mapping",
+            )
             assert isinstance(data, dict)
             results[name] = data
         for name, result in results.items():
+            consumer_scenario = f"child_consumer_{name}"
             _assert_device_contract(
-                isinstance(result, dict)
-                and result.get("success") is True
-                and read_gateway.health_snapshot()["fallback_count"] == 0,
-                "child_consumer",
+                isinstance(result, dict) and result.get("success") is True,
+                consumer_scenario,
+                missing_key="upstream_success",
+            )
+            _assert_device_contract(
+                read_gateway.health_snapshot()["fallback_count"] == 0,
+                consumer_scenario,
+                missing_key="zero_fallback",
             )
             _assert_device_contract(
                 _contains_exact_projection(result, child_entity_id),
