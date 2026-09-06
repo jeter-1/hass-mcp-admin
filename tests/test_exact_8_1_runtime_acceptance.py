@@ -18,6 +18,13 @@ ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
+from ha_mcp_engineering.ha_core_readmission.profiles import (  # noqa: E402
+    CORE_CAPABILITY_PROFILES,
+)
+from ha_mcp_engineering.ha_core_readmission.source import (  # noqa: E402
+    capability_evidence_for_probes,
+)
+
 
 def _load_script(name: str):
     path = ROOT / "scripts" / f"{name}.py"
@@ -315,6 +322,50 @@ class ExactAddonProfileTests(unittest.TestCase):
         self.assertEqual(
             fixture._result_for("get_config", {}),
             {"version": "2026.7.2"},
+        )
+        self.assertEqual(
+            fixture._result_for(
+                "automation/config",
+                {"entity_id": "automation.gateway_fixture"},
+            ),
+            fixture.AUTOMATION,
+        )
+        self.assertIsNone(
+            fixture._result_for(
+                "automation/config",
+                {"entity_id": "automation.unreviewed"},
+            )
+        )
+        rest_services = fixture._rest_services_result()
+        self.assertEqual(
+            [item["domain"] for item in rest_services],
+            sorted(fixture.SERVICES),
+        )
+        self.assertTrue(
+            all(set(item) == {"domain", "services"} for item in rest_services)
+        )
+
+    def test_core_fixture_satisfies_every_compiled_2026_7_2_read_profile(self):
+        evidence = capability_evidence_for_probes(
+            version="2026.7.2",
+            rest_config={"version": "2026.7.2"},
+            states=fixture.STATES,
+            services=fixture._rest_services_result(),
+            websocket_config=fixture._result_for("get_config", {}),
+            websocket_results={
+                "areas": fixture.AREAS,
+                "floors": [],
+                "labels": [],
+                "entities": fixture.ENTITY_REGISTRY,
+                "devices": fixture.DEVICE_REGISTRY,
+                "dashboards": fixture.DASHBOARDS,
+                "dashboard": fixture.DASHBOARD_CONFIG,
+                "automation": fixture.AUTOMATION,
+            },
+        )
+        self.assertEqual(
+            {item["capability_id"] for item in evidence},
+            {item.capability_id for item in CORE_CAPABILITY_PROFILES},
         )
 
     def test_hacs_fixture_exposes_source_derived_read_inputs_only(self):

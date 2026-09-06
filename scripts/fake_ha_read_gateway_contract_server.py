@@ -630,9 +630,18 @@ async def api_history(request: web.Request) -> web.Response:
     return web.json_response([rows])
 
 
+def _rest_services_result() -> list[dict[str, Any]]:
+    """Return Core's REST list shape without changing WebSocket service reads."""
+
+    return [
+        {"domain": domain, "services": services}
+        for domain, services in sorted(SERVICES.items())
+    ]
+
+
 async def api_services(_request: web.Request) -> web.Response:
     STATE.rest_reads["/api/services"] += 1
-    return web.json_response(SERVICES)
+    return web.json_response(_rest_services_result())
 
 
 async def api_automation(request: web.Request) -> web.Response:
@@ -670,6 +679,10 @@ async def fixture_stats(_request: web.Request) -> web.Response:
 def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
     if message_type == "get_config":
         return {"version": "2026.7.2"}
+    if message_type == "automation/config":
+        if request_data.get("entity_id") == "automation.gateway_fixture":
+            return AUTOMATION
+        return None
     if message_type == "hacs/info":
         return {"version": "2.0.5"}
     if message_type == "hacs/repositories/list":
