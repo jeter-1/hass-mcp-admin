@@ -2314,6 +2314,11 @@ async def _start_exact_upstream(token: str) -> None:
         handle.write(f"MCP_HOST={upstream_host}\n")
         handle.write(f"MCP_PORT={UPSTREAM_PORT}\n")
         handle.write(f"MCP_SECRET_PATH={UPSTREAM_SECRET_PATH}\n")
+        # Exact ha-mcp 8.4.3 exposes this fixed, unauthenticated liveness
+        # route only when explicitly enabled.  The disposable contract uses
+        # it to separate container startup from MCP catalog admission without
+        # issuing an upstream tool request or learning the secret path.
+        handle.write("MCP_HEALTHZ=true\n")
         handle.write("HA_MCP_DISABLE_SETTINGS_UI=true\n")
     environment_path.chmod(0o600)
     try:
@@ -2335,6 +2340,28 @@ async def _start_exact_upstream(token: str) -> None:
         )
     finally:
         environment_path.unlink(missing_ok=True)
+
+    timeout = aiohttp.ClientTimeout(total=2)
+    for _ in range(60):
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(
+                    f"http://127.0.0.1:{UPSTREAM_PORT}/healthz"
+                ) as response:
+                    body = await response.content.read(257)
+                    if (
+                        response.status == 200
+                        and len(body) <= 256
+                        and json.loads(body) == {
+                            "status": "ok",
+                            "server": "ha-mcp",
+                        }
+                    ):
+                        return
+        except (aiohttp.ClientError, TimeoutError, json.JSONDecodeError):
+            pass
+        await asyncio.sleep(1)
+    raise RuntimeError("Exact upstream liveness did not become ready")
 
 
 async def _remove_exact_upstream() -> None:
@@ -2948,6 +2975,25 @@ async def _run_core_2026_9_child_contract(
                 "type": "config/device_registry/update",
                 "device_id": parent_id,
                 "area_id": created_area_id,
+            }
+        )
+        # A fresh disposable Core has no stored Lovelace configuration.  Seed
+        # one bounded storage-mode dashboard before Core authority is observed
+        # so the dashboard-read capability is verified rather than withheld
+        # for absent fixture evidence.
+        await websocket.command(
+            {
+                "type": "lovelace/config/save",
+                "config": {
+                    "title": "RC2 Disposable Dashboard",
+                    "views": [
+                        {
+                            "title": "Contract",
+                            "path": "rc2-contract",
+                            "cards": [],
+                        }
+                    ],
+                },
             }
         )
         await _start_exact_upstream(token)

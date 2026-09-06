@@ -1394,6 +1394,13 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn('len(tools) == 25', source)
         self.assertIn('"ha_get_operation_status" not in tools', source)
         self.assertIn('metadata.get("fallback") == "none"', source)
+        self.assertIn('"lovelace/config/save"', source)
+
+        upstream_start = self.functions["_start_exact_upstream"]
+        upstream_source = ast.get_source_segment(self.source, upstream_start) or ""
+        self.assertIn('handle.write("MCP_HEALTHZ=true\\n")', upstream_source)
+        self.assertIn('f"http://127.0.0.1:{UPSTREAM_PORT}/healthz"', upstream_source)
+        self.assertNotIn("_call_exact_upstream_tool", upstream_source)
 
     def test_response_adapter_is_bound_to_the_exact_reviewed_ha_release(self):
         expected_adapter = self.contract._expected_device_response_adapter

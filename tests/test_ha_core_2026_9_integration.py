@@ -938,6 +938,47 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["expected_delegated_reads"], 25)
         self.assertEqual(counts["expected_connector_total"], 76)
 
+    async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
+        evidence = [
+            item
+            for item in _core_2026_9_evidence()
+            if item["capability_id"] != "core.dashboard_configuration_read"
+        ]
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _snapshot("2026.9.0", evidence=evidence)
+        )
+        registry = load_reviewed_upstream_release_registry()
+        release = registry.by_version["8.4.3"]
+        capture = _capture_for_release(release)
+        review = _fixture(ROOT / release.artifact_evidence_resource)
+        captured_by_name = {item["name"]: item for item in capture["tools"]}
+        tools = [
+            captured_by_name[name]
+            for name in review["runtime_catalog"]["runtime_tool_order"]
+        ]
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=FakeTransport(tools, version="8.4.3"),
+            release_registry=registry,
+            core_runtime=runtime,
+        )
+        server = FastMCP("core-2026-9-partial-evidence-test")
+
+        health = await gateway.initialize(server)
+
+        self.assertEqual(
+            len(registered_tools(server)),
+            24,
+            msg=json.dumps(health, sort_keys=True),
+        )
+        self.assertIsNone(
+            registered_tools(server).get("ha_config_list_dashboard_resources")
+        )
+        self.assertEqual(health["core_withheld_read_count"], 1)
+        self.assertEqual(health["last_discovery_failure_category"], None)
+        self.assertEqual(health["fallback_count"], 0)
+
     async def test_catalog_withdrawal_and_restoration_are_capability_local(self):
         runtime, _source = await Core20269RuntimeTests()._runtime(
             _core_2026_9_snapshot()
