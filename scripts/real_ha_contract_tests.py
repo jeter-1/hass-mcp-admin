@@ -2966,6 +2966,16 @@ async def _run_core_2026_9_child_contract(
         tools = registered_tools(server)
         device_assessment = assess_device_registry(devices)
         core_assessment = core_runtime.health_snapshot()
+        gateway_assessment = read_gateway.health_snapshot()
+        withheld_core = [
+            {
+                "capability_id": item["capability_id"],
+                "disposition": item["disposition"],
+                "reason_code": item["reason_code"],
+            }
+            for item in core_assessment["authority_profiles"]
+            if not str(item["disposition"]).startswith("admitted")
+        ]
         _assert_device_contract(
             len(tools) == 25,
             "child_consumer_catalog",
@@ -2978,6 +2988,25 @@ async def _run_core_2026_9_child_contract(
                 "child_device_count": device_assessment.child_count,
                 "core_compatible_count": core_assessment["compatible_count"],
                 "core_withheld_count": core_assessment["withheld_count"],
+                "core_withheld": withheld_core,
+                "gateway_admission_status": gateway_assessment[
+                    "admission_status"
+                ],
+                "gateway_catalog_status": gateway_assessment[
+                    "catalog_comparison_status"
+                ],
+                "gateway_discovery_failure": gateway_assessment[
+                    "last_discovery_failure_category"
+                ],
+                "gateway_exact_match_count": gateway_assessment[
+                    "exact_matched_automatic_read_count"
+                ],
+                "gateway_core_withheld_count": gateway_assessment[
+                    "core_withheld_read_count"
+                ],
+                "gateway_advertised_tool_count": gateway_assessment[
+                    "upstream_advertised_tool_count"
+                ],
             },
         )
         _assert_device_contract(
