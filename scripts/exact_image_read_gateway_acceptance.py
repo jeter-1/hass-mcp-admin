@@ -916,8 +916,21 @@ def decode_tool_result(
     structured = getattr(result, "structuredContent", None)
     if isinstance(structured, dict) and "result" not in structured:
         return structured
+    content_diagnostics: list[dict[str, Any]] = []
     for item in getattr(result, "content", []):
         text = getattr(item, "text", None)
+        item_diagnostics = {
+            "content_type": type(item).__name__[:64],
+            "has_text": isinstance(text, str),
+        }
+        if isinstance(text, str):
+            item_diagnostics.update(
+                {
+                    "text_byte_count": len(text.encode("utf-8")),
+                    "truncated_response_marker": "[truncated at " in text[-128:],
+                }
+            )
+        content_diagnostics.append(item_diagnostics)
         if isinstance(text, str):
             try:
                 value = json.loads(text)
@@ -940,7 +953,15 @@ def decode_tool_result(
                 return value
     raise AcceptanceFailure(
         "tool result did not contain a bounded JSON object",
-        diagnostics={"result_context": context[:128]},
+        diagnostics={
+            "result_context": context[:128],
+            "is_error": getattr(result, "isError", None) is True,
+            "structured_content_type": type(structured).__name__[:64],
+            "structured_result_present": (
+                isinstance(structured, dict) and "result" in structured
+            ),
+            "content": content_diagnostics[:8],
+        },
     )
 
 

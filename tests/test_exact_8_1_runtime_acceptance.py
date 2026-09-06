@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -179,6 +180,61 @@ class ExactAddonProfileTests(unittest.TestCase):
                     ),
                     "reviewed",
                 )
+
+    def test_gateway_decoder_reports_bounded_non_json_result_shape(self):
+        result = SimpleNamespace(
+            structuredContent=None,
+            content=[
+                SimpleNamespace(
+                    text='{"partial":true}\n[truncated at 60000 characters]'
+                )
+            ],
+            isError=True,
+        )
+
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure) as raised:
+            gateway_acceptance.decode_tool_result(
+                result,
+                context="engineering_health_before_calls",
+            )
+
+        diagnostics = raised.exception.diagnostics
+        self.assertEqual(
+            diagnostics["result_context"],
+            "engineering_health_before_calls",
+        )
+        self.assertTrue(diagnostics["is_error"])
+        self.assertEqual(diagnostics["structured_content_type"], "NoneType")
+        self.assertEqual(
+            diagnostics["content"],
+            [
+                {
+                    "content_type": "SimpleNamespace",
+                    "has_text": True,
+                    "text_byte_count": 48,
+                    "truncated_response_marker": True,
+                }
+            ],
+        )
+        self.assertNotIn("partial", json.dumps(diagnostics))
+
+    def test_gateway_decoder_bounds_non_text_content_diagnostics(self):
+        result = SimpleNamespace(
+            structuredContent={"result": "omitted"},
+            content=[SimpleNamespace(binary=b"omitted") for _ in range(12)],
+            isError=False,
+        )
+
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure) as raised:
+            gateway_acceptance.decode_tool_result(result)
+
+        diagnostics = raised.exception.diagnostics
+        self.assertFalse(diagnostics["is_error"])
+        self.assertTrue(diagnostics["structured_result_present"])
+        self.assertEqual(len(diagnostics["content"]), 8)
+        self.assertTrue(
+            all(item["has_text"] is False for item in diagnostics["content"])
+        )
 
     def test_exact_image_harness_exercises_held_operational_providers(self):
         source = (
