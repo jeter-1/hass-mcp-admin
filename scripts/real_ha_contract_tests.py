@@ -285,6 +285,26 @@ def _bounded_diagnostic_token(
     return value
 
 
+def _bounded_diagnostic_reason_codes(value: object) -> list[str]:
+    """Project only bounded, machine-owned reason-code tokens."""
+
+    if not isinstance(value, list):
+        return []
+    projected = {
+        token
+        for item in value[:32]
+        if (
+            token := _bounded_diagnostic_token(
+                item,
+                maximum=96,
+                punctuation="_-",
+            )
+        )
+        is not None
+    }
+    return sorted(projected)[:16]
+
+
 def _short_diagnostic_identifier(value: object) -> str | None:
     """Return only the bounded prefix of one opaque repository identifier."""
 
@@ -1423,6 +1443,22 @@ async def _run_governed_helper_state_contract(
             helper_policy = turn_on["plan"]["policy_decision"]
             helper_validation = turn_on["plan"]["validation_results"]
             helper_risk = turn_on["plan"]["risk"]
+            helper_operational = turn_on["plan"].get("operational")
+            helper_baseline = (
+                helper_operational.get("baseline")
+                if isinstance(helper_operational, dict)
+                else None
+            )
+            helper_dependency = (
+                helper_baseline.get("dependency_risk")
+                if isinstance(helper_baseline, dict)
+                else None
+            )
+            helper_dependency = (
+                helper_dependency
+                if isinstance(helper_dependency, dict)
+                else {}
+            )
             helper_diagnostic = {
                 "provider": _bounded_diagnostic_token(
                     turn_on.get("provider"), punctuation="_-"
@@ -1445,11 +1481,35 @@ async def _run_governed_helper_state_contract(
                 "dependency_evidence_complete": helper_validation.get(
                     "dependency_evidence_complete"
                 ),
-                "execution_eligible": turn_on["plan"].get(
-                    "execution_eligible"
+                "dependency_semantic_precision": _bounded_diagnostic_token(
+                    helper_validation.get("dependency_semantic_precision"),
+                    punctuation="_-",
                 ),
-                "approval_actionable": turn_on["plan"].get(
-                    "approval_actionable"
+                "coverage_failure_reason_codes": (
+                    _bounded_diagnostic_reason_codes(
+                        helper_dependency.get("coverage_failure_reason_codes")
+                    )
+                ),
+                "execution_block_reason_codes": (
+                    _bounded_diagnostic_reason_codes(
+                        helper_validation.get("execution_block_reason_codes")
+                    )
+                ),
+                "consequence_uncertainty_reason_codes": (
+                    _bounded_diagnostic_reason_codes(
+                        helper_validation.get(
+                            "consequence_uncertainty_reason_codes"
+                        )
+                    )
+                ),
+                "execution_contract_complete": helper_validation.get(
+                    "execution_contract_complete"
+                ),
+                "execution_eligible": helper_validation.get(
+                    "dependency_execution_eligible"
+                ),
+                "owner_decision_required": helper_validation.get(
+                    "owner_decision_required"
                 ),
                 "dispatch_count": len(exact_gateway.dispatches),
             }
