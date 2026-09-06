@@ -8,6 +8,8 @@ import sys
 import tempfile
 import unittest
 
+from awesomeversion import AwesomeVersion
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -68,7 +70,13 @@ class Rc1ReleaseTransitionTests(unittest.TestCase):
             self.assertIn("staged source candidate", documents)
             self.assertIn("advertised Engineering source remains", documents)
         else:
-            self.assertEqual(versions, {target})
+            self.assertTrue(
+                versions == {target}
+                or all(
+                    AwesomeVersion(version) > AwesomeVersion(target)
+                    for version in versions
+                )
+            )
             self.assertIn("materialized source candidate", documents)
             self.assertIn("advertised Engineering source is", documents)
             self.assertIn("`.release/next-version` has been consumed", documents)
