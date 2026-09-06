@@ -2961,7 +2961,7 @@ async def _run_core_2026_9_child_contract(
                 "query": child_entity_id,
                 "domain_filter": "switch",
                 "exact_match": True,
-                "result_fields": ["entity_id", "area", "device_id"],
+                "result_fields": ["entity_id", "area"],
                 "limit": 20,
             },
             "ha_get_entity": {"entity_id": child_entity_id},

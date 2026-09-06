@@ -414,9 +414,9 @@ UPSTREAM_ERROR_CALLS = {
             "timeout_seconds": 0,
         },
         "upstream_code": "RESOURCE_NOT_FOUND",
-        "public_code": "provider_error",
-        "failure_category": "upstream_error",
-        "retryable": True,
+        "public_code": "resource_not_found",
+        "failure_category": "resource_not_found",
+        "retryable": False,
         "fixture_counter": None,
     },
     "provider_failure": {

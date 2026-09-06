@@ -584,9 +584,9 @@ class ExactAddonProfileTests(unittest.TestCase):
             expected["reviewed_versions"], ("7.14.1", "7.14.2")
         )
         self.assertEqual(expected["upstream_code"], "RESOURCE_NOT_FOUND")
-        self.assertEqual(expected["public_code"], "provider_error")
-        self.assertEqual(expected["failure_category"], "upstream_error")
-        self.assertTrue(expected["retryable"])
+        self.assertEqual(expected["public_code"], "resource_not_found")
+        self.assertEqual(expected["failure_category"], "resource_not_found")
+        self.assertFalse(expected["retryable"])
         self.assertNotIn(
             "ha_get_operation_status", gateway_acceptance.DELEGATED_READ_CALLS
         )
@@ -736,7 +736,9 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                     "delegated_read_count"
                 ],
                 "held_read_count": len(expected["held_tools"]),
-                "held_tools": sorted(expected["held_tools"]),
+                # The bounded public health projection retains the exact count,
+                # while exact held identities are proven from tools/list.
+                "held_tools": [],
                 **{
                     name: 0
                     for name in readmission.ZERO_ADMISSION_COUNTERS
@@ -815,7 +817,25 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["probe"]["engineering_tool_count"], 76)
         health = result["probe"]["gateway_health"]
         self.assertEqual(health["dynamically_exposed_count"], 25)
-        self.assertEqual(health["held_tools"], ["ha_get_operation_status"])
+        self.assertEqual(health["held_tools"], [])
+        self.assertTrue(result["probe"]["held_tools_absent"])
+
+    async def test_readmission_accepts_bounded_health_without_held_identity_list(
+        self,
+    ):
+        exact = self._exact_observed(upstream_version="8.4.3")
+
+        self.assertTrue(
+            readmission.exact_readmission_observed(
+                exact, expected_upstream_version="8.4.3"
+            )
+        )
+        exact["held_tools_absent"] = False
+        self.assertFalse(
+            readmission.exact_readmission_observed(
+                exact, expected_upstream_version="8.4.3"
+            )
+        )
 
     async def test_exact_8_2_0_readmission_uses_exact_accounting(self):
         exact = self._exact_observed(upstream_version="8.2.0")

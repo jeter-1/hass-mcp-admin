@@ -13,6 +13,7 @@ import subprocess
 import sys
 import unittest
 
+from jsonschema import validate
 from mcp.server.fastmcp import FastMCP
 
 
@@ -1153,7 +1154,13 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
                 },
             },
             "ha_search": {
-                "arguments": {"query": entity, "domain_filter": "switch"},
+                "arguments": {
+                    "query": entity,
+                    "domain_filter": "switch",
+                    "exact_match": True,
+                    "result_fields": ["entity_id", "area"],
+                    "limit": 20,
+                },
                 "payload": {
                     "success": True,
                     "partial": False,
@@ -1184,6 +1191,10 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         }
         for name, case in cases.items():
             with self.subTest(tool=name):
+                validate(
+                    instance=case["arguments"],
+                    schema=captured_by_name[name]["inputSchema"],
+                )
                 transport.result = {
                     "content": [
                         {"type": "text", "text": json.dumps(case["payload"])}
