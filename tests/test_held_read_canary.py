@@ -209,6 +209,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         tools: list[dict] | None = None,
         result: dict | None = None,
         error: str | None = None,
+        response_size_limit: int = 60_000,
     ) -> tuple[UpstreamReadGateway, FakeTransport, FastMCP]:
         self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
         transport = FakeTransport(
@@ -219,7 +220,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         )
         gateway = UpstreamReadGateway()
         gateway.configure(
-            settings(),
+            settings(response_size_limit=response_size_limit),
             transport=transport,
             release_registry=load_reviewed_upstream_release_registry(),
             admission_validator=lambda _catalog: None,
@@ -541,6 +542,100 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(operation_ids[1], serialized_audit + serialized_health)
         self.assertEqual(len(transport.calls), 1)
         self.assertEqual(self.admission_surface_snapshot(gateway, server), before)
+
+    async def test_batch_error_code_cannot_reflect_configured_secret(self):
+        operation_id = "synthetic-failed-operation"
+        batch = {
+            "success": True,
+            "total_operations": 1,
+            "completed": 0,
+            "failed": 1,
+            "not_found": 0,
+            "pending": 0,
+            "all_complete": True,
+            "detailed_results": [
+                {
+                    "operation_id": operation_id,
+                    "status": "failed",
+                    "success": False,
+                    "error": {
+                        "code": "synthetic-engineering-access-secret",
+                        "message": "synthetic secret-free error",
+                    },
+                }
+            ],
+        }
+        gateway, transport, _server = await self.gateway(
+            result={
+                "content": [{"type": "text", "text": json.dumps(batch)}],
+                "isError": False,
+            }
+        )
+
+        serialized = await gateway.run_held_read_canary(
+            upstream_tool_name="ha_get_operation_status",
+            expected_compatibility_entry_id=ENTRY_ID,
+            arguments={"operation_id": [operation_id]},
+        )
+        result = decoded(serialized)
+
+        self.assertTrue(result["success"])
+        self.assertNotIn("synthetic-engineering-access-secret", serialized)
+        outcome = result["data"]["canary_evidence"]["batch_item_outcomes"][0]
+        self.assertIsNone(outcome["structured_code"])
+        self.assertEqual(outcome["failure_category"], "upstream_error")
+        self.assertEqual(len(transport.calls), 1)
+
+    async def test_maximum_batch_response_remains_complete_json_within_limit(self):
+        operation_ids = [
+            f"synthetic-{index:02d}-" + ("i" * 96)
+            for index in range(64)
+        ]
+        batch = {
+            "success": True,
+            "total_operations": 64,
+            "completed": 0,
+            "failed": 64,
+            "not_found": 0,
+            "pending": 0,
+            "all_complete": True,
+            "detailed_results": [
+                {
+                    "operation_id": operation_id,
+                    "status": "failed",
+                    "success": False,
+                    "error": {
+                        "code": "X" * 128,
+                        "message": "m" * 300,
+                    },
+                }
+                for operation_id in operation_ids
+            ],
+        }
+        response_limit = 10_000
+        gateway, transport, _server = await self.gateway(
+            result={
+                "content": [{"type": "text", "text": json.dumps(batch)}],
+                "isError": False,
+            },
+            response_size_limit=response_limit,
+        )
+
+        serialized = await gateway.run_held_read_canary(
+            upstream_tool_name="ha_get_operation_status",
+            expected_compatibility_entry_id=ENTRY_ID,
+            arguments={"operation_id": operation_ids},
+        )
+        result = decoded(serialized)
+
+        self.assertLessEqual(len(serialized.encode("utf-8")), response_limit)
+        self.assertEqual(result["operation"], "run_held_read_canary")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_code"], "provider_error")
+        self.assertEqual(
+            result["details"]["failure_category"], "response_too_large"
+        )
+        self.assertEqual(len(transport.calls), 1)
 
     async def test_malformed_batch_item_fails_provider_contract(self):
         operation_ids = ["synthetic-complete", "synthetic-missing"]

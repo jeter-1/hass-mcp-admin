@@ -18,6 +18,44 @@ DEVICE_DEPENDENT_DELEGATED_TOOLS = frozenset(
 CORE_2026_9_RELEASES = frozenset({"2026.9.0", "2026.9.1"})
 CORE_2026_9_DEVICE_ADAPTER_RELEASES = frozenset({"8.4.3"})
 
+_F3_DASHBOARD_OPERATIONS = frozenset(
+    {("update_existing_dashboard", "update_dashboard")}
+)
+_F3_TYPED_HELPER_OPERATIONS = frozenset(
+    {("set_exact_input_boolean_state", "set_input_boolean_state")}
+)
+_F3_GOVERNED_CONFIGURATION_OPERATIONS = frozenset(
+    {
+        ("create_automation_configuration", "create_automation_configuration"),
+        ("update_automation_configuration", "update_automation_configuration"),
+        ("create_script_configuration", "create_script_configuration"),
+        ("update_script_configuration", "update_script_configuration"),
+        (
+            "create_input_boolean_configuration",
+            "create_input_boolean_configuration",
+        ),
+        (
+            "update_input_boolean_configuration",
+            "update_input_boolean_configuration",
+        ),
+        (
+            "create_input_number_configuration",
+            "create_input_number_configuration",
+        ),
+        (
+            "update_input_number_configuration",
+            "update_input_number_configuration",
+        ),
+        ("create_full_home_assistant_backup", "create_full_backup"),
+        (
+            "reload_home_assistant_configuration_domain",
+            "controlled_reload",
+        ),
+        ("restart_installed_home_assistant_addon", "restart_addon"),
+        ("restart_home_assistant_core", "restart_home_assistant"),
+    }
+)
+
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
     "ha_config_get_calendar_events": ("core.basic_websocket_read",),
@@ -120,15 +158,32 @@ def static_tool_requirements(tool_name: str) -> tuple[str, ...]:
 def f3_requirements(prepared: Any) -> tuple[str, ...]:
     """Map an existing typed F3 operation to its complete Core authority set."""
 
-    capability_id = str(getattr(prepared, "capability_id", ""))
+    raw_capability_ids = {
+        value
+        for value in (
+            getattr(prepared, "capability_id", ""),
+            getattr(prepared, "capability_identity", ""),
+        )
+        if isinstance(value, str) and value
+    }
+    capability_id = (
+        next(iter(raw_capability_ids))
+        if len(raw_capability_ids) == 1
+        else ""
+    )
     operation = str(getattr(prepared, "operation", ""))
     values = {"core.f3_mutation_verification"}
-    if capability_id == "update_storage_dashboard" or "dashboard" in operation:
+    identity = (capability_id, operation)
+    if identity in _F3_DASHBOARD_OPERATIONS:
         values.add("core.dashboard_configuration_read")
-    elif "input_boolean" in operation or "helper" in capability_id:
+    elif identity in _F3_TYPED_HELPER_OPERATIONS:
         values.add("core.typed_helper_operation")
-    else:
+    elif identity in _F3_GOVERNED_CONFIGURATION_OPERATIONS:
         values.add("core.governed_configuration_operation")
+    else:
+        # There is deliberately no profile for this requirement. Unknown or
+        # conflicting identities therefore cannot acquire a Core route lease.
+        values.add("core.unsupported_f3_operation")
     return tuple(sorted(values))
 
 

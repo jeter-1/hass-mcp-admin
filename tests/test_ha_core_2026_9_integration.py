@@ -37,6 +37,7 @@ from ha_mcp_engineering.ha_core_readmission import (  # noqa: E402
     assess_ha_mcp_device_projection,
     compiled_exact_authority,
     delegated_requirements,
+    f3_requirements,
     static_tool_requirements,
     stable_observation,
 )
@@ -87,6 +88,19 @@ from tests.test_readonly_upstream_gateway import (  # noqa: E402
 AUTHORITY_FIXTURE = ROOT / "tests" / "fixtures" / "ha_core_2026_9_authority.json"
 DEVICE_FIXTURE = ROOT / "tests" / "fixtures" / "ha_core_2026_9_device_registry.json"
 LANE_FIXTURE = ROOT / "tests" / "fixtures" / "ha_core_2026_9_disposable_lane.json"
+
+
+class _CoreBoundDashboardOperation:
+    """Bind the generic F3 fixture to the production dashboard identity."""
+
+    capability_id = "update_existing_dashboard"
+    capability_identity = "update_existing_dashboard"
+
+    def __init__(self) -> None:
+        self._prepared = prepared_dashboard_operation()
+
+    def __getattr__(self, name: str):
+        return getattr(self._prepared, name)
 
 
 def _fixture(path: Path) -> dict:
@@ -916,6 +930,104 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(runtime.consume(forged))
         self.assertTrue(runtime.release(next_authority))
 
+    async def test_f3_requirements_use_exact_closed_capability_identities(self):
+        class Prepared:
+            def __init__(
+                self,
+                *,
+                capability_id: str = "",
+                capability_identity: str = "",
+                operation: str,
+            ) -> None:
+                self.capability_id = capability_id
+                self.capability_identity = capability_identity
+                self.operation = operation
+
+        verification = "core.f3_mutation_verification"
+        governed = (
+            "create_automation_configuration",
+            "update_automation_configuration",
+            "create_script_configuration",
+            "update_script_configuration",
+            "create_input_boolean_configuration",
+            "update_input_boolean_configuration",
+            "create_input_number_configuration",
+            "update_input_number_configuration",
+        )
+        for operation in governed:
+            with self.subTest(operation=operation):
+                self.assertEqual(
+                    f3_requirements(
+                        Prepared(
+                            capability_identity=operation,
+                            operation=operation,
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            (
+                                verification,
+                                "core.governed_configuration_operation",
+                            )
+                        )
+                    ),
+                )
+
+        operational = {
+            "create_full_home_assistant_backup": "create_full_backup",
+            "reload_home_assistant_configuration_domain": "controlled_reload",
+            "restart_installed_home_assistant_addon": "restart_addon",
+            "restart_home_assistant_core": "restart_home_assistant",
+        }
+        for capability_id, operation in operational.items():
+            with self.subTest(operation=operation):
+                self.assertEqual(
+                    f3_requirements(
+                        Prepared(
+                            capability_id=capability_id,
+                            operation=operation,
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            (
+                                verification,
+                                "core.governed_configuration_operation",
+                            )
+                        )
+                    ),
+                )
+
+        helper = Prepared(
+            capability_id="set_exact_input_boolean_state",
+            operation="set_input_boolean_state",
+        )
+        self.assertEqual(
+            f3_requirements(helper),
+            tuple(sorted((verification, "core.typed_helper_operation"))),
+        )
+
+        dashboard = Prepared(
+            capability_id="update_existing_dashboard",
+            capability_identity="update_existing_dashboard",
+            operation="update_dashboard",
+        )
+        self.assertEqual(
+            f3_requirements(dashboard),
+            tuple(sorted((verification, "core.dashboard_configuration_read"))),
+        )
+
+        unsupported = f3_requirements(
+            Prepared(
+                capability_id="set_exact_input_boolean_state",
+                operation="create_input_boolean_configuration",
+            )
+        )
+        self.assertEqual(
+            unsupported,
+            tuple(sorted((verification, "core.unsupported_f3_operation"))),
+        )
+
     async def test_unknown_version_and_unstable_observation_fail_closed(self):
         runtime, source = await self._runtime(
             _snapshot("2026.9.2", evidence=_evidence())
@@ -935,7 +1047,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         guard = _CoreDispatchAuthorityGuard(
             runtime, datetime.now(timezone.utc).isoformat()
         )
-        authority = await guard.acquire(prepared_dashboard_operation(), object())
+        authority = await guard.acquire(_CoreBoundDashboardOperation(), object())
         self.assertIsNotNone(authority)
         self.assertEqual(source.calls, 4)
         self.assertTrue(runtime.release(authority))
@@ -966,7 +1078,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         adapter = Adapter()
         guarded = _CoreVerificationAdapter(adapter, runtime)
-        result = await guarded.observe(prepared_dashboard_operation(), object())
+        result = await guarded.observe(_CoreBoundDashboardOperation(), object())
         self.assertEqual(result, "authoritative-observation")
         self.assertEqual(adapter.observe_calls, 1)
         self.assertEqual(source.calls, 4)

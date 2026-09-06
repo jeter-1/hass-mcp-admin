@@ -3753,23 +3753,6 @@ class UpstreamReadGateway:
             if sanitation.failed_closed:
                 return await fail("sanitization_failed")
             result = sanitation.value
-            encoded_size = len(
-                json.dumps(
-                    result,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                    allow_nan=False,
-                    default=str,
-                ).encode("utf-8")
-            )
-            summarized = encoded_size + 12_000 > response_limit
-            if summarized:
-                result = {
-                    "result_omitted": True,
-                    "reason": "bounded_result_summary",
-                    "sanitized_result_type": type(sanitation.value).__name__,
-                }
             upstream_partial, warnings = _upstream_completeness(
                 route.entry, sanitation.value
             )
@@ -3779,9 +3762,7 @@ class UpstreamReadGateway:
                     "The held operation-status batch contains incomplete or "
                     "non-success application outcomes."
                 )
-            truncated = bool(
-                sanitation.truncated_field_count or summarized
-            )
+            truncated = bool(sanitation.truncated_field_count)
             completeness = (
                 "partial" if truncated or upstream_partial else "complete"
             )
@@ -3791,6 +3772,73 @@ class UpstreamReadGateway:
                 truncation=truncated,
                 output_contract_match=True,
             )
+            response_warnings = (
+                (
+                    ["The untrusted upstream result was safely bounded."]
+                    if truncated
+                    else []
+                )
+                + warnings
+                + ["A passing canary does not authorize promotion."]
+            )
+
+            def bounded_success_response() -> str | None:
+                response = SuccessResponse(
+                    operation="run_held_read_canary",
+                    summary=(
+                        "Executed one reviewed held read as evidence only; no "
+                        "promotion was performed."
+                    ),
+                    data={"canary_evidence": report, "result": result},
+                    warnings=response_warnings,
+                    metadata={
+                        "provider": PROVIDER_ID,
+                        "untrusted_upstream_content": True,
+                        "fallback": "none",
+                        "fallback_occurred": False,
+                        "promotion_performed": False,
+                    },
+                    timing=timing_since(started),
+                    request_id=current_request_id(),
+                )
+                serialized = json.dumps(
+                    response.as_dict(), indent=2, default=str
+                )
+                if len(serialized.encode("utf-8")) > response_limit:
+                    return None
+                return serialized
+
+            serialized = bounded_success_response()
+            if serialized is None:
+                result = {
+                    "result_omitted": True,
+                    "reason": "bounded_result_summary",
+                    "sanitized_result_type": type(sanitation.value).__name__,
+                }
+                truncated = True
+                completeness = "partial"
+                report = evidence(
+                    outcome="partial",
+                    completeness=completeness,
+                    truncation=True,
+                    output_contract_match=True,
+                )
+                response_warnings = (
+                    ["The untrusted upstream result was safely bounded."]
+                    + warnings
+                    + ["A passing canary does not authorize promotion."]
+                )
+                serialized = bounded_success_response()
+            if serialized is None:
+                # The individual outcome projection is useful evidence, but it
+                # must never make the public response syntactically invalid.
+                # A configured bound too small for the complete report fails
+                # closed with a bounded response instead.
+                batch_item_outcomes = None
+                return await fail(
+                    "response_too_large",
+                    reason="bounded_canary_response_exceeded",
+                )
             set_audit_context(report)
             if telemetry is not None:
                 telemetry.result_status = report["outcome"]
@@ -3800,28 +3848,7 @@ class UpstreamReadGateway:
                 completeness,
                 dispatched=True,
             )
-            return SuccessResponse(
-                operation="run_held_read_canary",
-                summary=(
-                    "Executed one reviewed held read as evidence only; no "
-                    "promotion was performed."
-                ),
-                data={"canary_evidence": report, "result": result},
-                warnings=(
-                    (["The untrusted upstream result was safely bounded."] if truncated else [])
-                    + warnings
-                    + ["A passing canary does not authorize promotion."]
-                ),
-                metadata={
-                    "provider": PROVIDER_ID,
-                    "untrusted_upstream_content": True,
-                    "fallback": "none",
-                    "fallback_occurred": False,
-                    "promotion_performed": False,
-                },
-                timing=timing_since(started),
-                request_id=current_request_id(),
-            ).to_json(response_limit)
+            return serialized
         except _GatewayFailure as exc:
             return await fail(exc.category)
         except (SchemaError, TypeError, ValueError, OverflowError):
@@ -5498,7 +5525,11 @@ def _held_operation_status_batch_outcomes(
             public_code, retryable = _public_failure(category)
             projection.update(
                 {
-                    "structured_code": code,
+                    # Only binary-reviewed fixed discriminators are evidence.
+                    # Unknown upstream text is classified but never reflected.
+                    "structured_code": (
+                        code if expected_status is not None else None
+                    ),
                     "error_code": public_code,
                     "failure_category": category,
                     "retryable": retryable,
