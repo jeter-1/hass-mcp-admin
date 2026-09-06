@@ -1375,6 +1375,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             {
                 "CoreRuntime",
                 "UpstreamReadGateway",
+                "reconcile_until_initialized",
                 "registered_tools",
                 "load_reviewed_upstream_release_registry",
             }.issubset(call_names)

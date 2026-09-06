@@ -2962,7 +2962,7 @@ async def _run_core_2026_9_child_contract(
             core_runtime=core_runtime,
         )
         server = FastMCP("rc2-core-2026-9-disposable")
-        await read_gateway.initialize(server)
+        await read_gateway.reconcile_until_initialized(server)
         tools = registered_tools(server)
         device_assessment = assess_device_registry(devices)
         core_assessment = core_runtime.health_snapshot()
