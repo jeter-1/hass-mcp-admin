@@ -555,6 +555,7 @@ class UpstreamReadGateway:
         self._live_observation_epoch = 0
         self._latest_live_contract_epoch = 0
         self._latest_live_contract_token: str | None = None
+        self._core_reconciliation_epoch = 0
         self._stale_reprobe_retry_armed = False
         self._discovery_in_progress = False
         self._reprobe_event = asyncio.Event()
@@ -773,6 +774,7 @@ class UpstreamReadGateway:
         self._live_observation_epoch = 0
         self._latest_live_contract_epoch = 0
         self._latest_live_contract_token = None
+        self._core_reconciliation_epoch = 0
         self._stale_reprobe_retry_armed = False
         self._discovery_in_progress = False
         if self._missing_release_retry_handle is not None:
@@ -876,6 +878,7 @@ class UpstreamReadGateway:
         self._registered_tool_registry = registry
         with self._lock:
             discovery_epoch = self._live_observation_epoch
+            discovery_core_epoch = self._core_reconciliation_epoch
             self._state.update(
                 {
                     "reconciliation_status": (
@@ -1088,6 +1091,9 @@ class UpstreamReadGateway:
             capabilities: list[dict[str, Any]] = []
             collisions: list[dict[str, str]] = []
             core_withheld: list[dict[str, Any]] = []
+            core_route_generation_observed = False
+            core_route_generation: int | None = None
+            core_route_generation_mixed = False
             delegated_adapter_version = (
                 readmission_selection.binary_release.version
                 if readmission_selection is not None
@@ -1103,6 +1109,16 @@ class UpstreamReadGateway:
                         delegated_tool=entry.upstream_name,
                         delegated_adapter_version=delegated_adapter_version,
                     )
+                    observed_core_generation = core_status.get("generation")
+                    if core_route_generation_observed:
+                        core_route_generation_mixed = (
+                            core_route_generation_mixed
+                            or observed_core_generation
+                            != core_route_generation
+                        )
+                    else:
+                        core_route_generation = observed_core_generation
+                        core_route_generation_observed = True
                     if not core_status["available"]:
                         core_withheld.append(
                             {
@@ -1271,11 +1287,20 @@ class UpstreamReadGateway:
                     == candidate_contract_token
                 )
                 stale_discovery = (
-                    epoch_changed and not newer_live_catalog_matches
+                    (epoch_changed and not newer_live_catalog_matches)
+                    or discovery_core_epoch
+                    != self._core_reconciliation_epoch
+                    or core_route_generation_mixed
                 )
                 if stale_discovery:
+                    core_discovery_stale = (
+                        discovery_core_epoch
+                        != self._core_reconciliation_epoch
+                        or core_route_generation_mixed
+                    )
                     immediate_retry = (
-                        not self._stale_reprobe_retry_armed
+                        core_discovery_stale
+                        or not self._stale_reprobe_retry_armed
                     )
                     self._stale_reprobe_retry_armed = True
                     self._state.update(
@@ -1292,7 +1317,11 @@ class UpstreamReadGateway:
                             "next_compatibility_reprobe_at": None,
                             "stale_reprobe_retry_armed": True,
                             "recommended_action": (
-                                "A newer live contract observation "
+                                "Core authority changed while the client "
+                                "catalog was being constructed; reconcile "
+                                "again before publishing it."
+                                if core_discovery_stale
+                                else "A newer live contract observation "
                                 "superseded this discovery; reconcile "
                                 "again before publishing it."
                             ),
@@ -4145,7 +4174,9 @@ class UpstreamReadGateway:
     def request_core_reconciliation(self) -> None:
         """Re-enumerate delegated routes after a Core authority change."""
 
-        self._reprobe_event.set()
+        with self._lock:
+            self._core_reconciliation_epoch += 1
+            self._reprobe_event.set()
 
     def _record_live_contract_observation_locked(
         self, live_contract_token: str

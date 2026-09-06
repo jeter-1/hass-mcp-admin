@@ -4475,6 +4475,94 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ReconciliationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_core_change_during_catalog_build_republishes_only_new_generation(
+        self,
+    ):
+        class MidEnumerationCoreRuntime:
+            def __init__(self):
+                self.gateway = None
+                self.generation = 1
+                self.armed = False
+                self.route_calls = 0
+                self.catalog_changes = []
+                self.new_generation_published = asyncio.Event()
+
+            def route_status(self, _requirements, **_kwargs):
+                self.route_calls += 1
+                available = self.generation == 1
+                result = {
+                    "available": available,
+                    "disposition": (
+                        "admitted" if available else "unavailable"
+                    ),
+                    "reason_codes": (
+                        () if available else ("core_generation_changed",)
+                    ),
+                    "generation": self.generation,
+                }
+                if self.armed:
+                    self.armed = False
+                    self.generation = 2
+                    self.gateway.request_core_reconciliation()
+                return result
+
+            def record_catalog_change(self, *, restored, count):
+                self.catalog_changes.append((restored, count))
+                if not restored and count == 2:
+                    self.new_generation_published.set()
+
+        entries = [
+            policy_entry("ha_get_state"),
+            policy_entry("ha_get_history"),
+        ]
+        tools = [catalog_tool(entry.upstream_name) for entry in entries]
+        transport = SequencedDiscoveryTransport(tools, [])
+        core_runtime = MidEnumerationCoreRuntime()
+        gateway, server, _ = await initialize(
+            entries,
+            tools,
+            transport=transport,
+            core_runtime=core_runtime,
+        )
+        core_runtime.gateway = gateway
+        self.assertEqual(
+            set(registered_tools(server)),
+            {"ha_get_state", "ha_get_history"},
+        )
+
+        async def blocked_sleep(_delay):
+            await asyncio.Event().wait()
+
+        supervisor = asyncio.create_task(
+            gateway.supervise_reconciliation(
+                server,
+                reprobe_interval_seconds=900.0,
+                sleep=blocked_sleep,
+                initial_snapshot=gateway.health_snapshot(),
+            )
+        )
+        await asyncio.sleep(0)
+        core_runtime.armed = True
+        gateway.request_core_reconciliation()
+        try:
+            await asyncio.wait_for(
+                core_runtime.new_generation_published.wait(), timeout=1
+            )
+            self.assertEqual(transport.discovery_calls, 3)
+            self.assertEqual(set(registered_tools(server)), set())
+            health = gateway.health_snapshot()
+            self.assertEqual(health["core_withheld_read_count"], 2)
+            self.assertEqual(
+                {item["tool"] for item in health["core_withheld_tools"]},
+                {"ha_get_state", "ha_get_history"},
+            )
+            self.assertEqual(core_runtime.catalog_changes, [(False, 2)])
+            self.assertFalse(gateway._reprobe_event.is_set())
+            self.assertEqual(health["fallback_count"], 0)
+        finally:
+            supervisor.cancel()
+            await asyncio.gather(supervisor, return_exceptions=True)
+
     def tearDown(self):
         replace_dynamic_upstream_capabilities((), {})
 
