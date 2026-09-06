@@ -1420,19 +1420,67 @@ async def _run_governed_helper_state_contract(
                 desired_state="on",
                 expiration_minutes=5,
             )
-            assert turn_on["provider"] == HELPER_STATE_PROVIDER
-            assert turn_on["fallback"] == "none"
-            assert turn_on["plan"]["risk"]["level"] == "low"
             helper_policy = turn_on["plan"]["policy_decision"]
-            assert helper_policy["policy_class"] == "standard_admin"
-            assert helper_policy["risk_delta"] == "low"
-            assert helper_policy["physical_consequence"] == "none"
-            assert turn_on["plan"]["validation_results"][
-                "dependency_evidence_complete"
-            ] is True
-            assert len(exact_gateway.dispatches) == dispatch_baseline
-            assert (await exact_gateway.read_state(entity_id))["state"] == (
-                "off"
+            helper_validation = turn_on["plan"]["validation_results"]
+            helper_risk = turn_on["plan"]["risk"]
+            helper_diagnostic = {
+                "provider": _bounded_diagnostic_token(
+                    turn_on.get("provider"), punctuation="_-"
+                ),
+                "fallback": _bounded_diagnostic_token(
+                    turn_on.get("fallback"), punctuation="_-"
+                ),
+                "risk_level": _bounded_diagnostic_token(
+                    helper_risk.get("level"), punctuation="_-"
+                ),
+                "policy_class": _bounded_diagnostic_token(
+                    helper_policy.get("policy_class"), punctuation="_-"
+                ),
+                "risk_delta": _bounded_diagnostic_token(
+                    helper_policy.get("risk_delta"), punctuation="_-"
+                ),
+                "physical_consequence": _bounded_diagnostic_token(
+                    helper_policy.get("physical_consequence"), punctuation="_-"
+                ),
+                "dependency_evidence_complete": helper_validation.get(
+                    "dependency_evidence_complete"
+                ),
+                "execution_eligible": turn_on["plan"].get(
+                    "execution_eligible"
+                ),
+                "approval_actionable": turn_on["plan"].get(
+                    "approval_actionable"
+                ),
+                "dispatch_count": len(exact_gateway.dispatches),
+            }
+            helper_checks = {
+                "provider": turn_on["provider"] == HELPER_STATE_PROVIDER,
+                "fallback": turn_on["fallback"] == "none",
+                "risk_level": helper_risk["level"] == "low",
+                "policy_class": helper_policy["policy_class"]
+                == "standard_admin",
+                "risk_delta": helper_policy["risk_delta"] == "low",
+                "physical_consequence": helper_policy["physical_consequence"]
+                == "none",
+                "dependency_evidence_complete": helper_validation[
+                    "dependency_evidence_complete"
+                ]
+                is True,
+                "planning_dispatch_count": len(exact_gateway.dispatches)
+                == dispatch_baseline,
+            }
+            for missing_key, passed in helper_checks.items():
+                _assert_device_contract(
+                    passed,
+                    "helper_state_control",
+                    missing_key=missing_key,
+                    diagnostic=helper_diagnostic,
+                )
+            _assert_device_contract(
+                (await exact_gateway.read_state(entity_id))["state"] == "off",
+                "helper_state_control",
+                missing_key="planning_state_unchanged",
+                diagnostic=helper_diagnostic,
             )
 
             on_plan = await _approve_helper_state_plan(
@@ -2446,6 +2494,7 @@ _DEVICE_CONTRACT_SCENARIOS = frozenset(
         "dependency_index",
         "direct_device_target",
         "impact_analysis",
+        "helper_state_control",
         "persisted_references",
         "registry_shape",
         "split_projection",
