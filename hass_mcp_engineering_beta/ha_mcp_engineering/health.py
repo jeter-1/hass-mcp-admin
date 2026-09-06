@@ -140,7 +140,7 @@ class HealthRegistry:
                 }
             ),
             "upstream_read_gateway": (
-                self.upstream_read_gateway.health_snapshot()
+                self.upstream_read_gateway.health_projection()
                 if self.upstream_read_gateway
                 else {
                     "configured": False,

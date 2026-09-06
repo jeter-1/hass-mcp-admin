@@ -232,6 +232,47 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 
+    async def test_public_gateway_health_bounds_catalog_rows(self) -> None:
+        transport = _GatewayTransport(
+            self.capture["tools"], version="8.4.3"
+        )
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            replace(
+                _settings(self.signer.public_key_base64),
+                ha_mcp_release_registry_enabled=False,
+            ),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=None,
+        )
+        await gateway.initialize(FastMCP("beta58-public-health"))
+
+        internal = gateway.health_snapshot()
+        public = gateway.health_projection()
+
+        self.assertGreater(len(internal["blocked_tools"]), 0)
+        for field in (
+            "held_tools",
+            "core_withheld_tools",
+            "live_canary_required_tools",
+            "quarantined_tools",
+            "missing_tools",
+            "unreviewed_tools",
+            "exposed_tools",
+            "collision_mappings",
+            "blocked_tools",
+        ):
+            self.assertEqual(public[field], [])
+        self.assertTrue(public["catalog_name_projection_bounded"])
+        self.assertRegex(
+            public["catalog_name_projection_fingerprint"], r"^[0-9a-f]{64}$"
+        )
+        self.assertLess(len(json.dumps(public, indent=2)), 9_000)
+        self.assertEqual(public["dynamically_exposed_count"], 25)
+        self.assertEqual(public["fallback_count"], 0)
+        self.assertEqual(transport.calls, 0)
+
     async def test_signed_future_release_reuses_only_exact_binary_contracts(self) -> None:
         entry = _signed_entry_for(self.release, version="8.4.4")
         gateway, transport, snapshot = await self._initialize(

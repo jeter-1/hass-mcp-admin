@@ -4448,6 +4448,42 @@ class UpstreamReadGateway:
             self._sanitize_registry_enabled_health(value)
         return value
 
+    def health_projection(self) -> dict[str, Any]:
+        """Return bounded public health without per-tool catalog rows.
+
+        The internal snapshot retains the full reviewed admission inventory for
+        deterministic diagnostics.  The public server-health tool already
+        reports the corresponding counts and a fingerprint, so repeating every
+        admitted and blocked tool row can exhaust the bounded MCP response once
+        the Core and ha-mcp coordinators are both active.
+        """
+
+        value = self.health_snapshot()
+        tool_fields = (
+            "held_tools",
+            "core_withheld_tools",
+            "live_canary_required_tools",
+            "quarantined_tools",
+            "missing_tools",
+            "unreviewed_tools",
+            "exposed_tools",
+            "collision_mappings",
+            "blocked_tools",
+        )
+        raw_projection = {
+            field: value.get(field, []) for field in tool_fields
+        }
+        try:
+            value["catalog_name_projection_fingerprint"] = (
+                schema_fingerprint(raw_projection)
+            )
+        except Exception:
+            value["catalog_name_projection_fingerprint"] = None
+        value["catalog_name_projection_bounded"] = True
+        for field in tool_fields:
+            value[field] = []
+        return value
+
     @staticmethod
     def _sanitize_registry_enabled_health(value: dict[str, Any]) -> None:
         """Project signed-mode health without raw release or catalog data."""
