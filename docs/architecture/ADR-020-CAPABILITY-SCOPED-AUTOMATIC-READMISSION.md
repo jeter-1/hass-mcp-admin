@@ -1,7 +1,7 @@
 # ADR-020: Capability-scoped automatic-readmission foundation
 
 Status: accepted; ha-mcp production integration shipped in Beta 57 and Core
-production integration implemented locally for the next integration release
+production integration incorporated in the RC2 source candidate
 
 ## Context
 
@@ -283,6 +283,8 @@ or stable-v1 changes.
 - a production Core two-snapshot observer and granular binary-owned profiles;
 - independent Core runtime generations and atomic complete route-lease sets;
 - static, delegated, catalog, health, and F3 authority integration; and
+- exact Core 2026.9.0/2026.9.1 profiles paired with the binary-owned ha-mcp
+  8.4.3 child-device/effective-area adapter at publication and dispatch; and
 - tests proving no new provider, generic forwarding, write, action, fallback,
   or public-tool reachability.
 
@@ -290,10 +292,7 @@ or stable-v1 changes.
 
 - proxy transport recovery;
 - dynamic client catalog refresh and notification review;
-- exact Core 2026.9 disposable-image CI;
-- separately reviewed semantic profiles for held Core 2026.9 surfaces;
-- Track 3 integration; and
-- release staging, deployment, and runtime acceptance.
+- deployment, backup verification, Core upgrade, and live runtime acceptance.
 
 ## Operational conformance requirements
 

@@ -39,16 +39,21 @@ from .observation import (
     stable_observation,
 )
 from .profiles import (
+    CORE_2026_9_1_AUTHORITY,
     CORE_2026_9_AUTHORITY,
+    CORE_2026_9_RELEASE_AUTHORITIES,
     CORE_CAPABILITY_PROFILES,
     SUPPORTED_CORE_RELEASES,
     compiled_exact_authority,
 )
 from .routes import (
+    CORE_2026_9_DEVICE_ADAPTER_RELEASES,
+    CORE_2026_9_RELEASES,
     DELEGATED_CORE_REQUIREMENTS,
     DEVICE_DEPENDENT_DELEGATED_TOOLS,
     STATIC_TOOL_CORE_REQUIREMENTS,
     delegated_requirements,
+    delegated_provider_compatibility,
     f3_requirements,
     static_tool_requirements,
 )
@@ -56,7 +61,11 @@ from .runtime import CORE_READMISSION, CoreRouteAuthority, CoreRuntime
 
 
 __all__ = [
+    "CORE_2026_9_1_AUTHORITY",
     "CORE_2026_9_AUTHORITY",
+    "CORE_2026_9_DEVICE_ADAPTER_RELEASES",
+    "CORE_2026_9_RELEASES",
+    "CORE_2026_9_RELEASE_AUTHORITIES",
     "CORE_CAPABILITY_PROFILES",
     "CORE_IDENTITY",
     "CORE_PROTOCOL",
@@ -95,6 +104,7 @@ __all__ = [
     "canonical_json",
     "compiled_exact_authority",
     "delegated_requirements",
+    "delegated_provider_compatibility",
     "f3_requirements",
     "fingerprint",
     "stable_observation",

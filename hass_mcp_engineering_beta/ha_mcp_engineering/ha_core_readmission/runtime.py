@@ -21,7 +21,7 @@ from .models import (
 )
 from .observation import CoreObservationCollector, CoreSnapshotSource
 from .profiles import CORE_CAPABILITY_PROFILES, compiled_exact_authority
-from .routes import DEVICE_DEPENDENT_DELEGATED_TOOLS, f3_requirements
+from .routes import delegated_provider_compatibility, f3_requirements
 
 
 CORE_RECONCILIATION_INTERVAL_SECONDS = 300.0
@@ -245,6 +245,7 @@ class CoreRuntime:
         capability_ids: tuple[str, ...],
         *,
         delegated_tool: str | None = None,
+        delegated_adapter_version: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             generation = self._coordinator.current_generation
@@ -261,13 +262,17 @@ class CoreRuntime:
                 item is not None and item.disposition.admitted
                 for item in decisions
             )
+            provider_compatible, provider_reason = delegated_provider_compatibility(
+                tool_name=delegated_tool or "",
+                core_version=observation.version if observation is not None else None,
+                adapter_version=delegated_adapter_version,
+            )
+            available = available and provider_compatible
             disposition = (
                 "admitted"
                 if available
                 else "quarantined"
-                if delegated_tool in DEVICE_DEPENDENT_DELEGATED_TOOLS
-                and observation is not None
-                and observation.version == "2026.9.0"
+                if not provider_compatible
                 else next(
                     (
                         item.disposition.value
@@ -284,6 +289,7 @@ class CoreRuntime:
                         for item in decisions
                         if item is not None and not item.disposition.admitted
                     }
+                    | ({provider_reason} if provider_reason is not None else set())
                 )
             )
             return {
@@ -293,9 +299,19 @@ class CoreRuntime:
                 "generation": generation.generation if generation else None,
             }
 
-    def delegated_tool_available(self, tool_name: str, requirements: tuple[str, ...]) -> bool:
+    def delegated_tool_available(
+        self,
+        tool_name: str,
+        requirements: tuple[str, ...],
+        *,
+        adapter_version: str | None = None,
+    ) -> bool:
         return bool(
-            self.route_status(requirements, delegated_tool=tool_name)["available"]
+            self.route_status(
+                requirements,
+                delegated_tool=tool_name,
+                delegated_adapter_version=adapter_version,
+            )["available"]
         )
 
     @staticmethod
@@ -315,12 +331,22 @@ class CoreRuntime:
         *,
         target: Any | None = None,
         plan_created_at: str | None = None,
+        delegated_tool: str | None = None,
+        delegated_adapter_version: str | None = None,
     ) -> CoreRouteAuthority | None:
         with self._lock:
             self._counters["lease_attempts"] += 1
             observation = self._observation
             generation = self._coordinator.current_generation
             if observation is None or generation is None:
+                self._counters["lease_failures"] += 1
+                return None
+            provider_compatible, _provider_reason = delegated_provider_compatibility(
+                tool_name=delegated_tool or "",
+                core_version=observation.version,
+                adapter_version=delegated_adapter_version,
+            )
+            if not provider_compatible:
                 self._counters["lease_failures"] += 1
                 return None
             if not self._plan_is_current_locked(plan_created_at):

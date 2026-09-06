@@ -21,6 +21,7 @@ BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
 
 from ha_mcp_engineering.ha_core_readmission import (  # noqa: E402
+    CORE_2026_9_1_AUTHORITY,
     CORE_2026_9_AUTHORITY,
     CORE_CAPABILITY_PROFILES,
     DELEGATED_CORE_REQUIREMENTS,
@@ -47,7 +48,6 @@ from ha_mcp_engineering.ha_core_readmission.source import (  # noqa: E402
 )
 from ha_mcp_engineering.f3.contracts import (  # noqa: E402
     AdapterCapabilityDescriptor,
-    NormalizedOperationOutcome,
 )
 from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     _CoreDispatchAuthorityGuard,
@@ -90,11 +90,11 @@ def _fixture(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _core_2026_9_evidence() -> list[dict]:
+def _core_2026_9_evidence(version: str = "2026.9.0") -> list[dict]:
     registry = _fixture(DEVICE_FIXTURE)
     return capability_evidence_for_probes(
-        version="2026.9.0",
-        rest_config={"version": "2026.9.0"},
+        version=version,
+        rest_config={"version": version},
         states=[
             {
                 "entity_id": "sensor.synthetic",
@@ -103,7 +103,7 @@ def _core_2026_9_evidence() -> list[dict]:
             }
         ],
         services=[{"domain": "light", "services": {}}],
-        websocket_config={"version": "2026.9.0"},
+        websocket_config={"version": version},
         websocket_results={
             "areas": [{"area_id": "garage"}],
             "floors": [{"floor_id": "ground"}],
@@ -117,11 +117,15 @@ def _core_2026_9_evidence() -> list[dict]:
     )
 
 
-def _core_2026_9_snapshot(*, session_id: str = "core-session-2026-9") -> dict:
+def _core_2026_9_snapshot(
+    *,
+    version: str = "2026.9.0",
+    session_id: str = "core-session-2026-9",
+) -> dict:
     return _snapshot(
-        "2026.9.0",
+        version,
         session_id=session_id,
-        evidence=_core_2026_9_evidence(),
+        evidence=_core_2026_9_evidence(version),
     )
 
 
@@ -158,6 +162,20 @@ def _effective_projection(fixture: dict) -> dict:
             )
         ],
     }
+
+
+def _contains_projection(value: object, expected: object) -> bool:
+    if value == expected:
+        return True
+    if isinstance(value, dict):
+        return any(
+            _contains_projection(item, expected)
+            for pair in value.items()
+            for item in pair
+        )
+    if isinstance(value, list):
+        return any(_contains_projection(item, expected) for item in value)
+    return False
 
 
 class _MutableSource:
@@ -218,68 +236,68 @@ class _RecordingMcpApp:
 class Core20269AuthorityTests(unittest.TestCase):
     def test_immutable_authority_fixture_matches_compiled_profile(self):
         authority = _fixture(AUTHORITY_FIXTURE)
-        self.assertEqual(authority["home_assistant_core"], CORE_2026_9_AUTHORITY)
+        self.assertEqual(
+            authority["home_assistant_core"]["releases"]["2026.9.0"],
+            CORE_2026_9_AUTHORITY,
+        )
+        self.assertEqual(
+            authority["home_assistant_core"]["releases"]["2026.9.1"],
+            CORE_2026_9_1_AUTHORITY,
+        )
         self.assertEqual(
             authority["ha_mcp"]["source_commit"],
-            "701a7c26ac0e2309c7883a627d31873ab1510077",
+            "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
         )
-        self.assertEqual(authority["ha_mcp"]["parent_device_id_source_match_count"], 0)
-        self.assertEqual(authority["ha_mcp"]["effective_area_source_match_count"], 0)
+        self.assertTrue(
+            authority["ha_mcp"]["child_device_change"]["included_in_tag"]
+        )
+        self.assertGreater(
+            authority["ha_mcp"]["child_device_change"][
+                "parent_device_id_source_match_count"
+            ],
+            0,
+        )
+        self.assertGreater(
+            authority["ha_mcp"]["child_device_change"][
+                "effective_area_source_match_count"
+            ],
+            0,
+        )
 
-    def test_core_2026_9_decisions_are_capability_scoped(self):
+    def test_core_2026_9_exact_profiles_are_fully_admitted(self):
         observation = stable_observation(
             _core_2026_9_snapshot(), _core_2026_9_snapshot()
         )
         result = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES).reconcile(
             observation, compiled_exact_authority("2026.9.0")
         )
-        self.assertEqual(result.disposition, CoreDisposition.PARTIAL)
+        self.assertEqual(result.disposition, CoreDisposition.ADMITTED_EXACT)
         decisions = {
             item.capability_id: item for item in result.generation.decisions
         }
-        self.assertEqual(
-            sum(item.disposition.admitted for item in decisions.values()), 8
-        )
-        self.assertEqual(
-            decisions["core.direct_device_registry_read"].disposition,
-            CoreDisposition.HELD,
-        )
-        self.assertEqual(
-            decisions["core.delegated_device_effective_area"].disposition,
-            CoreDisposition.HELD,
-        )
-        for capability_id in (
-            "core.basic_rest_read",
-            "core.basic_websocket_read",
-            "core.state_service_discovery",
-            "core.non_device_registry_read",
-            "core.direct_entity_state_read",
-            "core.automation_configuration_read",
-            "core.dashboard_configuration_read",
-            "core.governance_observability",
-        ):
-            self.assertEqual(
-                decisions[capability_id].disposition,
-                CoreDisposition.ADMITTED_EXACT,
+        self.assertEqual(len(decisions), len(CORE_CAPABILITY_PROFILES))
+        self.assertTrue(
+            all(
+                decision.disposition == CoreDisposition.ADMITTED_EXACT
+                for decision in decisions.values()
             )
-        for capability_id in (
-            "core.template_semantics",
-            "core.configuration_validation",
-            "core.f3_mutation_verification",
-        ):
-            self.assertEqual(
-                decisions[capability_id].disposition,
-                CoreDisposition.HELD,
+        )
+
+    def test_core_2026_9_1_patch_profiles_are_fully_admitted(self):
+        observation = stable_observation(
+            _core_2026_9_snapshot(version="2026.9.1"),
+            _core_2026_9_snapshot(version="2026.9.1"),
+        )
+        result = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES).reconcile(
+            observation, compiled_exact_authority("2026.9.1")
+        )
+        self.assertEqual(result.disposition, CoreDisposition.ADMITTED_EXACT)
+        self.assertTrue(
+            all(
+                item.disposition == CoreDisposition.ADMITTED_EXACT
+                for item in result.generation.decisions
             )
-        for capability_id in (
-            "core.dependency_helper_planning",
-            "core.typed_helper_operation",
-            "core.governed_configuration_operation",
-        ):
-            self.assertEqual(
-                decisions[capability_id].disposition,
-                CoreDisposition.UNAVAILABLE,
-            )
+        )
 
     def test_pre_2026_9_profiles_remain_fully_admitted(self):
         for version in ("2026.7.2", "2026.8.0", "2026.8.1"):
@@ -297,7 +315,7 @@ class Core20269AuthorityTests(unittest.TestCase):
                 )
 
     def test_unknown_core_release_has_no_authority(self):
-        self.assertEqual(compiled_exact_authority("2026.9.1"), ())
+        self.assertEqual(compiled_exact_authority("2026.9.2"), ())
 
     def test_probe_projection_refuses_duplicate_or_incomplete_surfaces(self):
         registry = _fixture(DEVICE_FIXTURE)
@@ -361,20 +379,33 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
     def test_disposable_lane_is_immutable_bounded_and_nonproduction(self):
         lane = _fixture(LANE_FIXTURE)
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.1"]
+        release = registry.by_version["8.4.3"]
         self.assertEqual(
-            lane["home_assistant_image"],
-            "ghcr.io/home-assistant/home-assistant:2026.9.0@"
-            + CORE_2026_9_AUTHORITY["image_index_digest"],
+            lane["home_assistant_images"],
+            {
+                "2026.9.0": (
+                    "ghcr.io/home-assistant/home-assistant:2026.9.0@"
+                    + CORE_2026_9_AUTHORITY["image_index_digest"]
+                ),
+                "2026.9.1": (
+                    "ghcr.io/home-assistant/home-assistant:2026.9.1@"
+                    + CORE_2026_9_1_AUTHORITY["image_index_digest"]
+                ),
+            },
         )
         self.assertEqual(
             lane["ha_mcp_image"],
-            "ghcr.io/homeassistant-ai/ha-mcp:8.4.1@"
+            "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@"
             + release.image_index_digest,
         )
         self.assertFalse(lane["production_credentials_allowed"])
         self.assertFalse(lane["fallback_allowed"])
-        self.assertFalse(lane["core_mutation_allowed"])
+        self.assertFalse(lane["production_mutation_allowed"])
+        self.assertTrue(lane["disposable_reversible_mutation_allowed"])
+        self.assertEqual(
+            lane["network"],
+            "dedicated_internal_docker_bridge_with_loopback_only_test_ports",
+        )
         self.assertEqual(
             lane["execution_requirement"],
             "exact_head_ci_before_release_readiness",
@@ -393,13 +424,23 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                 "missing_parent_refusal",
                 "parent_cycle_refusal",
                 "state_json_semantics",
-                "template_dictionary_access_held",
-                "template_state_object_semantics_held",
-                "template_area_device_location_helpers_held",
-                "probatio_configuration_validation_held",
-                "f3_exact_readback_held",
-                "catalog_device_route_withdrawal",
-                "catalog_unrelated_read_retention",
+                "template_dictionary_access",
+                "template_state_object_semantics",
+                "template_area_device_location_helpers",
+                "probatio_configuration_validation_success",
+                "probatio_configuration_validation_warning",
+                "probatio_configuration_validation_error",
+                "probatio_configuration_validation_malformed",
+                "dependency_standard_helper_negative_control",
+                "dependency_consequential_helper_control",
+                "typed_helper_forward_verified_readback",
+                "typed_helper_duplicate_suppression",
+                "typed_helper_exact_restoration",
+                "f3_exact_readback",
+                "dashboard_read_continuity",
+                "dashboard_reversible_write_continuity",
+                "catalog_all_reviewed_read_retention",
+                "held_operation_status_unregistered",
                 "timeout_refusal",
                 "connection_loss_refusal",
                 "malformed_evidence_refusal",
@@ -408,40 +449,35 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         )
 
     def test_future_reviewed_device_authority_restores_only_delegated_reads(self):
-        evidence = _core_2026_9_evidence()
         profile = next(
             item
             for item in CORE_CAPABILITY_PROFILES
             if item.capability_id == "core.delegated_device_effective_area"
         )
-        evidence.append(
-            {
-                "capability_id": profile.capability_id,
-                "passed_checks": list(profile.required_checks),
-                "semantic_fingerprint": profile.contract_fingerprint,
-            }
-        )
-        snapshot = _snapshot("2026.9.0", evidence=evidence)
-        authority = list(compiled_exact_authority("2026.9.0"))
-        index = next(
-            index
-            for index, item in enumerate(authority)
+        snapshot = _snapshot("2026.9.2", evidence=_evidence())
+        selection = next(
+            item
+            for item in compiled_exact_authority("2026.9.1")
             if item.capability_ids == (profile.capability_id,)
         )
-        authority[index] = replace(
-            authority[index],
-            source=CoreAuthoritySource.VERIFIED_COMPATIBILITY,
-            status=CoreAuthorityStatus.POSITIVE,
-            reason_code="verified_compatible_release",
+        authority = (
+            replace(
+                selection,
+                subject_version="2026.9.2",
+                evidence_fingerprint="sha256:" + "a" * 64,
+                source=CoreAuthoritySource.VERIFIED_COMPATIBILITY,
+                status=CoreAuthorityStatus.POSITIVE,
+                reason_code="verified_compatible_release",
+            ),
         )
         coordinator = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
         result = coordinator.reconcile(
-            stable_observation(snapshot, deepcopy(snapshot)), tuple(authority)
+            stable_observation(snapshot, deepcopy(snapshot)), authority
         )
         delegated = result.generation.decision_for(profile.capability_id)
         direct = result.generation.decision_for("core.direct_device_registry_read")
         self.assertEqual(delegated.disposition, CoreDisposition.ADMITTED_COMPATIBLE)
-        self.assertEqual(direct.disposition, CoreDisposition.HELD)
+        self.assertEqual(direct.disposition, CoreDisposition.UNAVAILABLE)
 
     def test_expired_revoked_and_malformed_authority_fail_closed(self):
         observation = stable_observation(
@@ -624,7 +660,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         await runtime.reconcile_once("identity_or_connection_change")
         health = runtime.health_snapshot()
         self.assertGreater(health["current_generation"], old_generation)
-        self.assertEqual(health["compatible_count"], 8)
+        self.assertEqual(health["compatible_count"], len(CORE_CAPABILITY_PROFILES))
         self.assertEqual(health["fallback_count"], 0)
         self.assertIsNone(runtime.consume(old_authority))
         self.assertIsNotNone(runtime.acquire(("core.basic_rest_read",)))
@@ -633,10 +669,10 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 ("core.basic_rest_read",), plan_created_at=plan_created_at
             )
         )
-        self.assertIsNone(
+        self.assertIsNotNone(
             runtime.acquire(("core.delegated_device_effective_area",))
         )
-        self.assertIsNone(runtime.acquire(("core.template_semantics",)))
+        self.assertIsNotNone(runtime.acquire(("core.template_semantics",)))
 
     async def test_repeated_reconciliation_is_idempotent_and_redacted(self):
         runtime, source = await self._runtime(_core_2026_9_snapshot())
@@ -670,8 +706,8 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         summary = event["analysis_summary"]
         self.assertEqual(summary["observed_core_version"], "2026.9.0")
-        self.assertEqual(summary["admitted_count"], 8)
-        self.assertEqual(summary["withheld_count"], 8)
+        self.assertEqual(summary["admitted_count"], len(CORE_CAPABILITY_PROFILES))
+        self.assertEqual(summary["withheld_count"], 0)
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)
         self.assertLessEqual(len(encoded.encode("utf-8")), 8_192)
@@ -714,7 +750,7 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_version_and_unstable_observation_fail_closed(self):
         runtime, source = await self._runtime(
-            _snapshot("2026.9.1", evidence=_evidence())
+            _snapshot("2026.9.2", evidence=_evidence())
         )
         self.assertEqual(runtime.health_snapshot()["compatible_count"], 0)
         source.snapshot = _snapshot(
@@ -726,19 +762,20 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["compatible_count"], 0)
         self.assertEqual(health["fallback_count"], 0)
 
-    async def test_f3_predispatch_reprobes_and_core_2026_9_remains_held(self):
+    async def test_f3_predispatch_reprobes_and_core_2026_9_is_admitted(self):
         runtime, source = await self._runtime(_core_2026_9_snapshot())
         guard = _CoreDispatchAuthorityGuard(
             runtime, datetime.now(timezone.utc).isoformat()
         )
         authority = await guard.acquire(prepared_dashboard_operation(), object())
-        self.assertIsNone(authority)
+        self.assertIsNotNone(authority)
         self.assertEqual(source.calls, 4)
+        self.assertTrue(runtime.release(authority))
         health = runtime.health_snapshot()
-        self.assertGreaterEqual(health["counters"]["lease_failures"], 1)
+        self.assertEqual(health["counters"]["lease_failures"], 0)
         self.assertEqual(health["fallback_count"], 0)
 
-    async def test_f3_readback_is_not_called_without_current_core_authority(self):
+    async def test_f3_readback_uses_current_core_2026_9_authority(self):
         runtime, source = await self._runtime(_core_2026_9_snapshot())
 
         class Adapter:
@@ -757,16 +794,13 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
             async def observe(self, _prepared, _dispatch):
                 self.observe_calls += 1
-                raise AssertionError("held Core readback must not reach provider")
+                return "authoritative-observation"
 
         adapter = Adapter()
         guarded = _CoreVerificationAdapter(adapter, runtime)
         result = await guarded.observe(prepared_dashboard_operation(), object())
-        self.assertEqual(
-            result.outcome, NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED
-        )
-        self.assertFalse(result.observation_complete)
-        self.assertEqual(adapter.observe_calls, 0)
+        self.assertEqual(result, "authoritative-observation")
+        self.assertEqual(adapter.observe_calls, 1)
         self.assertEqual(source.calls, 4)
 
 
@@ -809,7 +843,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
 
     def test_current_tool_accounting_and_core_requirements_are_exact(self):
         registry = load_reviewed_upstream_release_registry()
-        policy = registry.by_version["8.4.1"].policy
+        policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 51)
         self.assertEqual(counts["automatic_read"], 25)
@@ -870,13 +904,13 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         counts = json.loads(result.stdout)["tool_counts"]
-        self.assertEqual(counts["reviewed_upstream_version"], "8.4.1")
+        self.assertEqual(counts["reviewed_upstream_version"], "8.4.3")
         self.assertEqual(counts["reviewed_stock_catalog"], 78)
         self.assertEqual(counts["expected_delegated_reads"], 25)
         self.assertEqual(counts["expected_connector_total"], 76)
 
     async def test_catalog_withdrawal_and_restoration_are_capability_local(self):
-        runtime, source = await Core20269RuntimeTests()._runtime(
+        runtime, _source = await Core20269RuntimeTests()._runtime(
             _core_2026_9_snapshot()
         )
         registry = load_reviewed_upstream_release_registry()
@@ -904,21 +938,12 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(registered_tools(server).get("ha_get_device"))
         health = gateway.health_snapshot()
-        self.assertEqual(health["core_withheld_read_count"], 6)
-        self.assertEqual(health["dynamically_exposed_count"], 19)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 19, 70)
+        self.assertEqual(health["core_withheld_read_count"], 5)
+        self.assertEqual(health["dynamically_exposed_count"], 20)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 71)
         self.assertEqual(
-            {
-                item["tool"]: item["disposition"]
-                for item in health["core_withheld_tools"]
-            },
-            {
-                **{
-                    tool: "quarantined"
-                    for tool in DEVICE_DEPENDENT_DELEGATED_TOOLS
-                },
-                "ha_eval_template": "held",
-            },
+            {item["tool"] for item in health["core_withheld_tools"]},
+            set(DEVICE_DEPENDENT_DELEGATED_TOOLS),
         )
         result = json.loads(
             await registered_tools(server).get("ha_get_state").run(
@@ -934,12 +959,18 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             registered_tools(server).get("ha_get_operation_status")
         )
         upstream_generation = gateway._admission_generation
-        unaffected_route = gateway._exposed["ha_get_state"]
 
-        source.snapshot = _snapshot("2026.8.1", evidence=_evidence())
-        await runtime.reconcile_once("identity_or_connection_change")
-        self.assertTrue(
-            runtime.route_status(("core.direct_entity_state_read",))["available"]
+        release = registry.by_version["8.4.3"]
+        capture = _capture_for_release(release)
+        review = _fixture(ROOT / release.artifact_evidence_resource)
+        captured_by_name = {item["name"]: item for item in capture["tools"]}
+        transport.catalog = replace(
+            transport.catalog,
+            server_version="8.4.3",
+            tools=tuple(
+                captured_by_name[name]
+                for name in review["runtime_catalog"]["runtime_tool_order"]
+            ),
         )
         restored_health = await gateway.initialize(server)
         self.assertIsNotNone(
@@ -950,11 +981,196 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             gateway.health_snapshot()["dynamically_exposed_count"], 25
         )
-        self.assertEqual(gateway._admission_generation, upstream_generation)
-        self.assertIs(gateway._exposed["ha_get_state"], unaffected_route)
+        self.assertGreater(gateway._admission_generation, upstream_generation)
         counters = runtime.health_snapshot()["counters"]
-        self.assertEqual(counters["catalog_withdrawals"], 6)
-        self.assertEqual(counters["catalog_restorations"], 6)
+        self.assertEqual(counters["catalog_withdrawals"], 5)
+        self.assertEqual(counters["catalog_restorations"], 5)
+        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+
+    async def test_core_2026_9_device_reads_require_corrected_ha_mcp_release(self):
+        snapshot = _snapshot("2026.9.0", evidence=_evidence())
+        positive_authority = tuple(
+            replace(
+                item,
+                status=CoreAuthorityStatus.POSITIVE,
+                reason_code="synthetic_positive_core_authority",
+            )
+            for item in compiled_exact_authority("2026.9.0")
+        )
+        source = _MutableSource(snapshot)
+        runtime = CoreRuntime()
+        runtime.configure(
+            object(),
+            source=source,
+            authority_provider=lambda _version: positive_authority,
+        )
+        await runtime.reconcile_once("startup")
+        registry = load_reviewed_upstream_release_registry()
+        release = registry.by_version["8.4.1"]
+        capture = _capture_for_release(release)
+        review = _fixture(ROOT / release.artifact_evidence_resource)
+        captured_by_name = {item["name"]: item for item in capture["tools"]}
+        tools = [
+            captured_by_name[name]
+            for name in review["runtime_catalog"]["runtime_tool_order"]
+        ]
+        transport = FakeTransport(tools, version="8.4.1")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            release_registry=registry,
+            core_runtime=runtime,
+        )
+        server = FastMCP("core-2026-9-legacy-ha-mcp-test")
+        await gateway.initialize(server)
+
+        self.assertIsNone(registered_tools(server).get("ha_get_device"))
+        self.assertIsNotNone(registered_tools(server).get("ha_get_state"))
+        self.assertEqual(
+            {
+                item["tool"] for item in gateway.health_snapshot()["core_withheld_tools"]
+            },
+            set(DEVICE_DEPENDENT_DELEGATED_TOOLS),
+        )
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+
+    async def test_call_time_device_adapter_drift_fails_before_dispatch(self):
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _core_2026_9_snapshot()
+        )
+        registry = load_reviewed_upstream_release_registry()
+        release = registry.by_version["8.4.3"]
+        capture = _capture_for_release(release)
+        review = _fixture(ROOT / release.artifact_evidence_resource)
+        captured_by_name = {item["name"]: item for item in capture["tools"]}
+        tools = [
+            captured_by_name[name]
+            for name in review["runtime_catalog"]["runtime_tool_order"]
+        ]
+        transport = FakeTransport(tools, version="8.4.3")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            release_registry=registry,
+            core_runtime=runtime,
+        )
+        server = FastMCP("core-2026-9-call-time-drift-test")
+        await gateway.initialize(server)
+        tool = registered_tools(server).get("ha_get_device")
+        self.assertIsNotNone(tool)
+
+        gateway._exposed["ha_get_device"] = replace(
+            gateway._exposed["ha_get_device"],
+            adapter_version="8.4.1",
+        )
+        value = json.loads(await tool.run({"device_id": "synthetic-device"}))
+
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_prohibited")
+        self.assertEqual(len(transport.attempts), 1)
+        self.assertEqual(transport.calls, [])
+        self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
+
+    async def test_all_device_consumers_preserve_child_and_effective_area_semantics(self):
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _core_2026_9_snapshot()
+        )
+        registry = load_reviewed_upstream_release_registry()
+        release = registry.by_version["8.4.3"]
+        capture = _capture_for_release(release)
+        review = _fixture(ROOT / release.artifact_evidence_resource)
+        captured_by_name = {item["name"]: item for item in capture["tools"]}
+        tools = [
+            captured_by_name[name]
+            for name in review["runtime_catalog"]["runtime_tool_order"]
+        ]
+        transport = FakeTransport(tools, version="8.4.3")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            settings(),
+            transport=transport,
+            release_registry=registry,
+            core_runtime=runtime,
+        )
+        server = FastMCP("core-2026-9-device-consumer-test")
+        await gateway.initialize(server)
+
+        child = "synthetic-child-device"
+        parent = "synthetic-parent-device"
+        entity = "switch.synthetic-child"
+        area = "synthetic-effective-area"
+        cases = {
+            "ha_get_device": {
+                "arguments": {"device_id": child},
+                "payload": {
+                    "success": True,
+                    "device": {
+                        "device_id": child,
+                        "parent_device_id": parent,
+                        "area_id": area,
+                    },
+                    "entities": [{"entity_id": entity, "device_id": child}],
+                },
+            },
+            "ha_get_overview": {
+                "arguments": {"detail_level": "full", "domains": ["switch"]},
+                "payload": {
+                    "success": True,
+                    "area_analysis": {
+                        area: [{"entity_id": entity, "device_id": child}]
+                    },
+                },
+            },
+            "ha_search": {
+                "arguments": {"query": entity, "domain_filter": "switch"},
+                "payload": {
+                    "success": True,
+                    "partial": False,
+                    "entities": [
+                        {"entity_id": entity, "device_id": child, "area_id": area}
+                    ],
+                },
+            },
+            "ha_get_entity": {
+                "arguments": {"entity_id": entity},
+                "payload": {
+                    "success": True,
+                    "entities": [
+                        {"entity_id": entity, "device_id": child, "area_id": area}
+                    ],
+                },
+            },
+            "ha_get_entity_exposure": {
+                "arguments": {"entity_id": entity},
+                "payload": {
+                    "success": True,
+                    "entity_id": entity,
+                    "device_id": child,
+                    "effective_area_id": area,
+                    "exposed_to": [],
+                },
+            },
+        }
+        for name, case in cases.items():
+            with self.subTest(tool=name):
+                transport.result = {
+                    "content": [
+                        {"type": "text", "text": json.dumps(case["payload"])}
+                    ],
+                    "isError": False,
+                }
+                tool = registered_tools(server).get(name)
+                self.assertIsNotNone(tool)
+                value = json.loads(await tool.run(case["arguments"]))
+                self.assertTrue(value["success"])
+                self.assertTrue(_contains_projection(value["data"], entity))
+                self.assertTrue(_contains_projection(value["data"], child))
+                self.assertTrue(_contains_projection(value["data"], area))
+
+        self.assertEqual(len(transport.calls), len(cases))
         self.assertEqual(gateway.health_snapshot()["fallback_count"], 0)
 
 class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
@@ -1007,7 +1223,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
             if item.get("type") == "http.response.body"
         )
 
-    async def test_static_gateway_withholds_only_unproven_core_route(self):
+    async def test_static_gateway_admits_reviewed_core_2026_9_routes(self):
         runtime, _source = await Core20269RuntimeTests()._runtime(
             _core_2026_9_snapshot()
         )
@@ -1020,21 +1236,21 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
             core_runtime=runtime,
         )
 
-        held = await self._call(gateway, "list_devices")
-        self.assertIn(b"CoreCapabilityUnavailable", held)
-        self.assertEqual(app.calls, [])
+        admitted_device = await self._call(gateway, "list_devices")
+        self.assertIn(b'"isError": false', admitted_device)
+        self.assertEqual(len(app.calls), 1)
 
         admitted = await self._call(gateway, "list_areas")
         self.assertIn(b'"isError": false', admitted)
-        self.assertEqual(len(app.calls), 1)
+        self.assertEqual(len(app.calls), 2)
         self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
 
     async def test_held_canary_cannot_dispatch_without_core_authority(self):
         runtime, _source = await Core20269RuntimeTests()._runtime(
-            _snapshot("2026.9.1", evidence=_evidence())
+            _snapshot("2026.9.2", evidence=_evidence())
         )
         registry = load_reviewed_upstream_release_registry()
-        release = registry.by_version["8.4.1"]
+        release = registry.by_version["8.4.3"]
         capture = _capture_for_release(release)
         review = _fixture(ROOT / release.artifact_evidence_resource)
         captured_by_name = {item["name"]: item for item in capture["tools"]}
@@ -1042,7 +1258,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
             captured_by_name[name]
             for name in review["runtime_catalog"]["runtime_tool_order"]
         ]
-        transport = FakeTransport(tools, version="8.4.1")
+        transport = FakeTransport(tools, version="8.4.3")
         gateway = UpstreamReadGateway()
         gateway.configure(
             settings(),

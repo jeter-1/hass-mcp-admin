@@ -1088,6 +1088,11 @@ class UpstreamReadGateway:
             capabilities: list[dict[str, Any]] = []
             collisions: list[dict[str, str]] = []
             core_withheld: list[dict[str, Any]] = []
+            delegated_adapter_version = (
+                readmission_selection.binary_release.version
+                if readmission_selection is not None
+                else catalog.server_version
+            )
             for decision in evaluation.matched:
                 entry = decision.entry
                 tool = decision.observed_tool
@@ -1096,6 +1101,7 @@ class UpstreamReadGateway:
                     core_status = self._core_runtime.route_status(
                         requirements,
                         delegated_tool=entry.upstream_name,
+                        delegated_adapter_version=delegated_adapter_version,
                     )
                     if not core_status["available"]:
                         core_withheld.append(
@@ -2890,6 +2896,8 @@ class UpstreamReadGateway:
                 if self._core_runtime is not None and requirements:
                     lease.core_authority = self._core_runtime.acquire(
                         requirements,
+                        delegated_tool=policy_entry.upstream_name,
+                        delegated_adapter_version=mapping.adapter_version,
                     )
                     if lease.core_authority is None:
                         raise DashboardTransportError(

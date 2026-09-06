@@ -17,6 +17,7 @@ from .profiles import CORE_CAPABILITY_PROFILES
 
 MAX_CORE_PROBE_BYTES = 4_000_000
 MAX_CORE_PROBE_ITEMS = 20_000
+CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1"})
 
 
 def _profile(capability_id: str):
@@ -119,17 +120,21 @@ def capability_evidence_for_probes(
         "core.direct_device_registry_read",
         (
             device_assessment.complete
-            if version == "2026.9.0"
+            if version in CORE_2026_9_VERSIONS
             else legacy_device_shape
         ),
         semantic=True,
     )
-    # Pre-2026.9 releases use the already-reviewed flat device model. Core
-    # 2026.9 needs a separate ha-mcp projection probe; the direct Core snapshot
-    # cannot manufacture that cross-surface evidence.
+    # This is Core-side device evidence only.  For Core 2026.9, the delegated
+    # gateway independently requires a binary-owned ha-mcp adapter that
+    # implements child-device and effective-area semantics.
     add(
         "core.delegated_device_effective_area",
-        version != "2026.9.0" and legacy_device_shape,
+        (
+            device_assessment.complete
+            if version in CORE_2026_9_VERSIONS
+            else legacy_device_shape
+        ),
         semantic=True,
     )
     add("core.direct_entity_state_read", state_shape)
@@ -146,11 +151,16 @@ def capability_evidence_for_probes(
     )
     add("core.governance_observability", True)
 
-    # These exact profiles were already reviewed for the deployed pre-2026.9
-    # releases.  For 2026.9 they are intentionally withheld until dedicated
-    # semantic probes and disposable acceptance exist; identity success must
-    # never manufacture that authority.
-    if version in {"2026.7.2", "2026.8.0", "2026.8.1"}:
+    # These exact profiles are released only for the compiled source versions
+    # whose semantic and disposable-runtime contracts were reviewed.  The
+    # coordinator still requires the exact binary-owned semantic fingerprint;
+    # an unknown version or a successful identity probe cannot select it.
+    if version in {
+        "2026.7.2",
+        "2026.8.0",
+        "2026.8.1",
+        *CORE_2026_9_VERSIONS,
+    }:
         add("core.template_semantics", websocket_ok, semantic=True)
         add("core.configuration_validation", rest_ok, semantic=True)
         add(

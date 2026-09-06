@@ -15,6 +15,9 @@ DEVICE_DEPENDENT_DELEGATED_TOOLS = frozenset(
     }
 )
 
+CORE_2026_9_RELEASES = frozenset({"2026.9.0", "2026.9.1"})
+CORE_2026_9_DEVICE_ADAPTER_RELEASES = frozenset({"8.4.3"})
+
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
     "ha_config_get_calendar_events": ("core.basic_websocket_read",),
@@ -84,6 +87,30 @@ def delegated_requirements(tool_name: str) -> tuple[str, ...]:
     return DELEGATED_CORE_REQUIREMENTS.get(tool_name, ())
 
 
+def delegated_provider_compatibility(
+    *,
+    tool_name: str,
+    core_version: str | None,
+    adapter_version: str | None,
+) -> tuple[bool, str | None]:
+    """Bind Core 2026.9 device routes to a reviewed corrected ha-mcp adapter.
+
+    The Core observation proves only Core's child-device/effective-area
+    contract.  The independent upstream admission generation proves the
+    selected binary-owned adapter.  Neither surface may manufacture the
+    other's authority.
+    """
+
+    if (
+        tool_name not in DEVICE_DEPENDENT_DELEGATED_TOOLS
+        or core_version not in CORE_2026_9_RELEASES
+    ):
+        return True, None
+    if adapter_version in CORE_2026_9_DEVICE_ADAPTER_RELEASES:
+        return True, None
+    return False, "ha_mcp_child_device_contract_unproven"
+
+
 def static_tool_requirements(tool_name: str) -> tuple[str, ...]:
     """Return Core requirements without changing static tool registration."""
 
@@ -106,10 +133,13 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
 
 
 __all__ = [
+    "CORE_2026_9_DEVICE_ADAPTER_RELEASES",
+    "CORE_2026_9_RELEASES",
     "DELEGATED_CORE_REQUIREMENTS",
     "DEVICE_DEPENDENT_DELEGATED_TOOLS",
     "STATIC_TOOL_CORE_REQUIREMENTS",
     "delegated_requirements",
+    "delegated_provider_compatibility",
     "f3_requirements",
     "static_tool_requirements",
 ]

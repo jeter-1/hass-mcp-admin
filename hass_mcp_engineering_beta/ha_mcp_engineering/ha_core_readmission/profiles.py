@@ -46,6 +46,36 @@ CORE_2026_9_AUTHORITY: dict[str, Any] = {
     "provenance": "slsa_v1_attestations_observed_for_both_manifests",
 }
 
+CORE_2026_9_1_AUTHORITY: dict[str, Any] = {
+    "version": "2026.9.1",
+    "tag": "refs/tags/2026.9.1",
+    "tag_type": "lightweight_signed_commit",
+    "source_commit": "fc034572d0216a04ed40a07154394908a594dfed",
+    "source_tree": "4b2a1cd29e3d85c43d791e03eb82a17244956fec",
+    "source_archive_sha256": (
+        "27f657b4fbf76980f8451007116b37f09cc1226bb52c4ae6100cd46532120ff2"
+    ),
+    "source_commit_signature": "verified",
+    "image_index_digest": (
+        "sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918"
+    ),
+    "architecture_manifests": {
+        "linux/amd64": (
+            "sha256:31076d37e3b7dc9681b32d892aa4413fa866c9a90e5c8a50324b397dce415d17"
+        ),
+        "linux/arm64": (
+            "sha256:134bdc1b5f3d32f201987966134fc6edbba0809c6d5100651b28dc653f443d39"
+        ),
+    },
+    "image_version": "2026.9.1",
+    "provenance": "slsa_v1_attestations_observed_for_both_manifests",
+}
+
+CORE_2026_9_RELEASE_AUTHORITIES: dict[str, dict[str, Any]] = {
+    CORE_2026_9_AUTHORITY["version"]: CORE_2026_9_AUTHORITY,
+    CORE_2026_9_1_AUTHORITY["version"]: CORE_2026_9_1_AUTHORITY,
+}
+
 
 SUPPORTED_CORE_RELEASES: tuple[tuple[str, str, str], ...] = (
     (
@@ -67,6 +97,11 @@ SUPPORTED_CORE_RELEASES: tuple[tuple[str, str, str], ...] = (
         CORE_2026_9_AUTHORITY["version"],
         CORE_2026_9_AUTHORITY["source_commit"],
         CORE_2026_9_AUTHORITY["image_index_digest"],
+    ),
+    (
+        CORE_2026_9_1_AUTHORITY["version"],
+        CORE_2026_9_1_AUTHORITY["source_commit"],
+        CORE_2026_9_1_AUTHORITY["image_index_digest"],
     ),
 )
 
@@ -189,8 +224,7 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
             "child_device_reduced_shape",
             "parent_reference_integrity",
             "effective_area_inheritance",
-            "ha_mcp_parent_projection",
-            "ha_mcp_effective_area_projection",
+            "core_device_semantics_for_delegation",
         ),
         provider_boundary="reviewed_ha_mcp_read_gateway_adapter",
         response_contract={
@@ -354,42 +388,6 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
 )
 
 
-_CORE_2026_9_DECISIONS: dict[str, tuple[CoreAuthorityStatus, str]] = {
-    "core.direct_device_registry_read": (
-        CoreAuthorityStatus.DENY_ONLY,
-        "direct_child_device_adapter_unproven",
-    ),
-    "core.delegated_device_effective_area": (
-        CoreAuthorityStatus.DENY_ONLY,
-        "ha_mcp_child_device_contract_unproven",
-    ),
-    "core.template_semantics": (
-        CoreAuthorityStatus.DENY_ONLY,
-        "template_semantics_unproven",
-    ),
-    "core.configuration_validation": (
-        CoreAuthorityStatus.DENY_ONLY,
-        "probatio_semantics_unproven",
-    ),
-    "core.dependency_helper_planning": (
-        CoreAuthorityStatus.UNAVAILABLE,
-        "helper_planning_semantics_unavailable",
-    ),
-    "core.typed_helper_operation": (
-        CoreAuthorityStatus.UNAVAILABLE,
-        "typed_helper_semantics_unavailable",
-    ),
-    "core.f3_mutation_verification": (
-        CoreAuthorityStatus.DENY_ONLY,
-        "exact_readback_semantics_unproven",
-    ),
-    "core.governed_configuration_operation": (
-        CoreAuthorityStatus.UNAVAILABLE,
-        "mutation_core_authority_unavailable",
-    ),
-}
-
-
 def compiled_exact_authority(version: str) -> tuple[CoreAuthoritySelection, ...]:
     """Return compiled per-capability decisions for one exact release."""
 
@@ -400,18 +398,13 @@ def compiled_exact_authority(version: str) -> tuple[CoreAuthoritySelection, ...]
     if release is None:
         return ()
     source_version, source_commit, image_digest = release
+    exact_authority = CORE_2026_9_RELEASE_AUTHORITIES.get(version)
     result: list[CoreAuthoritySelection] = []
     for profile in CORE_CAPABILITY_PROFILES:
-        if version == "2026.9.0":
-            status, reason = _CORE_2026_9_DECISIONS.get(
-                profile.capability_id,
-                (CoreAuthorityStatus.POSITIVE, "compiled_exact_release"),
-            )
-        else:
-            status, reason = (
-                CoreAuthorityStatus.POSITIVE,
-                "compiled_exact_release",
-            )
+        status, reason = (
+            CoreAuthorityStatus.POSITIVE,
+            "compiled_exact_release",
+        )
         result.append(
             CoreAuthoritySelection(
                 source=CoreAuthoritySource.COMPILED_EXACT,
@@ -431,8 +424,8 @@ def compiled_exact_authority(version: str) -> tuple[CoreAuthoritySelection, ...]
                         "source_commit": source_commit,
                         "image_digest": image_digest,
                         "source_tree": (
-                            CORE_2026_9_AUTHORITY["source_tree"]
-                            if version == "2026.9.0"
+                            exact_authority["source_tree"]
+                            if exact_authority is not None
                             else None
                         ),
                         "profile": profile.to_mapping(),
@@ -446,7 +439,9 @@ def compiled_exact_authority(version: str) -> tuple[CoreAuthoritySelection, ...]
 
 
 __all__ = [
+    "CORE_2026_9_1_AUTHORITY",
     "CORE_2026_9_AUTHORITY",
+    "CORE_2026_9_RELEASE_AUTHORITIES",
     "CORE_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

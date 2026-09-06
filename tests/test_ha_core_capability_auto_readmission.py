@@ -233,9 +233,9 @@ class CoreCoordinatorTests(unittest.TestCase):
     def test_compiled_exact_supported_releases_are_source_bound(self):
         self.assertEqual(
             tuple(item[0] for item in SUPPORTED_CORE_RELEASES),
-            ("2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0"),
+            ("2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0", "2026.9.1"),
         )
-        for version, _commit, _image in SUPPORTED_CORE_RELEASES[:-1]:
+        for version, _commit, _image in SUPPORTED_CORE_RELEASES:
             result = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES).reconcile(
                 _observation(version),
                 compiled_exact_authority(version),
@@ -246,14 +246,7 @@ class CoreCoordinatorTests(unittest.TestCase):
                 result.generation.decision_for("core.basic_rest_read").disposition,
                 CoreDisposition.ADMITTED_EXACT,
             )
-        candidate = CoreReadmissionCoordinator(
-            CORE_CAPABILITY_PROFILES
-        ).reconcile(
-            _observation("2026.9.0"),
-            compiled_exact_authority("2026.9.0"),
-        )
-        self.assertEqual(candidate.disposition, CoreDisposition.PARTIAL)
-        self.assertEqual(compiled_exact_authority("2026.9.1"), ())
+        self.assertEqual(compiled_exact_authority("2026.9.2"), ())
 
     def test_compatible_patch_restores_reads_without_restart(self):
         old = self.coordinator.reconcile(
