@@ -42,22 +42,13 @@ class AndroidCompanionContractRestClient:
         actions = data.get("actions") if isinstance(data, dict) else None
         action = actions[0] if isinstance(actions, list) and actions else None
         navigation_uri = data.get("url") if isinstance(data, dict) else None
-        android_navigation_uri = (
-            f"deep-link://{navigation_uri}"
-            if isinstance(navigation_uri, str)
-            else None
-        )
-        action_navigation_path = (
-            navigation_uri.removeprefix("homeassistant://navigate")
-            if isinstance(navigation_uri, str)
-            else None
-        )
         if (
             not isinstance(navigation_uri, str)
-            or data.get("clickAction") != android_navigation_uri
+            or not navigation_uri.startswith("/app/")
+            or data.get("clickAction") != navigation_uri
             or not isinstance(action, dict)
             or action.get("action") != "URI"
-            or action.get("uri") != action_navigation_path
+            or action.get("uri") != navigation_uri
             or "authenticationRequired" in action
         ):
             raise HomeAssistantApiError(details={"status": 400})
@@ -114,19 +105,15 @@ class Beta32ApprovalNotificationTests(unittest.IsolatedAsyncioTestCase):
         method, path, body = rest.calls[0]
         self.assertEqual(method, "POST")
         self.assertEqual(path, "/services/notify/mobile_app_synthetic_pixel")
-        review_url = (
-            "homeassistant://navigate/hassio/ingress/"
-            f"{SELF_SLUG}/plans/{PLAN_ID}"
-        )
+        review_url = f"/app/{SELF_SLUG}"
         self.assertEqual(body["data"]["url"], review_url)
-        android_navigation_uri = f"deep-link://{review_url}"
         self.assertEqual(
-            body["data"]["clickAction"], android_navigation_uri
+            body["data"]["clickAction"], review_url
         )
         self.assertEqual(
-            body["data"]["actions"][0]["uri"],
-            review_url.removeprefix("homeassistant://navigate"),
+            body["data"]["actions"][0]["uri"], review_url
         )
+        self.assertNotIn(PLAN_ID, json.dumps(body, sort_keys=True))
         self.assertNotIn(
             "authenticationRequired", body["data"]["actions"][0]
         )

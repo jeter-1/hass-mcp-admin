@@ -19,16 +19,14 @@ PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 TAG_GUARD_PATH = ROOT / "scripts" / "assert_registry_tags_absent.sh"
 ANCESTOR_GUARD_PATH = ROOT / "scripts" / "assert_protected_release_ancestor.sh"
 PROMOTION_PATH = ROOT / "scripts" / "promote_next_release.py"
+RELEASE_TRANSITION_PATH = ROOT / "scripts" / "release_transition.py"
 GUARDED_PUBLISHER_PATH = (
     ROOT / "scripts" / "publish_registry_tags_guarded.py"
 )
 SOURCE_VERIFIER_PATH = ROOT / "scripts" / "verify_publication_source_image.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
-# RC2dev12 remains the immutable failed full-host-reboot candidate. The
-# correction uses the staged-release mechanism without changing advertised
-# RC2dev12 runtime metadata in this feature pull request.
-NEXT_VERSION = "2.0.0-rc2-dev13"
-PROMOTION_FIXTURE_CURRENT_VERSION = "2.0.0-rc2-dev12"
+NEXT_VERSION = "2.2.0-rc.1"
+PROMOTION_FIXTURE_CURRENT_VERSION = "2.2.0-beta.58"
 PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
@@ -321,6 +319,10 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 script.parent.mkdir(parents=True)
                 config.write_text('version: "2.2.0-beta.50"\n', encoding="utf-8")
                 shutil.copy2(PROMOTION_PATH, script)
+                shutil.copy2(
+                    RELEASE_TRANSITION_PATH,
+                    script.with_name("release_transition.py"),
+                )
                 subprocess.run(
                     ["git", "init", "-b", "main"],
                     cwd=repo,
@@ -2276,10 +2278,10 @@ class PromotionScriptTests(unittest.TestCase):
                 f'SERVER_VERSION = "{current}"\n'
             ),
             "scripts/validate_addon_metadata.py": f'BETA_VERSION = "{current}"\n',
-            "docs/RC2DEV13_RELEASE_NOTES.md": (
+            "docs/V2_2_0_RC1_RELEASE_NOTES.md": (
                 f"# {candidate} release notes\n\nVersion: `{candidate}`\n"
             ),
-            "docs/RC2DEV13_ACCEPTANCE.md": (
+            "docs/V2_2_0_RC1_ACCEPTANCE.md": (
                 f"# {candidate} acceptance\n\nVersion: `{candidate}`\n"
             ),
         }
@@ -2308,6 +2310,10 @@ class PromotionScriptTests(unittest.TestCase):
             self.make_repo(root)
             scripts = root / "scripts"
             shutil.copy2(PROMOTION_PATH, scripts / "promote_next_release.py")
+            shutil.copy2(
+                RELEASE_TRANSITION_PATH,
+                scripts / "release_transition.py",
+            )
             shutil.copy2(ROOT / "scripts" / "codex-context.py", scripts / "codex-context.py")
             command = [
                 sys.executable,
@@ -2401,12 +2407,12 @@ class PromotionScriptTests(unittest.TestCase):
 
     def test_missing_or_non_authoritative_staged_documents_fail_closed(self):
         for relative, replacement in (
-            ("docs/RC2DEV13_ACCEPTANCE.md", None),
+            ("docs/V2_2_0_RC1_ACCEPTANCE.md", None),
             (
-                "docs/RC2DEV13_ACCEPTANCE.md",
-                "# 2.0.0-rc2-dev13 acceptance\n\nHistorical only; cannot authorize.\n",
+                "docs/V2_2_0_RC1_ACCEPTANCE.md",
+                "# 2.2.0-rc.1 acceptance\n\nHistorical only; cannot authorize.\n",
             ),
-            ("docs/RC2DEV13_RELEASE_NOTES.md", None),
+            ("docs/V2_2_0_RC1_RELEASE_NOTES.md", None),
         ):
             with self.subTest(relative=relative, replacement=replacement), tempfile.TemporaryDirectory() as directory:
                 self.make_repo(directory)
@@ -2426,7 +2432,9 @@ class PromotionScriptTests(unittest.TestCase):
                 Path(directory), NEXT_VERSION
             )
             self.assertEqual(resolution["resolution_status"], "exact")
-            (Path(directory) / "docs" / "RC2DEV13_ACCEPTANCE.md").unlink()
+            (
+                Path(directory) / "docs" / "V2_2_0_RC1_ACCEPTANCE.md"
+            ).unlink()
             with self.assertRaises(self.module.PromotionError):
                 self.module.validate_document_authority(
                     Path(directory), NEXT_VERSION

@@ -352,7 +352,16 @@ def resolve_documents(repo_root: Path, version: str) -> dict[str, Any]:
             if identity["kind"] == "development_rc":
                 stem = f"RC{rc_number}DEV{identity['dev']}"
             else:
-                stem = f"RC{rc_number}"
+                versioned_stem = (
+                    f"V{identity['core'].replace('.', '_')}_RC{rc_number}"
+                )
+                legacy_stem = f"RC{rc_number}"
+                docs_root = repo_root / "docs"
+                stem = (
+                    versioned_stem
+                    if any(docs_root.glob(f"{versioned_stem}_*.md"))
+                    else legacy_stem
+                )
         docs_root = repo_root / "docs"
         candidates = {
             "active_release_notes": docs_root / f"{stem}_RELEASE_NOTES.md",

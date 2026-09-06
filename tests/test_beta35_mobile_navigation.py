@@ -105,7 +105,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
             "synthetic-beta35-request",
         )
 
-    async def test_body_tap_and_action_derive_from_one_exact_plan_target(self):
+    async def test_body_tap_and_action_use_one_exact_approval_inbox_target(self):
         rest = CapturingRestClient()
         manager, _ = await self._manager(rest)
         self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
@@ -114,13 +114,9 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(rest.calls), 1)
         body = rest.calls[0][2]
-        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
-        navigation_uri = f"homeassistant://navigate{review_path}"
-        android_navigation_uri = f"deep-link://{navigation_uri}"
-        self.assertEqual(body["data"]["url"], navigation_uri)
-        self.assertEqual(
-            body["data"]["clickAction"], android_navigation_uri
-        )
+        review_path = f"/app/{SELF_SLUG}"
+        self.assertEqual(body["data"]["url"], review_path)
+        self.assertEqual(body["data"]["clickAction"], review_path)
         self.assertEqual(
             body["data"]["actions"],
             [
@@ -131,30 +127,8 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         )
-        self.assertEqual(
-            body["data"]["url"].removeprefix(
-                "homeassistant://navigate"
-            ),
-            review_path,
-        )
-        self.assertEqual(
-            body["data"]["clickAction"].removeprefix(
-                "deep-link://homeassistant://navigate"
-            ),
-            review_path,
-        )
-        self.assertEqual(
-            body["data"]["clickAction"].count("deep-link://"), 1
-        )
-        self.assertEqual(
-            body["data"]["clickAction"].count(
-                "homeassistant://navigate"
-            ),
-            1,
-        )
-
         encoded = json.dumps(body, sort_keys=True)
-        self.assertIn(PLAN_ID, encoded)
+        self.assertNotIn(PLAN_ID, encoded)
         self.assertNotIn(CHALLENGE_ID, encoded)
         for forbidden in (
             "approval_token",
@@ -168,8 +142,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         ):
             self.assertNotIn(forbidden, encoded.lower())
 
-    async def test_action_button_uses_cross_platform_ingress_target(self):
-        """The shared action must not reuse Android's body-only wrapper."""
+    async def test_action_button_uses_same_server_app_panel_target(self):
 
         rest = CapturingRestClient()
         manager, _ = await self._manager(rest)
@@ -178,7 +151,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         await manager.process_next()
 
         body = rest.calls[0][2]
-        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+        review_path = f"/app/{SELF_SLUG}"
         self.assertEqual(
             body["data"]["actions"],
             [
@@ -193,7 +166,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
             "deep-link://", body["data"]["actions"][0]["uri"]
         )
 
-    async def test_ios_body_and_action_resolve_the_exact_plan_route(self):
+    async def test_ios_body_and_action_use_relative_approval_inbox_route(self):
         rest = CapturingRestClient()
         manager, _ = await self._manager(rest)
         self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
@@ -201,18 +174,12 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         await manager.process_next()
 
         data = rest.calls[0][2]["data"]
-        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
-        self.assertEqual(
-            data["url"], f"homeassistant://navigate{review_path}"
-        )
-        self.assertEqual(
-            data["url"].removeprefix("homeassistant://navigate"),
-            review_path,
-        )
+        review_path = f"/app/{SELF_SLUG}"
+        self.assertEqual(data["url"], review_path)
         self.assertEqual(data["actions"][0]["uri"], review_path)
         self.assertNotIn("deep-link://", data["actions"][0]["uri"])
 
-    async def test_android_body_and_action_resolve_the_exact_plan_route(self):
+    async def test_android_body_and_action_use_relative_approval_inbox_route(self):
         rest = CapturingRestClient()
         manager, _ = await self._manager(rest)
         self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
@@ -220,21 +187,12 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         await manager.process_next()
 
         data = rest.calls[0][2]["data"]
-        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
-        self.assertEqual(
-            data["clickAction"],
-            f"deep-link://homeassistant://navigate{review_path}",
-        )
-        self.assertEqual(
-            data["clickAction"].removeprefix(
-                "deep-link://homeassistant://navigate"
-            ),
-            review_path,
-        )
+        review_path = f"/app/{SELF_SLUG}"
+        self.assertEqual(data["clickAction"], review_path)
         self.assertEqual(data["actions"][0]["uri"], review_path)
         self.assertNotIn("deep-link://", data["actions"][0]["uri"])
 
-    async def test_each_notification_keeps_its_own_plan_navigation_target(self):
+    async def test_each_notification_keeps_distinct_tag_and_shared_inbox_target(self):
         rest = CapturingRestClient()
         manager, _ = await self._manager(rest)
         self._enqueue(manager, PLAN_ID, CHALLENGE_ID)
@@ -252,10 +210,8 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             targets,
             [
-                "deep-link://homeassistant://navigate/hassio/ingress/"
-                f"{SELF_SLUG}/plans/{PLAN_ID}",
-                "deep-link://homeassistant://navigate/hassio/ingress/"
-                f"{SELF_SLUG}/plans/{SECOND_PLAN_ID}",
+                f"/app/{SELF_SLUG}",
+                f"/app/{SELF_SLUG}",
             ],
         )
         action_targets = [
@@ -264,9 +220,13 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             action_targets,
             [
-                f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}",
-                f"/hassio/ingress/{SELF_SLUG}/plans/{SECOND_PLAN_ID}",
+                f"/app/{SELF_SLUG}",
+                f"/app/{SELF_SLUG}",
             ],
+        )
+        self.assertNotEqual(
+            rest.calls[0][2]["data"]["tag"],
+            rest.calls[1][2]["data"]["tag"],
         )
 
     async def test_documented_navigation_forms_match_runtime_contract(self):
@@ -281,7 +241,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         def documented(value: str) -> str:
             return value.replace(
                 SELF_SLUG, "{verified_addon_slug}"
-            ).replace(PLAN_ID, "{plan_id}")
+            )
 
         external_approval = (
             ROOT / "docs" / "EXTERNAL_APPROVAL.md"
@@ -289,10 +249,13 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         mobile_navigation = (
             ROOT / "docs" / "BETA35_MOBILE_APPROVAL_NAVIGATION.md"
         ).read_text(encoding="utf-8")
-        combined = f"{external_approval}\n{mobile_navigation}"
-        self.assertIn(documented(data["url"]), combined)
-        self.assertIn(documented(data["clickAction"]), combined)
-        self.assertIn(documented(data["actions"][0]["uri"]), combined)
+        self.assertIn(documented(data["url"]), external_approval)
+        self.assertIn(documented(data["clickAction"]), external_approval)
+        self.assertIn(
+            documented(data["actions"][0]["uri"]), external_approval
+        )
+        self.assertIn("Beta 35 emitted", mobile_navigation)
+        self.assertIn("RC1 emits", mobile_navigation)
         self.assertNotIn(
             "Android `clickAction`, iOS `url`, and URI action target",
             external_approval,
@@ -403,9 +366,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(health["handset_clear_observable"])
 
     async def test_exact_image_fixture_records_bounded_platform_hashes(self):
-        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
-        ios_target = f"homeassistant://navigate{review_path}"
-        android_target = f"deep-link://{ios_target}"
+        review_path = f"/app/{SELF_SLUG}"
         body = {
             "title": "Home Assistant approval requested",
             "message": (
@@ -414,8 +375,8 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
             ),
             "data": {
                 "tag": "ha_mcp_approval_synthetic",
-                "url": ios_target,
-                "clickAction": android_target,
+                "url": review_path,
+                "clickAction": review_path,
                 "actions": [
                     {
                         "action": "URI",
@@ -442,11 +403,11 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             recorded["ios_url_sha256"],
-            hashlib.sha256(ios_target.encode()).hexdigest(),
+            hashlib.sha256(review_path.encode()).hexdigest(),
         )
         self.assertEqual(
             recorded["android_click_action_sha256"],
-            hashlib.sha256(android_target.encode()).hexdigest(),
+            hashlib.sha256(review_path.encode()).hexdigest(),
         )
         self.assertEqual(
             recorded["action_uri_sha256"],
@@ -475,9 +436,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(PLAN_ID, json.dumps(recorded, sort_keys=True))
 
     async def test_exact_image_fixture_rejects_drift_and_authority_fields(self):
-        review_path = f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
-        ios_target = f"homeassistant://navigate{review_path}"
-        android_target = f"deep-link://{ios_target}"
+        review_path = f"/app/{SELF_SLUG}"
         base = {
             "title": "Home Assistant approval requested",
             "message": (
@@ -486,8 +445,8 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
             ),
             "data": {
                 "tag": "ha_mcp_approval_synthetic",
-                "url": ios_target,
-                "clickAction": android_target,
+                "url": review_path,
+                "clickAction": review_path,
                 "actions": [
                     {
                         "action": "URI",
@@ -499,7 +458,7 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
         }
         invalid_bodies = []
         for mutation in (
-            "relative_body",
+            "retired_ingress_body",
             "android_action",
             "ios_action",
             "authority_title",
@@ -511,14 +470,18 @@ class Beta35MobileNavigationTests(unittest.IsolatedAsyncioTestCase):
             "authentication_required",
         ):
             candidate = json.loads(json.dumps(base))
-            if mutation == "relative_body":
-                candidate["data"]["url"] = review_path
-                relative_android_target = f"deep-link://{review_path}"
-                candidate["data"]["clickAction"] = relative_android_target
+            if mutation == "retired_ingress_body":
+                candidate["data"]["url"] = (
+                    f"/hassio/ingress/{SELF_SLUG}/plans/{PLAN_ID}"
+                )
             elif mutation == "android_action":
-                candidate["data"]["actions"][0]["uri"] = android_target
+                candidate["data"]["actions"][0]["uri"] = (
+                    f"deep-link://{review_path}"
+                )
             elif mutation == "ios_action":
-                candidate["data"]["actions"][0]["uri"] = ios_target
+                candidate["data"]["url"] = (
+                    f"homeassistant://navigate{review_path}"
+                )
             elif mutation == "authority_title":
                 candidate["title"] = "Home Assistant plan_hash requested"
             elif mutation == "authority_message":

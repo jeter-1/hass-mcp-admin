@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 from dataclasses import dataclass
+import importlib.util
 import os
 from pathlib import Path
 import re
@@ -22,7 +23,7 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
-BETA_VERSION = "2.2.0-beta.58"
+BETA_VERSION = "2.2.0-rc.1"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION_PATH = Path(".release/next-version")
 NON_RELEASE_BETA_PATHS = frozenset({"hass_mcp_engineering_beta/AGENTS.md"})
@@ -62,10 +63,6 @@ SEMVER = re.compile(
     r"^(?P<major>0|[1-9]\d*)\.(?P<minor>0|[1-9]\d*)\.(?P<patch>0|[1-9]\d*)"
     r"(?:-(?P<prerelease>[0-9A-Za-z.-]+))?$"
 )
-SEQUENCED_DEVELOPMENT_VERSION = re.compile(
-    r"^(?P<core>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-"
-    r"(?P<channel>beta\.|rc2-dev)(?P<sequence>[1-9]\d*)$"
-)
 REGISTRY_TAG_NOT_FOUND = re.compile(
     r"manifest unknown|no such manifest|"
     r"unexpected status from HEAD request.+404 Not Found",
@@ -75,6 +72,21 @@ REGISTRY_TAG_NOT_FOUND = re.compile(
 
 class MetadataValidationError(RuntimeError):
     pass
+
+
+def _release_transition_module():
+    path = Path(__file__).with_name("release_transition.py")
+    spec = importlib.util.spec_from_file_location(
+        "_engineering_release_transition",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise MetadataValidationError(
+            "Unable to load release-transition validation"
+        )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 @dataclass(frozen=True)
@@ -155,23 +167,13 @@ def staged_release_version(repo_root: Path, advertised_version: str) -> str | No
             "Staged release declaration must contain exactly one version"
         )
     candidate = lines[0]
-    if not is_newer_version(candidate, advertised_version):
-        raise MetadataValidationError(
-            "Staged release version must be newer than advertised metadata"
+    try:
+        _release_transition_module().validate_release_transition(
+            advertised_version,
+            candidate,
         )
-    current_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(advertised_version)
-    candidate_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(candidate)
-    if (
-        current_match is None
-        or candidate_match is None
-        or candidate_match["core"] != current_match["core"]
-        or candidate_match["channel"] != current_match["channel"]
-        or int(candidate_match["sequence"])
-        != int(current_match["sequence"]) + 1
-    ):
-        raise MetadataValidationError(
-            "Staged release must be the next version in the active development sequence"
-        )
+    except Exception as exc:
+        raise MetadataValidationError(str(exc)) from exc
     return candidate
 
 

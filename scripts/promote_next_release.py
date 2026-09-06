@@ -7,14 +7,7 @@ import importlib.util
 from pathlib import Path
 import re
 
-from awesomeversion import AwesomeVersion
-
-
 NEXT_VERSION_PATH = Path(".release/next-version")
-SEQUENCED_DEVELOPMENT_VERSION = re.compile(
-    r"^(?P<core>(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))-"
-    r"(?P<channel>beta\.|rc2-dev)(?P<sequence>[1-9]\d*)$"
-)
 AUTHORITATIVE_VERSION_FILES = (
     (
         Path("hass_mcp_engineering_beta/config.yaml"),
@@ -36,6 +29,19 @@ AUTHORITATIVE_VERSION_FILES = (
 
 class PromotionError(RuntimeError):
     pass
+
+
+def _release_transition_module():
+    path = Path(__file__).with_name("release_transition.py")
+    spec = importlib.util.spec_from_file_location(
+        "_engineering_release_transition",
+        path,
+    )
+    if spec is None or spec.loader is None:
+        raise PromotionError("Unable to load release-transition validation")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def read_next_version(repo_root: Path) -> str:
@@ -77,33 +83,13 @@ def advertised_version(repo_root: Path) -> str:
 
 
 def validate_sequenced_transition(current: str, candidate: str) -> None:
-    """Require the exact next version in one active development sequence."""
+    """Require the canonical next Engineering release transition."""
 
+    module = _release_transition_module()
     try:
-        current_version = AwesomeVersion(current)
-        candidate_version = AwesomeVersion(candidate)
-        if not candidate_version > current_version:
-            raise PromotionError(
-                "The release candidate must be newer than the current version"
-            )
-        current_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(current)
-        candidate_match = SEQUENCED_DEVELOPMENT_VERSION.fullmatch(candidate)
-        if (
-            current_match is None
-            or candidate_match is None
-            or candidate_match["core"] != current_match["core"]
-            or candidate_match["channel"] != current_match["channel"]
-            or int(candidate_match["sequence"])
-            != int(current_match["sequence"]) + 1
-        ):
-            raise PromotionError(
-                "The release candidate must be the next version in the active "
-                "development sequence"
-            )
-    except PromotionError:
-        raise
+        module.validate_release_transition(current, candidate)
     except Exception as exc:
-        raise PromotionError("A release version is not AwesomeVersion-compatible") from exc
+        raise PromotionError(str(exc)) from exc
 
 
 def validate_candidate(repo_root: Path) -> tuple[str, str]:

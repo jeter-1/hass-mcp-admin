@@ -2314,16 +2314,10 @@ async def inspect_approval_notification(
             )
 
             expected_ingress_path = (
-                "/hassio/ingress/"
-                "df26dea6_hass_mcp_engineering_beta/plans/"
-                f"{plan_id}"
+                "/app/df26dea6_hass_mcp_engineering_beta"
             )
-            expected_ios_url = (
-                f"homeassistant://navigate{expected_ingress_path}"
-            )
-            expected_android_target = (
-                f"deep-link://{expected_ios_url}"
-            )
+            expected_ios_url = expected_ingress_path
+            expected_android_target = expected_ingress_path
             notification_key = (
                 "ha_mcp_approval_"
                 + hashlib.sha256(challenge_id.encode()).hexdigest()[:24]
@@ -2457,7 +2451,7 @@ async def inspect_approval_notification(
             "/addons/self/info"
         ),
         "notification_dispatch_count": len(matching_calls),
-        "exact_ingress_plan_link": True,
+        "exact_app_panel_link": True,
         "configured": notification_health.get("configured"),
         "worker_running": notification_health.get("worker_running"),
         "submitted": notification_health.get("submitted"),

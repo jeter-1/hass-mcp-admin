@@ -354,17 +354,12 @@ class ApprovalNotificationManager:
                     dispatched=False,
                 )
                 return
-            review_path = (
-                f"/hassio/ingress/{addon_slug}/plans/{work.plan_id}"
-            )
-            # Derive every platform representation from the one authenticated
-            # Ingress path.  iOS body taps accept the Home Assistant URL-handler
-            # form directly.  Android body taps use deep-link:// to pass that
-            # URI to the exported navigation handler.  Both clients accept the
-            # relative frontend path for a URI action, so the shared action must
-            # not reuse Android's body-only wrapper.
-            review_url = f"homeassistant://navigate{review_path}"
-            android_review_url = f"deep-link://{review_url}"
+            # Home Assistant's app-panel route resolves the verified installed
+            # add-on inside the same server that delivered the notification.
+            # Every interaction opens the approval inbox through that one
+            # relative target; no external URL handler or Ingress session is
+            # needed and the notification conveys no per-plan authority.
+            review_path = f"/app/{addon_slug}"
             body = {
                 "title": "Home Assistant approval requested",
                 "message": (
@@ -373,8 +368,8 @@ class ApprovalNotificationManager:
                 ),
                 "data": {
                     "tag": work.notification_key,
-                    "url": review_url,
-                    "clickAction": android_review_url,
+                    "url": review_path,
+                    "clickAction": review_path,
                     "actions": [
                         {
                             "action": "URI",
