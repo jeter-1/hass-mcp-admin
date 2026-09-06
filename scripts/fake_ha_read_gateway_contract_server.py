@@ -668,6 +668,8 @@ async def fixture_stats(_request: web.Request) -> web.Response:
 
 
 def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
+    if message_type == "get_config":
+        return {"version": "2026.7.2"}
     if message_type == "hacs/info":
         return {"version": "2.0.5"}
     if message_type == "hacs/repositories/list":

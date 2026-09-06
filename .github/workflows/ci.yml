@@ -259,7 +259,13 @@ jobs:
             > "$contract_dir/configuration.yaml"
           : > "$contract_dir/automations.yaml"
           : > "$contract_dir/scripts.yaml"
-          docker network create --internal "$HA_CONTRACT_NETWORK"
+          # A dedicated bridge isolates this disposable topology from every
+          # unrelated container while the explicit loopback-only published
+          # ports let the bounded host-side contract client reach Core and
+          # ha-mcp. Docker's --internal networks intentionally suppress those
+          # published-port routes and therefore cannot serve this acceptance
+          # topology.
+          docker network create --driver bridge "$HA_CONTRACT_NETWORK"
       - name: Persist migration fixture with exact Home Assistant 2026.7.2
         shell: bash
         env:

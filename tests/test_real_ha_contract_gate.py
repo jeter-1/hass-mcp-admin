@@ -1222,7 +1222,11 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn("input_number: {}", startup_script)
         self.assertIn("beta23_device_fixture", startup_script)
         self.assertIn("custom_components/ha_mcp_tools", startup_script)
-        self.assertIn("docker network create --internal", startup_script)
+        self.assertIn(
+            'docker network create --driver bridge "$HA_CONTRACT_NETWORK"',
+            startup_script,
+        )
+        self.assertNotIn("docker network create --internal", startup_script)
         self.assertNotIn("runner.temp", str(job["env"]))
         self.assertIn('>> "$GITHUB_ENV"', startup_script)
         for variable in (
@@ -1244,6 +1248,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         writer_script = str(writer["run"])
         self.assertIn("$HA_FIXTURE_WRITER_IMAGE", writer_script)
         self.assertIn("--prepare-migration-fixture", writer_script)
+        self.assertIn("-p 127.0.0.1:18123:8123", writer_script)
+        self.assertIn('--network "$HA_CONTRACT_NETWORK"', writer_script)
         self.assertIn('docker stop --time 30 "$HA_WRITER_CONTAINER"', writer_script)
         target = next(
             step
@@ -1253,6 +1259,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         )
         target_script = str(target["run"])
         self.assertIn("$HA_CONTRACT_IMAGE", target_script)
+        self.assertIn("-p 127.0.0.1:8123:8123", target_script)
+        self.assertIn('--network "$HA_CONTRACT_NETWORK"', target_script)
         self.assertIn("kitchen_sink:", target_script)
         cleanup = next(
             step

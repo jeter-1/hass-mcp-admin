@@ -311,6 +311,12 @@ class ExactAddonProfileTests(unittest.TestCase):
                     fixture.SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES,
                 )
 
+    def test_core_fixture_exposes_authenticated_get_config_read(self):
+        self.assertEqual(
+            fixture._result_for("get_config", {}),
+            {"version": "2026.7.2"},
+        )
+
     def test_hacs_fixture_exposes_source_derived_read_inputs_only(self):
         self.assertEqual(fixture._result_for("hacs/info", {}), {"version": "2.0.5"})
         repositories = fixture._result_for("hacs/repositories/list", {})
