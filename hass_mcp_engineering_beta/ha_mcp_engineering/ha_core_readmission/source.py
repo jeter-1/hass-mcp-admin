@@ -69,6 +69,10 @@ def _bounded_json(value: Any) -> bool:
     return len(encoded) <= MAX_CORE_PROBE_BYTES
 
 
+def _reject_non_finite_json_constant(value: str) -> None:
+    raise ValueError(f"core_probe_response_non_finite:{value}")
+
+
 def _configuration_validation_response(value: Any) -> bool:
     if (
         not _bounded_mapping(value)
@@ -121,15 +125,25 @@ def capability_evidence_for_probes(
 ) -> list[dict[str, Any]]:
     """Project transient raw probes into bounded binary-owned check evidence."""
 
-    state_shape = _registry_sequence(states, "entity_id") and all(
-        isinstance(item.get("state"), str)
-        and isinstance(item.get("attributes"), Mapping)
-        for item in states
+    state_shape = (
+        _registry_sequence(states, "entity_id")
+        and _bounded_json(states)
+        and all(
+            isinstance(item.get("state"), str)
+            and isinstance(item.get("attributes"), Mapping)
+            for item in states
+        )
     )
-    service_shape = _registry_sequence(services, "domain") and all(
-        isinstance(item.get("services"), Mapping) for item in services
+    service_shape = (
+        _registry_sequence(services, "domain")
+        and _bounded_json(services)
+        and all(isinstance(item.get("services"), Mapping) for item in services)
     )
-    rest_ok = _bounded_mapping(rest_config) and rest_config.get("version") == version
+    rest_ok = (
+        _bounded_mapping(rest_config)
+        and _bounded_json(rest_config)
+        and rest_config.get("version") == version
+    )
     websocket_ok = (
         _bounded_mapping(websocket_config)
         and websocket_config.get("version") == version
@@ -271,7 +285,10 @@ class AiohttpCoreSnapshotSource:
             total += len(chunk)
             if total > MAX_CORE_PROBE_BYTES:
                 raise RuntimeError("core_probe_response_oversized")
-        return json.loads(b"".join(chunks))
+        return json.loads(
+            b"".join(chunks),
+            parse_constant=_reject_non_finite_json_constant,
+        )
 
     async def wait_for_connection_change(
         self,

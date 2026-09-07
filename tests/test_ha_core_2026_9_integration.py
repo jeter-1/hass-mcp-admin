@@ -297,6 +297,77 @@ class _ProbeSessionSequence(_ProbeSession):
         return self.websockets.pop(0)
 
 
+class _RawJsonContent:
+    def __init__(self, payload: bytes):
+        self.chunks = [payload, b""]
+
+    async def read(self, _size):
+        return self.chunks.pop(0)
+
+
+class _RawJsonResponse:
+    status = 200
+
+    def __init__(self, payload: bytes):
+        self.content = _RawJsonContent(payload)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        return None
+
+
+class _RawJsonSnapshotSession(_ProbeSession):
+    def __init__(self, rest_payloads, validation_payload, websocket):
+        super().__init__(websocket)
+        self.rest_payloads = rest_payloads
+        self.validation_payload = validation_payload
+
+    def get(self, url, **_kwargs):
+        path = next(path for path in self.rest_payloads if url.endswith(path))
+        return _RawJsonResponse(self.rest_payloads[path])
+
+    def post(self, _url, **_kwargs):
+        return _RawJsonResponse(self.validation_payload)
+
+
+def _complete_probe_websocket(version: str) -> _SequenceWebSocket:
+    def success(command_id, result):
+        return {
+            "id": command_id,
+            "type": "result",
+            "success": True,
+            "result": result,
+        }
+
+    return _SequenceWebSocket(
+        [
+            {"type": "auth_required"},
+            {"type": "auth_ok", "ha_version": version},
+            success(1, {"version": version}),
+            success(2, []),
+            success(3, []),
+            success(4, []),
+            success(5, []),
+            success(6, []),
+            success(7, []),
+            success(8, {"views": []}),
+            success(9, {"id": "synthetic"}),
+            success(10, []),
+            {
+                "id": 11,
+                "type": "result",
+                "success": False,
+                "error": {
+                    "code": "not_found",
+                    "message": "The trace could not be found",
+                },
+            },
+        ]
+    )
+
+
 class _RecordingMcpApp:
     def __init__(self):
         self.calls: list[dict] = []
@@ -583,6 +654,91 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                 }
                 self.assertNotIn("core.configuration_validation", admitted)
 
+    def test_nonfinite_rest_evidence_projection_withholds_authority(self):
+        inputs = {
+            "version": "2026.9.1",
+            "rest_config": {"version": "2026.9.1"},
+            "states": [
+                {
+                    "entity_id": "sensor.synthetic",
+                    "state": "on",
+                    "attributes": {},
+                }
+            ],
+            "services": [{"domain": "light", "services": {}}],
+            "websocket_config": {"version": "2026.9.1"},
+            "websocket_results": {
+                "areas": [],
+                "floors": [],
+                "labels": [],
+                "entities": [],
+                "devices": [],
+                "dashboards": [],
+                "dashboard": {"views": []},
+                "automation": {"id": "synthetic"},
+                "trace_list": [],
+                "trace_get": {
+                    "_ha_mcp_engineering_expected_probe_error": "not_found"
+                },
+            },
+            "configuration_validation": {
+                "result": "valid",
+                "errors": None,
+                "warnings": None,
+            },
+        }
+        constants = (
+            ("nan", float("nan")),
+            ("positive_infinity", float("inf")),
+            ("negative_infinity", float("-inf")),
+        )
+
+        for constant_name, constant in constants:
+            for surface in ("config", "states", "services"):
+                with self.subTest(
+                    constant=constant_name,
+                    surface=surface,
+                ):
+                    candidate = deepcopy(inputs)
+                    if surface == "config":
+                        candidate["rest_config"]["bad"] = constant
+                    elif surface == "states":
+                        candidate["states"][0]["attributes"]["bad"] = constant
+                    else:
+                        candidate["services"][0]["services"]["synthetic"] = {
+                            "bad": constant
+                        }
+                    admitted = {
+                        item["capability_id"]
+                        for item in capability_evidence_for_probes(**candidate)
+                    }
+
+                    if surface == "config":
+                        for capability_id in (
+                            "core.basic_rest_read",
+                            "core.configuration_validation",
+                            "core.f3_mutation_verification",
+                            "core.governed_configuration_operation",
+                        ):
+                            self.assertNotIn(capability_id, admitted)
+                    elif surface == "states":
+                        for capability_id in (
+                            "core.basic_rest_read",
+                            "core.state_service_discovery",
+                            "core.direct_entity_state_read",
+                            "core.typed_helper_operation",
+                        ):
+                            self.assertNotIn(capability_id, admitted)
+                    else:
+                        self.assertNotIn(
+                            "core.state_service_discovery", admitted
+                        )
+                        self.assertIn("core.basic_rest_read", admitted)
+                        self.assertIn(
+                            "core.direct_entity_state_read", admitted
+                        )
+                        self.assertIn("core.typed_helper_operation", admitted)
+
     async def test_nonfinite_websocket_result_is_a_bounded_probe_failure(self):
         source = AiohttpCoreSnapshotSource(object())
         websocket = _SyntheticWebSocket(
@@ -600,6 +756,126 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                 5,
                 "config/entity_registry/list",
             )
+
+    async def test_nonfinite_rest_json_is_capability_local_or_identity_fatal(self):
+        version = "2026.9.1"
+        valid_rest = {
+            "/config": b'{"version":"2026.9.1"}',
+            "/states": (
+                b'[{"entity_id":"sensor.synthetic","state":"on",'
+                b'"attributes":{}}]'
+            ),
+            "/services": b'[{"domain":"light","services":{}}]',
+        }
+        valid_validation = (
+            b'{"result":"valid","errors":null,"warnings":null}'
+        )
+
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            for surface in ("config", "states", "services", "validation"):
+                with self.subTest(constant=constant, surface=surface):
+                    rest_payloads = dict(valid_rest)
+                    validation_payload = valid_validation
+                    encoded_constant = constant.encode("ascii")
+                    if surface == "config":
+                        rest_payloads["/config"] = (
+                            b'{"version":"2026.9.1","bad":'
+                            + encoded_constant
+                            + b"}"
+                        )
+                    elif surface == "states":
+                        rest_payloads["/states"] = (
+                            b'[{"entity_id":"sensor.synthetic","state":"on",'
+                            b'"attributes":{"bad":'
+                            + encoded_constant
+                            + b"}}]"
+                        )
+                    elif surface == "services":
+                        rest_payloads["/services"] = (
+                            b'[{"domain":"light","services":{"synthetic":'
+                            b'{"bad":'
+                            + encoded_constant
+                            + b"}}}]"
+                        )
+                    else:
+                        validation_payload = (
+                            b'{"result":"valid","errors":null,"warnings":'
+                            + encoded_constant
+                            + b"}"
+                        )
+
+                    source = AiohttpCoreSnapshotSource(settings())
+                    session = _RawJsonSnapshotSession(
+                        rest_payloads,
+                        validation_payload,
+                        _complete_probe_websocket(version),
+                    )
+                    with patch(
+                        "ha_mcp_engineering.ha_core_readmission.source."
+                        "aiohttp.ClientSession",
+                        return_value=session,
+                    ):
+                        if surface == "config":
+                            with self.assertRaises(ValueError):
+                                await source.capture_core_snapshot()
+                            continue
+                        snapshot = await source.capture_core_snapshot()
+
+                    admitted = {
+                        item["capability_id"]
+                        for item in snapshot["capability_evidence"]
+                    }
+                    if surface == "states":
+                        for capability_id in (
+                            "core.basic_rest_read",
+                            "core.state_service_discovery",
+                            "core.direct_entity_state_read",
+                            "core.typed_helper_operation",
+                        ):
+                            self.assertNotIn(capability_id, admitted)
+                        self.assertIn("core.configuration_validation", admitted)
+                    elif surface == "services":
+                        self.assertNotIn(
+                            "core.state_service_discovery", admitted
+                        )
+                        self.assertIn("core.basic_rest_read", admitted)
+                        self.assertIn(
+                            "core.direct_entity_state_read", admitted
+                        )
+                        self.assertIn("core.typed_helper_operation", admitted)
+                    else:
+                        self.assertNotIn(
+                            "core.configuration_validation", admitted
+                        )
+                        self.assertIn("core.basic_rest_read", admitted)
+                        self.assertIn("core.basic_websocket_read", admitted)
+
+    async def test_strict_rest_decoder_preserves_valid_json(self):
+        source = AiohttpCoreSnapshotSource(object())
+
+        for value in (
+            {"version": "2026.9.1"},
+            [
+                {
+                    "entity_id": "sensor.synthetic",
+                    "state": "on",
+                    "attributes": {"numeric": 1.25, "enabled": True},
+                }
+            ],
+            [{"domain": "light", "services": {}}],
+        ):
+            with self.subTest(value=value):
+                payload = json.dumps(
+                    value,
+                    allow_nan=False,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+                self.assertEqual(
+                    await source._bounded_response_json(
+                        _RawJsonResponse(payload)
+                    ),
+                    value,
+                )
 
     async def test_states_transport_failure_retires_the_observation(self):
         class ProbeSession:
