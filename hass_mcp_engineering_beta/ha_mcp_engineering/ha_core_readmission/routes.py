@@ -93,7 +93,7 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "check_config": ("core.configuration_validation",),
     "get_history": ("core.basic_rest_read",),
     "get_logbook": ("core.basic_rest_read",),
-    "get_error_log": ("core.basic_rest_read",),
+    "get_error_log": ("core.basic_websocket_read",),
     "list_automations": ("core.automation_configuration_read",),
     "get_automation_config": ("core.automation_configuration_read",),
     "list_devices": ("core.direct_device_registry_read",),
@@ -149,8 +149,20 @@ def delegated_provider_compatibility(
     return False, "ha_mcp_child_device_contract_unproven"
 
 
-def static_tool_requirements(tool_name: str) -> tuple[str, ...]:
-    """Return Core requirements without changing static tool registration."""
+def static_tool_requirements(
+    tool_name: str,
+    arguments: Any = None,
+) -> tuple[str, ...]:
+    """Return the exact Core requirements for one static tool invocation."""
+
+    if tool_name == "server_info":
+        if isinstance(arguments, dict) and arguments.get("check_ha") is False:
+            return ()
+        return ("core.basic_rest_read",)
+    if tool_name == "get_server_health":
+        if isinstance(arguments, dict) and arguments.get("check_ha") is False:
+            return ()
+        return ("core.basic_rest_read", "core.basic_websocket_read")
 
     return STATIC_TOOL_CORE_REQUIREMENTS.get(tool_name, ())
 

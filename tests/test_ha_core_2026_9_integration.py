@@ -1844,13 +1844,17 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
         replace_dynamic_upstream_capabilities((), {})
 
     @staticmethod
-    async def _call(gateway: AuthenticatedMcpGateway, tool_name: str) -> bytes:
+    async def _call(
+        gateway: AuthenticatedMcpGateway,
+        tool_name: str,
+        arguments: dict | None = None,
+    ) -> bytes:
         configured = settings()
         request = {
             "jsonrpc": "2.0",
             "id": "core-route-test",
             "method": "tools/call",
-            "params": {"name": tool_name, "arguments": {}},
+            "params": {"name": tool_name, "arguments": arguments or {}},
         }
         delivered = False
         messages: list[dict] = []
@@ -1908,6 +1912,96 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(b'"isError": false', admitted)
         self.assertEqual(len(app.calls), 2)
         self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
+
+    async def test_static_routes_bind_their_actual_provider_surfaces(self):
+        partial_evidence = [
+            item
+            for item in _core_2026_9_evidence()
+            if item["capability_id"] != "core.basic_websocket_read"
+        ]
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _snapshot("2026.9.0", evidence=partial_evidence)
+        )
+        app = _RecordingMcpApp()
+        configured = settings()
+        gateway = AuthenticatedMcpGateway(
+            app,
+            configured,
+            AuditLogger("unused", configured.access_secret, enabled=False),
+            core_runtime=runtime,
+        )
+
+        self.assertEqual(
+            static_tool_requirements("get_error_log"),
+            ("core.basic_websocket_read",),
+        )
+        refused_log = await self._call(gateway, "get_error_log")
+        self.assertIn(b"CoreCapabilityUnavailable", refused_log)
+        self.assertEqual(app.calls, [])
+
+        refused_health = await self._call(
+            gateway, "get_server_health", {"check_ha": True}
+        )
+        self.assertIn(b"CoreCapabilityUnavailable", refused_health)
+        self.assertEqual(app.calls, [])
+
+        admitted_info = await self._call(
+            gateway, "server_info", {"check_ha": True}
+        )
+        admitted_local_health = await self._call(
+            gateway, "get_server_health", {"check_ha": False}
+        )
+        self.assertIn(b'"isError": false', admitted_info)
+        self.assertIn(b'"isError": false', admitted_local_health)
+        self.assertEqual(len(app.calls), 2)
+
+    async def test_live_health_checks_require_core_authority_but_local_checks_do_not(self):
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _snapshot("2026.9.2", evidence=_evidence())
+        )
+        app = _RecordingMcpApp()
+        configured = settings()
+        gateway = AuthenticatedMcpGateway(
+            app,
+            configured,
+            AuditLogger("unused", configured.access_secret, enabled=False),
+            core_runtime=runtime,
+        )
+
+        self.assertEqual(
+            static_tool_requirements("server_info", {"check_ha": True}),
+            ("core.basic_rest_read",),
+        )
+        self.assertEqual(
+            static_tool_requirements(
+                "get_server_health", {"check_ha": True}
+            ),
+            ("core.basic_rest_read", "core.basic_websocket_read"),
+        )
+        self.assertEqual(
+            static_tool_requirements("server_info", {"check_ha": False}),
+            (),
+        )
+        self.assertEqual(
+            static_tool_requirements(
+                "get_server_health", {"check_ha": False}
+            ),
+            (),
+        )
+
+        for tool_name in ("server_info", "get_server_health"):
+            refused = await self._call(
+                gateway, tool_name, {"check_ha": True}
+            )
+            self.assertIn(b"CoreCapabilityUnavailable", refused)
+        self.assertEqual(app.calls, [])
+
+        for tool_name in ("server_info", "get_server_health"):
+            admitted = await self._call(
+                gateway, tool_name, {"check_ha": False}
+            )
+            self.assertIn(b'"isError": false', admitted)
+        self.assertEqual(len(app.calls), 2)
 
     async def test_connection_change_before_provider_boundary_prevents_dispatch(self):
         runtime, _source = await Core20269RuntimeTests()._runtime(

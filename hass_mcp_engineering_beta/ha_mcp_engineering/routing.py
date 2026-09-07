@@ -568,7 +568,7 @@ class AuthenticatedMcpGateway:
                 )
                 return
             core_requirements = (
-                static_tool_requirements(tool_name)
+                static_tool_requirements(tool_name, parameters)
                 if isinstance(tool_name, str)
                 else ()
             )
