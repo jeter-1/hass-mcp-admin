@@ -1343,6 +1343,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         ):
             self.assertIn(contract, source)
         self.assertIn("_assert_device_contract", call_names)
+        self.assertIn("authorize_core_read", source)
+        self.assertIn("composite_core_authority", source)
         for scenario in (
             "component_lookup",
             "dependency_index",

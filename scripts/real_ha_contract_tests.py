@@ -2542,6 +2542,7 @@ def _contains_exact_value(value: Any, key: str, expected: str) -> bool:
 _DEVICE_CONTRACT_SCENARIOS = frozenset(
     {
         "component_lookup",
+        "composite_core_authority",
         "child_consumer_catalog",
         "child_consumer_ha_get_device",
         "child_consumer_ha_get_entity",
@@ -2887,6 +2888,12 @@ async def _run_device_migration_contract(
 
     await _start_exact_upstream(token)
     raw_upstream_lookup = await _call_exact_upstream_get_device(old_device_id)
+    core_read_authorizations = 0
+
+    def authorize_disposable_core_read() -> None:
+        nonlocal core_read_authorizations
+        core_read_authorizations += 1
+
     upstream_lookup, response_adapter = (
         await adapt_ha_get_device_composite_result(
             raw_upstream_lookup,
@@ -2894,6 +2901,7 @@ async def _run_device_migration_contract(
             upstream_version=UPSTREAM_VERSION,
             rest_client=rest,
             websocket_client=websocket,
+            authorize_core_read=authorize_disposable_core_read,
         )
     )
     print(
@@ -2921,6 +2929,10 @@ async def _run_device_migration_contract(
     )
     expected_adapter = _expected_device_response_adapter(
         home_assistant_version=EXPECTED_HA_VERSION,
+    )
+    _assert_device_contract(
+        core_read_authorizations == (3 if expected_adapter is not None else 0),
+        "composite_core_authority",
     )
     _assert_device_contract(
         response_adapter == expected_adapter, "upstream_response_adapter"
