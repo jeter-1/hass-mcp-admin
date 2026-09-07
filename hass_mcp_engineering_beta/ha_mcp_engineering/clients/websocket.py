@@ -60,8 +60,13 @@ class HomeAssistantWebSocketClient:
 
     async def command(self, payload: dict) -> Any:
         category = self._category(payload)
-        started = time.perf_counter()
         telemetry = current_telemetry()
+        if telemetry is not None and not telemetry.authorize_core_dispatch():
+            telemetry.error_code = ErrorCode.PROVIDER_UNAVAILABLE.value
+            raise HomeAssistantUnavailableError(
+                details=self._error_details(category)
+            )
+        started = time.perf_counter()
         if telemetry:
             telemetry.begin_ha_attempt(started)
         timeout = aiohttp.ClientTimeout(total=self.settings.ha_timeout_seconds)

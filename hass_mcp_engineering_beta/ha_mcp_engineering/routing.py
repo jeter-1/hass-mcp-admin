@@ -576,14 +576,7 @@ class AuthenticatedMcpGateway:
                 core_authority = self._core_runtime.acquire(
                     core_requirements
                 )
-                if core_authority is not None:
-                    core_commits = self._core_runtime.consume(
-                        core_authority
-                    )
-                if core_authority is None or core_commits is None:
-                    if core_authority is not None:
-                        self._core_runtime.release(core_authority)
-                        core_authority = None
+                if core_authority is None:
                     definition = error_definition(
                         ErrorCode.PROVIDER_UNAVAILABLE
                     )
@@ -613,6 +606,19 @@ class AuthenticatedMcpGateway:
                         request_id=request_id,
                     )
                     return
+
+                def authorize_core_dispatch() -> bool:
+                    nonlocal core_commits
+                    if core_commits is not None:
+                        return True
+                    core_commits = self._core_runtime.consume(core_authority)
+                    return core_commits is not None
+
+                # The gateway authenticates and acquires authority, but the
+                # A provider client commits it only immediately before the
+                # first provider interaction. A generation retired while the
+                # MCP application is still preparing the call cannot dispatch.
+                telemetry.core_dispatch_authorizer = authorize_core_dispatch
             await self.app(forwarded, new_receive, correlated_send)
             if tool_name and response_capture:
                 self._apply_mcp_outcome(telemetry, bytes(response_capture))
@@ -631,6 +637,10 @@ class AuthenticatedMcpGateway:
             )
             raise
         finally:
+            if core_authority is not None:
+                # A task that escaped the request lifetime must not inherit a
+                # callback that can authorize another provider interaction.
+                telemetry.core_dispatch_authorizer = lambda: False
             if self._core_runtime is not None:
                 if core_commits is not None:
                     self._core_runtime.finish(core_commits)

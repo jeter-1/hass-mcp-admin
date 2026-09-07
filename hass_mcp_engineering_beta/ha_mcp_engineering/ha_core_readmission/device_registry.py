@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import hashlib
 import math
 from typing import Any
 
@@ -17,6 +18,7 @@ from .models import CoreReadmissionError, canonical_json, fingerprint
 
 MAX_DEVICE_RECORDS = 4096
 MAX_DEVICE_RECORD_BYTES = 1_000_000
+MAX_DEVICE_SEMANTIC_FINGERPRINT_BYTES = MAX_DEVICE_RECORD_BYTES * 4
 MAX_DEVICE_ID_CHARS = 128
 _CHILD_REQUIRED_FIELDS = frozenset(
     {
@@ -276,12 +278,29 @@ def assess_device_registry(value: Any) -> DeviceRegistryAssessment:
             key: effective_areas[key] for key in sorted(effective_areas)
         },
     }
+    # The raw registry is already capped at one million bytes. This projection
+    # repeats each validated identity only in the bounded identity, parent, and
+    # effective-area indexes, so a four-times cap covers every accepted input
+    # without reusing the much smaller public-report serialization limit.
+    try:
+        semantic_fingerprint = "sha256:" + hashlib.sha256(
+            canonical_json(
+                material,
+                maximum=MAX_DEVICE_SEMANTIC_FINGERPRINT_BYTES,
+            )
+        ).hexdigest()
+    except CoreReadmissionError:
+        return _failure(
+            "device_semantic_fingerprint_oversized",
+            records=len(records),
+            children=len(children),
+        )
     return DeviceRegistryAssessment(
         complete=True,
         reason_code="device_registry_complete",
         record_count=len(records),
         child_count=len(children),
-        semantic_fingerprint=fingerprint(material),
+        semantic_fingerprint=semantic_fingerprint,
     )
 
 

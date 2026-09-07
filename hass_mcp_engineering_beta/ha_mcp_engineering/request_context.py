@@ -6,6 +6,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 import re
 import time
+from typing import Callable
 import uuid
 
 REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
@@ -43,6 +44,10 @@ class RequestTelemetry:
     provider_failure_count: int = 0
     caller_id: str = "anonymous"
     audit_context: dict[str, object] = field(default_factory=dict)
+    core_dispatch_authorizer: Callable[[], bool] | None = field(
+        default=None,
+        repr=False,
+    )
 
     @property
     def total_duration_ms(self) -> float:
@@ -105,6 +110,16 @@ class RequestTelemetry:
             self.provider_partial_count += 1
         else:
             self.provider_failure_count += 1
+
+    def authorize_core_dispatch(self) -> bool:
+        """Commit request-bound Core authority at the provider boundary."""
+
+        if self.core_dispatch_authorizer is None:
+            return True
+        try:
+            return self.core_dispatch_authorizer() is True
+        except Exception:
+            return False
 
 
 _REQUEST: ContextVar[RequestTelemetry | None] = ContextVar("engineering_request", default=None)

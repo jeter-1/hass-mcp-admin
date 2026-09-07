@@ -43,10 +43,12 @@ from ha_mcp_engineering.ha_core_readmission import (  # noqa: E402
     stable_observation,
 )
 from ha_mcp_engineering.ha_core_readmission.device_registry import (  # noqa: E402
+    MAX_DEVICE_RECORD_BYTES,
     MAX_DEVICE_RECORDS,
 )
 from ha_mcp_engineering.ha_core_readmission.source import (  # noqa: E402
     AUTOMATION_CONTRACT_PROBE_ENTITY_ID,
+    MAX_CORE_PROBE_BYTES,
     AiohttpCoreSnapshotSource,
     capability_evidence_for_probes,
 )
@@ -59,6 +61,7 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
     _CoreVerificationAdapter,
 )
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
 from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
@@ -565,6 +568,80 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNotNone(authority)
                 self.assertTrue(runtime.release(authority))
 
+    async def test_rest_probe_reads_fragmented_bounded_response_to_eof(self):
+        encoded = json.dumps(
+            {"version": "2026.9.1"}, separators=(",", ":")
+        ).encode("utf-8")
+
+        class FragmentedContent:
+            def __init__(self):
+                self.chunks = [encoded[:7], encoded[7:], b""]
+                self.read_sizes: list[int] = []
+
+            async def read(self, size):
+                self.read_sizes.append(size)
+                return self.chunks.pop(0)
+
+        class Response:
+            status = 200
+
+            def __init__(self):
+                self.content = FragmentedContent()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+        class Session:
+            def __init__(self):
+                self.response = Response()
+
+            def get(self, _url, **_kwargs):
+                return self.response
+
+        session = Session()
+        result = await AiohttpCoreSnapshotSource(settings())._rest_json(
+            session, "/config"
+        )
+
+        self.assertEqual(result, {"version": "2026.9.1"})
+        self.assertGreaterEqual(len(session.response.content.read_sizes), 3)
+
+    async def test_rest_probe_stops_at_bounded_fragmented_overflow(self):
+        class OversizedContent:
+            def __init__(self):
+                self.remaining = MAX_CORE_PROBE_BYTES + 1
+
+            async def read(self, size):
+                count = min(size, self.remaining)
+                self.remaining -= count
+                return b"x" * count
+
+        class Response:
+            status = 200
+
+            def __init__(self):
+                self.content = OversizedContent()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+        class Session:
+            def get(self, _url, **_kwargs):
+                return Response()
+
+        with self.assertRaisesRegex(
+            RuntimeError, "core_probe_response_oversized"
+        ):
+            await AiohttpCoreSnapshotSource(settings())._rest_json(
+                Session(), "/states"
+            )
+
     async def test_unexpected_missing_resource_envelopes_remain_withheld(self):
         source = AiohttpCoreSnapshotSource(object())
         malformed = (
@@ -874,6 +951,27 @@ class Core20269DeviceSemanticsTests(unittest.TestCase):
             assess_device_registry([{}] * (MAX_DEVICE_RECORDS + 1)).reason_code,
             "device_registry_oversized_or_invalid",
         )
+
+    def test_large_valid_registry_fingerprint_remains_capability_scoped(self):
+        records = []
+        for index in range(1_200):
+            record = deepcopy(self.fixture["devices"][0])
+            record["id"] = f"synthetic-regular-device-{index:04d}"
+            records.append(record)
+        encoded = json.dumps(
+            records,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        self.assertLessEqual(len(encoded), MAX_DEVICE_RECORD_BYTES)
+
+        result = assess_device_registry(records)
+
+        self.assertTrue(result.complete)
+        self.assertEqual(result.record_count, 1_200)
+        self.assertEqual(result.child_count, 0)
+        self.assertRegex(result.semantic_fingerprint, r"^sha256:[0-9a-f]{64}$")
 
     def test_entity_duplicates_missing_devices_and_projection_drift_fail(self):
         duplicate = [
@@ -1809,6 +1907,101 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
         admitted = await self._call(gateway, "list_areas")
         self.assertIn(b'"isError": false', admitted)
         self.assertEqual(len(app.calls), 2)
+        self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
+
+    async def test_connection_change_before_provider_boundary_prevents_dispatch(self):
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _core_2026_9_snapshot()
+        )
+        configured = settings()
+        provider_boundary = asyncio.Event()
+        release_provider = asyncio.Event()
+
+        class Response:
+            status = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def text(self):
+                return "[]"
+
+        class Session:
+            def __init__(self):
+                self.requests: list[tuple] = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def request(self, *args, **kwargs):
+                self.requests.append((args, kwargs))
+                return Response()
+
+        class ProviderApp:
+            async def __call__(self, _scope, receive, send):
+                await receive()
+                provider_boundary.set()
+                await release_provider.wait()
+                try:
+                    await HomeAssistantRestClient(configured).request(
+                        "GET", "/states"
+                    )
+                except Exception:
+                    pass
+                body = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "core-route-test",
+                        "result": {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps({"success": True}),
+                                }
+                            ],
+                            "isError": False,
+                        },
+                    }
+                ).encode("utf-8")
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 200,
+                        "headers": [(b"content-type", b"application/json")],
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": body,
+                        "more_body": False,
+                    }
+                )
+
+        session = Session()
+        gateway = AuthenticatedMcpGateway(
+            ProviderApp(),
+            configured,
+            AuditLogger("unused", configured.access_secret, enabled=False),
+            core_runtime=runtime,
+        )
+        with patch(
+            "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
+            return_value=session,
+        ):
+            call = asyncio.create_task(self._call(gateway, "list_devices"))
+            await asyncio.wait_for(provider_boundary.wait(), timeout=1)
+            runtime.request_reconciliation(connection_changed=True)
+            release_provider.set()
+            await asyncio.wait_for(call, timeout=1)
+
+        self.assertEqual(session.requests, [])
         self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
 
     async def test_held_canary_cannot_dispatch_without_core_authority(self):

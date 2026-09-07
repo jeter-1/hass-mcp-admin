@@ -266,9 +266,19 @@ class AiohttpCoreSnapshotSource:
         ) as response:
             if response.status != 200:
                 raise RuntimeError("core_probe_http_failure")
-            body = await response.content.read(MAX_CORE_PROBE_BYTES + 1)
-            if len(body) > MAX_CORE_PROBE_BYTES:
-                raise RuntimeError("core_probe_response_oversized")
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                chunk = await response.content.read(
+                    min(65_536, MAX_CORE_PROBE_BYTES + 1 - total)
+                )
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > MAX_CORE_PROBE_BYTES:
+                    raise RuntimeError("core_probe_response_oversized")
+            body = b"".join(chunks)
             value = json.loads(body)
             if not isinstance(value, (Mapping, Sequence)) or isinstance(
                 value, (str, bytes)
