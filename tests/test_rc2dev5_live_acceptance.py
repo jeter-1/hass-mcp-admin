@@ -36,6 +36,7 @@ from ha_mcp_engineering.application import validate_settings
 from ha_mcp_engineering.configuration import load_settings
 from ha_mcp_engineering.errors import ConfigurationError
 from ha_mcp_engineering.observability import METRICS
+from ha_mcp_engineering.request_context import current_telemetry
 from ha_mcp_engineering.providers.upstream_dashboard import UpstreamDashboardProvider
 from ha_mcp_engineering.providers.dispatch import CanonicalProviderDispatcher
 from ha_mcp_engineering.reliability.service import AutomationReliabilityAnalysisService
@@ -275,6 +276,150 @@ class DependencyFreshnessTests(unittest.IsolatedAsyncioTestCase):
 
 
 class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    class CoreAuthority:
+        def __init__(self, *, available=True, retire_on_consume=False):
+            self.available = available
+            self.current = available
+            self.retire_on_consume = retire_on_consume
+            self.listeners = []
+            self.acquire_calls = 0
+            self.consume_calls = 0
+            self.revalidate_calls = 0
+            self.release_calls = 0
+            self.finish_calls = 0
+
+        def register_reconciliation_listener(self, listener):
+            self.listeners.append(listener)
+
+        def acquire(self, requirements):
+            self.acquire_calls += 1
+            if not self.available or not self.current:
+                return None
+            self.requirements = requirements
+            return object()
+
+        def consume(self, _authority):
+            self.consume_calls += 1
+            if not self.current:
+                return None
+            commits = (object(),)
+            if self.retire_on_consume:
+                self.retire()
+            return commits
+
+        def revalidate(self, _authority, _commits):
+            self.revalidate_calls += 1
+            return self.current
+
+        def release(self, _authority):
+            self.release_calls += 1
+            return True
+
+        def finish(self, _commits):
+            self.finish_calls += 1
+            return True
+
+        def retire(self):
+            self.current = False
+            for listener in tuple(self.listeners):
+                listener()
+
+    async def test_prewarm_requires_core_authority_before_any_ha_call(self):
+        provider = ControlledProvider()
+
+        class AuthorityAwareRest:
+            def __init__(self):
+                self.calls = 0
+
+            async def request(self, _method, _path):
+                telemetry = current_telemetry()
+                if telemetry is None or not telemetry.authorize_core_dispatch():
+                    raise RuntimeError("core authority unavailable")
+                self.calls += 1
+                return {}
+
+        rest = AuthorityAwareRest()
+        provider.rest_client = rest
+        core_runtime = self.CoreAuthority(available=False)
+        runtime = DependencyAnalysisRuntime(
+            service=EntityDependencyAnalysisService(
+                DependencyIndex(provider, soft_ttl_seconds=10, hard_ttl_seconds=60)
+            ),
+        )
+        runtime.bind_core_runtime(core_runtime)
+        task = runtime.start_prewarm(
+            startup_delay_seconds=0, retry_delay_seconds=300
+        )
+        for _ in range(20):
+            await asyncio.sleep(0.01)
+            if runtime.health()["prewarm_attempt_count"]:
+                break
+        self.assertEqual(rest.calls, 0)
+        self.assertIsNone(runtime.require().index.snapshot)
+        self.assertEqual(
+            runtime.health()["prewarm_failure_category"],
+            "connectivity_not_ready",
+        )
+        self.assertEqual(core_runtime.acquire_calls, 1)
+        self.assertEqual(core_runtime.consume_calls, 0)
+        await runtime.shutdown()
+        self.assertTrue(task.done())
+
+    async def test_connection_change_blocks_prewarm_and_caches_nothing(self):
+        provider = ControlledProvider()
+
+        class AuthorityAwareRest:
+            def __init__(self):
+                self.calls = 0
+
+            async def request(self, _method, _path):
+                telemetry = current_telemetry()
+                if telemetry is None or not telemetry.authorize_core_dispatch():
+                    raise RuntimeError("retired Core generation")
+                self.calls += 1
+                return {}
+
+        rest = AuthorityAwareRest()
+        provider.rest_client = rest
+        core_runtime = self.CoreAuthority(retire_on_consume=True)
+        runtime = DependencyAnalysisRuntime(
+            service=EntityDependencyAnalysisService(
+                DependencyIndex(provider, soft_ttl_seconds=10, hard_ttl_seconds=60)
+            )
+        )
+        runtime.bind_core_runtime(core_runtime)
+
+        self.assertFalse(await runtime._authorized_prewarm(provider))
+        self.assertEqual(rest.calls, 0)
+        self.assertEqual(provider.scan_count, 0)
+        self.assertIsNone(runtime.require().index.snapshot)
+        self.assertTrue(runtime.require().index.invalidated)
+        self.assertEqual(core_runtime.consume_calls, 1)
+        self.assertGreaterEqual(core_runtime.revalidate_calls, 1)
+        await runtime.shutdown()
+
+    async def test_core_generation_change_invalidates_prewarmed_snapshot(self):
+        provider = ControlledProvider()
+        provider.rest_client = SimpleNamespace(
+            request=AsyncMock(return_value={})
+        )
+        core_runtime = self.CoreAuthority()
+        runtime = DependencyAnalysisRuntime(
+            service=EntityDependencyAnalysisService(
+                DependencyIndex(provider, soft_ttl_seconds=10, hard_ttl_seconds=60)
+            )
+        )
+        runtime.bind_core_runtime(core_runtime)
+
+        self.assertTrue(await runtime._authorized_prewarm(provider))
+        self.assertTrue(runtime.require().index.health()["valid"])
+        core_runtime.retire()
+        health = runtime.require().index.health()
+        self.assertTrue(health["invalidated"])
+        self.assertFalse(health["valid"])
+        self.assertEqual(health["validity_reason"], "core_authority_changed")
+        await runtime.shutdown()
+
     async def test_on_demand_build_during_delay_prevents_duplicate_prewarm(self):
         provider = ControlledProvider()
         provider.rest_client = SimpleNamespace(request=AsyncMock(return_value={}))
@@ -282,6 +427,7 @@ class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
         runtime = DependencyAnalysisRuntime(
             service=EntityDependencyAnalysisService(index)
         )
+        runtime.bind_core_runtime(self.CoreAuthority())
         runtime.start_prewarm(
             startup_delay_seconds=0.04,
             retry_delay_seconds=300,
@@ -303,6 +449,7 @@ class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
                 DependencyIndex(provider, soft_ttl_seconds=10, hard_ttl_seconds=60)
             )
         )
+        runtime.bind_core_runtime(self.CoreAuthority())
         task = runtime.start_prewarm(
             startup_delay_seconds=0.02, retry_delay_seconds=300
         )

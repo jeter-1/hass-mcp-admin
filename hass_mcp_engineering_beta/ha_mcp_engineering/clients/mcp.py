@@ -16,6 +16,7 @@ from mcp import types
 from mcp.client.streamable_http import streamablehttp_client
 
 from ..mcp_sdk_compatibility import ReviewedProtocolClientSession as ClientSession
+from ..request_context import current_telemetry
 
 
 REQUIRED_DASHBOARD_TOOL = "ha_config_get_dashboard"
@@ -330,6 +331,12 @@ class McpDashboardTransport:
                     if tool_name is None:
                         raise DashboardTransportError("internal_error")
                     capability_validator(handshake)
+                    telemetry = current_telemetry()
+                    if (
+                        telemetry is not None
+                        and not telemetry.authorize_core_dispatch()
+                    ):
+                        raise DashboardTransportError("connection_failed")
                     call_started = time.perf_counter()
                     call_result = await session.call_tool(
                         tool_name,

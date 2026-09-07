@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
 
@@ -16,6 +17,13 @@ from jsonschema import validate
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
+
+from ha_mcp_engineering.ha_core_readmission.profiles import (  # noqa: E402
+    CORE_CAPABILITY_PROFILES,
+)
+from ha_mcp_engineering.ha_core_readmission.source import (  # noqa: E402
+    capability_evidence_for_probes,
+)
 
 
 def _load_script(name: str):
@@ -180,6 +188,61 @@ class ExactAddonProfileTests(unittest.TestCase):
                     "reviewed",
                 )
 
+    def test_gateway_decoder_reports_bounded_non_json_result_shape(self):
+        result = SimpleNamespace(
+            structuredContent=None,
+            content=[
+                SimpleNamespace(
+                    text='{"partial":true}\n[truncated at 60000 characters]'
+                )
+            ],
+            isError=True,
+        )
+
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure) as raised:
+            gateway_acceptance.decode_tool_result(
+                result,
+                context="engineering_health_before_calls",
+            )
+
+        diagnostics = raised.exception.diagnostics
+        self.assertEqual(
+            diagnostics["result_context"],
+            "engineering_health_before_calls",
+        )
+        self.assertTrue(diagnostics["is_error"])
+        self.assertEqual(diagnostics["structured_content_type"], "NoneType")
+        self.assertEqual(
+            diagnostics["content"],
+            [
+                {
+                    "content_type": "SimpleNamespace",
+                    "has_text": True,
+                    "text_byte_count": 48,
+                    "truncated_response_marker": True,
+                }
+            ],
+        )
+        self.assertNotIn("partial", json.dumps(diagnostics))
+
+    def test_gateway_decoder_bounds_non_text_content_diagnostics(self):
+        result = SimpleNamespace(
+            structuredContent={"result": "omitted"},
+            content=[SimpleNamespace(binary=b"omitted") for _ in range(12)],
+            isError=False,
+        )
+
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure) as raised:
+            gateway_acceptance.decode_tool_result(result)
+
+        diagnostics = raised.exception.diagnostics
+        self.assertFalse(diagnostics["is_error"])
+        self.assertTrue(diagnostics["structured_result_present"])
+        self.assertEqual(len(diagnostics["content"]), 8)
+        self.assertTrue(
+            all(item["has_text"] is False for item in diagnostics["content"])
+        )
+
     def test_exact_image_harness_exercises_held_operational_providers(self):
         source = (
             ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
@@ -254,6 +317,71 @@ class ExactAddonProfileTests(unittest.TestCase):
                     fixture._addon_detail_payload_bytes(),
                     fixture.SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES,
                 )
+
+    def test_core_fixture_exposes_authenticated_get_config_read(self):
+        self.assertEqual(
+            fixture._result_for("get_config", {}),
+            {"version": "2026.7.2"},
+        )
+        self.assertEqual(
+            fixture._result_for(
+                "automation/config",
+                {"entity_id": "automation.gateway_fixture"},
+            ),
+            fixture.AUTOMATION,
+        )
+        self.assertIsNone(
+            fixture._result_for(
+                "automation/config",
+                {"entity_id": "automation.unreviewed"},
+            )
+        )
+        rest_services = fixture._rest_services_result()
+        self.assertEqual(
+            [item["domain"] for item in rest_services],
+            sorted(fixture.SERVICES),
+        )
+        self.assertTrue(
+            all(set(item) == {"domain", "services"} for item in rest_services)
+        )
+
+    def test_core_fixture_satisfies_every_compiled_2026_7_2_read_profile(self):
+        evidence = capability_evidence_for_probes(
+            version="2026.7.2",
+            rest_config={"version": "2026.7.2"},
+            states=fixture.STATES,
+            services=fixture._rest_services_result(),
+            websocket_config=fixture._result_for("get_config", {}),
+            configuration_validation={
+                "result": "valid",
+                "errors": None,
+                "warnings": None,
+            },
+            websocket_results={
+                "areas": fixture.AREAS,
+                "floors": [],
+                "labels": [],
+                "entities": fixture.ENTITY_REGISTRY,
+                "devices": fixture.DEVICE_REGISTRY,
+                "dashboards": fixture.DASHBOARDS,
+                "dashboard": fixture.DASHBOARD_CONFIG,
+                "automation": fixture.AUTOMATION,
+                "trace_list": fixture._result_for(
+                    "trace/list",
+                    {
+                        "domain": "automation",
+                        "item_id": "gateway_fixture",
+                    },
+                ),
+                "trace_get": {
+                    "_ha_mcp_engineering_expected_probe_error": "not_found"
+                },
+            },
+        )
+        self.assertEqual(
+            {item["capability_id"] for item in evidence},
+            {item.capability_id for item in CORE_CAPABILITY_PROFILES},
+        )
 
     def test_hacs_fixture_exposes_source_derived_read_inputs_only(self):
         self.assertEqual(fixture._result_for("hacs/info", {}), {"version": "2.0.5"})
@@ -471,9 +599,9 @@ class ExactAddonProfileTests(unittest.TestCase):
             expected["reviewed_versions"], ("7.14.1", "7.14.2")
         )
         self.assertEqual(expected["upstream_code"], "RESOURCE_NOT_FOUND")
-        self.assertEqual(expected["public_code"], "provider_error")
-        self.assertEqual(expected["failure_category"], "upstream_error")
-        self.assertTrue(expected["retryable"])
+        self.assertEqual(expected["public_code"], "resource_not_found")
+        self.assertEqual(expected["failure_category"], "resource_not_found")
+        self.assertFalse(expected["retryable"])
         self.assertNotIn(
             "ha_get_operation_status", gateway_acceptance.DELEGATED_READ_CALLS
         )
@@ -623,7 +751,9 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
                     "delegated_read_count"
                 ],
                 "held_read_count": len(expected["held_tools"]),
-                "held_tools": sorted(expected["held_tools"]),
+                # The bounded public health projection retains the exact count,
+                # while exact held identities are proven from tools/list.
+                "held_tools": [],
                 **{
                     name: 0
                     for name in readmission.ZERO_ADMISSION_COUNTERS
@@ -702,7 +832,25 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["probe"]["engineering_tool_count"], 76)
         health = result["probe"]["gateway_health"]
         self.assertEqual(health["dynamically_exposed_count"], 25)
-        self.assertEqual(health["held_tools"], ["ha_get_operation_status"])
+        self.assertEqual(health["held_tools"], [])
+        self.assertTrue(result["probe"]["held_tools_absent"])
+
+    async def test_readmission_accepts_bounded_health_without_held_identity_list(
+        self,
+    ):
+        exact = self._exact_observed(upstream_version="8.4.3")
+
+        self.assertTrue(
+            readmission.exact_readmission_observed(
+                exact, expected_upstream_version="8.4.3"
+            )
+        )
+        exact["held_tools_absent"] = False
+        self.assertFalse(
+            readmission.exact_readmission_observed(
+                exact, expected_upstream_version="8.4.3"
+            )
+        )
 
     async def test_exact_8_2_0_readmission_uses_exact_accounting(self):
         exact = self._exact_observed(upstream_version="8.2.0")

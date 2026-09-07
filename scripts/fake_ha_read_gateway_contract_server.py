@@ -443,6 +443,13 @@ async def read_only_guard(request: web.Request, handler):
         == "/core/api/services/notify/mobile_app_beta31_fixture"
     ):
         return await handler(request)
+    if request.method == "POST" and request.path in {
+        "/api/config/core/check_config",
+        "/core/api/config/core/check_config",
+    }:
+        # Home Assistant's administrative configuration check is a read-only
+        # validation operation despite its POST transport verb.
+        return await handler(request)
     if request.method != "GET":
         STATE.http_mutations[f"{request.method} {request.path}"] += 1
         return web.json_response({"message": "fixture is read-only"}, status=405)
@@ -599,6 +606,13 @@ async def api_config(_request: web.Request) -> web.Response:
     )
 
 
+async def api_check_config(_request: web.Request) -> web.Response:
+    STATE.rest_reads["/api/config/core/check_config"] += 1
+    return web.json_response(
+        {"result": "valid", "errors": None, "warnings": None}
+    )
+
+
 async def api_states(_request: web.Request) -> web.Response:
     STATE.rest_reads["/api/states"] += 1
     return web.json_response(STATES)
@@ -630,9 +644,18 @@ async def api_history(request: web.Request) -> web.Response:
     return web.json_response([rows])
 
 
+def _rest_services_result() -> list[dict[str, Any]]:
+    """Return Core's REST list shape without changing WebSocket service reads."""
+
+    return [
+        {"domain": domain, "services": services}
+        for domain, services in sorted(SERVICES.items())
+    ]
+
+
 async def api_services(_request: web.Request) -> web.Response:
     STATE.rest_reads["/api/services"] += 1
-    return web.json_response(SERVICES)
+    return web.json_response(_rest_services_result())
 
 
 async def api_automation(request: web.Request) -> web.Response:
@@ -668,6 +691,12 @@ async def fixture_stats(_request: web.Request) -> web.Response:
 
 
 def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
+    if message_type == "get_config":
+        return {"version": "2026.7.2"}
+    if message_type == "automation/config":
+        if request_data.get("entity_id") == "automation.gateway_fixture":
+            return AUTOMATION
+        return None
     if message_type == "hacs/info":
         return {"version": "2.0.5"}
     if message_type == "hacs/repositories/list":
@@ -748,6 +777,11 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
                 "trigger": "synthetic",
             }
         ]
+    if message_type == "trace/get":
+        return {
+            "trace": {},
+            "config": AUTOMATION,
+        }
     if message_type == "blueprint/list":
         return {}
     if message_type == "homeassistant/expose_entity/list":
@@ -987,6 +1021,26 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                     }
                 )
             continue
+        if (
+            message_type == "trace/get"
+            and request_data.get("item_id")
+            == "ha_mcp_engineering_contract_probe_0000000000000000"
+            and request_data.get("run_id")
+            == "00000000000000000000000000000000"
+        ):
+            STATE.websocket_reads[message_type] += 1
+            await ws.send_json(
+                {
+                    "id": request_id,
+                    "type": "result",
+                    "success": False,
+                    "error": {
+                        "code": "not_found",
+                        "message": "The trace could not be found",
+                    },
+                }
+            )
+            continue
         if any(
             token in lowered
             for token in (
@@ -1059,6 +1113,9 @@ def main() -> None:
     application = web.Application(middlewares=[read_only_guard])
     application.router.add_get("/api/", api_root)
     application.router.add_get("/api/config", api_config)
+    application.router.add_post(
+        "/api/config/core/check_config", api_check_config
+    )
     application.router.add_get("/api/states", api_states)
     application.router.add_get("/api/states/{entity_id}", api_state)
     application.router.add_get("/api/history/period", api_history)
@@ -1082,6 +1139,9 @@ def main() -> None:
     # synthetic contract there so CI exercises the real add-on startup path.
     application.router.add_get("/core/api/", api_root)
     application.router.add_get("/core/api/config", api_config)
+    application.router.add_post(
+        "/core/api/config/core/check_config", api_check_config
+    )
     application.router.add_get("/core/api/states", api_states)
     application.router.add_get(
         "/core/api/states/{entity_id}", api_state

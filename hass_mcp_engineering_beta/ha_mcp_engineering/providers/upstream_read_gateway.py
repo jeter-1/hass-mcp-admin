@@ -57,8 +57,14 @@ from ..ha_mcp_readmission.registry import (
     MISSING_RELEASE_REFRESH_INTERVAL_SECONDS,
     SignedReleaseRegistry,
 )
+from ..ha_core_readmission.routes import delegated_requirements
 from ..observability import METRICS
-from ..request_context import current_request_id, current_telemetry
+from ..request_context import (
+    begin_request,
+    current_request_id,
+    current_telemetry,
+    end_request,
+)
 from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
@@ -93,6 +99,7 @@ COMPATIBILITY_REPROBE_INTERVAL_SECONDS = 900.0
 MAX_QUARANTINE_RECORDS = 26
 MAX_RUNTIME_CONTRACT_DIFF_FIELDS = 16
 MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
+MAX_HELD_READ_CANARY_BATCH_ITEMS = 64
 OPERATIONAL_CATALOG_FINGERPRINT_MODEL = "mcp-sorted-full-tool-catalog-v1"
 HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1 = (
     "ha-mcp-hacs-info-top-level-success-v1"
@@ -217,10 +224,10 @@ _UPSTREAM_INTERNAL_CODES = frozenset(
     }
 )
 # Reviewed domain outcomes are keyed by both the exact admitted tool and the
-# exact structured code emitted by pinned ha-mcp 7.14.1.  The same upstream
+# exact structured code emitted by a compiled ha-mcp profile. The same upstream
 # code has different meanings for different tools, so codes are never promoted
-# globally.  CONFIG_NOT_FOUND and ENTITY_INVALID_ID have no established
-# automatic-read emitter in the pinned source and intentionally have no entry.
+# globally. CONFIG_NOT_FOUND and ENTITY_INVALID_ID have no established
+# automatic-read emitter in the reviewed source and intentionally have no entry.
 _UPSTREAM_DOMAIN_OUTCOMES = {
     ("ha_config_get_automation", "RESOURCE_NOT_FOUND"): "automation_not_found",
     ("ha_config_get_calendar_events", "ENTITY_NOT_FOUND"): "entity_not_found",
@@ -233,6 +240,7 @@ _UPSTREAM_DOMAIN_OUTCOMES = {
     ("ha_get_device", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_entity", "ENTITY_NOT_FOUND"): "entity_not_found",
     ("ha_get_hacs_info", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_get_operation_status", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_skill_guide", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_state", "ENTITY_NOT_FOUND"): "entity_not_found",
     ("ha_get_zone", "RESOURCE_NOT_FOUND"): "resource_not_found",
@@ -270,6 +278,9 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ),
     ("ha_get_hacs_info", "resource_not_found"): (
         "The requested HACS repository was not found."
+    ),
+    ("ha_get_operation_status", "resource_not_found"): (
+        "The requested operation was not found or is no longer retained."
     ),
     ("ha_get_skill_guide", "resource_not_found"): (
         "The requested skill guide resource was not found."
@@ -513,6 +524,8 @@ class _RouteLease:
     dispatch_committed: bool = False
     readmission_lease: RouteLease | None = None
     readmission_commit: DispatchCommit | None = None
+    core_authority: Any | None = None
+    core_commits: tuple[Any, ...] | None = None
 
 
 class UpstreamReadGateway:
@@ -535,6 +548,7 @@ class UpstreamReadGateway:
         ) = None
         self._readmission_audit: tuple[dict[str, Any], ...] = ()
         self._active_release: ReviewedUpstreamRelease | None = None
+        self._core_runtime: Any | None = None
         self._admission_validator: AdmissionValidator | None = None
         self._registered_server: Any = None
         self._registered_tool_registry: McpSdkToolRegistry | None = None
@@ -546,6 +560,7 @@ class UpstreamReadGateway:
         self._live_observation_epoch = 0
         self._latest_live_contract_epoch = 0
         self._latest_live_contract_token: str | None = None
+        self._core_reconciliation_epoch = 0
         self._stale_reprobe_retry_armed = False
         self._discovery_in_progress = False
         self._reprobe_event = asyncio.Event()
@@ -612,6 +627,8 @@ class UpstreamReadGateway:
             "automatic_read_count": 0,
             "held_read_count": 0,
             "held_tools": [],
+            "core_withheld_read_count": 0,
+            "core_withheld_tools": [],
             "live_canary_required_tools": [],
             "static_review_completed": False,
             "reviewed_automatic_read_count": 0,
@@ -697,11 +714,13 @@ class UpstreamReadGateway:
         admission_validator: AdmissionValidator | None = None,
         ha_rest_client: HomeAssistantRestClient | Any | None = None,
         ha_websocket_client: HomeAssistantWebSocketClient | Any | None = None,
+        core_runtime: Any | None = None,
     ) -> None:
         self._remove_registered_tools()
         replace_dynamic_upstream_capabilities((), self._empty_state())
         endpoint = parse_upstream_dashboard_endpoint(settings.upstream_dashboard_mcp_url)
         self._settings = settings
+        self._core_runtime = core_runtime
         self._ha_rest_client = ha_rest_client or HomeAssistantRestClient(settings)
         self._ha_websocket_client = (
             ha_websocket_client or HomeAssistantWebSocketClient(settings)
@@ -760,6 +779,7 @@ class UpstreamReadGateway:
         self._live_observation_epoch = 0
         self._latest_live_contract_epoch = 0
         self._latest_live_contract_token = None
+        self._core_reconciliation_epoch = 0
         self._stale_reprobe_retry_armed = False
         self._discovery_in_progress = False
         if self._missing_release_retry_handle is not None:
@@ -863,6 +883,7 @@ class UpstreamReadGateway:
         self._registered_tool_registry = registry
         with self._lock:
             discovery_epoch = self._live_observation_epoch
+            discovery_core_epoch = self._core_reconciliation_epoch
             self._state.update(
                 {
                     "reconciliation_status": (
@@ -1031,6 +1052,30 @@ class UpstreamReadGateway:
             observed_strict_fingerprint = _safe_strict_catalog_fingerprint(
                 list(catalog.tools)
             )
+            with self._lock:
+                previous_exposed = dict(self._exposed)
+                previous_held_canaries = dict(self._held_canaries)
+                if (
+                    readmission_selection is None
+                    and self._admission_generation > 0
+                    and self._active_release is not None
+                    and selected_release is not None
+                    and self._active_release.entry_id == selected_release.entry_id
+                    and self._state.get("observed_upstream_server_version")
+                    == catalog.server_version
+                    and self._state.get("observed_protocol_version")
+                    == catalog.protocol_version
+                    and self._state.get(
+                        "observed_strict_full_contract_fingerprint"
+                    )
+                    == observed_strict_fingerprint
+                ):
+                    # A Core-only availability change may require a fresh
+                    # client catalog without changing ha-mcp authority. Keep
+                    # the independent upstream generation and every unaffected
+                    # route binding stable when the exact upstream contract is
+                    # byte-for-byte unchanged.
+                    generation = self._admission_generation
             catalog_diff_field_counts = _catalog_diff_field_counts(
                 list(catalog.tools), reviewed_contracts
             )
@@ -1050,9 +1095,44 @@ class UpstreamReadGateway:
             dynamic_tools: dict[str, ReviewedUpstreamReadTool] = {}
             capabilities: list[dict[str, Any]] = []
             collisions: list[dict[str, str]] = []
+            core_withheld: list[dict[str, Any]] = []
+            core_route_generation_observed = False
+            core_route_generation: int | None = None
+            core_route_generation_mixed = False
+            delegated_adapter_version = (
+                readmission_selection.binary_release.version
+                if readmission_selection is not None
+                else catalog.server_version
+            )
             for decision in evaluation.matched:
                 entry = decision.entry
                 tool = decision.observed_tool
+                requirements = delegated_requirements(entry.upstream_name)
+                if self._core_runtime is not None and requirements:
+                    core_status = self._core_runtime.route_status(
+                        requirements,
+                        delegated_tool=entry.upstream_name,
+                        delegated_adapter_version=delegated_adapter_version,
+                    )
+                    observed_core_generation = core_status.get("generation")
+                    if core_route_generation_observed:
+                        core_route_generation_mixed = (
+                            core_route_generation_mixed
+                            or observed_core_generation
+                            != core_route_generation
+                        )
+                    else:
+                        core_route_generation = observed_core_generation
+                        core_route_generation_observed = True
+                    if not core_status["available"]:
+                        core_withheld.append(
+                            {
+                                "tool": entry.upstream_name,
+                                "disposition": core_status["disposition"],
+                                "reason_codes": list(core_status["reason_codes"]),
+                            }
+                        )
+                        continue
                 exposed_name = entry.exposed_name
                 if exposed_name in base_names:
                     exposed_name = f"{ALIAS_PREFIX}{entry.upstream_name}"
@@ -1073,7 +1153,7 @@ class UpstreamReadGateway:
                     contract_fingerprint=decision.expected_fingerprint,
                 )
                 dynamic_tools[exposed_name] = dynamic_tool
-                exposed[exposed_name] = _AdmittedRoute(
+                candidate_route = _AdmittedRoute(
                     entry=entry,
                     observed_tool=tool,
                     generation=generation,
@@ -1137,6 +1217,11 @@ class UpstreamReadGateway:
                         else None
                     ),
                 )
+                exposed[exposed_name] = (
+                    previous_exposed[exposed_name]
+                    if previous_exposed.get(exposed_name) == candidate_route
+                    else candidate_route
+                )
                 capabilities.append(
                     {
                         "tool": exposed_name,
@@ -1165,9 +1250,21 @@ class UpstreamReadGateway:
                 ),
                 generation=generation,
             )
-            full_admission = len(exposed) == selected_policy.classification_counts[
-                "automatic_read"
-            ]
+            held_canaries = {
+                name: (
+                    previous_held_canaries[name]
+                    if previous_held_canaries.get(name) == route
+                    else route
+                )
+                for name, route in held_canaries.items()
+            }
+            # Upstream contract admission and Core route availability are
+            # independent authorities.  A Core hold withdraws only the
+            # affected client-visible routes; it must not misreport an exact
+            # ha-mcp catalog as a partial upstream admission.
+            full_admission = len(evaluation.matched) == (
+                selected_policy.classification_counts["automatic_read"]
+            )
             compatibility_status = (
                 "exact"
                 if full_admission
@@ -1195,11 +1292,20 @@ class UpstreamReadGateway:
                     == candidate_contract_token
                 )
                 stale_discovery = (
-                    epoch_changed and not newer_live_catalog_matches
+                    (epoch_changed and not newer_live_catalog_matches)
+                    or discovery_core_epoch
+                    != self._core_reconciliation_epoch
+                    or core_route_generation_mixed
                 )
                 if stale_discovery:
+                    core_discovery_stale = (
+                        discovery_core_epoch
+                        != self._core_reconciliation_epoch
+                        or core_route_generation_mixed
+                    )
                     immediate_retry = (
-                        not self._stale_reprobe_retry_armed
+                        core_discovery_stale
+                        or not self._stale_reprobe_retry_armed
                     )
                     self._stale_reprobe_retry_armed = True
                     self._state.update(
@@ -1216,7 +1322,11 @@ class UpstreamReadGateway:
                             "next_compatibility_reprobe_at": None,
                             "stale_reprobe_retry_armed": True,
                             "recommended_action": (
-                                "A newer live contract observation "
+                                "Core authority changed while the client "
+                                "catalog was being constructed; reconcile "
+                                "again before publishing it."
+                                if core_discovery_stale
+                                else "A newer live contract observation "
                                 "superseded this discovery; reconcile "
                                 "again before publishing it."
                             ),
@@ -1255,6 +1365,7 @@ class UpstreamReadGateway:
                     policy=selected_policy,
                     release=selected_release,
                     readmission_selection=readmission_selection,
+                    core_withheld=tuple(core_withheld),
                 )
             replace_dynamic_upstream_capabilities(
                 self._dynamic_capabilities, self.health_snapshot()
@@ -1330,9 +1441,18 @@ class UpstreamReadGateway:
         policy: UpstreamToolPolicy,
         release: ReviewedUpstreamRelease | None,
         readmission_selection: HaMcpAdmissionSelection | None,
+        core_withheld: tuple[dict[str, Any], ...],
     ) -> None:
         """Publish one copy-on-write route generation under the state lock."""
 
+        previous_core_withheld = {
+            str(item.get("tool", ""))
+            for item in self._state.get("core_withheld_tools", ())
+            if isinstance(item, dict)
+        }
+        next_core_withheld = {
+            str(item.get("tool", "")) for item in core_withheld
+        }
         automatic_count = policy.classification_counts[
             "automatic_read"
         ]
@@ -1572,6 +1692,10 @@ class UpstreamReadGateway:
                         for entry in policy.tools
                         if entry.classification == "held_for_canary"
                     ),
+                    "core_withheld_read_count": len(core_withheld),
+                    "core_withheld_tools": [
+                        dict(item) for item in core_withheld[:MAX_QUARANTINE_RECORDS]
+                    ],
                     "live_canary_required_tools": sorted(
                         entry.upstream_name
                         for entry in policy.tools
@@ -1722,6 +1846,19 @@ class UpstreamReadGateway:
             self._latest_live_contract_token = None
             self._stale_reprobe_retry_armed = False
             self._reprobe_event.clear()
+        if self._core_runtime is not None:
+            withdrawn = len(next_core_withheld - previous_core_withheld)
+            restored = len(previous_core_withheld - next_core_withheld)
+            if withdrawn:
+                self._core_runtime.record_catalog_change(
+                    restored=False,
+                    count=withdrawn,
+                )
+            if restored:
+                self._core_runtime.record_catalog_change(
+                    restored=True,
+                    count=restored,
+                )
 
     async def _finish_discovery_failure(
         self,
@@ -2787,6 +2924,19 @@ class UpstreamReadGateway:
                         raise DashboardTransportError(
                             "prohibited_delegation"
                         )
+                requirements = delegated_requirements(
+                    policy_entry.upstream_name
+                )
+                if self._core_runtime is not None and requirements:
+                    lease.core_authority = self._core_runtime.acquire(
+                        requirements,
+                        delegated_tool=policy_entry.upstream_name,
+                        delegated_adapter_version=mapping.adapter_version,
+                    )
+                    if lease.core_authority is None:
+                        raise DashboardTransportError(
+                            "prohibited_delegation"
+                        )
                 if telemetry:
                     telemetry.audit_context[
                         "upstream_identity_status"
@@ -2824,6 +2974,15 @@ class UpstreamReadGateway:
                             raise DashboardTransportError(
                                 "prohibited_delegation"
                             )
+                if lease.core_authority is not None:
+                    core_commits = self._core_runtime.consume(
+                        lease.core_authority
+                    )
+                    if core_commits is None:
+                        raise DashboardTransportError(
+                            "prohibited_delegation"
+                        )
+                    lease.core_commits = core_commits
                 lease.dispatch_committed = True
 
             exchange = await transport.execute_read(
@@ -2870,6 +3029,23 @@ class UpstreamReadGateway:
                     finished, (finished - attempt_started) * 1_000
                 )
 
+    def _finish_core_route_lease(self, lease: _RouteLease | None) -> None:
+        """Release one retained Core authority exactly once."""
+
+        if lease is None:
+            return
+        core_runtime = self._core_runtime
+        core_commits = lease.core_commits
+        core_authority = lease.core_authority
+        lease.core_commits = None
+        lease.core_authority = None
+        if core_runtime is None:
+            return
+        if core_commits is not None:
+            core_runtime.finish(core_commits)
+        elif core_authority is not None:
+            core_runtime.release(core_authority)
+
     async def execute(
         self,
         *,
@@ -2890,6 +3066,13 @@ class UpstreamReadGateway:
             self._settings.response_size_limit if self._settings else 60_000,
         )
         telemetry = current_telemetry()
+        telemetry_token = None
+        if telemetry is None and policy_entry.upstream_name == "ha_get_device":
+            # Direct embedding and focused tests may enter this internal
+            # boundary without the normal MCP request middleware. Give the
+            # compatibility adapter one bounded request context rather than
+            # allowing its direct Core reads to run without an authorizer.
+            telemetry, telemetry_token = begin_request()
         try:
             mapping, exchange = await self._dispatch_current_route(
                 exposed_name=exposed_name,
@@ -2920,6 +3103,36 @@ class UpstreamReadGateway:
             )
             response_adapter = None
             if policy_entry.upstream_name == "ha_get_device":
+                if telemetry is None:
+                    raise _GatewayFailure(
+                        "prohibited_delegation", dispatched=True
+                    )
+                lease = route_context.get("lease")
+                prior_core_authorizer = telemetry.core_dispatch_authorizer
+
+                def authorize_retained_core() -> bool:
+                    if prior_core_authorizer is not None:
+                        try:
+                            if prior_core_authorizer() is not True:
+                                return False
+                        except Exception:
+                            return False
+                    return bool(
+                        self._core_runtime is not None
+                        and isinstance(lease, _RouteLease)
+                        and lease.core_authority is not None
+                        and lease.core_commits is not None
+                        and self._core_runtime.revalidate(
+                            lease.core_authority,
+                            lease.core_commits,
+                        )
+                    )
+
+                def require_retained_core() -> None:
+                    if not telemetry.authorize_core_dispatch():
+                        raise HomeAssistantUnavailableError()
+
+                telemetry.core_dispatch_authorizer = authorize_retained_core
                 try:
                     payload, response_adapter = (
                         await adapt_ha_get_device_composite_result(
@@ -2928,6 +3141,7 @@ class UpstreamReadGateway:
                             upstream_version=mapping.adapter_version,
                             rest_client=self._ha_rest_client,
                             websocket_client=self._ha_websocket_client,
+                            authorize_core_read=require_retained_core,
                         )
                     )
                 except HomeAssistantTimeoutError:
@@ -2947,6 +3161,10 @@ class UpstreamReadGateway:
                     raise _GatewayFailure(
                         "invalid_response", dispatched=True
                     ) from None
+                finally:
+                    telemetry.core_dispatch_authorizer = (
+                        prior_core_authorizer
+                    )
             sanitation = sanitize_untrusted_data(
                 payload,
                 known_secrets=self._known_secrets,
@@ -3131,6 +3349,15 @@ class UpstreamReadGateway:
                 timing=timing_since(started),
                 request_id=current_request_id(),
             ).to_json(response_limit)
+        finally:
+            lease = route_context.get("lease")
+            try:
+                self._finish_core_route_lease(
+                    lease if isinstance(lease, _RouteLease) else None
+                )
+            finally:
+                if telemetry_token is not None:
+                    end_request(telemetry_token)
 
     async def run_held_read_canary(
         self,
@@ -3146,6 +3373,9 @@ class UpstreamReadGateway:
         telemetry = current_telemetry()
         route: _HeldCanaryRoute | None = None
         dispatched = False
+        core_authority = None
+        core_commits = None
+        batch_item_outcomes: list[dict[str, Any]] | None = None
         observed_identity: dict[str, str | None] = {
             "server": None,
             "version": None,
@@ -3227,7 +3457,7 @@ class UpstreamReadGateway:
                 and observed_output_fingerprint
                 == route.runtime_output_schema_fingerprint
             )
-            return {
+            report = {
                 "upstream_tool": upstream_tool_name[:128],
                 "expected_compatibility_entry_id": (
                     expected_compatibility_entry_id[:160]
@@ -3279,6 +3509,10 @@ class UpstreamReadGateway:
                 "truncated": truncation,
                 "promotion_performed": False,
             }
+            if batch_item_outcomes is not None:
+                report["batch_item_count"] = len(batch_item_outcomes)
+                report["batch_item_outcomes"] = batch_item_outcomes
+            return report
 
         def set_audit_context(value: dict[str, Any]) -> None:
             if telemetry is None:
@@ -3326,11 +3560,20 @@ class UpstreamReadGateway:
                 telemetry.result_status = "failure"
                 telemetry.completeness = "failed"
             if dispatched:
-                METRICS.record_provider_result(
-                    PROVIDER_ID,
-                    "failed",
-                    dispatched=True,
-                )
+                classified_outcome = _EXPECTED_PROVIDER_OUTCOMES.get(normalized)
+                if classified_outcome is not None:
+                    METRICS.record_classified_outcome(classified_outcome)
+                    METRICS.record_provider_result(
+                        PROVIDER_ID,
+                        "complete",
+                        dispatched=True,
+                    )
+                else:
+                    METRICS.record_provider_result(
+                        PROVIDER_ID,
+                        "failed",
+                        dispatched=True,
+                    )
             response_limit = min(
                 route.entry.response_limit_bytes
                 if route is not None
@@ -3425,14 +3668,57 @@ class UpstreamReadGateway:
         )
         if errors:
             return await fail("argument_validation")
+        operation_ids = arguments.get("operation_id")
+        if (
+            isinstance(operation_ids, list)
+            and len(operation_ids) > MAX_HELD_READ_CANARY_BATCH_ITEMS
+        ):
+            return await fail(
+                "argument_validation",
+                reason="held_canary_batch_limit_exceeded",
+            )
         if transport is None:
             return await fail("not_configured")
+
+        core_requirements = delegated_requirements(upstream_tool_name)
+        core_runtime = self._core_runtime
+        owner_task = asyncio.current_task()
+        authority_closed = False
+
+        def require_active_owner() -> None:
+            # A retained worker may resume before the cancelled caller unwinds.
+            if authority_closed or (
+                owner_task is not None and owner_task.cancelling()
+            ):
+                raise DashboardTransportError("prohibited_delegation")
+
+        def finish_core_authority() -> None:
+            nonlocal authority_closed
+            nonlocal core_authority
+            nonlocal core_commits
+            # Retained transport work can outlive its cancelled caller. Close
+            # callback ownership before dropping authority, under the same lock
+            # as consumption, so late work cannot dispatch without that lease.
+            with self._lock:
+                if authority_closed:
+                    return
+                authority_closed = True
+                authority, commits = core_authority, core_commits
+                core_authority = None
+                core_commits = None
+                if core_runtime is not None:
+                    if commits is not None:
+                        core_runtime.finish(commits)
+                    elif authority is not None:
+                        core_runtime.release(authority)
 
         validator_ran = False
 
         def validate_live_catalog(catalog: McpReadCatalog) -> None:
             nonlocal validator_ran
-            validator_ran = True
+            with self._lock:
+                require_active_owner()
+                validator_ran = True
             observed_identity.update(
                 {
                     "server": self._safe_identity_evidence(catalog.server_name),
@@ -3496,43 +3782,57 @@ class UpstreamReadGateway:
 
         def before_dispatch() -> None:
             nonlocal dispatched
+            nonlocal core_commits
             with self._lock:
+                require_active_owner()
                 if (
-                    self._active_release is not active_release
+                    dispatched
+                    or self._active_release is not active_release
                     or self._held_canaries.get(upstream_tool_name) is not route
                     or self._admission_generation != route.generation
                     or self._state.get("compatibility_status") != "exact"
                     or self._state.get("admission_status") != "admitted_exact"
                 ):
                     raise DashboardTransportError("prohibited_delegation")
+                if core_authority is not None:
+                    core_commits = core_runtime.consume(core_authority)
+                    if core_commits is None:
+                        raise DashboardTransportError("prohibited_delegation")
                 dispatched = True
 
         try:
-            exchange = await transport.execute_read(
-                upstream_tool_name,
-                dict(arguments),
-                timeout_seconds=route.entry.timeout_seconds,
-                catalog_validator=validate_live_catalog,
-                before_dispatch=before_dispatch,
-            )
-        except DashboardTransportError as exc:
-            return await fail(exc.category)
-        except Exception as exc:
-            category = getattr(getattr(exc, "cause", None), "category", None)
-            return await fail(category or "internal_error")
-        if not validator_ran or not dispatched:
-            return await fail("prohibited_delegation")
-        if exchange.call_result.get("isError") is True:
-            error_contract = _upstream_error_evidence(exchange.call_result)
-            return await fail(
-                _classify_upstream_tool_error(
+            if core_runtime is not None and core_requirements:
+                core_authority = core_runtime.acquire(core_requirements)
+                if core_authority is None:
+                    return await fail(
+                        "prohibited_delegation",
+                        reason="core_capability_unavailable",
+                    )
+            try:
+                exchange = await transport.execute_read(
                     upstream_tool_name,
-                    exchange.call_result,
-                    arguments,
-                ),
-                error_contract=error_contract,
-            )
-        try:
+                    dict(arguments),
+                    timeout_seconds=route.entry.timeout_seconds,
+                    catalog_validator=validate_live_catalog,
+                    before_dispatch=before_dispatch,
+                )
+            except DashboardTransportError as exc:
+                return await fail(exc.category)
+            except Exception as exc:
+                category = getattr(getattr(exc, "cause", None), "category", None)
+                return await fail(category or "internal_error")
+            if not validator_ran or not dispatched:
+                return await fail("prohibited_delegation")
+            if exchange.call_result.get("isError") is True:
+                error_contract = _upstream_error_evidence(exchange.call_result)
+                return await fail(
+                    _classify_upstream_tool_error(
+                        upstream_tool_name,
+                        exchange.call_result,
+                        arguments,
+                    ),
+                    error_contract=error_contract,
+                )
             payload = _normalize_upstream_payload(
                 exchange.call_result,
                 server_version=route.server_version,
@@ -3550,6 +3850,9 @@ class UpstreamReadGateway:
                     "invalid_response",
                     reason="output_contract_validation_failed",
                 )
+            batch_item_outcomes, batch_partial = (
+                _held_operation_status_batch_outcomes(payload, arguments)
+            )
             response_limit = min(
                 route.entry.response_limit_bytes,
                 self._settings.response_size_limit
@@ -3564,29 +3867,16 @@ class UpstreamReadGateway:
             if sanitation.failed_closed:
                 return await fail("sanitization_failed")
             result = sanitation.value
-            encoded_size = len(
-                json.dumps(
-                    result,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                    allow_nan=False,
-                    default=str,
-                ).encode("utf-8")
-            )
-            summarized = encoded_size + 12_000 > response_limit
-            if summarized:
-                result = {
-                    "result_omitted": True,
-                    "reason": "bounded_result_summary",
-                    "sanitized_result_type": type(sanitation.value).__name__,
-                }
             upstream_partial, warnings = _upstream_completeness(
                 route.entry, sanitation.value
             )
-            truncated = bool(
-                sanitation.truncated_field_count or summarized
-            )
+            if batch_partial:
+                upstream_partial = True
+                warnings.append(
+                    "The held operation-status batch contains incomplete or "
+                    "non-success application outcomes."
+                )
+            truncated = bool(sanitation.truncated_field_count)
             completeness = (
                 "partial" if truncated or upstream_partial else "complete"
             )
@@ -3596,6 +3886,73 @@ class UpstreamReadGateway:
                 truncation=truncated,
                 output_contract_match=True,
             )
+            response_warnings = (
+                (
+                    ["The untrusted upstream result was safely bounded."]
+                    if truncated
+                    else []
+                )
+                + warnings
+                + ["A passing canary does not authorize promotion."]
+            )
+
+            def bounded_success_response() -> str | None:
+                response = SuccessResponse(
+                    operation="run_held_read_canary",
+                    summary=(
+                        "Executed one reviewed held read as evidence only; no "
+                        "promotion was performed."
+                    ),
+                    data={"canary_evidence": report, "result": result},
+                    warnings=response_warnings,
+                    metadata={
+                        "provider": PROVIDER_ID,
+                        "untrusted_upstream_content": True,
+                        "fallback": "none",
+                        "fallback_occurred": False,
+                        "promotion_performed": False,
+                    },
+                    timing=timing_since(started),
+                    request_id=current_request_id(),
+                )
+                serialized = json.dumps(
+                    response.as_dict(), indent=2, default=str
+                )
+                if len(serialized.encode("utf-8")) > response_limit:
+                    return None
+                return serialized
+
+            serialized = bounded_success_response()
+            if serialized is None:
+                result = {
+                    "result_omitted": True,
+                    "reason": "bounded_result_summary",
+                    "sanitized_result_type": type(sanitation.value).__name__,
+                }
+                truncated = True
+                completeness = "partial"
+                report = evidence(
+                    outcome="partial",
+                    completeness=completeness,
+                    truncation=True,
+                    output_contract_match=True,
+                )
+                response_warnings = (
+                    ["The untrusted upstream result was safely bounded."]
+                    + warnings
+                    + ["A passing canary does not authorize promotion."]
+                )
+                serialized = bounded_success_response()
+            if serialized is None:
+                # The individual outcome projection is useful evidence, but it
+                # must never make the public response syntactically invalid.
+                # A configured bound too small for the complete report fails
+                # closed with a bounded response instead.
+                batch_item_outcomes = None
+                return await fail(
+                    "response_too_large",
+                    reason="bounded_canary_response_exceeded",
+                )
             set_audit_context(report)
             if telemetry is not None:
                 telemetry.result_status = report["outcome"]
@@ -3605,32 +3962,13 @@ class UpstreamReadGateway:
                 completeness,
                 dispatched=True,
             )
-            return SuccessResponse(
-                operation="run_held_read_canary",
-                summary=(
-                    "Executed one reviewed held read as evidence only; no "
-                    "promotion was performed."
-                ),
-                data={"canary_evidence": report, "result": result},
-                warnings=(
-                    (["The untrusted upstream result was safely bounded."] if truncated else [])
-                    + warnings
-                    + ["A passing canary does not authorize promotion."]
-                ),
-                metadata={
-                    "provider": PROVIDER_ID,
-                    "untrusted_upstream_content": True,
-                    "fallback": "none",
-                    "fallback_occurred": False,
-                    "promotion_performed": False,
-                },
-                timing=timing_since(started),
-                request_id=current_request_id(),
-            ).to_json(response_limit)
+            return serialized
         except _GatewayFailure as exc:
             return await fail(exc.category)
         except (SchemaError, TypeError, ValueError, OverflowError):
             return await fail("invalid_response")
+        finally:
+            finish_core_authority()
 
     def _remove_registered_tools(self) -> None:
         with self._lock:
@@ -3917,6 +4255,13 @@ class UpstreamReadGateway:
                 self._live_observation_epoch
             )
             self._latest_live_contract_token = None
+
+    def request_core_reconciliation(self) -> None:
+        """Re-enumerate delegated routes after a Core authority change."""
+
+        with self._lock:
+            self._core_reconciliation_epoch += 1
+            self._reprobe_event.set()
 
     def _record_live_contract_observation_locked(
         self, live_contract_token: str
@@ -4244,6 +4589,42 @@ class UpstreamReadGateway:
         if registry is not None:
             value["automatic_readmission_registry"] = registry.snapshot()
             self._sanitize_registry_enabled_health(value)
+        return value
+
+    def health_projection(self) -> dict[str, Any]:
+        """Return bounded public health without per-tool catalog rows.
+
+        The internal snapshot retains the full reviewed admission inventory for
+        deterministic diagnostics.  The public server-health tool already
+        reports the corresponding counts and a fingerprint, so repeating every
+        admitted and blocked tool row can exhaust the bounded MCP response once
+        the Core and ha-mcp coordinators are both active.
+        """
+
+        value = self.health_snapshot()
+        tool_fields = (
+            "held_tools",
+            "core_withheld_tools",
+            "live_canary_required_tools",
+            "quarantined_tools",
+            "missing_tools",
+            "unreviewed_tools",
+            "exposed_tools",
+            "collision_mappings",
+            "blocked_tools",
+        )
+        raw_projection = {
+            field: value.get(field, []) for field in tool_fields
+        }
+        try:
+            value["catalog_name_projection_fingerprint"] = (
+                schema_fingerprint(raw_projection)
+            )
+        except Exception:
+            value["catalog_name_projection_fingerprint"] = None
+        value["catalog_name_projection_bounded"] = True
+        for field in tool_fields:
+            value[field] = []
         return value
 
     @staticmethod
@@ -5003,33 +5384,23 @@ def _classify_upstream_tool_error(
     call_result: dict[str, Any],
     arguments: dict[str, Any] | None = None,
 ) -> str:
-    """Classify only the reviewed 7.14.1 structured error discriminator."""
+    """Classify only an exact reviewed structured error discriminator."""
 
-    content = call_result.get("content")
-    if not isinstance(content, list) or len(content) != 1:
+    payload = _reviewed_upstream_error_payload(call_result)
+    if payload is None:
         return "upstream_error"
-    item = content[0]
-    if (
-        not isinstance(item, dict)
-        or item.get("type") != "text"
-        or not isinstance(item.get("text"), str)
-    ):
-        return "upstream_error"
-    text = item["text"]
-    try:
-        if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
-            return "upstream_error"
-        payload = json.loads(
-            text,
-            object_pairs_hook=_reject_duplicate_json_members,
-            parse_constant=_reject_non_finite_json_constant,
-        )
-    except (RecursionError, TypeError, UnicodeError, ValueError):
-        return "upstream_error"
-    if (
-        not isinstance(payload, dict)
-        or payload.get("success") is not False
-        or not isinstance(payload.get("error"), dict)
+    return _classify_upstream_error_payload(upstream_tool, payload, arguments)
+
+
+def _classify_upstream_error_payload(
+    upstream_tool: str,
+    payload: dict[str, Any],
+    arguments: dict[str, Any] | None = None,
+) -> str:
+    """Map one already-decoded, reviewed error object to binary-owned policy."""
+
+    if payload.get("success") is not False or not isinstance(
+        payload.get("error"), dict
     ):
         return "upstream_error"
     code = payload["error"].get("code")
@@ -5065,6 +5436,82 @@ def _classify_upstream_tool_error(
     return "upstream_error"
 
 
+def _bounded_canonical_error_payload(value: Any) -> tuple[dict[str, Any], str] | None:
+    """Return a strict bounded object and its canonical JSON, or fail closed."""
+
+    try:
+        canonical = json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        if len(canonical.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
+            return None
+        decoded = json.loads(
+            canonical,
+            object_pairs_hook=_reject_duplicate_json_members,
+            parse_constant=_reject_non_finite_json_constant,
+        )
+    except (RecursionError, TypeError, UnicodeError, ValueError):
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    return decoded, canonical
+
+
+def _reviewed_upstream_error_payload(
+    call_result: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Decode text and structured MCP error representations without ambiguity."""
+
+    structured_value: tuple[dict[str, Any], str] | None = None
+    if "structuredContent" in call_result:
+        structured_value = _bounded_canonical_error_payload(
+            call_result.get("structuredContent")
+        )
+        if structured_value is None:
+            return None
+
+    text_value: tuple[dict[str, Any], str] | None = None
+    if "content" in call_result:
+        content = call_result.get("content")
+        if (
+            not isinstance(content, list)
+            or len(content) != 1
+            or not isinstance(content[0], dict)
+            or content[0].get("type") != "text"
+            or not isinstance(content[0].get("text"), str)
+        ):
+            return None
+        text = content[0]["text"]
+        try:
+            if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
+                return None
+            decoded = json.loads(
+                text,
+                object_pairs_hook=_reject_duplicate_json_members,
+                parse_constant=_reject_non_finite_json_constant,
+            )
+        except (RecursionError, TypeError, UnicodeError, ValueError):
+            return None
+        text_value = _bounded_canonical_error_payload(decoded)
+        if text_value is None:
+            return None
+
+    if structured_value is None and text_value is None:
+        return None
+    if (
+        structured_value is not None
+        and text_value is not None
+        and structured_value[1] != text_value[1]
+    ):
+        return None
+    selected = structured_value if structured_value is not None else text_value
+    return selected[0] if selected is not None else None
+
+
 def _shape_projection(value: Any) -> Any:
     """Project an untrusted result to bounded structural evidence."""
 
@@ -5093,31 +5540,8 @@ def _shape_projection(value: Any) -> Any:
 def _upstream_error_evidence(call_result: dict[str, Any]) -> dict[str, Any]:
     """Return code-and-shape evidence without reflecting error payload data."""
 
-    content = call_result.get("content")
-    if (
-        not isinstance(content, list)
-        or len(content) != 1
-        or not isinstance(content[0], dict)
-        or content[0].get("type") != "text"
-        or not isinstance(content[0].get("text"), str)
-    ):
-        return {
-            "is_error": True,
-            "structured_code": None,
-            "shape_fingerprint": schema_fingerprint(
-                _shape_projection(call_result)
-            ),
-        }
-    text = content[0]["text"]
-    try:
-        if len(text.encode("utf-8")) > MAX_STRUCTURED_UPSTREAM_ERROR_BYTES:
-            raise ValueError("error envelope exceeds evidence bound")
-        payload = json.loads(
-            text,
-            object_pairs_hook=_reject_duplicate_json_members,
-            parse_constant=_reject_non_finite_json_constant,
-        )
-    except (RecursionError, TypeError, UnicodeError, ValueError):
+    payload = _reviewed_upstream_error_payload(call_result)
+    if payload is None:
         return {
             "is_error": True,
             "structured_code": None,
@@ -5125,7 +5549,7 @@ def _upstream_error_evidence(call_result: dict[str, Any]) -> dict[str, Any]:
                 {"unparseable_bounded_error": True}
             ),
         }
-    error = payload.get("error") if isinstance(payload, dict) else None
+    error = payload.get("error")
     code = error.get("code") if isinstance(error, dict) else None
     return {
         "is_error": True,
@@ -5134,6 +5558,113 @@ def _upstream_error_evidence(call_result: dict[str, Any]) -> dict[str, Any]:
         ),
         "shape_fingerprint": schema_fingerprint(_shape_projection(payload)),
     }
+
+
+def _held_operation_status_batch_outcomes(
+    payload: Any,
+    arguments: dict[str, Any],
+) -> tuple[list[dict[str, Any]] | None, bool]:
+    """Validate and classify the reviewed operation-status batch envelope.
+
+    This projection deliberately omits operation identifiers and error messages.
+    The raw sanitized result remains available only in the authenticated canary
+    response; health and audit consume the bounded canary evidence instead.
+    """
+
+    operation_ids = arguments.get("operation_id")
+    if not isinstance(operation_ids, list):
+        return None, False
+    if not operation_ids or len(operation_ids) > MAX_HELD_READ_CANARY_BATCH_ITEMS:
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    detailed = payload.get("detailed_results")
+    if (
+        payload.get("total_operations") != len(operation_ids)
+        or not isinstance(detailed, list)
+        or len(detailed) != len(operation_ids)
+    ):
+        raise _GatewayFailure("invalid_response", dispatched=True)
+
+    counts = {
+        name: 0
+        for name in ("completed", "failed", "timeout", "not_found", "pending")
+    }
+    outcomes: list[dict[str, Any]] = []
+    for index, (expected_id, item) in enumerate(
+        zip(operation_ids, detailed, strict=True)
+    ):
+        if (
+            not isinstance(expected_id, str)
+            or not isinstance(item, dict)
+            or item.get("operation_id") != expected_id
+        ):
+            raise _GatewayFailure("invalid_response", dispatched=True)
+        status = item.get("status")
+        if status not in counts:
+            raise _GatewayFailure("invalid_response", dispatched=True)
+        counts[status] += 1
+        projection: dict[str, Any] = {
+            "item_index": index,
+            "status": status,
+            "structured_code": None,
+            "error_code": None,
+            "failure_category": None,
+            "retryable": False,
+        }
+        if status == "completed":
+            if item.get("success") is not True or "error" in item:
+                raise _GatewayFailure("invalid_response", dispatched=True)
+        elif status == "pending":
+            if "error" in item or item.get("success") is False:
+                raise _GatewayFailure("invalid_response", dispatched=True)
+        else:
+            if item.get("success") is not False or not isinstance(
+                item.get("error"), dict
+            ):
+                raise _GatewayFailure("invalid_response", dispatched=True)
+            code = item["error"].get("code")
+            if not isinstance(code, str) or len(code) > 128:
+                raise _GatewayFailure("invalid_response", dispatched=True)
+            expected_status = {
+                "RESOURCE_NOT_FOUND": "not_found",
+                "TIMEOUT_OPERATION": "timeout",
+                "SERVICE_CALL_FAILED": "failed",
+            }.get(code)
+            if expected_status is not None and status != expected_status:
+                raise _GatewayFailure("invalid_response", dispatched=True)
+            category = _classify_upstream_error_payload(
+                "ha_get_operation_status",
+                item,
+                {"operation_id": expected_id},
+            )
+            public_code, retryable = _public_failure(category)
+            projection.update(
+                {
+                    # Only binary-reviewed fixed discriminators are evidence.
+                    # Unknown upstream text is classified but never reflected.
+                    "structured_code": (
+                        code if expected_status is not None else None
+                    ),
+                    "error_code": public_code,
+                    "failure_category": category,
+                    "retryable": retryable,
+                }
+            )
+        outcomes.append(projection)
+
+    expected_counts = {
+        "completed": counts["completed"],
+        "failed": counts["failed"] + counts["timeout"],
+        "not_found": counts["not_found"],
+        "pending": counts["pending"],
+    }
+    if any(payload.get(name) != value for name, value in expected_counts.items()):
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    if payload.get("all_complete") != (counts["pending"] == 0):
+        raise _GatewayFailure("invalid_response", dispatched=True)
+    partial = any(status != "completed" for status in counts if counts[status])
+    return outcomes, partial
 
 
 def _reviewed_single_entity_registry_lookup(

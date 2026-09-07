@@ -1,7 +1,7 @@
 # ADR-020: Capability-scoped automatic-readmission foundation
 
-Status: accepted as a test-only executable specification; non-authoritative and
-not integrated with production admission
+Status: accepted; ha-mcp production integration shipped in Beta 57 and Core
+production integration incorporated in the RC2 source candidate
 
 ## Context
 
@@ -12,12 +12,13 @@ until another Engineering release is built. The long-term product requirement
 is to retire stale authority after an update and restore only capabilities that
 can be matched to trusted, binary-known contracts.
 
-This decision establishes a reusable executable reference model and
+The original decision established a reusable executable reference model and
 implementation-neutral compatibility vectors. The model lives only under
 `tests/support/automatic_readmission/`. It is excluded from the packaged
 Engineering runtime and is not imported from startup, routing, providers, tool
-registration, health publication, or admission code. It changes no current
-runtime behavior and cannot grant admission or execution authority.
+registration, health publication, or admission code. The reference remains
+non-authoritative and cannot grant admission or execution authority; production
+adapters implement its contract independently.
 
 ADR-010 is already assigned to knowledge-source provenance, so this decision
 uses the next available architecture number, ADR-020.
@@ -34,7 +35,7 @@ observe change
   -> publish an atomic exact, compatible, partial, quarantined or unavailable set
 ```
 
-The executable specification is the non-authoritative
+The original executable specification remains the non-authoritative
 `tests.support.automatic_readmission` test-support package and a transport-free
 synthetic harness. It has no network, credential, environment-authority,
 filesystem-write, provider-call, registry-fetch, MCP-client, registration, or
@@ -47,9 +48,8 @@ scenarios state literal observations, authority and time inputs,
 reconciliation and lease operations, admitted and quarantined outcomes,
 sanitized health projections, and zero write/action reachability. The generic
 adapter/runner boundary compares literal expected results and emits only bounded
-mismatch fingerprints. A later production adapter can replay the same vectors
-without importing or copying reference-model classes, constants, or decision
-functions.
+mismatch fingerprints. Production adapters replay the same vectors without
+importing or copying reference-model classes, constants, or decision functions.
 
 ### Independently governed surfaces
 
@@ -73,7 +73,7 @@ end-to-end transport contract; it does not discover endpoints, trust proxy
 headers as release identity, follow expanded redirects, or probe public URLs.
 
 Home Assistant documents REST `GET /api/config`, WebSocket `auth_ok` version
-evidence and WebSocket `get_config`. Compatible Core readmission will require
+evidence and WebSocket `get_config`. Core readmission requires
 all three version observations to agree. The Core REST and WebSocket channels
 remain separate from Home Assistant's MCP Server endpoint at `/api/mcp` and
 from the independently configured ha-mcp endpoint.
@@ -188,17 +188,18 @@ failed validation remove unused leases, and finish removes active commits.
 Only a small bounded diagnostic retirement history is retained; current
 generation equality, not an unbounded historical set, is the dispatch guard.
 
-The reference model specifies these transitions only. It contains no real call,
-provider dispatch, or production route-publication method.
+The reference model specifies these transitions only. Production adapters now
+implement the same transition contract without importing test support. They
+gate existing typed calls and do not add a provider dispatch or generic route.
 
 ### Catalog publication and clients
 
-Future integration must publish runtime routing and `tools/list` from the same
-atomic generation and preserve deterministic catalog ordering. The current
-server contract requires clients to reconnect or explicitly re-list after a
-dynamic catalog change.
+Production integration publishes runtime routing and `tools/list` from the
+same effective Core and ha-mcp decisions and preserves deterministic catalog
+ordering. The current server contract requires clients to reconnect or
+explicitly re-list after a dynamic catalog change.
 
-This PR does not enable `notifications/tools/list_changed` and does not
+Integration does not enable `notifications/tools/list_changed` and does not
 advertise `tools.listChanged=true`. Although MCP defines that capability and
 notification, activation requires a separate review of pinned `mcp==1.28.1`,
 the negotiated protocol revision and actual client behavior. The server must
@@ -264,12 +265,12 @@ Engineering tools and compatible capabilities remain available while unknown
 or changed contracts are withheld. The affected surface has an explicit
 verification gap; unrelated surfaces retain their own authority.
 
-This PR provides an executable reference model, deterministic compatibility
-vectors, and contract evidence only. It provides no deployed capability. The
-advertised and staged Engineering versions, public schemas, tool registration,
-routing, providers, fallback and stable v1 remain unchanged.
+The reference artifacts remain the cross-implementation oracle. Production
+integration adds independent Core and ha-mcp decisions, leases, route gates,
+catalog withdrawal, and bounded health without adding tools, writes, fallback,
+or stable-v1 changes.
 
-## Implemented now
+## Implemented
 
 - a test-only executable specification;
 - synthetic implementation-neutral compatibility vectors;
@@ -277,38 +278,37 @@ routing, providers, fallback and stable v1 remain unchanged.
   model;
 - single-use route leases and explicitly bounded lifecycle state;
 - bounded sanitized reference health and audit projections; and
-- tests proving zero runtime import, packaging, provider, registration, write,
-  action, fallback and dispatch reachability.
-
-None of this is initialized at startup or connected to a provider, gateway,
-MCP server, registry fetcher, credential source, live upstream, or runtime
-state.
+- a production ha-mcp coordinator and signed readmission boundary shipped in
+  Beta 57;
+- a production Core two-snapshot observer and granular binary-owned profiles;
+- independent Core runtime generations and atomic complete route-lease sets;
+- static, delegated, catalog, health, and F3 authority integration; and
+- exact Core 2026.9.0/2026.9.1 profiles paired with the binary-owned ha-mcp
+  8.4.3 child-device/effective-area adapter at publication and dispatch; and
+- tests proving no new provider, generic forwarding, write, action, fallback,
+  or public-tool reachability.
 
 ## Deferred operational work
 
-- a production runtime coordinator;
-- upstream identity and capability observation wiring;
-- signed-registry fetching, verification and caching;
-- ha-mcp gateway integration;
-- Home Assistant Core compatibility integration;
 - proxy transport recovery;
 - dynamic client catalog refresh and notification review;
-- release staging, deployment, and runtime acceptance.
+- deployment, backup verification, Core upgrade, and live runtime acceptance.
 
-## First operational follow-on
+## Operational conformance requirements
 
-The first PR that implements operational readmission must:
+Every production integration must:
 
 1. baseline against then-current `main`;
-2. implement or move the reviewed behavior into Engineering runtime rather than
+2. implement reviewed behavior in Engineering runtime rather than
    importing test support;
-3. connect it to exactly one bounded production surface;
+3. preserve independent authority for each bounded production surface;
 4. replay these same implementation-neutral contract vectors through a
    production adapter without rewriting expected outcomes;
-5. stage a new Engineering release; and
-6. receive separate security and provider-boundary review.
+5. bind existing provider calls immediately before dispatch without adding
+   generic forwarding; and
+6. receive separate security and provider-boundary review before staging.
 
-Later Core, transport, registry, gateway and client-catalog work remains
+Core, transport, registry, gateway and client-catalog authority remains
 separate. Every operational follow-on must retain the generation, lease,
 revocation, zero-write and bounded-evidence contracts defined here.
 

@@ -80,6 +80,7 @@ class GovernanceRuntime:
         lifecycle_provider=None,
         runtime_snapshot=None,
         dashboard_provider=None,
+        core_runtime=None,
     ) -> None:
         try:
             repository = ChangePlanRepository(
@@ -179,6 +180,7 @@ class GovernanceRuntime:
                 dashboard_gateway=dashboard_gateway,
                 provider_identity_reader=provider_identity_reader,
                 retention_days=settings.governance_retention_days,
+                core_runtime=core_runtime,
             )
             self.storage_error = None
         except ChangePlanStorageError:

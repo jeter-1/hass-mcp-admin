@@ -1,0 +1,106 @@
+{
+  "model": "ha-core-2026-9-authority-evidence-v2",
+  "home_assistant_core": {
+    "latest_stable_patch": "2026.9.1",
+    "releases": {
+      "2026.9.0": {
+        "version": "2026.9.0",
+        "tag": "refs/tags/2026.9.0",
+        "tag_type": "lightweight_signed_commit",
+        "source_commit": "dfb5a9e690daaf204b542896e4b595e61a11a401",
+        "source_tree": "47d4178cc071773032fd6446c569dc21caf08f1e",
+        "source_archive_sha256": "ca6ee91306eb48f9ef237c08863744636a416fa27fb4ae3010223b22f2af9793",
+        "source_commit_signature": "verified",
+        "image_index_digest": "sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293",
+        "architecture_manifests": {
+          "linux/amd64": "sha256:bd39459e8d84fbbbd9a40fdccf7ab029f20d92340263b93db00887c3d5dcdaf6",
+          "linux/arm64": "sha256:2a7eb678f984c9983d36435c12e124f406c4eedd70fb5780d8488b1c777f0d95"
+        },
+        "image_version": "2026.9.0",
+        "provenance": "slsa_v1_attestations_observed_for_both_manifests"
+      },
+      "2026.9.1": {
+        "version": "2026.9.1",
+        "tag": "refs/tags/2026.9.1",
+        "tag_type": "lightweight_signed_commit",
+        "source_commit": "fc034572d0216a04ed40a07154394908a594dfed",
+        "source_tree": "4b2a1cd29e3d85c43d791e03eb82a17244956fec",
+        "source_archive_sha256": "27f657b4fbf76980f8451007116b37f09cc1226bb52c4ae6100cd46532120ff2",
+        "source_commit_signature": "verified",
+        "image_index_digest": "sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918",
+        "architecture_manifests": {
+          "linux/amd64": "sha256:31076d37e3b7dc9681b32d892aa4413fa866c9a90e5c8a50324b397dce415d17",
+          "linux/arm64": "sha256:134bdc1b5f3d32f201987966134fc6edbba0809c6d5100651b28dc653f443d39"
+        },
+        "image_version": "2026.9.1",
+        "provenance": "slsa_v1_attestations_observed_for_both_manifests"
+      }
+    },
+    "automation_trace_contract": {
+      "source_repository": "home-assistant/core",
+      "source_path": "homeassistant/components/trace/websocket_api.py",
+      "source_file_sha256": {
+        "2026.7.2": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634",
+        "2026.8.0": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634",
+        "2026.8.1": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634",
+        "2026.9.0": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634",
+        "2026.9.1": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634"
+      },
+      "trace_list_contract": "bounded mapping sequence",
+      "trace_get_missing_error": {
+        "code": "not_found",
+        "message": "The trace could not be found"
+      }
+    },
+    "patch_review": {
+      "comparison": "dfb5a9e690daaf204b542896e4b595e61a11a401...fc034572d0216a04ed40a07154394908a594dfed",
+      "device_registry_change": "deleted_empty_record_cleanup_only",
+      "consumed_contract_change": "none"
+    }
+  },
+  "ha_mcp": {
+    "version": "8.4.3",
+    "tag_object": "a4c06d0756f9feca01eda9406f9714bd75cd06a9",
+    "source_commit": "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
+    "source_tree": "ffc545fa7e3ad683737454de0217e2b9f672589e",
+    "image_index_digest": "sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
+    "image_revision": "47582a700b0889a355033ade36de7c3077780b48",
+    "catalog_tool_count": 78,
+    "catalog_fingerprint": "4b75e198df50a633ab94d51f006961c5fc31a1edfcf524b4dc925a48799e98f7",
+    "child_device_change": {
+      "pull_request": 2366,
+      "merge_commit": "b9ef3c3c6299603dcc1a607de7aa3c81999a05c3",
+      "included_in_tag": true,
+      "parent_device_id_source_match_count": 10,
+      "effective_area_source_match_count": 10
+    },
+    "reviewed_file_sha256": {
+      "src/ha_mcp/tools/bulk_selector.py": "435c7f65235c4b79d45488d1afb967674b809b71c46dc71c382bb344406d9ee4",
+      "src/ha_mcp/tools/component_api.py": "13002a2f6b6415434bf987eb8d912589406687c3c1cc77adf795478d64028f00",
+      "src/ha_mcp/tools/component_devices.py": "31a1b3c4f0ebf9d5e460a697b5de191f2ab69d4be05d5c6c472d62be734b52cd",
+      "src/ha_mcp/tools/smart_search/_entities.py": "5a5d9658b37f3cbe5da5d16cfbab419f8d620fea66c1b36963178decccaf76a5",
+      "src/ha_mcp/tools/smart_search/_overview.py": "6ac5d462ce098e74e221d6314a30a7929d6d62fab822ae6c912f2867b6ec2c9e",
+      "src/ha_mcp/tools/tools_entities.py": "d5d9c86508f85dd6d9b6f8f54fd20683eb94588354e2a9160eb0efe87edf106c",
+      "src/ha_mcp/tools/tools_registry.py": "87ee5769d16a742b4d868a716c3c2d949348701783a53f2814fe8a25d55a1c97",
+      "src/ha_mcp/tools/tools_search.py": "7509bbb4928871c835dfcc98f9dc68bb9ac43f6dcd1c620a0bf9ae3864ba86f6",
+      "src/ha_mcp/tools/tools_voice_assistant.py": "2f5c634ccc8241bdfb8fda12a8b518137c1d0f260d7920a8b4f57a7ab13b4b44",
+      "src/ha_mcp/utils/device_registry_semantics.py": "4c6d964d73ddf7992e88c7d290f6fc16e3b59c340917a10c0c3a3de03f814332",
+      "src/ha_mcp/visibility/resolver.py": "de1c8a419449c2898f2ae83b67a9932d8b694a16b92e7608a001604ab304ef66"
+    },
+    "existing_evidence": {
+      "contract_review": "docs/evidence/upstream-read-compatibility/ha-mcp-8.4.3-contract-review.json",
+      "contract_review_sha256": "109f59790c0e1a600a1d7146c8d5a1458e1898c63087ea08c2307bb1771a4172",
+      "catalog_capture": "docs/evidence/upstream-read-compatibility/ha-mcp-8.4.3.json",
+      "catalog_capture_sha256": "d18dc24d20581fc4a72d8ceba8918f78b97b332a24f9f37de5df4166ac925aad"
+    }
+  },
+  "reviewed_conclusion": {
+    "core_child_device_records": "present",
+    "core_effective_area_inheritance": "present",
+    "ha_mcp_child_device_support": "present",
+    "ha_mcp_effective_area_support": "present",
+    "device_dependent_delegated_disposition": "admitted_exact_with_8_4_3_adapter",
+    "legacy_8_4_1_disposition": "quarantined",
+    "fallback": "none"
+  }
+}

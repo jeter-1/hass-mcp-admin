@@ -183,12 +183,14 @@ def exact_readmission_observed(
         and health.get("dynamically_exposed_count")
         == expected_delegated
         and health.get("held_read_count") == len(expected_held_tools)
-        and set(health.get("held_tools") or ()) == expected_held_tools
+        and observed.get("held_tools_absent") is True
         and all(health.get(name) == 0 for name in ZERO_ADMISSION_COUNTERS)
     )
 
 
-async def probe(endpoint: str) -> dict[str, Any]:
+async def probe(
+    endpoint: str, *, expected_upstream_version: str | None = None
+) -> dict[str, Any]:
     async with streamablehttp_client(endpoint) as (read, write, _session_id):
         async with ClientSession(read, write) as session:
             initialized = await session.initialize()
@@ -206,10 +208,20 @@ async def probe(endpoint: str) -> dict[str, Any]:
                 )
             )
             held_tools = set(health.get("held_tools") or ())
+            expected = EXPECTED_ACCOUNTING_BY_VERSION.get(
+                expected_upstream_version or ""
+            )
+            expected_held_tools = (
+                set(expected["held_tools"]) if expected is not None else set()
+            )
             require("ha_get_state" in names, "admitted representative read disappeared")
             require(
                 not held_tools.intersection(names),
                 "held read became reachable through Engineering",
+            )
+            require(
+                not expected_held_tools.intersection(names),
+                "expected held read became reachable through Engineering",
             )
             result = decode_tool_result(
                 await session.call_tool(
@@ -245,7 +257,7 @@ async def probe(endpoint: str) -> dict[str, Any]:
                     else None
                 ),
                 "engineering_tool_count": len(names),
-                "held_tools_absent": True,
+                "held_tools_absent": not expected_held_tools.intersection(names),
                 "engineering_local_tool_count": (
                     len(names)
                     - health.get("dynamically_exposed_count", 0)
@@ -260,7 +272,10 @@ async def probe(endpoint: str) -> dict[str, Any]:
 
 async def run(args: argparse.Namespace) -> dict[str, Any]:
     if args.phase == "disconnected":
-        observed = await probe(args.engineering_endpoint)
+        observed = await probe(
+            args.engineering_endpoint,
+            expected_upstream_version=args.expected_upstream_version,
+        )
         require(not observed["success"], "read succeeded while upstream was stopped")
         require(
             observed["provider"] == "upstream_read_gateway",
@@ -276,7 +291,10 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     last: dict[str, Any] | None = None
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            last = await probe(args.engineering_endpoint)
+            last = await probe(
+                args.engineering_endpoint,
+                expected_upstream_version=args.expected_upstream_version,
+            )
         except Exception:  # bounded retry; no exception content is retained
             last = None
         if isinstance(last, dict) and exact_readmission_observed(

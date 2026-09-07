@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from types import MappingProxyType
 from typing import Any
@@ -84,6 +85,7 @@ async def adapt_ha_get_device_composite_result(
     upstream_version: str,
     rest_client: Any,
     websocket_client: Any,
+    authorize_core_read: Callable[[], None],
 ) -> tuple[Any, str | None]:
     """Restore the reviewed entity join for one exact composite lookup.
 
@@ -101,6 +103,7 @@ async def adapt_ha_get_device_composite_result(
         return payload, None
     device, device_id = candidate
 
+    authorize_core_read()
     runtime = await rest_client.request("GET", "/config")
     if not isinstance(runtime, dict):
         raise CompositeDeviceCompatibilityError()
@@ -112,6 +115,7 @@ async def adapt_ha_get_device_composite_result(
         return payload, None
     config_entries = _validated_reviewed_source(payload, device)
 
+    authorize_core_read()
     composite_splits = await websocket_client.command(
         {"type": "config/device_registry/list_composite_splits"}
     )
@@ -132,6 +136,7 @@ async def adapt_ha_get_device_composite_result(
     ):
         raise CompositeDeviceCompatibilityError()
 
+    authorize_core_read()
     entity_rows = await websocket_client.command(
         {"type": "config/entity_registry/list"}
     )

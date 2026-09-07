@@ -36,6 +36,17 @@ class TemplateSemanticRegistryTests(unittest.TestCase):
             for item in value["home_assistant"]["supported_versions"]
         )
         self.assertEqual(SUPPORTED_HOME_ASSISTANT_TEMPLATE_SOURCES, observed)
+        by_version = {
+            item["tag"]: item
+            for item in value["home_assistant"]["supported_versions"]
+        }
+        for version in ("2026.9.0", "2026.9.1"):
+            self.assertEqual(
+                "4563f8d2a4d038bc04f7a0ae2b9e042edec1a1a4",
+                by_version[version]["source_blobs"][
+                    "homeassistant/helpers/template/states.py"
+                ],
+            )
         self.assertEqual(
             {
                 "base": "jinja2.sandbox.ImmutableSandboxedEnvironment",

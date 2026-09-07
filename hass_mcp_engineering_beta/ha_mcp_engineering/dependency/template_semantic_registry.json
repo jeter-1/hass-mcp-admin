@@ -30,6 +30,7 @@
           "homeassistant/helpers/template/extensions/functional.py": "61a0528ea7e7fd9d45effdecf92bbc9c742261a7",
           "homeassistant/helpers/template/extensions/labels.py": "e65d4a0043534f08b7227eca1c656349cfd8d159",
           "homeassistant/helpers/template/extensions/state.py": "4133789782c3abb14ead21b627fe4d929e275ede",
+          "homeassistant/helpers/template/states.py": "af8abdf608a7d2430ae39a7bf3da183147b28670",
           "homeassistant/helpers/trigger.py": "8b58b146953f0ee024661832b5d8e6fe2a3e9803",
           "pyproject.toml": "9e23b118c34037fec64f048dfdbf485870254c75"
         },
@@ -55,6 +56,7 @@
           "homeassistant/helpers/template/extensions/functional.py": "61a0528ea7e7fd9d45effdecf92bbc9c742261a7",
           "homeassistant/helpers/template/extensions/labels.py": "e65d4a0043534f08b7227eca1c656349cfd8d159",
           "homeassistant/helpers/template/extensions/state.py": "bb851959a9ca2a4d7dc5885999cd8fb764103b27",
+          "homeassistant/helpers/template/states.py": "4563f8d2a4d038bc04f7a0ae2b9e042edec1a1a4",
           "homeassistant/helpers/trigger.py": "f4549792bb9b53b508fbe6dda3af47fca2379b12",
           "pyproject.toml": "5515bcd41bc34303808ad31f0ba9c16aae55ce66"
         },
@@ -80,10 +82,63 @@
           "homeassistant/helpers/template/extensions/functional.py": "61a0528ea7e7fd9d45effdecf92bbc9c742261a7",
           "homeassistant/helpers/template/extensions/labels.py": "e65d4a0043534f08b7227eca1c656349cfd8d159",
           "homeassistant/helpers/template/extensions/state.py": "bb851959a9ca2a4d7dc5885999cd8fb764103b27",
+          "homeassistant/helpers/template/states.py": "4563f8d2a4d038bc04f7a0ae2b9e042edec1a1a4",
           "homeassistant/helpers/trigger.py": "f4549792bb9b53b508fbe6dda3af47fca2379b12",
           "pyproject.toml": "233a0266dac7361dd8240b5a8360fc2097086fdc"
         },
         "tag": "2026.8.1"
+      },
+      {
+        "commit": "dfb5a9e690daaf204b542896e4b595e61a11a401",
+        "exact_ci_image_digest": "sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293",
+        "source_blobs": {
+          "homeassistant/components/automation/__init__.py": "b4bac8dd3d7636e1a78aacd9260b991aef899b35",
+          "homeassistant/components/script/__init__.py": "b653eea86584e0c2a30e4ed560dec3563c627922",
+          "homeassistant/components/template/trigger.py": "c3e5a5d141f5393bed97a4b7f05bf0ae2268df47",
+          "homeassistant/components/zone/trigger.py": "c23a3bb6f3c96b44e75b297efd58ee681a735fd3",
+          "homeassistant/core.py": "5bc5f94c85e308fe72b3f6d2a2c679c38a17dbe6",
+          "homeassistant/helpers/script.py": "1da929f2291fc8eacbe7819135df129592724230",
+          "homeassistant/helpers/template/__init__.py": "23ff8af3f3666b16687ccb29207c3c264080bbfc",
+          "homeassistant/helpers/template/extensions/areas.py": "5f446568f6a4f1eb1ca589b5848189257f636bfa",
+          "homeassistant/helpers/template/extensions/config_entries.py": "4c68a2900c0799ac092fbfe23aac243999004a8a",
+          "homeassistant/helpers/template/extensions/datetime.py": "888e9430a32a377ae091e57dae00c2157677fea5",
+          "homeassistant/helpers/template/extensions/devices.py": "271a347ab251f86d3cebce82710cb14e8b5cb201",
+          "homeassistant/helpers/template/extensions/entities.py": "41f8c82e5428b5e45a2b2352aa58fd4888cf6202",
+          "homeassistant/helpers/template/extensions/floors.py": "934ec50ff35d872b61d0539acd07d3c570baf48c",
+          "homeassistant/helpers/template/extensions/functional.py": "61a0528ea7e7fd9d45effdecf92bbc9c742261a7",
+          "homeassistant/helpers/template/extensions/labels.py": "e65d4a0043534f08b7227eca1c656349cfd8d159",
+          "homeassistant/helpers/template/extensions/state.py": "ccc0da8088bc374375488589f8f5a3d288e93016",
+          "homeassistant/helpers/template/states.py": "4563f8d2a4d038bc04f7a0ae2b9e042edec1a1a4",
+          "homeassistant/helpers/trigger.py": "9451757998c63efcf8c7a01249f730594b3f68dd",
+          "pyproject.toml": "f3183027e3d21bb70d1a87b14745bb0e4ccac881"
+        },
+        "tag": "2026.9.0"
+      },
+      {
+        "commit": "fc034572d0216a04ed40a07154394908a594dfed",
+        "exact_ci_image_digest": "sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918",
+        "source_blobs": {
+          "homeassistant/components/automation/__init__.py": "b4bac8dd3d7636e1a78aacd9260b991aef899b35",
+          "homeassistant/components/script/__init__.py": "b653eea86584e0c2a30e4ed560dec3563c627922",
+          "homeassistant/components/template/trigger.py": "c3e5a5d141f5393bed97a4b7f05bf0ae2268df47",
+          "homeassistant/components/zone/trigger.py": "c23a3bb6f3c96b44e75b297efd58ee681a735fd3",
+          "homeassistant/core.py": "5bc5f94c85e308fe72b3f6d2a2c679c38a17dbe6",
+          "homeassistant/helpers/script.py": "1da929f2291fc8eacbe7819135df129592724230",
+          "homeassistant/helpers/template/__init__.py": "23ff8af3f3666b16687ccb29207c3c264080bbfc",
+          "homeassistant/helpers/template/extensions/areas.py": "5f446568f6a4f1eb1ca589b5848189257f636bfa",
+          "homeassistant/helpers/template/extensions/config_entries.py": "4c68a2900c0799ac092fbfe23aac243999004a8a",
+          "homeassistant/helpers/template/extensions/datetime.py": "888e9430a32a377ae091e57dae00c2157677fea5",
+          "homeassistant/helpers/template/extensions/devices.py": "271a347ab251f86d3cebce82710cb14e8b5cb201",
+          "homeassistant/helpers/template/extensions/entities.py": "41f8c82e5428b5e45a2b2352aa58fd4888cf6202",
+          "homeassistant/helpers/template/extensions/floors.py": "934ec50ff35d872b61d0539acd07d3c570baf48c",
+          "homeassistant/helpers/template/extensions/functional.py": "61a0528ea7e7fd9d45effdecf92bbc9c742261a7",
+          "homeassistant/helpers/template/extensions/labels.py": "e65d4a0043534f08b7227eca1c656349cfd8d159",
+          "homeassistant/helpers/template/extensions/state.py": "ccc0da8088bc374375488589f8f5a3d288e93016",
+          "homeassistant/helpers/template/states.py": "4563f8d2a4d038bc04f7a0ae2b9e042edec1a1a4",
+          "homeassistant/helpers/trigger.py": "9451757998c63efcf8c7a01249f730594b3f68dd",
+          "pyproject.toml": "d2b55aef69aa792693ac73e7842b83a32bf3e4cb"
+        },
+        "tag": "2026.9.1"
       }
     ]
   },
@@ -394,6 +449,7 @@
       "homeassistant/helpers/script.py",
       "homeassistant/helpers/trigger.py",
       "homeassistant/helpers/template/__init__.py",
+      "homeassistant/helpers/template/states.py",
       "homeassistant/helpers/template/extensions/areas.py",
       "homeassistant/helpers/template/extensions/config_entries.py",
       "homeassistant/helpers/template/extensions/datetime.py",
@@ -407,7 +463,7 @@
     "immutability_contract": "exact_official_tag_commit_and_blob",
     "registry_generator": "scripts/generate_template_semantic_registry.py",
     "review_method": "official_tag_source_blob_evidence_and_pinned_jinja_package",
-    "reviewed_at": "2026-08-17",
+    "reviewed_at": "2026-09-06",
     "verified_at_generation": [
       "home_assistant_tag_commit_matches_captured_evidence",
       "home_assistant_path_exists_at_every_supported_tag",

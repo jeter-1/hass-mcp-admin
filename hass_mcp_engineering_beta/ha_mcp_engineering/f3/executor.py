@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
+import inspect
 import time
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable, Protocol
 
 from .contracts import ApprovalConsumptionRecorder
 from .locks import (
@@ -77,6 +78,27 @@ class SimulatedProcessLoss(BaseException):
 
 
 FaultHook = Callable[[str], None]
+
+
+class DispatchAuthorityGuard(Protocol):
+    """Independent authority consumed immediately before durable intent."""
+
+    def acquire(
+        self, prepared: object, preflight: object
+    ) -> object | None | Awaitable[object | None]:
+        """Acquire the complete current authority set after final preflight."""
+
+    def consume(self, authority: object) -> object | None:
+        """Atomically consume the registered authority set once."""
+
+    def revalidate(self, authority: object, commits: object) -> bool:
+        """Require the consumed authority to remain current before dispatch."""
+
+    def release(self, authority: object) -> bool:
+        """Release an unconsumed authority set."""
+
+    def finish(self, commits: object) -> bool:
+        """Finish a consumed authority set without granting new authority."""
 
 
 @dataclass(frozen=True)
@@ -323,6 +345,7 @@ class SharedOperationExecutor:
         prepared: object,
         identity: ExecutionIdentity,
         approval_consumption: ApprovalConsumptionRecorder,
+        dispatch_authority: DispatchAuthorityGuard | None = None,
     ) -> ExecutorResult:
         identity.validate()
         self.validate_prepared_operation(adapter, prepared)
@@ -335,6 +358,7 @@ class SharedOperationExecutor:
                 prepared=prepared,
                 identity=identity,
                 approval_consumption=approval_consumption,
+                dispatch_authority=dispatch_authority,
             )
 
     async def _execute_locked(
@@ -344,6 +368,7 @@ class SharedOperationExecutor:
         prepared: object,
         identity: ExecutionIdentity,
         approval_consumption: ApprovalConsumptionRecorder,
+        dispatch_authority: DispatchAuthorityGuard | None,
     ) -> ExecutorResult:
         self.metrics.increment("executions_started")
         try:
@@ -505,6 +530,30 @@ class SharedOperationExecutor:
             self._release_safely(handle)
             return self._result(record)
 
+        external_authority: object | None = None
+        external_commits: object | None = None
+        if dispatch_authority is not None:
+            try:
+                candidate_authority = dispatch_authority.acquire(
+                    prepared, preflight
+                )
+                external_authority = (
+                    await candidate_authority
+                    if inspect.isawaitable(candidate_authority)
+                    else candidate_authority
+                )
+            except Exception:
+                external_authority = None
+            if external_authority is None:
+                record = self._terminal_pre_dispatch(
+                    claim,
+                    identity,
+                    outcome="provider_unavailable_pre_dispatch",
+                    code="dispatch_authority_unavailable",
+                )
+                self._release_safely(handle)
+                return self._result(record)
+
         dispatch_metric_recorded = False
         irreversible_boundary_invoked = False
         approval_consumption_started = False
@@ -515,6 +564,7 @@ class SharedOperationExecutor:
             nonlocal approval_consumption_started
             nonlocal approval_consumption_succeeded
             nonlocal dispatch_metric_recorded
+            nonlocal external_commits
             if irreversible_boundary_invoked:
                 raise AdapterContractViolation(
                     "irreversible dispatch callback was invoked more than once"
@@ -534,6 +584,21 @@ class SharedOperationExecutor:
             self._inject(
                 "after_approval_consumption_before_durable_intent"
             )
+            if dispatch_authority is not None:
+                if external_authority is None:
+                    raise OperationExecutorError(
+                        "dispatch authority was not acquired"
+                    )
+                external_commits = dispatch_authority.consume(
+                    external_authority
+                )
+                if external_commits is None:
+                    raise OperationExecutorError(
+                        "dispatch authority was retired before intent"
+                    )
+                self._inject(
+                    "after_dispatch_authority_before_durable_intent"
+                )
             self.execution_repository.commit_dispatch_intent(
                 identity.task_id,
                 owner_id=identity.owner_id,
@@ -550,6 +615,17 @@ class SharedOperationExecutor:
             self.metrics.increment("dispatch_attempts")
             dispatch_metric_recorded = True
             self._inject("after_durable_intent_before_provider_invocation")
+            if dispatch_authority is not None:
+                if external_authority is None or external_commits is None:
+                    raise OperationExecutorError(
+                        "dispatch authority was not committed"
+                    )
+                if not dispatch_authority.revalidate(
+                    external_authority, external_commits
+                ):
+                    raise OperationExecutorError(
+                        "dispatch authority was retired after intent"
+                    )
 
         renewer = _LeaseRenewer(
             store=self.lock_store,
@@ -657,6 +733,11 @@ class SharedOperationExecutor:
             )
         finally:
             await renewer.stop()
+            if dispatch_authority is not None:
+                if external_commits is not None:
+                    dispatch_authority.finish(external_commits)
+                elif external_authority is not None:
+                    dispatch_authority.release(external_authority)
 
     def _validate_preflight(
         self, prepared: object, preflight: object

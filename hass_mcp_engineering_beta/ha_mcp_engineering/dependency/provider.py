@@ -1453,11 +1453,11 @@ def _build_label_membership_evidence(
 ) -> LabelMembershipEvidence:
     """Resolve literal labels with admitted Home Assistant lookup semantics.
 
-    Home Assistant 2026.7.2, 2026.8.0, and 2026.8.1 all use an exact label-ID
-    lookup first, then a normalized-name index where normalization is exactly
-    ``name.casefold().replace(" ", "")``.  The provider has already bound the
-    running release to that reviewed semantic registry before this helper is
-    called.
+    Home Assistant 2026.7.2, 2026.8.0, 2026.8.1, 2026.9.0, and 2026.9.1 all
+    use an exact label-ID lookup first, then a normalized-name index where
+    normalization is exactly ``name.casefold().replace(" ", "")``.  The
+    provider has already bound the running release to that reviewed semantic
+    registry before this helper is called.
     """
 
     distinct_selectors = sorted(

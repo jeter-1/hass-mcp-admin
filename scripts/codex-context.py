@@ -25,6 +25,11 @@ BETA_VERSION_RE = re.compile(
     r"^(?P<core>\d+\.\d+\.\d+)-beta\.(?P<beta>[1-9]\d*)$"
 )
 STABLE_VERSION_RE = re.compile(r"^(?P<core>\d+\.\d+\.\d+)$")
+UPSTREAM_RELEASE_VERSION_RE = re.compile(
+    r"^(?P<major>0|[1-9]\d*)\."
+    r"(?P<minor>0|[1-9]\d*)\."
+    r"(?P<patch>0|[1-9]\d*)$"
+)
 
 
 class ContextError(RuntimeError):
@@ -68,6 +73,74 @@ def simple_yaml_scalar(path: Path, key: str) -> str | None:
         text,
     )
     return match.group(1) if match else None
+
+
+def current_reviewed_upstream_policy(
+    repo_root: Path,
+    fallback: Path,
+) -> Path:
+    """Select the newest exact reviewed policy named by the local registry.
+
+    The registry default preserves legacy runtime compatibility and is not a
+    statement about the newest exact release reviewed by Engineering.  Context
+    reporting must not therefore pin counts to that legacy default forever.
+    Malformed, unreviewed, missing, or path-escaping entries are ignored; when
+    no usable registry exists, the historical single-policy layout remains the
+    bounded fallback.
+    """
+
+    registry_path = repo_root / (
+        "hass_mcp_engineering_beta/ha_mcp_engineering/"
+        "upstream_release_registry.json"
+    )
+    registry_text = read_text(registry_path)
+    if registry_text is None:
+        return fallback
+    try:
+        registry = json.loads(registry_text)
+    except json.JSONDecodeError:
+        return fallback
+    releases = registry.get("releases") if isinstance(registry, dict) else None
+    if not isinstance(releases, list):
+        return fallback
+
+    policy_root = repo_root / fallback.parent
+    candidates: list[tuple[tuple[int, int, int], Path]] = []
+    for release in releases:
+        if (
+            not isinstance(release, dict)
+            or release.get("approval_status") != "reviewed"
+        ):
+            continue
+        version = release.get("release_tag")
+        resource = release.get("policy_resource")
+        if isinstance(version, str):
+            version = version.removeprefix("v")
+        match = (
+            UPSTREAM_RELEASE_VERSION_RE.fullmatch(version)
+            if isinstance(version, str)
+            else None
+        )
+        if (
+            match is None
+            or not isinstance(resource, str)
+            or not resource
+            or Path(resource).name != resource
+        ):
+            continue
+        candidate = policy_root / resource
+        if not candidate.is_file():
+            continue
+        candidates.append(
+            (
+                tuple(
+                    int(match.group(name))
+                    for name in ("major", "minor", "patch")
+                ),
+                candidate.relative_to(repo_root),
+            )
+        )
+    return max(candidates, default=((0, 0, 0), fallback))[1]
 
 
 def python_literal(path: Path, name: str) -> Any | None:
@@ -427,8 +500,12 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
     capabilities_path = Path(
         "hass_mcp_engineering_beta/ha_mcp_engineering/capabilities.py"
     )
-    policy_path = Path(
+    baseline_policy_path = Path(
         "hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy.json"
+    )
+    policy_path = current_reviewed_upstream_policy(
+        repo_root,
+        baseline_policy_path,
     )
     version_path = Path("hass_mcp_engineering_beta/ha_mcp_engineering/version.py")
     validator_path = Path("scripts/validate_addon_metadata.py")

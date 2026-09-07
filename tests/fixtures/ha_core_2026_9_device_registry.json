@@ -1,0 +1,78 @@
+{
+  "devices": [
+    {
+      "area_id": "garage",
+      "configuration_url": null,
+      "config_entries": ["entry-garage"],
+      "config_entries_subentries": {"entry-garage": ["subentry-garage"]},
+      "config_entry_id": "entry-garage",
+      "config_subentry_id": "subentry-garage",
+      "connections": [["mac", "00:11:22:33:44:55"]],
+      "created_at": 1788556800.0,
+      "disabled_by": null,
+      "entry_type": null,
+      "hw_version": "synthetic-hardware-v1",
+      "id": "parent-garage",
+      "identifiers": [["synthetic", "garage"]],
+      "labels": [],
+      "manufacturer": "Synthetic Fixture Company",
+      "model": "Core 2026.9 parent fixture",
+      "model_id": "fixture-parent-v1",
+      "modified_at": 1788556801.0,
+      "name": "Synthetic garage controller",
+      "name_by_user": null,
+      "parent_device_id": null,
+      "primary_config_entry": "entry-garage",
+      "serial_number": "SYNTHETIC-PARENT-001",
+      "sw_version": "1.0",
+      "via_device_id": null
+    },
+    {
+      "area_id": null,
+      "config_entry_id": "entry-garage",
+      "config_subentry_id": "subentry-garage",
+      "created_at": 1788556802.0,
+      "disabled_by": null,
+      "id": "child-door",
+      "identifiers": [["synthetic", "door"]],
+      "labels": [],
+      "modified_at": 1788556803.0,
+      "name": "Synthetic garage door",
+      "name_by_user": null,
+      "parent_device_id": "parent-garage"
+    },
+    {
+      "area_id": "workshop",
+      "config_entry_id": "entry-garage",
+      "config_subentry_id": "subentry-garage",
+      "created_at": 1788556804.0,
+      "disabled_by": null,
+      "id": "child-light",
+      "identifiers": [["synthetic", "light"]],
+      "labels": ["synthetic-label"],
+      "modified_at": 1788556805.0,
+      "name": "Synthetic work light",
+      "name_by_user": "Work light",
+      "parent_device_id": "parent-garage"
+    }
+  ],
+  "entities": [
+    {
+      "area_id": null,
+      "device_id": "child-door",
+      "entity_id": "cover.synthetic_garage_door"
+    },
+    {
+      "area_id": null,
+      "device_id": "child-light",
+      "entity_id": "light.synthetic_work_light"
+    }
+  ],
+  "expected_effective_areas": {
+    "child-door": "garage",
+    "child-light": "workshop",
+    "cover.synthetic_garage_door": "garage",
+    "light.synthetic_work_light": "workshop",
+    "parent-garage": "garage"
+  }
+}
