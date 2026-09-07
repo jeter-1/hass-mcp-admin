@@ -33,6 +33,14 @@ service-inventory probe withholds only service discovery, and multi-call tools
 revalidate the same active Core commit before every provider interaction so a
 generation retired between calls cannot dispatch again.
 
+State-inventory failure is likewise capability-scoped: independent WebSocket
+registry, automation, trace, and dashboard reads remain eligible while
+state-dependent routes are withheld. Provider-backed backup and lifecycle
+planners now require their exact compiled Core route sets before entering the
+application. Background dependency prewarming uses the same single-generation
+Core lease discipline and invalidates cached evidence whenever Core authority
+changes.
+
 Core 2026.9 helper and dependency authority is now bound to exact official
 template source blobs, including the `states.py` implementation used by the
 reviewed globals and State-object semantics. Its generated registry is

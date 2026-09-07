@@ -109,6 +109,16 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "create_change_plan": ("core.dependency_helper_planning",),
     "create_configuration_plan": ("core.dependency_helper_planning",),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
+    "create_backup_plan": ("core.basic_websocket_read",),
+    "create_reload_plan": (
+        "core.configuration_validation",
+        "core.state_service_discovery",
+    ),
+    "create_addon_restart_plan": ("core.basic_websocket_read",),
+    "create_home_assistant_restart_plan": (
+        "core.basic_rest_read",
+        "core.configuration_validation",
+    ),
     "entity_dependency_analysis": ("core.dependency_helper_planning",),
     "automation_reliability_analysis": (
         "core.automation_trace_read",

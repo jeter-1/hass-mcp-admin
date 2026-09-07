@@ -356,7 +356,14 @@ class AiohttpCoreSnapshotSource:
         )
         async with aiohttp.ClientSession(timeout=timeout) as session:
             rest_config = await self._rest_json(session, "/config")
-            states = await self._rest_json(session, "/states")
+            try:
+                states = await self._rest_json(session, "/states")
+            except (RuntimeError, ValueError, asyncio.TimeoutError):
+                # State inventory is a capability-local surface. A bounded
+                # response failure or timeout withholds state-dependent reads
+                # without erasing independently validated WebSocket evidence.
+                # Connection failures still escape and retire the observation.
+                states = None
             try:
                 services = await self._rest_json(session, "/services")
             except (RuntimeError, ValueError):
@@ -412,10 +419,11 @@ class AiohttpCoreSnapshotSource:
                     )
                 except RuntimeError:
                     results["dashboard"] = None
+                state_records = states if _bounded_sequence(states) else ()
                 automation_entity_id = next(
                     (
                         item.get("entity_id")
-                        for item in states
+                        for item in state_records
                         if isinstance(item, Mapping)
                         and isinstance(item.get("entity_id"), str)
                         and item["entity_id"].startswith("automation.")

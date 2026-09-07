@@ -445,6 +445,114 @@ class Core20269AuthorityTests(unittest.TestCase):
 
 
 class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_states_transport_failure_retires_the_observation(self):
+        class ProbeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path == "/states":
+                raise ConnectionError("synthetic Core disconnect")
+            raise AssertionError(path)
+
+        source = AiohttpCoreSnapshotSource(settings())
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=ProbeSession(),
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+        ):
+            with self.assertRaisesRegex(ConnectionError, "Core disconnect"):
+                await source.capture_core_snapshot()
+
+    async def test_states_probe_failure_withholds_only_state_capabilities(self):
+        class ProbeWebSocket:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def send_json(self, _value):
+                return None
+
+        class ProbeSession:
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def ws_connect(self, _url, **_kwargs):
+                return ProbeWebSocket()
+
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path == "/states":
+                raise RuntimeError("synthetic oversized state inventory")
+            if path == "/services":
+                return [{"domain": "light", "services": {}}]
+            raise AssertionError(path)
+
+        async def command(
+            _websocket,
+            _command_id,
+            command_type,
+            _arguments=None,
+            *,
+            expected_errors=(),
+        ):
+            del expected_errors
+            if command_type == "get_config":
+                return {"version": "2026.9.1"}
+            if command_type == "lovelace/config":
+                return {"views": []}
+            if command_type == "automation/config":
+                return {"id": "synthetic"}
+            if command_type == "trace/get":
+                return {
+                    "_ha_mcp_engineering_expected_probe_error": "not_found"
+                }
+            return []
+
+        source = AiohttpCoreSnapshotSource(settings())
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=ProbeSession(),
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_receive_mapping",
+                side_effect=[
+                    {"type": "auth_required"},
+                    {"type": "auth_ok", "ha_version": "2026.9.1"},
+                ],
+            ),
+            patch.object(source, "_command", side_effect=command),
+        ):
+            snapshot = await source.capture_core_snapshot()
+
+        admitted = {
+            item["capability_id"] for item in snapshot["capability_evidence"]
+        }
+        self.assertNotIn("core.basic_rest_read", admitted)
+        self.assertNotIn("core.direct_entity_state_read", admitted)
+        self.assertNotIn("core.state_service_discovery", admitted)
+        self.assertIn("core.basic_websocket_read", admitted)
+        self.assertIn("core.non_device_registry_read", admitted)
+        self.assertIn("core.automation_configuration_read", admitted)
+        self.assertIn("core.automation_trace_read", admitted)
+        self.assertIn("core.dashboard_configuration_read", admitted)
+
     async def test_services_probe_failure_withholds_only_service_discovery(self):
         class ProbeWebSocket:
             def __init__(self):
@@ -2154,6 +2262,44 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(b'"isError": false', admitted_info)
         self.assertIn(b'"isError": false', admitted_local_health)
         self.assertEqual(len(app.calls), 2)
+
+    async def test_operational_plan_reads_require_core_authority(self):
+        expected = {
+            "create_backup_plan": ("core.basic_websocket_read",),
+            "create_reload_plan": (
+                "core.configuration_validation",
+                "core.state_service_discovery",
+            ),
+            "create_addon_restart_plan": ("core.basic_websocket_read",),
+            "create_home_assistant_restart_plan": (
+                "core.basic_rest_read",
+                "core.configuration_validation",
+            ),
+        }
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _snapshot("2026.9.2", evidence=_evidence())
+        )
+        app = _RecordingMcpApp()
+        configured = settings()
+        gateway = AuthenticatedMcpGateway(
+            app,
+            configured,
+            AuditLogger("unused", configured.access_secret, enabled=False),
+            core_runtime=runtime,
+        )
+
+        for tool_name, requirements in expected.items():
+            with self.subTest(tool_name=tool_name):
+                self.assertEqual(
+                    static_tool_requirements(tool_name), requirements
+                )
+                refused = await self._call(gateway, tool_name)
+                self.assertIn(b"CoreCapabilityUnavailable", refused)
+        # The MCP application owns every REST, WebSocket, and upstream provider
+        # interaction for these tools. Refusal before entering it proves that
+        # unavailable Core authority causes zero provider calls.
+        self.assertEqual(app.calls, [])
+        self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
 
     async def test_local_blueprint_read_is_independent_of_core_websocket(self):
         partial_evidence = [

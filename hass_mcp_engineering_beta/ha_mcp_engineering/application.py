@@ -254,6 +254,7 @@ def create_application(
         timeout=settings.ha_timeout_seconds,
         soft_ttl_seconds=settings.dependency_index_soft_ttl_seconds,
         hard_ttl_seconds=settings.dependency_index_hard_ttl_seconds,
+        core_runtime=CORE_READMISSION,
     )
     RELIABILITY_ANALYSIS.configure(
         HomeAssistantRestClient(settings),

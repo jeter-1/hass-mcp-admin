@@ -62,6 +62,16 @@ Source and exact-head validation must prove:
   contract; automation-configuration evidence cannot authorize them;
 - a missing or malformed service inventory withholds only service discovery
   after the configuration and state probes remain valid;
+- a missing, malformed, oversized, or timed-out state inventory withholds only
+  state-dependent capabilities while independent WebSocket registry,
+  automation, trace, and dashboard evidence remains eligible;
+- backup, reload, add-on restart, and Home Assistant restart planning cannot
+  enter their provider-backed read paths without the exact compiled Core
+  requirements for those routes;
+- background dependency prewarming acquires and consumes current
+  dependency-planning Core authority before its first HA read, revalidates that
+  authority before every later read, and makes its cache unusable when the Core
+  generation changes;
 - typed-helper execution performs one dispatch, authoritative reread,
   duplicate suppression, and exact disposable restoration;
 - dashboard reads and governed reversible dashboard updates retain their exact
