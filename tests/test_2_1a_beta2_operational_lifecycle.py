@@ -3025,6 +3025,72 @@ class SupervisorSelfIdentityTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ExactOperationalProviderTests(unittest.IsolatedAsyncioTestCase):
+    async def test_addon_reads_require_current_core_authority_before_transport(self):
+        transport = FakeMcpTransport()
+        provider = ReviewedOperationalLifecycleProvider()
+        provider.configure(
+            lifecycle_settings(
+                "http://abcdef12-ha-mcp:9583/synthetic-upstream-secret/mcp"
+            ),
+            transport=transport,
+        )
+        telemetry, token = begin_request("request-core-authority-refusal")
+        authorizations = 0
+
+        def refuse_core_authority() -> bool:
+            nonlocal authorizations
+            authorizations += 1
+            return False
+
+        telemetry.core_dispatch_authorizer = refuse_core_authority
+        try:
+            with self.assertRaises(OperationalLifecycleProviderError) as raised:
+                await provider.get_addon(UPSTREAM_ADDON_SLUG)
+        finally:
+            end_request(token)
+
+        self.assertEqual(raised.exception.category, "provider_unavailable")
+        self.assertFalse(raised.exception.dispatched)
+        self.assertEqual(authorizations, 1)
+        self.assertEqual(transport.calls, [])
+
+    async def test_addon_reads_revalidate_core_authority_before_second_call(self):
+        transport = FakeMcpTransport()
+        provider = ReviewedOperationalLifecycleProvider()
+        provider.configure(
+            lifecycle_settings(
+                "http://abcdef12-ha-mcp:9583/synthetic-upstream-secret/mcp"
+            ),
+            transport=transport,
+        )
+        telemetry, token = begin_request("request-core-authority-retired")
+        authorizations = 0
+
+        def retire_core_authority() -> bool:
+            nonlocal authorizations
+            authorizations += 1
+            return authorizations == 1
+
+        telemetry.core_dispatch_authorizer = retire_core_authority
+        try:
+            with self.assertRaises(OperationalLifecycleProviderError) as raised:
+                await provider.get_addon(UPSTREAM_ADDON_SLUG)
+        finally:
+            end_request(token)
+
+        self.assertEqual(raised.exception.category, "provider_unavailable")
+        self.assertFalse(raised.exception.dispatched)
+        self.assertEqual(authorizations, 2)
+        self.assertEqual(
+            transport.calls,
+            [
+                (
+                    "ha_get_addon",
+                    {"source": "installed", "include_stats": False},
+                )
+            ],
+        )
+
     async def test_exact_release_models_validate_binding_without_dispatch(self):
         cases = (
             (

@@ -72,6 +72,11 @@ Source and exact-head validation must prove:
   dependency-planning Core authority before its first HA read, revalidates that
   authority before every later read, and makes its cache unusable when the Core
   generation changes;
+- consumed F3 mutation authority is revalidated after durable intent and before
+  the adapter can invoke its provider, while F3 readback revalidates the same
+  current authority before every provider observation;
+- add-on lifecycle identity reads consume and revalidate the planner's current
+  Core route before each upstream `ha_get_addon` call;
 - typed-helper execution performs one dispatch, authoritative reread,
   duplicate suppression, and exact disposable restoration;
 - dashboard reads and governed reversible dashboard updates retain their exact

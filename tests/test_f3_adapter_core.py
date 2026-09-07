@@ -182,6 +182,9 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
                 events.append("authority_consumed")
                 return ("authority-commit",)
 
+            def revalidate(self, _authority, _commits):
+                return True
+
             def release(self, _authority):
                 events.append("authority_released")
                 return True
@@ -228,6 +231,9 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             def consume(self, _authority):
                 raise AssertionError("unavailable authority cannot be consumed")
 
+            def revalidate(self, _authority, _commits):
+                raise AssertionError("unavailable authority cannot be revalidated")
+
             def release(self, _authority):
                 raise AssertionError("no unavailable authority was acquired")
 
@@ -264,6 +270,9 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             def consume(self, _authority):
                 self.consume_count += 1
                 return None if self.consume_count == 1 else ("authority-commit",)
+
+            def revalidate(self, _authority, _commits):
+                return True
 
             def release(self, _authority):
                 self.release_count += 1
@@ -308,6 +317,50 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(adapter.counters.dispatch_invocations, 1)
         self.assertEqual(adapter.counters.simulated_mutations, 1)
 
+    async def test_retired_external_authority_after_intent_never_reaches_provider(self):
+        adapter = SyntheticOperationAdapter()
+
+        class Guard:
+            def __init__(self):
+                self.active = True
+                self.revalidations = 0
+
+            async def acquire(self, _prepared, _preflight):
+                return "registered-authority"
+
+            def consume(self, _authority):
+                return ("authority-commit",)
+
+            def revalidate(self, _authority, _commits):
+                self.revalidations += 1
+                return self.active
+
+            def release(self, _authority):
+                return True
+
+            def finish(self, _commits):
+                return True
+
+        guard = Guard()
+
+        def retire_after_intent(stage: str) -> None:
+            if stage == "after_durable_intent_before_provider_invocation":
+                guard.active = False
+
+        result = await self.executor(
+            fault_hook=retire_after_intent
+        ).execute(
+            adapter=adapter,
+            prepared=prepared_dashboard_operation(),
+            identity=_identity(),
+            approval_consumption=self.approval,
+            dispatch_authority=guard,
+        )
+        self.assertEqual(result.outcome, "verification_mismatch")
+        self.assertEqual(guard.revalidations, 1)
+        self.assertEqual(adapter.counters.dispatch_invocations, 0)
+        self.assertEqual(adapter.counters.simulated_mutations, 0)
+
     async def test_process_loss_after_core_authority_consumption_reconstructs_without_redispatch(self):
         adapter = SyntheticOperationAdapter()
 
@@ -324,6 +377,9 @@ class SharedExecutorTests(unittest.IsolatedAsyncioTestCase):
             def consume(self, _authority):
                 self.consumed += 1
                 return (f"commit-{self.consumed}",)
+
+            def revalidate(self, _authority, _commits):
+                return True
 
             def release(self, _authority):
                 return True

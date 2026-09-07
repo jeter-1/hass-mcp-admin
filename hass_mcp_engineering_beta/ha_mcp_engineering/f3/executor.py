@@ -91,6 +91,9 @@ class DispatchAuthorityGuard(Protocol):
     def consume(self, authority: object) -> object | None:
         """Atomically consume the registered authority set once."""
 
+    def revalidate(self, authority: object, commits: object) -> bool:
+        """Require the consumed authority to remain current before dispatch."""
+
     def release(self, authority: object) -> bool:
         """Release an unconsumed authority set."""
 
@@ -612,6 +615,17 @@ class SharedOperationExecutor:
             self.metrics.increment("dispatch_attempts")
             dispatch_metric_recorded = True
             self._inject("after_durable_intent_before_provider_invocation")
+            if dispatch_authority is not None:
+                if external_authority is None or external_commits is None:
+                    raise OperationExecutorError(
+                        "dispatch authority was not committed"
+                    )
+                if not dispatch_authority.revalidate(
+                    external_authority, external_commits
+                ):
+                    raise OperationExecutorError(
+                        "dispatch authority was retired after intent"
+                    )
 
         renewer = _LeaseRenewer(
             store=self.lock_store,

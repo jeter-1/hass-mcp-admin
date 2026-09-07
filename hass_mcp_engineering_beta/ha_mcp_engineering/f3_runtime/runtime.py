@@ -84,6 +84,7 @@ from ..governance.policy import POLICY_VERSION
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
+from ..request_context import begin_request, current_telemetry, end_request
 from .registry import ClosedAdapterRegistry
 from .repository import (
     ACTIVE_RECOVERY_CHECKPOINT_LIMIT,
@@ -137,6 +138,9 @@ class _CoreDispatchAuthorityGuard:
 
     def consume(self, authority: object) -> object | None:
         return self.runtime.consume(authority)
+
+    def revalidate(self, authority: object, commits: object) -> bool:
+        return self.runtime.revalidate(authority, commits)
 
     def release(self, authority: object) -> bool:
         return self.runtime.release(authority)
@@ -358,10 +362,32 @@ class _CoreVerificationAdapter:
         if commits is None:
             self._core_runtime.release(authority)
             return self._held_observation()
+        telemetry = current_telemetry()
+        request_token = None
+        if telemetry is None:
+            telemetry, request_token = begin_request()
+        prior_authorizer = telemetry.core_dispatch_authorizer
+
+        def authorize_core_dispatch() -> bool:
+            if (
+                prior_authorizer is not None
+                and prior_authorizer() is not True
+            ):
+                return False
+            return self._core_runtime.revalidate(authority, commits)
+
+        telemetry.core_dispatch_authorizer = authorize_core_dispatch
         try:
+            if not telemetry.authorize_core_dispatch():
+                return self._held_observation()
             return await callback()
         finally:
+            telemetry.core_dispatch_authorizer = lambda: False
             self._core_runtime.finish(commits)
+            if request_token is not None:
+                end_request(request_token)
+            else:
+                telemetry.core_dispatch_authorizer = prior_authorizer
 
     async def recover(self, prepared: Any, *, context: Any):
         return await self._observe_with_authority(

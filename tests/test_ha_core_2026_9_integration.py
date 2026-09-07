@@ -76,6 +76,7 @@ from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
+from ha_mcp_engineering.request_context import current_telemetry  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     load_reviewed_upstream_release_registry,
 )
@@ -1723,6 +1724,40 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, "authoritative-observation")
         self.assertEqual(adapter.observe_calls, 1)
         self.assertEqual(source.calls, 4)
+
+    async def test_f3_readback_revalidates_before_every_provider_read(self):
+        runtime, _source = await self._runtime(_core_2026_9_snapshot())
+
+        class Adapter:
+            capabilities = AdapterCapabilityDescriptor(
+                adapter_id="synthetic_core_verification_adapter",
+                contract_model="f3-operation-adapter-v1",
+                operation_family="synthetic_core_verification",
+                supported_operations=("update_dashboard",),
+                rollback_supported=False,
+                readback_recovery_supported=True,
+                exact_provider_contract_required=True,
+            )
+
+            def __init__(self):
+                self.provider_reads = 0
+
+            async def observe(self, _prepared, _dispatch):
+                telemetry = current_telemetry()
+                assert telemetry is not None
+                if telemetry.authorize_core_dispatch():
+                    self.provider_reads += 1
+                runtime.request_reconciliation(connection_changed=True)
+                if telemetry.authorize_core_dispatch():
+                    self.provider_reads += 1
+                    return "authoritative-observation"
+                return "held-observation"
+
+        adapter = Adapter()
+        guarded = _CoreVerificationAdapter(adapter, runtime)
+        result = await guarded.observe(_CoreBoundDashboardOperation(), object())
+        self.assertEqual(result, "held-observation")
+        self.assertEqual(adapter.provider_reads, 1)
 
 
 class CoreRuntimeLoopReconfigurationTests(unittest.TestCase):

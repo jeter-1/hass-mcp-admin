@@ -575,6 +575,10 @@ class ReviewedOperationalLifecycleProvider:
             if exc.category == "addon_not_found" and evidence is not None:
                 self._record_success(evidence)
             raise
+        except BeforeDispatchFailure as exc:
+            if isinstance(exc.cause, OperationalLifecycleProviderError):
+                raise exc.cause
+            self._fail("provider_error", dispatched=False)
         except CatalogValidationFailure as exc:
             if isinstance(exc.cause, OperationalLifecycleProviderError):
                 raise exc.cause
@@ -638,12 +642,24 @@ class ReviewedOperationalLifecycleProvider:
         started = time.perf_counter()
         if telemetry:
             telemetry.begin_upstream_attempt(started)
+
+        async def require_current_core_authority() -> None:
+            if telemetry is None or not telemetry.authorize_core_dispatch():
+                raise OperationalLifecycleProviderError(
+                    "provider_unavailable", dispatched=False
+                )
+
         try:
             return await self._transport.execute_read(
                 tool_name,
                 arguments,
                 timeout_seconds=timeout_seconds,
                 catalog_validator=catalog_validator,
+                before_dispatch=(
+                    None
+                    if telemetry is None
+                    else require_current_core_authority
+                ),
             )
         finally:
             if telemetry:

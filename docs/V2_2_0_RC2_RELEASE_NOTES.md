@@ -41,6 +41,12 @@ application. Background dependency prewarming uses the same single-generation
 Core lease discipline and invalidates cached evidence whenever Core authority
 changes.
 
+The final mutation boundary revalidates consumed Core authority after durable
+intent and immediately before provider invocation. F3 readback and add-on
+lifecycle identity reads likewise revalidate before each provider interaction;
+a retired generation therefore enters observation-only recovery or fails before
+the next call rather than using stale authority.
+
 Core 2026.9 helper and dependency authority is now bound to exact official
 template source blobs, including the `states.py` implementation used by the
 reviewed globals and State-object semantics. Its generated registry is
