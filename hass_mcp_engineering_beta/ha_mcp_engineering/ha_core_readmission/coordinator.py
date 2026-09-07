@@ -493,6 +493,61 @@ class CoreReadmissionCoordinator:
                 commits.append(commit)
             return tuple(commits)
 
+    def validate_commits(
+        self,
+        commits: tuple[CoreDispatchCommit, ...],
+        *,
+        observation: CoreObservation,
+        target_fingerprint: str | None = None,
+    ) -> bool:
+        """Revalidate an active committed set before another provider interaction."""
+
+        if (
+            not isinstance(commits, tuple)
+            or not commits
+            or len(commits) > MAX_CAPABILITIES
+            or not all(isinstance(item, CoreDispatchCommit) for item in commits)
+            or len({item.commit_id for item in commits}) != len(commits)
+        ):
+            return False
+        with self._lock:
+            generation = self._published
+            if generation is None or not isinstance(observation, CoreObservation):
+                return False
+            for commit in commits:
+                if (
+                    self._active_commits.get(commit.commit_id) != commit
+                ):
+                    return False
+                lease = commit.lease
+                profile = self._profile_by_capability.get(lease.capability_id)
+                decision = generation.decision_for(lease.capability_id)
+                expected_target = (
+                    target_fingerprint
+                    if profile is not None
+                    and profile.capability_class.mutation_capable
+                    else None
+                )
+                if not bool(
+                    profile is not None
+                    and decision is not None
+                    and decision.disposition.admitted
+                    and decision.adapter_id == lease.adapter_id
+                    and decision.profile_id == lease.profile_id
+                    and lease.surface == SURFACE
+                    and lease.generation == generation.generation
+                    and lease.session_fingerprint == generation.session_fingerprint
+                    and observation.session_fingerprint
+                    == generation.session_fingerprint
+                    and observation.fingerprint
+                    == generation.observation_fingerprint
+                    and lease.observation_fingerprint
+                    == generation.observation_fingerprint
+                    and lease.target_fingerprint == expected_target
+                ):
+                    return False
+            return True
+
     def release_route(self, lease: CoreRouteLease) -> bool:
         with self._lock:
             if self._issued_leases.get(getattr(lease, "lease_id", None)) != lease:

@@ -31,6 +31,10 @@ including `homeassistant/helpers/template/states.py`, through semantic-registry
 fingerprint `857e344b0f14ee3088e641ff3b1fd10657b9d1266dda54a1707025de18d5dcdc`.
 Those source blobs were captured from the official immutable 2026.9.0 and
 2026.9.1 tags and locally reverified before deterministic registry generation.
+The reviewed automation-trace contract is separately bound to Core's exact
+`homeassistant/components/trace/websocket_api.py` implementation: `trace/list`
+must return a bounded mapping sequence and `trace/get` must retain the exact
+missing-trace `not_found` envelope across every supported Core source commit.
 
 ## Functional acceptance
 
@@ -54,6 +58,10 @@ Source and exact-head validation must prove:
 - Probatio configuration validation distinguishes success, warnings, errors,
   and malformed evidence;
 - standard and consequential helper planning remain exact and deterministic;
+- automation trace list/get routes require their independent reviewed trace
+  contract; automation-configuration evidence cannot authorize them;
+- a missing or malformed service inventory withholds only service discovery
+  after the configuration and state probes remain valid;
 - typed-helper execution performs one dispatch, authoritative reread,
   duplicate suppression, and exact disposable restoration;
 - dashboard reads and governed reversible dashboard updates retain their exact
@@ -62,7 +70,8 @@ Source and exact-head validation must prove:
   `retryable=false`; and
 - `ha_get_operation_status` remains held and unregistered.
 
-Immediately before each existing provider boundary, the current route must
+Immediately before every provider interaction, including a later interaction
+inside one multi-call tool request, the current route must
 retain the exact Core observation, generation, session, capability, profile,
 adapter, and target. Stale authority, identity drift, adapter drift, malformed
 or incomplete evidence, lock failure, or lease reuse must stop before dispatch.

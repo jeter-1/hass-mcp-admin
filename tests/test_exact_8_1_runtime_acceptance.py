@@ -361,6 +361,16 @@ class ExactAddonProfileTests(unittest.TestCase):
                 "dashboards": fixture.DASHBOARDS,
                 "dashboard": fixture.DASHBOARD_CONFIG,
                 "automation": fixture.AUTOMATION,
+                "trace_list": fixture._result_for(
+                    "trace/list",
+                    {
+                        "domain": "automation",
+                        "item_id": "gateway_fixture",
+                    },
+                ),
+                "trace_get": {
+                    "_ha_mcp_engineering_expected_probe_error": "not_found"
+                },
             },
         )
         self.assertEqual(

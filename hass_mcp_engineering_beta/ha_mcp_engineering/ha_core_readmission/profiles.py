@@ -257,6 +257,28 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
         response_contract={"configuration": "bounded_automation_mapping"},
     ),
     _contract(
+        "core.automation_trace_read",
+        CoreCapabilityClass.AUTOMATION_TRACE_READ,
+        "compiled-core-automation-trace-read-v1",
+        (
+            "automation_trace_list_command_contract",
+            "automation_trace_list_bounded_mapping_sequence",
+            "automation_trace_get_command_contract",
+            "automation_trace_get_not_found_contract",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "trace_list": "bounded_list_of_trace_header_mappings",
+            "trace_get": {
+                "success": "bounded_trace_mapping",
+                "missing": {
+                    "code": "not_found",
+                    "message": "The trace could not be found",
+                },
+            },
+        },
+    ),
+    _contract(
         "core.dashboard_configuration_read",
         CoreCapabilityClass.DASHBOARD_CONFIGURATION_READ,
         "compiled-core-dashboard-configuration-read-v1",

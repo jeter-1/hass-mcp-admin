@@ -52,6 +52,7 @@ class CoreCapabilityClass(str, Enum):
     DELEGATED_DEVICE_EFFECTIVE_AREA = "delegated_device_effective_area"
     DIRECT_ENTITY_STATE_READ = "direct_entity_state_read"
     AUTOMATION_CONFIGURATION_READ = "automation_configuration_read"
+    AUTOMATION_TRACE_READ = "automation_trace_read"
     DASHBOARD_CONFIGURATION_READ = "dashboard_configuration_read"
     TEMPLATE_SEMANTICS = "template_semantics"
     CONFIGURATION_VALIDATION = "configuration_validation"
@@ -76,6 +77,7 @@ class CoreCapabilityClass(str, Enum):
         return self in {
             CoreCapabilityClass.DIRECT_DEVICE_REGISTRY_READ,
             CoreCapabilityClass.DELEGATED_DEVICE_EFFECTIVE_AREA,
+            CoreCapabilityClass.AUTOMATION_TRACE_READ,
             CoreCapabilityClass.TEMPLATE_SEMANTICS,
             CoreCapabilityClass.CONFIGURATION_VALIDATION,
             CoreCapabilityClass.DEPENDENCY_HELPER_PLANNING,

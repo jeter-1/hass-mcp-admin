@@ -610,14 +610,18 @@ class AuthenticatedMcpGateway:
                 def authorize_core_dispatch() -> bool:
                     nonlocal core_commits
                     if core_commits is not None:
-                        return True
+                        return self._core_runtime.revalidate(
+                            core_authority,
+                            core_commits,
+                        )
                     core_commits = self._core_runtime.consume(core_authority)
                     return core_commits is not None
 
                 # The gateway authenticates and acquires authority, but the
-                # A provider client commits it only immediately before the
-                # first provider interaction. A generation retired while the
-                # MCP application is still preparing the call cannot dispatch.
+                # provider client commits it only immediately before the first
+                # provider interaction and revalidates that active commit before
+                # every later interaction in the same request. A retired Core
+                # generation therefore cannot authorize a second provider call.
                 telemetry.core_dispatch_authorizer = authorize_core_dispatch
             await self.app(forwarded, new_receive, correlated_send)
             if tool_name and response_capture:

@@ -36,6 +36,22 @@
         "provenance": "slsa_v1_attestations_observed_for_both_manifests"
       }
     },
+    "automation_trace_contract": {
+      "source_repository": "home-assistant/core",
+      "source_path": "homeassistant/components/trace/websocket_api.py",
+      "source_file_sha256": {
+        "2026.7.2": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634",
+        "2026.8.0": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634",
+        "2026.8.1": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634",
+        "2026.9.0": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634",
+        "2026.9.1": "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634"
+      },
+      "trace_list_contract": "bounded mapping sequence",
+      "trace_get_missing_error": {
+        "code": "not_found",
+        "message": "The trace could not be found"
+      }
+    },
     "patch_review": {
       "comparison": "dfb5a9e690daaf204b542896e4b595e61a11a401...fc034572d0216a04ed40a07154394908a594dfed",
       "device_registry_change": "deleted_empty_record_cleanup_only",

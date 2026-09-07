@@ -22,8 +22,13 @@ CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1"})
 AUTOMATION_CONTRACT_PROBE_ENTITY_ID = (
     "automation.ha_mcp_engineering_contract_probe_0000000000000000"
 )
+TRACE_CONTRACT_PROBE_ITEM_ID = "ha_mcp_engineering_contract_probe_0000000000000000"
+TRACE_CONTRACT_PROBE_RUN_ID = "00000000000000000000000000000000"
 _EXPECTED_PROBE_ERROR_FIELD = "_ha_mcp_engineering_expected_probe_error"
 _AUTOMATION_NOT_FOUND_ERRORS = (("not_found", "Entity not found"),)
+_TRACE_NOT_FOUND_ERRORS = (
+    ("not_found", "The trace could not be found"),
+)
 _DASHBOARD_NOT_FOUND_ERRORS = (
     ("config_not_found", "Unknown config specified: None"),
     ("config_not_found", "No config found."),
@@ -148,6 +153,16 @@ def capability_evidence_for_probes(
     add(
         "core.automation_configuration_read",
         _bounded_mapping(websocket_results.get("automation")),
+    )
+    trace_list = websocket_results.get("trace_list")
+    trace_get = websocket_results.get("trace_get")
+    add(
+        "core.automation_trace_read",
+        _bounded_sequence(trace_list)
+        and all(_bounded_mapping(item) for item in trace_list)
+        and trace_get
+        == {_EXPECTED_PROBE_ERROR_FIELD: "not_found"},
+        semantic=True,
     )
     add(
         "core.dashboard_configuration_read",
@@ -342,7 +357,13 @@ class AiohttpCoreSnapshotSource:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             rest_config = await self._rest_json(session, "/config")
             states = await self._rest_json(session, "/states")
-            services = await self._rest_json(session, "/services")
+            try:
+                services = await self._rest_json(session, "/services")
+            except (RuntimeError, ValueError):
+                # Service discovery is an independent read surface. A failed,
+                # malformed, or oversized service inventory withholds only its
+                # capability and cannot erase already validated REST evidence.
+                services = None
             async with session.ws_connect(
                 self._settings.websocket_url,
                 timeout=websocket_timeout,
@@ -415,6 +436,36 @@ class AiohttpCoreSnapshotSource:
                     )
                 except RuntimeError:
                     results["automation"] = None
+                try:
+                    results["trace_list"] = await self._command(
+                        websocket,
+                        10,
+                        "trace/list",
+                        {
+                            "domain": "automation",
+                            "item_id": TRACE_CONTRACT_PROBE_ITEM_ID,
+                        },
+                    )
+                except (RuntimeError, ValueError):
+                    results["trace_list"] = None
+                try:
+                    # Exact Core 2026.7.2 through 2026.9.1 return this bounded
+                    # not_found envelope for a missing trace. It proves the
+                    # independently reviewed trace/get command contract without
+                    # requiring a real automation run or causing a mutation.
+                    results["trace_get"] = await self._command(
+                        websocket,
+                        11,
+                        "trace/get",
+                        {
+                            "domain": "automation",
+                            "item_id": TRACE_CONTRACT_PROBE_ITEM_ID,
+                            "run_id": TRACE_CONTRACT_PROBE_RUN_ID,
+                        },
+                        expected_errors=_TRACE_NOT_FOUND_ERRORS,
+                    )
+                except (RuntimeError, ValueError):
+                    results["trace_get"] = None
 
         version = rest_config.get("version") if isinstance(rest_config, Mapping) else None
         if not isinstance(version, str) or not isinstance(websocket_config, Mapping):

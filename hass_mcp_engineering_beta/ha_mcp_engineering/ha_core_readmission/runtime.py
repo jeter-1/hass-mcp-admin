@@ -483,6 +483,36 @@ class CoreRuntime:
             self._counters["lease_commits"] += len(commits)
             return commits
 
+    def revalidate(
+        self,
+        authority: CoreRouteAuthority,
+        commits: tuple[CoreDispatchCommit, ...],
+    ) -> bool:
+        """Require the same current Core authority before every provider call."""
+
+        with self._lock:
+            observation = self._observation
+            generation = self._coordinator.current_generation
+            valid = bool(
+                isinstance(authority, CoreRouteAuthority)
+                and observation is not None
+                and generation is not None
+                and authority.generation == generation.generation
+                and authority.observation_fingerprint == observation.fingerprint
+                and isinstance(commits, tuple)
+                and bool(commits)
+                and all(isinstance(item, CoreDispatchCommit) for item in commits)
+                and tuple(item.lease for item in commits) == authority.leases
+                and self._coordinator.validate_commits(
+                    commits,
+                    observation=observation,
+                    target_fingerprint=authority.target_fingerprint,
+                )
+            )
+            if not valid:
+                self._counters["lease_failures"] += 1
+            return valid
+
     def release(self, authority: CoreRouteAuthority | None) -> bool:
         return bool(
             authority is not None

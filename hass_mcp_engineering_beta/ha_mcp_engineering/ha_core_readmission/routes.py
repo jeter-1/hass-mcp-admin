@@ -67,7 +67,7 @@ DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_list_groups": ("core.basic_websocket_read",),
     "ha_config_list_helpers": ("core.basic_websocket_read",),
     "ha_eval_template": ("core.template_semantics",),
-    "ha_get_automation_traces": ("core.automation_configuration_read",),
+    "ha_get_automation_traces": ("core.automation_trace_read",),
     "ha_get_blueprint": ("core.basic_websocket_read",),
     "ha_get_device": ("core.delegated_device_effective_area",),
     "ha_get_entity": ("core.delegated_device_effective_area",),
@@ -87,8 +87,8 @@ DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
 
 STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "render_template": ("core.template_semantics",),
-    "list_automation_traces": ("core.automation_configuration_read",),
-    "get_automation_trace": ("core.automation_configuration_read",),
+    "list_automation_traces": ("core.automation_trace_read",),
+    "get_automation_trace": ("core.automation_trace_read",),
     "check_config": ("core.configuration_validation",),
     "get_history": ("core.basic_rest_read",),
     "get_logbook": ("core.basic_rest_read",),
@@ -110,8 +110,14 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "create_configuration_plan": ("core.dependency_helper_planning",),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "entity_dependency_analysis": ("core.dependency_helper_planning",),
-    "automation_reliability_analysis": ("core.dependency_helper_planning",),
-    "change_impact_analysis": ("core.dependency_helper_planning",),
+    "automation_reliability_analysis": (
+        "core.automation_trace_read",
+        "core.dependency_helper_planning",
+    ),
+    "change_impact_analysis": (
+        "core.automation_trace_read",
+        "core.dependency_helper_planning",
+    ),
     "configuration_integrity_analysis": ("core.dependency_helper_planning",),
     "incident_correlation": ("core.dependency_helper_planning",),
     "handoff_generation": ("core.dependency_helper_planning",),
@@ -163,7 +169,24 @@ def static_tool_requirements(
             return ()
         return ("core.basic_rest_read", "core.basic_websocket_read")
 
-    return STATIC_TOOL_CORE_REQUIREMENTS.get(tool_name, ())
+    requirements = STATIC_TOOL_CORE_REQUIREMENTS.get(tool_name, ())
+    if (
+        tool_name == "incident_correlation"
+        and isinstance(arguments, dict)
+        and isinstance(arguments.get("automation_id"), str)
+        and bool(arguments["automation_id"])
+    ):
+        requirements = (*requirements, "core.automation_trace_read")
+    elif (
+        tool_name == "handoff_generation"
+        and isinstance(arguments, dict)
+        and isinstance(arguments.get("automation_ids"), list)
+        and bool(arguments["automation_ids"])
+        and arguments.get("include_incident_context") is not False
+    ):
+        requirements = (*requirements, "core.automation_trace_read")
+
+    return tuple(sorted(set(requirements)))
 
 
 def f3_requirements(prepared: Any) -> tuple[str, ...]:

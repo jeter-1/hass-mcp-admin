@@ -54,6 +54,7 @@ candidate admits the reviewed profiles for:
 
 - REST and authenticated WebSocket reads;
 - state, service, entity, label, area, floor, and device registries;
+- separately reviewed `trace/list` and `trace/get` command contracts;
 - direct and delegated child-device/effective-area semantics;
 - template/Jinja behavior;
 - Probatio-backed configuration validation;
@@ -75,6 +76,11 @@ Evidence is layered rather than inferred from a version string:
 3. deterministic source and semantic fixtures;
 4. focused gateway, policy, helper, F3, dashboard, and held-read tests; and
 5. disposable exact-image CI against both reviewed 2026.9 patches.
+
+Service discovery is capability-scoped: failure of the bounded `/services`
+inventory does not erase valid configuration/state authority. Trace authority
+is likewise independent of automation-configuration authority, and each
+provider interaction revalidates the active Core generation before dispatch.
 
 Until step 5 passes on the final exact head, the disposable-runtime result is
 pending rather than a local pass. Local Docker is unavailable on the authoring

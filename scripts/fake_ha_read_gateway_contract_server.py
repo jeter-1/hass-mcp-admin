@@ -763,6 +763,11 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
                 "trigger": "synthetic",
             }
         ]
+    if message_type == "trace/get":
+        return {
+            "trace": {},
+            "config": AUTOMATION,
+        }
     if message_type == "blueprint/list":
         return {}
     if message_type == "homeassistant/expose_entity/list":
@@ -1001,6 +1006,26 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                         "result": generated,
                     }
                 )
+            continue
+        if (
+            message_type == "trace/get"
+            and request_data.get("item_id")
+            == "ha_mcp_engineering_contract_probe_0000000000000000"
+            and request_data.get("run_id")
+            == "00000000000000000000000000000000"
+        ):
+            STATE.websocket_reads[message_type] += 1
+            await ws.send_json(
+                {
+                    "id": request_id,
+                    "type": "result",
+                    "success": False,
+                    "error": {
+                        "code": "not_found",
+                        "message": "The trace could not be found",
+                    },
+                }
+            )
             continue
         if any(
             token in lowered

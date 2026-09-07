@@ -63,6 +63,10 @@ from ha_mcp_engineering.f3_runtime.runtime import (  # noqa: E402
 )
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient  # noqa: E402
+from ha_mcp_engineering.clients.websocket import (  # noqa: E402
+    HomeAssistantWebSocketClient,
+)
+from ha_mcp_engineering.errors import HomeAssistantUnavailableError  # noqa: E402
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
 from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
@@ -136,6 +140,10 @@ def _core_2026_9_evidence(version: str = "2026.9.0") -> list[dict]:
             "dashboards": [{"url_path": "synthetic-dashboard"}],
             "automation": {"id": "synthetic"},
             "dashboard": {"views": []},
+            "trace_list": [],
+            "trace_get": {
+                "_ha_mcp_engineering_expected_probe_error": "not_found"
+            },
         },
     )
 
@@ -286,6 +294,26 @@ class Core20269AuthorityTests(unittest.TestCase):
             ],
             0,
         )
+        trace = authority["home_assistant_core"][
+            "automation_trace_contract"
+        ]
+        self.assertEqual(
+            set(trace["source_file_sha256"]),
+            {"2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0", "2026.9.1"},
+        )
+        self.assertEqual(
+            set(trace["source_file_sha256"].values()),
+            {
+                "0496bed78479981fabe09d7473e6f497b6d0ab0ff2f9cf472b2114e03763e634"
+            },
+        )
+        self.assertEqual(
+            trace["trace_get_missing_error"],
+            {
+                "code": "not_found",
+                "message": "The trace could not be found",
+            },
+        )
 
     def test_core_2026_9_exact_profiles_are_fully_admitted(self):
         observation = stable_observation(
@@ -417,6 +445,175 @@ class Core20269AuthorityTests(unittest.TestCase):
 
 
 class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_services_probe_failure_withholds_only_service_discovery(self):
+        class ProbeWebSocket:
+            def __init__(self):
+                self.responses = [
+                    {"type": "auth_required"},
+                    {"type": "auth_ok", "ha_version": "2026.9.1"},
+                    {
+                        "id": 1,
+                        "type": "result",
+                        "success": True,
+                        "result": {"version": "2026.9.1"},
+                    },
+                    *[
+                        {
+                            "id": command_id,
+                            "type": "result",
+                            "success": True,
+                            "result": [],
+                        }
+                        for command_id in range(2, 8)
+                    ],
+                    {
+                        "id": 8,
+                        "type": "result",
+                        "success": False,
+                        "error": {
+                            "code": "config_not_found",
+                            "message": "No config found.",
+                        },
+                    },
+                    {
+                        "id": 9,
+                        "type": "result",
+                        "success": False,
+                        "error": {
+                            "code": "not_found",
+                            "message": "Entity not found",
+                        },
+                    },
+                    {
+                        "id": 10,
+                        "type": "result",
+                        "success": True,
+                        "result": [],
+                    },
+                    {
+                        "id": 11,
+                        "type": "result",
+                        "success": False,
+                        "error": {
+                            "code": "not_found",
+                            "message": "The trace could not be found",
+                        },
+                    },
+                ]
+                self.sent = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def receive_json(self):
+                return deepcopy(self.responses.pop(0))
+
+            async def send_json(self, value):
+                self.sent.append(deepcopy(value))
+
+        class ProbeSession:
+            def __init__(self, websocket):
+                self.websocket = websocket
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def ws_connect(self, _url, **_kwargs):
+                return self.websocket
+
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path == "/states":
+                return []
+            if path == "/services":
+                raise RuntimeError("synthetic services failure")
+            raise AssertionError(path)
+
+        source = AiohttpCoreSnapshotSource(settings())
+        websocket = ProbeWebSocket()
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=ProbeSession(websocket),
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+        ):
+            snapshot = await source.capture_core_snapshot()
+
+        admitted = {
+            item["capability_id"] for item in snapshot["capability_evidence"]
+        }
+        self.assertIn("core.basic_rest_read", admitted)
+        self.assertIn("core.direct_entity_state_read", admitted)
+        self.assertNotIn("core.state_service_discovery", admitted)
+        self.assertEqual(
+            websocket.sent[-2:],
+            [
+                {
+                    "id": 10,
+                    "type": "trace/list",
+                    "domain": "automation",
+                    "item_id": (
+                        "ha_mcp_engineering_contract_probe_0000000000000000"
+                    ),
+                },
+                {
+                    "id": 11,
+                    "type": "trace/get",
+                    "domain": "automation",
+                    "item_id": (
+                        "ha_mcp_engineering_contract_probe_0000000000000000"
+                    ),
+                    "run_id": "00000000000000000000000000000000",
+                },
+            ],
+        )
+
+    def test_trace_contract_evidence_is_independent_of_automation_configuration(self):
+        registry = _fixture(DEVICE_FIXTURE)
+        common = {
+            "areas": [],
+            "floors": [],
+            "labels": [],
+            "entities": registry["entities"],
+            "devices": registry["devices"],
+            "dashboards": [],
+            "automation": {"id": "synthetic"},
+            "dashboard": {"views": []},
+        }
+        without_trace = capability_evidence_for_probes(
+            version="2026.9.1",
+            rest_config={"version": "2026.9.1"},
+            states=[],
+            services=[],
+            websocket_config={"version": "2026.9.1"},
+            websocket_results=common,
+        )
+        malformed_trace = capability_evidence_for_probes(
+            version="2026.9.1",
+            rest_config={"version": "2026.9.1"},
+            states=[],
+            services=[],
+            websocket_config={"version": "2026.9.1"},
+            websocket_results={
+                **common,
+                "trace_list": {"not": "a list"},
+                "trace_get": {"not": "reviewed evidence"},
+            },
+        )
+        for evidence in (without_trace, malformed_trace):
+            with self.subTest(evidence=evidence):
+                admitted = {item["capability_id"] for item in evidence}
+                self.assertIn("core.automation_configuration_read", admitted)
+                self.assertNotIn("core.automation_trace_read", admitted)
+
     async def test_connection_monitor_authenticates_without_ha_command(self):
         class LifecycleWebSocket:
             def __init__(self):
@@ -2154,6 +2351,209 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(session.requests, [])
         self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
+
+    async def test_connection_change_between_provider_interactions_prevents_second_dispatch(self):
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _core_2026_9_snapshot()
+        )
+        configured = settings()
+        first_provider_call_finished = asyncio.Event()
+        continue_request = asyncio.Event()
+
+        class Response:
+            status = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            async def text(self):
+                return json.dumps({"version": "2026.9.0"})
+
+        class RestSession:
+            def __init__(self):
+                self.requests = []
+                self.websocket_connections = []
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+            def request(self, *args, **kwargs):
+                self.requests.append((args, kwargs))
+                return Response()
+
+            def ws_connect(self, *args, **kwargs):
+                self.websocket_connections.append((args, kwargs))
+                raise AssertionError("stale WebSocket dispatch reached")
+
+        class ProviderApp:
+            def __init__(self):
+                self.second_failure = None
+
+            async def __call__(self, _scope, receive, send):
+                await receive()
+                await HomeAssistantRestClient(configured).request(
+                    "GET", "/config"
+                )
+                first_provider_call_finished.set()
+                await continue_request.wait()
+                try:
+                    await HomeAssistantWebSocketClient(configured).command(
+                        {"type": "get_config"}
+                    )
+                except Exception as exc:
+                    self.second_failure = exc
+                body = json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": "core-route-test",
+                        "result": {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": json.dumps({"success": True}),
+                                }
+                            ],
+                            "isError": False,
+                        },
+                    }
+                ).encode("utf-8")
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 200,
+                        "headers": [(b"content-type", b"application/json")],
+                    }
+                )
+                await send(
+                    {
+                        "type": "http.response.body",
+                        "body": body,
+                        "more_body": False,
+                    }
+                )
+
+        app = ProviderApp()
+        rest_session = RestSession()
+        gateway = AuthenticatedMcpGateway(
+            app,
+            configured,
+            AuditLogger("unused", configured.access_secret, enabled=False),
+            core_runtime=runtime,
+        )
+        with patch(
+            "ha_mcp_engineering.clients.rest.aiohttp.ClientSession",
+            return_value=rest_session,
+        ):
+            call = asyncio.create_task(
+                self._call(gateway, "get_server_health", {"check_ha": True})
+            )
+            await asyncio.wait_for(first_provider_call_finished.wait(), timeout=1)
+            runtime.request_reconciliation(connection_changed=True)
+            continue_request.set()
+            await asyncio.wait_for(call, timeout=1)
+
+        self.assertEqual(len(rest_session.requests), 1)
+        self.assertIsInstance(app.second_failure, HomeAssistantUnavailableError)
+        self.assertEqual(rest_session.websocket_connections, [])
+        self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
+
+    async def test_trace_routes_require_independent_reviewed_evidence(self):
+        self.assertEqual(
+            delegated_requirements("ha_get_automation_traces"),
+            ("core.automation_trace_read",),
+        )
+        self.assertEqual(
+            static_tool_requirements("list_automation_traces"),
+            ("core.automation_trace_read",),
+        )
+        self.assertEqual(
+            static_tool_requirements("get_automation_trace"),
+            ("core.automation_trace_read",),
+        )
+        self.assertEqual(
+            static_tool_requirements("automation_reliability_analysis"),
+            (
+                "core.automation_trace_read",
+                "core.dependency_helper_planning",
+            ),
+        )
+        self.assertEqual(
+            static_tool_requirements("change_impact_analysis"),
+            (
+                "core.automation_trace_read",
+                "core.dependency_helper_planning",
+            ),
+        )
+        self.assertEqual(
+            static_tool_requirements("incident_correlation", {}),
+            ("core.dependency_helper_planning",),
+        )
+        self.assertEqual(
+            static_tool_requirements(
+                "incident_correlation", {"automation_id": "synthetic"}
+            ),
+            (
+                "core.automation_trace_read",
+                "core.dependency_helper_planning",
+            ),
+        )
+        self.assertEqual(
+            static_tool_requirements(
+                "handoff_generation", {"automation_ids": ["synthetic"]}
+            ),
+            (
+                "core.automation_trace_read",
+                "core.dependency_helper_planning",
+            ),
+        )
+        self.assertEqual(
+            static_tool_requirements(
+                "handoff_generation",
+                {
+                    "automation_ids": ["synthetic"],
+                    "include_incident_context": False,
+                },
+            ),
+            ("core.dependency_helper_planning",),
+        )
+
+        evidence = [
+            item
+            for item in _core_2026_9_evidence()
+            if item["capability_id"] != "core.automation_trace_read"
+        ]
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _snapshot("2026.9.0", evidence=evidence)
+        )
+        app = _RecordingMcpApp()
+        configured = settings()
+        gateway = AuthenticatedMcpGateway(
+            app,
+            configured,
+            AuditLogger("unused", configured.access_secret, enabled=False),
+            core_runtime=runtime,
+        )
+
+        for tool_name in (
+            "list_automation_traces",
+            "get_automation_trace",
+            "automation_reliability_analysis",
+            "change_impact_analysis",
+        ):
+            with self.subTest(tool_name=tool_name):
+                refused = await self._call(gateway, tool_name)
+                self.assertIn(b"CoreCapabilityUnavailable", refused)
+        self.assertEqual(app.calls, [])
+
+        admitted = await self._call(gateway, "get_automation_config")
+        self.assertIn(b'"isError": false', admitted)
+        self.assertEqual(len(app.calls), 1)
 
     async def test_held_canary_cannot_dispatch_without_core_authority(self):
         runtime, _source = await Core20269RuntimeTests()._runtime(

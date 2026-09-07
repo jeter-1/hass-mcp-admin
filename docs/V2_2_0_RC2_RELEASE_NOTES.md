@@ -27,6 +27,12 @@ dashboard writes retain exact capability authority. Unknown releases,
 malformed or unstable observations, adapter/identity drift, stale plans, and
 unbounded evidence remain fail-closed.
 
+Automation trace list/get reads now have an independent binary-owned Core
+contract instead of borrowing automation-configuration authority. A failed
+service-inventory probe withholds only service discovery, and multi-call tools
+revalidate the same active Core commit before every provider interaction so a
+generation retired between calls cannot dispatch again.
+
 Core 2026.9 helper and dependency authority is now bound to exact official
 template source blobs, including the `states.py` implementation used by the
 reviewed globals and State-object semantics. Its generated registry is
