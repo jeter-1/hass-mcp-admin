@@ -3681,31 +3681,44 @@ class UpstreamReadGateway:
             return await fail("not_configured")
 
         core_requirements = delegated_requirements(upstream_tool_name)
-        if self._core_runtime is not None and core_requirements:
-            core_authority = self._core_runtime.acquire(core_requirements)
-            if core_authority is None:
-                return await fail(
-                    "prohibited_delegation",
-                    reason="core_capability_unavailable",
-                )
+        core_runtime = self._core_runtime
+        owner_task = asyncio.current_task()
+        authority_closed = False
+
+        def require_active_owner() -> None:
+            # A retained worker may resume before the cancelled caller unwinds.
+            if authority_closed or (
+                owner_task is not None and owner_task.cancelling()
+            ):
+                raise DashboardTransportError("prohibited_delegation")
 
         def finish_core_authority() -> None:
+            nonlocal authority_closed
             nonlocal core_authority
             nonlocal core_commits
-            if self._core_runtime is None:
-                return
-            if core_commits is not None:
-                self._core_runtime.finish(core_commits)
-            elif core_authority is not None:
-                self._core_runtime.release(core_authority)
-            core_commits = None
-            core_authority = None
+            # Retained transport work can outlive its cancelled caller. Close
+            # callback ownership before dropping authority, under the same lock
+            # as consumption, so late work cannot dispatch without that lease.
+            with self._lock:
+                if authority_closed:
+                    return
+                authority_closed = True
+                authority, commits = core_authority, core_commits
+                core_authority = None
+                core_commits = None
+                if core_runtime is not None:
+                    if commits is not None:
+                        core_runtime.finish(commits)
+                    elif authority is not None:
+                        core_runtime.release(authority)
 
         validator_ran = False
 
         def validate_live_catalog(catalog: McpReadCatalog) -> None:
             nonlocal validator_ran
-            validator_ran = True
+            with self._lock:
+                require_active_owner()
+                validator_ran = True
             observed_identity.update(
                 {
                     "server": self._safe_identity_evidence(catalog.server_name),
@@ -3771,51 +3784,55 @@ class UpstreamReadGateway:
             nonlocal dispatched
             nonlocal core_commits
             with self._lock:
+                require_active_owner()
                 if (
-                    self._active_release is not active_release
+                    dispatched
+                    or self._active_release is not active_release
                     or self._held_canaries.get(upstream_tool_name) is not route
                     or self._admission_generation != route.generation
                     or self._state.get("compatibility_status") != "exact"
                     or self._state.get("admission_status") != "admitted_exact"
                 ):
                     raise DashboardTransportError("prohibited_delegation")
-            if core_authority is not None:
-                core_commits = self._core_runtime.consume(core_authority)
-                if core_commits is None:
-                    raise DashboardTransportError("prohibited_delegation")
-            with self._lock:
+                if core_authority is not None:
+                    core_commits = core_runtime.consume(core_authority)
+                    if core_commits is None:
+                        raise DashboardTransportError("prohibited_delegation")
                 dispatched = True
 
         try:
-            exchange = await transport.execute_read(
-                upstream_tool_name,
-                dict(arguments),
-                timeout_seconds=route.entry.timeout_seconds,
-                catalog_validator=validate_live_catalog,
-                before_dispatch=before_dispatch,
-            )
-        except DashboardTransportError as exc:
-            finish_core_authority()
-            return await fail(exc.category)
-        except Exception as exc:
-            finish_core_authority()
-            category = getattr(getattr(exc, "cause", None), "category", None)
-            return await fail(category or "internal_error")
-        if not validator_ran or not dispatched:
-            finish_core_authority()
-            return await fail("prohibited_delegation")
-        if exchange.call_result.get("isError") is True:
-            error_contract = _upstream_error_evidence(exchange.call_result)
-            finish_core_authority()
-            return await fail(
-                _classify_upstream_tool_error(
+            if core_runtime is not None and core_requirements:
+                core_authority = core_runtime.acquire(core_requirements)
+                if core_authority is None:
+                    return await fail(
+                        "prohibited_delegation",
+                        reason="core_capability_unavailable",
+                    )
+            try:
+                exchange = await transport.execute_read(
                     upstream_tool_name,
-                    exchange.call_result,
-                    arguments,
-                ),
-                error_contract=error_contract,
-            )
-        try:
+                    dict(arguments),
+                    timeout_seconds=route.entry.timeout_seconds,
+                    catalog_validator=validate_live_catalog,
+                    before_dispatch=before_dispatch,
+                )
+            except DashboardTransportError as exc:
+                return await fail(exc.category)
+            except Exception as exc:
+                category = getattr(getattr(exc, "cause", None), "category", None)
+                return await fail(category or "internal_error")
+            if not validator_ran or not dispatched:
+                return await fail("prohibited_delegation")
+            if exchange.call_result.get("isError") is True:
+                error_contract = _upstream_error_evidence(exchange.call_result)
+                return await fail(
+                    _classify_upstream_tool_error(
+                        upstream_tool_name,
+                        exchange.call_result,
+                        arguments,
+                    ),
+                    error_contract=error_contract,
+                )
             payload = _normalize_upstream_payload(
                 exchange.call_result,
                 server_version=route.server_version,
