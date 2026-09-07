@@ -89,7 +89,6 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "render_template": ("core.template_semantics",),
     "list_automation_traces": ("core.automation_configuration_read",),
     "get_automation_trace": ("core.automation_configuration_read",),
-    "get_blueprint": ("core.basic_websocket_read",),
     "check_config": ("core.configuration_validation",),
     "get_history": ("core.basic_rest_read",),
     "get_logbook": ("core.basic_rest_read",),

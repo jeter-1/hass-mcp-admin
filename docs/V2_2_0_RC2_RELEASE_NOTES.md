@@ -43,7 +43,7 @@ tools. `ha_get_operation_status` remains the only held read, task schema remains
 
 The disposable HA matrix now includes exact Core 2026.9.0 and 2026.9.1 images
 paired with exact ha-mcp 8.4.3 source and image identities. It uses a dedicated
-internal network, synthetic credentials and data, bounded waits, and
+non-internal Docker bridge, synthetic credentials and data, bounded waits, and
 unconditional cleanup. The exact-image, packaging, architecture, dashboard,
 helper, and historical compatibility lanes remain required.
 

@@ -266,6 +266,13 @@ jobs:
           # published-port routes and therefore cannot serve this acceptance
           # topology.
           docker network create --driver bridge "$HA_CONTRACT_NETWORK"
+          expected_network_internal="$(
+            python -c 'import json,pathlib; print(str(json.loads(pathlib.Path("tests/fixtures/ha_core_2026_9_disposable_lane.json").read_text(encoding="utf-8"))["docker_internal"]).lower())'
+          )"
+          actual_network_internal="$(
+            docker network inspect --format '{{.Internal}}' "$HA_CONTRACT_NETWORK"
+          )"
+          test "$actual_network_internal" = "$expected_network_internal"
       - name: Persist migration fixture with exact Home Assistant 2026.7.2
         shell: bash
         env:

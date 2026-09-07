@@ -92,8 +92,9 @@ Fallback remains zero.
 
 The disposable CI matrix keeps older Core lanes paired with exact ha-mcp 8.2.0
 and adds both immutable Core 2026.9 patches paired with exact ha-mcp 8.4.3. The
-2026.9 lanes use a dedicated internal Docker bridge, synthetic credentials and
-fixtures, loopback-only harness ports, bounded waits, and unconditional cleanup.
+2026.9 lanes use a dedicated non-internal Docker bridge, synthetic credentials
+and fixtures, loopback-only harness ports, bounded waits, and unconditional
+cleanup.
 The combined exact-image and Core lanes exercise all five device consumers
 through the production gateway plus template, Probatio, dependency/helper, F3,
 dashboard, and restoration contracts.

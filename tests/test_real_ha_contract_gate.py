@@ -1227,6 +1227,14 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             startup_script,
         )
         self.assertNotIn("docker network create --internal", startup_script)
+        self.assertIn(
+            "docker network inspect --format '{{.Internal}}'",
+            startup_script,
+        )
+        self.assertIn(
+            "tests/fixtures/ha_core_2026_9_disposable_lane.json",
+            startup_script,
+        )
         self.assertNotIn("runner.temp", str(job["env"]))
         self.assertIn('>> "$GITHUB_ENV"', startup_script)
         for variable in (

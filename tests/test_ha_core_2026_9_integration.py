@@ -11,8 +11,9 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from jsonschema import validate
 from mcp.server.fastmcp import FastMCP
@@ -67,6 +68,7 @@ from ha_mcp_engineering.tools import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_COUNT,
     registered_tools,
 )
+from ha_mcp_engineering.tools import compatibility  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
@@ -745,8 +747,9 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(lane["disposable_reversible_mutation_allowed"])
         self.assertEqual(
             lane["network"],
-            "dedicated_internal_docker_bridge_with_loopback_only_test_ports",
+            "dedicated_non_internal_docker_bridge_with_loopback_only_test_ports",
         )
+        self.assertIs(lane["docker_internal"], False)
         self.assertEqual(
             lane["execution_requirement"],
             "exact_head_ci_before_release_readiness",
@@ -1954,6 +1957,60 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(b'"isError": false', admitted_info)
         self.assertIn(b'"isError": false', admitted_local_health)
         self.assertEqual(len(app.calls), 2)
+
+    async def test_local_blueprint_read_is_independent_of_core_websocket(self):
+        partial_evidence = [
+            item
+            for item in _core_2026_9_evidence()
+            if item["capability_id"] != "core.basic_websocket_read"
+        ]
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _snapshot("2026.9.0", evidence=partial_evidence)
+        )
+        app = _RecordingMcpApp()
+        configured = settings()
+        gateway = AuthenticatedMcpGateway(
+            app,
+            configured,
+            AuditLogger("unused", configured.access_secret, enabled=False),
+            core_runtime=runtime,
+        )
+
+        self.assertEqual(static_tool_requirements("get_blueprint"), ())
+        admitted = await self._call(
+            gateway,
+            "get_blueprint",
+            {"path": "synthetic.yaml", "domain": "automation"},
+        )
+        self.assertIn(b'"isError": false', admitted)
+        self.assertEqual(len(app.calls), 1)
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            blueprint = base / "automation" / "synthetic.yaml"
+            blueprint.parent.mkdir(parents=True)
+            blueprint.write_text(
+                "blueprint:\n  name: Synthetic\n", encoding="utf-8"
+            )
+            with (
+                patch.object(
+                    compatibility, "_blueprint_base", return_value=str(base)
+                ),
+                patch.object(compatibility, "rest", new_callable=AsyncMock) as rest,
+                patch.object(
+                    compatibility, "ws_command", new_callable=AsyncMock
+                ) as websocket,
+            ):
+                rendered = await compatibility.get_blueprint(
+                    "synthetic.yaml", "automation"
+                )
+        payload = json.loads(rendered)
+        self.assertTrue(payload["success"])
+        self.assertEqual(
+            payload["data"], "blueprint:\n  name: Synthetic\n"
+        )
+        rest.assert_not_awaited()
+        websocket.assert_not_awaited()
 
     async def test_live_health_checks_require_core_authority_but_local_checks_do_not(self):
         runtime, _source = await Core20269RuntimeTests()._runtime(

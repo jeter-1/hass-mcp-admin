@@ -90,7 +90,7 @@ configuration changes. Health and audit remain bounded and sanitized.
 The immutable matrix retains Core 2026.7.2, 2026.8.0, and 2026.8.1 controls
 with exact ha-mcp 8.2.0, then adds exact Core 2026.9.0 and 2026.9.1 with exact
 ha-mcp 8.4.3. The 2026.9 lanes use synthetic credentials and fixtures on a
-dedicated internal Docker bridge with loopback-only harness ports, bounded
+dedicated non-internal Docker bridge with loopback-only harness ports, bounded
 timeouts, and unconditional cleanup. They may mutate only disposable fixtures
 and must restore each reversible helper, area, and configuration change.
 
