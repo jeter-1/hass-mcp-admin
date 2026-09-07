@@ -1418,6 +1418,42 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         source.connection_lost.set()
         await asyncio.sleep(0)
 
+    async def test_incomplete_observation_retires_monitored_authority(self):
+        class MonitoredSource(_MutableSource):
+            def __init__(self, snapshot):
+                super().__init__(snapshot)
+                self.connection_lost = asyncio.Event()
+
+            async def wait_for_connection_change(
+                self,
+                _expected_version,
+                on_attached,
+            ):
+                on_attached()
+                await self.connection_lost.wait()
+
+        source = MonitoredSource(
+            _snapshot("2026.9.1", evidence=_evidence())
+        )
+        runtime = CoreRuntime()
+        runtime.configure(object(), source=source)
+        await runtime.reconcile_once("startup")
+        old_authority = runtime.acquire(("core.basic_rest_read",))
+        self.assertIsNotNone(old_authority)
+
+        source.snapshot = _snapshot(
+            "2026.9.1",
+            connected=False,
+            evidence=_evidence(),
+        )
+        await runtime.reconcile_once("periodic")
+
+        self.assertIsNone(runtime.consume(old_authority))
+        self.assertIsNone(runtime.acquire(("core.basic_rest_read",)))
+        self.assertFalse(runtime.initialized)
+        source.connection_lost.set()
+        await asyncio.sleep(0)
+
     async def test_connection_monitor_retires_authority_before_reprobe(self):
         class ConnectionLifecycleSource(_MutableSource):
             def __init__(self, snapshot):

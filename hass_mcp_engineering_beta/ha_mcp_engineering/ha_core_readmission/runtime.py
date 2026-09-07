@@ -201,6 +201,10 @@ class CoreRuntime:
                 await self._ensure_connection_monitor(observation)
             )
             if monitor_required and not monitor_ready:
+                # A failed or incomplete observation cannot leave the prior
+                # monitored generation usable.  Retire it just as an observed
+                # socket movement would, then retry from a fresh source epoch.
+                self.request_reconciliation(connection_changed=True)
                 with self._lock:
                     self._counters["verification_failures"] += 1
                     self._append_event_locked(
