@@ -352,6 +352,11 @@ class ExactAddonProfileTests(unittest.TestCase):
             states=fixture.STATES,
             services=fixture._rest_services_result(),
             websocket_config=fixture._result_for("get_config", {}),
+            configuration_validation={
+                "result": "valid",
+                "errors": None,
+                "warnings": None,
+            },
             websocket_results={
                 "areas": fixture.AREAS,
                 "floors": [],

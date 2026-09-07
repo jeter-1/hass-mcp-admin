@@ -55,6 +55,40 @@ def _bounded_mapping(value: Any) -> bool:
     return isinstance(value, Mapping) and len(value) <= MAX_CORE_PROBE_ITEMS
 
 
+def _bounded_json(value: Any) -> bool:
+    try:
+        encoded = json.dumps(
+            value,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        return False
+    return len(encoded) <= MAX_CORE_PROBE_BYTES
+
+
+def _configuration_validation_response(value: Any) -> bool:
+    if (
+        not _bounded_mapping(value)
+        or set(value) != {"result", "errors", "warnings"}
+        or not _bounded_json(value)
+    ):
+        return False
+    result = value.get("result")
+    errors = value.get("errors")
+    warnings = value.get("warnings")
+    if result not in {"valid", "invalid"}:
+        return False
+    if errors is not None and (not isinstance(errors, str) or not errors):
+        return False
+    if warnings is not None and (not isinstance(warnings, str) or not warnings):
+        return False
+    return (result == "valid" and errors is None) or (
+        result == "invalid" and isinstance(errors, str)
+    )
+
+
 def _registry_sequence(value: Any, identity_field: str) -> bool:
     if not _bounded_sequence(value):
         return False
@@ -82,6 +116,7 @@ def capability_evidence_for_probes(
     services: Any,
     websocket_config: Any,
     websocket_results: Mapping[str, Any],
+    configuration_validation: Any = None,
 ) -> list[dict[str, Any]]:
     """Project transient raw probes into bounded binary-owned check evidence."""
 
@@ -184,7 +219,14 @@ def capability_evidence_for_probes(
         *CORE_2026_9_VERSIONS,
     }:
         add("core.template_semantics", websocket_ok, semantic=True)
-        add("core.configuration_validation", rest_ok, semantic=True)
+        add(
+            "core.configuration_validation",
+            rest_ok
+            and _configuration_validation_response(
+                configuration_validation
+            ),
+            semantic=True,
+        )
         add(
             "core.dependency_helper_planning",
             rest_ok and websocket_ok and device_contract_complete,
@@ -211,6 +253,24 @@ class AiohttpCoreSnapshotSource:
         """Retire the observer-session binding after a known connection event."""
 
         self._observer_session_id = uuid.uuid4().hex
+
+    @staticmethod
+    async def _bounded_response_json(response: Any) -> Any:
+        if response.status != 200:
+            raise RuntimeError("core_probe_http_failure")
+        chunks: list[bytes] = []
+        total = 0
+        while True:
+            chunk = await response.content.read(
+                min(65_536, MAX_CORE_PROBE_BYTES + 1 - total)
+            )
+            if not chunk:
+                break
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > MAX_CORE_PROBE_BYTES:
+                raise RuntimeError("core_probe_response_oversized")
+        return json.loads(b"".join(chunks))
 
     async def wait_for_connection_change(
         self,
@@ -289,25 +349,34 @@ class AiohttpCoreSnapshotSource:
         async with session.get(
             f"{self._settings.api_url}{path}", headers=headers
         ) as response:
-            if response.status != 200:
-                raise RuntimeError("core_probe_http_failure")
-            chunks: list[bytes] = []
-            total = 0
-            while True:
-                chunk = await response.content.read(
-                    min(65_536, MAX_CORE_PROBE_BYTES + 1 - total)
-                )
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                total += len(chunk)
-                if total > MAX_CORE_PROBE_BYTES:
-                    raise RuntimeError("core_probe_response_oversized")
-            body = b"".join(chunks)
-            value = json.loads(body)
+            value = await self._bounded_response_json(response)
             if not isinstance(value, (Mapping, Sequence)) or isinstance(
                 value, (str, bytes)
             ):
+                raise RuntimeError("core_probe_response_invalid")
+            return value
+
+    async def _check_configuration_json(
+        self,
+        session: aiohttp.ClientSession,
+    ) -> Any:
+        """Probe Core's source-reviewed, read-only validation contract."""
+
+        headers = {
+            "Authorization": f"Bearer {self._settings.ha_token}",
+            "Content-Type": "application/json",
+        }
+        # Core 2026.7.2 through 2026.9.1 expose this exact administrative
+        # validation endpoint. Although its transport verb is POST, the Core
+        # implementation only checks configuration and returns the bounded
+        # {result, errors, warnings} taxonomy; it performs no configuration
+        # mutation.
+        async with session.post(
+            f"{self._settings.api_url}/config/core/check_config",
+            headers=headers,
+        ) as response:
+            value = await self._bounded_response_json(response)
+            if not _configuration_validation_response(value):
                 raise RuntimeError("core_probe_response_invalid")
             return value
 
@@ -349,13 +418,22 @@ class AiohttpCoreSnapshotSource:
                 and set(error) == {"code", "message"}
                 and (error.get("code"), error.get("message")) in expected_errors
             ):
-                json.dumps(error, allow_nan=False)
+                try:
+                    json.dumps(error, allow_nan=False)
+                except (TypeError, ValueError) as exc:
+                    raise RuntimeError("core_probe_command_failed") from exc
                 return {_EXPECTED_PROBE_ERROR_FIELD: error["code"]}
             raise RuntimeError("core_probe_command_failed")
         if message.get("success") is not True:
             raise RuntimeError("core_probe_command_failed")
         result = message.get("result")
-        json.dumps(result, allow_nan=False)
+        try:
+            json.dumps(result, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            # Malformed JSON-decoded data is local to this command. Its caller
+            # can withhold the affected capability without collapsing other
+            # independently verified REST or WebSocket surfaces.
+            raise RuntimeError("core_probe_command_failed") from exc
         return result
 
     async def capture_core_snapshot(self) -> Mapping[str, Any]:
@@ -381,6 +459,15 @@ class AiohttpCoreSnapshotSource:
                 # malformed, or oversized service inventory withholds only its
                 # capability and cannot erase already validated REST evidence.
                 services = None
+            try:
+                configuration_validation = (
+                    await self._check_configuration_json(session)
+                )
+            except (RuntimeError, ValueError, asyncio.TimeoutError):
+                # Configuration validation is an independent, read-only
+                # contract probe. Absence, an incompatible envelope, or a
+                # bounded timeout withholds only validation-dependent plans.
+                configuration_validation = None
             async with session.ws_connect(
                 self._settings.websocket_url,
                 timeout=websocket_timeout,
@@ -498,6 +585,7 @@ class AiohttpCoreSnapshotSource:
             services=services,
             websocket_config=websocket_config,
             websocket_results=results,
+            configuration_validation=configuration_validation,
         )
         return {
             "identity": CORE_IDENTITY,

@@ -443,6 +443,13 @@ async def read_only_guard(request: web.Request, handler):
         == "/core/api/services/notify/mobile_app_beta31_fixture"
     ):
         return await handler(request)
+    if request.method == "POST" and request.path in {
+        "/api/config/core/check_config",
+        "/core/api/config/core/check_config",
+    }:
+        # Home Assistant's administrative configuration check is a read-only
+        # validation operation despite its POST transport verb.
+        return await handler(request)
     if request.method != "GET":
         STATE.http_mutations[f"{request.method} {request.path}"] += 1
         return web.json_response({"message": "fixture is read-only"}, status=405)
@@ -596,6 +603,13 @@ async def api_config(_request: web.Request) -> web.Response:
             "components": ["automation", "history", "sun"],
             "unit_system": {"length": "km", "temperature": "°C"},
         }
+    )
+
+
+async def api_check_config(_request: web.Request) -> web.Response:
+    STATE.rest_reads["/api/config/core/check_config"] += 1
+    return web.json_response(
+        {"result": "valid", "errors": None, "warnings": None}
     )
 
 
@@ -1099,6 +1113,9 @@ def main() -> None:
     application = web.Application(middlewares=[read_only_guard])
     application.router.add_get("/api/", api_root)
     application.router.add_get("/api/config", api_config)
+    application.router.add_post(
+        "/api/config/core/check_config", api_check_config
+    )
     application.router.add_get("/api/states", api_states)
     application.router.add_get("/api/states/{entity_id}", api_state)
     application.router.add_get("/api/history/period", api_history)
@@ -1122,6 +1139,9 @@ def main() -> None:
     # synthetic contract there so CI exercises the real add-on startup path.
     application.router.add_get("/core/api/", api_root)
     application.router.add_get("/core/api/config", api_config)
+    application.router.add_post(
+        "/core/api/config/core/check_config", api_check_config
+    )
     application.router.add_get("/core/api/states", api_states)
     application.router.add_get(
         "/core/api/states/{entity_id}", api_state

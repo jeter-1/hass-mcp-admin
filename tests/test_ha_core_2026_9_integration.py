@@ -132,6 +132,11 @@ def _core_2026_9_evidence(version: str = "2026.9.0") -> list[dict]:
         ],
         services=[{"domain": "light", "services": {}}],
         websocket_config={"version": version},
+        configuration_validation={
+            "result": "valid",
+            "errors": None,
+            "warnings": None,
+        },
         websocket_results={
             "areas": [{"area_id": "garage"}],
             "floors": [{"floor_id": "ground"}],
@@ -226,12 +231,42 @@ class _SyntheticWebSocket:
         self.sent: list[dict] = []
         self.receive_calls = 0
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        return None
+
     async def send_json(self, value: dict) -> None:
         self.sent.append(value)
 
     async def receive_json(self) -> dict:
         self.receive_calls += 1
         return deepcopy(self.response)
+
+
+class _SequenceWebSocket(_SyntheticWebSocket):
+    def __init__(self, responses: list[dict]):
+        super().__init__({})
+        self.responses = responses
+
+    async def receive_json(self) -> dict:
+        self.receive_calls += 1
+        return deepcopy(self.responses.pop(0))
+
+
+class _ProbeSession:
+    def __init__(self, websocket):
+        self.websocket = websocket
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        return None
+
+    def ws_connect(self, _url, **_kwargs):
+        return self.websocket
 
 
 class _RecordingMcpApp:
@@ -446,6 +481,98 @@ class Core20269AuthorityTests(unittest.TestCase):
 
 
 class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
+    def test_configuration_validation_is_not_inferred_from_config_identity(self):
+        registry = _fixture(DEVICE_FIXTURE)
+        inputs = dict(
+            version="2026.9.1",
+            rest_config={"version": "2026.9.1"},
+            states=[],
+            services=[],
+            websocket_config={"version": "2026.9.1"},
+            websocket_results={
+                "areas": [],
+                "floors": [],
+                "labels": [],
+                "entities": registry["entities"],
+                "devices": registry["devices"],
+                "dashboards": [],
+                "automation": {"id": "synthetic"},
+                "dashboard": {"views": []},
+                "trace_list": [],
+                "trace_get": {
+                    "_ha_mcp_engineering_expected_probe_error": "not_found"
+                },
+            },
+        )
+        evidence = capability_evidence_for_probes(**inputs)
+        admitted = {item["capability_id"] for item in evidence}
+
+        self.assertIn("core.basic_rest_read", admitted)
+        self.assertNotIn("core.configuration_validation", admitted)
+
+        for response in (
+            {"result": "valid", "errors": None, "warnings": None},
+            {
+                "result": "valid",
+                "errors": None,
+                "warnings": "Synthetic warning",
+            },
+            {
+                "result": "invalid",
+                "errors": "Synthetic configuration error",
+                "warnings": None,
+            },
+        ):
+            with self.subTest(response=response):
+                admitted = {
+                    item["capability_id"]
+                    for item in capability_evidence_for_probes(
+                        **inputs,
+                        configuration_validation=response,
+                    )
+                }
+                self.assertIn("core.configuration_validation", admitted)
+
+        for response in (
+            {"result": "valid", "errors": "unexpected", "warnings": None},
+            {"result": "invalid", "errors": None, "warnings": None},
+            {"result": "unknown", "errors": None, "warnings": None},
+            {
+                "result": "valid",
+                "errors": None,
+                "warnings": None,
+                "extra": True,
+            },
+            {"result": "valid", "errors": None, "warnings": float("nan")},
+        ):
+            with self.subTest(response=response):
+                admitted = {
+                    item["capability_id"]
+                    for item in capability_evidence_for_probes(
+                        **inputs,
+                        configuration_validation=response,
+                    )
+                }
+                self.assertNotIn("core.configuration_validation", admitted)
+
+    async def test_nonfinite_websocket_result_is_a_bounded_probe_failure(self):
+        source = AiohttpCoreSnapshotSource(object())
+        websocket = _SyntheticWebSocket(
+            {
+                "id": 5,
+                "type": "result",
+                "success": True,
+                "result": [{"entity_id": "sensor.synthetic", "value": float("nan")}],
+            }
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "core_probe_command_failed"):
+            await source._command(
+                websocket,
+                5,
+                "config/entity_registry/list",
+            )
+
     async def test_states_transport_failure_retires_the_observation(self):
         class ProbeSession:
             async def __aenter__(self):
@@ -530,6 +657,15 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                 return_value=ProbeSession(),
             ),
             patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_check_configuration_json",
+                return_value={
+                    "result": "valid",
+                    "errors": None,
+                    "warnings": None,
+                },
+            ),
             patch.object(
                 source,
                 "_receive_mapping",
@@ -653,6 +789,15 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                 return_value=ProbeSession(websocket),
             ),
             patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_check_configuration_json",
+                return_value={
+                    "result": "valid",
+                    "errors": None,
+                    "warnings": None,
+                },
+            ),
         ):
             snapshot = await source.capture_core_snapshot()
 
@@ -684,6 +829,144 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                 },
             ],
         )
+
+    async def test_unavailable_check_config_withholds_only_validation_authority(self):
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path in {"/states", "/services"}:
+                return []
+            raise AssertionError(path)
+
+        async def command(
+            _websocket,
+            _command_id,
+            command_type,
+            _arguments=None,
+            *,
+            expected_errors=(),
+        ):
+            del expected_errors
+            if command_type == "get_config":
+                return {"version": "2026.9.1"}
+            if command_type in {"lovelace/config", "automation/config"}:
+                return {}
+            if command_type == "trace/get":
+                return {
+                    "_ha_mcp_engineering_expected_probe_error": "not_found"
+                }
+            return []
+
+        source = AiohttpCoreSnapshotSource(settings())
+        websocket = _SyntheticWebSocket({})
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=_ProbeSession(websocket),
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_check_configuration_json",
+                side_effect=RuntimeError("synthetic endpoint unavailable"),
+            ),
+            patch.object(
+                source,
+                "_receive_mapping",
+                side_effect=[
+                    {"type": "auth_required"},
+                    {"type": "auth_ok", "ha_version": "2026.9.1"},
+                ],
+            ),
+            patch.object(source, "_command", side_effect=command),
+        ):
+            snapshot = await source.capture_core_snapshot()
+
+        admitted = {
+            item["capability_id"] for item in snapshot["capability_evidence"]
+        }
+        self.assertNotIn("core.configuration_validation", admitted)
+        self.assertIn("core.basic_rest_read", admitted)
+        self.assertIn("core.basic_websocket_read", admitted)
+        self.assertIn("core.governed_configuration_operation", admitted)
+
+    async def test_nonfinite_registry_result_withholds_only_registry_authority(self):
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path in {"/states", "/services"}:
+                return []
+            raise AssertionError(path)
+
+        def success(command_id, result):
+            return {
+                "id": command_id,
+                "type": "result",
+                "success": True,
+                "result": result,
+            }
+
+        def missing(command_id, message):
+            return {
+                "id": command_id,
+                "type": "result",
+                "success": False,
+                "error": {"code": "not_found", "message": message},
+            }
+
+        websocket = _SequenceWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok", "ha_version": "2026.9.1"},
+                success(1, {"version": "2026.9.1"}),
+                success(2, []),
+                success(3, []),
+                success(4, []),
+                success(
+                    5,
+                    [
+                        {
+                            "entity_id": "sensor.synthetic",
+                            "value": float("nan"),
+                        }
+                    ],
+                ),
+                success(6, []),
+                success(7, []),
+                success(8, {"views": []}),
+                missing(9, "Entity not found"),
+                success(10, []),
+                missing(11, "The trace could not be found"),
+            ]
+        )
+        source = AiohttpCoreSnapshotSource(settings())
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=_ProbeSession(websocket),
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_check_configuration_json",
+                return_value={
+                    "result": "valid",
+                    "errors": None,
+                    "warnings": None,
+                },
+            ),
+        ):
+            snapshot = await source.capture_core_snapshot()
+
+        admitted = {
+            item["capability_id"] for item in snapshot["capability_evidence"]
+        }
+        self.assertNotIn("core.non_device_registry_read", admitted)
+        self.assertIn("core.basic_rest_read", admitted)
+        self.assertIn("core.basic_websocket_read", admitted)
+        self.assertIn("core.dashboard_configuration_read", admitted)
+        self.assertIn("core.automation_configuration_read", admitted)
+        self.assertEqual(len(websocket.sent), 12)
 
     def test_trace_contract_evidence_is_independent_of_automation_configuration(self):
         registry = _fixture(DEVICE_FIXTURE)
@@ -955,6 +1238,64 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
                 Session(), "/states"
             )
 
+    async def test_check_config_probe_uses_only_the_exact_read_only_endpoint(self):
+        encoded = json.dumps(
+            {"result": "valid", "errors": None, "warnings": None},
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+        class Content:
+            def __init__(self):
+                self.chunks = [encoded, b""]
+
+            async def read(self, _size):
+                return self.chunks.pop(0)
+
+        class Response:
+            status = 200
+
+            def __init__(self):
+                self.content = Content()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, _exc_type, _exc, _tb):
+                return None
+
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def post(self, url, **kwargs):
+                self.calls.append((url, kwargs))
+                return Response()
+
+        configured = settings()
+        session = Session()
+        result = await AiohttpCoreSnapshotSource(
+            configured
+        )._check_configuration_json(session)
+
+        self.assertEqual(
+            result,
+            {"result": "valid", "errors": None, "warnings": None},
+        )
+        self.assertEqual(
+            session.calls,
+            [
+                (
+                    configured.api_url + "/config/core/check_config",
+                    {
+                        "headers": {
+                            "Authorization": f"Bearer {configured.ha_token}",
+                            "Content-Type": "application/json",
+                        }
+                    },
+                )
+            ],
+        )
+
     async def test_unexpected_missing_resource_envelopes_remain_withheld(self):
         source = AiohttpCoreSnapshotSource(object())
         malformed = (
@@ -1016,7 +1357,7 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
             [{"id": 1, "type": "get_config"}],
         )
 
-    def test_core_probe_source_contains_no_write_or_generic_forwarding(self):
+    def test_core_probe_source_contains_only_reviewed_validation_post(self):
         source = (
             BETA
             / "ha_mcp_engineering"
@@ -1024,7 +1365,8 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
             / "source.py"
         ).read_text(encoding="utf-8")
         self.assertIn("session.get(", source)
-        self.assertNotIn("session.post(", source)
+        self.assertEqual(source.count("session.post("), 1)
+        self.assertIn("/config/core/check_config", source)
         self.assertNotIn("session.put(", source)
         self.assertNotIn("session.delete(", source)
         self.assertNotIn("call_service", source)
@@ -2450,6 +2792,34 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
         # The MCP application owns every REST, WebSocket, and upstream provider
         # interaction for these tools. Refusal before entering it proves that
         # unavailable Core authority causes zero provider calls.
+        self.assertEqual(app.calls, [])
+        self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
+
+    async def test_missing_validation_probe_refuses_consumers_before_provider(self):
+        evidence = [
+            item
+            for item in _core_2026_9_evidence(version="2026.9.1")
+            if item["capability_id"] != "core.configuration_validation"
+        ]
+        runtime, _source = await Core20269RuntimeTests()._runtime(
+            _snapshot("2026.9.1", evidence=evidence)
+        )
+        app = _RecordingMcpApp()
+        configured = settings()
+        gateway = AuthenticatedMcpGateway(
+            app,
+            configured,
+            AuditLogger("unused", configured.access_secret, enabled=False),
+            core_runtime=runtime,
+        )
+
+        for tool_name in (
+            "create_reload_plan",
+            "create_home_assistant_restart_plan",
+        ):
+            with self.subTest(tool_name=tool_name):
+                refused = await self._call(gateway, tool_name)
+                self.assertIn(b"CoreCapabilityUnavailable", refused)
         self.assertEqual(app.calls, [])
         self.assertEqual(runtime.health_snapshot()["fallback_count"], 0)
 
