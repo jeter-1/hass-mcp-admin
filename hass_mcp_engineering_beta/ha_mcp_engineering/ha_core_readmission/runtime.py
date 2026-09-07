@@ -25,6 +25,7 @@ from .routes import delegated_provider_compatibility, f3_requirements
 
 
 CORE_RECONCILIATION_INTERVAL_SECONDS = 300.0
+CORE_MONITOR_ATTACHMENT_TIMEOUT_SECONDS = 30.0
 MAX_CORE_AUDIT_EVENTS = 32
 
 
@@ -53,6 +54,10 @@ class CoreRuntime:
         ] = compiled_exact_authority
         self._observation: CoreObservation | None = None
         self._connection_epoch = 0
+        self._connection_monitor_task: asyncio.Task[None] | None = None
+        self._connection_monitor_token: object | None = None
+        self._connection_monitor_version: str | None = None
+        self._connection_monitor_epoch: int | None = None
         self._initialized = False
         self._last_material_change_at: datetime | None = None
         self._listeners: list[Callable[[], None]] = []
@@ -103,6 +108,10 @@ class CoreRuntime:
             self._coordinator = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
             self._observation = None
             self._connection_epoch = 0
+            self._connection_monitor_task = None
+            self._connection_monitor_token = None
+            self._connection_monitor_version = None
+            self._connection_monitor_epoch = None
             self._initialized = False
             self._last_material_change_at = None
             self._listeners = []
@@ -134,9 +143,15 @@ class CoreRuntime:
     def request_reconciliation(self, *, connection_changed: bool = False) -> None:
         source = self._source
         listeners: tuple[Callable[[], None], ...] = ()
+        monitor_to_cancel: asyncio.Task[None] | None = None
         if connection_changed:
             with self._lock:
                 self._connection_epoch += 1
+                monitor_to_cancel = self._connection_monitor_task
+                self._connection_monitor_task = None
+                self._connection_monitor_token = None
+                self._connection_monitor_version = None
+                self._connection_monitor_epoch = None
                 retired_generation = (
                     self._coordinator.retire_current_generation()
                 )
@@ -151,6 +166,13 @@ class CoreRuntime:
                     retired_generation,
                 )
                 listeners = tuple(self._listeners)
+            if monitor_to_cancel is not None and not monitor_to_cancel.done():
+                try:
+                    current_task = asyncio.current_task()
+                except RuntimeError:
+                    current_task = None
+                if monitor_to_cancel is not current_task:
+                    monitor_to_cancel.cancel()
             marker = getattr(source, "mark_connection_changed", None)
             if callable(marker):
                 try:
@@ -175,6 +197,23 @@ class CoreRuntime:
                 if trigger != "startup":
                     self._counters["reprobes"] += 1
             observation = await collector.collect()
+            monitor_required, monitor_ready, newly_attached = (
+                await self._ensure_connection_monitor(observation)
+            )
+            if monitor_required and not monitor_ready:
+                with self._lock:
+                    self._counters["verification_failures"] += 1
+                    self._append_event_locked(
+                        "core_reconciliation",
+                        "core_lifecycle_monitor_unavailable",
+                        None,
+                    )
+                return self.health_snapshot()
+            if newly_attached:
+                # The first observation supplied only the expected version for
+                # the watcher.  Recollect the complete two-snapshot evidence
+                # under that authenticated lifecycle fence before publishing.
+                observation = await collector.collect()
             authority = (
                 self._authority_provider(observation.version)
                 if observation.version is not None
@@ -187,6 +226,17 @@ class CoreRuntime:
                     self._append_event_locked(
                         "core_reconciliation",
                         "core_connection_generation_stale",
+                        None,
+                    )
+                    return self.health_snapshot()
+                if monitor_required and (
+                    self._connection_monitor_version != observation.version
+                    or self._connection_monitor_epoch != self._connection_epoch
+                ):
+                    self._counters["verification_failures"] += 1
+                    self._append_event_locked(
+                        "core_reconciliation",
+                        "core_lifecycle_monitor_stale",
                         None,
                     )
                     return self.health_snapshot()
@@ -266,16 +316,6 @@ class CoreRuntime:
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("Core reconciliation interval must be positive")
-        source = self._source
-        monitor = getattr(source, "wait_for_connection_change", None)
-        monitor_task = (
-            asyncio.create_task(
-                self._supervise_connection_changes(monitor),
-                name="home-assistant-core-connection-monitor",
-            )
-            if callable(monitor)
-            else None
-        )
         try:
             while True:
                 try:
@@ -288,36 +328,126 @@ class CoreRuntime:
                     trigger = "periodic"
                 await self.reconcile_once(trigger)
         finally:
+            with self._lock:
+                monitor_task = self._connection_monitor_task
+                self._connection_monitor_task = None
+                self._connection_monitor_token = None
+                self._connection_monitor_version = None
+                self._connection_monitor_epoch = None
             if monitor_task is not None:
                 monitor_task.cancel()
                 await asyncio.gather(monitor_task, return_exceptions=True)
 
+    async def _ensure_connection_monitor(
+        self,
+        observation: CoreObservation,
+    ) -> tuple[bool, bool, bool]:
+        """Require one authenticated watcher before positive publication."""
+
+        source = self._source
+        monitor = getattr(source, "wait_for_connection_change", None)
+        if not callable(monitor):
+            return False, True, False
+        if (
+            not observation.connected
+            or not observation.authenticated
+            or not observation.stable
+            or observation.version is None
+        ):
+            return True, False, False
+        with self._lock:
+            epoch = self._connection_epoch
+            existing = self._connection_monitor_task
+            if (
+                existing is not None
+                and not existing.done()
+                and self._connection_monitor_version == observation.version
+                and self._connection_monitor_epoch == epoch
+            ):
+                return True, True, False
+            token = object()
+            ready = asyncio.Event()
+            self._connection_monitor_token = token
+            self._connection_monitor_version = None
+            self._connection_monitor_epoch = None
+            task = asyncio.create_task(
+                self._supervise_connection_changes(
+                    monitor,
+                    expected_version=observation.version,
+                    expected_epoch=epoch,
+                    token=token,
+                    ready=ready,
+                ),
+                name="home-assistant-core-connection-monitor",
+            )
+            self._connection_monitor_task = task
+        if existing is not None and not existing.done():
+            existing.cancel()
+            await asyncio.gather(existing, return_exceptions=True)
+
+        ready_wait = asyncio.create_task(ready.wait())
+        done, _pending = await asyncio.wait(
+            {task, ready_wait},
+            timeout=CORE_MONITOR_ATTACHMENT_TIMEOUT_SECONDS,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        attached = ready_wait in done and ready_wait.result()
+        if not ready_wait.done():
+            ready_wait.cancel()
+            await asyncio.gather(ready_wait, return_exceptions=True)
+        if not attached:
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            return True, False, False
+        with self._lock:
+            current = (
+                self._connection_monitor_task is task
+                and self._connection_monitor_token is token
+                and self._connection_monitor_version == observation.version
+                and self._connection_monitor_epoch == epoch
+                and epoch == self._connection_epoch
+            )
+        return True, current, current
+
     async def _supervise_connection_changes(
         self,
-        monitor: Callable[[str], Any],
+        monitor: Callable[[str, Callable[[], None]], Any],
+        *,
+        expected_version: str,
+        expected_epoch: int,
+        token: object,
+        ready: asyncio.Event,
     ) -> None:
-        """Retire Core authority as soon as its authenticated socket moves."""
+        """Bind one exact lifecycle socket and retire it as soon as it moves."""
 
-        while True:
+        attached = False
+
+        def on_attached() -> None:
+            nonlocal attached
             with self._lock:
-                observation = self._observation
-            if (
-                observation is None
-                or not observation.connected
-                or not observation.authenticated
-                or not observation.stable
-            ):
-                await asyncio.sleep(0.1)
-                continue
-            try:
-                await monitor(observation.version)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                # Exception text is not authority or public evidence. Failure
-                # to maintain the authenticated watcher is itself a lifecycle
-                # movement and therefore retires the current generation.
-                pass
+                if (
+                    self._connection_monitor_token is not token
+                    or self._connection_epoch != expected_epoch
+                ):
+                    return
+                attached = True
+                self._connection_monitor_version = expected_version
+                self._connection_monitor_epoch = expected_epoch
+                ready.set()
+
+        try:
+            await monitor(expected_version, on_attached)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Exception text is not authority or public evidence. Failure to
+            # establish or retain the watcher is a lifecycle movement.
+            pass
+        finally:
+            if not attached:
+                ready.set()
+        if attached:
             self.request_reconciliation(connection_changed=True)
 
     def route_status(

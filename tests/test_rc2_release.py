@@ -35,6 +35,12 @@ METADATA = _load_module(
     ROOT / "scripts" / "validate_addon_metadata.py",
 )
 
+sys.path.insert(0, str(BETA))
+from ha_mcp_engineering.ha_core_readmission import (  # noqa: E402
+    CORE_CAPABILITY_PROFILES,
+    SUPPORTED_CORE_RELEASES,
+)
+
 
 class Rc2ReleaseTests(unittest.TestCase):
     def test_rc2_is_materialized_and_documents_resolve_exactly(self):
@@ -97,6 +103,35 @@ class Rc2ReleaseTests(unittest.TestCase):
                 self.assertIn(statement, text, f"{statement!r} missing from {path.name}")
             self.assertNotIn("RC2 is staged", text)
             self.assertNotIn("advertised Engineering source is 2.2.0-rc.1", text)
+
+    def test_acceptance_discloses_every_new_compiled_core_trust_authority(self):
+        text = ACCEPTANCE.read_text(encoding="utf-8")
+        heading = "## Compiled production trust-policy expansion"
+        self.assertIn(heading, text)
+        section = text.split(heading, 1)[1].split("\n## ", 1)[0]
+        normalized_section = " ".join(section.split())
+        newly_trusted = tuple(
+            release
+            for release in SUPPORTED_CORE_RELEASES
+            if release[0].startswith("2026.9.")
+        )
+        self.assertEqual(
+            tuple(version for version, _commit, _digest in newly_trusted),
+            ("2026.9.0", "2026.9.1"),
+        )
+        for version, source_commit, image_digest in newly_trusted:
+            with self.subTest(version=version):
+                self.assertIn(version, section)
+                self.assertIn(source_commit, section)
+                self.assertIn(image_digest, section)
+        self.assertIn(
+            f"{len(CORE_CAPABILITY_PROFILES)} binary-owned capability profiles",
+            normalized_section,
+        )
+        self.assertIn(
+            "does not authorize an unlisted Core release",
+            normalized_section,
+        )
 
     def test_core_2026_9_ci_is_immutable_and_workflow_permissions_are_unchanged(self):
         workflow = yaml.safe_load(

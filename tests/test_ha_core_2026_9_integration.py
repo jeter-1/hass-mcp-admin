@@ -768,17 +768,22 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         session = LifecycleSession(websocket)
         configured = settings()
         source = AiohttpCoreSnapshotSource(configured)
+        attached = []
         with patch(
             "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
             return_value=session,
         ):
-            await source.wait_for_connection_change("2026.9.1")
+            await source.wait_for_connection_change(
+                "2026.9.1",
+                lambda: attached.append(True),
+            )
 
         self.assertEqual(
             websocket.sent,
             [{"type": "auth", "access_token": configured.ha_token}],
         )
         self.assertEqual(websocket.receive_calls, 1)
+        self.assertEqual(attached, [True])
         self.assertEqual(len(session.ws_connect_calls), 1)
         self.assertEqual(
             session.ws_connect_calls[0][0], configured.websocket_url
@@ -1345,6 +1350,74 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(runtime.acquire(("core.template_semantics",)))
 
+    async def test_authority_waits_for_lifecycle_monitor_and_recollects(self):
+        class DelayedLifecycleSource(_MutableSource):
+            def __init__(self, snapshot):
+                super().__init__(snapshot)
+                self.monitor_started = asyncio.Event()
+                self.allow_monitor_attachment = asyncio.Event()
+                self.connection_lost = asyncio.Event()
+                self.provider_calls = 0
+
+            async def wait_for_connection_change(
+                self,
+                expected_version,
+                on_attached,
+            ):
+                self.assert_expected_version = expected_version
+                self.monitor_started.set()
+                await self.allow_monitor_attachment.wait()
+                on_attached()
+                await self.connection_lost.wait()
+
+        original = _snapshot(
+            "2026.9.1",
+            session_id="core-session-before-monitor",
+            evidence=_evidence(),
+        )
+        replacement = _snapshot(
+            "2026.9.1",
+            session_id="core-session-after-same-version-replacement",
+            evidence=_evidence(),
+        )
+        source = DelayedLifecycleSource(original)
+        runtime = CoreRuntime()
+        runtime.configure(object(), source=source)
+
+        def dispatch_if_authorized() -> bool:
+            authority = runtime.acquire(("core.basic_rest_read",))
+            if authority is None or runtime.consume(authority) is None:
+                return False
+            source.provider_calls += 1
+            return True
+
+        reconciliation = asyncio.create_task(runtime.reconcile_once("startup"))
+        for _ in range(20):
+            await asyncio.sleep(0)
+            if source.monitor_started.is_set() or reconciliation.done():
+                break
+
+        self.assertTrue(source.monitor_started.is_set())
+        self.assertFalse(reconciliation.done())
+        self.assertFalse(dispatch_if_authorized())
+        self.assertEqual(source.provider_calls, 0)
+        self.assertEqual(source.assert_expected_version, "2026.9.1")
+
+        source.snapshot = replacement
+        source.allow_monitor_attachment.set()
+        await asyncio.wait_for(reconciliation, timeout=1)
+
+        self.assertEqual(source.calls, 4)
+        self.assertEqual(
+            runtime.current_observation.session_fingerprint,
+            stable_observation(replacement, replacement).session_fingerprint,
+        )
+        self.assertTrue(dispatch_if_authorized())
+        self.assertEqual(source.provider_calls, 1)
+
+        source.connection_lost.set()
+        await asyncio.sleep(0)
+
     async def test_connection_monitor_retires_authority_before_reprobe(self):
         class ConnectionLifecycleSource(_MutableSource):
             def __init__(self, snapshot):
@@ -1355,9 +1428,14 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
                 self.release_reprobe = asyncio.Event()
                 self.mark_calls = 0
 
-            async def wait_for_connection_change(self, expected_version):
+            async def wait_for_connection_change(
+                self,
+                expected_version,
+                on_attached,
+            ):
                 self.assert_expected_version = expected_version
                 self.monitor_started.set()
+                on_attached()
                 await self.connection_lost.wait()
                 self.connection_lost.clear()
 
@@ -1366,7 +1444,10 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
 
             async def capture_core_snapshot(self):
                 self.calls += 1
-                if self.calls == 3:
+                # The first publication now recollects two snapshots after
+                # lifecycle-watcher attachment; the reconnect probe begins at
+                # call five.
+                if self.calls == 5:
                     self.reprobe_started.set()
                     await self.release_reprobe.wait()
                 return deepcopy(self.snapshot)

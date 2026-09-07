@@ -21,6 +21,13 @@ effective-area correction rather than inheriting the obsolete 8.4.1
 quarantine. A legacy 8.4.1 adapter on Core 2026.9 still withholds only those
 five reads.
 
+This release intentionally expands the compiled production Core trust policy:
+exact 2026.9.0 and 2026.9.1 may select the existing 17 binary-owned capability
+profiles only when their compiled source/image identities and runtime evidence
+match. No unlisted release, live self-description, or registry response can
+create executable behavior, routing, write authority, generic forwarding, or
+fallback.
+
 Template/Jinja behavior, Probatio validation, dependency/helper planning,
 typed-helper execution/readback, F3 verification, dashboard reads, and governed
 dashboard writes retain exact capability authority. Unknown releases,

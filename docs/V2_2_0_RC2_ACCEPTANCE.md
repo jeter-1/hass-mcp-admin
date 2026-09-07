@@ -36,6 +36,23 @@ The reviewed automation-trace contract is separately bound to Core's exact
 must return a bounded mapping sequence and `trace/get` must retain the exact
 missing-trace `not_found` envelope across every supported Core source commit.
 
+## Compiled production trust-policy expansion
+
+RC2 expands compiled production trust authority from the prior Core releases
+to the following exact releases. Each release selects the same 17 binary-owned
+capability profiles; it does not authorize an unlisted Core release, a live
+self-description, new executable behavior, generic forwarding, or fallback.
+
+| Newly trusted release | Exact source commit | Exact OCI index |
+| --- | --- | --- |
+| `2026.9.0` | `dfb5a9e690daaf204b542896e4b595e61a11a401` | `sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293` |
+| `2026.9.1` | `fc034572d0216a04ed40a07154394908a594dfed` | `sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918` |
+
+This is a bounded admission-policy change and therefore remains an explicit
+security-review surface. Positive authority still requires the exact compiled
+identity, version, source, image, profile, adapter, stable observations, and
+per-capability runtime evidence.
+
 ## Functional acceptance
 
 Source and exact-head validation must prove:
@@ -106,8 +123,9 @@ The required catalog remains:
 - fallback: zero.
 
 No public schema, stable-v1 file, provider, generic forwarder, action/write
-surface, publication authority, deployment metadata, or production trust
-configuration changes. Health and audit remain bounded and sanitized.
+surface, publication authority, deployment metadata, or dynamic production
+trust configuration changes. The exact compiled Core 2026.9.0/2026.9.1 trust
+expansion is disclosed above. Health and audit remain bounded and sanitized.
 
 ## Exact disposable CI
 

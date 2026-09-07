@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import aiohttp
@@ -212,8 +212,12 @@ class AiohttpCoreSnapshotSource:
 
         self._observer_session_id = uuid.uuid4().hex
 
-    async def wait_for_connection_change(self, expected_version: str) -> None:
-        """Wait for the authenticated Core lifecycle socket to move or close."""
+    async def wait_for_connection_change(
+        self,
+        expected_version: str,
+        on_attached: Callable[[], None],
+    ) -> None:
+        """Bind the lifecycle socket, then wait for it to move or close."""
 
         if (
             not isinstance(expected_version, str)
@@ -258,6 +262,12 @@ class AiohttpCoreSnapshotSource:
                         or auth.get("ha_version") != expected_version
                     ):
                         return
+                    # Publication waits for this callback and then recollects
+                    # both stable snapshots while this exact authenticated
+                    # connection remains open.  A same-version Core
+                    # replacement therefore cannot inherit authority observed
+                    # before the watcher attached.
+                    on_attached()
                     # This connection subscribes to nothing and issues no HA
                     # command. Any application frame, close, or transport
                     # failure means the verified lifecycle binding moved.
