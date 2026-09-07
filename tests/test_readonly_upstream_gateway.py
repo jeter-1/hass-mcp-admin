@@ -35,6 +35,7 @@ from ha_mcp_engineering.clients.upstream_read import (  # noqa: E402
 )
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.configuration import Settings  # noqa: E402
+from ha_mcp_engineering.errors import HomeAssistantUnavailableError  # noqa: E402
 from ha_mcp_engineering.observability import METRICS  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     PROVIDER_ID,
@@ -301,6 +302,64 @@ class FakeTransport:
             connection_latency_ms=1.0,
             tool_call_latency_ms=2.0,
         )
+
+
+class CompositeCoreRuntime:
+    def __init__(self):
+        self.active = True
+        self.acquire_calls = 0
+        self.consume_calls = 0
+        self.revalidate_calls = 0
+        self.finish_calls = 0
+        self.release_calls = 0
+        self.authority = object()
+        self.commits = (object(),)
+
+    def route_status(self, _requirements, **_kwargs):
+        return {
+            "available": self.active,
+            "disposition": "admitted" if self.active else "retired",
+            "reason_codes": () if self.active else ("core_generation_retired",),
+            "generation": 1,
+        }
+
+    def acquire(self, _requirements, **_kwargs):
+        self.acquire_calls += 1
+        return self.authority if self.active else None
+
+    def consume(self, authority):
+        self.consume_calls += 1
+        return self.commits if authority is self.authority and self.active else None
+
+    def revalidate(self, authority, commits):
+        self.revalidate_calls += 1
+        return (
+            authority is self.authority
+            and commits is self.commits
+            and self.active
+        )
+
+    def finish(self, commits):
+        self.finish_calls += 1
+        return commits is self.commits
+
+    def release(self, authority):
+        self.release_calls += 1
+        return authority is self.authority
+
+    def record_catalog_change(self, **_kwargs):
+        return None
+
+
+class RetiringCompositeTransport(FakeTransport):
+    def __init__(self, tools, *, core_runtime, version, result):
+        super().__init__(tools, version=version, result=result)
+        self.core_runtime = core_runtime
+
+    async def execute_read(self, *args, **kwargs):
+        result = await super().execute_read(*args, **kwargs)
+        self.core_runtime.active = False
+        return result
 
 
 class SequencedDiscoveryTransport(FakeTransport):
@@ -2835,6 +2894,115 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class DelegationTests(unittest.IsolatedAsyncioTestCase):
+    @staticmethod
+    def _composite_payload():
+        return {
+            "success": True,
+            "device": {
+                "device_id": "legacy-composite-id",
+                "config_entries": ["entry-a", "entry-b"],
+                "entities": [],
+            },
+            "entities": [],
+            "entity_count": 0,
+            "queried_by": "device_id",
+            "queried_entity_id": None,
+        }
+
+    async def _composite_authority_case(self, retirement_stage):
+        reviewed_schema = schema("device_id")
+        observed = catalog_tool(
+            "ha_get_device", reviewed_schema=reviewed_schema
+        )
+        runtime = CompositeCoreRuntime()
+        transport_type = (
+            RetiringCompositeTransport
+            if retirement_stage == "after_upstream"
+            else FakeTransport
+        )
+        transport_kwargs = {
+            "version": "8.2.0",
+            "result": {
+                "structuredContent": self._composite_payload(),
+                "isError": False,
+            },
+        }
+        if transport_type is RetiringCompositeTransport:
+            transport_kwargs["core_runtime"] = runtime
+        transport = transport_type([observed], **transport_kwargs)
+
+        rest_calls = []
+
+        async def rest_request(method, path):
+            telemetry = current_telemetry()
+            if telemetry is None or not telemetry.authorize_core_dispatch():
+                raise HomeAssistantUnavailableError()
+            rest_calls.append((method, path))
+            if retirement_stage == "after_config":
+                runtime.active = False
+            return {"version": "2026.8.1"}
+
+        websocket_calls = []
+
+        async def websocket_command(command):
+            telemetry = current_telemetry()
+            if telemetry is None or not telemetry.authorize_core_dispatch():
+                raise HomeAssistantUnavailableError()
+            websocket_calls.append(dict(command))
+            if command["type"] == "config/device_registry/list_composite_splits":
+                if retirement_stage == "between_websocket_calls":
+                    runtime.active = False
+                return {
+                    "legacy-composite-id": {
+                        "split_ids": ["split-a", "split-b"],
+                        "primary_id": "split-a",
+                    }
+                }
+            return [
+                {
+                    "entity_id": "switch.fixture_a",
+                    "device_id": "split-a",
+                    "platform": "beta23_device_fixture",
+                },
+                {
+                    "entity_id": "switch.fixture_b",
+                    "device_id": "split-b",
+                    "platform": "beta23_device_fixture",
+                },
+            ]
+
+        rest = AsyncMock()
+        rest.request.side_effect = rest_request
+        websocket = AsyncMock()
+        websocket.command.side_effect = websocket_command
+        _gateway, server, _transport = await initialize(
+            [policy_entry("ha_get_device", reviewed_schema=reviewed_schema)],
+            [observed],
+            transport=transport,
+            version="8.2.0",
+            reviewed_version="8.2.0",
+            ha_rest_client=rest,
+            ha_websocket_client=websocket,
+            core_runtime=runtime,
+        )
+
+        telemetry, token = begin_request("composite-authority-test")
+        prior_authorizer = lambda: retirement_stage != "prior_denied"
+        telemetry.core_dispatch_authorizer = prior_authorizer
+        try:
+            value = json.loads(
+                await registered_tools(server).get("ha_get_device").run(
+                    {"device_id": "legacy-composite-id"}
+                )
+            )
+            self.assertIs(
+                telemetry.core_dispatch_authorizer,
+                prior_authorizer,
+            )
+        finally:
+            end_request(token)
+        return value, runtime, rest_calls, websocket_calls
+
     def tearDown(self):
         replace_dynamic_upstream_capabilities((), {})
 
@@ -2931,6 +3099,74 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(value["metadata"]["fallback"], "none")
         self.assertEqual(len(transport.calls), 1)
 
+    async def test_composite_authority_retirement_after_upstream_blocks_adapter(self):
+        value, runtime, rest_calls, websocket_calls = (
+            await self._composite_authority_case("after_upstream")
+        )
+
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_unavailable")
+        self.assertEqual(rest_calls, [])
+        self.assertEqual(websocket_calls, [])
+        self.assertEqual(runtime.finish_calls, 1)
+        self.assertEqual(runtime.release_calls, 0)
+
+    async def test_composite_authority_retirement_after_config_blocks_websocket(self):
+        value, runtime, rest_calls, websocket_calls = (
+            await self._composite_authority_case("after_config")
+        )
+
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_unavailable")
+        self.assertEqual(rest_calls, [("GET", "/config")])
+        self.assertEqual(websocket_calls, [])
+        self.assertEqual(runtime.finish_calls, 1)
+        self.assertEqual(runtime.release_calls, 0)
+
+    async def test_composite_authority_retirement_between_websocket_calls(self):
+        value, runtime, rest_calls, websocket_calls = (
+            await self._composite_authority_case(
+                "between_websocket_calls"
+            )
+        )
+
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_unavailable")
+        self.assertEqual(rest_calls, [("GET", "/config")])
+        self.assertEqual(
+            websocket_calls,
+            [{"type": "config/device_registry/list_composite_splits"}],
+        )
+        self.assertEqual(runtime.finish_calls, 1)
+        self.assertEqual(runtime.release_calls, 0)
+
+    async def test_composite_authority_combines_and_restores_prior_authorizer(self):
+        value, runtime, rest_calls, websocket_calls = (
+            await self._composite_authority_case("prior_denied")
+        )
+
+        self.assertFalse(value["success"])
+        self.assertEqual(value["error_code"], "provider_unavailable")
+        self.assertEqual(rest_calls, [])
+        self.assertEqual(websocket_calls, [])
+        self.assertEqual(runtime.finish_calls, 1)
+
+    async def test_composite_authority_success_cleans_up_once(self):
+        value, runtime, rest_calls, websocket_calls = (
+            await self._composite_authority_case("success")
+        )
+
+        self.assertTrue(value["success"])
+        self.assertEqual(
+            value["metadata"]["response_adapter"],
+            "ha-get-device-composite-ha-2026.8.1-v1",
+        )
+        self.assertEqual(rest_calls, [("GET", "/config")])
+        self.assertEqual(len(websocket_calls), 2)
+        self.assertGreaterEqual(runtime.revalidate_calls, 3)
+        self.assertEqual(runtime.finish_calls, 1)
+        self.assertEqual(runtime.release_calls, 0)
+
     async def test_exact_2026_8_composite_device_adapter_is_reported(self):
         reviewed_schema = schema("device_id")
         observed = catalog_tool(
@@ -2984,6 +3220,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             reviewed_version="8.1.1",
             ha_rest_client=rest,
             ha_websocket_client=websocket,
+            core_runtime=CompositeCoreRuntime(),
         )
 
         encoded = await registered_tools(server).get("ha_get_device").run(
@@ -3058,6 +3295,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             reviewed_version="8.2.0",
             ha_rest_client=rest,
             ha_websocket_client=websocket,
+            core_runtime=CompositeCoreRuntime(),
         )
 
         value = json.loads(
@@ -3117,6 +3355,7 @@ class DelegationTests(unittest.IsolatedAsyncioTestCase):
             reviewed_version="8.2.0",
             ha_rest_client=rest,
             ha_websocket_client=websocket,
+            core_runtime=CompositeCoreRuntime(),
         )
 
         value = json.loads(

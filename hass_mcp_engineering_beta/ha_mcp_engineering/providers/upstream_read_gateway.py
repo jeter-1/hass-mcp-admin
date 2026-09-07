@@ -59,7 +59,12 @@ from ..ha_mcp_readmission.registry import (
 )
 from ..ha_core_readmission.routes import delegated_requirements
 from ..observability import METRICS
-from ..request_context import current_request_id, current_telemetry
+from ..request_context import (
+    begin_request,
+    current_request_id,
+    current_telemetry,
+    end_request,
+)
 from ..sanitization import sanitize_untrusted_data
 from ..tool_framework import timing_since
 from ..upstream_tool_policy import (
@@ -3008,11 +3013,6 @@ class UpstreamReadGateway:
                 dispatched=False,
             ) from None
         finally:
-            if self._core_runtime is not None:
-                if lease.core_commits is not None:
-                    self._core_runtime.finish(lease.core_commits)
-                elif lease.core_authority is not None:
-                    self._core_runtime.release(lease.core_authority)
             coordinator = self._readmission_coordinator
             if coordinator is not None:
                 if lease.readmission_commit is not None:
@@ -3028,6 +3028,23 @@ class UpstreamReadGateway:
                 telemetry.finish_upstream_attempt(
                     finished, (finished - attempt_started) * 1_000
                 )
+
+    def _finish_core_route_lease(self, lease: _RouteLease | None) -> None:
+        """Release one retained Core authority exactly once."""
+
+        if lease is None:
+            return
+        core_runtime = self._core_runtime
+        core_commits = lease.core_commits
+        core_authority = lease.core_authority
+        lease.core_commits = None
+        lease.core_authority = None
+        if core_runtime is None:
+            return
+        if core_commits is not None:
+            core_runtime.finish(core_commits)
+        elif core_authority is not None:
+            core_runtime.release(core_authority)
 
     async def execute(
         self,
@@ -3049,6 +3066,13 @@ class UpstreamReadGateway:
             self._settings.response_size_limit if self._settings else 60_000,
         )
         telemetry = current_telemetry()
+        telemetry_token = None
+        if telemetry is None and policy_entry.upstream_name == "ha_get_device":
+            # Direct embedding and focused tests may enter this internal
+            # boundary without the normal MCP request middleware. Give the
+            # compatibility adapter one bounded request context rather than
+            # allowing its direct Core reads to run without an authorizer.
+            telemetry, telemetry_token = begin_request()
         try:
             mapping, exchange = await self._dispatch_current_route(
                 exposed_name=exposed_name,
@@ -3079,6 +3103,36 @@ class UpstreamReadGateway:
             )
             response_adapter = None
             if policy_entry.upstream_name == "ha_get_device":
+                if telemetry is None:
+                    raise _GatewayFailure(
+                        "prohibited_delegation", dispatched=True
+                    )
+                lease = route_context.get("lease")
+                prior_core_authorizer = telemetry.core_dispatch_authorizer
+
+                def authorize_retained_core() -> bool:
+                    if prior_core_authorizer is not None:
+                        try:
+                            if prior_core_authorizer() is not True:
+                                return False
+                        except Exception:
+                            return False
+                    return bool(
+                        self._core_runtime is not None
+                        and isinstance(lease, _RouteLease)
+                        and lease.core_authority is not None
+                        and lease.core_commits is not None
+                        and self._core_runtime.revalidate(
+                            lease.core_authority,
+                            lease.core_commits,
+                        )
+                    )
+
+                def require_retained_core() -> None:
+                    if not telemetry.authorize_core_dispatch():
+                        raise HomeAssistantUnavailableError()
+
+                telemetry.core_dispatch_authorizer = authorize_retained_core
                 try:
                     payload, response_adapter = (
                         await adapt_ha_get_device_composite_result(
@@ -3087,6 +3141,7 @@ class UpstreamReadGateway:
                             upstream_version=mapping.adapter_version,
                             rest_client=self._ha_rest_client,
                             websocket_client=self._ha_websocket_client,
+                            authorize_core_read=require_retained_core,
                         )
                     )
                 except HomeAssistantTimeoutError:
@@ -3106,6 +3161,10 @@ class UpstreamReadGateway:
                     raise _GatewayFailure(
                         "invalid_response", dispatched=True
                     ) from None
+                finally:
+                    telemetry.core_dispatch_authorizer = (
+                        prior_core_authorizer
+                    )
             sanitation = sanitize_untrusted_data(
                 payload,
                 known_secrets=self._known_secrets,
@@ -3290,6 +3349,15 @@ class UpstreamReadGateway:
                 timing=timing_since(started),
                 request_id=current_request_id(),
             ).to_json(response_limit)
+        finally:
+            lease = route_context.get("lease")
+            try:
+                self._finish_core_route_lease(
+                    lease if isinstance(lease, _RouteLease) else None
+                )
+            finally:
+                if telemetry_token is not None:
+                    end_request(telemetry_token)
 
     async def run_held_read_canary(
         self,

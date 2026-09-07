@@ -18,6 +18,7 @@ from .profiles import CORE_CAPABILITY_PROFILES
 
 MAX_CORE_PROBE_BYTES = 4_000_000
 MAX_CORE_PROBE_ITEMS = 20_000
+MAX_CORE_PROBE_RECONNECTS = 1
 CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1"})
 AUTOMATION_CONTRACT_PROBE_ENTITY_ID = (
     "automation.ha_mcp_engineering_contract_probe_0000000000000000"
@@ -436,6 +437,157 @@ class AiohttpCoreSnapshotSource:
             raise RuntimeError("core_probe_command_failed") from exc
         return result
 
+    async def _capture_websocket_evidence(
+        self,
+        session: aiohttp.ClientSession,
+        *,
+        websocket_timeout: aiohttp.ClientWSTimeout,
+        expected_version: str,
+        expected_observer_session_id: str,
+        automation_entity_id: str,
+    ) -> tuple[str, Mapping[str, Any], dict[str, Any]]:
+        """Collect independent probes without reusing a timed-out socket."""
+
+        commands = (
+            (2, "areas", "config/area_registry/list", None, ()),
+            (3, "floors", "config/floor_registry/list", None, ()),
+            (4, "labels", "config/label_registry/list", None, ()),
+            (5, "entities", "config/entity_registry/list", None, ()),
+            (6, "devices", "config/device_registry/list", None, ()),
+            (7, "dashboards", "lovelace/dashboards/list", None, ()),
+            (
+                8,
+                "dashboard",
+                "lovelace/config",
+                None,
+                _DASHBOARD_NOT_FOUND_ERRORS,
+            ),
+            (
+                9,
+                "automation",
+                "automation/config",
+                {"entity_id": automation_entity_id},
+                _AUTOMATION_NOT_FOUND_ERRORS,
+            ),
+            (
+                10,
+                "trace_list",
+                "trace/list",
+                {
+                    "domain": "automation",
+                    "item_id": TRACE_CONTRACT_PROBE_ITEM_ID,
+                },
+                (),
+            ),
+            (
+                11,
+                "trace_get",
+                "trace/get",
+                {
+                    "domain": "automation",
+                    "item_id": TRACE_CONTRACT_PROBE_ITEM_ID,
+                    "run_id": TRACE_CONTRACT_PROBE_RUN_ID,
+                },
+                _TRACE_NOT_FOUND_ERRORS,
+            ),
+        )
+        results: dict[str, Any] = {}
+        command_index = 0
+        reconnects = 0
+        accepted_auth_version: str | None = None
+        accepted_websocket_config: Mapping[str, Any] | None = None
+
+        while command_index < len(commands):
+            if self._observer_session_id != expected_observer_session_id:
+                raise RuntimeError("core_probe_connection_epoch_changed")
+            command_timed_out = False
+            async with session.ws_connect(
+                self._settings.websocket_url,
+                timeout=websocket_timeout,
+                max_msg_size=MAX_CORE_PROBE_BYTES,
+            ) as websocket:
+                required = await self._receive_mapping(websocket)
+                if required.get("type") != "auth_required":
+                    raise RuntimeError("core_probe_auth_protocol_invalid")
+                await websocket.send_json(
+                    {
+                        "type": "auth",
+                        "access_token": self._settings.ha_token,
+                    }
+                )
+                auth = await self._receive_mapping(websocket)
+                if auth.get("type") != "auth_ok":
+                    raise RuntimeError("core_probe_authentication_failed")
+                auth_version = auth.get("ha_version")
+                if auth_version != expected_version:
+                    raise RuntimeError("core_probe_version_changed")
+                websocket_config = await self._command(
+                    websocket, 1, "get_config"
+                )
+                if (
+                    not isinstance(websocket_config, Mapping)
+                    or websocket_config.get("version") != expected_version
+                ):
+                    raise RuntimeError("core_probe_version_changed")
+                if self._observer_session_id != expected_observer_session_id:
+                    raise RuntimeError("core_probe_connection_epoch_changed")
+                if accepted_auth_version is None:
+                    accepted_auth_version = auth_version
+                    accepted_websocket_config = websocket_config
+
+                while command_index < len(commands):
+                    (
+                        command_id,
+                        name,
+                        command_type,
+                        arguments,
+                        expected_errors,
+                    ) = commands[command_index]
+                    try:
+                        results[name] = await self._command(
+                            websocket,
+                            command_id,
+                            command_type,
+                            arguments,
+                            expected_errors=expected_errors,
+                        )
+                    except asyncio.TimeoutError:
+                        # A delayed response can no longer be correlated
+                        # safely. Exit this socket permanently and continue
+                        # only on one freshly authenticated, same-epoch socket.
+                        results[name] = None
+                        command_index += 1
+                        command_timed_out = True
+                        break
+                    except RuntimeError:
+                        results[name] = None
+                    except ValueError:
+                        if name not in {"trace_list", "trace_get"}:
+                            raise
+                        results[name] = None
+                    command_index += 1
+                    if self._observer_session_id != expected_observer_session_id:
+                        raise RuntimeError(
+                            "core_probe_connection_epoch_changed"
+                        )
+
+            if not command_timed_out or command_index >= len(commands):
+                break
+            if self._observer_session_id != expected_observer_session_id:
+                raise RuntimeError("core_probe_connection_epoch_changed")
+            if reconnects >= MAX_CORE_PROBE_RECONNECTS:
+                raise RuntimeError(
+                    "core_probe_websocket_reconnect_exhausted"
+                )
+            reconnects += 1
+
+        if (
+            accepted_auth_version is None
+            or accepted_websocket_config is None
+        ):
+            raise RuntimeError("core_probe_version_invalid")
+        return accepted_auth_version, accepted_websocket_config, results
+
     async def capture_core_snapshot(self) -> Mapping[str, Any]:
         timeout = aiohttp.ClientTimeout(total=self._settings.ha_timeout_seconds)
         websocket_timeout = aiohttp.ClientWSTimeout(
@@ -454,10 +606,11 @@ class AiohttpCoreSnapshotSource:
                 states = None
             try:
                 services = await self._rest_json(session, "/services")
-            except (RuntimeError, ValueError):
+            except (RuntimeError, ValueError, asyncio.TimeoutError):
                 # Service discovery is an independent read surface. A failed,
-                # malformed, or oversized service inventory withholds only its
-                # capability and cannot erase already validated REST evidence.
+                # malformed, oversized, or timed-out service inventory
+                # withholds only its capability and cannot erase already
+                # validated REST evidence. Connection failures still escape.
                 services = None
             try:
                 configuration_validation = (
@@ -468,115 +621,36 @@ class AiohttpCoreSnapshotSource:
                 # contract probe. Absence, an incompatible envelope, or a
                 # bounded timeout withholds only validation-dependent plans.
                 configuration_validation = None
-            async with session.ws_connect(
-                self._settings.websocket_url,
-                timeout=websocket_timeout,
-                max_msg_size=MAX_CORE_PROBE_BYTES,
-            ) as websocket:
-                required = await self._receive_mapping(websocket)
-                if required.get("type") != "auth_required":
-                    raise RuntimeError("core_probe_auth_protocol_invalid")
-                await websocket.send_json(
-                    {
-                        "type": "auth",
-                        "access_token": self._settings.ha_token,
-                    }
+            version = (
+                rest_config.get("version")
+                if isinstance(rest_config, Mapping)
+                else None
+            )
+            if not isinstance(version, str):
+                raise RuntimeError("core_probe_version_invalid")
+            state_records = states if _bounded_sequence(states) else ()
+            automation_entity_id = next(
+                (
+                    item.get("entity_id")
+                    for item in state_records
+                    if isinstance(item, Mapping)
+                    and isinstance(item.get("entity_id"), str)
+                    and item["entity_id"].startswith("automation.")
+                ),
+                AUTOMATION_CONTRACT_PROBE_ENTITY_ID,
+            )
+            observer_session_id = self._observer_session_id
+            auth_version, websocket_config, results = (
+                await self._capture_websocket_evidence(
+                    session,
+                    websocket_timeout=websocket_timeout,
+                    expected_version=version,
+                    expected_observer_session_id=observer_session_id,
+                    automation_entity_id=automation_entity_id,
                 )
-                auth = await self._receive_mapping(websocket)
-                if auth.get("type") != "auth_ok":
-                    raise RuntimeError("core_probe_authentication_failed")
-                websocket_config = await self._command(websocket, 1, "get_config")
-                commands = (
-                    (2, "areas", "config/area_registry/list"),
-                    (3, "floors", "config/floor_registry/list"),
-                    (4, "labels", "config/label_registry/list"),
-                    (5, "entities", "config/entity_registry/list"),
-                    (6, "devices", "config/device_registry/list"),
-                    (7, "dashboards", "lovelace/dashboards/list"),
-                )
-                results: dict[str, Any] = {}
-                for command_id, name, command_type in commands:
-                    try:
-                        results[name] = await self._command(
-                            websocket, command_id, command_type
-                        )
-                    except RuntimeError:
-                        results[name] = None
-                try:
-                    # Core 2026.7.2 through 2026.9.1 use these exact
-                    # config_not_found envelopes when the default Lovelace
-                    # dashboard exists without stored configuration or no
-                    # default dashboard is configured.  That is affirmative
-                    # endpoint-contract evidence, not a malformed response.
-                    results["dashboard"] = await self._command(
-                        websocket,
-                        8,
-                        "lovelace/config",
-                        expected_errors=_DASHBOARD_NOT_FOUND_ERRORS,
-                    )
-                except RuntimeError:
-                    results["dashboard"] = None
-                state_records = states if _bounded_sequence(states) else ()
-                automation_entity_id = next(
-                    (
-                        item.get("entity_id")
-                        for item in state_records
-                        if isinstance(item, Mapping)
-                        and isinstance(item.get("entity_id"), str)
-                        and item["entity_id"].startswith("automation.")
-                    ),
-                    AUTOMATION_CONTRACT_PROBE_ENTITY_ID,
-                )
-                try:
-                    # Absence of a sample automation must not be confused
-                    # with absence of the automation/config contract.  The
-                    # fixed missing entity produces the exact source-reviewed
-                    # not_found envelope on every supported Core release.
-                    results["automation"] = await self._command(
-                        websocket,
-                        9,
-                        "automation/config",
-                        {"entity_id": automation_entity_id},
-                        expected_errors=_AUTOMATION_NOT_FOUND_ERRORS,
-                    )
-                except RuntimeError:
-                    results["automation"] = None
-                try:
-                    results["trace_list"] = await self._command(
-                        websocket,
-                        10,
-                        "trace/list",
-                        {
-                            "domain": "automation",
-                            "item_id": TRACE_CONTRACT_PROBE_ITEM_ID,
-                        },
-                    )
-                except (RuntimeError, ValueError):
-                    results["trace_list"] = None
-                try:
-                    # Exact Core 2026.7.2 through 2026.9.1 return this bounded
-                    # not_found envelope for a missing trace. It proves the
-                    # independently reviewed trace/get command contract without
-                    # requiring a real automation run or causing a mutation.
-                    results["trace_get"] = await self._command(
-                        websocket,
-                        11,
-                        "trace/get",
-                        {
-                            "domain": "automation",
-                            "item_id": TRACE_CONTRACT_PROBE_ITEM_ID,
-                            "run_id": TRACE_CONTRACT_PROBE_RUN_ID,
-                        },
-                        expected_errors=_TRACE_NOT_FOUND_ERRORS,
-                    )
-                except (RuntimeError, ValueError):
-                    results["trace_get"] = None
+            )
 
-        version = rest_config.get("version") if isinstance(rest_config, Mapping) else None
-        if not isinstance(version, str) or not isinstance(websocket_config, Mapping):
-            raise RuntimeError("core_probe_version_invalid")
-        auth_version = auth.get("ha_version")
-        if not isinstance(auth_version, str):
+        if not isinstance(websocket_config, Mapping):
             raise RuntimeError("core_probe_version_invalid")
         evidence = capability_evidence_for_probes(
             version=version,
@@ -605,5 +679,6 @@ class AiohttpCoreSnapshotSource:
 __all__ = [
     "AiohttpCoreSnapshotSource",
     "MAX_CORE_PROBE_BYTES",
+    "MAX_CORE_PROBE_RECONNECTS",
     "capability_evidence_for_probes",
 ]

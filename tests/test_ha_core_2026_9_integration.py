@@ -255,6 +255,23 @@ class _SequenceWebSocket(_SyntheticWebSocket):
         return deepcopy(self.responses.pop(0))
 
 
+class _TrackingSequenceWebSocket(_SequenceWebSocket):
+    def __init__(self, responses: list[Any]):
+        super().__init__(responses)
+        self.exit_calls = 0
+
+    async def __aexit__(self, _exc_type, _exc, _tb):
+        self.exit_calls += 1
+        return None
+
+    async def receive_json(self) -> dict:
+        self.receive_calls += 1
+        value = self.responses.pop(0)
+        if isinstance(value, BaseException):
+            raise value
+        return deepcopy(value)
+
+
 class _ProbeSession:
     def __init__(self, websocket):
         self.websocket = websocket
@@ -267,6 +284,17 @@ class _ProbeSession:
 
     def ws_connect(self, _url, **_kwargs):
         return self.websocket
+
+
+class _ProbeSessionSequence(_ProbeSession):
+    def __init__(self, websockets):
+        super().__init__(None)
+        self.websockets = list(websockets)
+        self.ws_connect_calls = 0
+
+    def ws_connect(self, _url, **_kwargs):
+        self.ws_connect_calls += 1
+        return self.websockets.pop(0)
 
 
 class _RecordingMcpApp:
@@ -772,63 +800,70 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
             def ws_connect(self, _url, **_kwargs):
                 return self.websocket
 
-        async def rest_json(_session, path):
-            if path == "/config":
-                return {"version": "2026.9.1"}
-            if path == "/states":
-                return []
-            if path == "/services":
-                raise RuntimeError("synthetic services failure")
-            raise AssertionError(path)
-
-        source = AiohttpCoreSnapshotSource(settings())
-        websocket = ProbeWebSocket()
-        with (
-            patch(
-                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
-                return_value=ProbeSession(websocket),
-            ),
-            patch.object(source, "_rest_json", side_effect=rest_json),
-            patch.object(
-                source,
-                "_check_configuration_json",
-                return_value={
-                    "result": "valid",
-                    "errors": None,
-                    "warnings": None,
-                },
-            ),
+        for failure in (
+            RuntimeError("synthetic services failure"),
+            asyncio.TimeoutError("synthetic services timeout"),
         ):
-            snapshot = await source.capture_core_snapshot()
+            with self.subTest(failure=type(failure).__name__):
 
-        admitted = {
-            item["capability_id"] for item in snapshot["capability_evidence"]
-        }
-        self.assertIn("core.basic_rest_read", admitted)
-        self.assertIn("core.direct_entity_state_read", admitted)
-        self.assertNotIn("core.state_service_discovery", admitted)
-        self.assertEqual(
-            websocket.sent[-2:],
-            [
-                {
-                    "id": 10,
-                    "type": "trace/list",
-                    "domain": "automation",
-                    "item_id": (
-                        "ha_mcp_engineering_contract_probe_0000000000000000"
+                async def rest_json(_session, path):
+                    if path == "/config":
+                        return {"version": "2026.9.1"}
+                    if path == "/states":
+                        return []
+                    if path == "/services":
+                        raise failure
+                    raise AssertionError(path)
+
+                source = AiohttpCoreSnapshotSource(settings())
+                websocket = ProbeWebSocket()
+                with (
+                    patch(
+                        "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                        return_value=ProbeSession(websocket),
                     ),
-                },
-                {
-                    "id": 11,
-                    "type": "trace/get",
-                    "domain": "automation",
-                    "item_id": (
-                        "ha_mcp_engineering_contract_probe_0000000000000000"
+                    patch.object(source, "_rest_json", side_effect=rest_json),
+                    patch.object(
+                        source,
+                        "_check_configuration_json",
+                        return_value={
+                            "result": "valid",
+                            "errors": None,
+                            "warnings": None,
+                        },
                     ),
-                    "run_id": "00000000000000000000000000000000",
-                },
-            ],
-        )
+                ):
+                    snapshot = await source.capture_core_snapshot()
+
+                admitted = {
+                    item["capability_id"]
+                    for item in snapshot["capability_evidence"]
+                }
+                self.assertIn("core.basic_rest_read", admitted)
+                self.assertIn("core.direct_entity_state_read", admitted)
+                self.assertNotIn("core.state_service_discovery", admitted)
+                self.assertEqual(
+                    websocket.sent[-2:],
+                    [
+                        {
+                            "id": 10,
+                            "type": "trace/list",
+                            "domain": "automation",
+                            "item_id": (
+                                "ha_mcp_engineering_contract_probe_0000000000000000"
+                            ),
+                        },
+                        {
+                            "id": 11,
+                            "type": "trace/get",
+                            "domain": "automation",
+                            "item_id": (
+                                "ha_mcp_engineering_contract_probe_0000000000000000"
+                            ),
+                            "run_id": "00000000000000000000000000000000",
+                        },
+                    ],
+                )
 
     async def test_unavailable_check_config_withholds_only_validation_authority(self):
         async def rest_json(_session, path):
@@ -967,6 +1002,279 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("core.dashboard_configuration_read", admitted)
         self.assertIn("core.automation_configuration_read", admitted)
         self.assertEqual(len(websocket.sent), 12)
+
+    async def test_websocket_command_timeout_reconnects_without_reusing_socket(self):
+        def success(command_id, result):
+            return {
+                "id": command_id,
+                "type": "result",
+                "success": True,
+                "result": result,
+            }
+
+        def missing(command_id, message):
+            return {
+                "id": command_id,
+                "type": "result",
+                "success": False,
+                "error": {"code": "not_found", "message": message},
+            }
+
+        first = _TrackingSequenceWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok", "ha_version": "2026.9.1"},
+                success(1, {"version": "2026.9.1"}),
+                success(2, []),
+                asyncio.TimeoutError("synthetic floor registry timeout"),
+                success(3, [{"floor_id": "late-floor"}]),
+            ]
+        )
+        second = _TrackingSequenceWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok", "ha_version": "2026.9.1"},
+                success(1, {"version": "2026.9.1"}),
+                success(4, []),
+                success(5, []),
+                success(6, []),
+                success(7, []),
+                success(8, {"views": []}),
+                missing(9, "Entity not found"),
+                success(10, []),
+                missing(11, "The trace could not be found"),
+            ]
+        )
+        session = _ProbeSessionSequence([first, second])
+
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path in {"/states", "/services"}:
+                return []
+            raise AssertionError(path)
+
+        source = AiohttpCoreSnapshotSource(settings())
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=session,
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_check_configuration_json",
+                return_value={
+                    "result": "valid",
+                    "errors": None,
+                    "warnings": None,
+                },
+            ),
+        ):
+            snapshot = await source.capture_core_snapshot()
+
+        admitted = {
+            item["capability_id"] for item in snapshot["capability_evidence"]
+        }
+        self.assertEqual(session.ws_connect_calls, 2)
+        self.assertEqual(first.exit_calls, 1)
+        self.assertEqual(second.exit_calls, 1)
+        self.assertEqual(
+            [item["id"] for item in first.sent if "id" in item],
+            [1, 2, 3],
+        )
+        self.assertEqual(
+            [item["id"] for item in second.sent if "id" in item],
+            [1, 4, 5, 6, 7, 8, 9, 10, 11],
+        )
+        self.assertEqual(len(first.responses), 1)
+        self.assertNotIn("core.non_device_registry_read", admitted)
+        self.assertIn("core.basic_rest_read", admitted)
+        self.assertIn("core.basic_websocket_read", admitted)
+        self.assertIn("core.dashboard_configuration_read", admitted)
+        self.assertIn("core.automation_configuration_read", admitted)
+        self.assertIn("core.automation_trace_read", admitted)
+
+    async def test_websocket_timeout_reconnect_version_drift_fails_closed(self):
+        def success(command_id, result):
+            return {
+                "id": command_id,
+                "type": "result",
+                "success": True,
+                "result": result,
+            }
+
+        first = _TrackingSequenceWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok", "ha_version": "2026.9.1"},
+                success(1, {"version": "2026.9.1"}),
+                asyncio.TimeoutError("synthetic registry timeout"),
+            ]
+        )
+        second = _TrackingSequenceWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok", "ha_version": "2026.9.0"},
+            ]
+        )
+        session = _ProbeSessionSequence([first, second])
+
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path in {"/states", "/services"}:
+                return []
+            raise AssertionError(path)
+
+        source = AiohttpCoreSnapshotSource(settings())
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=session,
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_check_configuration_json",
+                return_value={
+                    "result": "valid",
+                    "errors": None,
+                    "warnings": None,
+                },
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "core_probe_version_changed"
+            ):
+                await source.capture_core_snapshot()
+
+        self.assertEqual(session.ws_connect_calls, 2)
+        self.assertEqual(first.exit_calls, 1)
+        self.assertEqual(second.exit_calls, 1)
+
+    async def test_websocket_timeout_reconnect_epoch_drift_fails_closed(self):
+        def success(command_id, result):
+            return {
+                "id": command_id,
+                "type": "result",
+                "success": True,
+                "result": result,
+            }
+
+        source = AiohttpCoreSnapshotSource(settings())
+
+        class EpochChangingSocket(_TrackingSequenceWebSocket):
+            async def receive_json(self):
+                if self.responses and self.responses[0] == "change_epoch":
+                    self.receive_calls += 1
+                    self.responses.pop(0)
+                    source.mark_connection_changed()
+                    raise asyncio.TimeoutError("synthetic registry timeout")
+                return await super().receive_json()
+
+        first = EpochChangingSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok", "ha_version": "2026.9.1"},
+                success(1, {"version": "2026.9.1"}),
+                "change_epoch",
+            ]
+        )
+        unused = _TrackingSequenceWebSocket([])
+        session = _ProbeSessionSequence([first, unused])
+
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path in {"/states", "/services"}:
+                return []
+            raise AssertionError(path)
+
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=session,
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_check_configuration_json",
+                return_value={
+                    "result": "valid",
+                    "errors": None,
+                    "warnings": None,
+                },
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "core_probe_connection_epoch_changed"
+            ):
+                await source.capture_core_snapshot()
+
+        self.assertEqual(session.ws_connect_calls, 1)
+        self.assertEqual(first.exit_calls, 1)
+
+    async def test_websocket_timeout_reconnect_attempts_are_bounded(self):
+        def success(command_id, result):
+            return {
+                "id": command_id,
+                "type": "result",
+                "success": True,
+                "result": result,
+            }
+
+        first = _TrackingSequenceWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok", "ha_version": "2026.9.1"},
+                success(1, {"version": "2026.9.1"}),
+                asyncio.TimeoutError("synthetic first timeout"),
+            ]
+        )
+        second = _TrackingSequenceWebSocket(
+            [
+                {"type": "auth_required"},
+                {"type": "auth_ok", "ha_version": "2026.9.1"},
+                success(1, {"version": "2026.9.1"}),
+                asyncio.TimeoutError("synthetic second timeout"),
+            ]
+        )
+        unused = _TrackingSequenceWebSocket([])
+        session = _ProbeSessionSequence([first, second, unused])
+
+        async def rest_json(_session, path):
+            if path == "/config":
+                return {"version": "2026.9.1"}
+            if path in {"/states", "/services"}:
+                return []
+            raise AssertionError(path)
+
+        source = AiohttpCoreSnapshotSource(settings())
+        with (
+            patch(
+                "ha_mcp_engineering.ha_core_readmission.source.aiohttp.ClientSession",
+                return_value=session,
+            ),
+            patch.object(source, "_rest_json", side_effect=rest_json),
+            patch.object(
+                source,
+                "_check_configuration_json",
+                return_value={
+                    "result": "valid",
+                    "errors": None,
+                    "warnings": None,
+                },
+            ),
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError, "core_probe_websocket_reconnect_exhausted"
+            ):
+                await source.capture_core_snapshot()
+
+        self.assertEqual(session.ws_connect_calls, 2)
+        self.assertEqual(first.exit_calls, 1)
+        self.assertEqual(second.exit_calls, 1)
 
     def test_trace_contract_evidence_is_independent_of_automation_configuration(self):
         registry = _fixture(DEVICE_FIXTURE)

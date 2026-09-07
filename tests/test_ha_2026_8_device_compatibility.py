@@ -1,5 +1,6 @@
 from pathlib import Path
 import sys
+from typing import Any
 import unittest
 from unittest.mock import AsyncMock
 
@@ -13,8 +14,18 @@ from ha_mcp_engineering.providers.ha_2026_8_device_compatibility import (  # noq
     CompositeDeviceCompatibilityError,
     HA_2026_8_1_ADAPTER_ID,
     REVIEWED_UPSTREAM_VERSIONS,
-    adapt_ha_get_device_composite_result,
+    adapt_ha_get_device_composite_result as _adapt_ha_get_device_composite_result,
 )
+
+
+async def adapt_ha_get_device_composite_result(
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Invoke the adapter with explicit synthetic request authority."""
+
+    kwargs.setdefault("authorize_core_read", lambda: None)
+    return await _adapt_ha_get_device_composite_result(*args, **kwargs)
 
 
 def empty_composite_payload():
