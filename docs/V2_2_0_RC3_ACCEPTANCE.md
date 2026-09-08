@@ -96,8 +96,11 @@ RC3 retains the functional and execution-integrity requirements established by
 recovery limitations clarified here. This version-specific document controls RC3.
 
 Revalidate raw REST rejection of NaN, Infinity and -Infinity across `/config`,
-`/states`, `/services` and `check_config`, with the established capability-local
-authority consequences. Preserve conservative connection failures and valid
+`/states`, `/services` and `check_config`. Malformed `/config` is identity-fatal:
+it prevents authoritative Core snapshot capture. Invalid `/states`,
+`/services` and `check_config` evidence withholds their dependent capabilities
+while independently valid capabilities remain eligible.
+Preserve conservative connection failures and valid
 responses, composite-read authority before every observation, capability-local
 service timeouts, and bounded freshly authenticated WebSocket replacement with
 the same reviewed version and epoch. A timed-out WebSocket is never reused.
