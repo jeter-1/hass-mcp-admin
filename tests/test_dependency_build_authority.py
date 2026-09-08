@@ -366,6 +366,29 @@ class DependencyBuildAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.index.snapshot)
         self.assert_cleaned()
 
+    async def test_fenced_waiter_cannot_start_a_replacement_after_shutdown(self):
+        self.network.hold("/states")
+        early = asyncio.create_task(self.index.get())
+        await self.wait_entered("/states")
+        first = self.index._build_task
+        fence = self.index.open_source_fence("synthetic_postlock")
+        fenced = asyncio.create_task(self.index.get(min_source_epoch=fence))
+        for _ in range(4):
+            await asyncio.sleep(0)
+        before = self.spies["acquire"].call_count
+        await self.runtime.shutdown()
+        with self.assertRaises(asyncio.CancelledError):
+            await early
+        # Release the synthetic boundary so an erroneous replacement cannot
+        # hang the test. Shutdown must prevent even its first provider call.
+        self.network.gates["/states"].set()
+        with self.assertRaisesRegex(RuntimeError, "dependency_index_shutdown"):
+            await asyncio.wait_for(fenced, 3)
+        self.assertIs(self.index._build_task, first)
+        self.assertEqual(self.spies["acquire"].call_count, before)
+        self.assertIsNone(self.index.snapshot)
+        self.assert_cleaned()
+
     async def test_retirement_between_rest_reads_refuses_next_dispatch(self):
         self.network.after_read = lambda key: (
             self.core.request_reconciliation(connection_changed=True)

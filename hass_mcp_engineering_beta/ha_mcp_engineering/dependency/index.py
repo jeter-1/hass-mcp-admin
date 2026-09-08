@@ -339,6 +339,10 @@ class DependencyIndex:
         mode: str,
         reason: str | None = None,
     ) -> asyncio.Task[DependencyIndexSnapshot]:
+        # A fenced waiter can wake after shutdown cancels the older scan. It
+        # must not start another build while continuing its existing get().
+        if self._closed:
+            raise RuntimeError("dependency_index_shutdown")
         task = self._build_task
         if task is not None and not task.done():
             return task
