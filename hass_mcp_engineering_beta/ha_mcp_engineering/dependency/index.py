@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -11,6 +13,7 @@ import time
 from typing import Any
 
 from ..observability import METRICS
+from .authority import BUILD_TIMEOUT_SECONDS
 from .models import (
     DependencyObligation,
     DependencyIndexSnapshot,
@@ -126,6 +129,12 @@ class DependencyIndex:
         )
         self.ttl_seconds = self.soft_ttl_seconds  # compatibility/diagnostic alias
         self.provider = provider
+        # The generic index also supports isolated, non-runtime providers. The
+        # composition root always binds this scope, even if Core is unavailable.
+        self.build_scope: Callable[
+            [float], AbstractContextManager[Callable[[], None]]
+        ] | None = None
+        self._closed = False
         self.max_edges = max(100, min(max_edges, 50_000))
         self.snapshot: DependencyIndexSnapshot | None = None
         self.generation = 0
@@ -268,6 +277,8 @@ class DependencyIndex:
         governed post-lock refresh.
         """
 
+        if self._closed:
+            raise RuntimeError("dependency_index_shutdown")
         lookup_started = time.perf_counter()
         if min_source_epoch is not None:
             refresh = True
@@ -328,6 +339,10 @@ class DependencyIndex:
         mode: str,
         reason: str | None = None,
     ) -> asyncio.Task[DependencyIndexSnapshot]:
+        # A fenced waiter can wake after shutdown cancels the older scan. It
+        # must not start another build while continuing its existing get().
+        if self._closed:
+            raise RuntimeError("dependency_index_shutdown")
         task = self._build_task
         if task is not None and not task.done():
             return task
@@ -361,230 +376,15 @@ class DependencyIndex:
         self._last_build_failure_category = None
         METRICS.record_dependency_index_build()
         try:
-            # The epoch is captured immediately before the source read, so a
-            # fence opened after this point is provably not covered by it.
-            source_epoch = self._source_epoch
-            self._build_scan_epoch = source_epoch
-            scan = await self.provider.scan()
-            next_generation = self.generation + 1
-            findings = sorted(scan.findings, key=lambda item: item.evidence_id)[: self.max_edges]
-            findings_truncated = len(scan.findings) > self.max_edges
-            profiles = sorted(
-                scan.automation_action_profiles,
-                key=lambda item: (
-                    item.source_entity_id or "",
-                    item.source_id,
-                ),
-            )[:MAX_AUTOMATION_ACTION_PROFILES]
-            profiles_truncated = (
-                len(scan.automation_action_profiles)
-                > MAX_AUTOMATION_ACTION_PROFILES
+            deadline = time.monotonic() + BUILD_TIMEOUT_SECONDS
+            scope = (
+                self.build_scope(deadline)
+                if self.build_scope is not None
+                else nullcontext(None)
             )
-            read_failures = sorted(
-                scan.automation_read_failures,
-                key=lambda item: (
-                    item.source_entity_id or "",
-                    item.source_id,
-                    item.reason_code,
-                ),
-            )[:MAX_AUTOMATION_READ_FAILURES]
-            read_failures_truncated = (
-                len(scan.automation_read_failures)
-                > MAX_AUTOMATION_READ_FAILURES
-            )
-            ordered_dynamic_references = sorted(
-                scan.dynamic_references,
-                key=_dynamic_reference_sort_key,
-            )
-            dynamic_references = ordered_dynamic_references[
-                :MAX_DYNAMIC_REFERENCES
-            ]
-            dynamic_reference_overflow = ordered_dynamic_references[
-                MAX_DYNAMIC_REFERENCES:
-            ]
-            dynamic_references_truncated = bool(
-                dynamic_reference_overflow
-            )
-            dynamic_reference_overflow_count = len(
-                dynamic_reference_overflow
-            )
-            dynamic_reference_overflow_fingerprint = (
-                _dynamic_reference_overflow_fingerprint(
-                    dynamic_reference_overflow
-                )
-            )
-            ordered_obligations = sorted(
-                scan.obligations,
-                key=_obligation_sort_key,
-            )
-            obligation_overflow: list[DependencyObligation] = []
-            if len(ordered_obligations) > MAX_DEPENDENCY_OBLIGATIONS:
-                # Reserve one retained terminal that explicitly prevents an
-                # overflow from looking like complete absence.
-                obligation_overflow = ordered_obligations[
-                    MAX_DEPENDENCY_OBLIGATIONS - 1:
-                ]
-                obligations = ordered_obligations[
-                    :MAX_DEPENDENCY_OBLIGATIONS - 1
-                ]
-            else:
-                obligations = ordered_obligations
-            obligations_truncated = bool(obligation_overflow)
-            obligation_overflow_count = len(obligation_overflow)
-            obligation_overflow_fingerprint = (
-                _obligation_overflow_fingerprint(obligation_overflow)
-            )
-            if obligations_truncated:
-                obligations.append(
-                    make_coverage_failure_obligation(
-                        source_type="automation",
-                        source_id="dependency_index",
-                        source_entity_id=None,
-                        config_path="$",
-                        relation="other_structured_reference",
-                        reason_code="dependency_obligation_index_overflow",
-                        configuration_fingerprint=(
-                            obligation_overflow_fingerprint
-                        ),
-                        limit_exceeded=True,
-                    )
-                )
-            coverage = list(scan.coverage)
-            if (
-                findings_truncated
-                or profiles_truncated
-                or read_failures_truncated
-                or dynamic_references_truncated
-                or obligations_truncated
-            ):
-                METRICS.record_dependency_truncation()
-                coverage = [
-                    replace(
-                        item,
-                        completeness=(
-                            "partial"
-                            if item.source_type == "automation"
-                            else item.completeness
-                        ),
-                        warnings=(
-                            [
-                                *item.warnings,
-                                "Automation dependency evidence exceeded the bounded index payload.",
-                            ]
-                            if item.source_type == "automation"
-                            else list(item.warnings)
-                        ),
-                    )
-                    for item in coverage
-                ]
-            fingerprint = snapshot_fingerprint(
-                findings,
-                coverage,
-                next_generation,
-                profiles,
-                read_failures,
-                dynamic_references=dynamic_references,
-                dynamic_reference_overflow_count=(
-                    dynamic_reference_overflow_count
-                ),
-                dynamic_reference_overflow_fingerprint=(
-                    dynamic_reference_overflow_fingerprint
-                ),
-                label_membership_fingerprints=(
-                    scan.label_membership_fingerprints
-                ),
-                label_membership_complete=(
-                    scan.label_membership_complete
-                ),
-                label_membership_truncated=(
-                    scan.label_membership_truncated
-                ),
-                label_registry_complete=(
-                    scan.label_registry_complete
-                ),
-                label_selector_authority=(
-                    scan.label_selector_authority
-                ),
-                obligations=obligations,
-                obligation_overflow_count=obligation_overflow_count,
-                obligation_overflow_fingerprint=(
-                    obligation_overflow_fingerprint
-                ),
-                obligation_ledger_model=scan.obligation_ledger_model,
-                home_assistant_version=scan.home_assistant_version,
-                home_assistant_version_status=(
-                    scan.home_assistant_version_status
-                ),
-            )
-            build_duration_ms = (time.perf_counter() - build_started) * 1000
-            replacement = DependencyIndexSnapshot(
-                fingerprint=fingerprint,
-                generation=next_generation,
-                built_at_monotonic=time.monotonic(),
-                built_at=_utc_now(),
-                findings=tuple(findings),
-                dynamic_references=tuple(dynamic_references),
-                target_metadata=scan.target_metadata,
-                coverage=tuple(coverage),
-                build_duration_ms=build_duration_ms,
-                build_profile=dict(scan.profile),
-                automation_action_profiles=tuple(profiles),
-                automation_read_failures=tuple(read_failures),
-                dynamic_reference_overflow_count=(
-                    dynamic_reference_overflow_count
-                ),
-                dynamic_reference_overflow_fingerprint=(
-                    dynamic_reference_overflow_fingerprint
-                ),
-                label_memberships=dict(scan.label_memberships),
-                label_membership_fingerprints=dict(
-                    scan.label_membership_fingerprints
-                ),
-                label_membership_complete=dict(
-                    scan.label_membership_complete
-                ),
-                label_membership_truncated=tuple(
-                    scan.label_membership_truncated
-                ),
-                label_registry_complete=bool(
-                    scan.label_registry_complete
-                ),
-                label_selector_authority=dict(
-                    scan.label_selector_authority
-                ),
-                obligations=tuple(obligations),
-                obligation_overflow_count=(
-                    obligation_overflow_count
-                ),
-                obligation_overflow_fingerprint=(
-                    obligation_overflow_fingerprint
-                ),
-                obligation_ledger_model=scan.obligation_ledger_model,
-                home_assistant_version=scan.home_assistant_version,
-                home_assistant_version_status=(
-                    scan.home_assistant_version_status
-                ),
-                source_epoch=source_epoch,
-            )
-            # Publish the complete replacement atomically after every build step.
-            self.snapshot = replacement
-            self.generation = next_generation
-            # An invalidation raised after this build began reading describes
-            # configuration this build never saw, so completing must not clear
-            # it.  Only a read that began at or after the invalidation may.
-            if self._invalidation_epoch <= source_epoch:
-                self.invalidated = False
-                self._invalidation_reason = "within_ttl"
-            self._build_completed_at = _utc_now()
-            self._last_refresh_completed_at = self._build_completed_at
-            self._last_refresh_failure_category = None
-            METRICS.set_dependency_index_state(
-                source_count=len(coverage),
-                edge_count=len(findings),
-                unresolved_count=len(scan.dynamic_references),
-                built_at=replacement.built_at,
-            )
-            return replacement
+            async with asyncio.timeout(BUILD_TIMEOUT_SECONDS):
+                with scope as require_current:
+                    return await self._build_snapshot(build_started, require_current)
         except asyncio.CancelledError:
             self._last_build_failure_category = "cancelled"
             self._last_refresh_failure_category = "cancelled"
@@ -603,7 +403,241 @@ class DependencyIndex:
             self._build_mode = None
             self._build_scan_epoch = None
 
+    async def _build_snapshot(
+        self, build_started: float, require_current: Callable[[], None] | None
+    ) -> DependencyIndexSnapshot:
+        # The epoch is captured immediately before the source read, so a
+        # fence opened after this point is provably not covered by it.
+        source_epoch = self._source_epoch
+        self._build_scan_epoch = source_epoch
+        scan = await self.provider.scan()
+        next_generation = self.generation + 1
+        findings = sorted(scan.findings, key=lambda item: item.evidence_id)[: self.max_edges]
+        findings_truncated = len(scan.findings) > self.max_edges
+        profiles = sorted(
+            scan.automation_action_profiles,
+            key=lambda item: (
+                item.source_entity_id or "",
+                item.source_id,
+            ),
+        )[:MAX_AUTOMATION_ACTION_PROFILES]
+        profiles_truncated = (
+            len(scan.automation_action_profiles)
+            > MAX_AUTOMATION_ACTION_PROFILES
+        )
+        read_failures = sorted(
+            scan.automation_read_failures,
+            key=lambda item: (
+                item.source_entity_id or "",
+                item.source_id,
+                item.reason_code,
+            ),
+        )[:MAX_AUTOMATION_READ_FAILURES]
+        read_failures_truncated = (
+            len(scan.automation_read_failures)
+            > MAX_AUTOMATION_READ_FAILURES
+        )
+        ordered_dynamic_references = sorted(
+            scan.dynamic_references,
+            key=_dynamic_reference_sort_key,
+        )
+        dynamic_references = ordered_dynamic_references[
+            :MAX_DYNAMIC_REFERENCES
+        ]
+        dynamic_reference_overflow = ordered_dynamic_references[
+            MAX_DYNAMIC_REFERENCES:
+        ]
+        dynamic_references_truncated = bool(
+            dynamic_reference_overflow
+        )
+        dynamic_reference_overflow_count = len(
+            dynamic_reference_overflow
+        )
+        dynamic_reference_overflow_fingerprint = (
+            _dynamic_reference_overflow_fingerprint(
+                dynamic_reference_overflow
+            )
+        )
+        ordered_obligations = sorted(
+            scan.obligations,
+            key=_obligation_sort_key,
+        )
+        obligation_overflow: list[DependencyObligation] = []
+        if len(ordered_obligations) > MAX_DEPENDENCY_OBLIGATIONS:
+            # Reserve one retained terminal that explicitly prevents an
+            # overflow from looking like complete absence.
+            obligation_overflow = ordered_obligations[
+                MAX_DEPENDENCY_OBLIGATIONS - 1:
+            ]
+            obligations = ordered_obligations[
+                :MAX_DEPENDENCY_OBLIGATIONS - 1
+            ]
+        else:
+            obligations = ordered_obligations
+        obligations_truncated = bool(obligation_overflow)
+        obligation_overflow_count = len(obligation_overflow)
+        obligation_overflow_fingerprint = (
+            _obligation_overflow_fingerprint(obligation_overflow)
+        )
+        if obligations_truncated:
+            obligations.append(
+                make_coverage_failure_obligation(
+                    source_type="automation",
+                    source_id="dependency_index",
+                    source_entity_id=None,
+                    config_path="$",
+                    relation="other_structured_reference",
+                    reason_code="dependency_obligation_index_overflow",
+                    configuration_fingerprint=(
+                        obligation_overflow_fingerprint
+                    ),
+                    limit_exceeded=True,
+                )
+            )
+        coverage = list(scan.coverage)
+        if (
+            findings_truncated
+            or profiles_truncated
+            or read_failures_truncated
+            or dynamic_references_truncated
+            or obligations_truncated
+        ):
+            METRICS.record_dependency_truncation()
+            coverage = [
+                replace(
+                    item,
+                    completeness=(
+                        "partial"
+                        if item.source_type == "automation"
+                        else item.completeness
+                    ),
+                    warnings=(
+                        [
+                            *item.warnings,
+                            "Automation dependency evidence exceeded the bounded index payload.",
+                        ]
+                        if item.source_type == "automation"
+                        else list(item.warnings)
+                    ),
+                )
+                for item in coverage
+            ]
+        fingerprint = snapshot_fingerprint(
+            findings,
+            coverage,
+            next_generation,
+            profiles,
+            read_failures,
+            dynamic_references=dynamic_references,
+            dynamic_reference_overflow_count=(
+                dynamic_reference_overflow_count
+            ),
+            dynamic_reference_overflow_fingerprint=(
+                dynamic_reference_overflow_fingerprint
+            ),
+            label_membership_fingerprints=(
+                scan.label_membership_fingerprints
+            ),
+            label_membership_complete=(
+                scan.label_membership_complete
+            ),
+            label_membership_truncated=(
+                scan.label_membership_truncated
+            ),
+            label_registry_complete=(
+                scan.label_registry_complete
+            ),
+            label_selector_authority=(
+                scan.label_selector_authority
+            ),
+            obligations=obligations,
+            obligation_overflow_count=obligation_overflow_count,
+            obligation_overflow_fingerprint=(
+                obligation_overflow_fingerprint
+            ),
+            obligation_ledger_model=scan.obligation_ledger_model,
+            home_assistant_version=scan.home_assistant_version,
+            home_assistant_version_status=(
+                scan.home_assistant_version_status
+            ),
+        )
+        build_duration_ms = (time.perf_counter() - build_started) * 1000
+        replacement = DependencyIndexSnapshot(
+            fingerprint=fingerprint,
+            generation=next_generation,
+            built_at_monotonic=time.monotonic(),
+            built_at=_utc_now(),
+            findings=tuple(findings),
+            dynamic_references=tuple(dynamic_references),
+            target_metadata=scan.target_metadata,
+            coverage=tuple(coverage),
+            build_duration_ms=build_duration_ms,
+            build_profile=dict(scan.profile),
+            automation_action_profiles=tuple(profiles),
+            automation_read_failures=tuple(read_failures),
+            dynamic_reference_overflow_count=(
+                dynamic_reference_overflow_count
+            ),
+            dynamic_reference_overflow_fingerprint=(
+                dynamic_reference_overflow_fingerprint
+            ),
+            label_memberships=dict(scan.label_memberships),
+            label_membership_fingerprints=dict(
+                scan.label_membership_fingerprints
+            ),
+            label_membership_complete=dict(
+                scan.label_membership_complete
+            ),
+            label_membership_truncated=tuple(
+                scan.label_membership_truncated
+            ),
+            label_registry_complete=bool(
+                scan.label_registry_complete
+            ),
+            label_selector_authority=dict(
+                scan.label_selector_authority
+            ),
+            obligations=tuple(obligations),
+            obligation_overflow_count=(
+                obligation_overflow_count
+            ),
+            obligation_overflow_fingerprint=(
+                obligation_overflow_fingerprint
+            ),
+            obligation_ledger_model=scan.obligation_ledger_model,
+            home_assistant_version=scan.home_assistant_version,
+            home_assistant_version_status=(
+                scan.home_assistant_version_status
+            ),
+            source_epoch=source_epoch,
+        )
+        # Revalidate after the last read and all parsing, before publishing.
+        # The synchronous publication keeps the existing invalidation/fence
+        # checks below: a pre-invalidation scan cannot become current.
+        if require_current is not None:
+            require_current()
+        # Publish the complete replacement atomically after every build step.
+        self.snapshot = replacement
+        self.generation = next_generation
+        # An invalidation raised after this build began reading describes
+        # configuration this build never saw, so completing must not clear
+        # it.  Only a read that began at or after the invalidation may.
+        if self._invalidation_epoch <= source_epoch:
+            self.invalidated = False
+            self._invalidation_reason = "within_ttl"
+        self._build_completed_at = _utc_now()
+        self._last_refresh_completed_at = self._build_completed_at
+        self._last_refresh_failure_category = None
+        METRICS.set_dependency_index_state(
+            source_count=len(coverage),
+            edge_count=len(findings),
+            unresolved_count=len(scan.dynamic_references),
+            built_at=replacement.built_at,
+        )
+        return replacement
+
     async def shutdown(self) -> None:
+        self._closed = True
         task = self._build_task
         if task is not None and not task.done():
             task.cancel()

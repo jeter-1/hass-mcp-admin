@@ -1,7 +1,20 @@
 # HA MCP Engineering Server Beta
 
-This directory contains the Engineering v2 add-on. The currently advertised
-version is `2.2.0-beta.36`; staged version `2.2.0-beta.37` adds one exact,
+This directory contains the Engineering v2 add-on. The advertised source
+candidate is `2.2.0-rc.3`, correcting shared dependency refresh authority
+after requesting callers return or cancel. Current authority is
+[RC3 acceptance](../docs/V2_2_0_RC3_ACCEPTANCE.md) and
+[RC3 release notes](../docs/V2_2_0_RC3_RELEASE_NOTES.md).
+The healthy exact reviewed ha-mcp 8.4.3 pairing exposes 51 static tools plus
+25 delegated reads, 76 total; `ha_get_operation_status` remains held.
+Publication, installed-image binding, a fresh public catalog and live acceptance
+require separate evidence.
+
+## Historical development context
+
+The beta descriptions and release-specific catalog counts below preserve
+development history; they do not supersede the current RC3 contract.
+Beta 37, staged from Beta 36, added one exact,
 governed `input_boolean` on/off action with external approval, durable
 single-dispatch execution, authoritative readback, no fallback, and a
 separately governed reverse plan. Beta 36 corrected bounded Supervisor

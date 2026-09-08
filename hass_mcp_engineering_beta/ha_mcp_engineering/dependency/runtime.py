@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
+import time
 from typing import Any
 
-from ..request_context import begin_request, end_request
+from .authority import BUILD_TIMEOUT_SECONDS, dependency_build_authority
 from .index import DependencyIndex
 from .provider import DirectHaDependencyProvider
 from .service import EntityDependencyAnalysisService
@@ -46,6 +49,8 @@ class DependencyAnalysisRuntime:
         """Bind background reads to the same Core generation as public routes."""
 
         self.core_runtime = core_runtime
+        if self.service is not None:
+            self.service.index.build_scope = self._build_scope
         if core_runtime is not None:
             core_runtime.register_reconciliation_listener(
                 self.invalidate_core_authority
@@ -57,51 +62,21 @@ class DependencyAnalysisRuntime:
         if self.service:
             self.service.index.invalidate("core_authority_changed")
 
+    def _build_scope(
+        self, deadline: float
+    ) -> AbstractContextManager[Callable[[], None]]:
+        return dependency_build_authority(self.core_runtime, deadline)
+
     async def _authorized_prewarm(self, provider) -> bool:
-        """Run one prewarm attempt under a bounded Core route lease."""
-
-        service = self.require()
-        core_runtime = self.core_runtime
-        authority = (
-            core_runtime.acquire(("core.dependency_helper_planning",))
-            if core_runtime is not None
-            else None
-        )
-        if authority is None:
-            async def unavailable() -> None:
-                raise RuntimeError("core_authority_unavailable")
-
-            return await service.index.prewarm(unavailable)
-
-        commits = None
-        telemetry, token = begin_request()
-
-        def authorize_core_dispatch() -> bool:
-            nonlocal commits
-            if commits is not None:
-                return core_runtime.revalidate(authority, commits)
-            commits = core_runtime.consume(authority)
-            return commits is not None
-
-        telemetry.core_dispatch_authorizer = authorize_core_dispatch
+        """Check connectivity separately; the shared build owns its own scope."""
 
         async def connectivity_check() -> Any:
-            # Enforce the lease even for an injected test client; the
-            # production REST client performs the same check again directly
-            # before opening its transport.
-            if not telemetry.authorize_core_dispatch():
-                raise RuntimeError("core_authority_unavailable")
-            return await provider.rest_client.request("GET", "/config")
+            deadline = time.monotonic() + BUILD_TIMEOUT_SECONDS
+            async with asyncio.timeout(BUILD_TIMEOUT_SECONDS):
+                with self._build_scope(deadline):
+                    return await provider.rest_client.request("GET", "/config")
 
-        try:
-            return await service.index.prewarm(connectivity_check)
-        finally:
-            telemetry.core_dispatch_authorizer = lambda: False
-            if commits is not None:
-                core_runtime.finish(commits)
-            else:
-                core_runtime.release(authority)
-            end_request(token)
+        return await self.require().index.prewarm(connectivity_check)
 
     def start_prewarm(
         self,
