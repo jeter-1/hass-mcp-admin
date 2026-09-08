@@ -1,4 +1,4 @@
-"""RC2 materialization, document, and compatibility invariants."""
+"""Current materialization and preserved RC2 document/compatibility invariants."""
 
 from __future__ import annotations
 
@@ -16,6 +16,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 VERSION = "2.2.0-rc.2"
+CURRENT_VERSION = "2.2.0-rc.3"
 ACCEPTANCE = ROOT / "docs" / "V2_2_0_RC2_ACCEPTANCE.md"
 RELEASE_NOTES = ROOT / "docs" / "V2_2_0_RC2_RELEASE_NOTES.md"
 
@@ -43,17 +44,17 @@ from ha_mcp_engineering.ha_core_readmission import (  # noqa: E402
 
 
 class Rc2ReleaseTests(unittest.TestCase):
-    def test_rc2_is_materialized_and_documents_resolve_exactly(self):
+    def test_current_release_is_materialized_and_documents_resolve_exactly(self):
         config = yaml.safe_load((BETA / "config.yaml").read_text(encoding="utf-8"))
         version_source = (
             BETA / "ha_mcp_engineering" / "version.py"
         ).read_text(encoding="utf-8")
-        self.assertEqual(config["version"], VERSION)
+        self.assertEqual(config["version"], CURRENT_VERSION)
         self.assertRegex(
             version_source,
-            rf'(?m)^SERVER_VERSION = "{re.escape(VERSION)}"$',
+            rf'(?m)^SERVER_VERSION = "{re.escape(CURRENT_VERSION)}"$',
         )
-        self.assertEqual(METADATA.BETA_VERSION, VERSION)
+        self.assertEqual(METADATA.BETA_VERSION, CURRENT_VERSION)
         self.assertFalse((ROOT / ".release" / "next-version").exists())
 
         result = subprocess.run(
@@ -73,17 +74,17 @@ class Rc2ReleaseTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         context = json.loads(result.stdout)
-        self.assertEqual(context["versions"]["engineering"], VERSION)
+        self.assertEqual(context["versions"]["engineering"], CURRENT_VERSION)
         self.assertEqual(context["versions"]["stable"], "1.1.2")
         self.assertEqual(context["versions"]["staged"], "unknown")
         self.assertEqual(context["documents"]["resolution_status"], "exact")
         self.assertEqual(
             context["documents"]["active_acceptance_document"],
-            "docs/V2_2_0_RC2_ACCEPTANCE.md",
+            "docs/V2_2_0_RC3_ACCEPTANCE.md",
         )
         self.assertEqual(
             context["documents"]["active_release_notes"],
-            "docs/V2_2_0_RC2_RELEASE_NOTES.md",
+            "docs/V2_2_0_RC3_RELEASE_NOTES.md",
         )
 
     def test_documents_bind_release_and_preserved_catalog(self):

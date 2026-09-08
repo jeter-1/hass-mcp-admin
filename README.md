@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-beta.15`, based on the exact
+> add-on is developed in place at `2.2.0-rc.3`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,7 +42,14 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering development version is `2.2.0-beta.15`. It corrects
+> The current Engineering source candidate is `2.2.0-rc.3`. It corrects
+> shared dependency refresh authority after callers return or cancel.
+> Current release and acceptance authority are
+> [RC3 release notes](docs/V2_2_0_RC3_RELEASE_NOTES.md) and
+> [RC3 acceptance](docs/V2_2_0_RC3_ACCEPTANCE.md). Publication, deployed
+> identity and live acceptance require separate evidence.
+> The following beta references preserve development history.
+> Beta 15 corrected
 > exact `ha-mcp` 8.0.0 lifecycle add-on detail response handling after Beta 14
 > corrected catalog, Dashboard, backup, and reload admission. Its release and
 > acceptance authority are recorded in
