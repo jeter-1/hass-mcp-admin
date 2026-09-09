@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-rc.4`, based on the exact
+> add-on is developed in place at `2.2.0-rc.5`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,12 +42,12 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering source candidate is `2.2.0-rc.4`. It corrects
-> device display validation and recurring failed Core reconciliation while
-> preserving shared dependency refresh authority.
+> The current Engineering source candidate is `2.2.0-rc.5`. It corrects
+> integration identifier compatibility while preserving registry identity
+> bounds, prior Core corrections and shared dependency refresh authority.
 > Current release and acceptance authority are
-> [RC4 release notes](docs/V2_2_0_RC4_RELEASE_NOTES.md) and
-> [RC4 acceptance](docs/V2_2_0_RC4_ACCEPTANCE.md). Publication, deployed
+> [RC5 release notes](docs/V2_2_0_RC5_RELEASE_NOTES.md) and
+> [RC5 acceptance](docs/V2_2_0_RC5_ACCEPTANCE.md). Publication, deployed
 > identity and live acceptance require separate evidence.
 > The following beta references preserve development history.
 > Beta 15 corrected

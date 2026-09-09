@@ -142,6 +142,24 @@ def _string_sequence(value: Any, *, pairs: bool = False) -> bool:
     return all(_identifier(item) is not None for item in value)
 
 
+def _integration_identifiers(value: Any) -> bool:
+    # Core integration identifiers are text pairs, not registry IDs/references.
+    # Preserve their text; the complete registry byte bound is checked first.
+    if (
+        isinstance(value, (str, bytes))
+        or not isinstance(value, Sequence)
+        or len(value) > 256
+    ):
+        return False
+    return all(
+        isinstance(item, Sequence)
+        and not isinstance(item, (str, bytes))
+        and len(item) == 2
+        and all(isinstance(part, str) for part in item)
+        for item in value
+    )
+
+
 def _base_fields_valid(item: Mapping[str, Any]) -> bool:
     return bool(
         _identifier(item.get("config_entry_id"))
@@ -152,7 +170,7 @@ def _base_fields_valid(item: Mapping[str, Any]) -> bool:
         and _optional_display_name(item.get("name_by_user"))
         and _timestamp(item.get("created_at"))
         and _timestamp(item.get("modified_at"))
-        and _string_sequence(item.get("identifiers"), pairs=True)
+        and _integration_identifiers(item.get("identifiers"))
         and _string_sequence(item.get("labels"))
     )
 
