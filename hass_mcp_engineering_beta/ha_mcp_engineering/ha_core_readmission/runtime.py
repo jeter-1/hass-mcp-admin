@@ -146,6 +146,7 @@ class CoreRuntime:
         monitor_to_cancel: asyncio.Task[None] | None = None
         if connection_changed:
             with self._lock:
+                had_observation = self._observation is not None or self._initialized
                 self._connection_epoch += 1
                 monitor_to_cancel = self._connection_monitor_task
                 self._connection_monitor_task = None
@@ -165,7 +166,10 @@ class CoreRuntime:
                     "core_connection_changed",
                     retired_generation,
                 )
-                listeners = tuple(self._listeners)
+                # Once authority is absent, repeated failed probes must not
+                # invalidate the same dependency evidence again. Real published
+                # transitions still notify every listener on retirement.
+                listeners = tuple(self._listeners) if had_observation else ()
             if monitor_to_cancel is not None and not monitor_to_cancel.done():
                 try:
                     current_task = asyncio.current_task()
@@ -317,20 +321,34 @@ class CoreRuntime:
         self,
         *,
         interval_seconds: float = CORE_RECONCILIATION_INTERVAL_SECONDS,
+        sleep: Callable[[float], Any] = asyncio.sleep,
     ) -> None:
         if interval_seconds <= 0:
             raise ValueError("Core reconciliation interval must be positive")
+        retry = False
         try:
             while True:
-                try:
-                    await asyncio.wait_for(
-                        self._reprobe_event.wait(), timeout=interval_seconds
-                    )
-                    self._reprobe_event.clear()
-                    trigger = "identity_or_connection_change"
-                except TimeoutError:
-                    trigger = "periodic"
-                await self.reconcile_once(trigger)
+                if retry:
+                    # Failure/monitor retirement can itself set the wakeup.
+                    # Coalesce those hints during one existing reconciliation
+                    # interval instead of creating an immediate retry chain.
+                    # External changes still retire authority synchronously;
+                    # after recovery they resume waking the supervisor at once.
+                    await sleep(interval_seconds)
+                    trigger = "failure_retry"
+                else:
+                    try:
+                        await asyncio.wait_for(
+                            self._reprobe_event.wait(), timeout=interval_seconds
+                        )
+                        trigger = "identity_or_connection_change"
+                    except TimeoutError:
+                        trigger = "periodic"
+                self._reprobe_event.clear()
+                snapshot = await self.reconcile_once(trigger)
+                retry = not (
+                    snapshot["initialized"] and snapshot["identity_agreement"]
+                )
         finally:
             with self._lock:
                 monitor_task = self._connection_monitor_task

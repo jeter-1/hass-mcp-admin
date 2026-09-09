@@ -109,6 +109,13 @@ def _optional_identifier(value: Any) -> bool:
     return value is None or _identifier(value) is not None
 
 
+def _optional_display_name(value: Any) -> bool:
+    # Core permits string-or-null display text, including empty/long strings.
+    # These are not target identities. The complete registry's byte limit is
+    # enforced before field validation; retain the original text unchanged.
+    return value is None or isinstance(value, str)
+
+
 def _timestamp(value: Any) -> bool:
     return (
         type(value) in {int, float}
@@ -141,8 +148,8 @@ def _base_fields_valid(item: Mapping[str, Any]) -> bool:
         and _optional_identifier(item.get("config_subentry_id"))
         and _optional_identifier(item.get("area_id"))
         and _optional_identifier(item.get("disabled_by"))
-        and _optional_identifier(item.get("name"))
-        and _optional_identifier(item.get("name_by_user"))
+        and _optional_display_name(item.get("name"))
+        and _optional_display_name(item.get("name_by_user"))
         and _timestamp(item.get("created_at"))
         and _timestamp(item.get("modified_at"))
         and _string_sequence(item.get("identifiers"), pairs=True)
