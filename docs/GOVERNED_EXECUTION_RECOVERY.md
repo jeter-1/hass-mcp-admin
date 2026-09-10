@@ -52,6 +52,11 @@ metrics still count bounded output. It is never appended outside the JSON.
 The smallest receipts may omit repeated outcome labels and detail-navigation
 hints while retaining the exact identities and authoritative task outcome.
 
+Both flat get_execution_task results and nested apply receipts preserve task
+state, available attempt accounting, dispatch evidence and bounded verification
+outcomes. Attempt counts do not independently prove dispatch. Missing and null
+facts remain unknown; they do not become zero, false or verified.
+
 Use get_execution_task for a retained task and get_change_plan with page_size=1
 for a plan. Plan detail_sections lists the existing summary, obligation_evidence
 and downstream_profiles selections. Follow their returned cursors/fragments

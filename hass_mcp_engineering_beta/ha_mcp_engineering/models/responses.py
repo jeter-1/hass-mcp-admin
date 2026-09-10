@@ -153,7 +153,12 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
     body_key = "data" if value.get("success") else "details"
     body = mapping(value.get(body_key))
     plan = mapping(body.get("plan"))
-    task = mapping(body.get("execution_task"))
+    # The task reader returns a flat task; apply returns a nested task. Use
+    # either authoritative shape without deriving dispatch from attempt counts.
+    task = (
+        body if value.get("operation") == "get_execution_task"
+        else mapping(body.get("execution_task"))
+    )
     operational = mapping(plan.get("operational"))
     verification = mapping(operational.get("verification"))
     receipt = {key: value[key] for key in (
@@ -163,7 +168,7 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
         "plan_id", "plan_hash", "task_id", "task_state", "status", "outcome",
         "terminal_outcome", "provider_dispatch_occurred", "redispatch_performed",
         "verified", "plan_created", "reason", "provider", "fallback",
-        "fallback_occurred"
+        "fallback_occurred", "state", "provider_attempt_count", "dispatched_at"
     ) if key in body and not isinstance(body[key], (dict, list))}
     for key in ("plan_id", "plan_hash"):
         if key not in facts and key in plan:
@@ -171,7 +176,7 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
     for key in ("task_id", "terminal_outcome", "provider_attempt_count"):
         if key not in facts and key in task:
             facts[key] = task[key]
-    if "task_state" not in facts and "state" in task:
+    if "task_state" not in facts and "state" not in facts and "state" in task:
         facts["task_state"] = task["state"]
     if "status" in verification:
         facts["verification_status"] = verification["status"]
@@ -212,7 +217,8 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
             read.pop("detail_sections", None)
         # Keep the authoritative task outcome without repeating its identical
         # terminal label. The notice already explains the size limitation.
-        if facts.get("terminal_outcome") == facts.get("task_state"):
+        state = facts.get("task_state", facts.get("state"))
+        if state is not None and facts.get("terminal_outcome") == state:
             facts.pop("terminal_outcome", None)
         completeness.pop("reason", None)
         output = _compact_json(receipt)

@@ -5,13 +5,18 @@ from copy import deepcopy
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.models.responses import MAX_CHARS, dump_json
 from ha_mcp_engineering.tool_framework import run_structured
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from tests import test_beta37_exact_helper_state as helper_fixtures
+from tests import test_f3_runtime_integration as operational_fixtures
+from ha_mcp_engineering.tools import governance
+from ha_mcp_engineering.request_context import begin_request, end_request
 
 
 class BoundedResponseTests(unittest.IsolatedAsyncioTestCase):
@@ -104,6 +109,38 @@ class BoundedResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(receipt["error_code"], "change_plan_not_found")
         self.assertNotIn("response_completeness", receipt)
 
+    def test_task_accounting_does_not_infer_missing_dispatch_or_verification(self):
+        from ha_mcp_engineering.models.responses import SuccessResponse
+
+        for observed in ({}, {"provider_attempt_count": 0, "dispatched_at": None},
+                         {"provider_attempt_count": 1, "dispatched_at": None,
+                          "verification_summary": {"status": None}}):
+            with self.subTest(observed=observed):
+                value = {"task_id": "a" * 32, "plan_id": "b" * 32,
+                         "plan_hash": "c" * 64, "state": "observing",
+                         "payload": "雪" * 6000, **observed}
+                original = deepcopy(value)
+                encoded = SuccessResponse(
+                    "get_execution_task", "Read task", value, request_id="r" * 128
+                ).to_json(1024)
+                data = json.loads(encoded)["data"]
+                self.assertLessEqual(len(encoded.encode("utf-8")), 1024)
+                self.assertEqual(data["state"], "observing")
+                for key in ("provider_attempt_count", "dispatched_at"):
+                    self.assertEqual(key in data, key in observed)
+                    if key in observed:
+                        self.assertEqual(data[key], observed[key])
+                self.assertNotIn("provider_dispatch_occurred", data)
+                self.assertNotIn("verified", data)
+                status = data.get("verification_summary", {})
+                if "verification_summary" in observed:
+                    self.assertTrue("status" in status or "task_verification_status" in data)
+                    self.assertIsNone(status.get("status", data.get("task_verification_status")))
+                else:
+                    self.assertNotIn("status", status)
+                    self.assertNotIn("task_verification_status", data)
+                self.assertEqual(value, original)
+
 
 class MinimumApplyReceiptTests(unittest.IsolatedAsyncioTestCase):
     asyncSetUp = helper_fixtures.ExactHelperStateRuntimeTests.asyncSetUp
@@ -139,3 +176,116 @@ class MinimumApplyReceiptTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual({r["tool"] for r in completeness["retrieval"]},
                                  {"get_change_plan", "get_execution_task"})
         self.assertEqual(self.helper.dispatch_count, 1)
+
+
+class TaskReceiptTests(unittest.IsolatedAsyncioTestCase):
+    """RC5-REVIEW-1: real task reader over disposable governed executions.
+
+    The observing regression is ported from the preserved independent review's
+    test_task_receipt.py, reviewed against b14f8cf07a8dc569719b25c3edd60cfe19f1c68b.
+    """
+
+    asyncSetUp = operational_fixtures.F3OperationalActivationTests.asyncSetUp
+    asyncTearDown = operational_fixtures.F3OperationalActivationTests.asyncTearDown
+    _grant = operational_fixtures.F3OperationalActivationTests._grant
+
+    async def create_reload(self):
+        created = await self.service.create_reload_plan(reload_target="automation")
+        return await self._grant(created)
+
+    async def assert_task_receipt(self, task_id, state, limit):
+        before = self.service.get_execution_task(task_id)
+        self.assertEqual(before["state"], state)
+        dispatches = self.lifecycle.dispatch_count
+        _, token = begin_request("r" * 128)
+        try:
+            with (
+                patch.object(governance.GOVERNANCE, "service", self.service),
+                patch.object(governance, "SETTINGS", SimpleNamespace(response_size_limit=limit)),
+            ):
+                for _ in range(2):
+                    encoded = await governance.get_execution_task(task_id)
+                    receipt = json.loads(encoded)
+                    data = receipt["data"]
+                    self.assertTrue(receipt["success"])
+                    self.assertEqual(receipt["request_id"], "r" * 128)
+                    self.assertLessEqual(len(encoded), limit)
+                    self.assertLessEqual(len(encoded.encode("utf-8")), limit)
+                    for key in ("task_id", "plan_id", "plan_hash", "state",
+                                "provider_attempt_count", "dispatched_at"):
+                        self.assertIn(key, data)
+                        self.assertEqual(data[key], before[key], key)
+                    if "terminal_outcome" in data:
+                        self.assertEqual(data["terminal_outcome"], before["terminal_outcome"])
+                    if before["terminal_outcome"] is None:
+                        self.assertIn("terminal_outcome", data)
+                    status = before.get("verification_summary", {})
+                    if "status" in status:
+                        actual = data.get("verification_summary", {}).get(
+                            "status", data.get("task_verification_status", "missing")
+                        )
+                        self.assertEqual(actual, status["status"])
+                    else:
+                        self.assertNotIn("task_verification_status", data)
+                    if "provider_dispatch_occurred" not in before:
+                        self.assertNotIn("provider_dispatch_occurred", data)
+                    if limit == 1024:
+                        self.assertTrue(receipt["response_completeness"]["truncated"])
+                        self.assertFalse(receipt["response_completeness"]["approval_disclosures_complete"])
+        finally:
+            end_request(token)
+        self.assertEqual(self.lifecycle.dispatch_count, dispatches)
+        self.assertEqual(self.service.get_execution_task(task_id), before)
+
+    async def observing_task(self):
+        self.lifecycle.mode = "ambiguous"
+        plan = await self.create_reload()
+        applied = await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual(applied["task_state"], "observing")
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+        return applied["task_id"]
+
+    async def test_minimum_budget_preserves_observing_task_facts(self):
+        await self.assert_task_receipt(await self.observing_task(), "observing", 1024)
+
+    async def test_default_budget_preserves_observing_task_facts(self):
+        await self.assert_task_receipt(await self.observing_task(), "observing", 60000)
+
+    async def test_pre_dispatch_task_retains_zero_attempts_and_null_dispatch(self):
+        plan = await self.create_reload()
+        task, _, _ = await self.runtime._initialize(
+            self.service._load(plan["plan_id"]), plan["plan_hash"]
+        )
+        before = self.service.get_execution_task(task.task_id)
+        self.assertEqual(before["provider_attempt_count"], 0)
+        self.assertIsNone(before["dispatched_at"])
+        self.assertIsNone(before["terminal_outcome"])
+        for limit in (1024, 60000):
+            await self.assert_task_receipt(task.task_id, "created", limit)
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+
+    async def test_successful_task_retains_verified_outcome(self):
+        plan = await self.create_reload()
+        applied = await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        for limit in (1024, 60000):
+            await self.assert_task_receipt(applied["task_id"], "succeeded_verified", limit)
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+
+    async def test_failed_task_remains_distinct_without_dispatch(self):
+        plan = await self.create_reload()
+        self.lifecycle.mode = "pre_dispatch_failure"
+        applied = await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        before = self.service.get_execution_task(applied["task_id"])
+        self.assertEqual(before["provider_attempt_count"], 0)
+        self.assertIsNone(before["dispatched_at"])
+        for limit in (1024, 60000):
+            await self.assert_task_receipt(applied["task_id"], "failed_pre_dispatch", limit)
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+
+    async def test_manual_review_task_remains_unverified_without_redispatch(self):
+        task_id = await self.observing_task()
+        self.clock.advance(seconds=901)
+        await self.runtime.recover_once("receipt_regression_expired_evidence")
+        for limit in (1024, 60000):
+            await self.assert_task_receipt(task_id, "manual_review_required", limit)
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
