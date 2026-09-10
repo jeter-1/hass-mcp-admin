@@ -102,4 +102,3 @@ class BoundedResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(receipt["success"])
         self.assertEqual(receipt["error_code"], "change_plan_not_found")
         self.assertNotIn("response_completeness", receipt)
-
