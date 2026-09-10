@@ -58,7 +58,7 @@ async def run_structured(
         result = action()
         if inspect.isawaitable(result):
             result = await result
-        return SuccessResponse(
+        response = SuccessResponse(
             operation=operation,
             summary=summary,
             data=result,
@@ -66,7 +66,7 @@ async def run_structured(
             metadata=metadata or {},
             timing=timing_since(started),
             request_id=current_request_id(),
-        ).to_json(response_limit)
+        )
     except Exception as exc:
         code, message, retryable, details = map_exception(exc)
         telemetry = current_telemetry()
@@ -112,7 +112,7 @@ async def run_structured(
             if source_type is not None:
                 coverage["source_type"] = source_type
             failure_metadata.setdefault("source_coverage", [coverage])
-        return FailureResponse(
+        response = FailureResponse(
             operation=operation,
             error=type(exc).__name__,
             error_code=code.value,
@@ -123,4 +123,7 @@ async def run_structured(
             metadata=failure_metadata,
             timing=timing_since(started),
             request_id=current_request_id(),
-        ).to_json(response_limit)
+        )
+    # Formatting follows the action outcome. A serialization failure must not
+    # be misclassified as failure of an already completed persisted action.
+    return response.to_json(response_limit)
