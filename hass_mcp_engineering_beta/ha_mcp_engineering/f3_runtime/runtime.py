@@ -2058,6 +2058,15 @@ class F3RuntimeIntegration:
                 None,
             )
             if active is not None:
+                if not any(
+                    item is not None and item.dispatch_intent is not None
+                    for item in records
+                ):
+                    # Preflight progress is not evidence of dispatch. In
+                    # particular, do not replace the approved plan status
+                    # while its owner awaits Core authority before consuming
+                    # approval. Terminal outcomes are still projected below.
+                    return
                 if task.state == ExecutionTaskState.DISPATCHING:
                     self.service._record_task_event(
                         task, "observation_pending", new_state=ExecutionTaskState.OBSERVING,
@@ -3692,6 +3701,7 @@ class F3RuntimeIntegration:
             transitions += 1
             selected.append(declaration["child_id"])
             try:
+                joined_active_execution = False
                 plan = self.service._load_for_projection(
                     declaration["plan_id"]
                 )
@@ -3759,7 +3769,15 @@ class F3RuntimeIntegration:
                         )
                     if result.duplicate_execution:
                         self._sweep_collisions += 1
-                self._project(plan, task)
+                        # Reusing an expired claim for readback is also marked
+                        # duplicate. Only a live ownership collision defers
+                        # projection; recovered progress must still publish.
+                        joined_active_execution = (
+                            not result.terminal
+                            and "active_execution_exists" in result.diagnostic_codes
+                        )
+                if not joined_active_execution:
+                    self._project(plan, task)
                 processed += 1
                 latest = self.children.get(declaration["child_id"])
                 pending = latest is not None and not latest.terminal
