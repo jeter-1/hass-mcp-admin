@@ -821,6 +821,54 @@ class PlanObservabilityTests(unittest.IsolatedAsyncioTestCase):
             1,
         )
 
+    async def test_oversized_creation_receipt_retains_complete_profile_retrieval(self):
+        from ha_mcp_engineering.tool_framework import run_structured
+
+        profiles = [_production_profile(0, entity_id_chars=150)]
+        self.reader.profiles = deepcopy(profiles)
+        self.reader.obligations = []
+        calls = []
+        completed = []
+
+        async def create_once():
+            calls.append("create")
+            result = await self.service.create_helper_state_plan(
+                entity_id=self.helper.entity_id,
+                desired_state="on",
+                expiration_minutes=120,
+            )
+            completed.append(result)
+            return result
+
+        rendered = await run_structured(
+            "create_helper_state_plan", "Created proposal", create_once
+        )
+        receipt = json.loads(rendered)
+        self.assertEqual(calls, ["create"])
+        self.assertLessEqual(len(rendered), 60_000)
+        self.assertTrue(receipt["success"])
+        self.assertFalse(receipt["data"]["provider_dispatch_occurred"])
+        self.assertTrue(receipt["response_completeness"]["truncated"])
+        self.assertFalse(receipt["response_completeness"]["approval_disclosures_complete"])
+        plan = receipt["data"]["plan"]
+        self.assertEqual(
+            plan["plan_hash"], self.service.plan_hash(self.service._load(plan["plan_id"]))
+        )
+        reads = receipt["response_completeness"]["retrieval"]
+        self.assertEqual(reads[0]["tool"], "get_change_plan")
+        self.assertEqual(reads[0]["arguments"]["plan_id"], plan["plan_id"])
+        self.assertIn("downstream_profiles", reads[0]["detail_sections"])
+        from ha_mcp_engineering.models.responses import SuccessResponse
+        minimum = SuccessResponse(
+            "create_helper_state_plan", "Created proposal", completed[0]
+        ).to_json(1024)
+        self.assertLessEqual(len(minimum), 1024)
+        self.assertEqual(json.loads(minimum)["data"]["plan_hash"], plan["plan_hash"])
+        self.assertTrue(json.loads(minimum)["success"])
+        self.assertEqual(calls, ["create"])
+        self._disable_authority_paths()
+        self._assert_complete_profile_traversal(plan["plan_id"], profiles)
+
     async def test_fragment_response_exact_budget_and_one_character_less(self):
         profiles = [_production_profile(0)]
         plan_id = await self._create_plan_with_profiles(profiles)

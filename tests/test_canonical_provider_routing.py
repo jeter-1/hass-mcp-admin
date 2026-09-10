@@ -383,6 +383,12 @@ class CanonicalRoutingTests(unittest.IsolatedAsyncioTestCase):
             response_limit=300,
         )
         self.assertIn("... [truncated at 300 chars]", rendered)
+        receipt = json.loads(rendered)
+        self.assertLessEqual(len(rendered), 300)
+        self.assertTrue(receipt["success"])
+        self.assertEqual(receipt["operation"], "search_entities")
+        self.assertEqual(receipt["data"]["provider"], "direct_ha_api")
+        self.assertTrue(receipt["response_completeness"]["truncated"])
         self.assertEqual(
             METRICS.snapshot()["provider_routing"]["evidence_truncation_count"],
             1,

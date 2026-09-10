@@ -1,11 +1,12 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. The advertised source
-candidate is `2.2.0-rc.5`, correcting integration identifier compatibility while
-preserving registry identity bounds, prior Core corrections and shared dependency
-refresh authority.
-Current authority is [RC5 acceptance](../docs/V2_2_0_RC5_ACCEPTANCE.md) and
-[RC5 release notes](../docs/V2_2_0_RC5_RELEASE_NOTES.md).
+candidate is `2.2.0-rc.6`, correcting recovery/approval overlap, preserving
+reconciliation facts in bounded JSON receipts, and coalescing identical integrity
+findings. Live acceptance and any governed recovery require separate authorization
+and fresh verification.
+Current authority is [RC6 acceptance](../docs/V2_2_0_RC6_ACCEPTANCE.md) and
+[RC6 release notes](../docs/V2_2_0_RC6_RELEASE_NOTES.md).
 The healthy exact reviewed ha-mcp 8.4.3 pairing exposes 51 static tools plus
 25 delegated reads, 76 total; `ha_get_operation_status` remains held.
 Publication, installed-image binding, a fresh public catalog and live acceptance
@@ -14,7 +15,7 @@ require separate evidence.
 ## Historical development context
 
 The beta descriptions and release-specific catalog counts below preserve
-development history; they do not supersede the current RC5 contract.
+development history; they do not supersede the current RC6 contract.
 Beta 37, staged from Beta 36, added one exact,
 governed `input_boolean` on/off action with external approval, durable
 single-dispatch execution, authoritative readback, no fallback, and a
