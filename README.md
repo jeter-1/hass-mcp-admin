@@ -44,8 +44,8 @@
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
 > The current Engineering source candidate is `2.2.0-rc.6`. It corrects
 > recovery/approval overlap, preserves reconciliation facts in bounded JSON
-> receipts, and coalesces identical integrity findings. The helper restoration
-> remains unresolved; offline validation does not establish live recovery.
+> receipts, and coalesces identical integrity findings. Live acceptance and any
+> governed recovery require separate authorization and fresh verification.
 > Current release and acceptance authority are
 > [RC6 release notes](docs/V2_2_0_RC6_RELEASE_NOTES.md) and
 > [RC6 acceptance](docs/V2_2_0_RC6_ACCEPTANCE.md). Publication, deployed

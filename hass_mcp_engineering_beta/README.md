@@ -3,8 +3,8 @@
 This directory contains the Engineering v2 add-on. The advertised source
 candidate is `2.2.0-rc.6`, correcting recovery/approval overlap, preserving
 reconciliation facts in bounded JSON receipts, and coalescing identical integrity
-findings. The helper restoration remains unresolved; offline validation does not
-establish live recovery.
+findings. Live acceptance and any governed recovery require separate authorization
+and fresh verification.
 Current authority is [RC6 acceptance](../docs/V2_2_0_RC6_ACCEPTANCE.md) and
 [RC6 release notes](../docs/V2_2_0_RC6_RELEASE_NOTES.md).
 The healthy exact reviewed ha-mcp 8.4.3 pairing exposes 51 static tools plus

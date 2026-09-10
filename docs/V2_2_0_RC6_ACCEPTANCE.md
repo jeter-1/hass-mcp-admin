@@ -17,10 +17,9 @@ Reviewed tree: `508aa787aa13a92822bdef663fc04a69562dd9f0`.
 
 Record the final RC6 head/tree and both comparisons: published RC5 to final
 candidate, and reviewed remediation to final candidate. Keep the reviewed
-runtime files, behavioral tests and
-[recovery contract](GOVERNED_EXECUTION_RECOVERY.md) byte-identical. Release
-preparation changes only version declarations, current README references,
-version-specific documents and necessary release-test expectations.
+runtime files, behavioral tests and previously reviewed recovery documentation
+byte-identical. Release preparation changes only version declarations, current
+README references, version-specific documents and necessary release-test expectations.
 
 Use `python scripts/codex-context.py --format json`. Require exact staged RC6
 acceptance and release-note resolution before the promotion preview and local
@@ -103,7 +102,7 @@ pairing requires all 17 Core capabilities and 51 static plus 25 delegated tools,
 
 Public tool schemas, registration, routing/admission, permissions, persistence
 formats, dependencies, workflows and stable-v1 remain unchanged. Preserve
-[RC5's identifier contract](V2_2_0_RC5_ACCEPTANCE.md), earlier display/reconciliation
+RC5's integration identifier contract, earlier display/reconciliation
 corrections, raw REST validation, capability-local failures and timeouts,
 WebSocket replacement and authority cleanup. Shared builds retain manager-owned
 authority, per-read revalidation, source/post-lock fences, and the 300-second
@@ -127,21 +126,21 @@ must retain earlier Core, dependency, fence, held-read, routing and governance
 tests. Record commands, interpreter, counts, skips, failures and tested SHA.
 Keep forced faults, oversized synthetic responses and race stress disposable.
 
-## Operational stop and corrected-build acceptance
+## Corrected-build acceptance
 
-The helper `input_boolean.mcp_beta22_smoke_flag` was last recorded **ON**.
-This document establishes no fresh state. The failed RC5 restoration remains
-failed, and dashboard canaries remain paused. Preserve the failed execution,
-reproductions and original receipts. Prior RC5 smoke, refresh, trace, catalog
-and installed-image evidence do not prove RC6 acceptance.
+Live acceptance requires fresh evidence from the installation being evaluated.
+Preserve any prior execution and recovery evidence in the operator's private
+records. Earlier-version smoke, refresh, trace, catalog and installed-image
+evidence do not establish RC6 acceptance or current deployment state.
 
 After separately authorized publication/deployment and bounded read-only access:
 
 1. Read fresh Engineering, Core, Supervisor, HAOS and ha-mcp identities through
-   the existing Engineering connector. Core was last reported as 2026.9.1;
-   resolve drift before dependent work. Bind the running RC6 container/image to
-   its published index, architecture manifest and configuration digest, source,
-   timestamp and clean labels. Version text alone is insufficient.
+   the existing Engineering connector. Compare observed versions with the
+   reviewed compatibility contract and resolve drift before dependent work.
+   Bind the running RC6 container/image to its published index, architecture
+   manifest and configuration digest, source, timestamp and clean labels.
+   Version text alone is insufficient.
 2. Capture one fresh complete paginated public MCP catalog through the same
    endpoint, preserving raw descriptors and cursor continuity. Compare against
    exact RC6 source/dependencies. Require 76 unique tools, matching schemas,
@@ -149,9 +148,9 @@ After separately authorized publication/deployment and bounded read-only access:
    supported capture/image facilities remains BLOCKED.
 3. Verify REST/WebSocket identity agreement, all 17 Core capabilities, exact
    provider admission, dashboard authority, storage/audit and F3 readiness.
-   Read current helper state and reconcile failed plan/task history without
-   applying it. Account for active tasks/claims/locks and baseline projection
-   failures. Distinguish old failures from new ones.
+   Read current state for the operator-designated test helper and reconcile any
+   prior plan/task history without applying it. Account for active tasks/claims/
+   locks and existing projection failures. Distinguish old failures from new ones.
 4. Exercise bounded useful reads, including the five device/effective-area
    dependent delegated reads and unrelated entity/state, services, automation,
    existing traces and dashboard configuration. Preserve attribution,
@@ -170,27 +169,28 @@ After separately authorized publication/deployment and bounded read-only access:
 ## Later helper restoration and remaining gates
 
 Only after corrected-build identity, authority and current-state reconciliation,
-obtain separate concrete authorization for restoration if it is still required.
-Inspect consumers and disclose incomplete consequence coverage. If the helper
-is already OFF, record that current condition without toggling it to recreate
-the incident.
+obtain separate concrete authorization for any required restoration. Reconcile
+the operator-designated test helper and any prior execution. Inspect consumers
+and disclose incomplete consequence coverage. If the helper is already OFF,
+record that condition without toggling it.
 
-If still ON and restoration is authorized, create a **fresh exact OFF plan** for
-`input_boolean.mcp_beta22_smoke_flag`. Record the new plan/hash and request its
+If an OFF transition is required and authorized, create a **fresh exact plan**
+for the designated helper and OFF state. Record the new plan/hash and request its
 authenticated panel approval; `approve_change_plan` requests approval and does
 not grant it. After Josh approves, apply once, inspect the execution task, and
 independently read back OFF. Require reconciliation facts and settled execution
-resources. Never reuse the failed restoration plan or its approval.
+resources. Never reuse a failed plan or its approval.
 
 If dispatch, outcome or response completeness is uncertain, inspect existing
 task/plan details and authoritative state before further mutation. Do not
 blindly repeat apply, infer dispatch solely from an attempt count, or overwrite
 unexpected external changes. Failed verification/restoration keeps canaries
-paused. Offline success does not erase the RC5 failure receipt.
+paused. Offline success does not establish live recovery or supersede prior
+execution evidence.
 
-Dashboard canaries may resume only after restoration/current-state reconciliation
-and execution integrity are verified, with separate exact target, patch, complete
-pre-state/hashes, no-concurrent-edit window, authenticated approvals, one apply,
+Run dashboard canaries only after any required restoration, current-state
+reconciliation and execution integrity are verified, with separate exact target,
+patch, complete pre-state/hashes, no-concurrent-edit window, authenticated approvals, one apply,
 readback/rendering and governed reverse-plan restoration. They remain non-atomic
 against external editors. Held-read, helper, notification/Android navigation,
 backup and restart tests each retain their bounded authorization and approvals.

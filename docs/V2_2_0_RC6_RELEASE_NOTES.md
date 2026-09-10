@@ -31,9 +31,8 @@ publication, installation or live recovery.
   counts, incomplete coverage, manual-review disclosures and continuation retain
   their meanings.
 
-The [governed execution recovery contract](GOVERNED_EXECUTION_RECOVERY.md)
-describes behavior and response-detail limitations. The release-only delta does
-not modify the reviewed runtime or behavioral tests. Public tool schemas,
+The release-only delta preserves the reviewed recovery behavior and response-detail
+limitations without modifying runtime or behavioral tests. Public tool schemas,
 registration, routing/admission, provider boundaries, permissions, persistence,
 TTLs, dependencies, workflows and stable-v1 remain unchanged. No new tool,
 unreviewed dispatch, write route or fallback is introduced.
@@ -63,23 +62,27 @@ identifier, reconciliation, dependency, transport and cancellation corrections
 remain intact. The 300-second cooperative build deadline and 600/3600-second
 evidence TTLs are unchanged; no remote-abort guarantee is established.
 
-## Operational stop and later recovery
+## Deployment acceptance and recovery
 
-The helper `input_boolean.mcp_beta22_smoke_flag` was last recorded **ON**.
-No fresh state is established here. The failed RC5 restoration remains failed;
-dashboard canaries remain paused. Core was last reported as 2026.9.1. This
-preparation does not request another Core update or stable promotion.
+Live acceptance and any restoration require fresh deployment evidence and
+separate authorization. Preserve prior execution and recovery evidence in the
+operator's private records. This release preparation establishes no current
+deployment state and does not authorize a Core update or stable promotion.
 
 Follow [RC6 acceptance](V2_2_0_RC6_ACCEPTANCE.md): separately authorize deployment,
 verify fresh installed identity/image, catalog, authority and state, useful reads,
-natural dependency refresh and settled resources. Then, if still required and
-separately authorized, create a fresh exact OFF plan for the helper, obtain its
-authenticated panel approval, apply once, inspect the task and independently
-read back OFF. Never reuse the failed restoration plan or approval. If already
-OFF, record the current condition without toggling it to recreate the incident.
-Uncertain dispatch or verification requires reconciliation before further
-mutation. Source success does not prove household recovery or erase the failure.
+natural dependency refresh and settled resources. Before restoration, reconcile
+the operator-designated test helper and any prior execution. Inspect consumers
+and disclose incomplete consequence coverage. If it is already OFF, record that
+condition without toggling it. If an OFF transition is required and authorized,
+create a fresh exact plan, obtain its authenticated panel approval, apply once,
+inspect the task and independently verify OFF. Require settled execution
+resources. Never reuse a failed plan or approval, or blindly retry an uncertain
+operation. Reconcile uncertain dispatch, verification or external changes before
+further mutation. Source success does not establish live recovery.
 
+Dependent dashboard canaries require verified restoration/current-state
+reconciliation and execution integrity before their separately approved tests.
 Dashboard, held-read/helper canaries, notification/navigation, backup, restart
 and Core-update testing retain their separate exact scopes and approvals. None
 runs during release preparation. Published RC5 remains immutable; returning to
