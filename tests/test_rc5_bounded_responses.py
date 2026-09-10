@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineeri
 from ha_mcp_engineering.models.responses import MAX_CHARS, dump_json
 from ha_mcp_engineering.tool_framework import run_structured
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
+from tests import test_beta37_exact_helper_state as helper_fixtures
 
 
 class BoundedResponseTests(unittest.IsolatedAsyncioTestCase):
@@ -102,3 +103,39 @@ class BoundedResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(receipt["success"])
         self.assertEqual(receipt["error_code"], "change_plan_not_found")
         self.assertNotIn("response_completeness", receipt)
+
+
+class MinimumApplyReceiptTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = helper_fixtures.ExactHelperStateRuntimeTests.asyncSetUp
+    asyncTearDown = helper_fixtures.ExactHelperStateRuntimeTests.asyncTearDown
+    grant = helper_fixtures.ExactHelperStateRuntimeTests.grant
+    create_and_grant = helper_fixtures.ExactHelperStateRuntimeTests.create_and_grant
+
+    async def test_maximum_request_identity_preserves_completed_apply_at_minimum_budget(self):
+        from ha_mcp_engineering.models.responses import SuccessResponse
+
+        plan = await self.create_and_grant("on")
+        result = await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual(self.helper.dispatch_count, 1)
+        for request_id in ("receipt-review", "r" * 128):
+            with self.subTest(request_id_length=len(request_id)):
+                output = SuccessResponse(
+                    "apply_change_plan", "Apply", result, request_id=request_id
+                ).to_json(1024)
+                receipt = json.loads(output)
+                self.assertLessEqual(len(output.encode()), 1024)
+                self.assertEqual(receipt["request_id"], request_id)
+                self.assertTrue(receipt["success"])
+                facts = receipt["data"]
+                self.assertEqual(facts["task_id"], result["task_id"])
+                self.assertEqual(facts["plan_hash"], plan["plan_hash"])
+                self.assertEqual(facts["task_state"], "succeeded_verified")
+                self.assertTrue(facts["provider_dispatch_occurred"])
+                self.assertFalse(facts["redispatch_performed"])
+                self.assertEqual(facts["task_verification_status"], "verified")
+                self.assertEqual(facts["provider"], "direct_home_assistant_state")
+                completeness = receipt["response_completeness"]
+                self.assertFalse(completeness["approval_disclosures_complete"])
+                self.assertEqual({r["tool"] for r in completeness["retrieval"]},
+                                 {"get_change_plan", "get_execution_task"})
+        self.assertEqual(self.helper.dispatch_count, 1)

@@ -189,14 +189,33 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
     if "status" in task_verification:
         facts["task_verification_status"] = task_verification["status"]
     receipt[body_key] = facts
-    receipt["response_completeness"] = {
+    reads = _retrieval(value)
+    completeness = {
         "truncated": True,
-        "reason": "response_size_limit",
-        "projection": "primary_reconciliation_receipt",
-        "approval_disclosures_complete": False,
-        "retrieval": _retrieval(value),
+        # The existing routing metrics recognize this notice. Keep it inside
+        # JSON rather than appending text outside the response envelope.
+        "notice": f"... [truncated at {limit} chars]",
     }
+    if reads:
+        completeness.update({
+            "reason": "response_size_limit",
+            "projection": "primary_reconciliation_receipt",
+            "approval_disclosures_complete": False,
+            "retrieval": reads,
+        })
+    receipt["response_completeness"] = completeness
     output = _compact_json(receipt)
+    if len(output) > limit and reads:
+        # These are navigation hints, not disclosure data or tool arguments.
+        # The existing reader exposes the supported detail selections itself.
+        for read in reads:
+            read.pop("detail_sections", None)
+        # Keep the authoritative task outcome without repeating its identical
+        # terminal label. The notice already explains the size limitation.
+        if facts.get("terminal_outcome") == facts.get("task_state"):
+            facts.pop("terminal_outcome", None)
+        completeness.pop("reason", None)
+        output = _compact_json(receipt)
     if len(output) > limit:
         raise ValueError("response bound cannot contain reconciliation identity")
     return output
@@ -212,6 +231,7 @@ def _bounded_json(output: str, limit: int) -> str:
     omission = {
         "truncated": True,
         "reason": "response_size_limit",
+        "notice": f"... [truncated at {limit} chars]",
         "limit_chars": limit,
         "original_chars": len(output),
         "omitted_paths": [],

@@ -47,6 +47,10 @@ omissions and existing read-only retrieval operations. It does not change the
 reported action outcome or grant approval. At small budgets, an explicitly
 labelled primary_reconciliation_receipt exposes primary plan/task IDs and hashes
 in the data or details object. It is not a complete plan disclosure.
+The legacy truncation notice remains inside this JSON object so existing routing
+metrics still count bounded output. It is never appended outside the JSON.
+The smallest receipts may omit repeated outcome labels and detail-navigation
+hints while retaining the exact identities and authoritative task outcome.
 
 Use get_execution_task for a retained task and get_change_plan with page_size=1
 for a plan. Plan detail_sections lists the existing summary, obligation_evidence
