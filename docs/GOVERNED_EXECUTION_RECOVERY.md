@@ -62,3 +62,16 @@ Serialization runs after action outcome classification. An encoding problem
 must not be mapped to an action failure after a persisted effect. Never repeat
 a mutation to recover its response; reconcile the returned plan/task identities.
 
+## Integrity finding coalescing
+
+Identical findings coalesce before analysis caps, totals and pagination. Equality
+includes every finding field and its evidence references. Distinct sources,
+paths, warnings and excerpts remain visible. A reused dynamic evidence ID does
+not overwrite different content; conflicting references receive deterministic
+content-qualified IDs. Finding IDs retain their existing source/path meaning
+and alone are not a sufficient equality test.
+
+The existing unresolved_dynamic_reference_count and the summary's
+unresolved_in_requested_scope_count still count raw references. finding_count
+and reported_finding_count count visible coalesced findings. Coverage gaps,
+manual-review requirements and cursor continuation semantics remain unchanged.

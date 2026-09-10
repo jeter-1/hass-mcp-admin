@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import asdict, replace
+import json
 from typing import Any
 
 from ..dependency.extraction import valid_entity_id
@@ -146,6 +148,7 @@ def classify_integrity(
                 str(value.get("source_type")),
                 str(value.get("source_id")),
                 str(value.get("config_path")),
+                json.dumps(value, sort_keys=True, default=str),
             ),
         ):
             source_type = str(item.get("source_type") or "unknown")[:64]
@@ -155,7 +158,7 @@ def classify_integrity(
                 item.get("evidence_id")
                 or stable_id("integrity_dynamic", source_type, source_id, path)
             )[:128]
-            evidence[reference_id] = IntegrityEvidenceReference(
+            reference = IntegrityEvidenceReference(
                 reference_id=reference_id,
                 evidence_kind="unresolved_dynamic_reference",
                 summary=str(
@@ -170,6 +173,18 @@ def classify_integrity(
                 configuration_paths=(path,),
                 excerpt=_optional(item.get("excerpt"), 300),
             )
+            original_reference = asdict(reference)
+            collision = 0
+            while reference_id in evidence and evidence[reference_id] != reference:
+                # A reused upstream ID cannot overwrite different evidence.
+                # Keep the existing path-based ID for the first deterministic
+                # entry and qualify only conflicting evidence by its content.
+                reference_id = stable_id(
+                    "integrity_dynamic_evidence", original_reference, collision
+                )
+                reference = replace(reference, reference_id=reference_id)
+                collision += 1
+            evidence[reference_id] = reference
             findings.append(
                 IntegrityFinding(
                     finding_id=stable_id(
@@ -274,7 +289,9 @@ def classify_integrity(
             )
 
     return (
-        sorted(findings, key=_finding_sort_key),
+        # Frozen findings compare every field, including evidence references.
+        # Coalesce before the service's analysis cap, totals and pagination.
+        sorted(dict.fromkeys(findings), key=_finding_sort_key),
         evidence,
         warnings[:10],
     )
