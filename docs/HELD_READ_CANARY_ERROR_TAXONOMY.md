@@ -26,6 +26,18 @@ non-retryable `resource_not_found`; it does not turn sibling results into a
 transport outage. Malformed batch items fail the canary response contract.
 Bounded item evidence excludes operation identifiers and upstream messages.
 
+## Request timing
+
+Entering the admitted transport records one upstream attempt. Its timing ends
+before success or error serialization and also ends on caller cancellation.
+A local refusal before transport records no attempt. Catalog refusal, transport
+failure, and timeout after entering transport are attempts even when dispatch
+did not occur; use the separate canary dispatch evidence for that distinction.
+The request's active timing count settles without changing Core lease/commit
+ownership, late-callback refusal, or admission. An already-dispatched retained
+read may finish after caller cancellation; timing settlement does not establish
+remote abort or permit retry.
+
 ## Security boundary
 
 The canary performs one validated upstream read call and never calls Home
