@@ -1,5 +1,6 @@
 """Beta-native entity dependency analysis MCP tool."""
 
+import json
 import time
 from typing import Annotated, Literal
 
@@ -11,7 +12,7 @@ from ..integrity import CONFIGURATION_INTEGRITY_ANALYSIS
 from ..incident import INCIDENT_CORRELATION
 from ..handoff import HANDOFF_GENERATION
 from ..reliability import RELIABILITY_ANALYSIS
-from ..errors import ErrorCode, map_exception
+from ..errors import ErrorCode, GovernanceError, map_exception
 from ..models import FailureResponse, SuccessResponse
 from ..observability import METRICS
 from ..request_context import current_request_id, current_telemetry
@@ -293,6 +294,35 @@ async def configuration_integrity_analysis(
 
     started = time.perf_counter()
     telemetry = current_telemetry()
+    rendered = None
+
+    def page_fits(output):
+        nonlocal rendered
+        assessment = output.data.get("final_assessment")
+        summary = (
+            "Completed bounded configuration-integrity analysis; review is required."
+            if assessment == "review_required"
+            else "Completed bounded configuration-integrity analysis with incomplete coverage."
+            if assessment == "assessment_incomplete"
+            else "No confirmed integrity findings were detected within the reported coverage."
+        )
+        try:
+            candidate = SuccessResponse(
+                operation="configuration_integrity_analysis",
+                summary=summary,
+                data=output.data,
+                warnings=output.warnings,
+                metadata=output.metadata,
+                timing=timing_since(started),
+                request_id=current_request_id(),
+            ).to_json(SETTINGS.response_size_limit)
+        except ValueError:
+            return False
+        if json.loads(candidate).get("response_completeness", {}).get("truncated"):
+            return False
+        rendered = candidate
+        return True
+
     try:
         output = await CONFIGURATION_INTEGRITY_ANALYSIS.require().analyze(
             source_types=source_types,
@@ -302,27 +332,15 @@ async def configuration_integrity_analysis(
             limit=limit,
             cursor=cursor,
             refresh_index=refresh_index,
+            page_fits=page_fits,
         )
+        if rendered is None and not page_fits(output):
+            raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE)
         if telemetry:
             telemetry.result_status = "partial" if output.partial else "success"
             telemetry.completeness = "partial" if output.partial else "complete"
-        assessment = output.data.get("final_assessment")
-        summary = (
-            "Completed bounded configuration-integrity analysis; review is required."
-            if assessment == "review_required"
-            else "Completed bounded configuration-integrity analysis with incomplete coverage."
-            if assessment == "assessment_incomplete"
-            else "No confirmed integrity findings were detected within the reported coverage."
-        )
-        return SuccessResponse(
-            operation="configuration_integrity_analysis",
-            summary=summary,
-            data=output.data,
-            warnings=output.warnings,
-            metadata=output.metadata,
-            timing=timing_since(started),
-            request_id=current_request_id(),
-        ).to_json(SETTINGS.response_size_limit)
+        # Return exactly the complete envelope accepted before snapshot retirement.
+        return rendered
     except Exception as exc:
         code, message, retryable, details = map_exception(exc)
         if telemetry:

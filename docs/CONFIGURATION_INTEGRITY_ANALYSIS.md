@@ -200,6 +200,18 @@ and index provenance. A tampered token returns `invalid_cursor`; an expired
 snapshot or replaced/invalidated index returns `stale_cursor`; changed query
 semantics fail closed. A pagination snapshot is not a general result cache.
 
+The public tool checks the complete serialized page against the configured
+character and UTF-8 response budget before advancing or retiring its snapshot.
+It can lower `effective_limit`, with `clamp_reason=response_size_limit`; follow
+the returned cursor, whose offset includes only delivered findings. This also
+applies when an oversized first page would otherwise contain every finding.
+Totals, evidence, coverage disclosures, ordering, and the snapshot's 300-second
+TTL and 16-entry capacity are unchanged. A final snapshot is retired only after
+its complete response fits. If even one finding with its disclosures cannot fit,
+the read returns `analysis_unavailable`; an existing cursor remains usable within
+its original fences and lifetime. This is a response-construction guarantee,
+not acknowledgement that a remote client received the response.
+
 The response reports cache hit/refresh state, index generation, fingerprint,
 build timestamp, current lookup/build duration, original build duration,
 snapshot TTL, current-request timing, HA cumulative attempt time, HA wall-clock
