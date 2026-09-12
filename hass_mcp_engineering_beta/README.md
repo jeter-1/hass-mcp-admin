@@ -1,13 +1,14 @@
 # HA MCP Engineering Server Beta
 
 This directory contains the Engineering v2 add-on. The advertised source
-candidate is `2.2.0-rc.8`, adding opt-in Core compatibility through independently
-reviewed signed data referencing existing compiled contracts. Earlier reporting,
+candidate is `2.2.0-rc.9`, carrying exact reviewed Core semantic authority through
+dependency evidence into governed helper planning. Signed data still references
+existing compiled contracts and requires independent review. Earlier reporting,
 recovery and provider controls remain intact. Core trust setup and production
 data publication remain separate: installation alone does not establish Core
 2026.9.2 authority. See the [Core registry runbook](../docs/CORE_RELEASE_REGISTRY.md).
-Current authority is [RC8 acceptance](../docs/V2_2_0_RC8_ACCEPTANCE.md) and
-[RC8 release notes](../docs/V2_2_0_RC8_RELEASE_NOTES.md).
+Current authority is [RC9 acceptance](../docs/V2_2_0_RC9_ACCEPTANCE.md) and
+[RC9 release notes](../docs/V2_2_0_RC9_RELEASE_NOTES.md).
 The healthy exact reviewed ha-mcp 8.4.3 pairing exposes 51 static tools plus
 25 delegated reads, 76 total; `ha_get_operation_status` remains held.
 Publication, installed-image binding, a fresh public catalog and live acceptance
@@ -16,7 +17,7 @@ require separate evidence.
 ## Historical development context
 
 The beta descriptions and release-specific catalog counts below preserve
-development history; they do not supersede the current RC8 contract.
+development history; they do not supersede the current RC9 contract.
 Beta 37, staged from Beta 36, added one exact,
 governed `input_boolean` on/off action with external approval, durable
 single-dispatch execution, authoritative readback, no fallback, and a
