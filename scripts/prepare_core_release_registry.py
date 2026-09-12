@@ -28,7 +28,7 @@ from ha_mcp_engineering.ha_core_readmission.registry_models import (
     CORE_REGISTRY_ID, CORE_REGISTRY_KEY_ID, CoreReleaseEntry,
 )
 from ha_mcp_engineering.ha_mcp_readmission.registry import (
-    MAX_CACHE_BYTES, MAX_REVOCATION_SOURCE_ENVELOPES, _parse_signed_journal,
+    MAX_CACHE_BYTES, SignedReleaseRegistry, _parse_signed_journal,
 )
 from ha_mcp_engineering.signed_registry import (
     ReleaseRevocation, TrustAnchorStore, canonical_json, sha256_digest,
@@ -181,14 +181,16 @@ def sign_candidate(candidate: bytes, *, expected_sha256: str,
         raise ValueError("reviewed journal successor mismatch")
     envelope = signed(value["envelope"], key)
     # Validate closed schemas, chain, timestamps and retained denials before output.
-    envelopes = ([] if current is None else [e.to_mapping() for e in current.envelopes]) + [envelope]
-    sources = [] if current is None else [e.to_mapping() for e in current.revocation_sources]
+    previous_envelopes = () if current is None else current.envelopes
+    envelopes = [e.to_mapping() for e in previous_envelopes] + [envelope]
     removed, envelopes = envelopes[:-MAX_CHAIN], envelopes[-MAX_CHAIN:]
-    for old in removed:
-        if old["revocations"] and old not in sources:
-            sources.append(old)
-    if len(sources) > MAX_REVOCATION_SOURCE_ENVELOPES:
-        raise ValueError("retained revocation bound exhausted")
+    # These envelopes were authenticated when parsing the previous journal.
+    # Keep coverage of every denial using the runtime's existing retention
+    # policy; distinct signatures of the same tombstone add no new coverage.
+    sources = [e.to_mapping() for e in SignedReleaseRegistry._minimal_revocation_sources(
+        (() if current is None else current.revocation_sources)
+        + previous_envelopes[:len(removed)]
+    )]
     journal = signed({
         "schema_version": 1, "registry_id": CORE_REGISTRY_ID,
         "key_id": CORE_REGISTRY_KEY_ID,
