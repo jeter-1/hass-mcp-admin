@@ -3,7 +3,7 @@
 > Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
 > source but is operationally retired. It is not covered by the Engineering
 > dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-rc.8`, based on the exact
+> add-on is developed in place at `2.2.0-rc.9`, based on the exact
 > `v2.0.1` release, at
 > [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
 > Its existing technical “Beta” identity is retained to avoid a slug or runtime
@@ -42,15 +42,16 @@
 > Dev15 contract-level compatibility, partial quarantine, dashboard
 > independence, and retry-cadence separation are documented in
 > [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering source candidate is `2.2.0-rc.8`. It preserves
-> the earlier reporting and recovery fixes and adds opt-in Core compatibility
-> through independently reviewed signed data referencing compiled contracts.
+> The current Engineering source candidate is `2.2.0-rc.9`. It preserves
+> the earlier reporting and recovery fixes and carries exact reviewed Core
+> semantic authority into dependency evidence and governed helper planning.
+> Compatible Core data still requires independent review and owner trust setup.
 > Core trust setup and production data publication remain separate; installing
-> RC8 alone does not establish authority for Core 2026.9.2. See the
+> RC9 alone does not establish authority for Core 2026.9.2. See the
 > [Core registry runbook](docs/CORE_RELEASE_REGISTRY.md).
 > Current release and acceptance authority are
-> [RC8 release notes](docs/V2_2_0_RC8_RELEASE_NOTES.md) and
-> [RC8 acceptance](docs/V2_2_0_RC8_ACCEPTANCE.md). Publication, deployed
+> [RC9 release notes](docs/V2_2_0_RC9_RELEASE_NOTES.md) and
+> [RC9 acceptance](docs/V2_2_0_RC9_ACCEPTANCE.md). Publication, deployed
 > identity and live acceptance require separate evidence.
 > The following beta references preserve development history.
 > Beta 15 corrected

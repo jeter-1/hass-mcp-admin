@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 from ..sanitization import sanitize_untrusted_data
+from .semantic_registry import ReviewedCoreSemantics
 
 
 SOURCE_TYPES = ("automation", "blueprint", "script", "scene", "group", "template", "dashboard")
@@ -506,6 +507,7 @@ class DependencyScanResult:
     # produced against rather than leaving it unbound.
     home_assistant_version: str | None = None
     home_assistant_version_status: str = "unavailable"
+    semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -550,6 +552,7 @@ class DependencyIndexSnapshot:
     # the snapshot fingerprint: it describes when evidence was read, not what
     # the evidence says, and approval binding must not churn on fences.
     source_epoch: int = 0
+    semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
 
 
 def obligation_material(item: DependencyObligation) -> dict[str, Any]:
@@ -676,6 +679,7 @@ def snapshot_fingerprint(
     obligation_ledger_model: str | None = None,
     home_assistant_version: str | None = None,
     home_assistant_version_status: str = "unavailable",
+    semantic_evidence: ReviewedCoreSemantics | None = None,
 ) -> str:
     payload = {
         "generation": generation,
@@ -744,5 +748,7 @@ def snapshot_fingerprint(
         "home_assistant_version": home_assistant_version,
         "home_assistant_version_status": home_assistant_version_status,
     }
+    if semantic_evidence is not None:
+        payload["reviewed_core_semantics"] = semantic_evidence.material()
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

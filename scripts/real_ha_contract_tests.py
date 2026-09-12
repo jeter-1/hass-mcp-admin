@@ -32,6 +32,7 @@ from ha_mcp_engineering.clients import (  # noqa: E402
     HomeAssistantWebSocketClient,
 )
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
+from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
     DirectHaDependencyProvider,
 )
@@ -1378,15 +1379,46 @@ async def _run_governed_helper_state_contract(
 ) -> dict[str, object]:
     """Exercise the exact helper state lifecycle against disposable Core."""
 
+    # Use the production composition, including build and final-dispatch Core
+    # authority. A standalone DependencyIndex cannot establish signed semantic
+    # applicability, even when a separate capability-count test passed earlier.
+    core_runtime = CoreRuntime()
+    dependency_runtime = DependencyAnalysisRuntime()
+    with tempfile.TemporaryDirectory(prefix="helper-core-authority-") as directory:
+        try:
+            configured = settings(token)
+            if EXPECTED_HA_VERSION == "2026.9.2":
+                from core_registry_contract_lane import configure_with_test_authority
+                await configure_with_test_authority(
+                    core_runtime, configured, cache_path=Path(directory) / "core.json",
+                    expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
+            else:
+                core_runtime.configure(configured)
+                await core_runtime.reconcile_once("startup")
+            dependency_runtime.configure(
+                rest, websocket, secret="disposable-beta37-dependency-evidence",
+                core_runtime=core_runtime)
+            assert isinstance(dependency_runtime.require().index.provider, DirectHaDependencyProvider)
+            result = await _run_governed_helper_state_with_authority(
+                gateway, rest, websocket, token, core_runtime,
+                dependency_runtime.require().index)
+            assert all(core_runtime.health_snapshot()[name] == 0 for name in (
+                "issued_lease_count", "active_commit_count", "fallback_count"))
+            return result
+        finally:
+            await dependency_runtime.shutdown()
+            monitor = core_runtime._connection_monitor_task
+            core_runtime.request_reconciliation(connection_changed=True)
+            if monitor is not None:
+                await asyncio.gather(monitor, return_exceptions=True)
+
+
+async def _run_governed_helper_state_with_authority(
+    gateway, rest, websocket, token, core_runtime, dependency_index,
+) -> dict[str, object]:
+
     exact_gateway = _ObservedHelperStateGateway(
         HelperStateGateway(rest, websocket)
-    )
-    dependency_index = DependencyIndex(
-        DirectHaDependencyProvider(
-            rest,
-            websocket,
-            secret="disposable-beta37-dependency-evidence",
-        )
     )
     dependency_risk = HelperDependencyRiskService(dependency_index)
 
@@ -1420,6 +1452,7 @@ async def _run_governed_helper_state_contract(
             helper_state_gateway=exact_gateway,
             provider_identity_reader=forbidden_upstream_identity,
             retention_days=90,
+            core_runtime=core_runtime,
         )
         service.f3_runtime = runtime
         await runtime.recover_once("startup")
@@ -1536,6 +1569,10 @@ async def _run_governed_helper_state_contract(
                     missing_key=missing_key,
                     diagnostic=helper_diagnostic,
                 )
+            assert helper_dependency.get("home_assistant_version_observed") == EXPECTED_HA_VERSION
+            assert dependency_index.snapshot.semantic_evidence.matches(EXPECTED_HA_VERSION)
+            if EXPECTED_HA_VERSION == "2026.9.2":
+                assert helper_dependency.get("reviewed_core_semantics", {}).get("core_version") == EXPECTED_HA_VERSION
             _assert_device_contract(
                 (await exact_gateway.read_state(entity_id))["state"] == "off",
                 "helper_state_control",

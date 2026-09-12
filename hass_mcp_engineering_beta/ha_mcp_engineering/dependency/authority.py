@@ -5,16 +5,24 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 import time
 from typing import Any
 
 from ..errors import HomeAssistantUnavailableError
 from ..request_context import begin_request, current_telemetry, end_request
+from .semantic_registry import ReviewedCoreSemantics
 
 
 # A whole scan, including queued reads, must not retain authority indefinitely.
 # This is independent of the evidence TTLs and individual transport timeouts.
 BUILD_TIMEOUT_SECONDS = 300.0
+_SEMANTIC_EVIDENCE: ContextVar[ReviewedCoreSemantics | None] = ContextVar(
+    "dependency_semantic_evidence", default=None)
+
+
+def current_semantic_evidence() -> ReviewedCoreSemantics | None:
+    return _SEMANTIC_EVIDENCE.get()
 
 
 @contextmanager
@@ -34,6 +42,7 @@ def dependency_build_authority(
     authority = None
     commits = None
     closed = False
+    semantic_token = _SEMANTIC_EVIDENCE.set(None)
 
     def authorize() -> bool:
         nonlocal commits, closed
@@ -68,6 +77,10 @@ def dependency_build_authority(
         if core_runtime is not None:
             authority = core_runtime.acquire(("core.dependency_helper_planning",))
         require_current()
+        evidence = core_runtime.dependency_semantic_evidence(authority, commits)
+        if evidence is None:
+            raise HomeAssistantUnavailableError()
+        _SEMANTIC_EVIDENCE.set(evidence)
         yield require_current
     finally:
         # Close both the telemetry slot and any callback captured before exit.
@@ -79,4 +92,5 @@ def dependency_build_authority(
             elif authority is not None:
                 core_runtime.release(authority)
         finally:
+            _SEMANTIC_EVIDENCE.reset(semantic_token)
             end_request(token)

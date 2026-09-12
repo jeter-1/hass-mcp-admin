@@ -24,6 +24,7 @@ from .models import (
 )
 from .extraction import make_coverage_failure_obligation
 from .provider import DependencySourceProvider
+from .semantic_registry import semantic_evidence_current
 
 
 DEFAULT_SOFT_TTL_SECONDS = 600.0
@@ -245,6 +246,7 @@ class DependencyIndex:
     def _is_current(self, age: float | None) -> bool:
         return bool(
             self.snapshot
+            and semantic_evidence_current(self.snapshot.semantic_evidence, self.snapshot.home_assistant_version)
             and not self.invalidated
             and age is not None
             and age < self.soft_ttl_seconds
@@ -253,6 +255,7 @@ class DependencyIndex:
     def _is_usable(self, age: float | None) -> bool:
         return bool(
             self.snapshot
+            and semantic_evidence_current(self.snapshot.semantic_evidence, self.snapshot.home_assistant_version)
             and not self.invalidated
             and age is not None
             and age < self.hard_ttl_seconds
@@ -557,6 +560,7 @@ class DependencyIndex:
             ),
             obligation_ledger_model=scan.obligation_ledger_model,
             home_assistant_version=scan.home_assistant_version,
+            semantic_evidence=scan.semantic_evidence,
             home_assistant_version_status=(
                 scan.home_assistant_version_status
             ),
@@ -610,12 +614,15 @@ class DependencyIndex:
                 scan.home_assistant_version_status
             ),
             source_epoch=source_epoch,
+            semantic_evidence=scan.semantic_evidence,
         )
         # Revalidate after the last read and all parsing, before publishing.
         # The synchronous publication keeps the existing invalidation/fence
         # checks below: a pre-invalidation scan cannot become current.
         if require_current is not None:
             require_current()
+        if not semantic_evidence_current(scan.semantic_evidence, scan.home_assistant_version):
+            raise DependencyFenceError("core_semantic_authority_changed")
         # Publish the complete replacement atomically after every build step.
         self.snapshot = replacement
         self.generation = next_generation

@@ -403,7 +403,11 @@ class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
         provider.rest_client = SimpleNamespace(
             request=AsyncMock(return_value={})
         )
-        core_runtime = self.CoreAuthority()
+        from tests import test_ha_core_2026_9_integration as core_fixtures
+
+        core_runtime, _ = await core_fixtures.Core20269RuntimeTests()._runtime(
+            core_fixtures._snapshot("2026.8.1", evidence=core_fixtures._evidence())
+        )
         runtime = DependencyAnalysisRuntime(
             service=EntityDependencyAnalysisService(
                 DependencyIndex(provider, soft_ttl_seconds=10, hard_ttl_seconds=60)
@@ -413,7 +417,7 @@ class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(await runtime._authorized_prewarm(provider))
         self.assertTrue(runtime.require().index.health()["valid"])
-        core_runtime.retire()
+        core_runtime.request_reconciliation(connection_changed=True)
         health = runtime.require().index.health()
         self.assertTrue(health["invalidated"])
         self.assertFalse(health["valid"])
@@ -427,7 +431,12 @@ class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
         runtime = DependencyAnalysisRuntime(
             service=EntityDependencyAnalysisService(index)
         )
-        runtime.bind_core_runtime(self.CoreAuthority())
+        from tests import test_ha_core_2026_9_integration as core_fixtures
+
+        core_runtime, _ = await core_fixtures.Core20269RuntimeTests()._runtime(
+            core_fixtures._snapshot("2026.8.1", evidence=core_fixtures._evidence())
+        )
+        runtime.bind_core_runtime(core_runtime)
         runtime.start_prewarm(
             startup_delay_seconds=0.04,
             retry_delay_seconds=300,
@@ -438,6 +447,8 @@ class PrewarmRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runtime.health()["prewarm_state"], "complete")
         provider.rest_client.request.assert_not_awaited()
         await runtime.shutdown()
+        for name in ("issued_lease_count", "active_commit_count", "fallback_count"):
+            self.assertEqual(core_runtime.health_snapshot()[name], 0)
 
     async def test_prewarm_is_delayed_nonblocking_and_does_not_retry_storm(self):
         provider = ControlledProvider()
