@@ -28,6 +28,26 @@ Signed references to unknown capabilities/profiles or mismatched fingerprints
 do not enable them; a mismatch affects only capabilities whose prerequisites
 fail. An unknown probe profile supplies no new-release authority.
 
+Governed helper planning also consumes this exact semantic applicability.
+The consumed dependency-build authority issues in-memory evidence binding the
+observed Core version, selected compiled probe and template/dependency contracts
+to the actual compiled semantic registry. Each snapshot carries that evidence;
+publication, cached reuse and helper admission check its original Core generation
+and current signed selection. It grants no transport or mutation authority and
+does not keep the completed build's lease/commit alive. Retirement, expiry,
+revocation, a mismatched observed version or changed compiled semantics refuses
+reuse; a replacement scan must acquire its own current authority.
+
+For an uncompiled release, helper approval material includes the exact version
+and stable semantic contract identity. Operational generations and source epochs
+remain separate, so an identical post-lock refresh can preserve a valid approval.
+Compiled-version approval material remains compatible. Source fences, evidence
+freshness, external approval, current target state and final Core dispatch checks
+remain necessary. No additional version list, version substitution or caller
+admission flag can grant semantic applicability. RC8's capability-count success
+did not establish this consumer path; its failed disposable helper evidence is
+preserved, and RC9 requires the complete pinned runtime lane to pass.
+
 The observation interface authenticates Core's reported version and contract
 responses; it does not expose the running Core OCI digest. Recorded release
 source/image provenance is therefore separate from installed-image evidence.

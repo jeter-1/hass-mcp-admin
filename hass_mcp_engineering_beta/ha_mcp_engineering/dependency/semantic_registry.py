@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from collections.abc import Callable
+from dataclasses import dataclass, field
 import hashlib
 from importlib.metadata import version as package_version
 import json
@@ -291,6 +293,42 @@ def semantic_registry_identity() -> dict[str, str]:
         "sha256": semantic_registry_sha256(),
         "jinja_version": "3.1.6",
     }
+
+
+@dataclass(frozen=True)
+class ReviewedCoreSemantics:
+    """In-memory evidence issued by CoreRuntime, never caller or persisted data.
+
+    Currency is tied to the issuing Core generation, independently of the build
+    commit's lifetime. This grants no dispatch authority. Stable contract facts
+    exclude generation/lease/expiry so equivalent fresh scans preserve approvals.
+    """
+
+    observed_version: str
+    contract: tuple[tuple[str, str], ...]
+    _current: Callable[[ReviewedCoreSemantics], bool] = field(repr=False, compare=False)
+
+    def matches(self, observed_version: str | None) -> bool:
+        try:
+            return bool(
+                observed_version == self.observed_version
+                and semantic_registry_sha256() == EXPECTED_SEMANTIC_REGISTRY_SHA256
+                and semantic_registry()
+                and self._current(self)
+            )
+        except (OSError, ValueError, RuntimeError):
+            return False
+
+    def material(self) -> dict[str, str]:
+        return dict(self.contract)
+
+
+def semantic_evidence_current(evidence: ReviewedCoreSemantics | None, version: str | None) -> bool:
+    """Absent evidence retains the compiled-only consumer path, never admission."""
+
+    return evidence is None or (
+        isinstance(evidence, ReviewedCoreSemantics) and evidence.matches(version)
+    )
 
 
 __all__ = [

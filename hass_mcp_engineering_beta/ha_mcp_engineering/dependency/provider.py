@@ -197,6 +197,10 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         from ..governance.risk import (
             automation_action_consequence_profile,
         )
+        from .authority import current_semantic_evidence
+
+        # Capture before reading; never mint replacement authority mid-scan.
+        semantic_evidence = current_semantic_evidence()
 
         scan_started = time.perf_counter()
         findings = []
@@ -943,6 +947,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             },
             home_assistant_version=home_assistant_version,
             home_assistant_version_status=home_assistant_version_status,
+            semantic_evidence=semantic_evidence,
             automation_action_profiles=automation_action_profiles,
             automation_read_failures=automation_read_failures,
             label_memberships=label_memberships,

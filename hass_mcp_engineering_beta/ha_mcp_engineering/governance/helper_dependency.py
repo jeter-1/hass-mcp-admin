@@ -16,6 +16,7 @@ from ..dependency.models import (
 )
 from .models import ChangeRiskAssessment, RiskLevel
 from ..dependency.semantic_registry import (
+    ReviewedCoreSemantics,
     supported_home_assistant_versions,
 )
 from .normalize import stable_hash
@@ -1214,13 +1215,10 @@ def home_assistant_version_admission(
 ) -> dict[str, Any]:
     """Admit or refuse the reviewed semantics for the connected release.
 
-    The reviewed template semantics are asserted valid for a fixed set of
-    Home Assistant releases.  Evidence produced against any other release -
-    or against an instance whose version could not be read - is not
-    execution-authoritative, so this gate fails closed on every negative
-    case.  It is an additional necessary condition layered on the R2 source
-    fence and the R5 compatibility/execution split, never a replacement for
-    either.
+    Compiled releases retain their existing contract. Other exact releases
+    require current in-memory evidence from the reviewed Core authority that
+    owned this scan. This remains additional to source fences, freshness and
+    the compatibility/execution split; it grants no dispatch authority.
     """
 
     supported = supported_home_assistant_versions()
@@ -1228,9 +1226,11 @@ def home_assistant_version_admission(
     status = str(
         getattr(snapshot, "home_assistant_version_status", "unavailable")
     )
+    evidence = getattr(snapshot, "semantic_evidence", None)
+    reviewed = isinstance(evidence, ReviewedCoreSemantics) and evidence.matches(observed)
     if status == "observed":
         if isinstance(observed, str) and observed:
-            admitted = observed in supported
+            admitted = reviewed or (evidence is None and observed in supported)
             reason = None if admitted else VERSION_UNSUPPORTED_REASON
         else:
             # Claimed observed but carries no version: the field is the
@@ -1240,19 +1240,24 @@ def home_assistant_version_admission(
         admitted, reason = False, VERSION_UNREADABLE_REASON
     else:
         admitted, reason = False, VERSION_UNAVAILABLE_REASON
-    return {
+    result = {
         "admitted": admitted,
         "observed_version": observed if status == "observed" else None,
         "observation_status": status,
         "supported_versions": list(supported),
         "reason_code": reason,
     }
+    # Do not churn existing compiled-version approval material. The uncompiled
+    # path binds the stable contracts, never its operational generation/lease.
+    if reviewed and observed not in supported:
+        result["reviewed_core_semantics"] = evidence.material()
+    return result
 
 
 def _version_admission_material(admission: dict[str, Any]) -> dict[str, Any]:
     """Return the admission facts bound into evidence and its fingerprint."""
 
-    return {
+    result = {
         "home_assistant_version_admitted": bool(admission["admitted"]),
         "home_assistant_version_observed": admission["observed_version"],
         "home_assistant_version_observation_status": (
@@ -1262,6 +1267,9 @@ def _version_admission_material(admission: dict[str, Any]) -> dict[str, Any]:
             admission["supported_versions"]
         ),
     }
+    if "reviewed_core_semantics" in admission:
+        result["reviewed_core_semantics"] = dict(admission["reviewed_core_semantics"])
+    return result
 
 
 def build_helper_dependency_risk_binding(

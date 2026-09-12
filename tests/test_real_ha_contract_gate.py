@@ -354,10 +354,17 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
         self.assertIn(legacy_contract.name, runner_calls)
 
     def test_beta37_helper_state_uses_real_f3_lifecycle_on_every_ha_lane(self):
-        contract = self.functions[
+        wrapper = self.functions[
             "_run_governed_helper_state_contract"
         ]
-        contract_text = ast.unparse(contract)
+        contract = self.functions["_run_governed_helper_state_with_authority"]
+        self.assertEqual(len(calls_under(wrapper, contract.name)), 1)
+        self.assertIn("DependencyAnalysisRuntime", ast.unparse(wrapper))
+        self.assertIn("configure_with_test_authority", ast.unparse(wrapper))
+        self.assertIn("core_runtime=core_runtime", ast.unparse(wrapper))
+        self.assertIn("core_runtime=core_runtime", ast.unparse(contract))
+        self.assertIn("shutdown", ast.unparse(wrapper))
+        contract_text = ast.unparse(wrapper) + ast.unparse(contract)
         for required in (
             "HelperStateGateway",
             "DirectHaDependencyProvider",
@@ -404,7 +411,7 @@ class RealHomeAssistantDev14GateTests(unittest.TestCase):
             call_name(call)
             for call in calls_under(self.functions["run_contracts"])
         }
-        self.assertIn(contract.name, runner_calls)
+        self.assertIn(wrapper.name, runner_calls)
 
     def test_all_four_resources_have_create_read_update_reread_coverage(self):
         resource_ids = self.contract.RESOURCE_IDS

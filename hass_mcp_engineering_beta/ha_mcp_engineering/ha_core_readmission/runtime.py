@@ -787,6 +787,63 @@ class CoreRuntime:
             and self._coordinator.release_routes(authority.leases)
         )
 
+    def dependency_semantic_evidence(
+        self, authority: CoreRouteAuthority, commits: tuple[CoreDispatchCommit, ...]
+    ):
+        """Bind collected semantics to current reviewed Core contracts.
+
+        Issue only inside the consumed dependency build. Reuse of this evidence
+        checks the original generation, never reacquires or extends its commit.
+        The selected compiled probe fingerprint binds the semantic registry hash.
+        """
+
+        from ..dependency.semantic_registry import (
+            ReviewedCoreSemantics, semantic_registry_identity,
+        )
+
+        self._sync_registry_authority()
+        with self._lock:
+            if (authority.capability_ids != ("core.dependency_helper_planning",)
+                    or not self.revalidate(authority, commits)):
+                return None
+            generation = self._coordinator.current_generation
+            observation = self._observation
+            if generation is None or observation is None:
+                return None
+            profile = self._probe_profile_for(observation.version)
+            decisions = tuple(generation.decision_for(name) for name in (
+                "core.template_semantics", "core.dependency_helper_planning"))
+            if profile is None or any(d is None or not d.disposition.admitted for d in decisions):
+                return None
+            contract = {
+                **semantic_registry_identity(),
+                "core_version": observation.version,
+                "probe_profile_id": profile.profile_id,
+                "probe_contract_fingerprint": profile.contract_fingerprint,
+                **{d.capability_id: d.contract_fingerprint for d in decisions},
+            }
+
+            material = tuple(sorted(contract.items()))
+
+            def current(candidate: ReviewedCoreSemantics) -> bool:
+                self._sync_registry_authority()
+                with self._lock:
+                    # Object identity also rejects configure/reset reuse of a
+                    # numerical generation. Retirement cannot revive evidence.
+                    selected = self._probe_profile_for(observation.version)
+                    return bool(
+                        candidate.contract == material
+                        and candidate.observed_version == observation.version
+                        and self._coordinator.current_generation is generation
+                        and self._observation is not None
+                        and self._observation.fingerprint == observation.fingerprint
+                        and selected == profile
+                    )
+
+            evidence = ReviewedCoreSemantics(
+                observation.version, material, current)
+            return evidence if evidence.matches(observation.version) else None
+
     def finish(self, commits: tuple[CoreDispatchCommit, ...] | None) -> bool:
         return bool(commits and self._coordinator.finish_commits(commits))
 
