@@ -63,6 +63,20 @@ class CoreRegistryPreparationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.candidate()
 
+    def test_older_writer_can_revoke_unknown_profile_without_altering_other_positives(self):
+        self.entry["probe_profile_id"] = "future-unknown-profile"
+        sibling = {**deepcopy(self.entry), "version": "2026.9.3", "entry_id": "synthetic-sibling",
+                   "image_index_digest": "sha256:" + "f" * 64}
+        previous = self.signer.journal_raw(envelopes=[self.signer.raw(entries=[self.entry, sibling])])
+        candidate = self.candidate(previous, operation="revoke", reason="Synthetic withdrawal.")
+        result = prepare.parse_journal(self.sign(candidate, previous), self.signer.private_key.public_key())
+        self.assertEqual([e.to_mapping() for e in result.accepted.entries], [sibling])
+        self.assertEqual(result.accepted.revocations[0].version, "2026.9.2")
+        value = prepare.strict_json(candidate)
+        value["envelope"]["entries"][0]["source_commit"] = "a" * 40
+        with self.assertRaises(ValueError):
+            self.sign(canonical_json(value), previous)
+
     def test_revocation_survives_renewal_and_checkpoint_compaction(self):
         raw = self.sign(self.candidate())
         raw = self.sign(self.candidate(raw, operation="revoke", reason="Synthetic withdrawal."), raw)

@@ -28,6 +28,11 @@ Signed references to unknown capabilities/profiles or mismatched fingerprints
 do not enable them; a mismatch affects only capabilities whose prerequisites
 fail. An unknown probe profile supplies no new-release authority.
 
+The observation interface authenticates Core's reported version and contract
+responses; it does not expose the running Core OCI digest. Recorded release
+source/image provenance is therefore separate from installed-image evidence.
+Do not describe version agreement as a cryptographic running-image proof.
+
 ## Runtime lifecycle
 
 Core reuses the existing bounded signed-journal verification, durable cache,
@@ -51,6 +56,12 @@ new positive authority; unexpired previously verified data can remain usable.
 An unaffected compiled pairing remains usable when the registry is unavailable.
 Malformed cache or an incomplete persistence transaction may deny the whole
 Core surface to prevent reactivation of possibly revoked authority.
+
+Inherited transport bounds are 5 seconds to connect, 15 seconds overall and
+32 MiB for a journal/cache. Periodic refresh is six hours; the missing-release
+lookup is throttled to 60 seconds and is driven by Core reconciliation. Runtime
+chains are bounded to 64 envelopes and eight retained denial-source envelopes;
+the preparation utility compacts its positive chain to 32 envelopes.
 
 Acquisition, consumption and each dispatch revalidation synchronously check
 whether the selected authority has expired, changed or been revoked. They only
@@ -160,6 +171,11 @@ For withdrawal use `revoke` with the exact entry, hashed review evidence and
 `--reason`, then the same review/sign/publish process. This also permits a
 reviewed denial of a compiled pairing. Preserve tombstones across renewal and
 compaction. Do not restore an old journal or delete a cache as rollback.
+
+Withdrawal does not require the writer to understand a newer positive profile.
+The denial-only path may remove positives and retain exact unchanged siblings;
+it cannot add or alter a positive entry. This allows an older writer to withdraw
+newer-profile authority without an Engineering code change.
 
 ## Validation and release completion
 

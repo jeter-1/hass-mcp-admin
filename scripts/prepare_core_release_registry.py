@@ -99,7 +99,6 @@ def prepare_candidate(*, entry, evidence: bytes, previous: bytes | None,
     """Produce unsigned review material; successful probes alone cannot sign it."""
     timestamp = now or datetime.now(timezone.utc)
     parsed = CoreReleaseEntry.from_mapping(entry)
-    require_known_contracts(parsed)
     if not 1 <= len(evidence) <= MAX_EVIDENCE_BYTES:
         raise ValueError("review evidence exceeds bound")
     if hashlib.sha256(evidence).hexdigest() != parsed.evidence_sha256:
@@ -114,6 +113,7 @@ def prepare_candidate(*, entry, evidence: bytes, previous: bytes | None,
             for revocation in envelope.revocations:
                 tombstones[revocation.release_identity] = revocation.to_mapping()
     if operation == "add":
+        require_known_contracts(parsed)
         if parsed.release_identity in tombstones:
             raise ValueError("revoked release cannot be re-added")
         old = next((e for e in entries if e["version"] == parsed.version), None)
@@ -205,8 +205,18 @@ def sign_candidate(candidate: bytes, *, expected_sha256: str,
     expires = parse_utc_timestamp(result.accepted.expires_at)
     if not generated <= timestamp < expires or expires - generated > timedelta(days=90):
         raise ValueError("candidate is not current at signing")
-    for entry in result.accepted.entries:
-        require_known_contracts(entry)
+    if value["operation"] == "revoke":
+        # Denial never requires positive applicability. An older writer can
+        # withdraw a newer-profile record, but cannot add or alter positives.
+        prior_entries = {} if tip is None else {
+            e.release_identity: e.to_mapping() for e in tip.entries
+        }
+        for entry in result.accepted.entries:
+            if prior_entries.get(entry.release_identity) != entry.to_mapping():
+                raise ValueError("withdrawal cannot add or alter positive authority")
+    else:
+        for entry in result.accepted.entries:
+            require_known_contracts(entry)
     return raw
 
 

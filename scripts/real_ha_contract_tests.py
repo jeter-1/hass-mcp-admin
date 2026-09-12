@@ -3075,6 +3075,8 @@ async def _run_core_2026_9_child_contract(
     parent_id, child_id, child_entity_id = candidates[0]
     original_parent_area = devices_by_id[parent_id].get("area_id")
     created_area_id: str | None = None
+    registry_directory = None
+    core_runtime = None
     body_error: BaseException | None = None
     restore_error: BaseException | None = None
     try:
@@ -3125,11 +3127,12 @@ async def _run_core_2026_9_child_contract(
             # adding .2 to the production compiled release table.
             sys.path.insert(0, str(ROOT / "scripts"))
             from core_registry_contract_lane import configure_with_test_authority
-            with tempfile.TemporaryDirectory(prefix="core-data-contract-") as directory:
-                await configure_with_test_authority(
-                    core_runtime, configured, cache_path=Path(directory) / "core.json",
-                    expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
-                )
+            registry_directory = tempfile.TemporaryDirectory(prefix="core-data-contract-")
+            await configure_with_test_authority(
+                core_runtime, configured,
+                cache_path=Path(registry_directory.name) / "core.json",
+                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+            )
         else:
             core_runtime.configure(configured)
             await core_runtime.reconcile_once("startup")
@@ -3290,6 +3293,16 @@ async def _run_core_2026_9_child_contract(
                 )
         except BaseException as exc:
             restore_error = exc
+        finally:
+            # Keep authority persistence available through the final consumer
+            # read; then close the test-owned lifecycle socket before cleanup.
+            if core_runtime is not None:
+                monitor = core_runtime._connection_monitor_task
+                core_runtime.request_reconciliation(connection_changed=True)
+                if monitor is not None:
+                    await asyncio.gather(monitor, return_exceptions=True)
+            if registry_directory is not None:
+                registry_directory.cleanup()
     if body_error is not None and restore_error is not None:
         raise ExceptionGroup(
             "Core child-device contract and restoration both failed",

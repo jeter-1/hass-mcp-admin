@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from copy import deepcopy
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
 import sys
@@ -17,7 +17,7 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT / "tests")]
 from ha_mcp_engineering.ha_core_readmission import CoreRuntime, CORE_IDENTITY, compiled_exact_authority
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry, CORE_REGISTRY_URL
 from ha_mcp_engineering.ha_core_readmission.registry_models import CoreRegistryEnvelope
-from ha_mcp_engineering.ha_mcp_readmission.registry import SignedReleaseRegistry, ReleaseRegistryOperationalError
+from ha_mcp_engineering.ha_mcp_readmission.registry import SignedReleaseRegistry, ReleaseRegistryOperationalError, MAX_CACHE_BYTES
 from ha_mcp_engineering.signed_registry import canonical_json, RegistryValidationError
 from ha_mcp_engineering.signed_registry.canonical import sha256_digest
 from core_registry_fixtures import CoreSigner, ProjectedCoreSource, core_entry, core_revocation, NOW
@@ -194,10 +194,47 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(default.selections("2026.9.1"))
 
     async def test_bad_signature_and_oversized_payload_cannot_create_core_authority(self):
-        for raw in (CoreSigner().journal_raw(), b" " * (4 * 1024 * 1024 + 1)):
+        for raw in (CoreSigner().journal_raw(), b" " * (MAX_CACHE_BYTES + 1)):
             self.raw = raw
             self.assertFalse(await self.registry.refresh())
             self.assertEqual(self.registry.selections("2026.9.2"), ())
+        self.assertEqual(self.registry.snapshot()["last_failure_reason"], "registry_journal_oversized")
+
+    async def test_actual_f3_guards_reprobe_and_stop_readback_on_signed_expiry(self):
+        from tests.test_ha_core_2026_9_integration import _CoreBoundDashboardOperation
+        from ha_mcp_engineering.f3_runtime.runtime import _CoreDispatchAuthorityGuard, _CoreVerificationAdapter
+        from ha_mcp_engineering.request_context import current_telemetry
+        runtime, source = await self.runtime()
+        prepared = _CoreBoundDashboardOperation()
+        guard = _CoreDispatchAuthorityGuard(runtime, datetime.now(timezone.utc).isoformat())
+        authority = await guard.acquire(prepared, object())
+        self.assertIsNotNone(authority)
+        self.assertEqual(source.calls, 4)
+        commits = guard.consume(authority)
+        self.assertTrue(guard.revalidate(authority, commits))
+        self.assertTrue(guard.finish(commits))
+        reads = []
+        owner = self
+
+        class Adapter:
+            capabilities = object()
+
+            async def observe(self, _prepared, _dispatch):
+                telemetry = current_telemetry()
+                if telemetry.authorize_core_dispatch():
+                    reads.append("first")
+                owner.clock += timedelta(days=2)
+                if telemetry.authorize_core_dispatch():
+                    reads.append("forbidden_after_expiry")
+                return "observation_interrupted"
+
+        result = await _CoreVerificationAdapter(Adapter(), runtime).observe(prepared, object())
+        self.assertEqual(result, "observation_interrupted")
+        self.assertEqual(reads, ["first"])
+        self.assertIsNone(await guard.acquire(prepared, object()))
+        health = runtime.health_snapshot()
+        for name in ("issued_lease_count", "active_commit_count", "fallback_count"):
+            self.assertEqual(health[name], 0)
 
     async def test_future_device_routes_keep_exact_corrected_upstream_adapter(self):
         runtime, _ = await self.runtime()
