@@ -51,6 +51,8 @@ class Settings:
     ha_mcp_release_registry_public_key: str = field(
         default="", repr=False
     )
+    ha_core_release_registry_enabled: bool = False
+    ha_core_release_registry_public_key: str = field(default="", repr=False)
     # ``dependency_index_prewarm`` is retained as an options compatibility alias.
     dependency_index_prewarm: bool = False
     prewarm_enabled: bool = True
@@ -234,6 +236,12 @@ def load_settings() -> Settings:
             or ""
         ).strip(),
         dependency_index_prewarm=bool(options.get("dependency_index_prewarm", False)),
+        ha_core_release_registry_enabled=bool(
+            options.get("ha_core_release_registry_enabled", False)
+        ),
+        ha_core_release_registry_public_key=str(
+            options.get("ha_core_release_registry_public_key", "") or ""
+        ).strip(),
         # RC2dev4 stored ``dependency_index_prewarm: false`` as its default.
         # Treating that legacy default as authoritative would silently disable
         # RC2dev5 prewarming on upgrades. The new key is the sole control; its

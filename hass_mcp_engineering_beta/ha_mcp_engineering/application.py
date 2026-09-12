@@ -1,6 +1,7 @@
 """Beta application composition, validation, and structured startup."""
 
 import asyncio
+import base64
 import logging
 import os
 import sys
@@ -136,6 +137,29 @@ def validate_settings(settings: Settings) -> None:
         except SignedRegistryValidationError:
             errors.append(
                 "ha_mcp_release_registry_public_key must be a base64 Ed25519 public key when the registry is enabled"
+            )
+    if settings.ha_core_release_registry_enabled:
+        from .ha_core_readmission.registry_models import CORE_REGISTRY_KEY_ID
+
+        try:
+            TrustAnchorStore.from_base64(
+                {CORE_REGISTRY_KEY_ID: settings.ha_core_release_registry_public_key}
+            )
+            core_key = base64.b64decode(settings.ha_core_release_registry_public_key)
+            for existing in (
+                settings.ha_mcp_release_registry_public_key,
+                settings.upstream_trust_registry_public_key,
+            ):
+                try:
+                    shared_key = bool(existing) and base64.b64decode(existing, validate=True) == core_key
+                except ValueError:
+                    shared_key = False
+                if shared_key:
+                    errors.append("Core release registry requires an independent signing identity")
+                    break
+        except SignedRegistryValidationError:
+            errors.append(
+                "ha_core_release_registry_public_key must be a base64 Ed25519 public key when the registry is enabled"
             )
     if errors:
         raise ConfigurationError(

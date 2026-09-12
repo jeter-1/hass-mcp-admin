@@ -118,7 +118,7 @@ HA_CONTRACT_CONTAINER = os.environ.get(
 )
 UPSTREAM_PORT = int(os.environ.get("REAL_HA_UPSTREAM_PORT", "18086"))
 UPSTREAM_SECRET_PATH = "/beta23-real-ha-mcp"
-CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1"})
+CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1", "2026.9.2"})
 MIGRATION_AUTOMATION_ID = "beta23_composite_device_reference"
 FIXTURE_PLATFORM = "beta23_device_fixture"
 RESOURCE_ORDER = (
@@ -3120,8 +3120,19 @@ async def _run_core_2026_9_child_contract(
         await _start_exact_upstream(token)
         configured = settings(token)
         core_runtime = CoreRuntime()
-        core_runtime.configure(configured)
-        await core_runtime.reconcile_once("startup")
+        if EXPECTED_HA_VERSION == "2026.9.2":
+            # CI-only ephemeral authority exercises data admission without
+            # adding .2 to the production compiled release table.
+            sys.path.insert(0, str(ROOT / "scripts"))
+            from core_registry_contract_lane import configure_with_test_authority
+            with tempfile.TemporaryDirectory(prefix="core-data-contract-") as directory:
+                await configure_with_test_authority(
+                    core_runtime, configured, cache_path=Path(directory) / "core.json",
+                    expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                )
+        else:
+            core_runtime.configure(configured)
+            await core_runtime.reconcile_once("startup")
         read_gateway = UpstreamReadGateway()
         read_gateway.configure(
             configured,

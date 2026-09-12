@@ -14,6 +14,7 @@ from ..configuration import Settings
 from .device_registry import assess_device_registry
 from .models import CORE_IDENTITY
 from .profiles import CORE_CAPABILITY_PROFILES
+from .probe_profiles import CoreProbeProfile, compiled_probe_profile
 
 
 MAX_CORE_PROBE_BYTES = 4_000_000
@@ -122,9 +123,11 @@ def capability_evidence_for_probes(
     websocket_config: Any,
     websocket_results: Mapping[str, Any],
     configuration_validation: Any = None,
+    probe_profile: CoreProbeProfile | None = None,
 ) -> list[dict[str, Any]]:
     """Project transient raw probes into bounded binary-owned check evidence."""
 
+    probe_profile = probe_profile or compiled_probe_profile(version)
     state_shape = (
         _registry_sequence(states, "entity_id")
         and _bounded_json(states)
@@ -183,7 +186,7 @@ def capability_evidence_for_probes(
     )
     device_contract_complete = (
         device_assessment.complete
-        if version in CORE_2026_9_VERSIONS
+        if probe_profile is not None and probe_profile.strict_device_registry
         else legacy_device_shape
     )
     add(
@@ -223,16 +226,10 @@ def capability_evidence_for_probes(
     )
     add("core.governance_observability", True)
 
-    # These exact profiles are released only for the compiled source versions
-    # whose semantic and disposable-runtime contracts were reviewed.  The
-    # coordinator still requires the exact binary-owned semantic fingerprint;
-    # an unknown version or a successful identity probe cannot select it.
-    if version in {
-        "2026.7.2",
-        "2026.8.0",
-        "2026.8.1",
-        *CORE_2026_9_VERSIONS,
-    }:
+    # Independent compiled or verified authority selects this code-owned probe
+    # profile. A successful response or an observed version cannot select it.
+    # Admission still independently checks each exact capability contract.
+    if probe_profile is not None:
         add("core.template_semantics", websocket_ok, semantic=True)
         add(
             "core.configuration_validation",
@@ -260,8 +257,9 @@ def capability_evidence_for_probes(
 class AiohttpCoreSnapshotSource:
     """Capture bounded REST and authenticated WebSocket observations only."""
 
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, profile_selector=compiled_probe_profile):
         self._settings = settings
+        self._profile_selector = profile_selector
         self._observer_session_id = uuid.uuid4().hex
 
     def mark_connection_changed(self) -> None:
@@ -671,6 +669,7 @@ class AiohttpCoreSnapshotSource:
             raise RuntimeError("core_probe_version_invalid")
         evidence = capability_evidence_for_probes(
             version=version,
+            probe_profile=self._profile_selector(version),
             rest_config=rest_config,
             states=states,
             services=services,

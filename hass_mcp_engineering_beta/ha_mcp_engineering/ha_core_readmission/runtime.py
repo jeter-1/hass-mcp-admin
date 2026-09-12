@@ -22,6 +22,9 @@ from .models import (
 from .observation import CoreObservationCollector, CoreSnapshotSource
 from .profiles import CORE_CAPABILITY_PROFILES, compiled_exact_authority
 from .routes import delegated_provider_compatibility, f3_requirements
+from .registry import CoreReleaseRegistry
+from .probe_profiles import compiled_probe_profile
+from .models import CORE_IDENTITY
 
 
 CORE_RECONCILIATION_INTERVAL_SECONDS = 300.0
@@ -53,6 +56,8 @@ class CoreRuntime:
             [str], tuple[CoreAuthoritySelection, ...]
         ] = compiled_exact_authority
         self._observation: CoreObservation | None = None
+        self._release_registry: CoreReleaseRegistry | None = None
+        self._published_registry_token: str | None = None
         self._connection_epoch = 0
         self._connection_monitor_task: asyncio.Task[None] | None = None
         self._connection_monitor_token: object | None = None
@@ -85,15 +90,22 @@ class CoreRuntime:
         source: CoreSnapshotSource | None = None,
         authority_provider: Callable[
             [str], tuple[CoreAuthoritySelection, ...]
-        ] = compiled_exact_authority,
+        ] | None = None,
+        release_registry: CoreReleaseRegistry | None = None,
         audit_sink: Callable[[dict[str, Any]], Any] | None = None,
     ) -> None:
         """Configure one runtime; no probe or provider dispatch occurs here."""
 
+        registry = release_registry or CoreReleaseRegistry(
+            enabled=getattr(settings, "ha_core_release_registry_enabled", False),
+            public_key=getattr(settings, "ha_core_release_registry_public_key", ""),
+        )
         if source is None:
             from .source import AiohttpCoreSnapshotSource
 
-            source = AiohttpCoreSnapshotSource(settings)
+            source = AiohttpCoreSnapshotSource(
+                settings, profile_selector=registry.probe_profile_for
+            )
         with self._lock:
             # ``CORE_READMISSION`` is process-global, while test and embedding
             # callers may configure and serve it from successive event loops.
@@ -103,7 +115,9 @@ class CoreRuntime:
             self._reprobe_event = asyncio.Event()
             self._source = source
             self._collector = CoreObservationCollector(self._source)
-            self._authority_provider = authority_provider
+            self._authority_provider = authority_provider or registry.selections
+            self._release_registry = registry
+            self._published_registry_token = None
             self._audit_sink = audit_sink
             self._coordinator = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
             self._observation = None
@@ -194,6 +208,13 @@ class CoreRuntime:
             collector = self._collector
             if collector is None:
                 raise RuntimeError("Core readmission is not configured")
+            registry = self._release_registry
+            if registry is not None:
+                await registry.refresh_if_due()
+            self._sync_registry_authority()
+            collection_token = (
+                registry.collection_token() if registry and registry.enabled else None
+            )
             with self._lock:
                 prior_observation = self._observation
                 connection_epoch = self._connection_epoch
@@ -201,6 +222,21 @@ class CoreRuntime:
                 if trigger != "startup":
                     self._counters["reprobes"] += 1
             observation = await collector.collect()
+            if registry and registry.enabled and observation.version is not None:
+                # A newly observed Core version cannot keep the preceding
+                # generation usable while we await external compatibility data.
+                if self._retire_observed_version_change(observation.version):
+                    prior_observation = None
+                if not compiled_exact_authority(observation.version):
+                    refreshed = await registry.refresh_for_missing_release(
+                        server_name=CORE_IDENTITY, version=observation.version
+                    )
+                    self._sync_registry_authority()
+                    if refreshed and registry.collection_token() != collection_token:
+                        # One bounded recollection after a missing-release fetch.
+                        # A later concurrent change refuses this attempt below.
+                        collection_token = registry.collection_token()
+                        observation = await collector.collect()
             monitor_required, monitor_ready, newly_attached = (
                 await self._ensure_connection_monitor(observation)
             )
@@ -222,6 +258,13 @@ class CoreRuntime:
                 # the watcher.  Recollect the complete two-snapshot evidence
                 # under that authenticated lifecycle fence before publishing.
                 observation = await collector.collect()
+            if registry and registry.enabled and registry.collection_token() != collection_token:
+                self._sync_registry_authority()
+                self._reprobe_event.set()
+                with self._lock:
+                    self._counters["verification_failures"] += 1
+                    self._append_event_locked("core_reconciliation", "core_registry_changed_during_probe", None)
+                return self.health_snapshot()
             authority = (
                 self._authority_provider(observation.version)
                 if observation.version is not None
@@ -256,6 +299,10 @@ class CoreRuntime:
                 self._initialized = True
                 if result.published:
                     self._observation = observation
+                    self._published_registry_token = (
+                        registry.selection_token(observation.version)
+                        if registry and registry.enabled and observation.version else None
+                    )
                 if result.published and any(
                     item.disposition.admitted
                     for item in result.generation.decisions
@@ -472,6 +519,53 @@ class CoreRuntime:
         if attached:
             self.request_reconciliation(connection_changed=True)
 
+    def _retire_observed_version_change(self, version: str) -> bool:
+        with self._lock:
+            if self._observation is None or self._observation.version == version:
+                return False
+            retired = self._coordinator.retire_current_generation()
+            self._published_registry_token = None
+            self._observation = None
+            self._initialized = False
+            self._last_material_change_at = datetime.now(timezone.utc)
+            if retired is not None:
+                self._counters["retirements"] += 1
+            self._append_event_locked("core_authority_changed", "core_observed_version_changed", retired)
+            listeners = tuple(self._listeners)
+        for listener in listeners:
+            listener()
+        return True
+
+    def _sync_registry_authority(self) -> None:
+        """Withdraw moved/expired authority synchronously; never admit here."""
+        registry = self._release_registry
+        if registry is None or not registry.enabled:
+            return
+        with self._lock:
+            observation = self._observation
+            if (self._published_registry_token is None or observation is None
+                    or observation.version is None):
+                return
+            if registry.selection_token(observation.version) == self._published_registry_token:
+                return
+            retired = self._coordinator.retire_current_generation()
+            self._published_registry_token = None
+            self._initialized = False
+            self._last_material_change_at = datetime.now(timezone.utc)
+            if retired is not None:
+                self._counters["retirements"] += 1
+            self._append_event_locked("core_authority_changed", "core_registry_authority_changed", retired)
+            listeners = tuple(self._listeners)
+        self._reprobe_event.set()
+        for listener in listeners:
+            listener()
+
+    def _probe_profile_for(self, version: str | None):
+        if version is None:
+            return None
+        return (self._release_registry.probe_profile_for(version)
+                if self._release_registry else compiled_probe_profile(version))
+
     def route_status(
         self,
         capability_ids: tuple[str, ...],
@@ -479,6 +573,7 @@ class CoreRuntime:
         delegated_tool: str | None = None,
         delegated_adapter_version: str | None = None,
     ) -> dict[str, Any]:
+        self._sync_registry_authority()
         with self._lock:
             generation = self._coordinator.current_generation
             observation = self._observation
@@ -498,6 +593,7 @@ class CoreRuntime:
                 tool_name=delegated_tool or "",
                 core_version=observation.version if observation is not None else None,
                 adapter_version=delegated_adapter_version,
+                probe_profile=self._probe_profile_for(observation.version if observation else None),
             )
             available = available and provider_compatible
             disposition = (
@@ -566,6 +662,7 @@ class CoreRuntime:
         delegated_tool: str | None = None,
         delegated_adapter_version: str | None = None,
     ) -> CoreRouteAuthority | None:
+        self._sync_registry_authority()
         with self._lock:
             self._counters["lease_attempts"] += 1
             observation = self._observation
@@ -577,6 +674,7 @@ class CoreRuntime:
                 tool_name=delegated_tool or "",
                 core_version=observation.version,
                 adapter_version=delegated_adapter_version,
+                probe_profile=self._probe_profile_for(observation.version),
             )
             if not provider_compatible:
                 self._counters["lease_failures"] += 1
@@ -619,6 +717,7 @@ class CoreRuntime:
     def consume(
         self, authority: CoreRouteAuthority
     ) -> tuple[CoreDispatchCommit, ...] | None:
+        self._sync_registry_authority()
         with self._lock:
             observation = self._observation
             if observation is None:
@@ -642,6 +741,7 @@ class CoreRuntime:
     ) -> bool:
         """Require the same current Core authority before every provider call."""
 
+        self._sync_registry_authority()
         with self._lock:
             observation = self._observation
             generation = self._coordinator.current_generation
@@ -752,6 +852,7 @@ class CoreRuntime:
         }
 
     def health_snapshot(self) -> dict[str, Any]:
+        self._sync_registry_authority()
         with self._lock:
             assessment = self._coordinator.update_assessment()
             generation = self._coordinator.current_generation
@@ -779,6 +880,7 @@ class CoreRuntime:
                     for item in decisions
                 ],
                 "counters": dict(self._counters),
+                "release_registry": self._release_registry.snapshot() if self._release_registry else None,
                 "recent_events": [dict(item) for item in self._events],
                 "fallback_count": 0,
             }
@@ -788,6 +890,7 @@ class CoreRuntime:
     def health_projection(self) -> dict[str, Any]:
         """Return the bounded Core authority summary used by public health."""
 
+        self._sync_registry_authority()
         with self._lock:
             projection = {
                 **self._coordinator.health_projection(),
@@ -800,6 +903,7 @@ class CoreRuntime:
                     self._observation and self._observation.identity_agrees
                 ),
                 "counters": dict(self._counters),
+                "release_registry": self._release_registry.snapshot() if self._release_registry else None,
                 "recent_event_count": len(self._events),
                 "fallback_count": 0,
             }

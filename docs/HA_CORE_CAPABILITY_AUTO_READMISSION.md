@@ -1,6 +1,8 @@
 # Home Assistant Core capability-scoped readmission
 
-Status: integrated RC2 source candidate; final exact-head CI remains required.
+Status: Core signed-data continuity implementation; candidate CI, independent
+review and release acceptance remain required. This document describes source
+behavior, not an observation of a deployed connection.
 
 This is the Home Assistant Core implementation of ADR-020. It observes Core,
 publishes Core-owned per-capability authority, gates existing static, delegated,
@@ -15,6 +17,13 @@ release evidence, not derived from live descriptions. A future compatible
 release may select only an existing binary-known profile and adapter through
 reviewed compatibility authority. Live version, catalog, and response evidence
 cannot authorize themselves.
+
+Production composition now connects the existing compatibility authority model
+to an independent Core signed registry. A reviewed future release selects an
+existing probe profile, capability contracts and device-adapter restriction
+together. It does not need an entry in the compiled exact-release table.
+See [Core registry operation](CORE_RELEASE_REGISTRY.md) for review, expiry,
+revocation, initial activation and the evidence needed before an update.
 
 One reconciliation captures two consecutive authenticated snapshots containing:
 
@@ -91,7 +100,11 @@ authority stays separately bound to its exact getter/setter attestation.
 Fallback remains zero.
 
 The disposable CI matrix keeps older Core lanes paired with exact ha-mcp 8.2.0
-and adds both immutable Core 2026.9 patches paired with exact ha-mcp 8.4.3. The
+and includes immutable Core 2026.9.0/.1/.2 paired with exact ha-mcp 8.4.3. The .2
+lane first verifies refusal with no authority, then admits an ephemeral signed
+test record in the same Core runtime instance. It uses actual Core probes and
+the existing five-read comparison. Its signature is test-only and cannot
+authorize a production installation. The
 2026.9 lanes use a dedicated non-internal Docker bridge, synthetic credentials
 and fixtures, loopback-only harness ports, bounded waits, and unconditional
 cleanup.

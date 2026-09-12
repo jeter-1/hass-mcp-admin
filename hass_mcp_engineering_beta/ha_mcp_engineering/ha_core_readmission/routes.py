@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .probe_profiles import CoreProbeProfile, compiled_probe_profile
+
 
 DEVICE_DEPENDENT_DELEGATED_TOOLS = frozenset(
     {
@@ -145,6 +147,7 @@ def delegated_provider_compatibility(
     tool_name: str,
     core_version: str | None,
     adapter_version: str | None,
+    probe_profile: CoreProbeProfile | None = None,
 ) -> tuple[bool, str | None]:
     """Bind Core 2026.9 device routes to a reviewed corrected ha-mcp adapter.
 
@@ -154,12 +157,14 @@ def delegated_provider_compatibility(
     other's authority.
     """
 
+    probe_profile = probe_profile or compiled_probe_profile(core_version or "")
     if (
         tool_name not in DEVICE_DEPENDENT_DELEGATED_TOOLS
-        or core_version not in CORE_2026_9_RELEASES
+        or probe_profile is None
+        or not probe_profile.strict_device_registry
     ):
         return True, None
-    if adapter_version in CORE_2026_9_DEVICE_ADAPTER_RELEASES:
+    if adapter_version in probe_profile.delegated_device_adapters:
         return True, None
     return False, "ha_mcp_child_device_contract_unproven"
 

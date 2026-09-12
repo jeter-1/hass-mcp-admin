@@ -113,6 +113,19 @@ Clock = Callable[[], datetime]
 
 
 @dataclass(frozen=True)
+class RegistryBinding:
+    """Code-owned surface binding; never supplied by downloaded content."""
+
+    registry_id: str = REGISTRY_ID
+    key_id: str = TRUST_ANCHOR_KEY_ID
+    url: str = REGISTRY_URL
+    envelope_type: type[RegistryEnvelope] = RegistryEnvelope
+
+
+HA_MCP_REGISTRY_BINDING = RegistryBinding()
+
+
+@dataclass(frozen=True)
 class SignedRegistryJournal:
     """Authenticated bounded chain plus explicit compaction checkpoint."""
 
@@ -155,6 +168,7 @@ def _parse_signed_journal(
     raw: bytes,
     *,
     trust_anchors: TrustAnchorStore,
+    binding: RegistryBinding = HA_MCP_REGISTRY_BINDING,
 ) -> SignedRegistryJournal:
     if not isinstance(raw, bytes) or len(raw) > MAX_CACHE_BYTES:
         raise ReleaseRegistryOperationalError(
@@ -180,11 +194,11 @@ def _parse_signed_journal(
         raise ReleaseRegistryOperationalError(
             "registry_journal_schema_unsupported"
         )
-    if value["registry_id"] != REGISTRY_ID:
+    if value["registry_id"] != binding.registry_id:
         raise ReleaseRegistryOperationalError(
             RegistryErrorCode.REGISTRY_ID_MISMATCH.value
         )
-    if value["key_id"] != TRUST_ANCHOR_KEY_ID:
+    if value["key_id"] != binding.key_id:
         raise ReleaseRegistryOperationalError(
             RegistryErrorCode.UNKNOWN_KEY.value
         )
@@ -253,12 +267,14 @@ def _parse_signed_journal(
         )
     envelopes = tuple(
         parse_verified_registry_envelope(
-            canonical_json(item), trust_anchors=trust_anchors
+            canonical_json(item), trust_anchors=trust_anchors,
+            envelope_type=binding.envelope_type,
         )
         for item in raw_envelopes
     )
     _validate_journal_envelopes(
         envelopes,
+        binding=binding,
         checkpoint_sequence=checkpoint_sequence,
         checkpoint_previous=checkpoint_previous,
     )
@@ -273,7 +289,8 @@ def _parse_signed_journal(
         )
     sources = tuple(
         parse_verified_registry_envelope(
-            canonical_json(item), trust_anchors=trust_anchors
+            canonical_json(item), trust_anchors=trust_anchors,
+            envelope_type=binding.envelope_type,
         )
         for item in raw_sources
     )
@@ -284,7 +301,7 @@ def _parse_signed_journal(
     source_by_sequence: dict[int, str] = {}
     envelope_digests = set(envelope_by_sequence.values())
     for source in sources:
-        _require_journal_envelope(source)
+        _require_journal_envelope(source, binding=binding)
         if (
             not source.revocations
             or source.sequence > envelopes[-1].sequence
@@ -307,8 +324,8 @@ def _parse_signed_journal(
         source_digests.add(source.content_digest)
         source_by_sequence[source.sequence] = source.content_digest
     return SignedRegistryJournal(
-        registry_id=REGISTRY_ID,
-        key_id=TRUST_ANCHOR_KEY_ID,
+        registry_id=binding.registry_id,
+        key_id=binding.key_id,
         checkpoint_sequence=checkpoint_sequence,
         checkpoint_previous_registry_sha256=checkpoint_previous,
         envelopes=envelopes,
@@ -317,10 +334,14 @@ def _parse_signed_journal(
     )
 
 
-def _require_journal_envelope(envelope: RegistryEnvelope) -> None:
+def _require_journal_envelope(
+    envelope: RegistryEnvelope,
+    *,
+    binding: RegistryBinding = HA_MCP_REGISTRY_BINDING,
+) -> None:
     if (
-        envelope.registry_id != REGISTRY_ID
-        or envelope.key_id != TRUST_ANCHOR_KEY_ID
+        envelope.registry_id != binding.registry_id
+        or envelope.key_id != binding.key_id
     ):
         raise ReleaseRegistryOperationalError("registry_journal_invalid")
 
@@ -330,6 +351,7 @@ def _validate_journal_envelopes(
     *,
     checkpoint_sequence: int,
     checkpoint_previous: str | None,
+    binding: RegistryBinding = HA_MCP_REGISTRY_BINDING,
 ) -> None:
     first = envelopes[0]
     if (
@@ -341,7 +363,7 @@ def _validate_journal_envelopes(
     digests: set[str] = set()
     previous: RegistryEnvelope | None = None
     for envelope in envelopes:
-        _require_journal_envelope(envelope)
+        _require_journal_envelope(envelope, binding=binding)
         if (
             envelope.sequence in sequences
             or envelope.content_digest in digests
@@ -375,11 +397,13 @@ class SignedReleaseRegistry:
         cache_path: Path = CACHE_PATH,
         fetcher: Fetcher | None = None,
         now: Clock | None = None,
+        binding: RegistryBinding = HA_MCP_REGISTRY_BINDING,
     ) -> None:
+        self._binding = binding
         self._enabled = bool(enabled)
         self._anchors = (
             TrustAnchorStore.from_base64(
-                {TRUST_ANCHOR_KEY_ID: public_key}
+                {binding.key_id: public_key}
             )
             if self._enabled
             else TrustAnchorStore({})
@@ -531,10 +555,11 @@ class SignedReleaseRegistry:
                         self._surface_denied = True
                         raise
                     witness_started = True
-                raw = await self._fetcher(REGISTRY_URL, MAX_CACHE_BYTES)
+                raw = await self._fetcher(self._binding.url, MAX_CACHE_BYTES)
                 journal = _parse_signed_journal(
                     raw,
                     trust_anchors=self._anchors,
+                    binding=self._binding,
                 )
                 self._require_current_tip(journal.accepted)
                 status = self._validate_candidate_journal(journal)
@@ -738,7 +763,7 @@ class SignedReleaseRegistry:
         }
 
     async def _fetch_bytes(self, url: str, maximum: int) -> bytes:
-        if url != REGISTRY_URL or not url.startswith("https://"):
+        if url != self._binding.url or not url.startswith("https://"):
             raise ReleaseRegistryOperationalError(
                 "registry_location_rejected"
             )
@@ -799,6 +824,7 @@ class SignedReleaseRegistry:
             trust_anchors=self._anchors,
             now=self.evaluated_at(),
             accepted_state=accepted_state,
+            envelope_type=self._binding.envelope_type,
         )
         if not result.accepted:
             code = (
@@ -1276,6 +1302,7 @@ class SignedReleaseRegistry:
         journal = _parse_signed_journal(
             canonical_json(value["authority_journal"]),
             trust_anchors=self._anchors,
+            binding=self._binding,
         )
         sources = self._minimal_revocation_sources(
             self._sources_in_journal(journal)
@@ -1470,6 +1497,7 @@ class SignedReleaseRegistry:
         candidate = _parse_signed_journal(
             canonical_json(value["candidate_journal"]),
             trust_anchors=self._anchors,
+            binding=self._binding,
         )
         raw_denial_journals = value["retained_denial_journals"]
         if (
@@ -1483,6 +1511,7 @@ class SignedReleaseRegistry:
             _parse_signed_journal(
                 canonical_json(item),
                 trust_anchors=self._anchors,
+                binding=self._binding,
             )
             for item in raw_denial_journals
         )

@@ -29,6 +29,8 @@ options:
   upstream_trust_registry_public_key: ""
   ha_mcp_release_registry_enabled: false
   ha_mcp_release_registry_public_key: ""
+  ha_core_release_registry_enabled: false
+  ha_core_release_registry_public_key: ""
   dependency_index_prewarm: false
   prewarm_enabled: true
   prewarm_startup_delay_seconds: 45
@@ -61,6 +63,8 @@ schema:
   upstream_trust_registry_public_key: str
   ha_mcp_release_registry_enabled: bool
   ha_mcp_release_registry_public_key: str
+  ha_core_release_registry_enabled: bool
+  ha_core_release_registry_public_key: str
   dependency_index_prewarm: bool
   prewarm_enabled: bool
   prewarm_startup_delay_seconds: float

@@ -231,6 +231,8 @@ class SignatureAndTrustTests(unittest.TestCase):
                 "hass_mcp_engineering_beta/ha_mcp_engineering/application.py",
                 "hass_mcp_engineering_beta/ha_mcp_engineering/ha_mcp_readmission/ha_mcp.py",
                 "hass_mcp_engineering_beta/ha_mcp_engineering/ha_mcp_readmission/registry.py",
+                "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/registry.py",
+                "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/registry_models.py",
             },
         )
 
