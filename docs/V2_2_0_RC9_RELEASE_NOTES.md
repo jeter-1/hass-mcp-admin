@@ -48,6 +48,10 @@ retirement/expiry races, post-lock refresh, cancellation and resource cleanup
 remain covered. The disposable runtime lane now composes the production Core
 and dependency runtimes for helper execution; its original success, failure,
 uncertain-response reconciliation and cleanup assertions remain in force.
+Full discovery also required two existing positive prewarm tests to use real
+Core authority in place of their earlier test double. Their scheduling and
+invalidation assertions remain intact; no runtime behavior changed in that
+separate validation-fixture commit. Preserve the initial failed Evidence record.
 
 These are source/synthetic observations, not installed-system acceptance.
 Require clean final-head Evidence against the canonical RC8 base and complete

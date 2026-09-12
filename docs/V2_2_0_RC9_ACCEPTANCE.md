@@ -16,8 +16,11 @@ materialize with `--apply` under release-preparation authority. Require all thre
 authoritative declarations at RC9, consumed staging and exact active resolution
 of this acceptance document. Keep implementation and release commits separate.
 
-Record both comparisons: canonical RC8 to final RC9, and implementation commit
-to final RC9. The latter contains release preparation only. Run focused tests
+Record the complete canonical-RC8-to-final-RC9 comparison, the correction and
+any separately committed validation-fixture adjustments, and each release-only
+delta. Full discovery exposed two prewarm test doubles lacking semantic evidence;
+their positive scheduling/invalidation cases now use the real Core runtime,
+preserving their assertions and adding resource-settlement checks. Run focused tests
 and final clean-head Evidence against the canonical RC8 base with exact changed
 protected-path declarations. Require all applicable steps, including metadata,
 to pass; record commands, interpreter, counts, skips, failures and base/head/tree.
