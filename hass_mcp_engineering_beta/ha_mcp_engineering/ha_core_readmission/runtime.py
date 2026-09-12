@@ -265,6 +265,13 @@ class CoreRuntime:
                     self._counters["verification_failures"] += 1
                     self._append_event_locked("core_reconciliation", "core_registry_changed_during_probe", None)
                 return self.health_snapshot()
+            # Fence selection itself as well as the preceding probe collection.
+            # Retain this token through publication: sampling a fresh token
+            # afterward could bind admitted decisions to expired/denied data.
+            selected_registry_token = (
+                registry.selection_token(observation.version)
+                if registry and registry.enabled and observation.version else None
+            )
             authority = (
                 self._authority_provider(observation.version)
                 if observation.version is not None
@@ -291,6 +298,16 @@ class CoreRuntime:
                         None,
                     )
                     return self.health_snapshot()
+                if (
+                    selected_registry_token is not None
+                    and registry.selection_token(observation.version) != selected_registry_token
+                ):
+                    self._reprobe_event.set()
+                    self._counters["verification_failures"] += 1
+                    self._append_event_locked(
+                        "core_reconciliation", "core_registry_changed_during_selection", None
+                    )
+                    return self.health_snapshot()
                 # Publish the decision generation and its exact observation
                 # under one runtime lock.  Routes and health must never see a
                 # new generation paired with the prior observation.
@@ -299,10 +316,9 @@ class CoreRuntime:
                 self._initialized = True
                 if result.published:
                     self._observation = observation
-                    self._published_registry_token = (
-                        registry.selection_token(observation.version)
-                        if registry and registry.enabled and observation.version else None
-                    )
+                    # A change during coordinator publication must differ from
+                    # this token at the final health/use-time synchronization.
+                    self._published_registry_token = selected_registry_token
                 if result.published and any(
                     item.disposition.admitted
                     for item in result.generation.decisions
