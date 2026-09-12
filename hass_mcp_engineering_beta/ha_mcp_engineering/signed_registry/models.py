@@ -881,6 +881,14 @@ class RegistryEnvelope:
     signature: str
 
     @classmethod
+    def _parse_entry(cls, value: Any) -> ReviewedReleaseEntry:
+        return ReviewedReleaseEntry.from_mapping(value)
+
+    @classmethod
+    def _parse_revocation(cls, value: Any) -> ReleaseRevocation:
+        return ReleaseRevocation.from_mapping(value)
+
+    @classmethod
     def from_bytes(cls, raw: bytes) -> "RegistryEnvelope":
         return cls.from_mapping(_strict_json_loads(raw))
 
@@ -943,7 +951,7 @@ class RegistryEnvelope:
         ):
             _fail(RegistryErrorCode.ENTRIES_INVALID)
         entries = tuple(
-            ReviewedReleaseEntry.from_mapping(item)
+            cls._parse_entry(item)
             for item in raw_entries
         )
         raw_revocations = value["revocations"]
@@ -953,7 +961,7 @@ class RegistryEnvelope:
         ):
             _fail(RegistryErrorCode.REVOCATIONS_INVALID)
         revocations = tuple(
-            ReleaseRevocation.from_mapping(item)
+            cls._parse_revocation(item)
             for item in raw_revocations
         )
         if any(

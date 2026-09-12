@@ -172,6 +172,7 @@ def parse_verified_registry_envelope(
     raw: bytes,
     *,
     trust_anchors: TrustAnchorStore,
+    envelope_type: type[RegistryEnvelope] = RegistryEnvelope,
 ) -> RegistryEnvelope:
     """Parse and authenticate an envelope without granting positive authority.
 
@@ -181,7 +182,7 @@ def parse_verified_registry_envelope(
     any capability.
     """
 
-    envelope = RegistryEnvelope.from_bytes(raw)
+    envelope = envelope_type.from_bytes(raw)
     _verify_signature(envelope, trust_anchors)
     return envelope
 
@@ -193,13 +194,14 @@ def validate_registry_envelope(
     now: datetime,
     accepted_state: AcceptedRegistryState | None = None,
     max_clock_skew: timedelta = MAX_CLOCK_SKEW,
+    envelope_type: type[RegistryEnvelope] = RegistryEnvelope,
 ) -> RegistryValidationResult:
     """Verify one registry and return deterministic bounded validation data."""
 
     envelope: RegistryEnvelope | None = None
     digest: str | None = None
     try:
-        envelope = RegistryEnvelope.from_bytes(raw)
+        envelope = envelope_type.from_bytes(raw)
         digest = envelope.content_digest
         _verify_signature(envelope, trust_anchors)
         _validate_time(

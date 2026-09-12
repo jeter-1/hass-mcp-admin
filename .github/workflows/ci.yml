@@ -188,6 +188,13 @@ jobs:
             ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456"
             ha_mcp_source_commit: eac7a3aa7063432e9af17e7d7726040e909c7b8f
             ha_mcp_source_sha256: 4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc
+          - lane: ha-2026-9-2
+            ha_version: "2026.9.2"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.9.2@sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe"
+            ha_mcp_version: "8.4.3"
+            ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456"
+            ha_mcp_source_commit: eac7a3aa7063432e9af17e7d7726040e909c7b8f
+            ha_mcp_source_sha256: 4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc
     env:
       HA_CONTRACT_LANE: ${{ matrix.lane }}
       HA_CONTRACT_VERSION: ${{ matrix.ha_version }}

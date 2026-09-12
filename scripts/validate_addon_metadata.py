@@ -23,7 +23,7 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
-BETA_VERSION = "2.2.0-rc.7"
+BETA_VERSION = "2.2.0-rc.8"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION_PATH = Path(".release/next-version")
 NON_RELEASE_BETA_PATHS = frozenset({"hass_mcp_engineering_beta/AGENTS.md"})
@@ -40,6 +40,8 @@ EXPECTED_BETA_SCHEMA = {
     "upstream_trust_registry_public_key": "str",
     "ha_mcp_release_registry_enabled": "bool",
     "ha_mcp_release_registry_public_key": "str",
+    "ha_core_release_registry_enabled": "bool",
+    "ha_core_release_registry_public_key": "str",
     "dependency_index_prewarm": "bool",
     "prewarm_enabled": "bool",
     "prewarm_startup_delay_seconds": "float",
@@ -245,6 +247,10 @@ def validate_config_pair(production: dict, beta: dict, *, minimum_secret_length:
         raise MetadataValidationError(
             "ha-mcp release registry public key must default to empty"
         )
+    if options["ha_core_release_registry_enabled"] is not False:
+        raise MetadataValidationError("Core release registry must default to disabled")
+    if options["ha_core_release_registry_public_key"] != "":
+        raise MetadataValidationError("Core release registry public key must default to empty")
     if options["redaction_enabled"] is not True:
         raise MetadataValidationError("Beta redaction must remain enabled")
     if options["trust_cf_connecting_ip"] is not False:

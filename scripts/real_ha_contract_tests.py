@@ -118,7 +118,7 @@ HA_CONTRACT_CONTAINER = os.environ.get(
 )
 UPSTREAM_PORT = int(os.environ.get("REAL_HA_UPSTREAM_PORT", "18086"))
 UPSTREAM_SECRET_PATH = "/beta23-real-ha-mcp"
-CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1"})
+CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1", "2026.9.2"})
 MIGRATION_AUTOMATION_ID = "beta23_composite_device_reference"
 FIXTURE_PLATFORM = "beta23_device_fixture"
 RESOURCE_ORDER = (
@@ -3075,6 +3075,8 @@ async def _run_core_2026_9_child_contract(
     parent_id, child_id, child_entity_id = candidates[0]
     original_parent_area = devices_by_id[parent_id].get("area_id")
     created_area_id: str | None = None
+    registry_directory = None
+    core_runtime = None
     body_error: BaseException | None = None
     restore_error: BaseException | None = None
     try:
@@ -3120,8 +3122,20 @@ async def _run_core_2026_9_child_contract(
         await _start_exact_upstream(token)
         configured = settings(token)
         core_runtime = CoreRuntime()
-        core_runtime.configure(configured)
-        await core_runtime.reconcile_once("startup")
+        if EXPECTED_HA_VERSION == "2026.9.2":
+            # CI-only ephemeral authority exercises data admission without
+            # adding .2 to the production compiled release table.
+            sys.path.insert(0, str(ROOT / "scripts"))
+            from core_registry_contract_lane import configure_with_test_authority
+            registry_directory = tempfile.TemporaryDirectory(prefix="core-data-contract-")
+            await configure_with_test_authority(
+                core_runtime, configured,
+                cache_path=Path(registry_directory.name) / "core.json",
+                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+            )
+        else:
+            core_runtime.configure(configured)
+            await core_runtime.reconcile_once("startup")
         read_gateway = UpstreamReadGateway()
         read_gateway.configure(
             configured,
@@ -3279,6 +3293,16 @@ async def _run_core_2026_9_child_contract(
                 )
         except BaseException as exc:
             restore_error = exc
+        finally:
+            # Keep authority persistence available through the final consumer
+            # read; then close the test-owned lifecycle socket before cleanup.
+            if core_runtime is not None:
+                monitor = core_runtime._connection_monitor_task
+                core_runtime.request_reconciliation(connection_changed=True)
+                if monitor is not None:
+                    await asyncio.gather(monitor, return_exceptions=True)
+            if registry_directory is not None:
+                registry_directory.cleanup()
     if body_error is not None and restore_error is not None:
         raise ExceptionGroup(
             "Core child-device contract and restoration both failed",
