@@ -1828,7 +1828,7 @@ class ChangeGovernanceService:
     def _task_plan_projection(
         self, task: ExecutionTask
     ) -> dict[str, Any]:
-        return {
+        value = {
             "record_kind": "f1_execution_task",
             "task_id": task.task_id,
             "task_state": task.state.value,
@@ -1836,6 +1836,19 @@ class ChangeGovernanceService:
             "updated_at": task.updated_at,
             "provider_dispatch_occurred": self._task_is_dispatched(task),
         }
+
+        if task.legacy_projection.get("execution_authority") == "f3_child_sequence":
+            # Use the same authoritative parent/child projection as the task
+            # reader. Legacy operational verification remains historical data.
+            public_task = (
+                self.f3_runtime.decorate_task(task)
+                if self.f3_runtime is not None
+                else self._public_task(task, include_events=False)
+            )
+            value["verification_summary"] = deepcopy(
+                public_task["verification_summary"]
+            )
+        return value
 
     def _public_task(
         self, task: ExecutionTask, *, include_events: bool = True
@@ -2663,6 +2676,10 @@ class ChangeGovernanceService:
                 )
                 value["generic_configuration_verification_applicable"] = (
                     False
+                )
+            if "verification_summary" in value["execution_task"]:
+                value["authoritative_verification_field"] = (
+                    "execution_task.verification_summary"
                 )
             sanitized = sanitize_untrusted_data(
                 value,
@@ -5249,7 +5266,14 @@ class ChangeGovernanceService:
             "failure_information",
             "rollback",
         )
-        return {key: deepcopy(public[key]) for key in keys if key in public}
+        value = {key: deepcopy(public[key]) for key in keys if key in public}
+        if public.get("authoritative_verification_field") == (
+            "execution_task.verification_summary"
+        ):
+            value["authoritative_verification_field"] = public[
+                "authoritative_verification_field"
+            ]
+        return value
 
     def get_plan_observability(
         self,

@@ -3809,13 +3809,26 @@ class UpstreamReadGateway:
                         reason="core_capability_unavailable",
                     )
             try:
-                exchange = await transport.execute_read(
-                    upstream_tool_name,
-                    dict(arguments),
-                    timeout_seconds=route.entry.timeout_seconds,
-                    catalog_validator=validate_live_catalog,
-                    before_dispatch=before_dispatch,
-                )
+                attempt_started = time.perf_counter()
+                if telemetry is not None:
+                    telemetry.begin_upstream_attempt(attempt_started)
+                try:
+                    exchange = await transport.execute_read(
+                        upstream_tool_name,
+                        dict(arguments),
+                        timeout_seconds=route.entry.timeout_seconds,
+                        catalog_validator=validate_live_catalog,
+                        before_dispatch=before_dispatch,
+                    )
+                finally:
+                    # Finalize timing before any response is serialized, also
+                    # on cancellation. Entering transport is not dispatch proof.
+                    if telemetry is not None:
+                        attempt_finished = time.perf_counter()
+                        telemetry.finish_upstream_attempt(
+                            attempt_finished,
+                            (attempt_finished - attempt_started) * 1000,
+                        )
             except DashboardTransportError as exc:
                 return await fail(exc.category)
             except Exception as exc:

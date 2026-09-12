@@ -33,6 +33,22 @@ a fresh exact OFF plan, authenticated panel approval, one apply, task inspection
 and independent OFF readback. Do not reuse the failed restoration plan or its
 approval. Dashboard canaries remain paused.
 
+## Plan verification attribution
+
+For F3-backed plans with a retained task, `get_change_plan` identifies
+`execution_task.verification_summary` as its authoritative verification field.
+It uses the same parent/child projection as `get_execution_task`, including
+terminal zero-dispatch child normalization. A compact plan summary retains this
+pointer and its target. Task state and verification remain distinct: created,
+pending, failed, or manual-review evidence never becomes verified merely from
+an attempt count or a plan's legacy status.
+
+The stored legacy `operational.verification` record is preserved unchanged.
+Taskless legacy operational plans continue to identify that record as their
+verification authority. These read projections do not change persisted plans,
+approvals, tasks, dispatch ownership, or provider behavior. Retrieve the task
+and child details for reconciliation; repeated reads cannot authorize a retry.
+
 ## Oversized structured responses
 
 Small responses retain their existing JSON representation. Larger responses

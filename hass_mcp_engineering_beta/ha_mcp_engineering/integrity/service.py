@@ -13,7 +13,7 @@ import hmac
 import json
 import secrets
 import time
-from typing import Any
+from typing import Any, Callable
 import uuid
 
 from ..dependency.models import SOURCE_TYPES
@@ -120,6 +120,7 @@ class ConfigurationIntegrityAnalysisService:
         limit: int = 20,
         cursor: str = "",
         refresh_index: bool = False,
+        page_fits: Callable[[IntegrityAnalysisOutput], bool] | None = None,
     ) -> IntegrityAnalysisOutput:
         started = time.perf_counter()
         METRICS.record_integrity_analysis_request()
@@ -153,6 +154,7 @@ class ConfigurationIntegrityAnalysisService:
                 query_fingerprint=query_fingerprint,
                 limit=validated["limit"],
                 started=started,
+                page_fits=page_fits,
             )
 
         analysis_timestamp = _analysis_timestamp(self.clock)
@@ -395,7 +397,12 @@ class ConfigurationIntegrityAnalysisService:
             reference_id: item.public(detail_level=validated["detail_level"])
             for reference_id, item in evidence_by_model.items()
         }
-        if has_more:
+        output = IntegrityAnalysisOutput(
+            data=data, warnings=warnings, metadata=metadata, partial=partial
+        )
+        # The public wrapper checks the actual serialized envelope. A page that
+        # would otherwise be final also needs a snapshot if its output is too big.
+        if has_more or (page_fits is not None and not page_fits(output)):
             data_base = copy.deepcopy(data)
             for key in ("findings", "evidence_references", "pagination", "timing_details"):
                 data_base.pop(key, None)
@@ -419,24 +426,23 @@ class ConfigurationIntegrityAnalysisService:
                         "cursor", "index_changed_before_snapshot_commit"
                     ),
                 )
-            snapshot_id = self.pagination_snapshots.put(
-                _IntegritySnapshot(
-                    expires_at=time.monotonic()
-                    + PAGINATION_SNAPSHOT_TTL_SECONDS,
-                    query_fingerprint=query_fingerprint,
-                    evidence_fingerprint=evidence_fingerprint,
-                    index_generation=index_generation,
-                    index_fingerprint=index_fingerprint,
-                    analysis_timestamp=analysis_timestamp,
-                    detail_level=validated["detail_level"],
-                    data_base=data_base,
-                    findings=all_findings_public,
-                    evidence_by_id=all_evidence,
-                    warnings=snapshot_warnings,
-                    metadata=copy.deepcopy(metadata),
-                    source_partial=source_partial,
-                )
+            snapshot = _IntegritySnapshot(
+                expires_at=time.monotonic()
+                + PAGINATION_SNAPSHOT_TTL_SECONDS,
+                query_fingerprint=query_fingerprint,
+                evidence_fingerprint=evidence_fingerprint,
+                index_generation=index_generation,
+                index_fingerprint=index_fingerprint,
+                analysis_timestamp=analysis_timestamp,
+                detail_level=validated["detail_level"],
+                data_base=data_base,
+                findings=all_findings_public,
+                evidence_by_id=all_evidence,
+                warnings=snapshot_warnings,
+                metadata=copy.deepcopy(metadata),
+                source_partial=source_partial,
             )
+            snapshot_id = self.pagination_snapshots.put(snapshot)
             data["pagination"]["next_cursor"] = self._encode_cursor(
                 snapshot_id=snapshot_id,
                 query_fingerprint=query_fingerprint,
@@ -446,6 +452,17 @@ class ConfigurationIntegrityAnalysisService:
                 index_fingerprint=index_fingerprint,
                 offset=len(page),
             )
+            if page_fits is not None and not page_fits(output):
+                output = self._snapshot_page(
+                    snapshot=snapshot,
+                    snapshot_id=snapshot_id,
+                    offset=0,
+                    limit=validated["limit"],
+                    started=started,
+                    page_fits=page_fits,
+                    timing_details=data["timing_details"],
+                )
+                partial = output.partial
 
         METRICS.record_integrity_analysis_terminal(
             partial=partial,
@@ -471,9 +488,7 @@ class ConfigurationIntegrityAnalysisService:
             unresolved_dynamic_reference_count=in_scope_dynamic_count,
             coverage_complete=bundle.required_coverage_complete,
         )
-        return IntegrityAnalysisOutput(
-            data=data, warnings=warnings, metadata=metadata, partial=partial
-        )
+        return output
 
     def _continue_snapshot(
         self,
@@ -482,6 +497,7 @@ class ConfigurationIntegrityAnalysisService:
         query_fingerprint: str,
         limit: int,
         started: float,
+        page_fits: Callable[[IntegrityAnalysisOutput], bool] | None = None,
     ) -> IntegrityAnalysisOutput:
         METRICS.record_integrity_cursor_continuation()
         try:
@@ -538,73 +554,113 @@ class ConfigurationIntegrityAnalysisService:
                 ErrorCode.INVALID_CURSOR,
                 details=_details("cursor", "offset_out_of_range"),
             )
+        return self._snapshot_page(
+            snapshot=snapshot,
+            snapshot_id=str(payload["snapshot_id"]),
+            offset=offset,
+            limit=limit,
+            started=started,
+            page_fits=page_fits,
+        )
+
+    def _snapshot_page(
+        self,
+        *,
+        snapshot: _IntegritySnapshot,
+        snapshot_id: str,
+        offset: int,
+        limit: int,
+        started: float,
+        page_fits: Callable[[IntegrityAnalysisOutput], bool] | None,
+        timing_details: dict[str, Any] | None = None,
+    ) -> IntegrityAnalysisOutput:
+        """Advance only by findings delivered in a complete bounded envelope."""
         effective_limit, clamp_reason = _effective_limit(
             limit, snapshot.detail_level
         )
-        page = snapshot.findings[offset : offset + effective_limit]
-        references = {
-            reference
-            for item in page
-            for reference in item.get("evidence_references", ())
-        }
-        evidence = [
-            snapshot.evidence_by_id[reference]
-            for reference in sorted(references)
-            if reference in snapshot.evidence_by_id
-        ][:100]
-        next_offset = offset + len(page)
-        has_more = next_offset < len(snapshot.findings)
-        next_cursor = (
-            self._encode_cursor(
-                snapshot_id=str(payload["snapshot_id"]),
-                query_fingerprint=query_fingerprint,
-                evidence_fingerprint=snapshot.evidence_fingerprint,
-                analysis_timestamp=snapshot.analysis_timestamp,
-                index_generation=snapshot.index_generation,
-                index_fingerprint=snapshot.index_fingerprint,
-                offset=next_offset,
-            )
-            if has_more
-            else None
-        )
-        if not has_more:
-            self.pagination_snapshots.remove(str(payload["snapshot_id"]))
-        partial = snapshot.source_partial or has_more
-        warnings = list(snapshot.warnings)
-        if has_more:
-            warnings.append(
-                "Findings were paginated; continue with the returned cursor."
-            )
-        data = copy.deepcopy(snapshot.data_base)
-        data.update(
-            {
-                "result_status": "partial" if partial else "success",
-                "findings": list(page),
-                "evidence_references": evidence,
-                "pagination": {
-                    "requested_limit": limit,
-                    "effective_limit": effective_limit,
-                    "maximum_limit": MAX_PAGE_LIMIT,
-                    "effective_payload_cap": DETAIL_RESULT_CAPS[
-                        snapshot.detail_level
-                    ],
-                    "clamped": limit != effective_limit,
-                    "clamp_reason": clamp_reason,
-                    "returned": len(page),
-                    "total": len(snapshot.findings),
-                    "has_more": has_more,
-                    "next_cursor": next_cursor,
-                    "source": "bounded_sanitized_pagination_snapshot",
-                },
-                "timing_details": _timing_details(started, bundle=None),
+        while True:
+            page = snapshot.findings[offset : offset + effective_limit]
+            references = {
+                reference
+                for item in page
+                for reference in item.get("evidence_references", ())
             }
-        )
-        return IntegrityAnalysisOutput(
-            data=data,
-            warnings=warnings,
-            metadata=copy.deepcopy(snapshot.metadata),
-            partial=partial,
-        )
+            evidence = [
+                snapshot.evidence_by_id[reference]
+                for reference in sorted(references)
+                if reference in snapshot.evidence_by_id
+            ][:100]
+            next_offset = offset + len(page)
+            has_more = next_offset < len(snapshot.findings)
+            next_cursor = (
+                self._encode_cursor(
+                    snapshot_id=snapshot_id,
+                    query_fingerprint=snapshot.query_fingerprint,
+                    evidence_fingerprint=snapshot.evidence_fingerprint,
+                    analysis_timestamp=snapshot.analysis_timestamp,
+                    index_generation=snapshot.index_generation,
+                    index_fingerprint=snapshot.index_fingerprint,
+                    offset=next_offset,
+                )
+                if has_more
+                else None
+            )
+            partial = snapshot.source_partial or has_more
+            warnings = list(snapshot.warnings)
+            if has_more:
+                warnings.append(
+                    "Findings were paginated; continue with the returned cursor."
+                )
+            data = copy.deepcopy(snapshot.data_base)
+            data.update(
+                {
+                    "result_status": "partial" if partial else "success",
+                    "findings": list(page),
+                    "evidence_references": evidence,
+                    "pagination": {
+                        "requested_limit": limit,
+                        "effective_limit": effective_limit,
+                        "maximum_limit": MAX_PAGE_LIMIT,
+                        "effective_payload_cap": DETAIL_RESULT_CAPS[
+                            snapshot.detail_level
+                        ],
+                        "clamped": limit != effective_limit,
+                        "clamp_reason": clamp_reason,
+                        "returned": len(page),
+                        "total": len(snapshot.findings),
+                        "has_more": has_more,
+                        "next_cursor": next_cursor,
+                        "source": "bounded_sanitized_pagination_snapshot",
+                    },
+                    "timing_details": timing_details or _timing_details(
+                        started, bundle=None
+                    ),
+                }
+            )
+            output = IntegrityAnalysisOutput(
+                data=data,
+                warnings=warnings,
+                metadata=copy.deepcopy(snapshot.metadata),
+                partial=partial,
+            )
+
+            if page_fits is None or page_fits(output):
+                # The full final page has been serialized successfully. Do not
+                # retire a snapshot merely because an attempted page was final.
+                if not has_more:
+                    self.pagination_snapshots.remove(snapshot_id)
+                return output
+            if len(page) <= 1:
+                # Do not loop or recollect when even one complete finding and
+                # its disclosures cannot fit a custom response budget.
+                raise GovernanceError(
+                    ErrorCode.ANALYSIS_UNAVAILABLE,
+                    details=_details(
+                        "response_limit", "complete_page_exceeds_response_budget"
+                    ),
+                )
+            effective_limit = max(1, len(page) // 2)
+            clamp_reason = "response_size_limit"
 
     def _encode_cursor(self, **values) -> str:
         payload = json.dumps(
