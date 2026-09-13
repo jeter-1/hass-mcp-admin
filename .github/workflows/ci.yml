@@ -13,6 +13,53 @@ permissions:
 
 jobs:
   validate:
+    name: validate
+    if: ${{ always() }}
+    needs:
+      - validate_source
+      - real-ha-contract-tests
+      - prepare_exact_image_matrix
+      - exact-image-read-gateway
+      - exact-addon-runtime-acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job family to succeed
+        if: ${{ always() }}
+        shell: python
+        env:
+          REQUIRED_JOB_RESULTS: ${{ toJSON(needs) }}
+          WORKFLOW_CANCELLED: ${{ cancelled() }}
+        run: |
+          import json
+          import os
+          import sys
+
+          required_jobs = (
+              "validate_source",
+              "real-ha-contract-tests",
+              "prepare_exact_image_matrix",
+              "exact-image-read-gateway",
+              "exact-addon-runtime-acceptance",
+          )
+          if os.environ.get("WORKFLOW_CANCELLED") != "false":
+              sys.exit("Required CI refused: workflow cancellation state is not clear.")
+          try:
+              results = json.loads(os.environ["REQUIRED_JOB_RESULTS"])
+          except (KeyError, ValueError):
+              sys.exit("Required CI refused: job results are unavailable or malformed.")
+          if not isinstance(results, dict) or set(results) != set(required_jobs):
+              sys.exit("Required CI refused: job result set does not match required jobs.")
+          unsuccessful = [
+              name for name in required_jobs
+              if not isinstance(results[name], dict)
+              or results[name].get("result") != "success"
+          ]
+          if unsuccessful:
+              sys.exit("Required CI did not succeed: " + ", ".join(unsuccessful))
+          print("All required CI job families succeeded.")
+
+  validate_source:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
