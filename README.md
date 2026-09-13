@@ -1,318 +1,112 @@
 # HA MCP Engineering Server
 
-> Stable v1.1.2 under `hass_mcp_admin` is retained as historical repository
-> source but is operationally retired. It is not covered by the Engineering
-> dependency audit and is not a supported rollback option. The Engineering v2
-> add-on is developed in place at `2.2.0-rc.9`, based on the exact
-> `v2.0.1` release, at
-> [`hass_mcp_engineering_beta/`](hass_mcp_engineering_beta/) on port `8100`.
-> Its existing technical “Beta” identity is retained to avoid a slug or runtime
-> identity migration. See [`V2_BETA_ARCHITECTURE.md`](V2_BETA_ARCHITECTURE.md)
-> before installing or migrating tools. Historical beta release and
-> cache-refresh procedures are documented in
-> [`docs/BETA_DEPLOYMENT.md`](docs/BETA_DEPLOYMENT.md).
-> The beta approval workflow is documented in
-> [`docs/CHANGE_GOVERNANCE.md`](docs/CHANGE_GOVERNANCE.md).
-> The facilitator decision and bounded-response contract are documented in
-> [`docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md`](docs/architecture/ADR-002-ENGINEERING-MCP-FACILITATOR.md)
-> and [`docs/TOKEN_EFFICIENCY.md`](docs/TOKEN_EFFICIENCY.md).
-> Beta 11 System Log security and Beta 12 connector-cache guidance are documented in
-> [`docs/BETA_DEPLOYMENT.md`](docs/BETA_DEPLOYMENT.md). Beta 14 trace/time stabilization is
-> documented in [`docs/AUTOMATION_RELIABILITY_ANALYSIS.md`](docs/AUTOMATION_RELIABILITY_ANALYSIS.md),
-> and Beta 15 change-impact analysis is documented in
-> [`docs/CHANGE_IMPACT_ANALYSIS.md`](docs/CHANGE_IMPACT_ANALYSIS.md).
-> Beta 17 global configuration-integrity analysis and the Beta 18 reference
-> classifier hardening are documented in
-> [`docs/CONFIGURATION_INTEGRITY_ANALYSIS.md`](docs/CONFIGURATION_INTEGRITY_ANALYSIS.md).
-> Beta 24 pre-RC hardening, trusted-proxy setup, and bounded audit reads are
-> documented in [`docs/BETA_24_RELEASE_NOTES.md`](docs/BETA_24_RELEASE_NOTES.md),
-> [`docs/RATE_LIMITING.md`](docs/RATE_LIMITING.md), and
-> [`docs/AUDIT_LOG.md`](docs/AUDIT_LOG.md).
-> Beta 25 external human approval is documented in
-> [`docs/EXTERNAL_APPROVAL.md`](docs/EXTERNAL_APPROVAL.md) and
-> [`docs/BETA_25_RELEASE_NOTES.md`](docs/BETA_25_RELEASE_NOTES.md). Beta 26
-> expiry lifecycle hardening is documented in
-> [`docs/BETA_26_RELEASE_NOTES.md`](docs/BETA_26_RELEASE_NOTES.md). RC2 release
-> and deployed acceptance procedures are in
-> [`docs/RC2_RELEASE_NOTES.md`](docs/RC2_RELEASE_NOTES.md) and
-> [`docs/RC2_ACCEPTANCE.md`](docs/RC2_ACCEPTANCE.md).
-> The Phase 1 single-server architecture pivot and its complete reviewed
-> `ha-mcp` 7.14.1 policy inventory are documented in
-> [`ADR-005`](docs/architecture/ADR-005-READONLY-UPSTREAM-GATEWAY.md).
-> Dev15 contract-level compatibility, partial quarantine, dashboard
-> independence, and retry-cadence separation are documented in
-> [`ADR-006`](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md).
-> The current Engineering source candidate is `2.2.0-rc.9`. It preserves
-> the earlier reporting and recovery fixes and carries exact reviewed Core
-> semantic authority into dependency evidence and governed helper planning.
-> Compatible Core data still requires independent review and owner trust setup.
-> Core trust setup and production data publication remain separate; installing
-> RC9 alone does not establish authority for Core 2026.9.2. See the
-> [Core registry runbook](docs/CORE_RELEASE_REGISTRY.md).
-> Current release and acceptance authority are
-> [RC9 release notes](docs/V2_2_0_RC9_RELEASE_NOTES.md) and
-> [RC9 acceptance](docs/V2_2_0_RC9_ACCEPTANCE.md). Publication, deployed
-> identity and live acceptance require separate evidence.
-> The following beta references preserve development history.
-> Beta 15 corrected
-> exact `ha-mcp` 8.0.0 lifecycle add-on detail response handling after Beta 14
-> corrected catalog, Dashboard, backup, and reload admission. Its release and
-> acceptance authority are recorded in
-> [`docs/V2_2_0_BETA15_RELEASE_NOTES.md`](docs/V2_2_0_BETA15_RELEASE_NOTES.md)
-> and
-> [`docs/V2_2_0_BETA15_ACCEPTANCE.md`](docs/V2_2_0_BETA15_ACCEPTANCE.md).
-> The Beta 12 special-provider canary failure remains recorded in
-> [`docs/V2_2_0_BETA12_CANARY_FAILURE.md`](docs/V2_2_0_BETA12_CANARY_FAILURE.md).
-> Production `ha-mcp` 8.0.0 acceptance remains pending a later controlled
-> canary.
-> The accepted F2 architecture remains recorded in ADR-012 and the historical
-> Beta 6 release documents.
-> The inert update-and-recovery preflight foundation remains recorded in
-> [`ADR-011`](docs/architecture/ADR-011-GOVERNED-UPDATE-RECOVERY-PREFLIGHT.md),
-> [`docs/V2_2_0_BETA5_RELEASE_NOTES.md`](docs/V2_2_0_BETA5_RELEASE_NOTES.md),
-> and [`docs/V2_2_0_BETA5_ACCEPTANCE.md`](docs/V2_2_0_BETA5_ACCEPTANCE.md).
-> The inert knowledge-provenance foundation remains recorded in
-> [`ADR-010`](docs/architecture/ADR-010-KNOWLEDGE-SOURCE-PROVENANCE.md),
-> [`docs/V2_2_0_BETA4_RELEASE_NOTES.md`](docs/V2_2_0_BETA4_RELEASE_NOTES.md),
-> and [`docs/V2_2_0_BETA4_ACCEPTANCE.md`](docs/V2_2_0_BETA4_ACCEPTANCE.md).
-> The inert signed compatibility-registry foundation remains recorded in
-> [`ADR-009`](docs/architecture/ADR-009-SIGNED-COMPATIBILITY-REGISTRY-FOUNDATION.md),
-> [`docs/V2_2_0_BETA3_RELEASE_NOTES.md`](docs/V2_2_0_BETA3_RELEASE_NOTES.md),
-> and [`docs/V2_2_0_BETA3_ACCEPTANCE.md`](docs/V2_2_0_BETA3_ACCEPTANCE.md).
-> The F1 recovery-evidence and counter correction remains recorded in
-> [`docs/V2_2_0_BETA2_RELEASE_NOTES.md`](docs/V2_2_0_BETA2_RELEASE_NOTES.md)
-> and [`docs/V2_2_0_BETA2_ACCEPTANCE.md`](docs/V2_2_0_BETA2_ACCEPTANCE.md).
-> The durable execution-task foundation remains recorded in
-> [`ADR-008`](docs/architecture/ADR-008-DURABLE-EXECUTION-TASKS.md),
-> [`docs/V2_2_0_BETA1_RELEASE_NOTES.md`](docs/V2_2_0_BETA1_RELEASE_NOTES.md),
-> and [`docs/V2_2_0_BETA1_ACCEPTANCE.md`](docs/V2_2_0_BETA1_ACCEPTANCE.md).
-> Its bounded operational-administration design is recorded in
-> [`docs/OPERATIONAL_ADMINISTRATION.md`](docs/OPERATIONAL_ADMINISTRATION.md) and
-> [`docs/V2_1_1_BETA3_ACCEPTANCE.md`](docs/V2_1_1_BETA3_ACCEPTANCE.md). The
-> immutable 2.0.1 release documents remain historical release authority.
-> Repository-specific local and remote Codex development procedures are in
-> [`docs/CODEX_WORKFLOW.md`](docs/CODEX_WORKFLOW.md).
+Engineering **2.2.0** is the stable Engineering milestone. It provides one public
+MCP endpoint through the existing Nabu Casa connector, with a unified catalog.
+Engineering selects reviewed, admitted ha-mcp or native providers internally.
 
-A focused Model Context Protocol server for Home Assistant engineering, diagnostics,
-and controlled administration, packaged as a Home Assistant OS add-on. It works with
-ChatGPT, Claude, and other MCP-capable clients.
+The installation retains its technical **Beta** identity. Choose **HA MCP
+Engineering Server Beta**, directory and slug `hass_mcp_engineering_beta`.
+No second installation or migration is required. Historical v1.1.2 in
+`hass_mcp_admin/` is frozen and operationally retired; it is neither the
+current installation target nor a supported Engineering rollback.
 
-The v2 pivot makes Engineering the one client-visible front door: it preserves
-its engineering, analysis, governance, verification, and handoff tools while
-dynamically adding only exact contract-matched pure-read operations from the
-reviewed `ha-mcp` policy. Dev15 first requires its exact compiled 7.14.1
-release/profile, then withholds each missing or incompatible read individually.
-An unreviewed release cannot authorize itself through matching live
-descriptors; writes and mixed-operation upstream tools remain unavailable
-through the generic gateway. See [ARCHITECTURE.md](ARCHITECTURE.md) for the
-current boundaries.
+Read the [2.2.0 release notes](docs/V2_2_0_RELEASE_NOTES.md) and
+[2.2.0 acceptance contract](docs/V2_2_0_ACCEPTANCE.md). A source version does
+not prove publication, deployment or installed acceptance.
 
-Current tools:
+## Install or update Engineering
 
-> `server_info` reports the exact server/version/build and live HA connectivity. `list_capabilities` reports whether each tool is native, transitional, delegated, or deprecated.
+1. Use this repository in the Home Assistant add-on store:
+   `https://github.com/jeter-1/hass-mcp-admin`.
+2. Select **HA MCP Engineering Server Beta**. Update an existing Engineering
+   installation in place after publication and authorized deployment. Do not
+   install the historical v1 package or move its data into Engineering.
+3. Retain existing connection and trust configuration. Configure a new
+   installation through the supported add-on interface, keeping access secrets
+   in the operator's private interface.
+4. Use the existing public Engineering Nabu Casa connector. MCP remains on port
+   `8100`; authenticated, admin-only **HA MCP Approval** ingress uses internal
+   port `8110`. The approval panel is not a second MCP endpoint.
+5. Verify the final installed artifact, reconnect the client and complete the
+   bounded [acceptance checks](docs/V2_2_0_ACCEPTANCE.md).
 
-| Category | Tools |
-|---|---|
-| Foundation | `server_info`, `list_capabilities` |
-| Debugging | `get_history`, `get_logbook`, `get_error_log`, `list_automation_traces`, `get_automation_trace`, `render_template` |
-| Automations | `list_automations`, `get_automation_config`, `check_config`; compatibility-visible `upsert_automation`, `delete_automation`, and `reload_domain` fail closed in v2 |
-| Blueprints | `list_blueprints`, `get_blueprint` |
-| State | `get_entity`, `search_entities` |
-| Registries | `list_areas`, `list_devices`, `list_entity_registry`, `search_services`, `list_services` |
-| Operations | `get_audit_log`; proposal-only `create_backup_plan`, `create_reload_plan`, `create_addon_restart_plan`, `create_home_assistant_restart_plan`, and exact-`input_boolean` `create_helper_state_plan`; durable `get_execution_task`, `list_execution_tasks`, and pre-dispatch-only `cancel_execution_task` |
-| Beta analysis | `entity_dependency_analysis`, `automation_reliability_analysis`, `change_impact_analysis`, `configuration_integrity_analysis`, `incident_correlation`, `handoff_generation` |
-| Governance | five operational proposal tools plus `create_change_plan`, `create_configuration_plan`, `get_change_plan`, `list_change_plans`, `approve_change_plan`, `apply_change_plan`, `rollback_change` |
-| General execution | `call_service` is compatibility-visible but fails closed in v2; Engineering does not delegate service execution or any upstream write. HAMCP-089 permits only the separately governed exact `input_boolean` state contract documented below. |
-| Reviewed upstream reads | Exact `ha-mcp` 7.14.2 admits up to 26 reviewed reads; exact 8.0.0 admits 24 and holds `ha_search` plus `ha_get_operation_status` for a later canary. Unknown releases expose none, and no new or write tool is inferred into policy. See [ADR-006](docs/architecture/ADR-006-CONTRACT-LEVEL-UPSTREAM-COMPATIBILITY.md). |
+The image repository remains
+`ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
+`linux/arm64` and `linux/arm/v7`. Options/defaults, persistent paths, stored
+formats, ports, ingress and technical Beta identities are unchanged by 2.2.0.
 
-It runs against the Supervisor's internal HA proxy, so **no long-lived access token is
-needed** — auth to HA is handled by the injected `SUPERVISOR_TOKEN`.
+## Capabilities and compatibility
 
----
+The fully healthy reviewed **ha-mcp 8.4.3** pairing exposes **51 static tools
+plus 25 delegated reads, 76 total**, with all **17 Core capabilities**.
+Actual authority and provider admission determine availability. Fresh protocol
+enumeration and descriptor comparison establish the catalog; a health count or
+cached client inventory alone does not.
+`ha_get_operation_status` remains held and absent from ordinary registration.
 
-## Security model (read this first)
+Engineering supports bounded inspection, dependency/reliability/integrity
+analysis, reviewed reads and governed operations. Native capabilities supplement
+upstream functionality where deeper Engineering semantics are required.
+Provider unavailability grants no fallback authority or arbitrary forwarding.
 
-- The MCP endpoint is only reachable at `/<access_secret>/mcp`. Everything else 404s.
-  The secret is effectively a bearer credential embedded in the URL, because some hosted MCP
-  connectors don't send custom headers for non-OAuth servers. **Minimum 24 chars;
-  the server refuses to start otherwise.** Generate one: `openssl rand -hex 24`
-- The v2 Engineering server does not treat `confirm=true` as change approval.
-  `call_service`, `delete_automation`, and `reload_domain` fail closed;
-  automation writes require an immutable governed plan and external Home
-  Assistant administrator approval. MCP callers cannot approve their own work.
-- Expose it through a **Cloudflare Tunnel** — never port-forward 8099. Add a Cloudflare
-  WAF rate-limiting rule on the hostname as a brute-force backstop.
-- Rotate the secret by changing it in the add-on config and updating the connector URL.
+Accepted RC9 evidence includes **Core 2026.9.2 / ha-mcp 8.4.3**.
+Core 2026.9.2 requires separately configured, valid signed Core authority
+referencing existing compiled contracts. Installing 2.2.0 does not configure
+trust or admit an uncompiled release. Existing compiled pairings retain their
+behavior.
 
-## Install
+The [Core registry contract](docs/CORE_RELEASE_REGISTRY.md) governs exact-version
+review, separate Core trust, signatures, expiry, retained denials and authority
+retirement. Signed data can select existing compiled contracts; incompatible
+semantics require review and possibly code changes. Future Core and ha-mcp
+versions receive no blanket compatibility from this milestone.
 
-### 1. Put this repo on GitHub
+## Governed changes and evidence
 
-```bash
-git init && git add -A && git commit -m "HA MCP Engineering Server add-on"
-git remote add origin git@github.com:YOUR_GITHUB_USERNAME/hass-mcp-admin.git
-git push -u origin main
+Inspect, explain evidence and effects, prepare an exact plan, obtain its
+authenticated approval, apply once, inspect execution, read back and verify.
+`approve_change_plan` requests approval; it does not grant it. Approval
+remains bound to current evidence and execution conditions.
+
+After a timeout or incomplete response, reconcile the persisted task and
+authoritative target state. Attempt count alone does not prove dispatch.
+Do not blindly repeat a mutation, reuse a failed approval or change providers.
+Dashboard saves remain non-atomic against external editors.
+
+- [Change governance](docs/CHANGE_GOVERNANCE.md)
+- [External approval](docs/EXTERNAL_APPROVAL.md)
+- [Execution recovery](docs/GOVERNED_EXECUTION_RECOVERY.md)
+- [Bounded response guidance](docs/TOKEN_EFFICIENCY.md)
+- [Integrity analysis](docs/CONFIGURATION_INTEGRITY_ANALYSIS.md)
+- [Automation reliability](docs/AUTOMATION_RELIABILITY_ANALYSIS.md)
+- [Audit records](docs/AUDIT_LOG.md)
+
+## Development and release
+
+Follow the [Engineering README](hass_mcp_engineering_beta/README.md),
+[docs/CODEX_WORKFLOW.md](docs/CODEX_WORKFLOW.md) and applicable instructions.
+Resolve the exact release context before work:
+
+```sh
+python scripts/codex-context.py --format json
 ```
 
-Then replace `YOUR_GITHUB_USERNAME` in `repository.yaml` and
-`hass_mcp_admin/config.yaml` with your actual username (and push again).
+Materialize a release in its original PR through
+`scripts/promote_next_release.py`; the temporary declaration is consumed.
+Final clean-head Evidence and candidate CI remain separate from publication
+and installed acceptance. A version-changing main merge can automatically
+publish; the owner decision must cover that consequence. Deployment is separate.
 
-### 2. Install the add-on
+## Historical references
 
-1. HA → **Settings → Add-ons → Add-on Store → ⋮ → Repositories**
-2. Add `https://github.com/YOUR_GITHUB_USERNAME/hass-mcp-admin`
-3. Refresh, open **HA MCP Engineering Server**, click **Install** (it builds locally, ~1–2 min)
-4. **Configuration** tab → set `access_secret` to your generated value → **Save**
-5. **Start** the add-on. Check the **Log** tab — you should see
-   `HA MCP Engineering Server starting on :8099`.
+Published artifacts and historical evidence remain immutable. RC9's accepted
+runtime is preserved by 2.2.0; its observations retain their RC9 pairing/time.
 
-### 3. Expose it with Cloudflare Tunnel
+- [RC9 notes](docs/V2_2_0_RC9_RELEASE_NOTES.md) and
+  [RC9 acceptance](docs/V2_2_0_RC9_ACCEPTANCE.md)
+- [Architecture history](V2_BETA_ARCHITECTURE.md)
+- [Historical beta deployment guidance](docs/BETA_DEPLOYMENT.md)
+- [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases)
 
-Using the community **Cloudflared** add-on (recommended if you already use it or have a
-domain on Cloudflare):
-
-1. Install the Cloudflared add-on and authenticate it to your Cloudflare account.
-2. In its configuration, add an additional host:
-
-```yaml
-additional_hosts:
-  - hostname: ha-mcp.yourdomain.com
-    service: http://homeassistant:8099
-```
-
-> If `homeassistant` doesn't resolve from the cloudflared container, use your HA host's
-> LAN IP instead (e.g. `http://192.168.1.x:8099`). Port 8099 is published on the host
-> by this add-on.
-
-3. Restart Cloudflared, then verify: `https://ha-mcp.yourdomain.com/health` → `ok`,
-   and `https://ha-mcp.yourdomain.com/anything-else` → 404.
-
-### 4. Connect an MCP client
-
-1. In your MCP client, add a custom Streamable HTTP connector.
-2. URL: `https://ha-mcp.yourdomain.com/<access_secret>/mcp`
-3. No OAuth — it should connect directly and show 25 tools.
-
-Consult your MCP client documentation for its custom-connector workflow.
-
-## Standalone / Docker use (non-HAOS installs)
-
-The same image runs anywhere. Provide env vars instead of the supervisor proxy:
-
-```bash
-docker build -t ha-mcp-admin ./hass_mcp_admin
-docker run -d -p 8099:8099 \
-  -e HA_URL=http://YOUR_HA_HOST:8123 \
-  -e HA_TOKEN=YOUR_LONG_LIVED_ACCESS_TOKEN \
-  -e ACCESS_SECRET=$(openssl rand -hex 24) \
-  ha-mcp-admin
-```
-
-## Notes & limitations
-
-- In v2, `upsert_automation` is retained only as a schema-compatible refusal.
-  Use `create_change_plan`, `approve_change_plan`, and `apply_change_plan` for
-  automation changes. Generated evidence or recommendations are never approval.
-- Tool output is capped at 60k characters; narrow queries (filters, `limit`, shorter
-  history windows) rather than fighting truncation.
-- Traces only exist for runs since the last HA restart (HA keeps the last 5 per
-  automation by default — raise with `stored_traces` if needed).
-
-## Timeout architecture
-
-Per-request timeout to HA is 60s (`aiohttp.ClientTimeout`), deliberately under
-Cloudflare's ~100s origin-response limit, so tool calls fail cleanly origin-side
-rather than as opaque edge 524s. `get_history` is single-entity and capped at 168h
-per call. If you ever raise the aiohttp timeout past ~90s, also tune cloudflared's
-`originRequest.connectTimeout`/`keepAliveTimeout` for the hostname.
-
-## Future refactor candidates
-
-- **Persistent WebSocket connection**: `ws_command` currently opens one connection
-  per command (~10–20ms overhead via the supervisor proxy, self-healing across HA
-  restarts). If bulk registry operations are added, refactor to a lazy singleton
-  with an asyncio lock, monotonic message IDs, and reconnect-on-failure.
-
-## Rate limiting & audit logging
-
-**Rate limiting** (token buckets, configurable in add-on options):
-- Per-client: `rate_limit_per_minute` (default 120) sustained, `rate_limit_burst`
-  (default 25) burst. Client identity is the direct socket peer by default.
-  `cf-connecting-ip` is ignored unless explicitly enabled and the peer matches a
-  configured trusted proxy CIDR. See [`docs/RATE_LIMITING.md`](docs/RATE_LIMITING.md).
-- Global bucket at 2x the per-client limits — protects HA Core from any runaway loop.
-- Failed-auth attempts (wrong path) per IP: burst 5, refill 30/hour, then 429s. This
-  is the origin-side brute-force backstop under your Cloudflare WAF rule.
-- The two 1,000-entry identity stores use independent bounded LRU eviction; a new
-  identity never clears every client's throttling state.
-
-**Audit log**: JSONL at `/data/audit.jsonl` (rotates at 5MB to `.1`). Events:
-`tool_call` (tool, bounded summarized intent, safe caller hash, terminal status),
-`auth_failure`, `auth_failure_throttled`, and `rate_limited`. Logged at the
-transport layer by parsing JSON-RPC `tools/call` bodies, so coverage is uniform
-across all tools. Limitation: in-tool refusals (e.g. the destructive gate) return
-HTTP 200 — the log records the attempt and whether `confirm` was set, not the gate
-outcome. Review from chat via the `get_audit_log` tool; reads are clamped to
-1–500 lines. See [`docs/AUDIT_LOG.md`](docs/AUDIT_LOG.md).
-
-## Engineering v2 milestones
-
-The current Engineering development version is `2.2.0-beta.15`, based on the
-accepted Beta 14 special-provider admission boundary. It corrects the live
-exact 8.0.0 add-on detail response used for lifecycle identity while preserving
-Beta 10 historical-plan compatibility, Beta 11 bounded restart reconciliation,
-Beta 12 automatic-read admission, Beta 13 secure dependency pins, and Beta 14
-Dashboard, backup, and catalog validation. It adds no resource type, provider,
-tool, arbitrary service call, approval mode, or fallback.
-The roadmap and acceptance authority are
-[`docs/2_1_ROADMAP.md`](docs/2_1_ROADMAP.md) and
-[`docs/V2_2_0_BETA15_ACCEPTANCE.md`](docs/V2_2_0_BETA15_ACCEPTANCE.md). Determine advertised
-release state from authoritative version metadata and
-`scripts/codex-context.py`, not from this milestone narrative. Engineering has
-48 statically registered
-tools: 25 canonical plus 23 Engineering-native. Audit
-filters parse each bounded JSONL
-record and compare only the exact top-level event, so the routed audit reader's
-own nested filter argument cannot create false security evidence.
-The dashboard boundary adds only `list_dashboards` and
-`get_dashboard_config`, backed by an optional
-secret-configured `upstream_dashboard` MCP provider whose allowlist contains
-only `ha_config_get_dashboard`. Exact reviewed attestations for `ha-mcp`
-7.13.0, 7.14.0, and 7.14.1 retain release provenance for the compiled semantic
-dashboard-read family. Dashboard admission requires an exact built-in or
-verified signed attestation for the observed release. Missing exact authority,
-revocation, or contract mismatch blocks with no older-attestation or
-self-advertised compatible-variant fallback. Expired exact evidence remains
-deny-only, and registry unavailability cannot revive an older contract.
-The selected attestation derives retained raw-schema, reviewed-security, and
-runtime-descriptor expectations while keeping those diagnostics distinct from
-normalized semantic compatibility; unrelated catalog and prose drift remain
-observability evidence.
-Engineering constructs only exact non-screenshot read forms. The mixed upstream
-tool is not described as globally read-only. The generic
-`StandardHaMcpGateway` remains unavailable. No dashboard write, service,
-physical-action, screenshot/preference, arbitrary forwarding, or Supervisor
-discovery path is added.
-Exact configuration evidence verifies the upstream-compatible 16-character
-optimistic-lock hash and separately returns a full 64-character Engineering
-evidence hash calculated before sanitization.
-RC2 governance, external approval, direct-HA policies, and idempotent
-plan/challenge expiry remain intact. No planned feature capability remains.
-Historical v1.1.2 source, `hass_mcp_admin`, and its packaging remain unchanged;
-the add-on is now operationally retired. See
-[`docs/RC2DEV10_RELEASE_NOTES.md`](docs/RC2DEV10_RELEASE_NOTES.md),
-[`docs/RC2DEV10_ACCEPTANCE.md`](docs/RC2DEV10_ACCEPTANCE.md),
-[`docs/RC2DEV9_RELEASE_NOTES.md`](docs/RC2DEV9_RELEASE_NOTES.md),
-[`docs/RC2DEV9_ACCEPTANCE.md`](docs/RC2DEV9_ACCEPTANCE.md),
-[`docs/UPSTREAM_TRUST_REGISTRY.md`](docs/UPSTREAM_TRUST_REGISTRY.md),
-[`docs/RC3A_RELEASE_NOTES.md`](docs/RC3A_RELEASE_NOTES.md),
-[`docs/RC3A_ACCEPTANCE.md`](docs/RC3A_ACCEPTANCE.md),
-[`docs/RC2DEV7_RELEASE_NOTES.md`](docs/RC2DEV7_RELEASE_NOTES.md),
-[`docs/RC2DEV7_ACCEPTANCE.md`](docs/RC2DEV7_ACCEPTANCE.md),
-[`docs/RC2DEV4_RELEASE_NOTES.md`](docs/RC2DEV4_RELEASE_NOTES.md),
-[`docs/RC2DEV4_ACCEPTANCE.md`](docs/RC2DEV4_ACCEPTANCE.md),
-[`docs/RC2_RELEASE_NOTES.md`](docs/RC2_RELEASE_NOTES.md),
-[`docs/RC2_ACCEPTANCE.md`](docs/RC2_ACCEPTANCE.md),
-[`docs/BETA_26_RELEASE_NOTES.md`](docs/BETA_26_RELEASE_NOTES.md),
-[`docs/EXTERNAL_APPROVAL.md`](docs/EXTERNAL_APPROVAL.md), and
-[`hass_mcp_engineering_beta/OBSERVABILITY.md`](hass_mcp_engineering_beta/OBSERVABILITY.md).
+Historical counts, pairings, installation and rollback guidance describe their
+original release and do not replace the current 2.2.0 contract.
