@@ -1434,7 +1434,11 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         release = outcome["release"]
         self.assertEqual(release["target_commitish"], "d" * 40)
-        self.assertTrue(release["prerelease"])
+        version = AwesomeVersion(CURRENT_REPOSITORY_VERSION)
+        self.assertEqual(
+            release["prerelease"],
+            version.beta or version.release_candidate or version.dev,
+        )
         self.assertIn("Immutable publication identity", release["body"])
         self.assertIn(f"sha256:{'e' * 64}", release["body"])
 
