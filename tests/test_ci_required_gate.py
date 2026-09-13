@@ -44,12 +44,10 @@ class RequiredCIGateTests(unittest.TestCase):
     def _results(self):
         return {name: {"result": "success", "outputs": {}} for name in REQUIRED_JOBS}
 
-    def _run(self, results, *, cancelled="false", raw=False):
+    def _run(self, results, *, raw=False):
         env = {"PATH": os.defpath}
         if results is not None:
             env["REQUIRED_JOB_RESULTS"] = results if raw else json.dumps(results)
-        if cancelled is not None:
-            env["WORKFLOW_CANCELLED"] = cancelled
         return subprocess.run(
             [sys.executable, "-c", self._step()["run"]],
             env=env,
@@ -132,14 +130,26 @@ class RequiredCIGateTests(unittest.TestCase):
                 self.assertNotEqual(self._run(payload, raw=True).returncode, 0)
 
     def test_workflow_cancellation_refuses_even_when_dependencies_succeeded(self):
-        self.assertNotEqual(self._run(self._results(), cancelled="true").returncode, 0)
+        self.assertEqual(self._run(self._results()).returncode, 0)
+        cancellation = self.jobs["validate"]["steps"][-1]
+        self.assertEqual(cancellation["name"], "Refuse workflow cancellation")
+        self.assertEqual(cancellation["if"], "${{ cancelled() }}")
+        result = subprocess.run(
+            [sys.executable, "-c", cancellation["run"]],
+            env={"PATH": os.defpath}, capture_output=True, text=True, timeout=10,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("workflow was cancelled", result.stderr)
 
-    def test_missing_or_invalid_cancellation_observation_refuses(self):
-        for cancelled in (None, "", "False", "unknown"):
-            with self.subTest(cancelled=cancelled):
-                self.assertNotEqual(
-                    self._run(self._results(), cancelled=cancelled).returncode, 0
-                )
+    def test_status_functions_are_only_used_in_supported_conditions(self):
+        # GitHub accepts status functions in `if`, not step env/run expressions.
+        # YAML parsing and Python execution alone do not validate that boundary.
+        for step in self.jobs["validate"]["steps"]:
+            for key, value in step.items():
+                if key != "if":
+                    self.assertNotRegex(
+                        json.dumps(value), r"\$\{\{[^}]*\b(?:always|cancelled|success|failure)\("
+                    )
 
     def test_outputs_do_not_substitute_for_job_results(self):
         results = self._results()
@@ -181,19 +191,21 @@ class RequiredCIGateTests(unittest.TestCase):
             self._step()["env"],
             {
                 "REQUIRED_JOB_RESULTS": "${{ toJSON(needs) }}",
-                "WORKFLOW_CANCELLED": "${{ cancelled() }}",
             },
         )
         self.assertFalse(gate.get("continue-on-error", False))
-        self.assertFalse(self._step().get("continue-on-error", False))
+        for step in gate["steps"]:
+            self.assertFalse(step.get("continue-on-error", False))
 
     def test_aggregate_is_bounded_and_has_no_checkout_action_or_write_permission(self):
         gate = self.jobs["validate"]
         self.assertGreater(gate["timeout-minutes"], 0)
         self.assertLessEqual(gate["timeout-minutes"], 5)
         self.assertEqual(self.workflow["permissions"], {"contents": "read"})
-        self.assertEqual(len(gate["steps"]), 1)
-        self.assertNotIn("uses", self._step())
+        self.assertEqual(len(gate["steps"]), 2)
+        for step in gate["steps"]:
+            self.assertNotIn("uses", step)
+            self.assertEqual(step["shell"], "python")
         self.assertNotIn("permissions", gate)
 
 

@@ -29,7 +29,6 @@ jobs:
         shell: python
         env:
           REQUIRED_JOB_RESULTS: ${{ toJSON(needs) }}
-          WORKFLOW_CANCELLED: ${{ cancelled() }}
         run: |
           import json
           import os
@@ -42,8 +41,6 @@ jobs:
               "exact-image-read-gateway",
               "exact-addon-runtime-acceptance",
           )
-          if os.environ.get("WORKFLOW_CANCELLED") != "false":
-              sys.exit("Required CI refused: workflow cancellation state is not clear.")
           try:
               results = json.loads(os.environ["REQUIRED_JOB_RESULTS"])
           except (KeyError, ValueError):
@@ -58,6 +55,13 @@ jobs:
           if unsuccessful:
               sys.exit("Required CI did not succeed: " + ", ".join(unsuccessful))
           print("All required CI job families succeeded.")
+
+      - name: Refuse workflow cancellation
+        if: ${{ cancelled() }}
+        shell: python
+        run: |
+          import sys
+          sys.exit("Required CI refused: workflow was cancelled.")
 
   validate_source:
     runs-on: ubuntu-latest

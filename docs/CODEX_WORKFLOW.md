@@ -158,8 +158,9 @@ required CI job family, not the source/unit-test worker alone:
 The aggregate and its result-checking step use `always()` so a failed dependency
 does not merely skip the required gate. Every expected job must report exactly
 `success`. Failure, cancellation, an unexpected skip, missing/malformed results,
-or a different result set makes the gate fail. Workflow cancellation also refuses
-success even if the dependencies have finished. Matrix preparation is independently
+or a different result set makes the gate fail. A final cancellation-refusal step
+uses `cancelled()` in its supported step condition and fails the gate even if
+the dependency result check succeeded. Matrix preparation is independently
 required; its success cannot override a failed or skipped gateway job. Existing
 matrix coverage and failure collection remain unchanged.
 
