@@ -210,7 +210,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertIn("workflow_call", workflow_events(self.ci))
 
     def test_dependency_audit_is_a_required_release_validation_gate(self):
-        validate_steps = self.ci["jobs"]["validate"]["steps"]
+        validate_steps = self.ci["jobs"]["validate_source"]["steps"]
         audit = next(
             step
             for step in validate_steps
@@ -239,7 +239,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         )
 
     def test_pull_request_ci_requires_materialized_release_state(self):
-        validate_steps = self.ci["jobs"]["validate"]["steps"]
+        validate_steps = self.ci["jobs"]["validate_source"]["steps"]
         transition_validation = next(
             step
             for step in validate_steps
@@ -292,7 +292,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         )
 
     def test_pull_request_ci_rejects_skipped_and_cross_channel_materialization(self):
-        validate_steps = self.ci["jobs"]["validate"]["steps"]
+        validate_steps = self.ci["jobs"]["validate_source"]["steps"]
         transition_script = str(
             next(
                 step["run"]

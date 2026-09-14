@@ -143,6 +143,48 @@ Review and commit the resulting authoritative version updates and deletion of
 CI fails closed while an unmaterialized declaration remains, so a second
 promotion pull request is neither created nor required.
 
+## Required CI check
+
+The public required check remains `validate`. It is an aggregate over every
+required CI job family, not the source/unit-test worker alone:
+
+- `validate_source`: the existing source, dependency audit, compatibility fixture,
+  unit-test and packaging checks, including all declared architectures;
+- `real-ha-contract-tests`: every configured disposable Core contract lane;
+- `prepare_exact_image_matrix`: reviewed gateway-matrix preparation;
+- `exact-image-read-gateway`: every prepared exact-image gateway lane; and
+- `exact-addon-runtime-acceptance`: every configured exact add-on runtime lane.
+
+The aggregate and its result-checking step use `always()` so a failed dependency
+does not merely skip the required gate. Every expected job must report exactly
+`success`. Failure, cancellation, an unexpected skip, missing/malformed results,
+or a different result set makes the gate fail. A final cancellation-refusal step
+uses `cancelled()` in its supported step condition and fails the gate even if
+the dependency result check succeeded. Matrix preparation is independently
+required; its success cannot override a failed or skipped gateway job. Existing
+matrix coverage and failure collection remain unchanged.
+
+Ordinary code and documentation-only pull requests run the same required jobs;
+there is no path-based exemption. Intentional version-specific step skips inside
+a successful matrix job remain distinct from a skipped required job family.
+Candidate evidence must identify the unique `validate` check, its actual producer
+and CI run, and the exact PR/base/head or verified synthetic merge checkout.
+This aggregate does not add an expected-app ruleset binding or new enforcement of
+the owning workflow identity; those are separate protection changes.
+
+The publisher continues to call the entire reusable CI workflow before release
+detection or publication. Its enclosing job is also named `validate`; it is not
+the renamed `validate_source` worker. The aggregate adds no publishing authority.
+
+If a gate correction is needed, keep the failed evidence and use a reviewed
+corrective or revert PR with all checks intact. Before rolling out a gate change,
+identify Josh's existing repository-admin recovery access. If a malformed gate
+cannot validate its own correction, stop and prepare an exact, separately
+authorized owner recovery covering the affected protection, correction SHA,
+restoration and verification. Do not automatically disable the gate, use an
+administrative merge bypass, or infer that reverting source undoes publication
+or deployment.
+
 ## Independent review and Ready automation
 
 Review begins only after implementation reaches a stable candidate and
@@ -184,8 +226,8 @@ disabled.
 Josh's `Ready for review` action on a same-repository `jeter-1` pull request
 targeting `main` attests that the independent review is complete and acceptable.
 Ready does not start another CI run for an unchanged head. The authorization
-workflow reuses the existing exact-head `validate` result produced when the pull
-request was opened, reopened, or synchronized; a missing, failed, stale-base, or
+workflow reuses the existing exact-head aggregate `validate` result produced when
+the pull request was opened, reopened, or synchronized; a missing, failed, stale-base, or
 ambiguous result remains a hard stop.
 The protected-base authorization workflow verifies the repository, base, actor,
 and exact authorized head, waits only for that head's deterministic `validate`
@@ -218,6 +260,13 @@ protected-main publication workflow validates and publishes that exact merge
 commit. Because materialization occurred before review, publication does not
 trigger another model review. It does not deploy the add-on or modify Home
 Assistant.
+
+Publication still has its own event boundary. A merge performed with the
+workflow's `GITHUB_TOKEN` does not start another workflow from its push event.
+After such a merge, observe whether a publication run exists for the actual
+merge SHA; if none exists, use the existing owner-authorized manual publication
+entry point with that exact SHA and expected version. Do not dispatch a duplicate
+run or introduce a new credential or automatic handoff to bridge this boundary.
 
 This workflow pull request must cross the preexisting receipt-required pipeline
 one final time. After it merges, removing `codex-review-receipt` from the active
