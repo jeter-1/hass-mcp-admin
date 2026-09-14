@@ -82,6 +82,7 @@ jobs:
       group: authorized-merge-${{ github.event.pull_request.number || github.event.issue.number }}
       cancel-in-progress: true
     permissions:
+      actions: read
       checks: read
       contents: write
       issues: read
@@ -147,38 +148,15 @@ jobs:
               exit 1
             fi
 
-            checks_json="$(gh api \
-              -H "Accept: application/vnd.github+json" \
-              "repos/${REPOSITORY}/commits/${AUTHORIZED_HEAD_SHA}/check-runs?check_name=validate&filter=latest&per_page=100")"
-            check_count="$(jq -r '.total_count' <<< "$checks_json")"
-            if [[ "$check_count" == "1" ]]; then
-              check_binding_count="$(jq -r \
-                --arg base_sha "$AUTHORIZED_BASE_SHA" \
-                --arg head_sha "$AUTHORIZED_HEAD_SHA" \
-                --arg pr_number "$PR_NUMBER" \
-                '[.check_runs[0].pull_requests[]? |
-                  select((.number | tostring) == $pr_number and
-                         .base.ref == "main" and
-                         .base.sha == $base_sha and
-                         .head.sha == $head_sha)] | length' \
-                <<< "$checks_json")"
-              check_head_sha="$(jq -r '.check_runs[0].head_sha // ""' <<< "$checks_json")"
-              if [[ "$check_head_sha" != "$AUTHORIZED_HEAD_SHA" || "$check_binding_count" != "1" ]]; then
-                echo "::error::The deterministic validate check is not bound to the authorized PR base and head."
-                exit 1
-              fi
-              check_status="$(jq -r '.check_runs[0].status' <<< "$checks_json")"
-              check_conclusion="$(jq -r '.check_runs[0].conclusion // ""' <<< "$checks_json")"
-              if [[ "$check_status" == "completed" && "$check_conclusion" == "success" ]]; then
-                break
-              fi
-              if [[ "$check_status" == "completed" ]]; then
-                echo "::error::The exact-head deterministic validate check did not succeed."
-                exit 1
-              fi
-            elif [[ "$check_count" != "0" ]]; then
-              echo "::error::The exact-head deterministic validate check was ambiguous."
+            if ! provenance_json="$(python3 scripts/validate_ci_provenance.py \
+              --repository "$REPOSITORY" --pr-number "$PR_NUMBER" \
+              --base-sha "$AUTHORIZED_BASE_SHA" --head-sha "$AUTHORIZED_HEAD_SHA")"; then
+              echo "$provenance_json"
               exit 1
+            fi
+            if [[ "$(jq -r '.status' <<< "$provenance_json")" == "success" ]]; then
+              echo "$provenance_json"
+              break
             fi
 
             if [[ "$attempt" -eq "$VALIDATE_MAX_ATTEMPTS" ]]; then
@@ -228,6 +206,11 @@ jobs:
             echo "::error::The pull-request eligibility or exact head changed after Ready authorization."
             exit 1
           fi
+
+          python3 scripts/validate_ci_provenance.py \
+            --repository "$REPOSITORY" --pr-number "$PR_NUMBER" \
+            --base-sha "$AUTHORIZED_BASE_SHA" --head-sha "$AUTHORIZED_HEAD_SHA" \
+            --require-success
 
           gh pr merge "$PR_NUMBER" \
             --repo "$REPOSITORY" \

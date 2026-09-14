@@ -7,6 +7,8 @@ import unittest
 
 import yaml
 
+from tests.test_ci_provenance import fixture as ci_fixture, MOCK_API_SHELL
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CODEX_RECEIPT_WORKFLOW = ROOT / ".github" / "workflows" / "codex-review-receipt.yml"
@@ -147,6 +149,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertEqual(
             job["permissions"],
             {
+                "actions": "read",
                 "checks": "read",
                 "contents": "write",
                 "issues": "read",
@@ -172,13 +175,11 @@ class ReviewWorkflowTests(unittest.TestCase):
             == "Wait for the exact-head deterministic validate check"
         )
         wait_script = str(wait_step["run"])
-        self.assertIn("check-runs?check_name=validate&filter=latest", wait_script)
+        self.assertIn("scripts/validate_ci_provenance.py", wait_script)
         self.assertIn("AUTHORIZED_BASE_SHA", wait_script)
         self.assertIn("AUTHORIZED_HEAD_SHA", wait_script)
-        self.assertIn(".check_runs[0].pull_requests[]?", wait_script)
         self.assertIn(".base.sha == $base_sha", wait_script)
         self.assertIn(".head.sha == $head_sha", wait_script)
-        self.assertIn(".number | tostring", wait_script)
         self.assertIn("VALIDATE_MAX_ATTEMPTS", wait_script)
         self.assertIn("The pull-request base or head moved", wait_script)
         self.assertNotIn("gh pr checks", wait_script)
@@ -188,6 +189,8 @@ class ReviewWorkflowTests(unittest.TestCase):
         merge_script = str(job["steps"][-1]["run"])
         self.assertIn("issues/${PR_NUMBER}/timeline?per_page=100", merge_script)
         self.assertIn("scripts/validate_ready_authorization.py", merge_script)
+        self.assertIn("scripts/validate_ci_provenance.py", merge_script)
+        self.assertIn("--require-success", merge_script)
         self.assertIn('git rev-parse HEAD)" != "$AUTHORIZED_BASE_SHA"', merge_script)
         self.assertIn('.state == "open"', merge_script)
         self.assertIn(".draft == false", merge_script)
@@ -233,23 +236,12 @@ class ReviewWorkflowTests(unittest.TestCase):
             status: str = "completed",
             conclusion: str = "success",
         ):
-            return {
-                "total_count": 1,
-                "check_runs": [
-                    {
-                        "head_sha": head,
-                        "status": status,
-                        "conclusion": conclusion,
-                        "pull_requests": [
-                            {
-                                "number": number,
-                                "base": {"ref": "main", "sha": base},
-                                "head": {"sha": head},
-                            }
-                        ],
-                    }
-                ],
-            }
+            data = ci_fixture(base, head)
+            payload = next(iter(data.values()))
+            check = payload["check_runs"][0]
+            check.update(status=status, conclusion=conclusion)
+            check["pull_requests"][0]["number"] = number
+            return payload
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -263,7 +255,7 @@ if [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; then
   printf '%s\\n' "$MOCK_PR_JSON"
 elif [[ "$1" == "api" && "$*" == *"check-runs?check_name=validate&filter=latest"* ]]; then
   printf '%s\\n' "$MOCK_CHECKS_JSON"
-else
+""" + MOCK_API_SHELL + """else
   printf 'unexpected gh invocation: %s\\n' "$*" >&2
   exit 2
 fi
@@ -273,7 +265,12 @@ fi
             fake_gh.chmod(0o700)
 
             cases = (
-                (pr_payload(), check_payload(), 0, 2),
+                (pr_payload(), check_payload(), 0, 7),
+                (pr_payload(), {"total_count": 1, "check_runs": [
+                    check_payload()["check_runs"][0] | {
+                        "name": "validate", "app": {"id": 999, "slug": "other-app"}
+                    }
+                ]}, 1, 2),
                 (
                     pr_payload(),
                     check_payload(conclusion="failure"),
@@ -306,6 +303,7 @@ fi
                             "AUTHORIZED_HEAD_SHA": authorized_head,
                             "GH_TOKEN": "test-token",
                             "MOCK_CHECKS_JSON": json.dumps(checks_payload),
+                            "MOCK_PROVENANCE_JSON": json.dumps(ci_fixture()),
                             "MOCK_PR_JSON": json.dumps(current_pr),
                             "MOCK_GH_LOG": str(gh_log),
                             "PATH": f"{root}:/usr/bin:/bin",
@@ -353,7 +351,7 @@ elif [[ "$1" == "api" && "$2" == "repos/${REPOSITORY}/pulls/${PR_NUMBER}" ]]; th
   printf '%s\\n' "$MOCK_PR_JSON"
 elif [[ "$1" == "pr" && "$2" == "merge" ]]; then
   exit 0
-else
+""" + MOCK_API_SHELL + """else
   printf 'unexpected gh invocation: %s\\n' "$*" >&2
   exit 2
 fi
@@ -400,7 +398,21 @@ fi
                     False,
                 ),
             )
-            for pr_payload, expected_returncode, merge_expected in cases:
+            bound_cases = [(pr, code, merged, ci_fixture(base_sha, authorized_head))
+                           for pr, code, merged in cases]
+            for failure in ("app", "workflow", "attempt", "pending"):
+                data = ci_fixture(base_sha, authorized_head)
+                values = list(data.values())
+                if failure == "app":
+                    values[0]["check_runs"][0]["app"]["id"] = 999
+                elif failure == "workflow":
+                    values[2]["workflow_runs"][0]["path"] = ".github/workflows/other.yml"
+                elif failure == "attempt":
+                    values[3]["jobs"][0]["run_attempt"] = 2
+                else:
+                    values[0]["check_runs"][0].update(status="queued", conclusion=None)
+                bound_cases.append((eligible, 1, False, data))
+            for pr_payload, expected_returncode, merge_expected, provenance in bound_cases:
                 with self.subTest(pr_payload=pr_payload):
                     gh_log.write_text("", encoding="utf-8")
                     result = subprocess.run(
@@ -413,6 +425,7 @@ fi
                             "GITHUB_STEP_SUMMARY": str(summary),
                             "MOCK_GH_LOG": str(gh_log),
                             "MOCK_PR_JSON": json.dumps(pr_payload),
+                            "MOCK_PROVENANCE_JSON": json.dumps(provenance),
                             "PATH": f"{root}:/usr/bin:/bin",
                             "PR_NUMBER": "164",
                             "REPOSITORY": "jeter-1/hass-mcp-admin",
@@ -428,7 +441,7 @@ fi
                     )
                     self.assertEqual(merge_was_reached, merge_expected)
                     if merge_expected:
-                        self.assertEqual(len(calls), 3)
+                        self.assertEqual(len(calls), 9)
                         self.assertIn("--match-head-commit", calls[-1])
                         self.assertNotIn("--auto", calls[-1])
 

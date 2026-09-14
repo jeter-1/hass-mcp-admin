@@ -169,8 +169,30 @@ there is no path-based exemption. Intentional version-specific step skips inside
 a successful matrix job remain distinct from a skipped required job family.
 Candidate evidence must identify the unique `validate` check, its actual producer
 and CI run, and the exact PR/base/head or verified synthetic merge checkout.
-This aggregate does not add an expected-app ruleset binding or new enforcement of
-the owning workflow identity; those are separate protection changes.
+The required status must be bound in the main ruleset to the observed GitHub
+Actions app (`integration_id: 15368`). This settings change is separate from the
+aggregate implementation and requires explicit owner authorization. Preserve the
+exported prior ruleset and verify that no other rule, bypass, or enforcement
+setting changes. App binding alone does not identify the owning workflow.
+
+The protected-base `scripts/validate_ci_provenance.py` therefore verifies the
+unique check's app, PR/base/head association, and check suite; resolves that
+suite through this repository's `.github/workflows/ci.yml`; and binds its current
+run attempt's `validate` job to the exact check. Only a successful PR-triggered
+CI run and job for the authorized base/head are accepted. Another app or
+workflow, foreign repository, ambiguous/incomplete evidence, obsolete attempt,
+unsuccessful conclusion, or changed evidence refuses. Only an absent or pending
+check/run may remain pending within the existing bounded wait. GitHub API reads
+are limited to fixed GET routes, 100-item complete collections, 4 MB responses,
+and 30 seconds per request, with secret-safe failure categories. The merge job
+adds only `actions: read` for this metadata; existing merge permissions remain.
+
+The provenance check runs again immediately before the head-matched merge, after
+Ready/lifecycle and current PR revalidation. GitHub's strict base protection and
+required checks still enforce the final merge boundary; separate API reads are
+not an atomic transaction. Rollout evidence must distinguish the active ruleset
+binding from the workflow change, which takes effect only after its reviewed
+merge. A draft PR's passing fixtures do not prove a live negative merge test.
 
 The publisher continues to call the entire reusable CI workflow before release
 detection or publication. Its enclosing job is also named `validate`; it is not
@@ -231,8 +253,8 @@ the pull request was opened, reopened, or synchronized; a missing, failed, stale
 ambiguous result remains a hard stop.
 The protected-base authorization workflow verifies the repository, base, actor,
 and exact authorized head, waits only for that head's deterministic `validate`
-check whose pull-request association is bound to the same protected base and
-head, then revalidates the complete Ready lifecycle, open/non-draft disposition,
+check whose producer and owning CI attempt are verified and whose pull-request
+association is bound to the same protected base and head, then revalidates the complete Ready lifecycle, open/non-draft disposition,
 protected base commit, same-repository head, and exact head immediately before
 one non-administrative, head-matched merge. A new base therefore requires a new
 base-bound validation result. Remaining required statuses and review-thread
