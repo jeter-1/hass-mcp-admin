@@ -89,13 +89,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.14"
           cache: pip
           cache-dependency-path: |
-            hass_mcp_engineering_beta/requirements.txt
-            tests/requirements.txt
+            hass_mcp_engineering_beta/requirements.lock
+            tests/requirements.lock
       - name: Install dependencies
-        run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt -r tests/requirements.txt
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r tests/requirements.lock
       - name: Regenerate historical compatibility fixtures
         shell: bash
         run: |
@@ -124,8 +125,10 @@ jobs:
           do
             cmp "$generated/$fixture" "tests/fixtures/$fixture"
           done
+      - name: Verify committed build inputs
+        run: python hass_mcp_engineering_beta/build_inputs.py source
       - name: Audit Engineering dependencies
-        run: python -m pip_audit --strict --progress-spinner off --requirement hass_mcp_engineering_beta/requirements.txt
+        run: python -m pip_audit --strict --progress-spinner off --requirement hass_mcp_engineering_beta/requirements.lock
       - name: Compile Python
         run: python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests
       - name: Validate deployment metadata
@@ -183,13 +186,14 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.14"
           cache: pip
           cache-dependency-path: |
-            hass_mcp_engineering_beta/requirements.txt
-            tests/requirements.txt
+            hass_mcp_engineering_beta/requirements.lock
+            tests/requirements.lock
       - name: Install dependencies
-        run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt -r tests/requirements.txt
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r tests/requirements.lock
       - name: Run Engineering unit tests
         run: python -m unittest discover -s tests -v
 
@@ -233,14 +237,36 @@ jobs:
           beta_version="$(sed -nE 's/^version:[[:space:]]*"?([^"[:space:]]+)"?[[:space:]]*$/\1/p' hass_mcp_engineering_beta/config.yaml)"
           build_sha="$(git rev-parse HEAD)"
           build_time="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          docker buildx build \
-            --platform "linux/amd64,linux/arm64" \
-            --build-arg "BUILD_VERSION=$beta_version" \
-            --build-arg "HAMCP_BUILD_SHA=$build_sha" \
-            --build-arg "HAMCP_BUILD_TIME=$build_time" \
-            --build-arg "HAMCP_BUILD_DIRTY=false" \
-            --output=type=cacheonly \
-            ./hass_mcp_engineering_beta
+          mkdir -p "$RUNNER_TEMP/build-input-evidence"
+          for architecture in amd64 arm64; do
+            platform="linux/$architecture"
+            image="hass-mcp-engineering-beta:inputs-$architecture"
+            docker buildx build \
+              --platform "$platform" \
+              --build-arg "BUILD_VERSION=$beta_version" \
+              --build-arg "HAMCP_BUILD_SHA=$build_sha" \
+              --build-arg "HAMCP_BUILD_TIME=$build_time" \
+              --build-arg "HAMCP_BUILD_DIRTY=false" \
+              --load --tag "$image" ./hass_mcp_engineering_beta
+            container="engineering-build-smoke-$architecture"
+            trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+            timeout --signal=TERM --kill-after=10s 120s docker run --rm \
+              --name "$container" --platform "$platform" --network none \
+              --read-only --cap-drop ALL --security-opt no-new-privileges \
+              --entrypoint python "$image" /app/build_inputs.py smoke \
+              --expected-platform "$platform" \
+              > "$RUNNER_TEMP/build-input-evidence/$architecture.json"
+            trap - EXIT
+          done
+          printf '%s\n' "$build_sha" > "$RUNNER_TEMP/build-input-evidence/source-sha.txt"
+      - name: Retain per-architecture build input evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: engineering-build-inputs
+          path: ${{ runner.temp }}/build-input-evidence/
+          if-no-files-found: error
+          retention-days: 14
 
   real-ha-contract-tests:
     runs-on: ubuntu-latest
@@ -310,11 +336,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.14"
           cache: pip
-          cache-dependency-path: hass_mcp_engineering_beta/requirements.txt
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
       - name: Install Engineering client dependencies
-        run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
       - name: Prepare exact source and disposable migration configuration
         shell: bash
         run: |
@@ -480,11 +507,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.14"
           cache: pip
-          cache-dependency-path: hass_mcp_engineering_beta/requirements.txt
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
       - name: Install transport acceptance dependencies
-        run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
       - name: Start synthetic read-only Home Assistant fixture
         shell: bash
         run: |
@@ -832,11 +860,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.14"
           cache: pip
-          cache-dependency-path: hass_mcp_engineering_beta/requirements.txt
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
       - name: Install exact add-on runtime acceptance dependencies
-        run: python -m pip install -r hass_mcp_engineering_beta/requirements.txt
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
       - name: Verify immutable add-on indexes and platform manifests
         shell: bash
         run: |

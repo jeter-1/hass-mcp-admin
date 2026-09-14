@@ -1,5 +1,12 @@
 # Codex Development Workflow
 
+Engineering packaging follows [controlled build inputs](BUILD_INPUTS.md): use
+complete hash locks, retain both architecture inventories/smoke results, and
+verify source-bound base/runtime evidence before publication. Historical
+artifacts retain their original contracts. Packaging changes still require an
+authorized release transition; passing checks never authorize republishing an
+existing version.
+
 Repository policy lives in [`../AGENTS.md`](../AGENTS.md). This guide is the
 operator playbook for applying that policy locally or remotely.
 

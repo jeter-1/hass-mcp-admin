@@ -22,6 +22,10 @@ Published 2.2.0 retains its three-platform images. Future releases retire
 An affected installation needs an independently planned migration to supported
 64-bit hardware/OS; changing this package does not migrate its data.
 
+The next build uses a digest-pinned Python base and complete hash-locked runtime
+wheels. See [build inputs](../docs/BUILD_INPUTS.md) for maintenance, both
+architecture smoke checks and final-digest inventory verification.
+
 Update the same add-on after authorized publication/deployment; preserve
 settings, connector, data and ingress. New installations select this add-on
 using the [root installation guidance](../README.md#install-or-update-engineering).

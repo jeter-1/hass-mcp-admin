@@ -373,7 +373,7 @@ def valid_run_metadata():
 class ReleaseArchitectureContractTests(unittest.TestCase):
     def source_repo(self, root, config):
         path = root / MODULE.SOURCE_DIRECTORY / "config.yaml"
-        path.parent.mkdir(parents=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(config, encoding="utf-8")
         for arguments in (
             ["init", "-q"], ["add", "--", MODULE.SOURCE_DIRECTORY],
@@ -478,6 +478,9 @@ class PublicationSourceVerifierTests(unittest.TestCase):
             b"arch:\n  - amd64\n  - aarch64\n  - armv7\n"))
         self.release_bytes = patch.start()
         self.addCleanup(patch.stop)
+        legacy = mock.patch.object(MODULE, "release_build_inputs", return_value=None)
+        legacy.start()
+        self.addCleanup(legacy.stop)
 
     def write_evidence(
         self, root, *, provenance=None, sbom=None, images=None, manifest=None

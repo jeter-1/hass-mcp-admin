@@ -219,14 +219,15 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         self.assertEqual(
             audit["run"],
             "python -m pip_audit --strict --progress-spinner off "
-            "--requirement hass_mcp_engineering_beta/requirements.txt",
+            "--requirement hass_mcp_engineering_beta/requirements.lock",
         )
         install = next(
             step
             for step in validate_steps
             if step.get("name") == "Install dependencies"
         )
-        self.assertIn("hass_mcp_engineering_beta/requirements.txt", install["run"])
+        self.assertIn("tests/requirements.lock", install["run"])
+        self.assertIn("--require-hashes --only-binary=:all:", install["run"])
         self.assertNotIn("hass_mcp_admin/requirements-dev.txt", install["run"])
         release_install = next(
             step

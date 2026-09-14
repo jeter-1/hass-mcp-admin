@@ -38,6 +38,10 @@ Engineering releases require a supported 64-bit installation. This source change
 does not migrate or uninstall an existing system. Options/defaults, persistent paths, stored
 formats, ports, ingress and technical Beta identities are unchanged by 2.2.0.
 
+The next build also pins the base image and complete runtime wheel closure.
+See [controlled build inputs](docs/BUILD_INPUTS.md) for architecture checks,
+dependency updates, publication verification and their evidence limits.
+
 ## Capabilities and compatibility
 
 The fully healthy reviewed **ha-mcp 8.4.3** pairing exposes **51 static tools

@@ -15,7 +15,7 @@ import subprocess
 import sys
 from typing import Any, Iterable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlsplit
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
@@ -212,6 +212,105 @@ def release_platforms(repo: Path, release_sha: str) -> dict:
 def emit_release_platforms(args: argparse.Namespace) -> None:
     platforms = release_platforms(args.release_repo, args.expected_release_sha)
     _write_lines(args.github_output, (f"build_platforms={','.join(platforms)}",))
+
+
+def release_build_inputs(repo: Path, release_sha: str) -> dict | None:
+    """Read data, never execute candidate code. Absence is only a legacy contract."""
+    _exact_pattern(release_sha, SHA_PATTERN, "EXPECTED_RELEASE_SHA_INVALID")
+    path = f"{SOURCE_DIRECTORY}/build-inputs.json"
+    try:
+        listing = subprocess.run(
+            ["git", "-C", str(repo), "ls-tree", release_sha, "--", path],
+            capture_output=True, check=True, timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise VerificationError("RELEASE_BUILD_INPUTS_UNAVAILABLE") from exc
+    if not listing:
+        return None
+    if not re.fullmatch(rb"100644 blob [0-9a-f]{40}\t" + path.encode() + rb"\n", listing):
+        _fail("RELEASE_BUILD_INPUTS_TYPE_INVALID")
+    contract = _mapping(_decode_json(release_blob(repo, release_sha, path),
+                                    "RELEASE_BUILD_INPUTS_INVALID"), "RELEASE_BUILD_INPUTS_INVALID")
+    fields = {"schema_version", "python_version", "installer_version", "base_image",
+              "base_platforms", "requirements_sha256", "runtime_lock_sha256", "runtime"}
+    if set(contract) != fields or type(contract["schema_version"]) is not int or contract["schema_version"] != 1:
+        _fail("RELEASE_BUILD_INPUTS_SCHEMA_INVALID")
+    _exact_pattern(contract["python_version"], re.compile(r"3\.12\.[0-9]+\Z"), "RELEASE_PYTHON_INVALID")
+    version_pattern = re.compile(r"[0-9][A-Za-z0-9.!+_-]*\Z")
+    _exact_pattern(contract["installer_version"], version_pattern, "RELEASE_INSTALLER_INVALID")
+    _exact_pattern(contract["base_image"], re.compile(r"python:3\.12-slim@sha256:[0-9a-f]{64}\Z"),
+                   "RELEASE_BASE_INVALID")
+    bases = _mapping(contract["base_platforms"], "RELEASE_BASES_INVALID")
+    if set(bases) != {"linux/amd64", "linux/arm64"} or set(bases) != set(release_platforms(repo, release_sha)):
+        _fail("RELEASE_BASE_PLATFORM_MISMATCH")
+    for descriptor in bases.values():
+        if not isinstance(descriptor, dict) or set(descriptor) != {"manifest_digest", "configuration_digest"}:
+            _fail("RELEASE_BASE_DESCRIPTOR_INVALID")
+        for digest in descriptor.values():
+            _exact_pattern(digest, DIGEST_PATTERN, "RELEASE_BASE_DIGEST_INVALID")
+    raw_lock = release_blob(repo, release_sha, f"{SOURCE_DIRECTORY}/requirements.lock")
+    raw_requirements = release_blob(repo, release_sha, f"{SOURCE_DIRECTORY}/requirements.txt")
+    for raw, key in ((raw_lock, "runtime_lock_sha256"), (raw_requirements, "requirements_sha256")):
+        if hashlib.sha256(raw).hexdigest() != contract[key]:
+            _fail("RELEASE_BUILD_INPUT_HASH_MISMATCH")
+    expected = {}
+    for line in raw_lock.decode("utf-8").replace("\\\n", " ").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = line.split()
+        match = re.fullmatch(r"([a-z0-9]+(?:-[a-z0-9]+)*)==([0-9][A-Za-z0-9.!+_-]*)", fields[0])
+        if (match is None or not 2 <= len(fields) <= 129
+                or any(not re.fullmatch(r"--hash=sha256:[0-9a-f]{64}", f) for f in fields[1:])
+                or len(set(fields[1:])) != len(fields[1:])):
+            _fail("RELEASE_BUILD_LOCK_INVALID")
+        name, version = match.groups()
+        if name in expected:
+            _fail("RELEASE_BUILD_LOCK_DUPLICATE")
+        expected[name] = version
+    if not 1 <= len(expected) <= 512 or "pip" in expected or expected != contract["runtime"]:
+        _fail("RELEASE_BUILD_RUNTIME_MISMATCH")
+    dockerfile = release_blob(repo, release_sha, f"{SOURCE_DIRECTORY}/Dockerfile").decode("utf-8")
+    bases = [line.split()[1] for line in dockerfile.splitlines() if line.startswith("FROM ")]
+    if bases != [contract["base_image"], contract["base_image"]]:
+        _fail("RELEASE_BUILD_DOCKER_BASE_MISMATCH")
+    return contract
+
+
+def verify_sbom_inventory(packages: list, contract: dict) -> None:
+    actual = {}
+    for package in packages:
+        package = _mapping(package, "SOURCE_SBOM_PACKAGE_INVALID")
+        refs = _sequence(package.get("externalRefs", []), "SOURCE_SBOM_REFS_INVALID")
+        purls = [ref.get("referenceLocator") for ref in refs if isinstance(ref, dict)
+                 and ref.get("referenceType") == "purl"
+                 and str(ref.get("referenceLocator", "")).startswith("pkg:pypi/")]
+        if not purls:
+            continue
+        if len(purls) != 1 or not isinstance(package.get("name"), str):
+            _fail("SOURCE_SBOM_PYTHON_IDENTITY_INVALID")
+        name = re.sub(r"[-_.]+", "-", package["name"]).lower()
+        version = package.get("versionInfo")
+        purl = unquote(purls[0]).split("?", 1)[0]
+        if name in actual or purl != f"pkg:pypi/{name}@{version}":
+            _fail("SOURCE_SBOM_PYTHON_IDENTITY_INVALID")
+        actual[name] = version
+    if actual != {**contract["runtime"], "pip": contract["installer_version"]}:
+        _fail("SOURCE_SBOM_RUNTIME_MISMATCH")
+
+
+def verify_base_dependency(definition: dict, contract: dict, platform: str) -> None:
+    dependencies = _sequence(definition.get("resolvedDependencies"), "SOURCE_BASE_EVIDENCE_MISSING")
+    python = [item for item in dependencies if isinstance(item, dict)
+              and str(item.get("uri", "")).startswith("pkg:docker/python@")]
+    expected = {contract["base_image"].split("@sha256:")[1],
+                contract["base_platforms"][platform]["manifest_digest"].split(":")[1]}
+    if len(python) != 1:
+        _fail("SOURCE_BASE_EVIDENCE_AMBIGUOUS")
+    item = python[0]
+    query = parse_qs(urlsplit(item["uri"]).query)
+    if query.get("platform") != [platform] or item.get("digest") not in [{"sha256": d} for d in expected]:
+        _fail("SOURCE_BASE_INPUT_MISMATCH")
 
 
 @dataclass(frozen=True)
@@ -823,6 +922,7 @@ def verify_source(args: argparse.Namespace) -> None:
         _fail("EXPECTED_OWNER_INVALID")
 
     platforms = release_platforms(args.release_repo, release_sha)
+    build_inputs = release_build_inputs(args.release_repo, release_sha)
     manifest_evidence = _manifest_evidence(
         args.manifest_json, args.expected_digest, platforms
     )
@@ -910,6 +1010,8 @@ def verify_source(args: argparse.Namespace) -> None:
         packages = _sequence(spdx.get("packages"), "SOURCE_SBOM_PACKAGES_INVALID")
         if not packages:
             _fail("SOURCE_SBOM_PACKAGES_EMPTY")
+        if build_inputs is not None:
+            verify_sbom_inventory(packages, build_inputs)
 
     for platform in platforms:
         envelope = _mapping(
@@ -921,6 +1023,8 @@ def verify_source(args: argparse.Namespace) -> None:
         )
         if definition.get("buildType") != BUILD_TYPE:
             _fail("SOURCE_SLSA_BUILD_TYPE_MISMATCH")
+        if build_inputs is not None:
+            verify_base_dependency(definition, build_inputs, platform)
         external = _mapping(
             definition.get("externalParameters"),
             "SOURCE_SLSA_EXTERNAL_PARAMETERS_INVALID",
@@ -1014,6 +1118,7 @@ def verify_source(args: argparse.Namespace) -> None:
             "source_image_verified=true",
             f"manifest_digest={args.expected_digest}",
             "sbom_status=present",
+            "build_inputs_status=" + ("verified" if build_inputs is not None else "historical_not_declared"),
             *(
                 f"{REQUIRED_PLATFORMS[platform][3]}={platform_digests[platform]}"
                 for platform in platforms
