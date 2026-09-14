@@ -521,11 +521,26 @@ jobs:
             echo "source_mode=$DETECTED_SOURCE_MODE"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Resolve exact release architectures
+        id: platforms
+        shell: bash
+        env:
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          verifier="$RUNNER_TEMP/release-platform-verifier.py"
+          [[ "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git show "${WORKFLOW_AUTHORITY_SHA}:scripts/verify_publication_source_image.py" > "$verifier"
+          python "$verifier" release-platforms \
+            --release-repo . --expected-release-sha "$RELEASE_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Set up QEMU
         if: needs.detect-release.outputs.source_mode == 'build'
         uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
         with:
-          platforms: arm64,arm
+          platforms: arm64
 
       - name: Revalidate publication authority before registry access
         shell: bash
@@ -627,7 +642,7 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ./hass_mcp_engineering_beta
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          platforms: ${{ steps.platforms.outputs.build_platforms }}
           provenance: mode=max
           sbom: true
           outputs: type=image,name=ghcr.io/jeter-1/hass-mcp-engineering-beta,push-by-digest=true,name-canonical=true,push=true
@@ -714,27 +729,32 @@ jobs:
             "$source_image" > "$manifest_json"
           platform_env="$RUNNER_TEMP/source-platforms.env"
           python "$verifier" extract-manifest \
+            --release-repo . --expected-release-sha "$RELEASE_SHA" \
             --manifest-json "$manifest_json" \
             --expected-digest "$EXPECTED_DIGEST" \
             --output-env "$platform_env"
           # The verifier emits only fixed platform keys with exact sha256 values.
           source "$platform_env"
 
-          amd64_json="$RUNNER_TEMP/source-amd64.json"
-          arm64_json="$RUNNER_TEMP/source-arm64.json"
-          armv7_json="$RUNNER_TEMP/source-armv7.json"
-          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${SOURCE_AMD64_DIGEST}" > "$amd64_json"
-          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${SOURCE_ARM64_DIGEST}" > "$arm64_json"
-          DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
-            --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${SOURCE_ARMV7_DIGEST}" > "$armv7_json"
+          image_arguments=()
+          IFS=',' read -ra platforms <<< '${{ steps.platforms.outputs.build_platforms }}'
+          for platform in "${platforms[@]}"; do
+            case "$platform" in
+              linux/amd64) digest="$SOURCE_AMD64_DIGEST" ;;
+              linux/arm64) digest="$SOURCE_ARM64_DIGEST" ;;
+              linux/arm/v7) digest="$SOURCE_ARMV7_DIGEST" ;;
+              *) echo "::error::Unexpected release platform"; exit 1 ;;
+            esac
+            image_json="$RUNNER_TEMP/source-${platform//\//-}.json"
+            DOCKER_CONFIG="$anonymous_config" docker buildx imagetools inspect \
+              --format '{{json .Image}}' "${IMAGE_REPOSITORY}@${digest}" > "$image_json"
+            image_arguments+=(--image-json "$platform=$image_json")
+          done
           python "$verifier" verify-source \
+            --release-repo . \
             --manifest-json "$manifest_json" \
             --image-repository "$IMAGE_REPOSITORY" \
-            --image-json "linux/amd64=$amd64_json" \
-            --image-json "linux/arm64=$arm64_json" \
-            --image-json "linux/arm/v7=$armv7_json" \
+            "${image_arguments[@]}" \
             --expected-digest "$EXPECTED_DIGEST" \
             --expected-release-sha "$RELEASE_SHA" \
             --expected-version "$VERSION" \
@@ -1047,7 +1067,7 @@ jobs:
           - Commit image: `ghcr.io/jeter-1/hass-mcp-engineering-beta:sha-{release_sha}`
           - OCI manifest digest: `{digest}`
           - Build timestamp: `{build_time}`
-          - Architectures: `linux/amd64`, `linux/arm64`, `linux/arm/v7`
+          - Architectures: `${{ steps.platforms.outputs.build_platforms }}`
           - SLSA provenance and SBOM attestations: verified
           """
           Path(output_path).write_text(
@@ -1193,7 +1213,7 @@ jobs:
             echo "- Version image: ${IMAGE_REPOSITORY}:${VERSION}"
             echo "- Commit image: ${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
             echo "- OCI digest: $DIGEST"
-            echo "- Architectures: linux/amd64, linux/arm64, linux/arm/v7"
+            echo "- Architectures: ${{ steps.platforms.outputs.build_platforms }}"
             echo "- Digest-addressed source image: ${IMAGE_REPOSITORY}@${DIGEST}"
             echo "- temporary_registry_tag_created: false"
             echo "- source_image_published: $SOURCE_IMAGE_PUBLISHED"

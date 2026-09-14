@@ -380,7 +380,7 @@ only under its content-addressed digest. Digest resume skips QEMU, registry
 login, and the build action entirely. The publication job has a bounded timeout,
 and a failure at any later phase therefore cannot leave a predictable staging
 tag or delete a digest shared by completed release tags. The exact OCI index,
-three platform child digests, per-platform image labels, attestation subjects,
+source-declared platform child digests, per-platform image labels, attestation subjects,
 and SLSA provenance are verified anonymously and without Docker image pulls
 before any final image tag is created. Each attestation manifest and raw in-toto
 statement is fetched by its descriptor digest; its byte hash, bounded size,
@@ -604,3 +604,20 @@ release continues only when the triggering commit remains an ancestor of current
 protected `main`; a divergent or removed commit fails closed. The publication
 concurrency group serializes release runs, so a later release transition cannot
 overtake an earlier one.
+
+### Engineering architecture retirement
+
+The next Engineering release advertises `amd64` and `aarch64`; published 2.2.0
+retains its original three-platform artifacts. HAOS retired 32-bit armv7 support.
+This changes future package availability, not existing data or installation identity.
+Do not rewrite historical release notes, signed upstream architecture evidence,
+frozen-v1 packaging or old verification fixtures to match the new set.
+
+Publication resolves its complete expected platform set from
+`hass_mcp_engineering_beta/config.yaml` at the exact guarded release SHA.
+The current protected verifier reads that committed blob, not mutable checkout
+bytes or the received manifest's own platform list. Both 64-bit platforms and
+all their attestations are mandatory; historical three-platform releases still
+require arm/v7 and its attestation. Missing, extra or duplicate coverage refuses.
+An old release remains subject to every existing recovery eligibility guard;
+retaining artifact verification does not authorize republishing it.

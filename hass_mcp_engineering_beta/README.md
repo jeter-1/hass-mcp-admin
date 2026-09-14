@@ -12,10 +12,15 @@ See [2.2.0 acceptance](../docs/V2_2_0_ACCEPTANCE.md) and
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures | `amd64`, `aarch64`, `armv7` |
+| Architectures for the next release | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
 | Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
 | Server ID | `hass-mcp-engineering-beta` |
+
+Published 2.2.0 retains its three-platform images. Future releases retire
+32-bit `armv7`, following [Home Assistant OS support](https://github.com/home-assistant/operating-system/releases/tag/17.0).
+An affected installation needs an independently planned migration to supported
+64-bit hardware/OS; changing this package does not migrate its data.
 
 Update the same add-on after authorized publication/deployment; preserve
 settings, connector, data and ingress. New installations select this add-on

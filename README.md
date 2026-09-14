@@ -32,7 +32,10 @@ not prove publication, deployment or installed acceptance.
 
 The image repository remains
 `ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
-`linux/arm64` and `linux/arm/v7`. Options/defaults, persistent paths, stored
+`linux/arm64` for the next release. Published 2.2.0 retains its historical
+`linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; future
+Engineering releases require a supported 64-bit installation. This source change
+does not migrate or uninstall an existing system. Options/defaults, persistent paths, stored
 formats, ports, ingress and technical Beta identities are unchanged by 2.2.0.
 
 ## Capabilities and compatibility

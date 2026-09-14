@@ -11,6 +11,7 @@ from http.client import HTTPException
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 from typing import Any, Iterable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
@@ -50,6 +51,14 @@ REQUIRED_PLATFORMS = {
     "linux/amd64": ("linux", "amd64", None, "SOURCE_AMD64_DIGEST"),
     "linux/arm64": ("linux", "arm64", None, "SOURCE_ARM64_DIGEST"),
     "linux/arm/v7": ("linux", "arm", "v7", "SOURCE_ARMV7_DIGEST"),
+}
+
+# Kept for historical three-platform evidence. New publication expectations are
+# read from the exact guarded release commit, never from the received index.
+ARCHITECTURE_PLATFORMS = {
+    "amd64": "linux/amd64",
+    "aarch64": "linux/arm64",
+    "armv7": "linux/arm/v7",
 }
 
 MAX_MANIFEST_BYTES = 1_048_576
@@ -145,6 +154,64 @@ def _exact_build_time(value: str) -> str:
     if parsed.strftime("%Y-%m-%dT%H:%M:%SZ") != value:
         _fail("EXPECTED_BUILD_TIME_INVALID")
     return value
+
+
+def release_blob(repo: Path, release_sha: str, path: str, limit: int = 65_536) -> bytes:
+    """Read bounded immutable source; the caller supplies a fixed internal path."""
+    _exact_pattern(release_sha, SHA_PATTERN, "EXPECTED_RELEASE_SHA_INVALID")
+    reference = f"{release_sha}:{path}"
+    try:
+        size = subprocess.run(
+            ["git", "-C", str(repo), "cat-file", "-s", reference],
+            capture_output=True, check=True, timeout=10,
+        ).stdout
+        if not size.strip().isdigit() or not 0 < int(size) <= limit:
+            _fail("RELEASE_SOURCE_BOUND_INVALID")
+        value = subprocess.run(
+            ["git", "-C", str(repo), "show", reference],
+            capture_output=True, check=True, timeout=10,
+        ).stdout
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise VerificationError("RELEASE_SOURCE_UNAVAILABLE") from exc
+    if len(value) != int(size):
+        _fail("RELEASE_SOURCE_BOUND_INVALID")
+    return value
+
+
+def release_platforms(repo: Path, release_sha: str) -> dict:
+    """Select the complete platform contract from committed add-on metadata."""
+    import yaml
+
+    class UniqueLoader(yaml.SafeLoader):
+        pass
+
+    def mapping(loader, node):
+        result = {}
+        for key_node, value_node in node.value:
+            key = loader.construct_object(key_node)
+            if not isinstance(key, str) or key in result:
+                _fail("RELEASE_CONFIG_INVALID")
+            result[key] = loader.construct_object(value_node)
+        return result
+
+    UniqueLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+    raw = release_blob(repo, release_sha, f"{SOURCE_DIRECTORY}/config.yaml")
+    try:
+        config = yaml.load(raw, Loader=UniqueLoader)
+    except (yaml.YAMLError, UnicodeError, RecursionError) as exc:
+        raise VerificationError("RELEASE_CONFIG_INVALID") from exc
+    if not isinstance(config, dict):
+        _fail("RELEASE_CONFIG_INVALID")
+    architectures = config.get("arch")
+    if architectures not in (["amd64", "aarch64"], ["amd64", "aarch64", "armv7"]):
+        _fail("RELEASE_ARCHITECTURE_SET_INVALID")
+    return {ARCHITECTURE_PLATFORMS[name]: REQUIRED_PLATFORMS[ARCHITECTURE_PLATFORMS[name]]
+            for name in architectures}
+
+
+def emit_release_platforms(args: argparse.Namespace) -> None:
+    platforms = release_platforms(args.release_repo, args.expected_release_sha)
+    _write_lines(args.github_output, (f"build_platforms={','.join(platforms)}",))
 
 
 @dataclass(frozen=True)
@@ -390,7 +457,9 @@ def _descriptor(value: dict[str, Any], reason: str) -> Descriptor:
 def _manifest_evidence(
     manifest_path: Path,
     expected_digest: str,
+    platforms: Mapping | None = None,
 ) -> ManifestEvidence:
+    platforms = REQUIRED_PLATFORMS if platforms is None else platforms
     _exact_pattern(expected_digest, DIGEST_PATTERN, "SOURCE_DIGEST_INVALID")
     raw = _read_bytes(manifest_path, MAX_MANIFEST_BYTES)
     actual_digest = f"sha256:{hashlib.sha256(raw).hexdigest()}"
@@ -408,7 +477,7 @@ def _manifest_evidence(
     if root.get("schemaVersion") != 2 or root.get("mediaType") != INDEX_MEDIA_TYPE:
         _fail("SOURCE_MANIFEST_TYPE_INVALID")
     entries = _sequence(root.get("manifests"), "SOURCE_MANIFEST_ENTRIES_INVALID")
-    if len(entries) != len(REQUIRED_PLATFORMS) * 2:
+    if len(entries) != len(platforms) * 2:
         _fail("SOURCE_MANIFEST_CARDINALITY_INVALID")
 
     platform_descriptors: dict[str, Descriptor] = {}
@@ -440,7 +509,7 @@ def _manifest_evidence(
 
         key = None
         for candidate, (os_name, architecture, variant, _env_name) in (
-            REQUIRED_PLATFORMS.items()
+            platforms.items()
         ):
             expected_platform = {"os": os_name, "architecture": architecture}
             if variant is not None:
@@ -452,7 +521,7 @@ def _manifest_evidence(
             _fail("SOURCE_PLATFORM_SET_INVALID")
         platform_descriptors[key] = descriptor
 
-    if set(platform_descriptors) != set(REQUIRED_PLATFORMS):
+    if set(platform_descriptors) != set(platforms):
         _fail("SOURCE_PLATFORM_SET_INVALID")
     subject_platforms = {
         descriptor.digest: platform
@@ -464,7 +533,7 @@ def _manifest_evidence(
         if platform is None or platform in attestations:
             _fail("SOURCE_ATTESTATION_SET_INVALID")
         attestations[platform] = descriptor
-    if set(attestations) != set(REQUIRED_PLATFORMS):
+    if set(attestations) != set(platforms):
         _fail("SOURCE_ATTESTATION_SET_INVALID")
     return ManifestEvidence(
         platforms=platform_descriptors,
@@ -510,7 +579,7 @@ def _attestation_statements(
     total_provenance_bytes = 0
     total_sbom_bytes = 0
 
-    for platform in REQUIRED_PLATFORMS:
+    for platform in manifest.platforms:
         platform_descriptor = manifest.platforms[platform]
         attestation_descriptor = manifest.attestations[platform]
         raw_attestation = reader.manifest(attestation_descriptor)
@@ -621,12 +690,13 @@ def _write_lines(path: Path, lines: Iterable[str]) -> None:
 
 
 def extract_manifest(args: argparse.Namespace) -> None:
-    evidence = _manifest_evidence(args.manifest_json, args.expected_digest)
+    platforms = release_platforms(args.release_repo, args.expected_release_sha)
+    evidence = _manifest_evidence(args.manifest_json, args.expected_digest, platforms)
     _write_lines(
         args.output_env,
         (
             f"{REQUIRED_PLATFORMS[platform][3]}={evidence.platforms[platform].digest}"
-            for platform in REQUIRED_PLATFORMS
+            for platform in platforms
         ),
     )
 
@@ -680,14 +750,14 @@ def verify_recovery_run(args: argparse.Namespace) -> None:
     )
 
 
-def _parse_image_arguments(values: list[str]) -> dict[str, Path]:
+def _parse_image_arguments(values: list[str], platforms: Mapping) -> dict[str, Path]:
     result: dict[str, Path] = {}
     for value in values:
         platform, separator, path = value.partition("=")
-        if not separator or platform not in REQUIRED_PLATFORMS or platform in result:
+        if not separator or platform not in platforms or platform in result:
             _fail("SOURCE_IMAGE_ARGUMENT_INVALID")
         result[platform] = Path(path)
-    if set(result) != set(REQUIRED_PLATFORMS):
+    if set(result) != set(platforms):
         _fail("SOURCE_IMAGE_ARGUMENT_SET_INVALID")
     return result
 
@@ -752,14 +822,15 @@ def verify_source(args: argparse.Namespace) -> None:
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", args.owner):
         _fail("EXPECTED_OWNER_INVALID")
 
+    platforms = release_platforms(args.release_repo, release_sha)
     manifest_evidence = _manifest_evidence(
-        args.manifest_json, args.expected_digest
+        args.manifest_json, args.expected_digest, platforms
     )
     platform_digests = {
         platform: descriptor.digest
         for platform, descriptor in manifest_evidence.platforms.items()
     }
-    image_paths = _parse_image_arguments(args.image_json)
+    image_paths = _parse_image_arguments(args.image_json, platforms)
     source_url = f"https://github.com/{args.repository}"
     labels = _required_labels(release_sha, version, build_time, source_url)
 
@@ -785,7 +856,7 @@ def verify_source(args: argparse.Namespace) -> None:
         args.image_repository,
         manifest_evidence,
     )
-    if set(provenance) != set(REQUIRED_PLATFORMS):
+    if set(provenance) != set(platforms):
         _fail("SOURCE_PROVENANCE_PLATFORM_SET_INVALID")
     required_args = _required_build_args(
         release_sha, version, build_time, source_url
@@ -822,9 +893,9 @@ def verify_source(args: argparse.Namespace) -> None:
         "source": source_url,
     }
 
-    if set(sbom) != set(REQUIRED_PLATFORMS):
+    if set(sbom) != set(platforms):
         _fail("SOURCE_SBOM_PLATFORM_SET_INVALID")
-    for platform in REQUIRED_PLATFORMS:
+    for platform in platforms:
         envelope = _mapping(sbom.get(platform), "SOURCE_SBOM_ENVELOPE_INVALID")
         spdx = _mapping(envelope.get("SPDX"), "SOURCE_SBOM_SPDX_INVALID")
         _require_items(
@@ -840,7 +911,7 @@ def verify_source(args: argparse.Namespace) -> None:
         if not packages:
             _fail("SOURCE_SBOM_PACKAGES_EMPTY")
 
-    for platform in REQUIRED_PLATFORMS:
+    for platform in platforms:
         envelope = _mapping(
             provenance.get(platform), "SOURCE_PROVENANCE_ENVELOPE_INVALID"
         )
@@ -945,7 +1016,7 @@ def verify_source(args: argparse.Namespace) -> None:
             "sbom_status=present",
             *(
                 f"{REQUIRED_PLATFORMS[platform][3]}={platform_digests[platform]}"
-                for platform in REQUIRED_PLATFORMS
+                for platform in platforms
             ),
         ),
     )
@@ -959,7 +1030,15 @@ def parser() -> argparse.ArgumentParser:
     extract.add_argument("--manifest-json", type=Path, required=True)
     extract.add_argument("--expected-digest", required=True)
     extract.add_argument("--output-env", type=Path, required=True)
+    extract.add_argument("--release-repo", type=Path, required=True)
+    extract.add_argument("--expected-release-sha", required=True)
     extract.set_defaults(handler=extract_manifest)
+
+    platforms = commands.add_parser("release-platforms")
+    platforms.add_argument("--release-repo", type=Path, required=True)
+    platforms.add_argument("--expected-release-sha", required=True)
+    platforms.add_argument("--github-output", type=Path, required=True)
+    platforms.set_defaults(handler=emit_release_platforms)
 
     run = commands.add_parser("verify-recovery-run")
     run.add_argument("--run-json", type=Path, required=True)
@@ -970,6 +1049,7 @@ def parser() -> argparse.ArgumentParser:
     run.set_defaults(handler=verify_recovery_run)
 
     source = commands.add_parser("verify-source")
+    source.add_argument("--release-repo", type=Path, required=True)
     source.add_argument("--manifest-json", type=Path, required=True)
     source.add_argument("--image-json", action="append", required=True)
     source.add_argument("--image-repository", required=True)

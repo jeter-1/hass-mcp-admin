@@ -27,7 +27,7 @@ SOURCE_VERIFIER_PATH = ROOT / "scripts" / "verify_publication_source_image.py"
 IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION = "2.2.0-rc.1"
 PROMOTION_FIXTURE_CURRENT_VERSION = "2.2.0-beta.58"
-PLATFORMS = ("linux/amd64", "linux/arm64", "linux/arm/v7")
+PLATFORMS = ("linux/amd64", "linux/arm64")
 BUILD_ARGUMENTS = (
     "BUILD_VERSION",
     "HAMCP_BUILD_SHA",
@@ -1931,8 +1931,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         self.assertEqual(values["provenance"], "mode=max")
         self.assertIs(values["sbom"], True)
         self.assertEqual(
-            tuple(item.strip() for item in values["platforms"].split(",")),
-            PLATFORMS,
+            values["platforms"],
+            "${{ steps.platforms.outputs.build_platforms }}",
         )
         arguments = assignment_lines(values["build-args"])
         self.assertEqual(set(arguments), set(BUILD_ARGUMENTS))
@@ -2097,9 +2097,13 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
             "verify-source",
             '--image-repository "$IMAGE_REPOSITORY"',
             'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/verify_publication_source_image.py"',
-            '--image-json "linux/amd64=$amd64_json"',
-            '--image-json "linux/arm64=$arm64_json"',
-            '--image-json "linux/arm/v7=$armv7_json"',
+            '--release-repo . --expected-release-sha "$RELEASE_SHA"',
+            'image_arguments+=(--image-json "$platform=$image_json")',
+            'linux/amd64) digest="$SOURCE_AMD64_DIGEST"',
+            'linux/arm64) digest="$SOURCE_ARM64_DIGEST"',
+            'linux/arm/v7) digest="$SOURCE_ARMV7_DIGEST"',
+            '${{ steps.platforms.outputs.build_platforms }}',
+
         ):
             self.assertIn(value, source_verify)
         self.assertNotIn("docker pull", source_verify)

@@ -163,7 +163,7 @@ class CIEfficiencyTests(unittest.TestCase):
         steps = self.jobs["validate_packaging"]["steps"]
         scripts = "\n".join(s.get("run", "") for s in steps)
         self.assertIn("docker build -t hass-mcp-admin:test ./hass_mcp_admin", scripts)
-        self.assertIn('linux/amd64,linux/arm64,linux/arm/v7', scripts)
+        self.assertIn('linux/amd64,linux/arm64', scripts)
         self.assertIn("--output=type=cacheonly", scripts)
         self.assertIn('BUILD_SHA == os.environ["EXPECTED_BUILD_SHA"]', scripts)
         self.assertIn('SERVER_VERSION == os.environ["EXPECTED_BUILD_VERSION"]', scripts)

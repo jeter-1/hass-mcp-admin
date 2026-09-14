@@ -6,7 +6,6 @@ url: https://github.com/jeter-1/hass-mcp-admin
 arch:
   - amd64
   - aarch64
-  - armv7
 image: ghcr.io/jeter-1/hass-mcp-engineering-beta
 init: false
 homeassistant_api: true
