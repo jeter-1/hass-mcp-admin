@@ -13,6 +13,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 REQUIRED_JOBS = (
+    "validate_prerequisites",
+    "validate_packaging",
     "validate_source",
     "real-ha-contract-tests",
     "prepare_exact_image_matrix",
@@ -72,7 +74,7 @@ class RequiredCIGateTests(unittest.TestCase):
 
     def test_each_failed_cancelled_or_skipped_family_refuses(self):
         for name in REQUIRED_JOBS:
-            for outcome in ("failure", "cancelled", "skipped"):
+            for outcome in ("failure", "cancelled", "skipped", "timed_out"):
                 with self.subTest(job=name, outcome=outcome):
                     results = self._results()
                     results[name]["result"] = outcome
@@ -88,6 +90,16 @@ class RequiredCIGateTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("prepare_exact_image_matrix", result.stderr)
         self.assertIn("exact-image-read-gateway", result.stderr)
+
+    def test_failed_preflight_cannot_skip_source_and_packaging_into_success(self):
+        results = self._results()
+        results["validate_prerequisites"]["result"] = "failure"
+        results["validate_source"]["result"] = "skipped"
+        results["validate_packaging"]["result"] = "skipped"
+        result = self._run(results)
+        self.assertNotEqual(result.returncode, 0)
+        for name in ("validate_prerequisites", "validate_source", "validate_packaging"):
+            self.assertIn(name, result.stderr)
 
     def test_successful_preparation_cannot_hide_failed_matrix_child(self):
         # GitHub reports a failed matrix job family when any required child

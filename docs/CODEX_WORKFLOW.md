@@ -148,8 +148,11 @@ promotion pull request is neither created nor required.
 The public required check remains `validate`. It is an aggregate over every
 required CI job family, not the source/unit-test worker alone:
 
-- `validate_source`: the existing source, dependency audit, compatibility fixture,
-  unit-test and packaging checks, including all declared architectures;
+- `validate_prerequisites`: source, dependency audit, historical compatibility
+  fixtures, metadata/release and syntax checks;
+- `validate_source`: complete unit discovery after successful prerequisites;
+- `validate_packaging`: frozen-v1 and Engineering packaging, embedded build
+  identity and all declared architectures, after successful prerequisites;
 - `real-ha-contract-tests`: every configured disposable Core contract lane;
 - `prepare_exact_image_matrix`: reviewed gateway-matrix preparation;
 - `exact-image-read-gateway`: every prepared exact-image gateway lane; and
@@ -197,6 +200,42 @@ merge. A draft PR's passing fixtures do not prove a live negative merge test.
 The publisher continues to call the entire reusable CI workflow before release
 detection or publication. Its enclosing job is also named `validate`; it is not
 the renamed `validate_source` worker. The aggregate adds no publishing authority.
+
+### CI scheduling and bounds
+
+Standalone PR CI uses a repository/PR-number concurrency group in the dedicated
+`hass-mcp-ci-` namespace. A newer run replaces obsolete validation for that PR;
+another PR has a different group even when its branch name matches. The guard
+checks the PR event and exact caller workflow reference for `ci.yml`. Reusable
+workflows inherit their caller's GitHub context, so the guard does not infer
+standalone CI from the display name or a hypothetical `workflow_call` event.
+
+Other invocations use a run-ID/attempt-specific group and disable in-progress
+cancellation. Unique groups also prevent replacement of pending publication or
+recovery validation; `cancel-in-progress: false` alone would not prevent that
+replacement in a shared group. Publication retains its separate serialized
+concurrency policy. No triggers, merge authority or permissions are added.
+
+After prerequisites succeed, complete unit discovery and packaging run in
+parallel. Every worker checks out the same event revision without overriding
+the ref. Source tests install the same declared dependencies in their own job;
+packaging uses its existing Docker builds. Fixture regeneration and generated
+registry comparison finish inside the prerequisite job and require no transfer
+to later workers. No built image or validation result is reused from another run.
+
+Explicit limits are 15 minutes for prerequisites, 40 for unit discovery, 30 for
+packaging and 10 for matrix preparation. These allow headroom over the inspected
+successful pre-change CI run 34798268513: about 16 minutes for unit discovery and
+seven minutes for the following packaging steps, with short prerequisite and
+matrix-preparation work. Existing 50/25/20-minute runtime-family limits and the
+five-minute aggregate limit are unchanged. A timeout cannot satisfy `validate`.
+Existing exit-trap and `always()` cleanup remain; forced runner termination can
+prevent cleanup completion and must not be reported as verified cleanup.
+
+Measure elapsed time, unit/build overlap, summed job durations and cancellation
+of obsolete work separately. Parallel jobs can reduce elapsed time while adding
+setup work and runner usage. Offline scheduling tests establish the intended
+policy; they do not establish GitHub cancellation behavior or billed savings.
 
 If a gate correction is needed, keep the failed evidence and use a reviewed
 corrective or revert PR with all checks intact. Before rolling out a gate change,

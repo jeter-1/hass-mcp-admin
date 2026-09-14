@@ -1486,7 +1486,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertNotIn("secret", encoded)
 
     def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):
-        validate = self.ci["jobs"]["validate_source"]
+        validate = self.ci["jobs"]["validate_prerequisites"]
         step = next(
             item
             for item in validate["steps"]
