@@ -84,10 +84,21 @@ def validate_release_transition(current: str, candidate: str) -> None:
             )
         )
     else:
+        next_patch = (
+            current_version.core[0],
+            current_version.core[1],
+            current_version.core[2] + 1,
+        )
         accepted = (
-            candidate_version.core > current_version.core
-            and candidate_version.channel == "beta"
-            and candidate_version.sequence == 1
+            (
+                candidate_version.core > current_version.core
+                and candidate_version.channel == "beta"
+                and candidate_version.sequence == 1
+            )
+            or (
+                candidate_version.core == next_patch
+                and candidate_version.channel == "stable"
+            )
         )
 
     if not accepted:

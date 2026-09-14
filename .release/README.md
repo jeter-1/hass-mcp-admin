@@ -22,6 +22,13 @@ repository's controlled, head-bound merge/publication workflow. Publication
 validates and publishes the exact protected-main release commit; it does not
 write another version commit. Deployment and live acceptance remain separate.
 
+The canonical lifecycle permits a stable version to advance directly to its
+immediately following stable patch (for example, `2.2.0 -> 2.2.1`), or to a
+higher version's `beta.1`. Direct stable minor/major jumps, skipped stable patches,
+unchanged versions and downgrades remain refused. Beta/RC sequencing is unchanged.
+Every release still requires materialized versions, exact documents, complete
+Evidence and required CI, review and owner-authorized merge/publication.
+
 Preserve immutable releases and all failed/partial publication evidence.
 Ambiguous or partial publication requires bounded reconciliation, not blind
 retry or reuse. See [the current workflow](../docs/CODEX_WORKFLOW.md) and the
