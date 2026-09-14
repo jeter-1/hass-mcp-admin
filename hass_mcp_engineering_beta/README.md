@@ -1,9 +1,9 @@
 # HA MCP Engineering Server Beta
 
-**Engineering 2.2.0** is the stable Engineering milestone on this existing
+**Engineering 2.2.1** is the maintenance release following 2.2.0 on this existing
 installation path. The technical Beta name is retained deliberately.
-See [2.2.0 acceptance](../docs/V2_2_0_ACCEPTANCE.md) and
-[2.2.0 release notes](../docs/V2_2_0_RELEASE_NOTES.md).
+See [2.2.1 acceptance](../docs/V2_2_1_ACCEPTANCE.md) and
+[2.2.1 release notes](../docs/V2_2_1_RELEASE_NOTES.md).
 
 ## Retained installation identity
 
@@ -12,17 +12,17 @@ See [2.2.0 acceptance](../docs/V2_2_0_ACCEPTANCE.md) and
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures for the next release | `amd64`, `aarch64` |
+| Architectures for 2.2.1 | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
 | Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
 | Server ID | `hass-mcp-engineering-beta` |
 
-Published 2.2.0 retains its three-platform images. Future releases retire
+Published 2.2.0 retains its three-platform images. 2.2.1 retires
 32-bit `armv7`, following [Home Assistant OS support](https://github.com/home-assistant/operating-system/releases/tag/17.0).
 An affected installation needs an independently planned migration to supported
 64-bit hardware/OS; changing this package does not migrate its data.
 
-The next build uses a digest-pinned Python base and complete hash-locked runtime
+The 2.2.1 build uses a digest-pinned Python base and complete hash-locked runtime
 wheels. See [build inputs](../docs/BUILD_INPUTS.md) for maintenance, both
 architecture smoke checks and final-digest inventory verification.
 
@@ -34,8 +34,8 @@ belongs to this milestone.
 
 Historical v1.1.2 in `hass_mcp_admin/` is frozen and operationally retired,
 outside the Engineering dependency audit and not an Engineering rollback.
-2.2.0 preserves RC9 runtime behavior, configuration schema/defaults, persistence
-formats, ports, ingress and image repository.
+2.2.1 preserves the accepted Engineering runtime behavior, configuration
+schema/defaults, persistence formats, ports, ingress and image repository.
 
 ## Unified catalog and exact compatibility
 
@@ -51,7 +51,7 @@ Provider unavailability grants no fallback, arbitrary forwarding or alternate
 provider retry.
 
 Accepted RC9 evidence includes **Core 2026.9.2 / ha-mcp 8.4.3** under
-separately configured, valid signed Core authority. Installing 2.2.0 does not
+separately configured, valid signed Core authority. Installing 2.2.1 does not
 activate trust or admit an uncompiled Core version. Existing compiled pairings
 retain their behavior, and no newer ha-mcp version is adopted.
 
@@ -115,9 +115,10 @@ consequence. Deployment and verification of the final installation are separate.
 
 ## Acceptance and history
 
-Retained RC9 source/build, installed-image, catalog and live receipts remain
-bound to RC9's source, pairing and observation time. They do not label 2.2.0
-installed or accepted. The [2.2.0 contract](../docs/V2_2_0_ACCEPTANCE.md) separately
+Retained RC9 and 2.2.0 source/build, installed-image, catalog and live receipts
+remain bound to their original source, pairing and observation time. They do
+not establish 2.2.1 installed acceptance. The
+[2.2.1 contract](../docs/V2_2_1_ACCEPTANCE.md) separately
 requires final publication/image identity, fresh catalog and bounded installed
 verification.
 
@@ -125,6 +126,8 @@ Complete Android navigation, cache-only startup during an outage and independent
 backup-content verification were not established. Notification clearing is an
 operator observation with narrower coverage than approval navigation.
 
+[2.2.0 notes](../docs/V2_2_0_RELEASE_NOTES.md),
+[2.2.0 acceptance](../docs/V2_2_0_ACCEPTANCE.md),
 [RC9 notes](../docs/V2_2_0_RC9_RELEASE_NOTES.md),
 [RC9 acceptance](../docs/V2_2_0_RC9_ACCEPTANCE.md),
 [architecture history](../V2_BETA_ARCHITECTURE.md) and
