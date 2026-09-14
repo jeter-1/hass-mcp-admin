@@ -4,6 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -369,7 +370,118 @@ def valid_run_metadata():
     }
 
 
+class ReleaseArchitectureContractTests(unittest.TestCase):
+    def source_repo(self, root, config):
+        path = root / MODULE.SOURCE_DIRECTORY / "config.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(config, encoding="utf-8")
+        for arguments in (
+            ["init", "-q"], ["add", "--", MODULE.SOURCE_DIRECTORY],
+            ["-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+             "-c", "commit.gpgsign=false", "commit", "-qm", "fixture"],
+        ):
+            subprocess.run(["git", "-C", str(root), *arguments], check=True,
+                           capture_output=True, timeout=10)
+        return subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"],
+                                       text=True).strip()
+
+    def current_manifest(self):
+        manifest = valid_manifest()
+        removed = PLATFORM_DIGESTS["linux/arm/v7"]
+        manifest["manifests"] = [entry for entry in manifest["manifests"]
+            if entry["digest"] != removed and
+            entry.get("annotations", {}).get("vnd.docker.reference.digest") != removed]
+        return manifest
+
+    def test_complete_two_platform_publication_uses_committed_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sha = self.source_repo(root, "arch:\n  - amd64\n  - aarch64\n")
+            # A changed checkout cannot expand the committed release contract.
+            (root / MODULE.SOURCE_DIRECTORY / "config.yaml").write_text(
+                "arch:\n  - amd64\n  - aarch64\n  - armv7\n")
+            with mock.patch.dict(globals(), {"RELEASE_SHA": sha}):
+                selected = ("linux/amd64", "linux/arm64")
+                images = {p: v for p, v in valid_images().items() if p in selected}
+                provenance = {p: v for p, v in valid_provenance().items() if p in selected}
+                sbom = {p: v for p, v in valid_sbom().items() if p in selected}
+                case = PublicationSourceVerifierTests()
+                result, output, _ = case.verify_source(
+                    root, manifest=self.current_manifest(), images=images,
+                    provenance=provenance, sbom=sbom)
+            self.assertEqual(result, 0)
+            self.assertIn("source_image_verified=true", output.read_text())
+            self.assertNotIn("SOURCE_ARMV7_DIGEST", output.read_text())
+
+    def test_source_and_manifest_must_have_exactly_the_same_platforms(self):
+        for arches, manifest in (
+            ("  - amd64\n  - aarch64\n", valid_manifest()),
+            ("  - amd64\n  - aarch64\n  - armv7\n", self.current_manifest()),
+        ):
+            with self.subTest(arches=arches), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                sha = self.source_repo(root, "arch:\n" + arches)
+                raw = json_bytes(manifest)
+                index = root / "index.json"
+                index.write_bytes(raw)
+                output = root / "result.env"
+                result = MODULE.main([
+                    "extract-manifest", "--release-repo", str(root),
+                    "--expected-release-sha", sha, "--manifest-json", str(index),
+                    "--expected-digest", "sha256:" + hashlib.sha256(raw).hexdigest(),
+                    "--output-env", str(output)])
+                self.assertEqual(result, 1)
+                self.assertFalse(output.exists())
+
+    def test_source_declarations_refuse_missing_duplicate_unknown_or_partial(self):
+        for config in (
+            "name: fixture\n", "arch: [amd64]\n", "arch: [amd64, aarch64, amd64]\n",
+            "arch: [amd64, aarch64, mystery]\n", "arch: [amd64, aarch64]\narch: [amd64]\n",
+            "arch: true\n", "arch: {amd64: yes, aarch64: yes}\n",
+        ):
+            with self.subTest(config=config), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                sha = self.source_repo(root, config)
+                with self.assertRaises(MODULE.VerificationError):
+                    MODULE.release_platforms(root, sha)
+
+    def test_platform_output_is_exact_and_source_is_required(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sha = self.source_repo(root, "arch: [amd64, aarch64, armv7]\n")
+            output = root / "platforms.env"
+            self.assertEqual(MODULE.main([
+                "release-platforms", "--release-repo", str(root),
+                "--expected-release-sha", sha, "--github-output", str(output)]), 0)
+            self.assertEqual(output.read_text(),
+                             "build_platforms=linux/amd64,linux/arm64,linux/arm/v7\n")
+            for wrong in ("--all", "a" * 40):
+                with self.subTest(wrong=wrong), self.assertRaises(MODULE.VerificationError):
+                    MODULE.release_platforms(root, wrong)
+
+    def test_source_bounds_and_git_failures_refuse(self):
+        for error in (OSError("synthetic"), subprocess.TimeoutExpired("git", 10)):
+            with mock.patch.object(MODULE.subprocess, "run", side_effect=error):
+                with self.assertRaisesRegex(MODULE.VerificationError, "RELEASE_SOURCE_UNAVAILABLE"):
+                    MODULE.release_blob(Path("."), RELEASE_SHA, "fixed-path")
+        with mock.patch.object(MODULE.subprocess, "run", return_value=mock.Mock(stdout=b"65537")) as run:
+            with self.assertRaisesRegex(MODULE.VerificationError, "RELEASE_SOURCE_BOUND_INVALID"):
+                MODULE.release_blob(Path("."), RELEASE_SHA, "fixed-path")
+            self.assertEqual(run.call_count, 1)
+
+
 class PublicationSourceVerifierTests(unittest.TestCase):
+    def setUp(self):
+        # Existing historical provenance fixtures use a synthetic release SHA.
+        # Only the Git byte-read is substituted; architecture parsing stays real.
+        patch = mock.patch.object(MODULE, "release_blob", return_value=(
+            b"arch:\n  - amd64\n  - aarch64\n  - armv7\n"))
+        self.release_bytes = patch.start()
+        self.addCleanup(patch.stop)
+        legacy = mock.patch.object(MODULE, "release_build_inputs", return_value=None)
+        legacy.start()
+        self.addCleanup(legacy.stop)
+
     def write_evidence(
         self, root, *, provenance=None, sbom=None, images=None, manifest=None
     ):
@@ -408,6 +520,7 @@ class PublicationSourceVerifierTests(unittest.TestCase):
         output = root / "github-output"
         arguments = [
             "verify-source",
+            "--release-repo", str(root),
             "--manifest-json",
             str(manifest_path),
             "--image-repository",
@@ -478,6 +591,8 @@ class PublicationSourceVerifierTests(unittest.TestCase):
             result = MODULE.main(
                 [
                     "extract-manifest",
+                    "--release-repo", directory,
+                    "--expected-release-sha", RELEASE_SHA,
                     "--manifest-json",
                     str(manifest_path),
                     "--expected-digest",
@@ -498,6 +613,8 @@ class PublicationSourceVerifierTests(unittest.TestCase):
             wrong = MODULE.main(
                 [
                     "extract-manifest",
+                    "--release-repo", directory,
+                    "--expected-release-sha", RELEASE_SHA,
                     "--manifest-json",
                     str(manifest_path),
                     "--expected-digest",
@@ -537,6 +654,8 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                 result = MODULE.main(
                     [
                         "extract-manifest",
+                    "--release-repo", directory,
+                    "--expected-release-sha", RELEASE_SHA,
                         "--manifest-json",
                         str(path),
                         "--expected-digest",
@@ -737,6 +856,7 @@ class PublicationSourceVerifierTests(unittest.TestCase):
             output = root / "github-output"
             arguments = [
                 "verify-source",
+            "--release-repo", str(root),
                 "--manifest-json",
                 str(manifest_path),
                 "--image-repository",
@@ -855,6 +975,8 @@ class PublicationSourceVerifierTests(unittest.TestCase):
                 result = MODULE.main(
                     [
                         "extract-manifest",
+                    "--release-repo", directory,
+                    "--expected-release-sha", RELEASE_SHA,
                         "--manifest-json",
                         str(path),
                         "--expected-digest",

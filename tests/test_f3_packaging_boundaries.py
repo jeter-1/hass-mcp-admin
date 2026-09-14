@@ -185,7 +185,7 @@ class BuiltImageImportClosureTests(unittest.TestCase):
         config = yaml.safe_load(
             (BETA_DIR / "config.yaml").read_text(encoding="utf-8")
         )
-        self.assertEqual(config["arch"], ["amd64", "aarch64", "armv7"])
+        self.assertEqual(config["arch"], ["amd64", "aarch64"])
         dockerfile = (BETA_DIR / "Dockerfile").read_text(encoding="utf-8")
         self.assertEqual(
             dockerfile.count(

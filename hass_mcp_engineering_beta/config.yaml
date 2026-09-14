@@ -1,12 +1,11 @@
 name: HA MCP Engineering Server Beta
-version: "2.2.0"
+version: "2.2.1"
 slug: hass_mcp_engineering_beta
 description: Governed Home Assistant engineering with external admin approval
 url: https://github.com/jeter-1/hass-mcp-admin
 arch:
   - amd64
   - aarch64
-  - armv7
 image: ghcr.io/jeter-1/hass-mcp-engineering-beta
 init: false
 homeassistant_api: true

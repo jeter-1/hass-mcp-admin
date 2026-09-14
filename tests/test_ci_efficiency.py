@@ -157,14 +157,19 @@ class CIEfficiencyTests(unittest.TestCase):
         source = self.jobs["validate_source"]["steps"]
         self.assertEqual(source[-1]["run"], "python -m unittest discover -s tests -v")
         self.assertEqual(source[-2]["run"],
-                         "python -m pip install -r hass_mcp_engineering_beta/requirements.txt -r tests/requirements.txt")
+                         "python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r tests/requirements.lock")
 
     def test_packaging_preserves_platforms_embedded_identity_and_no_push(self):
         steps = self.jobs["validate_packaging"]["steps"]
         scripts = "\n".join(s.get("run", "") for s in steps)
         self.assertIn("docker build -t hass-mcp-admin:test ./hass_mcp_admin", scripts)
-        self.assertIn('linux/amd64,linux/arm64,linux/arm/v7', scripts)
-        self.assertIn("--output=type=cacheonly", scripts)
+        self.assertIn('for architecture in amd64 arm64; do', scripts)
+        self.assertIn('--load --tag', scripts)
+        self.assertIn('--network none', scripts)
+        self.assertIn('120s docker run', scripts)
+        self.assertIn('/app/build_inputs.py smoke', scripts)
+        self.assertIn('--expected-platform', scripts)
+        self.assertIn('trap', scripts)
         self.assertIn('BUILD_SHA == os.environ["EXPECTED_BUILD_SHA"]', scripts)
         self.assertIn('SERVER_VERSION == os.environ["EXPECTED_BUILD_VERSION"]', scripts)
         self.assertIn("BUILD_DIRTY is False", scripts)
