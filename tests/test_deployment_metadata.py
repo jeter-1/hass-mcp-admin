@@ -230,6 +230,19 @@ class AddonMetadataValidationTests(unittest.TestCase):
     def test_repository_metadata_is_valid(self):
         self.validate()
 
+    def test_inbound_policy_option_schemas_are_required_and_exact(self):
+        for name in ("mcp_allowed_hosts", "mcp_allowed_origins"):
+            self.assertEqual(self.beta["schema"][name], ["str"])
+            for section in ("options", "schema"):
+                beta = copy.deepcopy(self.beta)
+                beta[section].pop(name)
+                with self.subTest(name=name, missing=section), self.assertRaises(VALIDATOR.MetadataValidationError):
+                    self.validate(beta=beta)
+            beta = copy.deepcopy(self.beta)
+            beta["schema"][name] = "str"
+            with self.subTest(name=name, malformed=True), self.assertRaises(VALIDATOR.MetadataValidationError):
+                self.validate(beta=beta)
+
     def test_rc_uses_exact_generic_registry_image_and_version(self):
         self.assertEqual(self.beta["version"], VALIDATOR.BETA_VERSION)
         self.assertEqual(self.beta["image"], VALIDATOR.BETA_IMAGE)

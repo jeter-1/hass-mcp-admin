@@ -33,6 +33,8 @@ BETA_INGRESS_PORT = 8110
 MIN_ACCESS_SECRET_LENGTH = 24
 EXTERNAL_CHECK_TIMEOUT_SECONDS = 60
 EXPECTED_BETA_SCHEMA = {
+    "mcp_allowed_hosts": ["str"],
+    "mcp_allowed_origins": ["str"],
     "access_secret": "str",
     "approval_notification_service": "str",
     "upstream_dashboard_mcp_url": "password",
