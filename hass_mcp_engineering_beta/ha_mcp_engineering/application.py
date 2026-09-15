@@ -46,6 +46,7 @@ from .signed_registry import (
     TrustAnchorStore,
 )
 from .tools import get_registered_server
+from .inbound_topology_observer import create_mcp_listener
 
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
@@ -461,14 +462,8 @@ async def _serve(settings: Settings) -> None:
             name="approval-notification-worker",
         )
 
-    mcp_server = uvicorn.Server(
-        uvicorn.Config(
-            gateway,
-            host="0.0.0.0",
-            port=settings.port,
-            log_level=settings.log_level.lower(),
-            access_log=False,
-        )
+    mcp_server = create_mcp_listener(
+        gateway, port=settings.port, log_level=settings.log_level.lower(),
     )
     approval_server = uvicorn.Server(
         uvicorn.Config(
