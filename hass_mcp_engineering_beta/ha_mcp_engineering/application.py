@@ -46,6 +46,7 @@ from .signed_registry import (
     TrustAnchorStore,
 )
 from .tools import get_registered_server
+from .inbound_topology_observer import create_mcp_listener, finish_mcp_observation
 
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
@@ -461,102 +462,99 @@ async def _serve(settings: Settings) -> None:
             name="approval-notification-worker",
         )
 
-    mcp_server = uvicorn.Server(
-        uvicorn.Config(
-            gateway,
-            host="0.0.0.0",
-            port=settings.port,
-            log_level=settings.log_level.lower(),
-            access_log=False,
-        )
-    )
-    approval_server = uvicorn.Server(
-        uvicorn.Config(
-            create_approval_application(),
-            host="0.0.0.0",
-            port=settings.ingress_port,
-            log_level=settings.log_level.lower(),
-            access_log=False,
-        )
-    )
-    # Let the MCP server own process signals. The private listener follows its
-    # lifecycle so container shutdown cannot leave an independent authority
-    # process running.
-    approval_server.install_signal_handlers = lambda: None
-    mcp_task = asyncio.create_task(mcp_server.serve())
-    approval_task = asyncio.create_task(approval_server.serve())
-    upstream_reconciliation_task = asyncio.create_task(
-        _supervise_upstream_reconciliation(gateway),
-        name="upstream-read-gateway-reconciliation",
-    )
-    core_reconciliation_task = (
-        asyncio.create_task(
-            CORE_READMISSION.supervise(),
-            name="home-assistant-core-capability-reconciliation",
-        )
-        if core_reconciliation_enabled
-        else None
-    )
-    operational_reconciliation_task = asyncio.create_task(
-        _supervise_f3_recovery(perform_startup=False),
-        name="f3-central-recovery-coordinator",
-    )
-    registry_refresh_task = (
-        asyncio.create_task(UPSTREAM_DASHBOARD.refresh_registry_at_startup())
-        if settings.upstream_trust_registry_enabled
-        else None
-    )
-    prewarm_task = (
-        DEPENDENCY_ANALYSIS.start_prewarm(
-            startup_delay_seconds=settings.prewarm_startup_delay_seconds,
-            retry_delay_seconds=settings.prewarm_retry_delay_seconds,
-        )
-        if settings.prewarm_enabled and DEPENDENCY_ANALYSIS.service is not None
-        else None
+    mcp_server = create_mcp_listener(
+        gateway, port=settings.port, log_level=settings.log_level.lower(),
     )
     try:
-        supervised_tasks = {
-            mcp_task,
-            approval_task,
-            upstream_reconciliation_task,
-            operational_reconciliation_task,
-        }
-        if core_reconciliation_task is not None:
-            supervised_tasks.add(core_reconciliation_task)
-        done, _ = await asyncio.wait(
-            supervised_tasks,
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-        # Either listener ending is a process-level event. A failed private
-        # authority listener must never leave a seemingly healthy MCP listener
-        # running without its required approval channel.
-        for task in done:
-            exception = task.exception()
-            if exception is not None:
-                raise exception
-    finally:
-        mcp_server.should_exit = True
-        approval_server.should_exit = True
-        upstream_reconciliation_task.cancel()
-        if core_reconciliation_task is not None:
-            core_reconciliation_task.cancel()
-        operational_reconciliation_task.cancel()
-        if notification_task is not None:
-            notification_task.cancel()
-        await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
-        await asyncio.gather(upstream_reconciliation_task, return_exceptions=True)
-        if core_reconciliation_task is not None:
-            await asyncio.gather(
-                core_reconciliation_task, return_exceptions=True
+        approval_server = uvicorn.Server(
+            uvicorn.Config(
+                create_approval_application(),
+                host="0.0.0.0",
+                port=settings.ingress_port,
+                log_level=settings.log_level.lower(),
+                access_log=False,
             )
-        await asyncio.gather(
-            operational_reconciliation_task, return_exceptions=True
         )
-        if notification_task is not None:
-            await asyncio.gather(notification_task, return_exceptions=True)
-        if registry_refresh_task is not None:
-            await asyncio.gather(registry_refresh_task, return_exceptions=True)
-        await DEPENDENCY_ANALYSIS.shutdown()
+        # Let the MCP server own process signals. The private listener follows its
+        # lifecycle so container shutdown cannot leave an independent authority
+        # process running.
+        approval_server.install_signal_handlers = lambda: None
+        mcp_task = asyncio.create_task(mcp_server.serve())
+        approval_task = asyncio.create_task(approval_server.serve())
+        upstream_reconciliation_task = asyncio.create_task(
+            _supervise_upstream_reconciliation(gateway),
+            name="upstream-read-gateway-reconciliation",
+        )
+        core_reconciliation_task = (
+            asyncio.create_task(
+                CORE_READMISSION.supervise(),
+                name="home-assistant-core-capability-reconciliation",
+            )
+            if core_reconciliation_enabled
+            else None
+        )
+        operational_reconciliation_task = asyncio.create_task(
+            _supervise_f3_recovery(perform_startup=False),
+            name="f3-central-recovery-coordinator",
+        )
+        registry_refresh_task = (
+            asyncio.create_task(UPSTREAM_DASHBOARD.refresh_registry_at_startup())
+            if settings.upstream_trust_registry_enabled
+            else None
+        )
+        prewarm_task = (
+            DEPENDENCY_ANALYSIS.start_prewarm(
+                startup_delay_seconds=settings.prewarm_startup_delay_seconds,
+                retry_delay_seconds=settings.prewarm_retry_delay_seconds,
+            )
+            if settings.prewarm_enabled and DEPENDENCY_ANALYSIS.service is not None
+            else None
+        )
+        try:
+            supervised_tasks = {
+                mcp_task,
+                approval_task,
+                upstream_reconciliation_task,
+                operational_reconciliation_task,
+            }
+            if core_reconciliation_task is not None:
+                supervised_tasks.add(core_reconciliation_task)
+            done, _ = await asyncio.wait(
+                supervised_tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            # Either listener ending is a process-level event. A failed private
+            # authority listener must never leave a seemingly healthy MCP listener
+            # running without its required approval channel.
+            for task in done:
+                exception = task.exception()
+                if exception is not None:
+                    raise exception
+        finally:
+            mcp_server.should_exit = True
+            approval_server.should_exit = True
+            upstream_reconciliation_task.cancel()
+            if core_reconciliation_task is not None:
+                core_reconciliation_task.cancel()
+            operational_reconciliation_task.cancel()
+            if notification_task is not None:
+                notification_task.cancel()
+            await asyncio.gather(mcp_task, approval_task, return_exceptions=True)
+            await asyncio.gather(upstream_reconciliation_task, return_exceptions=True)
+            if core_reconciliation_task is not None:
+                await asyncio.gather(
+                    core_reconciliation_task, return_exceptions=True
+                )
+            await asyncio.gather(
+                operational_reconciliation_task, return_exceptions=True
+            )
+            if notification_task is not None:
+                await asyncio.gather(notification_task, return_exceptions=True)
+            if registry_refresh_task is not None:
+                await asyncio.gather(registry_refresh_task, return_exceptions=True)
+            await DEPENDENCY_ANALYSIS.shutdown()
+    finally:
+        finish_mcp_observation(mcp_server)
 
 
 def main() -> None:
