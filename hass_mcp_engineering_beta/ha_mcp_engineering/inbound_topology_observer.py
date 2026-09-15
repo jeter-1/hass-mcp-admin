@@ -557,3 +557,10 @@ def create_mcp_listener(app, *, port, log_level):
     except BaseException:
         observation.finish("CONFIGURATION_FAILED")
         raise
+
+
+def finish_mcp_observation(server):
+    # Composition may fail before the serve coroutine starts, so its finally
+    # block alone cannot own cleanup of an already-consumed private arm.
+    if isinstance(server, ObservedServer):
+        server.config.observation.finish("COMPOSITION_EXIT")

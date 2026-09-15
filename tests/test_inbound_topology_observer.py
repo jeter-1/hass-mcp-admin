@@ -495,6 +495,44 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(session.closed)
         self.assertEqual(self.read_report()["state"], "SHUTDOWN")
 
+    async def test_composition_failure_closes_consumed_observation(self):
+        from types import SimpleNamespace
+        from ha_mcp_engineering import application
+        from tests.test_beta_v2 import beta_settings
+        session = self.prepare()
+        with patch.object(application, "create_application", return_value=object()), \
+                patch.object(application, "GOVERNANCE", SimpleNamespace(service=None)), \
+                patch.object(observer, "prepare_observation", return_value=session), \
+                patch.object(application, "create_approval_application",
+                             side_effect=RuntimeError("synthetic-composition")):
+            with self.assertRaises(RuntimeError):
+                await application._serve(beta_settings(str(Path(self.temp.name) / "audit.jsonl")))
+        self.assertTrue(session.closed)
+        self.assertIsNone(session.root_fd)
+        self.assertIsNone(session.attempt_fd)
+        self.assertEqual(self.read_report()["state"], "COMPOSITION_EXIT")
+        self.assertIsNone(self.prepare())
+
+    async def test_task_creation_failure_closes_arm_before_serve_starts(self):
+        from types import SimpleNamespace
+        from ha_mcp_engineering import application
+        from tests.test_beta_v2 import beta_settings
+        session = self.prepare()
+        def refuse_task(coroutine, **kwargs):
+            coroutine.close()
+            raise RuntimeError("synthetic-task-creation")
+        with patch.object(application, "create_application", return_value=object()), \
+                patch.object(application, "GOVERNANCE", SimpleNamespace(service=None)), \
+                patch.object(observer, "prepare_observation", return_value=session), \
+                patch.object(application, "create_approval_application", return_value=AsyncMock()), \
+                patch.object(application.asyncio, "create_task", side_effect=refuse_task):
+            with self.assertRaises(RuntimeError):
+                await application._serve(beta_settings(str(Path(self.temp.name) / "audit.jsonl")))
+        self.assertTrue(session.closed)
+        self.assertIsNone(session.root_fd)
+        self.assertIsNone(session.attempt_fd)
+        self.assertFalse(self.read_report()["capture_complete"])
+
     async def test_real_server_starts_timer_only_after_ready(self):
         session = self.prepare()
         config = observer.ObservedConfig(AsyncMock(), observation=session, log_config=None)

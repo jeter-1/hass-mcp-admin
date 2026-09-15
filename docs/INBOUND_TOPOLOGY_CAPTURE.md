@@ -51,7 +51,8 @@ Recording begins only after the MCP listener is ready. It ends at the earlier
 of absolute arm expiry or 180 monotonic seconds. Startup delay consumes the arm's
 remaining validity. A wall-clock rollback does not extend the monotonic bound.
 A scheduled timer finalizes even when no requests arrive. Shutdown finalizes a
-partial receipt; process termination may leave only the durable claim. There is
+partial receipt; composition failure also closes an arm consumed before its
+listener task starts; process termination may leave only the durable claim. There is
 no arm polling, rearming, automatic retry or deadline extension.
 
 ## Selected evidence and limits
