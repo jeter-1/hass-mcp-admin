@@ -1443,6 +1443,7 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
                                 "path": f"/{SECRET}/mcp",
                                 "raw_path": f"/{SECRET}/mcp".encode(),
                                 "headers": [
+                                    (b"host", b"127.0.0.1:8100"),
                                     (b"content-type", b"application/json"),
                                     (
                                         b"x-request-id",
@@ -1579,6 +1580,7 @@ class GenericReadAuditTests(unittest.IsolatedAsyncioTestCase):
                         "path": f"/{SECRET}/mcp",
                         "raw_path": f"/{SECRET}/mcp".encode(),
                         "headers": [
+                            (b"host", b"127.0.0.1:8100"),
                             (b"content-type", b"application/json"),
                             (b"x-request-id", b"delegated-audit-request"),
                         ],

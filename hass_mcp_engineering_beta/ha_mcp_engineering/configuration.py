@@ -8,6 +8,9 @@ import os
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit, urlunsplit
 
+from .errors import ConfigurationError
+from .inbound_security import option_list
+
 OPTIONS_PATH = Path(os.environ.get("HAMCP_OPTIONS_PATH", "/data/options.json"))
 MIN_ACCESS_SECRET_LENGTH = 24
 MAX_TRUSTED_PROXY_CIDRS = 64
@@ -60,6 +63,8 @@ class Settings:
     prewarm_retry_delay_seconds: float = 300.0
     dependency_index_soft_ttl_seconds: float = 600.0
     dependency_index_hard_ttl_seconds: float = 3600.0
+    mcp_allowed_hosts: tuple[str, ...] | None = field(default=None, repr=False)
+    mcp_allowed_origins: tuple[str, ...] = field(default=(), repr=False)
 
     @property
     def api_url(self) -> str:
@@ -171,6 +176,14 @@ def _read_options(path: Path = OPTIONS_PATH) -> dict:
 
 def load_settings() -> Settings:
     options = _read_options()
+    try:
+        allowed_hosts = option_list(options, "mcp_allowed_hosts", None)
+        allowed_origins = option_list(options, "mcp_allowed_origins", ())
+    except ValueError:
+        raise ConfigurationError(
+            "Invalid MCP inbound policy configuration.",
+            details={"issues": ["invalid_inbound_policy_list"]},
+        ) from None
     ha_url = os.environ.get("HA_URL", "http://supervisor/core").rstrip("/")
     token = os.environ.get("SUPERVISOR_TOKEN") or os.environ.get("HA_TOKEN", "")
     secret = (options.get("access_secret") or os.environ.get("ACCESS_SECRET", "")).strip()
@@ -183,6 +196,8 @@ def load_settings() -> Settings:
         ha_token=token,
         access_secret=secret,
         port=int(os.environ.get("MCP_PORT", "8100")),
+        mcp_allowed_hosts=allowed_hosts,
+        mcp_allowed_origins=allowed_origins,
         audit_path=str(options.get("audit_path", os.environ.get("AUDIT_PATH", "/data/audit.jsonl"))),
         rate_limit_per_minute=int(options.get("rate_limit_per_minute", 120)),
         rate_limit_burst=int(options.get("rate_limit_burst", 25)),

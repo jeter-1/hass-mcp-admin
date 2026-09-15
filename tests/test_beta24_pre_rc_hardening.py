@@ -82,7 +82,7 @@ class CatalogReadinessBarrierTests(unittest.IsolatedAsyncioTestCase):
                 "method": "GET",
                 "path": path,
                 "raw_path": path.encode("ascii"),
-                "headers": [],
+                "headers": [(b"host", b"127.0.0.1:8100")],
                 "client": ("127.0.0.1", 1234),
             },
             receive,
@@ -384,7 +384,7 @@ class UpsertAuditBoundsTests(unittest.IsolatedAsyncioTestCase):
                 "method": "POST",
                 "path": f"/{SECRET}/mcp",
                 "raw_path": f"/{SECRET}/mcp".encode(),
-                "headers": [],
+                "headers": [(b"host", b"127.0.0.1:8100")],
                 "client": ("127.0.0.1", 1),
             }
             await gateway(request_scope, receive, send)

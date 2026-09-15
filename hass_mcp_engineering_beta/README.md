@@ -6,6 +6,13 @@ retained deliberately.
 See [2.2.2 acceptance](../docs/V2_2_2_ACCEPTANCE.md) and
 [2.2.2 release notes](../docs/V2_2_2_RELEASE_NOTES.md).
 
+The subsequent, unreleased source adds strict MCP
+[Host/Origin enforcement](../docs/INBOUND_SECURITY.md). Before deploying a future
+release containing it, configure exact aliases for any MCP paths beyond its
+loopback-authority defaults. Native clients may omit Origin; browser MCP clients
+require an explicit origin. Approval ingress retains its separate authentication.
+This does not claim a new published or installed version.
+
 ## Retained installation identity
 
 | Surface | Value |

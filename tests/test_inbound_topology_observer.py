@@ -481,7 +481,7 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
                 patch.object(observer.uvicorn, "Config") as config, \
                 patch.object(observer.uvicorn, "Server") as server:
             app = object();result = observer.create_mcp_listener(app, port=8100, log_level="info")
-        config.assert_called_once_with(app, host="0.0.0.0", port=8100, log_level="info", access_log=False)
+        config.assert_called_once_with(app, host="0.0.0.0", port=8100, log_level="info", access_log=False, proxy_headers=False)
         server.assert_called_once_with(config.return_value)
         self.assertIs(result, server.return_value)
 
@@ -656,10 +656,10 @@ class PrivateArmTests(unittest.IsolatedAsyncioTestCase):
         with patch("socket.socket.connect", side_effect=AssertionError("network_forbidden")), \
                 patch.object(gateway._core_runtime, "acquire",
                              side_effect=AssertionError("authority_forbidden")) as acquire:
-            first = await request(b"GET /health HTTP/1.1\r\nHost: example.invalid:8100\r\n" +
+            first = await request(b"GET /health HTTP/1.1\r\nHost: 127.0.0.1:8100\r\n" +
                                   prefix + b"1\r\nConnection: close\r\n\r\n")
             self.assertIn(b"200", first.split(b"\r\n", 1)[0])
-            refused = await request(b"POST /synthetic-wrong-secret HTTP/1.1\r\nHost: example.invalid:8100\r\n" +
+            refused = await request(b"POST /synthetic-wrong-secret HTTP/1.1\r\nHost: 127.0.0.1:8100\r\n" +
                                     prefix + b"2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
             self.assertIn(b"404", refused.split(b"\r\n", 1)[0])
             malformed = await request(b"GET /health HTTP/1.1\r\nHost: one.invalid\r\nHost: two.invalid\r\n" +

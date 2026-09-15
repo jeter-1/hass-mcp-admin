@@ -67,7 +67,7 @@ async def asgi_request(
             "path": path,
             "raw_path": path.encode("utf-8"),
             "query_string": query_string,
-            "headers": list(headers),
+            "headers": [(b"host", b"127.0.0.1:8100"), *headers],
             "client": (client, 1),
         },
         receive,

@@ -18,6 +18,11 @@ not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
+For the unreleased Host/Origin source change after 2.2.2, read the
+[inbound policy and migration requirements](docs/INBOUND_SECURITY.md) before a
+future deployment. Existing MCP aliases beyond the strict loopback defaults need
+explicit configuration. Published 2.2.2 acceptance is not proof of that change.
+
 1. Use this repository in the Home Assistant add-on store:
    `https://github.com/jeter-1/hass-mcp-admin`.
 2. Select **HA MCP Engineering Server Beta**. Update an existing Engineering

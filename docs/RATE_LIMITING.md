@@ -8,6 +8,11 @@ Per-client sustained and burst limits remain configurable through
 ## Client identity
 
 The default identity is the canonical IPv4 or IPv6 direct socket peer.
+The MCP listener explicitly disables Uvicorn proxy-header rewriting before this
+identity is resolved. [Host/Origin policy](INBOUND_SECURITY.md) runs first and
+does not grant client identity. Denied headers produce a bounded transport
+rejection without allocating client/authentication buckets or invoking a tool.
+For policy-valid requests, the existing limits and accounting below apply.
 `cf-connecting-ip` is ignored by default. Arbitrary strings never become bucket
 keys, and `unknown` is used only when no valid direct peer exists.
 

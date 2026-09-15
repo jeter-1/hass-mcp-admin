@@ -549,7 +549,8 @@ class ObservedServer(uvicorn.Server):
 
 def create_mcp_listener(app, *, port, log_level):
     observation = prepare_observation(port)
-    options = {"host": "0.0.0.0", "port": port, "log_level": log_level, "access_log": False}
+    options = {"host": "0.0.0.0", "port": port, "log_level": log_level,
+               "access_log": False, "proxy_headers": False}
     if observation is None:
         return uvicorn.Server(uvicorn.Config(app, **options))
     try:

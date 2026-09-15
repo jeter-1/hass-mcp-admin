@@ -117,6 +117,7 @@ class RoutedAuditClient:
                     "raw_path": path.encode("utf-8"),
                     "query_string": b"",
                     "headers": [
+                        (b"host", b"127.0.0.1:8100"),
                         (b"accept", b"application/json, text/event-stream"),
                         (b"content-type", b"application/json"),
                         (b"x-request-id", request_id.encode("ascii")),

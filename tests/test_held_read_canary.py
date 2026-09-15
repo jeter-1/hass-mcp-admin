@@ -1059,6 +1059,7 @@ class HeldReadCanaryTests(unittest.IsolatedAsyncioTestCase):
                     "path": "/synthetic-engineering-access-secret/mcp",
                     "raw_path": b"/synthetic-engineering-access-secret/mcp",
                     "headers": [
+                        (b"host", b"127.0.0.1:8100"),
                         (b"content-type", b"application/json"),
                         (b"x-request-id", b"held-canary-audit"),
                     ],
