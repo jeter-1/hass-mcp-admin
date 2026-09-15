@@ -1,7 +1,8 @@
 # HA MCP Engineering Server
 
-Engineering **2.2.1** is the maintenance release following the stable 2.2.0
-milestone. It provides one public MCP endpoint through the existing Nabu Casa
+Engineering **2.2.2** adds private, opt-in topology observation to support
+Host/Origin hardening. Observation is disabled by default; issue #62 remains open.
+It provides one public MCP endpoint through the existing Nabu Casa
 connector, with a unified catalog.
 Engineering selects reviewed, admitted ha-mcp or native providers internally.
 
@@ -11,8 +12,8 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.2.1 release notes](docs/V2_2_1_RELEASE_NOTES.md) and
-[2.2.1 acceptance contract](docs/V2_2_1_ACCEPTANCE.md). A source version does
+Read the [2.2.2 release notes](docs/V2_2_2_RELEASE_NOTES.md) and
+[2.2.2 acceptance contract](docs/V2_2_2_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
@@ -29,19 +30,25 @@ not prove publication, deployment or installed acceptance.
    `8100`; authenticated, admin-only **HA MCP Approval** ingress uses internal
    port `8110`. The approval panel is not a second MCP endpoint.
 5. Verify the final installed artifact, reconnect the client and complete the
-   bounded [acceptance checks](docs/V2_2_1_ACCEPTANCE.md).
+   bounded [acceptance checks](docs/V2_2_2_ACCEPTANCE.md).
 
 The image repository remains
 `ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
-`linux/arm64` for 2.2.1. Published 2.2.0 retains its historical
-`linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; 2.2.1
+`linux/arm64` for 2.2.2. Published 2.2.0 retains its historical
+`linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; Engineering
 requires a supported 64-bit installation. This source change does not migrate or
 uninstall an existing system. Options/defaults, persistent paths, stored formats,
-ports, ingress and technical Beta identities are preserved in 2.2.1.
+ports, ingress and technical Beta identities are preserved in 2.2.2.
 
-The 2.2.1 build also pins the base image and complete runtime wheel closure.
+The controlled build introduced in 2.2.1 pins the base image and complete runtime
+wheel closure.
 See [controlled build inputs](docs/BUILD_INPUTS.md) for architecture checks,
 dependency updates, publication verification and their evidence limits.
+
+The [private observer contract](docs/INBOUND_TOPOLOGY_CAPTURE.md) requires
+separate source-bound arming, bounded collection and private evidence handling.
+Installation does not authorize or start a capture, and observation does not
+implement Host/Origin enforcement.
 
 ## Capabilities and compatibility
 
@@ -59,7 +66,7 @@ Provider unavailability grants no fallback authority or arbitrary forwarding.
 
 Accepted RC9 evidence includes **Core 2026.9.2 / ha-mcp 8.4.3**.
 Core 2026.9.2 requires separately configured, valid signed Core authority
-referencing existing compiled contracts. Installing 2.2.1 does not configure
+referencing existing compiled contracts. Installing 2.2.2 does not configure
 trust or admit an uncompiled release. Existing compiled pairings retain their
 behavior.
 
@@ -119,4 +126,4 @@ runtime is preserved by 2.2.0; its observations retain their RC9 pairing/time.
 - [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases)
 
 Historical counts, pairings, installation and rollback guidance describe their
-original release and do not replace the current 2.2.1 contract.
+original release and do not replace the current 2.2.2 contract.
