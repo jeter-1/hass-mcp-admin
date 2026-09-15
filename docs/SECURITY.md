@@ -591,8 +591,8 @@ published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
 Published 2.2.2 retains the Host/Origin configuration risk tracked in issue #62.
-The subsequent source change adds an Engineering-owned policy before all MCP
-gateway paths. Its strict loopback-authority defaults and exact configured
+Engineering 2.2.3 adds an Engineering-owned policy before all MCP gateway paths.
+Its strict loopback-authority defaults and exact configured
 aliases/origins supplement secret-path authentication; they do not replace it.
 The all-interface bind and independently authenticated approval ingress remain
 separate. The MCP listener disables implicit Uvicorn proxy-header rewriting.

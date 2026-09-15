@@ -421,7 +421,7 @@ class AddonMetadataValidationTests(unittest.TestCase):
             VALIDATOR.validate_repository(
                 ROOT,
                 base_ref="origin/main",
-                deployed_version="2.2.3",
+                deployed_version="2.2.4",
                 paths={"hass_mcp_engineering_beta/config.yaml"},
                 unreleased_integrity_check=integrity_check,
             )
