@@ -590,17 +590,18 @@ without an exception because released fixes are available. Python 3.12 and
 published glibc wheels remain available for amd64, arm64, and arm/v7; CI still
 performs the authoritative multiarchitecture build. Stable v1.1.2 is unchanged.
 
-CVE-2025-66416 remains a reviewed, mitigated, deferred configuration risk.
-MCP 1.28.1 supplies Host and Origin controls and automatically configures them
-for loopback binds, but the Engineering production FastMCP instance binds to
-`0.0.0.0` without an explicit transport-security policy. Secret-path
-authentication, complete authenticated-path audit redaction, access-log
-suppression, the minimum secret length, and authentication/general rate
-limiting reduce exposure but do not establish Host or Origin enforcement.
-Supported Host and Origin values depend on Supervisor, LAN, connector, and
-tunnel topology and are not guessed in this maintenance change. Issue #62
-tracks configurable production enforcement and exact-image tests with reviewed
-deployment values.
+Published 2.2.2 retains the Host/Origin configuration risk tracked in issue #62.
+Engineering 2.2.3 adds an Engineering-owned policy before all MCP gateway paths.
+Its strict loopback-authority defaults and exact configured
+aliases/origins supplement secret-path authentication; they do not replace it.
+The all-interface bind and independently authenticated approval ingress remain
+separate. The MCP listener disables implicit Uvicorn proxy-header rewriting.
+See [INBOUND_SECURITY.md](INBOUND_SECURITY.md) for parsing, bounds, migration,
+safe diagnostics and required exact-image/deployed-path validation. The inner
+SDK policy remains intentionally unused because it cannot cover earlier gateway
+work. Source tests do not establish a new release, installed enforcement or
+end-to-end rejection of headers discarded upstream. Do not mark the advisory or
+issue fully resolved from these tests alone.
 
 The scanner is point-in-time public-advisory evidence, not a proof that
 dependencies are defect-free. The repository retains exact top-level pins but

@@ -25,7 +25,9 @@ class SameThreadAsgiTestClient:
         app,
         *,
         lifespan_app=None,
-        base_url: str = "http://testserver",
+        # Supply the default MCP authority; tests of aliases/invalid headers
+        # override this explicitly. This client still opens no network socket.
+        base_url: str = "http://127.0.0.1:8100",
         follow_redirects: bool = False,
     ) -> None:
         self.app = app

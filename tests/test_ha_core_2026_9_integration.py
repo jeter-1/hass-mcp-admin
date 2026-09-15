@@ -3265,7 +3265,7 @@ class Core20269StaticRouteTests(unittest.IsolatedAsyncioTestCase):
                 "method": "POST",
                 "path": f"/{configured.access_secret}/mcp",
                 "raw_path": f"/{configured.access_secret}/mcp".encode("ascii"),
-                "headers": [(b"content-type", b"application/json")],
+                "headers": [(b"host", b"127.0.0.1:8100"), (b"content-type", b"application/json")],
                 "client": ("127.0.0.1", 1),
             },
             receive,

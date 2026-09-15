@@ -23,7 +23,7 @@ BETA_SLUG = "hass_mcp_engineering_beta"
 PRODUCTION_NAME = "HA MCP Engineering Server"
 BETA_NAME = "HA MCP Engineering Server Beta"
 PRODUCTION_VERSION = "1.1.2"
-BETA_VERSION = "2.2.2"
+BETA_VERSION = "2.2.3"
 BETA_IMAGE = "ghcr.io/jeter-1/hass-mcp-engineering-beta"
 NEXT_VERSION_PATH = Path(".release/next-version")
 NON_RELEASE_BETA_PATHS = frozenset({"hass_mcp_engineering_beta/AGENTS.md"})
@@ -33,6 +33,8 @@ BETA_INGRESS_PORT = 8110
 MIN_ACCESS_SECRET_LENGTH = 24
 EXTERNAL_CHECK_TIMEOUT_SECONDS = 60
 EXPECTED_BETA_SCHEMA = {
+    "mcp_allowed_hosts": ["str"],
+    "mcp_allowed_origins": ["str"],
     "access_secret": "str",
     "approval_notification_service": "str",
     "upstream_dashboard_mcp_url": "password",

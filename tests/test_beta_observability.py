@@ -550,7 +550,7 @@ class OperationLatencyMetricTests(unittest.TestCase):
                     "method": method,
                     "path": f"/{SECRET}/mcp",
                     "raw_path": f"/{SECRET}/mcp".encode(),
-                    "headers": [],
+                    "headers": [(b"host", b"127.0.0.1:8100")],
                     "client": ("127.0.0.1", 1),
                 }
                 await gateway(scope, receive, send)
@@ -697,7 +697,7 @@ class GatewayAndHealthTests(unittest.TestCase):
             scope = {
                 "type": "http", "method": "POST", "path": f"/{SECRET}/mcp",
                 "raw_path": f"/{SECRET}/mcp".encode(),
-                "headers": [(b"x-request-id", b"rate-request-123")],
+                "headers": [(b"host", b"127.0.0.1:8100"), (b"x-request-id", b"rate-request-123")],
                 "client": ("127.0.0.1", 1),
             }
             asyncio.run(gateway(scope, receive, send))

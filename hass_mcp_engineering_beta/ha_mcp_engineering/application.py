@@ -47,12 +47,17 @@ from .signed_registry import (
 )
 from .tools import get_registered_server
 from .inbound_topology_observer import create_mcp_listener, finish_mcp_observation
+from .inbound_security import compile_policy
 
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
 
 def validate_settings(settings: Settings) -> None:
     errors = []
+    try:
+        compile_policy(settings.mcp_allowed_hosts, settings.mcp_allowed_origins, settings.port)
+    except ValueError:
+        errors.append("invalid_mcp_inbound_policy")
     if not settings.ha_token:
         errors.append("Home Assistant API token is unavailable")
     if not settings.ha_url.startswith(("http://", "https://")):
@@ -558,7 +563,13 @@ async def _serve(settings: Settings) -> None:
 
 
 def main() -> None:
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except ConfigurationError as exc:
+        configure_logging("INFO")
+        log_event(get_logger("application"), logging.ERROR, "startup_validation_failed",
+                  exc.safe_message, context=exc.details)
+        sys.exit("FATAL: beta configuration validation failed; review structured logs")
     configure_logging(settings.log_level)
     logger = get_logger("application")
     try:
@@ -583,6 +594,9 @@ def main() -> None:
             "ingress_port": settings.ingress_port,
             "runtime": "home_assistant_addon" if os.environ.get("SUPERVISOR_TOKEN") else "standalone",
             "redaction_enabled": settings.redaction_enabled,
+            "mcp_inbound_policy": compile_policy(
+                settings.mcp_allowed_hosts, settings.mcp_allowed_origins, settings.port,
+            ).summary(),
             "approval_notifications": {
                 "configured": bool(settings.approval_notification_service),
                 "authority": "none",

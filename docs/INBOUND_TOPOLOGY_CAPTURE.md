@@ -5,6 +5,13 @@ assessment. It does **not** enforce Host/Origin policy or resolve issue #62.
 Source validation does not establish the installed forwarding topology. Release,
 installation, activation, collection and cleanup require separate authorization.
 
+The post-2.2.2 enforcement source explicitly retains this observer dormant.
+MCP listener construction now sets `proxy_headers=False` for both dormant and
+armed paths; the observer still records parser-produced scope before any inner
+middleware. The [Host/Origin gateway policy](INBOUND_SECURITY.md) applies even
+when a separately authorized observer is active. Recording a request does not
+admit it. Arm/storage/replay and cleanup contracts below remain unchanged.
+
 ## Boundary
 
 The MCP listener can place a passive observer outside Uvicorn's loaded proxy

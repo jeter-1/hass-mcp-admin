@@ -21,6 +21,7 @@ from .audit import (
 )
 from .capabilities import capability_for_tool
 from .configuration import Settings
+from .inbound_security import bounded_request_id, compile_policy
 from .errors import ErrorCode, error_definition
 from .ha_core_readmission.routes import static_tool_requirements
 from .logging_config import get_logger, log_event
@@ -176,6 +177,9 @@ class AuthenticatedMcpGateway:
     ):
         self.app = app
         self.settings = settings
+        self.inbound_policy = compile_policy(
+            settings.mcp_allowed_hosts, settings.mcp_allowed_origins, settings.port,
+        )
         self.audit = audit
         self.prefix = f"/{settings.access_secret}"
         self._initial_catalog_reconciliation_required = bool(
@@ -359,9 +363,46 @@ class AuthenticatedMcpGateway:
             "global": self.global_bucket.summary(),
         }
 
+    async def _reject_inbound(self, scope, send, denial):
+        telemetry, token = begin_request(bounded_request_id(scope.get("headers")))
+        try:
+            telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+            telemetry.result_status = "failure"
+            telemetry.completeness = "failed"
+            telemetry.response_status = denial.status
+            METRICS.record_error(telemetry.error_code)
+            self.audit.write({
+                "event": "inbound_request_rejected",
+                "request_id": telemetry.request_id,
+                "authenticated": False,
+                "result_status": "rejected",
+                "error_code": telemetry.error_code,
+                "reason": denial.category,
+                "response_status": denial.status,
+            })
+            return await self._respond(send, denial.status, denial.body, telemetry.request_id)
+        finally:
+            try:
+                log_event(
+                    self.logger, logging.INFO, "inbound_request_rejected",
+                    "MCP inbound policy refused the request.",
+                    context={"reason": denial.category, "response_status": denial.status,
+                             "error_code": ErrorCode.INVALID_REQUEST.value},
+                    secret=self.settings.access_secret,
+                )
+            finally:
+                end_request(token)
+
     async def __call__(self, scope, receive, send):
         if scope["type"] == "lifespan":
             return await self.app(scope, receive, send)
+        if scope["type"] != "http":
+            if scope["type"] == "websocket":
+                return await send({"type": "websocket.close", "code": 1008})
+            raise ValueError("unsupported_asgi_scope")
+        denial = self.inbound_policy.check(scope.get("headers"))
+        if denial is not None:
+            return await self._reject_inbound(scope, send, denial)
         path = scope.get("path", "")
         telemetry, context_token = begin_request(self._header(scope, b"x-request-id"))
         request_id = telemetry.request_id

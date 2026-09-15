@@ -49,7 +49,8 @@ async def _asgi_request(gateway, path: str, *, client="127.0.0.1", body=b"{}"):
     await gateway(
         {
             "type": "http", "method": "POST", "path": path,
-            "raw_path": path.encode(), "headers": [], "client": (client, 1),
+            "raw_path": path.encode(),
+            "headers": [(b"host", b"127.0.0.1:8100")], "client": (client, 1),
         },
         receive,
         send,

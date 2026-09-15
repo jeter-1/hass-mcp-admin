@@ -779,7 +779,7 @@ class AuditContractTests(unittest.IsolatedAsyncioTestCase):
                     "method": "POST",
                     "path": f"/{secret}/mcp",
                     "raw_path": f"/{secret}/mcp".encode(),
-                    "headers": [],
+                    "headers": [(b"host", b"127.0.0.1:8100"), ],
                     "client": ("127.0.0.1", 1),
                 },
                 receive,
