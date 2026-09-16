@@ -74,6 +74,15 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
+        "tool": "control_fan", "category": "ordinary_runtime_action",
+        "status": "beta_native", "risk": "physical_action", "additive": True,
+        "operation_class": "typed_fan", "routing": "engineering_native",
+        "provider": "upstream_typed_fan", "fallback": "none",
+        "policy": "authenticated_exact_fan_operation",
+        "external_approval_required": False, "direct_write_allowed": False,
+        "verification": "exact_ha_state_and_percentage",
+    },
+    {
         "tool": "run_held_read_canary",
         "category": "verification",
         "status": "beta_native",

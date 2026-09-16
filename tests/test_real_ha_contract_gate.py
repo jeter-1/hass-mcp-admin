@@ -1306,7 +1306,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 for path in DEVICE_FIXTURE_ROOT.iterdir()
                 if path.name != "__pycache__"
             },
-            {"__init__.py", "config_flow.py", "manifest.json", "switch.py"},
+            {"__init__.py", "config_flow.py", "manifest.json", "switch.py", "fan.py"},
         )
         manifest = json.loads(
             (DEVICE_FIXTURE_ROOT / "manifest.json").read_text(encoding="utf-8")
@@ -1321,6 +1321,14 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIn("identifiers={SHARED_IDENTIFIER}", switch_source)
         self.assertIn("async def async_turn_on", switch_source)
         self.assertIn("async def async_turn_off", switch_source)
+        fan_source = (DEVICE_FIXTURE_ROOT / "fan.py").read_text()
+        self.assertIn("class SyntheticFan(FanEntity)", fan_source)
+        self.assertIn("async def async_set_percentage", fan_source)
+        lane = CONTRACT_PATH.read_text()
+        self.assertIn("await _run_typed_fan_contract(configured, core_runtime, read_gateway)", lane)
+        self.assertIn('assert receipt["provider_attempt_count"] == 1', lane)
+        self.assertIn('assert duplicate == receipt', lane)
+        self.assertIn('assert readback.baseline["state"] == "off"', lane)
 
     def test_real_ha_contract_covers_migration_lookup_dependency_and_impact(self):
         runner = self.functions["_run_device_migration_contract"]

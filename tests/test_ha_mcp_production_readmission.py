@@ -2694,9 +2694,9 @@ class SignedGatewayReadmissionTests(
             {generation},
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 51)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 52)
         self.assertEqual(len(registered), 25)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 76)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 77)
         self.assertNotIn("ha_get_operation_status", registered)
         for policy_entry in self.release.policy.tools:
             if policy_entry.classification != "automatic_read":

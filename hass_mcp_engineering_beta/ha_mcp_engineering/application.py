@@ -11,6 +11,7 @@ import uvicorn
 
 from .approval_web import create_approval_application as create_ingress_web_application
 from .audit import AuditLogger
+from .fan.service import FAN_OPERATIONS
 from .configuration import (
     MAX_TRUSTED_PROXY_CIDRS,
     MIN_ACCESS_SECRET_LENGTH,
@@ -334,6 +335,7 @@ def create_application(
     UPSTREAM_READ_GATEWAY.configure(
         settings, core_runtime=CORE_READMISSION
     )
+    FAN_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY)
     CORE_READMISSION.register_reconciliation_listener(
         UPSTREAM_READ_GATEWAY.request_core_reconciliation
     )
@@ -351,6 +353,7 @@ def create_application(
         UPSTREAM_DASHBOARD,
         UPSTREAM_READ_GATEWAY,
         CORE_READMISSION,
+        FAN_OPERATIONS.service,
     )
     return gateway
 
@@ -389,6 +392,8 @@ async def _run_f3_recovery_pass(trigger: str, *, strict: bool = False) -> None:
     try:
         if service.f3_runtime is not None:
             await service.f3_runtime.recover_once(trigger)
+            if FAN_OPERATIONS.service is not None:
+                await FAN_OPERATIONS.service.recover_once()
         elif strict:
             raise RuntimeError("F3 runtime is not initialized")
         # Task rehydration validates durable authority and deadlines first.
@@ -557,6 +562,8 @@ async def _serve(settings: Settings) -> None:
                 await asyncio.gather(notification_task, return_exceptions=True)
             if registry_refresh_task is not None:
                 await asyncio.gather(registry_refresh_task, return_exceptions=True)
+            if FAN_OPERATIONS.service is not None:
+                await FAN_OPERATIONS.service.close()
             await DEPENDENCY_ANALYSIS.shutdown()
     finally:
         finish_mcp_observation(mcp_server)

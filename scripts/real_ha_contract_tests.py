@@ -3181,6 +3181,8 @@ async def _run_core_2026_9_child_contract(
         )
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.reconcile_until_initialized(server)
+        if EXPECTED_HA_VERSION == "2026.9.2":
+            await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)
         device_assessment = assess_device_registry(devices)
         core_assessment = core_runtime.health_snapshot()
@@ -3349,6 +3351,50 @@ async def _run_core_2026_9_child_contract(
         raise body_error
     if restore_error is not None:
         raise restore_error
+
+
+async def _run_typed_fan_contract(configured, core_runtime, read_gateway):
+    """Only the fixed synthetic entity in this job's disposable Core/container."""
+    from datetime import datetime, timezone
+    from uuid import uuid4
+    from ha_mcp_engineering.fan.service import FanService
+    from ha_mcp_engineering.fan.authority import FanCoreAuthority
+    from ha_mcp_engineering.fan.contracts import FanRequest, digest
+    from ha_mcp_engineering.providers.upstream_fan import FanProvider
+    from ha_mcp_engineering.request_context import begin_request, end_request
+    with tempfile.TemporaryDirectory(prefix="typed-fan-contract-") as directory:
+        service = FanService(directory, FanProvider.configured(configured, read_gateway),
+                             FanCoreAuthority(core_runtime))
+        telemetry, context = begin_request()
+        try:
+            for action, percentage in (("turn_on", 50), ("set_percentage", 75), ("turn_off", None)):
+                request = FanRequest(
+                    entity_id="fan.hamcp_contract_fan", action=action, percentage=percentage,
+                    operation_id=f"{int(datetime.now(timezone.utc).timestamp())}-{uuid4().hex}",
+                )
+                telemetry.ordinary_fan_binding = digest(request.model_dump())
+                receipt = await service.control(request)
+                for _ in range(6):
+                    if receipt["terminal"]:
+                        break
+                    await asyncio.sleep(2)
+                    receipt = await service.reconcile(request.task_id)
+                assert receipt["state"] == "succeeded_verified", receipt["state"]
+                assert receipt["provider_attempt_count"] == 1
+                assert receipt["dispatch_intent_recorded"] is True
+                duplicate = await service.control(request)
+                assert duplicate == receipt
+            readback = await service.adapter.prepare(request)
+            assert readback.baseline["state"] == "off"
+            assert not service.locks.records()
+            assert service.health()["nonterminal_tasks"] == 0
+            assert service.health()["fallback_count"] == 0
+            print(json.dumps({"typed_fan_contract": "PASS", "operations": 3,
+                              "duplicate_mutations": 0, "restored": "off"}))
+        finally:
+            telemetry.ordinary_fan_binding = None
+            await service.close()
+            end_request(context)
 
 
 async def _cleanup_configuration_resources(

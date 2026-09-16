@@ -2844,7 +2844,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         registry = load_reviewed_upstream_release_registry()
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 51)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 52)
         self.assertEqual(counts["automatic_read"], 25)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -2855,7 +2855,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             {"ha_get_operation_status"},
         )
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 76)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 77)
         self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 26)
         self.assertEqual(
             {
@@ -2906,7 +2906,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["reviewed_upstream_version"], "8.4.3")
         self.assertEqual(counts["reviewed_stock_catalog"], 78)
         self.assertEqual(counts["expected_delegated_reads"], 25)
-        self.assertEqual(counts["expected_connector_total"], 76)
+        self.assertEqual(counts["expected_connector_total"], 77)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [

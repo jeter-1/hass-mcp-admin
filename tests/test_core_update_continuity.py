@@ -463,7 +463,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, transport = await self.gateway(runtime)
         tools = registered_tools(server)
         self.assertEqual(len(tools), 25)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 76)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 77)
         self.assertNotIn("ha_get_operation_status", tools)
         result = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic"}))
         self.assertTrue(result["success"])

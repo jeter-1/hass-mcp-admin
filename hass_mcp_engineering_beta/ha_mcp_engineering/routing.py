@@ -519,6 +519,13 @@ class AuthenticatedMcpGateway:
                         raw_parameters = params.get("arguments", {})
                         parameters = raw_parameters if isinstance(raw_parameters, dict) else {}
                         capability = capability_for_tool(tool_name)
+                        if tool_name == "control_fan" and isinstance(raw_parameters, dict):
+                            from .fan.contracts import FanRequest, digest
+                            try:
+                                fan_request = FanRequest.model_validate(raw_parameters).checked()
+                                telemetry.ordinary_fan_binding = digest(fan_request.model_dump())
+                            except ValueError:
+                                pass
                         telemetry.tool_name = tool_name
                         telemetry.tool_started = time.perf_counter()
                         METRICS.record_tool_call()
@@ -530,6 +537,18 @@ class AuthenticatedMcpGateway:
                     return queue.pop(0) if queue else await receive()
 
                 new_receive = replay
+
+            if tool_name == "control_fan" and telemetry.ordinary_fan_binding is None:
+                telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                failure = FailureResponse(
+                    operation="control_fan", error="InvalidFanRequest",
+                    error_code=telemetry.error_code, message="The fan request is invalid.",
+                    retryable=False, request_id=request_id,
+                )
+                return await self._respond(
+                    send, 400, failure.to_json(self.settings.response_size_limit).encode(),
+                    request_id, b"application/json",
+                )
 
             forwarded = dict(scope)
             forwarded["path"] = path[len(self.prefix):] or "/"
@@ -682,6 +701,7 @@ class AuthenticatedMcpGateway:
             )
             raise
         finally:
+            telemetry.ordinary_fan_binding = None
             if core_authority is not None:
                 # A task that escaped the request lifetime must not inherit a
                 # callback that can authorize another provider interaction.

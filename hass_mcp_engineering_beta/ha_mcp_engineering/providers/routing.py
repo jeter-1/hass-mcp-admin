@@ -39,6 +39,7 @@ class RoutingDecision:
 
 
 _ENGINEERING_NATIVE = {
+    ProviderCapability.TYPED_FAN_EXECUTION,
     ProviderCapability.GOVERNANCE_PERSISTENCE,
     ProviderCapability.OPERATIONAL_ADMINISTRATION,
     ProviderCapability.RISK_ASSESSMENT,
@@ -114,6 +115,7 @@ class RoutingPolicy:
 
 
 TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
+    "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
     "server_info": ProviderCapability.HANDOFF_GENERATION,
     "list_capabilities": ProviderCapability.HANDOFF_GENERATION,
     "render_template": ProviderCapability.TEMPLATE_RENDER,

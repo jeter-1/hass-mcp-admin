@@ -328,6 +328,14 @@ async def list_change_plans(status: str = "", limit: int = 20) -> str:
     )
 
 
+async def _get_execution_task(task_id):
+    from ..fan.service import FAN_OPERATIONS
+    service = FAN_OPERATIONS.service
+    if service is not None and service.load(task_id) is not None:
+        return await service.reconcile(task_id)
+    return GOVERNANCE.require().get_execution_task(task_id)
+
+
 async def get_execution_task(
     task_id: Annotated[
         str, Field(pattern=r"^[a-f0-9]{32}$")
@@ -337,7 +345,7 @@ async def get_execution_task(
     return await run_structured(
         "get_execution_task",
         "Returned the requested durable execution task.",
-        lambda: GOVERNANCE.require().get_execution_task(task_id),
+        lambda: _get_execution_task(task_id),
         metadata={
             "resource_type": "execution_task",
             "resource_id": task_id,

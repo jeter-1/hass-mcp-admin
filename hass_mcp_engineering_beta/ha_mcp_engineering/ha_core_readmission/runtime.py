@@ -674,6 +674,7 @@ class CoreRuntime:
         capability_ids: tuple[str, ...],
         *,
         target: Any | None = None,
+        expected_core_version: str | None = None,
         plan_created_at: str | None = None,
         delegated_tool: str | None = None,
         delegated_adapter_version: str | None = None,
@@ -684,6 +685,9 @@ class CoreRuntime:
             observation = self._observation
             generation = self._coordinator.current_generation
             if observation is None or generation is None:
+                self._counters["lease_failures"] += 1
+                return None
+            if expected_core_version is not None and observation.version != expected_core_version:
                 self._counters["lease_failures"] += 1
                 return None
             provider_compatible, _provider_reason = delegated_provider_compatibility(

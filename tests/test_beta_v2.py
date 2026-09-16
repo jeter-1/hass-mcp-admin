@@ -835,7 +835,7 @@ class BetaApplicationTests(unittest.TestCase):
         )
         names = [tool["name"] for tool in listing["result"]["tools"]]
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(len(names), 51)
+        self.assertEqual(len(names), 52)
         dashboard_descriptors = {
             tool["name"]: tool
             for tool in listing["result"]["tools"]
