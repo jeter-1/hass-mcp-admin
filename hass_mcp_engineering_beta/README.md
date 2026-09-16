@@ -1,13 +1,13 @@
 # HA MCP Engineering Server Beta
 
-**Engineering 2.2.3** adds received Host/Origin enforcement on this existing
-installation path. It supplements secret-path authentication. The technical
-Beta name is retained deliberately.
-See [2.2.3 acceptance](../docs/V2_2_3_ACCEPTANCE.md) and
-[2.2.3 release notes](../docs/V2_2_3_RELEASE_NOTES.md).
+**Engineering 2.3.0-beta.1** adds typed ordinary fan control on this existing
+installation path. This prerelease retains Host/Origin enforcement, secret-path
+authentication and the technical Beta name.
+See [2.3.0-beta.1 acceptance](../docs/V2_3_0_BETA1_ACCEPTANCE.md) and
+[2.3.0-beta.1 release notes](../docs/V2_3_0_BETA1_RELEASE_NOTES.md).
 
 Read the [Host/Origin policy](../docs/INBOUND_SECURITY.md) before an authorized
-2.2.3 update. Configure exact aliases for MCP paths beyond its loopback-authority
+2.3.0-beta.1 update. Configure exact aliases for MCP paths beyond its loopback-authority
 defaults; explicit host lists replace those defaults. Native clients may omit
 Origin; browser MCP clients require an explicit origin. Approval ingress retains
 its separate authentication. Invalid options refuse startup, so retain independent
@@ -21,7 +21,7 @@ installed acceptance.
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures for 2.2.3 | `amd64`, `aarch64` |
+| Architectures for 2.3.0-beta.1 | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
 | Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
 | Server ID | `hass-mcp-engineering-beta` |
@@ -43,12 +43,12 @@ belongs to this milestone.
 
 Historical v1.1.2 in `hass_mcp_admin/` is frozen and operationally retired,
 outside the Engineering dependency audit and not an Engineering rollback.
-2.2.3 preserves existing options, persistence formats, ports, ingress and image
-repository. The two new options, `mcp_allowed_hosts` and `mcp_allowed_origins`,
+2.3.0-beta.1 preserves existing options, persistence formats, ports, ingress and image
+repository. The existing options, `mcp_allowed_hosts` and `mcp_allowed_origins`,
 enforce the received-header boundary before ordinary MCP behavior. The private
 observer retains its [existing contract](../docs/INBOUND_TOPOLOGY_CAPTURE.md),
-disabled by default with separate authorization and source-bound arming. No public
-tool is added. Issue #62 remains open pending appropriate installed-path evidence.
+disabled by default with separate authorization and source-bound arming. The observer grants no
+provider authority and installation does not arm it.
 
 ## Unified catalog and exact compatibility
 
@@ -57,14 +57,14 @@ suitable admitted ha-mcp or native providers, enforcing provider admission,
 target binding, authority, dispatch, attribution and verification internally.
 
 The healthy reviewed **ha-mcp 8.4.3** pairing requires **17 Core capabilities**
-and exposes **51 static plus 25 delegated tools, 76 total**.
+and exposes **52 static plus 25 delegated tools, 77 total**.
 `ha_get_operation_status` stays held. Fresh raw descriptor comparison is
 required catalog evidence; a cached inventory or count alone is insufficient.
 Provider unavailability grants no fallback, arbitrary forwarding or alternate
 provider retry.
 
 Accepted RC9 evidence includes **Core 2026.9.2 / ha-mcp 8.4.3** under
-separately configured, valid signed Core authority. Installing 2.2.3 does not
+separately configured, valid signed Core authority. Installing 2.3.0-beta.1 does not
 activate trust or admit an uncompiled Core version. Existing compiled pairings
 retain their behavior, and no newer ha-mcp version is adopted.
 
@@ -73,6 +73,23 @@ separate Core trust, signatures, exact compiled capability/probe references,
 expiry, retained denials and authority retirement. Unknown or changed
 contracts need review and possibly code changes. Future releases are not
 automatically compatible.
+
+## Ordinary fan control
+
+The additive `control_fan` tool uses ordinary authenticated connector authority
+for one exact `turn_on`, `turn_off` or `set_percentage` request. The assistant
+manages the operation ID automatically and reuses it for reconciliation. No
+configuration plan or panel approval is created. Generic services and fallback
+remain unavailable. Its compiled semantics require Core 2026.9.2 / ha-mcp 8.4.3
+and current authority; the existing signed references alone do not grant fan writes.
+
+At most one mutation may dispatch per operation. Verify authoritative task state
+and exact HA state/percentage, retaining uncertainty and incomplete consumer
+coverage. Lost acknowledgements and recovery never grant redispatch. Unresolved
+outcomes hold only the affected target after active dependency locks settle;
+receipts and bounded audit retain provider and original-request attribution.
+There is no automatic restoration, independent physical feedback or hold override.
+See [typed fan control](../docs/TYPED_FAN_CONTROL.md) for the full contract.
 
 ## Execution, evidence and recovery
 
@@ -130,8 +147,8 @@ consequence. Deployment and verification of the final installation are separate.
 
 Retained RC9 and 2.2.0 source/build, installed-image, catalog and live receipts
 remain bound to their original source, pairing and observation time. They do
-not establish 2.2.3 installed acceptance. The
-[2.2.3 contract](../docs/V2_2_3_ACCEPTANCE.md) separately
+not establish 2.3.0-beta.1 installed acceptance. The
+[2.3.0-beta.1 contract](../docs/V2_3_0_BETA1_ACCEPTANCE.md) separately
 requires final publication/image identity, fresh catalog and bounded installed
 verification.
 
