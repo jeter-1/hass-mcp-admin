@@ -63,6 +63,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_operational_recovery.py",
     "tests/test_f3_packaging_boundaries.py",
     "tests/test_typed_fan.py",
+    "tests/test_typed_fan_review.py",
     "tests/test_f3_runtime_integration.py",
 }
 
@@ -344,6 +345,8 @@ class F3ImportBoundaryTests(unittest.TestCase):
     def test_only_the_closed_integration_package_imports_f3_runtime_internals(self):
         approved = {
             "fan/adapter.py",
+            "fan/audit.py",
+            "fan/locks.py",
             "fan/service.py",
             "f3_runtime/registry.py",
             "f3_runtime/repository.py",

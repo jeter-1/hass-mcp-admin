@@ -81,7 +81,13 @@ without dispatch; after intent, recovery reads only. A declaration visible befor
 its executor claims ownership remains pending until the original operation ID
 expires; this prevents another process from cancelling still-authorized work. Verification has a
 180-second evidence deadline and six observation/verification attempts. A late
-or unresolved outcome becomes manual review and retains conflict protection;
+or unresolved outcome becomes manual review and retains conflict protection only
+for the exact unresolved fan. Core and ha-mcp availability dependencies remain
+locked during active execution, but are released atomically when the target's
+non-expiring hold is retained. A failed local settlement keeps the previous lock
+set intact for fenced, read-only reconciliation; it never permits redispatch.
+Task receipts expose retained keys and generations; health counts ordinary locks
+and holds separately. Already settled holds do not consume the recovery budget;
 there is no automated second action or lock override. External actors can still
 change the fan between the final preread and dispatch: this is not an atomic
 compare-and-set against Home Assistant or outside editors.
@@ -94,6 +100,18 @@ records and 45 seconds. Ordinary receipts and holds are visible separately in
 health. Runtime startup, process cancellation, and supported task reads use the
 same read-only reconciliation path. Retained records are not automatically
 expired or recycled by this implementation.
+
+Authenticated request audit retains the selected provider, no-fallback attribution,
+operation/task identities and available execution facts. Durable lifecycle events
+and outcome snapshots are projected into the existing bounded audit logger,
+including read-only background recovery after the request has ended. Recovery
+preserves the initiating request correlation; it does not invent a new approval.
+Durable intent and attempt count remain distinct from remote delivery, and
+unresolved verification is unknown rather than false success. No raw provider
+response or exception text enters these projections. Retained audit event IDs
+deduplicate replay on task retrieval/reconstruction. Audit failures are reported
+separately and do not change execution authority; supported receipt retrieval can
+replay persisted events, subject to the existing audit-log retention window.
 
 ## Validation and rollout boundary
 

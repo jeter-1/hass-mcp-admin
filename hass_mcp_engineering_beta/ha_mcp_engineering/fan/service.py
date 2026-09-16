@@ -17,28 +17,28 @@ import tempfile
 import uuid
 
 from ..f3.executor import SharedOperationExecutor, PreIntentRetryRequired
-from ..f3.locks import DurableLockStore
 from ..f3.models import ExecutionIdentity, ExecutorTiming, LockTiming, parse_timestamp
-from ..f3.persistence import DurableExecutionRepository
 from ..request_context import current_telemetry
 from .adapter import FanAdapter, prepare_record
 from .authority import FanCoreAuthority
 from .contracts import FAN_CONTRACT, PROVIDER, FanRefusal, FanRequest, digest
+from .locks import FanLockStore
+from .audit import FanExecutionRepository
 
 MAX_RECORDS = 4096
 MAX_ACTIVE = 16
 
 
 class FanService:
-    def __init__(self, root, provider, core, *, now=lambda: datetime.now(timezone.utc)):
+    def __init__(self, root, provider, core, *, now=lambda: datetime.now(timezone.utc), audit=None):
         self.root = Path(root) / "ordinary-fan-v1"
         self.root.mkdir(parents=True, exist_ok=True)
         self.now = now
         self.provider, self.core = provider, core
         self.adapter = FanAdapter(provider, core)
         # Exact shared lock namespace, independent ordinary execution records.
-        self.locks = DurableLockStore(root)
-        self.executions = DurableExecutionRepository(self.root)
+        self.locks = FanLockStore(root, self.load)
+        self.executions = FanExecutionRepository(self.root, self.load, audit)
         self.active = {}
         self.preparing = 0
         self.recovery_failures = 0
@@ -124,6 +124,23 @@ class FanService:
         return check
 
     async def control(self, request):
+        telemetry = current_telemetry()
+        if telemetry:
+            telemetry.audit_context.update(task_id=request.task_id, operation_id=request.operation_id)
+        try:
+            result = await self._control(request)
+        except Exception:
+            if telemetry:
+                telemetry.audit_context["fan_outcome"] = "request_failed_reconcile_task"
+            raise
+        if telemetry:
+            telemetry.audit_context.update({key: result[key] for key in (
+                "task_id", "operation_id", "operation_hash", "provider_attempt_count",
+                "dispatch_intent_recorded", "provider_response_received", "terminal")})
+            telemetry.audit_context["fan_outcome"] = result["state"]
+        return result
+
+    async def _control(self, request):
         request = FanRequest.model_validate(request.model_dump()).checked()
         check = self._authorization(request)
         prior = self.load(request.task_id)
@@ -185,6 +202,8 @@ class FanService:
         if prepared is None:
             return None
         record = self.executions.get(task_id)
+        self.executions.project(record)
+        retained = [item for item in self.locks.records() if item.task_id == task_id]
         return {
             "task_id": task_id, "operation_id": prepared.request.operation_id,
             "operation_hash": prepared.prepared_operation_hash,
@@ -203,6 +222,9 @@ class FanService:
             "redispatch_prohibited": True,
             "consequence_coverage": "incomplete",
             "physical_feedback_verified": False,
+            "retained_locks": [{"key": item.key, "generation": item.generation,
+                                "mode": item.mode, "conflict_hold": item.conflict_hold}
+                               for item in retained],
             "complete": True,
         }
 
@@ -227,12 +249,14 @@ class FanService:
                                   timing=ExecutorTiming(180, 120, 6, 6), now=self.now())
             await self.executor().cancel(task_id)
             return self.receipt(task_id)
+        self.locks.reconcile_terminal_hold(record)
         if not record.terminal and parse_timestamp(record.claim_expires_at, field_name="claim_expires_at") > self.now():
             return self.receipt(task_id)
         executor = self.executor()
         if not record.terminal and record.dispatch_intent is None:
             await executor.cancel(task_id)
-        identity = ExecutionIdentity(task_id, None, record.execution_identity().attempt_id, uuid.uuid4().hex, uuid.uuid4().hex)
+        identity = ExecutionIdentity(task_id, None, record.execution_identity().attempt_id,
+                                     record.execution_identity().request_id, uuid.uuid4().hex)
         async def refuse():
             raise FanRefusal("fan_recovery_is_read_only")
         await executor.execute(adapter=self.adapter, prepared=prepared, identity=identity,
@@ -243,9 +267,14 @@ class FanService:
         # Bounded sweep; an active owner wins. Observation cannot turn a saved
         # declaration into fresh ordinary authorization.
         candidates = []
+        locks_by_task = {}
+        for item in self.locks.records():
+            locks_by_task.setdefault(item.task_id, []).append(item)
         for path in sorted(self.root.glob("*.json"))[:MAX_RECORDS]:
             record = self.executions.get(path.stem)
-            if record is None or not record.terminal:
+            if (record is None or not record.terminal
+                    or (record.normalized_outcome == "manual_review_required"
+                        and not self.locks.hold_settled(record, locks_by_task.get(path.stem, [])))):
                 candidates.append(path.stem)
         try:
             async with asyncio.timeout(45):
@@ -266,11 +295,17 @@ class FanService:
 
     def health(self):
         records = self.executions.list()
+        tasks = {item.execution_identity().task_id for item in records}
+        owned = [item for item in self.locks.records() if item.task_id in tasks]
+        holds = [item for item in owned if item.conflict_hold]
         return {"configured": True, "active_executions": len(self.active),
                 "nonterminal_tasks": sum(not item.terminal for item in records),
                 "recovery_failures": self.recovery_failures, "fallback_count": 0,
                 "receipt_count": len(list(self.root.glob("*.json"))),
-                "receipt_capacity": MAX_RECORDS}
+                "receipt_capacity": MAX_RECORDS,
+                "audit_projection_failures": self.executions.audit_projection_failures,
+                "retained_lock_count": len(owned), "conflict_hold_count": len(holds),
+                "conflict_hold_task_count": len({item.task_id for item in holds})}
 
 
 class FanRuntime:
@@ -281,11 +316,11 @@ class FanRuntime:
             raise FanRefusal("fan_service_unavailable")
         return self.service
 
-    def configure(self, settings, core_runtime, read_gateway):
+    def configure(self, settings, core_runtime, read_gateway, *, audit=None):
         from ..providers.upstream_fan import FanProvider
         self.service = FanService(settings.governance_path,
                                   FanProvider.configured(settings, read_gateway),
-                                  FanCoreAuthority(core_runtime))
+                                  FanCoreAuthority(core_runtime), audit=audit)
 
 
 FAN_OPERATIONS = FanRuntime()

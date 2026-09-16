@@ -335,7 +335,7 @@ def create_application(
     UPSTREAM_READ_GATEWAY.configure(
         settings, core_runtime=CORE_READMISSION
     )
-    FAN_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY)
+    FAN_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     CORE_READMISSION.register_reconciliation_listener(
         UPSTREAM_READ_GATEWAY.request_core_reconciliation
     )

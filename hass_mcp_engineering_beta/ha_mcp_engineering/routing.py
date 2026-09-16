@@ -23,6 +23,7 @@ from .capabilities import capability_for_tool
 from .configuration import Settings
 from .inbound_security import bounded_request_id, compile_policy
 from .errors import ErrorCode, error_definition
+from .fan.audit import request_summary as _fan_request_summary
 from .ha_core_readmission.routes import static_tool_requirements
 from .logging_config import get_logger, log_event
 from .models import FailureResponse, Timing
@@ -962,6 +963,9 @@ class AuthenticatedMcpGateway:
                     ha_endpoint_categories=sorted(telemetry.endpoint_categories),
                     resource_ids=resource_ids,
                     analysis_summary=(
+                        _fan_request_summary(telemetry)
+                        if tool_name == "control_fan"
+                        else
                         {
                             **dict(telemetry.audit_context),
                             **(
