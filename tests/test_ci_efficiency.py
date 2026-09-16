@@ -155,8 +155,11 @@ class CIEfficiencyTests(unittest.TestCase):
         runs = [s["run"] for j in self.jobs.values() for s in j.get("steps", []) if "run" in s]
         self.assertEqual(runs.count("python -m unittest discover -s tests -v"), 1)
         source = self.jobs["validate_source"]["steps"]
-        self.assertEqual(source[-1]["run"], "python -m unittest discover -s tests -v")
-        self.assertEqual(source[-2]["run"],
+        self.assertEqual(source[-2]["run"], "python -m unittest discover -s tests -v")
+        self.assertEqual(source[-2]["id"], "unit_tests")
+        self.assertEqual(source[-1]["id"], "source_receipt")
+        self.assertEqual(source[-1]["env"]["FULL_SUITE_OUTCOME"], "${{ steps.unit_tests.outcome }}")
+        self.assertEqual(source[-3]["run"],
                          "python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r tests/requirements.lock")
 
     def test_packaging_preserves_platforms_embedded_identity_and_no_push(self):

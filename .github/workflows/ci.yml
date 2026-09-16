@@ -7,6 +7,10 @@ on:
       - reopened
       - synchronize
   workflow_call:
+    outputs:
+      source_validation:
+        description: Exact same-run successful full-discovery receipt; complete CI success is separately required.
+        value: ${{ jobs.validate_source.outputs.source_validation }}
 
 permissions:
   contents: read
@@ -180,6 +184,8 @@ jobs:
     needs: validate_prerequisites
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    outputs:
+      source_validation: ${{ steps.source_receipt.outputs.source_validation }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -195,7 +201,13 @@ jobs:
         run: >-
           python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r tests/requirements.lock
       - name: Run Engineering unit tests
+        id: unit_tests
         run: python -m unittest discover -s tests -v
+      - name: Bind successful full-discovery identity
+        id: source_receipt
+        env:
+          FULL_SUITE_OUTCOME: ${{ steps.unit_tests.outcome }}
+        run: python scripts/publication_validation.py record --github-output "$GITHUB_OUTPUT"
 
   validate_packaging:
     needs: validate_prerequisites
