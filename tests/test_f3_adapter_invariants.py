@@ -61,6 +61,9 @@ class F3AdapterIsolationTests(unittest.TestCase):
                 )
             ):
                 continue
+            if path.relative_to(RUNTIME).as_posix() == "fan/service.py":
+                # Explicit ordinary-action owner of the same F3 primitives.
+                continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             imported: set[str] = set()
             for node in ast.walk(tree):

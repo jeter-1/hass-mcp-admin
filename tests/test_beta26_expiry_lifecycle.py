@@ -498,6 +498,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
                 "list_execution_tasks",
                 "cancel_execution_task",
                 "run_held_read_canary",
+                "control_fan",
             }
         }
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()

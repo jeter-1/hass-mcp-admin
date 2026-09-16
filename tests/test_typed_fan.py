@@ -239,6 +239,33 @@ class FanTests(unittest.IsolatedAsyncioTestCase):
         values=await asyncio.gather(self.service.control(request),self.service.control(request))
         self.assertEqual(self.transport.writes,1)
         self.assertTrue(all(value['task_id']==request.task_id for value in values));self.settled()
+    async def test_separate_service_duplicate_defers_to_original_owner(self):
+        second = FanService(self.tmp.name, self.provider, FanCoreAuthority(self.core), now=self.clock)
+        self.addAsyncCleanup(second.close)
+        request = self.request(percentage=50)
+        self.telemetry.ordinary_fan_binding = digest(request.model_dump())
+        results = await asyncio.gather(self.service.control(request), second.control(request))
+        final = await second.reconcile(request.task_id)
+        self.assertTrue(all(item['task_id'] == request.task_id for item in results))
+        self.assertEqual(final['state'], 'succeeded_verified')
+        self.assertEqual(self.transport.writes, 1)
+        self.settled()
+
+    async def test_ownerless_declaration_cancels_only_after_original_id_expires(self):
+        request = self.request(percentage=50)
+        prepared = await self.service.adapter.prepare(request)
+        self.service.save(prepared)
+        early = await self.service.reconcile(request.task_id)
+        self.assertEqual(early['state'], 'created')
+        self.assertEqual(self.transport.writes, 0)
+        self.clock.advance(301)
+        expired = await self.service.reconcile(request.task_id)
+        self.assertEqual(expired['state'], 'cancelled_pre_dispatch')
+        repeated = await self.call(request)
+        self.assertEqual(repeated, expired)
+        self.assertEqual(self.transport.writes, 0)
+        self.settled()
+
     async def test_restart_lock_contends_with_fan(self):
         owner=LockOwner('synthetic-owner','synthetic-restart',None,'restart','synthetic-attempt')
         held=self.service.locks.acquire_once(

@@ -1802,6 +1802,7 @@ class ToolCompatibilityTests(unittest.TestCase):
                 "list_execution_tasks",
                 "cancel_execution_task",
                 "run_held_read_canary",
+                "control_fan",
             },
         )
         for name, expected in BETA14_SCHEMA_HASHES.items():

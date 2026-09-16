@@ -521,7 +521,7 @@ class McpOutcomeClassificationTests(unittest.TestCase):
         }
         self.assertEqual(len(tools), 52)
         catalog = build_capability_catalog()
-        self.assertEqual(catalog["registered_count"], 51)
+        self.assertEqual(catalog["registered_count"], 52)
         self.assertEqual(catalog["count"], 25)
         self.assertEqual(catalog["planned"], [])
         self.assertEqual(

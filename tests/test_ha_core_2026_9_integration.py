@@ -2980,7 +2980,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["core_withheld_read_count"], 5)
         self.assertEqual(health["dynamically_exposed_count"], 20)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 71)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 72)
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS),

@@ -25,6 +25,8 @@ Fan state/speed changes can cause motion and automation reactions. Consumer
 coverage is incomplete; that disclosure does not itself prohibit an exact,
 owner-requested action. Verification establishes Home Assistant's reported
 state and exact requested percentage, not independent physical feedback.
+One HA fan entity can represent integration-defined groups or consumers; this
+wrapper does not independently enumerate their physical effects.
 Integration quantization is not rounded into success. There is no automatic
 restoration or rollback: reconcile first, then obtain a separate owner request
 for an exact restoration action if needed.
@@ -75,7 +77,9 @@ whether an action completed. Bounded responses retain reconciliation identities
 and point to supported task retrieval.
 
 Active owners take precedence over recovery. Owner loss before intent cancels
-without dispatch; after intent, recovery reads only. Verification has a
+without dispatch; after intent, recovery reads only. A declaration visible before
+its executor claims ownership remains pending until the original operation ID
+expires; this prevents another process from cancelling still-authorized work. Verification has a
 180-second evidence deadline and six observation/verification attempts. A late
 or unresolved outcome becomes manual review and retains conflict protection;
 there is no automated second action or lock override. External actors can still

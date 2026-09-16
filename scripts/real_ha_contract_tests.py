@@ -853,7 +853,10 @@ async def _wait_for_writer_fixture(
         fixture_entities = [
             item
             for item in entities
-            if isinstance(item, dict) and item.get("platform") == FIXTURE_PLATFORM
+            if isinstance(item, dict)
+            and item.get("platform") == FIXTURE_PLATFORM
+            and isinstance(item.get("entity_id"), str)
+            and item["entity_id"].startswith("switch.")
         ]
         device_ids = {
             item.get("device_id") for item in fixture_entities if item.get("device_id")

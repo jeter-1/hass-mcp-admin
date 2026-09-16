@@ -180,6 +180,7 @@ class RC1PublicContractTests(unittest.TestCase):
                         *V2_1A_BETA2_ADDITIVE_TOOL_NAMES,
                         *F1_ADDITIVE_TOOL_NAMES,
                         "run_held_read_canary",
+                        "control_fan",
                         "create_dashboard_update_plan",
                         "create_helper_state_plan",
                     )

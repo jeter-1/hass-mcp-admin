@@ -214,6 +214,12 @@ class FanService:
             return self.receipt(task_id)
         record = self.executions.get(task_id)
         if record is None:
+            # A declaration can be visible before its executor claims ownership
+            # in another process. Defer while its original authorization window
+            # could still be valid. Once expired, no fresh dispatch can consume
+            # that request, so cancellation cannot interrupt authorized work.
+            if prepared.request.is_fresh(self.now()):
+                return self.receipt(task_id)
             # Claim only to persist cancellation of an ownerless declaration.
             # This path never invokes an adapter or acquires dispatch authority.
             identity = ExecutionIdentity(task_id, None, task_id, uuid.uuid4().hex, uuid.uuid4().hex)

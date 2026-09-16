@@ -794,6 +794,41 @@ class RealHomeAssistantF2RunnerTests(unittest.IsolatedAsyncioTestCase):
         cls.contract = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.contract)
 
+    async def test_migration_writer_keeps_two_switches_with_separate_fan_fixture(self):
+        switches = [
+            {"platform": self.contract.FIXTURE_PLATFORM,
+             "entity_id": f"switch.synthetic_{slot}", "device_id": "synthetic-composite"}
+            for slot in ("a", "b")
+        ]
+        fan = {"platform": self.contract.FIXTURE_PLATFORM,
+               "entity_id": "fan.hamcp_contract_fan", "device_id": None}
+        devices = [{"id": "synthetic-composite"}]
+        command = AsyncMock(side_effect=[switches + [fan], devices])
+        with patch.object(self.contract.asyncio, "sleep", new=AsyncMock()) as sleep:
+            selected, observed = await self.contract._wait_for_writer_fixture(
+                SimpleNamespace(command=command)
+            )
+        self.assertEqual(selected, switches)
+        self.assertEqual(observed, devices)
+        self.assertEqual(command.await_count, 2)
+        sleep.assert_not_awaited()
+
+    async def test_migration_writer_still_refuses_missing_switch(self):
+        entities = [
+            {"platform": self.contract.FIXTURE_PLATFORM,
+             "entity_id": "switch.synthetic_a", "device_id": "synthetic-composite"},
+            {"platform": self.contract.FIXTURE_PLATFORM,
+             "entity_id": "fan.hamcp_contract_fan", "device_id": None},
+        ]
+        command = AsyncMock(return_value=entities)
+        with patch.object(self.contract.asyncio, "sleep", new=AsyncMock()) as sleep:
+            with self.assertRaisesRegex(RuntimeError, "composite device"):
+                await self.contract._wait_for_writer_fixture(SimpleNamespace(command=command))
+        self.assertEqual(command.await_count, 60)
+        self.assertEqual(sleep.await_count, 60)
+        self.assertTrue(all(c.args[0]["type"] == "config/entity_registry/list"
+                            for c in command.await_args_list))
+
     async def _capture_f2_failure(self, gateway):
         no_traces = SimpleNamespace(headers=[])
         with patch.object(
