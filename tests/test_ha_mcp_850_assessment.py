@@ -87,6 +87,16 @@ class EvidenceTests(unittest.TestCase):
             with self.assertRaises(lane.Refusal):
                 lane.payload(value)
 
+    def test_state_uses_its_existing_metadata_envelope(self):
+        expected = {"data": {"entity_id": lane.FAN, "state": "off"}, "metadata": {}}
+        self.assertEqual(lane.payload({"structuredContent": expected}, "ha_get_state"), expected)
+        with self.assertRaises(lane.Refusal):
+            lane.payload({"structuredContent": expected}, "ha_call_service")
+        for invalid in ({"data": {}}, {"data": {"entity_id": "other", "state": "off"}},
+                        {**expected, "success": False}):
+            with self.assertRaises(lane.Refusal):
+                lane.payload({"structuredContent": invalid}, "ha_get_state")
+
     def test_existing_evidence_is_preserved(self):
         with tempfile.TemporaryDirectory() as name:
             folder = Path(name)

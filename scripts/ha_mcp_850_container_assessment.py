@@ -102,13 +102,22 @@ def checked_result(result):
     return value
 
 
-def payload(value):
+def payload(value, tool=None):
     require(not value.get("isError"), "upstream_tool_error")
     data = value.get("structuredContent")
     if not isinstance(data, dict):
         texts = [c["text"] for c in value.get("content", []) if c.get("type") == "text"]
         data = json.loads("\n".join(texts))
-    require(isinstance(data, dict) and data.get("success") is True, "upstream_result_unsuccessful")
+    require(isinstance(data, dict), "upstream_result_malformed")
+    if tool == "ha_get_state":
+        # This tool's actual 8.5.0 single-entity contract has data/metadata,
+        # with no top-level success flag. Keep the assertion tool-specific.
+        state = data.get("data")
+        require(isinstance(state, dict) and state.get("entity_id") == FAN
+                and isinstance(state.get("state"), str) and data.get("success") is not False,
+                "upstream_state_malformed")
+    else:
+        require(data.get("success") is True, "upstream_result_unsuccessful")
     return data
 
 
@@ -372,7 +381,7 @@ async def assess(architecture, output, private, identity, pins):
                         if success is None:
                             return raw
                         if success:
-                            return payload(raw)
+                            return payload(raw, name)
                         structured = raw.get("structuredContent")
                         require(raw.get("isError") is True or isinstance(structured, dict) and structured.get("success") is False, "expected_tool_refusal")
                         return raw
