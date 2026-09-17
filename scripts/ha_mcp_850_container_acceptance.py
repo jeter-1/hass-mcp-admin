@@ -611,7 +611,7 @@ def main():
     output = runner / (identity + "-evidence")
     output.mkdir(mode=0o700)
     private = Path(tempfile.mkdtemp(prefix=identity + "-private-", dir=runner))
-    receipt = {"started_at": now(), "status": "FAILED", "source": os.environ.get("GITHUB_SHA"), "assessment_base": pins["assessment_source"], "architecture": args.architecture, "production_access": False, "signing": "ephemeral_Core_test_key_only", "candidate_runtime_exercised": True}
+    receipt = {"started_at": now(), "status": "FAILED", "source": os.environ.get("GITHUB_SHA"), "assessment_base": pins["assessment_source"], "architecture": args.architecture, "production_access": False, "signing": "ephemeral_Core_test_key_only", "scope": "candidate_runtime_with_disposable_containers"}
     failed = False
     try:
         async def bounded():
@@ -637,6 +637,8 @@ def main():
         # Root-owned Core files are removed by the job's fixed runner-temp cleanup.
         for name in ("standalone.env", "addon.env"):
             (private / name).unlink(missing_ok=True)
+        receipt["completed_candidate_variants"] = [kind for kind in ("standalone", "addon")
+            if (output / (kind + "-candidate-result.json")).is_file()]
         receipt["finished_at"] = now()
         if failed:
             receipt["status"] = "FAIL"
