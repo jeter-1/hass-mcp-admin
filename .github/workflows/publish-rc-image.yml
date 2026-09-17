@@ -312,6 +312,8 @@ jobs:
         shell: bash
         env:
           CURRENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          COMPLETE_CI_RESULT: ${{ needs.validate.result }}
+          SOURCE_VALIDATION_RECEIPT: ${{ needs.validate.outputs.source_validation }}
           DETECTED_EXPECTED_VERSION: ${{ needs.detect-release.outputs.expected_version }}
           DETECTED_RECOVERY_BUILD_TIME: ${{ needs.detect-release.outputs.recovery_build_time }}
           DETECTED_RECOVERY_RUN_ID: ${{ needs.detect-release.outputs.recovery_run_id }}
@@ -511,9 +513,24 @@ jobs:
             --expected-version "$version" \
             --deployed-version "$deployed_version"
           python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests
-          # Historical stable-v1 behavior modules intentionally do not match
-          # the Engineering test*.py discovery pattern.
-          python -m unittest discover -s tests -v
+          # Use the current protected verifier even when recovery selects an
+          # older release source without this helper. Missing/failed/mismatched
+          # same-run evidence refuses publication, rather than weakening CI.
+          validation_verifier="$RUNNER_TEMP/publication-validation.py"
+          git show "${TRIGGER_SHA}:scripts/publication_validation.py" > "$validation_verifier"
+          validation_mode="$(python "$validation_verifier" decide \
+            --repo-root . --installed-lock "$RUNNER_TEMP/release-validation.lock")"
+          if [[ "$validation_mode" == "validate_release_source" ]]; then
+            # Historical stable-v1 behavior modules intentionally do not match
+            # the Engineering test*.py discovery pattern.
+            python -m unittest discover -s tests -v
+          elif [[ "$validation_mode" == "reuse_same_run" ]]; then
+            echo "Reusing exact-source full discovery from this run's successful complete CI."
+          else
+            echo "::error::Unknown source-validation disposition."
+            exit 1
+          fi
+          echo "full_suite_validation=$validation_mode" >> "$GITHUB_OUTPUT"
           git diff --check "$validation_base..HEAD"
 
           {

@@ -230,6 +230,25 @@ packaging uses its existing Docker builds. Fixture regeneration and generated
 registry comparison finish inside the prerequisite job and require no transfer
 to later workers. No built image or validation result is reused from another run.
 
+Publication may reuse the successful full unittest discovery from its own
+completed reusable CI call. `scripts/publication_validation.py` binds the job
+output to the repository, run and attempt, caller workflow/ref/commit, event,
+tested source commit/tree, Python version, both dependency locks and the verifier
+and workflow files. The publisher requires complete CI success independently,
+checks the lock actually selected for its dependency installation, and requires a
+clean release checkout at that same commit. Missing, malformed, failed, skipped,
+canceled or mismatched evidence refuses publication; it is not permission to
+replace complete CI with an isolated test run. This receipt is trusted job output
+within the existing protected workflow, not an independent signature.
+
+When historical recovery selects a different release commit, full discovery runs
+on that checkout even if its tree happens to match. The verifier is loaded from
+the current protected workflow-authority commit, so an older release need not
+contain it. Release metadata, ancestry, staging, version, artifact-absence, image
+and provenance guards still run. The publisher records whether discovery was
+reused or executed; reuse must not be counted as a second test execution. Actual
+wall-time savings require a subsequent authorized publication observation.
+
 Explicit limits are 15 minutes for prerequisites, 40 for unit discovery, 30 for
 packaging and 10 for matrix preparation. These allow headroom over the inspected
 successful pre-change CI run 34798268513: about 16 minutes for unit discovery and
