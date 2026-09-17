@@ -1,0 +1,86 @@
+name: Isolated ha-mcp 8.5.0 assessment
+
+on:
+  push:
+    branches: [assessment/ha-mcp-8.5.0-container-validation]
+
+permissions:
+  contents: read
+
+# Isolated assessment only; never participates in merge/publication authority.
+concurrency:
+  group: ha-mcp-850-assessment-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  exact-containers:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify unchanged Engineering and delivery boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code 1e503411095fcab3b29c95e7f88bdfcb83ae1c72 HEAD -- \
+            hass_mcp_engineering_beta hass_mcp_admin upstream-trust .release \
+            .github/workflows/ci.yml .github/workflows/publish-rc-image.yml
+          git rev-parse HEAD 'HEAD^{tree}'
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: homeassistant-ai/ha-mcp
+          ref: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+          path: .upstream-850
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+        with:
+          python-version: '3.12.14'
+      - name: Install reviewed Engineering client dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all:
+          --index-url https://pypi.org/simple -r tests/requirements.lock
+      - name: Assess published images and synthetic Core fixtures
+        env:
+          ASSESSMENT_ARCH: ${{ matrix.architecture }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python scripts/ha_mcp_850_container_assessment.py --architecture "$ASSESSMENT_ARCH"
+      - name: Always reconcile owned container cleanup
+        if: ${{ always() }}
+        env:
+          ASSESSMENT_ARCH: ${{ matrix.architecture }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ha_mcp_850_container_assessment.py --cleanup --architecture "$ASSESSMENT_ARCH"
+      - name: Remove disposable private runner files
+        if: ${{ always() }}
+        env:
+          ASSESSMENT_ARCH: ${{ matrix.architecture }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$ASSESSMENT_ARCH" == amd64 || "$ASSESSMENT_ARCH" == arm64 ]]
+          prefix="h850-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASSESSMENT_ARCH-private-"
+          # Only this run's synthetic, root-owned Core storage. Never upload it.
+          find "$RUNNER_TEMP" -mindepth 1 -maxdepth 1 -type d -name "$prefix*" -exec sudo rm -rf -- {} +
+      - name: Retain bounded assessment evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ha-mcp-850-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/h850-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.architecture }}-evidence/*.json
+          if-no-files-found: error
+          retention-days: 14
