@@ -763,9 +763,23 @@ jobs:
           cmp \
             "$RUNNER_TEMP/upstream-contract-capture-1.json" \
             "$RUNNER_TEMP/upstream-contract-capture-2.json"
-          cmp \
-            "$RUNNER_TEMP/upstream-contract-capture-1.json" \
-            "docs/evidence/upstream-read-compatibility/ha-mcp-${UPSTREAM_VERSION}.json"
+          if [[ "$UPSTREAM_VERSION" == "8.5.0" ]]; then
+            python - "$RUNNER_TEMP/upstream-contract-capture-1.json" <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "scripts")
+          from exact_image_read_gateway_acceptance import verify_850_gateway_fixture_capture
+          verify_850_gateway_fixture_capture(
+              json.loads(Path(sys.argv[1]).read_text()),
+              json.loads(Path("docs/evidence/upstream-read-compatibility/ha-mcp-8.5.0.json").read_text()),
+          )
+          PY
+          else
+            cmp \
+              "$RUNNER_TEMP/upstream-contract-capture-1.json" \
+              "docs/evidence/upstream-read-compatibility/ha-mcp-${UPSTREAM_VERSION}.json"
+          fi
       - name: Upload bounded exact-image result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

@@ -478,6 +478,13 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
                 "candidate_blueprint_write_reachable")
         missing = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic_missing"}))
         require(missing.get("success") is False, "candidate_missing_state_not_refused")
+        missing_automation = json.loads(await tools["ha_config_get_automation"].run(
+            {"identifier": "synthetic_missing_automation"}))
+        save(output, kind + "-candidate-missing-automation.json", missing_automation)
+        require(missing_automation.get("success") is False
+                and missing_automation.get("details", {}).get("failure_category") == "automation_not_found"
+                and missing_automation["metadata"]["fallback_occurred"] is False,
+                "candidate_empty_registry_automation_error")
         good = json.loads(await tools["ha_get_state"].run({"entity_id": FAN}))
         require(good.get("success") is True, "candidate_valid_read_after_error")
 

@@ -192,6 +192,51 @@ class ExactAddonProfileTests(unittest.TestCase):
         with self.assertRaises(addon_acceptance.AcceptanceFailure):
             addon_acceptance._select_exact_addon_profile("8.1.2")
 
+    def _850_fixture_capture(self):
+        reviewed = json.loads((ROOT / "docs/evidence/upstream-read-compatibility/ha-mcp-8.5.0.json").read_text())
+        captured = json.loads(json.dumps(reviewed))
+        captured["error_shapes"]["missing_automation"]["shape_fingerprint"] = "965faf0ef1864aad32d79da308763a92f024cf2d70cde40344832e76dbe85ba5"
+        return captured, reviewed
+
+    def test_850_fixture_error_preserves_both_captures(self):
+        captured, reviewed = self._850_fixture_capture()
+        before = json.dumps([captured, reviewed], sort_keys=True)
+        gateway_acceptance.verify_850_gateway_fixture_capture(captured, reviewed)
+        self.assertEqual(json.dumps([captured, reviewed], sort_keys=True), before)
+        self.assertEqual(gateway_acceptance.EXPECTED_ERROR_SHAPE_FINGERPRINTS["missing_automation"].get(
+            "8.5.0", gateway_acceptance.EXPECTED_ERROR_SHAPE_FINGERPRINTS["missing_automation"]["legacy"]),
+            captured["error_shapes"]["missing_automation"]["shape_fingerprint"])
+
+    def test_850_fixture_error_refuses_other_error_contract_changes(self):
+        for shape, key, value in (("missing_automation", "shape_fingerprint", "a" * 64),
+                                  ("missing_automation", "structured_code", "SERVICE_CALL_FAILED"),
+                                  ("missing_automation", "is_error", False),
+                                  ("missing_state", "shape_fingerprint", "b" * 64)):
+            captured, reviewed = self._850_fixture_capture()
+            captured["error_shapes"][shape][key] = value
+            with self.subTest(shape=shape, key=key), self.assertRaises(gateway_acceptance.AcceptanceFailure):
+                gateway_acceptance.verify_850_gateway_fixture_capture(captured, reviewed)
+
+    def test_850_fixture_error_does_not_relax_catalog_or_identity(self):
+        for change in ("descriptor", "count", "identity"):
+            captured, reviewed = self._850_fixture_capture()
+            if change == "descriptor":
+                captured["tools"][0]["description"] += " drift"
+            elif change == "count":
+                captured["tool_count"] -= 1
+            else:
+                captured["server_version"] = "8.5.1"
+            with self.subTest(change=change), self.assertRaises(gateway_acceptance.AcceptanceFailure):
+                gateway_acceptance.verify_850_gateway_fixture_capture(captured, reviewed)
+
+    def test_850_fixture_error_requires_the_exact_reviewed_reference(self):
+        captured, reviewed = self._850_fixture_capture()
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure):
+            gateway_acceptance.verify_850_gateway_fixture_capture(reviewed, reviewed)
+        reviewed["error_shapes"]["missing_automation"]["shape_fingerprint"] = "c" * 64
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure):
+            gateway_acceptance.verify_850_gateway_fixture_capture(captured, reviewed)
+
     def test_gateway_acceptance_requires_exact_dashboard_disposition(self):
         self.assertEqual(
             gateway_acceptance.expected_dashboard_attestation_status(

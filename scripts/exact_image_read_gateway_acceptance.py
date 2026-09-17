@@ -516,7 +516,6 @@ EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
         ),
     },
     "missing_automation": {
-        "8.5.0": "8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3",
         "legacy": (
             "965faf0ef1864aad32d79da308763a92f024cf2d70cde40344832e76dbe85ba5"
         ),
@@ -567,6 +566,26 @@ class AcceptanceFailure(RuntimeError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AcceptanceFailure(message)
+
+
+def verify_850_gateway_fixture_capture(captured: dict, reviewed: dict) -> None:
+    """Require the exact capture, accounting only for the owned fixture's one ID.
+
+    Upstream 311d6dc tools_config_automations.py:_raise_automation_not_found
+    includes available_automation_ids. The reviewed real-Core registry had no
+    automations; this gateway fixture contains automation.gateway_fixture.
+    Keep both observations intact and reject every other contract difference.
+    """
+    require(reviewed.get("server_version") == "8.5.0", "fixture reference version changed")
+    expected = json.loads(json.dumps(reviewed))
+    error = expected["error_shapes"]["missing_automation"]
+    require(error == {
+        "is_error": True,
+        "structured_code": "RESOURCE_NOT_FOUND",
+        "shape_fingerprint": "8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3",
+    }, "reviewed empty-registry error contract changed")
+    error["shape_fingerprint"] = EXPECTED_ERROR_SHAPE_FINGERPRINTS["missing_automation"]["legacy"]
+    require(captured == expected, "exact gateway fixture capture changed")
 
 
 def _exception_leaves(exc: BaseException) -> list[BaseException]:
