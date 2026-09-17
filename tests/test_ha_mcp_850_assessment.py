@@ -42,6 +42,12 @@ class GuardTests(unittest.TestCase):
         with self.assertRaises(lane.Refusal):
             lane.execution_guard(self.env, "arm/v7")
 
+    def test_relay_import_at_its_actual_root_mount(self):
+        namespace = {"__name__": "relay_import_probe", "__file__": "/assessment.py"}
+        source = (ROOT / "scripts/ha_mcp_850_container_assessment.py").read_text()
+        exec(compile(source, "/assessment.py", "exec"), namespace)
+        self.assertEqual(namespace["ROOT"], Path("/"))
+
 
 class CatalogTests(unittest.TestCase):
     def test_complete_multiple_pages(self):
@@ -129,6 +135,24 @@ class EvidenceTests(unittest.TestCase):
 class CleanupTests(unittest.TestCase):
     identity = "h850-1234-1-amd64"
 
+    def test_diagnostics_export_only_selected_markers(self):
+        def fake(*args, **kwargs):
+            if args[0] == "logs":
+                return subprocess.CompletedProcess([], 0, "PermissionError SYNTHETIC_SECRET arbitrary message", "")
+            value = self.identity if ".Config.Labels" in args[2] else json.dumps({"Running": False, "ExitCode": 1, "OOMKilled": False})
+            return subprocess.CompletedProcess([], 0, value, "")
+        with patch.object(lane, "docker", side_effect=fake):
+            result = lane.startup_diagnostics(self.identity)
+            self.assertEqual(len(result), 4)
+            self.assertTrue(all(r["known_markers"] == ["permission_error"] for r in result))
+            self.assertNotIn("SYNTHETIC_SECRET", json.dumps(result))
+
+    def test_diagnostics_refuse_foreign_resources(self):
+        with patch.object(lane, "docker", return_value=subprocess.CompletedProcess([], 0, "foreign", "")) as docker:
+            with self.assertRaises(lane.Refusal):
+                lane.startup_diagnostics(self.identity)
+            self.assertEqual(docker.call_count, 1)
+
     def test_invalid_resource_names_never_reach_docker(self):
         with patch.object(lane, "docker") as docker:
             with self.assertRaises(lane.Refusal):
@@ -185,6 +209,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertNotIn("secrets.", rendered)
         self.assertNotIn("packages: write", rendered)
         self.assertNotIn("workflow_dispatch", rendered)
+        installer = next(s["run"] for s in job["steps"] if s.get("name") == "Install reviewed Engineering client dependencies")
+        self.assertIn("-r hass_mcp_engineering_beta/requirements.lock", installer)
+        self.assertIn("--require-hashes --only-binary=:all:", installer)
 
     def test_inputs_are_digest_pinned_and_complete(self):
         pins = json.loads(lane.PINS.read_bytes())

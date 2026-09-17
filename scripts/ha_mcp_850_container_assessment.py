@@ -22,7 +22,8 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = Path(__file__).resolve().parents[1]
+# The relay is mounted as /assessment.py; parent.parent is also valid there.
+ROOT = Path(__file__).resolve().parent.parent
 PINS = ROOT / "tests/fixtures/ha_mcp_850_assessment.json"
 BRANCH = "refs/heads/assessment/ha-mcp-8.5.0-container-validation"
 CORE_URL = "http://127.0.0.1:18123"
@@ -133,6 +134,27 @@ def resource_names(identity):
     require(re.fullmatch(r"h850-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
+
+
+def startup_diagnostics(identity):
+    """Selected facts only. Never export logs or arbitrary exception text."""
+    markers = {"Traceback (most recent call last)": "traceback_present",
+               "PermissionError": "permission_error", "Read-only file system": "read_only_filesystem",
+               "ModuleNotFoundError": "missing_module", "IndexError": "index_error",
+               "Address already in use": "address_in_use", "exec format error": "wrong_executable_format"}
+    result = []
+    for name in resource_names(identity):
+        owner = docker("inspect", "--format", '{{index .Config.Labels "' + LABEL + '"}}', name, check=False)
+        if owner.returncode:
+            continue
+        require(owner.stdout.strip() == identity, "diagnostic_owner_mismatch")
+        state = json.loads(docker("inspect", "--format", "{{json .State}}", name).stdout)
+        logs = docker("logs", "--tail", "80", name, check=False)
+        text = logs.stdout + logs.stderr
+        result.append({"resource": name, "running": state["Running"], "exit_code": state["ExitCode"],
+                       "oom_killed": state["OOMKilled"],
+                       "known_markers": sorted(label for marker, label in markers.items() if marker in text)})
+    return result
 
 
 def cleanup(identity):
@@ -463,6 +485,11 @@ def main():
         receipt["failure_category"] = str(error) if isinstance(error, Refusal) else type(error).__name__
         receipt["phase"] = PHASE
     finally:
+        if failed:
+            try:
+                receipt["diagnostics"] = startup_diagnostics(identity)
+            except BaseException:
+                receipt["diagnostics_unavailable"] = True
         try:
             receipt["cleanup"] = cleanup(identity)
         except BaseException as error:

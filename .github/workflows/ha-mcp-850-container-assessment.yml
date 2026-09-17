@@ -50,7 +50,7 @@ jobs:
       - name: Install reviewed Engineering client dependencies
         run: >-
           python -m pip --isolated install --require-hashes --only-binary=:all:
-          --index-url https://pypi.org/simple -r tests/requirements.lock
+          --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
       - name: Assess published images and synthetic Core fixtures
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
