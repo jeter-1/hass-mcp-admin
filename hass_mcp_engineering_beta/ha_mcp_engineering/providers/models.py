@@ -14,6 +14,7 @@ class ProviderCapability(str, Enum):
     BROAD_ENTITY_SEARCH = "broad_entity_search"
     AREA_LOOKUP = "area_lookup"
     SERVICE_DISCOVERY = "service_discovery"
+    TYPED_FAN_EXECUTION = "typed_fan_execution"
     ORDINARY_SERVICE_EXECUTION = "ordinary_service_execution"
     TEMPLATE_RENDER = "template_render"
     HISTORY_READ = "history_read"

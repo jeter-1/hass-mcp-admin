@@ -74,6 +74,15 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
+        "tool": "control_fan", "category": "ordinary_runtime_action",
+        "status": "beta_native", "risk": "physical_action", "additive": True,
+        "operation_class": "typed_fan", "routing": "engineering_native",
+        "provider": "upstream_typed_fan", "fallback": "none",
+        "policy": "authenticated_exact_fan_operation",
+        "external_approval_required": False, "direct_write_allowed": False,
+        "verification": "exact_ha_state_and_percentage",
+    },
+    {
         "tool": "run_held_read_canary",
         "category": "verification",
         "status": "beta_native",
@@ -339,6 +348,19 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "control_fan",
+        "capability": "typed_fan_execution",
+        "required_semantics": "One exact fan action under authenticated connector authority, durable ownership and independent state/percentage verification.",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained",
+        "direct_ha_coverage": "not_used",
+        "selected_provider": "upstream_typed_fan",
+        "completeness": "reported_state_only_physical_feedback_not_verified",
+        "fallback_policy": "none",
+        "security_justification": "A separate compiled Core 2026.9.2/ha-mcp 8.4.3 fan contract fixes target, service and arguments; generic services remain closed and uncertain dispatch is reconciled without replay.",
+        "trust_mode": "reviewed_argument_constrained",
+        "trust_profile": "core-2026.9.2-ha-mcp-8.4.3-single-fan-v1",
+    },
     {
         "tool": "list_dashboards",
         "capability": "dashboard_inventory",

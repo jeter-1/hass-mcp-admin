@@ -31,6 +31,7 @@ def settings_for(directory, **extra):
         ha_url="http://synthetic-ha.invalid", ha_token="synthetic-unused-token",
         access_secret=SECRET, port=8100,
         audit_path=str(Path(directory) / "audit.jsonl"),
+        governance_path=str(Path(directory) / "governance"),
         rate_limit_per_minute=1000, rate_limit_burst=100,
         destructive_services=frozenset(), **extra,
     )

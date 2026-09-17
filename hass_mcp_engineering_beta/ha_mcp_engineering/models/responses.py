@@ -95,7 +95,8 @@ _RECEIPT_FACTS = frozenset({
     "resource_id", "resource_type", "authoritative_lifecycle_field",
     "authoritative_verification_field", "status_is_legacy",
     "execution_request_id", "reason", "reason_code", "failure_category",
-    "diagnostic_code", "error_category",
+    "diagnostic_code", "error_category", "operation_id", "operation_hash",
+    "dispatch_intent_recorded", "redispatch_prohibited", "authorization",
 })
 
 
@@ -168,7 +169,9 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
         "plan_id", "plan_hash", "task_id", "task_state", "status", "outcome",
         "terminal_outcome", "provider_dispatch_occurred", "redispatch_performed",
         "verified", "plan_created", "reason", "provider", "fallback",
-        "fallback_occurred", "state", "provider_attempt_count", "dispatched_at"
+        "fallback_occurred", "state", "provider_attempt_count", "dispatched_at",
+        "operation_id", "operation_hash", "dispatch_intent_recorded",
+        "provider_response_received", "redispatch_prohibited"
     ) if key in body and not isinstance(body[key], (dict, list))}
     for key in ("plan_id", "plan_hash"):
         if key not in facts and key in plan:
@@ -184,7 +187,7 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
         facts["provider"] = operational["provider"]
     original_metadata = mapping(value.get("metadata"))
     routing = mapping(original_metadata.get("routing"))
-    for key in ("provider", "fallback", "fallback_occurred"):
+    for key in ("provider", "fallback", "fallback_occurred", "task_id", "operation_id", "operation_hash"):
         if key not in facts:
             if key in original_metadata:
                 facts[key] = original_metadata[key]

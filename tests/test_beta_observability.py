@@ -98,6 +98,7 @@ def settings(audit_path: str, **overrides) -> Settings:
         access_secret=SECRET,
         port=8100,
         audit_path=audit_path,
+        governance_path=str(Path(audit_path).parent / "governance"),
         rate_limit_per_minute=120,
         rate_limit_burst=25,
         destructive_services=frozenset(),
@@ -724,7 +725,7 @@ class GatewayAndHealthTests(unittest.TestCase):
         self.assertTrue(payload["success"])
         health = payload["data"]
         self.assertEqual(health["server"]["version"], SERVER_VERSION)
-        self.assertEqual(health["registered_tool_count"], 51)
+        self.assertEqual(health["registered_tool_count"], 52)
         helper_provider = health["governance"][
             "operational_administration"
         ]["helper_state_provider"]

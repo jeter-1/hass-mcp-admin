@@ -30,6 +30,7 @@ class HealthRegistry:
     upstream_dashboard: Any = None
     upstream_read_gateway: Any = None
     core_readmission: Any = None
+    fan_operations: Any = None
 
     def configure(
         self,
@@ -46,6 +47,7 @@ class HealthRegistry:
         upstream_dashboard=None,
         upstream_read_gateway=None,
         core_readmission=None,
+        fan_operations=None,
     ) -> None:
         self.settings = settings
         self.audit = audit
@@ -61,6 +63,7 @@ class HealthRegistry:
         self.upstream_dashboard = upstream_dashboard
         self.upstream_read_gateway = upstream_read_gateway
         self.core_readmission = core_readmission
+        self.fan_operations = fan_operations
 
     def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
         metrics = METRICS.snapshot()
@@ -69,6 +72,7 @@ class HealthRegistry:
             "runtime": "home_assistant_addon" if self.settings and self.settings.ha_url == "http://supervisor/core" else "standalone",
             "uptime_seconds": metrics["uptime_seconds"],
             "home_assistant": ha_connection,
+            "ordinary_fan": (self.fan_operations.health() if self.fan_operations else {"configured": False}),
             "latency": {
                 "mcp_operations": metrics["mcp_operation_latency"],
                 "tools": metrics["tool_latency"],
