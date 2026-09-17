@@ -12,6 +12,13 @@ CORE_VERSION = "2026.9.2"
 CORE_SOURCE = "33c3e0cca60e73a8c4970ee677d75b8bc6464cdf"
 CORE_FAN_SOURCE_SHA256 = "cfe36916625e40c89b395d091de87ad4230f78b854a4b126e99e2aa287731a19"
 FAN_CONTRACT = "core-2026.9.2-ha-mcp-8.4.3-single-fan-v1"
+# The historical constant remains the exact beta.1 writer contract.
+FAN_RELEASES = {
+    "8.4.3": ("ha-mcp-v8.4.3-d5cea47a", "eac7a3aa7063432e9af17e7d7726040e909c7b8f", FAN_CONTRACT),
+    "8.5.0": ("ha-mcp-v8.5.0-e1538bcd", "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+              "core-2026.9.2-ha-mcp-8.5.0-single-fan-v1"),
+}
+FAN_CONTRACTS = tuple(item[2] for item in FAN_RELEASES.values())
 PROVIDER = "upstream_typed_fan"
 CORE_REQUIREMENTS = (
     "core.direct_entity_state_read", "core.state_service_discovery",

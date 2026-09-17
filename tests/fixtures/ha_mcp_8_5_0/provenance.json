@@ -1,0 +1,9 @@
+{
+  "source_commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+  "assessment_commit": "bde748c66b57dc696821c05c768b2a8b574a0db0",
+  "run": 35261708885,
+  "attempt": 1,
+  "artifact": "ha-mcp-850-amd64-35261708885-1",
+  "synthetic_only": true,
+  "read_results": "Unmodified decoded selected call receipts, reserialized as one test fixture. Exact original bytes remain in CI artifacts. No household data."
+}

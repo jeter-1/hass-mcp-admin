@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .probe_profiles import CoreProbeProfile, compiled_probe_profile
+from .probe_profiles import CoreProbeProfile, compiled_probe_profile, CHILD_DEVICE_PROBE_PROFILE
 
 
 DEVICE_DEPENDENT_DELEGATED_TOOLS = frozenset(
@@ -71,6 +71,7 @@ DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_eval_template": ("core.template_semantics",),
     "ha_get_automation_traces": ("core.automation_trace_read",),
     "ha_get_blueprint": ("core.basic_websocket_read",),
+    "ha_manage_blueprints": ("core.basic_websocket_read",),
     "ha_get_device": ("core.delegated_device_effective_area",),
     "ha_get_entity": ("core.delegated_device_effective_area",),
     "ha_get_entity_exposure": ("core.delegated_device_effective_area",),
@@ -163,6 +164,11 @@ def delegated_provider_compatibility(
         or probe_profile is None
         or not probe_profile.strict_device_registry
     ):
+        return True, None
+    # The reviewed 8.5.0 adapter preserves child-device/effective-area semantics.
+    # Keep the signed Core profile and its fingerprint byte-for-byte unchanged;
+    # this exact provider binding is binary-owned, not new Core authority.
+    if adapter_version == "8.5.0" and probe_profile == CHILD_DEVICE_PROBE_PROFILE:
         return True, None
     if adapter_version in probe_profile.delegated_device_adapters:
         return True, None

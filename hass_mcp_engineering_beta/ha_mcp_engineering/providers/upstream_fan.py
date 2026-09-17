@@ -1,4 +1,4 @@
-"""Fixed fan-only wrapper over one exact reviewed ha-mcp release.
+"""Fixed fan-only wrapper over a closed set of exact reviewed ha-mcp releases.
 
 This does not admit ha_call_service into the generic read gateway. In particular,
 wait=False excludes the component fallback in ha-mcp's waited service path.
@@ -9,7 +9,7 @@ import asyncio
 import json
 from ..clients.upstream_read import McpReadGatewayTransport
 from ..configuration import parse_upstream_dashboard_endpoint
-from ..fan.contracts import FanRequest, FanRefusal, checked_state, digest
+from ..fan.contracts import FanRequest, FanRefusal, FAN_RELEASES, checked_state, digest
 from ..request_context import current_telemetry
 from ..upstream_tool_policy import load_reviewed_upstream_release_registry, validate_reviewed_release_catalog
 from ..version import SERVER_VERSION
@@ -32,13 +32,15 @@ class FanProvider:
         ) if endpoint else None
         return cls(transport, gateway.fan_provider_authority_token)
 
-    def validate_catalog(self, catalog):
+    def validate_catalog(self, catalog, expected_contract=None):
         registry = load_reviewed_upstream_release_registry()
         release = registry.by_version.get(catalog.server_version)
-        if (catalog.server_name != "ha-mcp" or catalog.server_version != "8.4.3"
+        selected = FAN_RELEASES.get(catalog.server_version)
+        if (catalog.server_name != "ha-mcp" or selected is None
                 or catalog.protocol_version != "2025-03-26" or release is None
                 or catalog.catalog_complete is not True
-                or release.revoked or release.entry_id != ENTRY or release.source_commit != SOURCE
+                or release.revoked or release.entry_id != selected[0] or release.source_commit != selected[1]
+                or (expected_contract is not None and expected_contract != selected[2])
                 or release.provider_disposition("read_gateway") != "admitted"):
             raise FanRefusal("fan_provider_identity_unavailable")
         result = validate_reviewed_release_catalog(
@@ -48,7 +50,11 @@ class FanProvider:
         )
         if not result.valid:
             raise FanRefusal("fan_provider_contract_mismatch")
-        return self.authority_token()
+        return (catalog.server_version, selected[2], self._authority(catalog.server_version))
+
+    def _authority(self, version):
+        # Retain the original callback calling convention for existing users.
+        return self.authority_token() if version == "8.4.3" else self.authority_token(version)
 
     @staticmethod
     def decode(raw):
@@ -58,63 +64,64 @@ class FanProvider:
             raise FanRefusal("fan_provider_response_oversized")
         value = raw.get("structuredContent")
         if not isinstance(value, dict):
-            # This exact release uses structured content. Never parse arbitrary
+            # Both exact releases use structured content. Never parse arbitrary
             # text as a substitute for its reviewed envelope.
             raise FanRefusal("fan_provider_response_malformed")
         return value
 
-    async def _call(self, tool, args, before):
+    async def _call(self, tool, args, before, *, expected_contract=None):
         if self.transport is None:
             raise FanRefusal("fan_provider_unconfigured")
         token = None
         def validate(catalog):
             nonlocal token
-            token = self.validate_catalog(catalog)
+            token = self.validate_catalog(catalog, expected_contract)
         async def dispatch():
-            if token is None or self.authority_token() != token:
+            if token is None or self._authority(token[0]) != token[2]:
                 raise FanRefusal("fan_provider_authority_retired")
             await before()
-            if self.authority_token() != token:
+            if self._authority(token[0]) != token[2]:
                 raise FanRefusal("fan_provider_authority_retired")
         async with asyncio.timeout(20):
             value = await self.transport.execute_read(
                 tool, args, timeout_seconds=15,
                 catalog_validator=validate, before_dispatch=dispatch,
             )
-        if token is None or self.authority_token() != token:
+        if token is None or self._authority(token[0]) != token[2]:
             raise FanRefusal("fan_provider_authority_retired")
         telemetry = current_telemetry()
         if telemetry:
             telemetry.audit_context.update(provider="upstream_typed_fan", fallback="none")
             telemetry.record_provider_outcome("complete")
-        return self.decode(value.call_result)
+        return self.decode(value.call_result), token[1]
 
-    async def state(self, entity_id, authorize):
+    async def state(self, entity_id, authorize, *, contract=None):
         async def before():
             authorize()
-        value = await self._call("ha_get_state", {
+        value, _ = await self._call("ha_get_state", {
             "entity_id": entity_id,
             "fields": ["entity_id", "state", "attributes", "last_updated"],
             "attribute_keys": ["percentage", "supported_features"],
-        }, before)
+        }, before, expected_contract=contract)
         return checked_state(value.get("data"), entity_id)
 
-    async def services(self, request, authorize):
+    async def services(self, request, authorize, *, contract=None):
         async def before():
             authorize()
-        value = await self._call("ha_list_services", {
+        value, selected = await self._call("ha_list_services", {
             "domain": "fan", "limit": 50, "offset": 0, "detail_level": "summary",
-        }, before)
+        }, before, expected_contract=contract)
         services = value.get("services")
         if (value.get("success") is not True or not isinstance(services, dict)
                 or "fan." + request.action not in services):
             raise FanRefusal("fan_service_unavailable")
+        return selected
 
-    async def dispatch(self, request, before):
+    async def dispatch(self, request, before, *, contract=None):
         # Revalidate at the provider boundary: no caller-supplied mapping gets
         # forwarded, even if the caller bypassed the MCP schema.
         request = FanRequest.model_validate(request.model_dump()).checked()
-        value = await self._call("ha_call_service", request.arguments(), before)
+        value, _ = await self._call("ha_call_service", request.arguments(), before, expected_contract=contract)
         if value.get("success") is not True:
             raise FanRefusal("fan_action_not_acknowledged")
         return digest({"acknowledged": True})

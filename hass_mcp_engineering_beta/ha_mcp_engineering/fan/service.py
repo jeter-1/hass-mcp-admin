@@ -21,7 +21,7 @@ from ..f3.models import ExecutionIdentity, ExecutorTiming, LockTiming, parse_tim
 from ..request_context import current_telemetry
 from .adapter import FanAdapter, prepare_record
 from .authority import FanCoreAuthority
-from .contracts import FAN_CONTRACT, PROVIDER, FanRefusal, FanRequest, digest
+from .contracts import FAN_CONTRACTS, PROVIDER, FanRefusal, FanRequest, digest
 from .locks import FanLockStore
 from .audit import FanExecutionRepository
 
@@ -70,10 +70,16 @@ class FanService:
         request = FanRequest.model_validate(value["request"]).checked()
         if request.task_id != task_id:
             raise FanRefusal("fan_receipt_corrupt")
-        prepared = prepare_record(request, value["baseline"])
-        if prepared.prepared_operation_hash != value["prepared_hash"]:
+        # No storage migration or relabeling: recover the exact contract from
+        # the original writer's hash over a closed set of compiled projections.
+        matches = []
+        for contract in FAN_CONTRACTS:
+            prepared = prepare_record(request, value["baseline"], contract)
+            if prepared.prepared_operation_hash == value["prepared_hash"]:
+                matches.append(prepared)
+        if len(matches) != 1:
             raise FanRefusal("fan_receipt_corrupt")
-        return prepared
+        return matches[0]
 
     def save(self, prepared):
         request = prepared.request
@@ -208,7 +214,7 @@ class FanService:
             "task_id": task_id, "operation_id": prepared.request.operation_id,
             "operation_hash": prepared.prepared_operation_hash,
             "authorization": "authenticated_connector", "provider": PROVIDER,
-            "provider_contract": FAN_CONTRACT, "fallback": "none",
+            "provider_contract": prepared.provider_contract, "fallback": "none",
             "entity_id": prepared.request.entity_id, "action": prepared.request.action,
             "percentage": prepared.request.percentage,
             "state": record.task_state if record else "created",

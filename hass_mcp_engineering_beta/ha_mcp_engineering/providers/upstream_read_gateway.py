@@ -79,10 +79,17 @@ from ..upstream_tool_policy import (
     load_reviewed_upstream_release_registry,
     load_upstream_tool_policy,
     runtime_annotation_fingerprint,
+    read_annotation_fingerprint,
     runtime_contract_field_fingerprints,
     runtime_contract_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
+)
+from .upstream_blueprint import (
+    is_blueprint_adapter, public_schema as blueprint_public_schema,
+    read_arguments as blueprint_read_arguments,
+    validate_result as validate_blueprint_result,
+    completeness as blueprint_completeness,
 )
 from .ha_2026_8_device_compatibility import (
     CompositeDeviceCompatibilityError,
@@ -105,6 +112,7 @@ HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1 = (
     "ha-mcp-hacs-info-top-level-success-v1"
 )
 _REVIEWED_SUCCESS_ENVELOPE_MODELS = {
+    ("8.5.0", REVIEWED_PROTOCOL_VERSION, "ha_get_hacs_info"): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
     (
         "8.1.0",
         REVIEWED_PROTOCOL_VERSION,
@@ -236,6 +244,7 @@ _UPSTREAM_DOMAIN_OUTCOMES = {
     ("ha_config_get_scene", "ENTITY_NOT_FOUND"): "entity_not_found",
     ("ha_config_get_script", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_blueprint", "RESOURCE_NOT_FOUND"): "resource_not_found",
+    ("ha_manage_blueprints", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_device", "ENTITY_NOT_FOUND"): "entity_not_found",
     ("ha_get_device", "RESOURCE_NOT_FOUND"): "resource_not_found",
     ("ha_get_entity", "ENTITY_NOT_FOUND"): "entity_not_found",
@@ -301,6 +310,19 @@ _EXPECTED_PROVIDER_OUTCOMES = {
 }
 
 
+def _public_read_schema(entry, observed):
+    schema = blueprint_public_schema(entry, observed)
+    # Preserve the shipped public descriptor. This exact upstream schema differs
+    # only in one example; raw descriptor validation still binds all its bytes.
+    if (entry.upstream_name == "ha_get_overview" and
+            entry.input_schema_fingerprint ==
+            "2623c1ff0b2739ce7bc7ac360dfb0a0f17c5379b79e92a4a1a2d0fe0bbb7c408"):
+        description = schema["properties"]["fields"]["description"]
+        schema["properties"]["fields"]["description"] = description.replace(
+            '["system_info", "domain_stats"]', '["system_info", "domains"]', 1)
+    return schema
+
+
 class ReviewedUpstreamReadTool(Tool):
     """FastMCP tool whose advertised and validated schema is the reviewed schema."""
 
@@ -329,7 +351,7 @@ class ReviewedUpstreamReadTool(Tool):
         # The exact schema is reviewed separately; descriptive or annotation
         # content advertised by the remote peer cannot weaken the read boundary.
         annotations = ToolAnnotations(
-            title=entry.upstream_name,
+            title=entry.exposed_name if is_blueprint_adapter(entry) else entry.upstream_name,
             readOnlyHint=entry.reviewed_annotations.read_only,
             destructiveHint=entry.reviewed_annotations.destructive,
             idempotentHint=entry.reviewed_annotations.idempotent,
@@ -348,7 +370,7 @@ class ReviewedUpstreamReadTool(Tool):
             fn=base.fn,
             name=base.name,
             description=base.description,
-            parameters=deepcopy(observed_tool["inputSchema"]),
+            parameters=_public_read_schema(entry, observed_tool["inputSchema"]),
             fn_metadata=base.fn_metadata,
             is_async=True,
             context_kwarg=None,
@@ -356,7 +378,7 @@ class ReviewedUpstreamReadTool(Tool):
         )
         tool._gateway = gateway
         tool._entry = entry
-        tool._schema = deepcopy(observed_tool["inputSchema"])
+        tool._schema = _public_read_schema(entry, observed_tool["inputSchema"])
         tool._admission_generation = admission_generation
         tool._contract_fingerprint = contract_fingerprint
         return tool
@@ -2316,7 +2338,8 @@ class UpstreamReadGateway:
             require_exact_order and expected_order_fingerprint is not None
         )
         catalog_structure_invalid = (
-            exact_catalog_order_required and catalog_has_invalid_structure
+            catalog.catalog_complete is not True
+            or (exact_catalog_order_required and catalog_has_invalid_structure)
         )
         catalog_order_invalid = (
             exact_catalog_order_required
@@ -2335,10 +2358,10 @@ class UpstreamReadGateway:
         for entry in selected_policy.tools:
             observed = observed_reviewed.get(entry.upstream_name, [])
             if not observed:
-                if entry.classification == "automatic_read":
+                if entry.is_read_route:
                     missing_reviewed_reads.append(entry.upstream_name)
                 continue
-            if entry.classification == "automatic_read":
+            if entry.is_read_route:
                 if catalog_structure_invalid or catalog_order_invalid:
                     reference = _compare_tool_contract(
                         entry,
@@ -2618,7 +2641,7 @@ class UpstreamReadGateway:
             mapping = self._exposed.get(exposed_name)
             if (
                 not mapping
-                or mapping.entry.classification != "automatic_read"
+                or not mapping.entry.is_read_route
                 or mapping.entry.upstream_name != policy_entry.upstream_name
                 or mapping.generation != admission_generation
                 or mapping.contract_fingerprint != contract_fingerprint
@@ -2643,6 +2666,12 @@ class UpstreamReadGateway:
         )
         if errors:
             raise _GatewayFailure("argument_validation", dispatched=False)
+        dispatch_arguments = dict(arguments)
+        if is_blueprint_adapter(policy_entry):
+            try:
+                dispatch_arguments = blueprint_read_arguments(arguments)
+            except ValueError:
+                raise _GatewayFailure("argument_validation", dispatched=False) from None
         if transport is None:
             raise _GatewayFailure("not_configured", dispatched=False)
 
@@ -2653,6 +2682,11 @@ class UpstreamReadGateway:
 
             def validate_live_catalog(catalog: McpReadCatalog) -> None:
                 lease.validator_ran = True
+                if catalog.catalog_complete is not True:
+                    self._advance_live_observation_epoch()
+                    live_contract_failure.update(
+                        disposition="surface_retired", reason="catalog_incomplete")
+                    raise DashboardTransportError("schema_mismatch")
                 with self._lock:
                     route_is_current = (
                         self._exposed.get(exposed_name) is mapping
@@ -2987,7 +3021,7 @@ class UpstreamReadGateway:
 
             exchange = await transport.execute_read(
                 policy_entry.upstream_name,
-                dict(arguments),
+                dispatch_arguments,
                 timeout_seconds=policy_entry.timeout_seconds,
                 catalog_validator=validate_live_catalog,
                 before_dispatch=commit_live_route,
@@ -3101,6 +3135,11 @@ class UpstreamReadGateway:
                 protocol_version=mapping.protocol_version,
                 upstream_tool=policy_entry.upstream_name,
             )
+            if is_blueprint_adapter(policy_entry):
+                try:
+                    validate_blueprint_result(payload, arguments)
+                except ValueError:
+                    raise _GatewayFailure("invalid_response", dispatched=True) from None
             response_adapter = None
             if policy_entry.upstream_name == "ha_get_device":
                 if telemetry is None:
@@ -4547,21 +4586,23 @@ class UpstreamReadGateway:
             if self._state["last_discovery_failure_category"] is None:
                 self._state["last_failure_category"] = None
 
-    def fan_provider_authority_token(self) -> str:
+    def fan_provider_authority_token(self, version="8.4.3") -> str:
         """Current deny-aware exact provider identity for a separate fan contract.
 
         Pure-read admission is not a fan grant. The fan wrapper owns the new
         binary contract and validates the complete catalog on its own session.
         """
-        from ..fan.contracts import FanRefusal, digest
+        from ..fan.contracts import FanRefusal, FAN_RELEASES, digest
         with self._lock:
-            release = self._release_registry.by_version.get("8.4.3") if self._release_registry else None
+            release = self._release_registry.by_version.get(version) if self._release_registry else None
+            if version not in FAN_RELEASES:
+                raise FanRefusal("fan_provider_authority_unavailable")
             if release is None or release.revoked or release.provider_disposition("read_gateway") != "admitted":
                 raise FanRefusal("fan_provider_authority_unavailable")
             if self._readmission_selector is None:
                 return digest({"compiled": release.entry_id, "policy": release.policy_sha256})
             selection = self._readmission_selector.select(
-                server_name="ha-mcp", version="8.4.3", protocol_version="2025-03-26",
+                server_name="ha-mcp", version=version, protocol_version="2025-03-26",
             )
             if not selection.authority.decisions or any(
                 item.status.value != "positive" for item in selection.authority.decisions
@@ -4902,8 +4943,8 @@ def _compare_tool_contract(
         "runtime_fingerprint": reviewed_runtime_annotation_fingerprint,
         "published_policy": published_annotations,
     }
-    observed_annotation_fingerprint = runtime_annotation_fingerprint(
-        observed_tool.get("annotations")
+    observed_annotation_fingerprint = read_annotation_fingerprint(
+        entry, observed_tool.get("annotations")
     )
     observed_annotations = {
         "runtime_fingerprint": observed_annotation_fingerprint,
@@ -4914,7 +4955,8 @@ def _compare_tool_contract(
         observed_tool.get("description")
     )
     behavior_adapter = (
-        "ha_search_partial_v1"
+        "ha-mcp-8.5.0-blueprint-list-get-v1"
+        if is_blueprint_adapter(entry) else "ha_search_partial_v1"
         if entry.upstream_name == "ha_search"
         else "bounded_opaque_read_v1"
     )
@@ -5033,7 +5075,7 @@ def _compare_tool_contract(
         != reviewed_runtime_contract_fingerprint
     ):
         reason = "runtime_contract_mismatch"
-    elif entry.classification != "automatic_read":
+    elif not entry.is_read_route:
         reason = "security_classification_mismatch"
     elif protocol_version not in SUPPORTED_PROTOCOLS:
         reason = "unsupported_protocol_version"
@@ -5830,6 +5872,8 @@ def _upstream_completeness(
 ) -> tuple[bool, list[str]]:
     """Preserve ha_search's reviewed top-level semantic completeness signal."""
 
+    if is_blueprint_adapter(policy_entry):
+        return blueprint_completeness(payload)
     if policy_entry.upstream_name != "ha_search":
         return False, []
     if not isinstance(payload, dict) or not isinstance(payload.get("partial"), bool):

@@ -105,6 +105,17 @@ _LEGACY_ERROR_PROBES = (
 )
 _ERROR_ADAPTERS = (
     _BinaryErrorContractAdapter(
+        adapter_id="ha_mcp_error_contract_8_5_0_v1",
+        aggregate_fingerprint="4ed5b1b4c0aaad0036b4625206e96739b40fc83ec1c944754fef1ed667a10437",
+        probes=(
+            _BinaryErrorProbeContract('invalid_search', 'ha_search', 'VALIDATION_FAILED', 'fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939'),
+            _BinaryErrorProbeContract('missing_state', 'ha_get_state', 'ENTITY_NOT_FOUND', '8a705d923e27b7f0bd5675c49b972697874db226303b0ad8e159b83793f1950c'),
+            _BinaryErrorProbeContract('missing_automation', 'ha_config_get_automation', 'RESOURCE_NOT_FOUND', '8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3'),
+            _BinaryErrorProbeContract('missing_registry_entity', 'ha_get_entity', 'SERVICE_CALL_FAILED', '3e1148ad27428880af39facca3605d530996850931d3e55c5d908f69ecc2d9c8'),
+        ),
+    ),
+
+    _BinaryErrorContractAdapter(
         adapter_id="ha_mcp_error_contract_7_14_1_through_8_2_0_v1",
         aggregate_fingerprint=(
             "b1134b2e121e7f1827970ef5c7bac7f9437272e1c0a030d458167f9c2b2d0a9b"
@@ -385,9 +396,13 @@ class HaMcpAuthoritySelector:
     ) -> tuple[ReviewedUpstreamRelease, CapabilityProfile] | None:
         if entry is None:
             return None
-        return self._by_policy_binding.get(
-            (entry.policy_resource, entry.policy_sha256)
-        )
+        selected = self._by_policy_binding.get((entry.policy_resource, entry.policy_sha256))
+        if selected is not None and any(
+            item.is_read_route and item.classification != "automatic_read"
+            for item in selected[0].policy.tools
+        ) and entry.version != selected[0].version:
+            return None
+        return selected
 
 
 def signed_entry_to_expiry(
@@ -431,7 +446,11 @@ def observation_for_catalog(
         elif name in by_name and name in contracts:
             safe_id = name
             entry = by_name[name]
-            kind = _capability_kind(entry.classification)
+            # Authority covers the compiled list/get projection, never generic
+            # dispatch of the mixed upstream tool. Its raw classification and
+            # closed argument restrictions remain in the contract fingerprint.
+            kind = (CapabilityKind.ORDINARY_READ if entry.is_read_route
+                    else _capability_kind(entry.classification))
             contract = _observed_contract_fingerprint(
                 tool=raw,
                 policy_entry=entry,
@@ -502,7 +521,7 @@ def _profile_for_release(
             ),
         )
         for entry in policy.tools
-        if entry.classification == "automatic_read"
+        if entry.is_read_route
     )
     digest_id = release.policy_sha256.removeprefix("sha256:")[:16]
     return CapabilityProfile(
@@ -526,7 +545,7 @@ def _expected_contract_fingerprint(
         {
             "model": CONTRACT_MODEL,
             "tool_name": tool_name,
-            "classification": "automatic_read",
+            "classification": release_contract.policy_classification,
             "argument_restrictions": list(argument_restrictions),
             "input_schema_fingerprint": (
                 release_contract.input_schema_fingerprint
@@ -662,9 +681,10 @@ def _signed_matching_capabilities(
             )
         )
         if (
-            remote.policy_classification == "automatic_read"
-            and remote.reviewed_automatic_read
-            and remote.quarantine_reason is None
+            remote.policy_classification == policy_entry.classification
+            and policy_entry.is_read_route
+            and remote.reviewed_automatic_read == known.reviewed_automatic_read
+            and remote.quarantine_reason == known.quarantine_reason
             and remote.input_schema_fingerprint
             == known.input_schema_fingerprint
             and remote.description_fingerprint

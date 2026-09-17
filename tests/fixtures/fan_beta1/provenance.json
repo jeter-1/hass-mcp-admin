@@ -1,0 +1,11 @@
+{
+  "source_commit": "1e503411095fcab3b29c95e7f88bdfcb83ae1c72",
+  "source_tree": "b587b3961261283a546eb3ef79a566e8a0c6eafa",
+  "writer": "fan.adapter.prepare_record + fan.service.FanService.save",
+  "synthetic": true,
+  "receipt_sha256": "09b7ed86104f07c47dbbaeb2afbc16e4c1dd6b2d40dd592a2e421a1f00104ef0",
+  "task_id": "9eb9cd7cff94a8a8143c2ce640e79765",
+  "generation": "Imported exact clean engineering-2.3.0-beta1-publication checkout; fixed synthetic request, baseline and clock; original save bytes preserved.",
+  "reproduction_script": "tests/fixtures/fan_beta1/generate.py",
+  "reproduction_script_sha256": "64ac44ad100f68db1b2a0f6c45cf653827ede86678775a0d4959ded798f2b3cb"
+}

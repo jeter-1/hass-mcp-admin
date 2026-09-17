@@ -197,7 +197,7 @@ def expected_contract_family(upstream_version: str) -> str:
     return (
         CONTRACT_FAMILY_V3
         if upstream_version
-        in {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3"}
+        in {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.5.0"}
         else CONTRACT_FAMILY
     )
 
