@@ -2856,14 +2856,24 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             {"ha_get_operation_status"},
         )
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 77)
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 26)
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 27)
         self.assertEqual(
             {
                 item.upstream_name
                 for item in policy.tools
                 if item.classification in {"automatic_read", "held_for_canary"}
             },
-            set(DELEGATED_CORE_REQUIREMENTS),
+            set(DELEGATED_CORE_REQUIREMENTS) - {"ha_manage_blueprints"},
+        )
+        current = registry.by_version["8.5.0"].policy
+        self.assertEqual(
+            {item.upstream_name for item in current.tools
+             if item.is_read_route or item.classification == "held_for_canary"},
+            set(DELEGATED_CORE_REQUIREMENTS) - {"ha_get_blueprint"},
+        )
+        self.assertEqual(
+            delegated_requirements("ha_manage_blueprints"),
+            delegated_requirements("ha_get_blueprint"),
         )
         self.assertEqual(
             DEVICE_DEPENDENT_DELEGATED_TOOLS,
@@ -2903,8 +2913,8 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         counts = json.loads(result.stdout)["tool_counts"]
-        self.assertEqual(counts["reviewed_upstream_version"], "8.4.3")
-        self.assertEqual(counts["reviewed_stock_catalog"], 78)
+        self.assertEqual(counts["reviewed_upstream_version"], "8.5.0")
+        self.assertEqual(counts["reviewed_stock_catalog"], 77)
         self.assertEqual(counts["expected_delegated_reads"], 25)
         self.assertEqual(counts["expected_connector_total"], 77)
 
