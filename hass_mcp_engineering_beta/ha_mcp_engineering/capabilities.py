@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .fan.contracts import CORE_VERSION, FAN_CONTRACTS, FAN_RELEASES
+
 from .version import (
     BUILD_DIRTY,
     BUILD_SHA,
@@ -357,9 +359,14 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "selected_provider": "upstream_typed_fan",
         "completeness": "reported_state_only_physical_feedback_not_verified",
         "fallback_policy": "none",
-        "security_justification": "A separate compiled Core 2026.9.2/ha-mcp 8.4.3 fan contract fixes target, service and arguments; generic services remain closed and uncertain dispatch is reconciled without replay.",
+        "security_justification": (
+            f"Separate compiled Core {CORE_VERSION}/ha-mcp "
+            f"{', '.join(FAN_RELEASES)} fan contracts fix target, service and arguments; "
+            "the execution receipt identifies the selected exact contract. Generic "
+            "services remain closed and uncertain dispatch is reconciled without replay."
+        ),
         "trust_mode": "reviewed_argument_constrained",
-        "trust_profile": "core-2026.9.2-ha-mcp-8.4.3-single-fan-v1",
+        "trust_profile": ", ".join(FAN_CONTRACTS),
     },
     {
         "tool": "list_dashboards",

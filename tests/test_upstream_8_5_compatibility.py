@@ -224,6 +224,26 @@ class Fan850Tests(fan.FanTests):
         self.assertEqual(self.transport.writes, 1)
         self.settled()
 
+    async def test_capability_metadata_covers_both_exact_execution_contracts(self):
+        from ha_mcp_engineering.capabilities import build_capability_catalog
+        row = next(x for x in build_capability_catalog()['provider_matrix']
+                   if x['tool'] == 'control_fan')
+        for version, (_, _, contract) in FAN_RELEASES.items():
+            with self.subTest(version=version):
+                self.transport.catalog = replace(
+                    self.transport.catalog, server_version=version,
+                    tools=tuple(capture(version)['tools']))
+                before = self.transport.writes
+                result = await self.call(self.request(percentage=66 if version == '8.4.3' else 33))
+                self.assertEqual(result['provider_contract'], contract)
+                self.assertEqual(result['state'], 'succeeded_verified')
+                self.assertEqual(self.transport.writes, before + 1)
+                self.settled()
+                self.assertIn(contract, row['trust_profile'])
+                self.assertIn(version, row['security_justification'])
+        self.assertEqual(row['fallback_policy'], 'none')
+        self.assertEqual(row['trust_mode'], 'reviewed_argument_constrained')
+
     async def test_provider_swap_between_prepare_and_dispatch_never_writes(self):
 
         async def change(tool):
