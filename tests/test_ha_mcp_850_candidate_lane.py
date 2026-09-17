@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -293,6 +294,25 @@ class CleanupTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_matrix_installs_locked_contract_dependencies_before_loading_registry(self):
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        steps = workflow["jobs"]["prepare_exact_image_matrix"]["steps"]
+        install = next(i for i, step in enumerate(steps)
+                       if step.get("name") == "Install reviewed registry runtime dependencies")
+        derive = next(i for i, step in enumerate(steps)
+                      if step.get("id") == "reviewed-registry")
+        self.assertLess(install, derive)
+        self.assertIn("--require-hashes --only-binary=:all:", steps[install]["run"])
+        self.assertIn("-r hass_mcp_engineering_beta/requirements.lock", steps[install]["run"])
+        result = subprocess.run([sys.executable, "scripts/review_upstream_read_release.py", "ci-matrix"],
+                                cwd=ROOT, text=True, capture_output=True, timeout=30)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        entries = json.loads(result.stdout)["include"]
+        self.assertEqual({entry["upstream_version"] for entry in entries},
+                         {"7.14.1", "7.14.2", "8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.5.0"})
+        candidate = next(entry for entry in entries if entry["upstream_version"] == "8.5.0")
+        self.assertEqual(candidate["source_commit"], "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
+
     def test_closed_scope_and_always_cleanup(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         self.assertEqual(workflow["permissions"], {"contents": "read"})

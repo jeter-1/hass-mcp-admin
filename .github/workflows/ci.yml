@@ -491,6 +491,14 @@ jobs:
       matrix: ${{ steps.reviewed-registry.outputs.matrix }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+        with:
+          python-version: "3.12.14"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
+      - name: Install reviewed registry runtime dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
       - name: Derive exact-image matrix from reviewed registry
         id: reviewed-registry
         shell: bash
