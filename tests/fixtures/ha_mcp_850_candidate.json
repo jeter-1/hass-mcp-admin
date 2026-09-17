@@ -1,0 +1,38 @@
+{
+  "upstream_source": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+  "upstream_tree": "e21f9674a057b6aa1d6168e22fabbeaee26a6a3c",
+  "skills_source": "196c134692cccde0de3c37b9d6533fa3b1946af9",
+  "core_image": "ghcr.io/home-assistant/home-assistant:2026.9.2@sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe",
+  "version": "8.5.0",
+  "standalone_index": "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
+  "images": {
+    "amd64": {
+      "standalone": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
+        "manifest": "sha256:dc12a5c532e050e143fa8bfe990136c226da7f7b412dae96977adf0fd1a06c76",
+        "configuration": "sha256:e8dcb498378d91c9558698999f22461003c71aa67b405b9c17a76b792c85f4a7",
+        "revision": "8182c6e6db68b37ae7041dec6dd4ade7b7356fb7"
+      },
+      "addon": {
+        "manifest": "sha256:11b8d4de18742cb4105519e35ff8cc117cce54117ac935ad30299304509d49ec",
+        "configuration": "sha256:689f233eec5f14e623539710d8b9f280e98fbc934a9624d55f39270918d69beb",
+        "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:5c3b2281d06869640c3f12ea23c19de0a25428cce72c912cf99a7657625d79bd"
+      }
+    },
+    "arm64": {
+      "standalone": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
+        "manifest": "sha256:f1891a5b6bc5570dcc9b2c97892fc247ee17516adb921ee79004a3c234e4016e",
+        "configuration": "sha256:075a8624c08f55663533e526c9d76b9f22e932b815b93eb29e50c5c38df4c56a",
+        "revision": "8182c6e6db68b37ae7041dec6dd4ade7b7356fb7"
+      },
+      "addon": {
+        "manifest": "sha256:d932097e3e95343ce0ab9bf252d07752db1b52c150ed42621b0dc19ebfbcf370",
+        "configuration": "sha256:343b54236510e445a1b6a59e8fda55c5643b1cd8493cc7047338075d1cbdbabd",
+        "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-aarch64@sha256:0c8b92c31a749db896e6268e37729a6fe658274dda1148a562d541b8705ea76b"
+      }
+    }
+  },
+  "assessment_source": "1e503411095fcab3b29c95e7f88bdfcb83ae1c72",
+  "assessment_provenance": "bde748c66b57dc696821c05c768b2a8b574a0db0"
+}

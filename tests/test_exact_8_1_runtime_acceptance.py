@@ -49,6 +49,26 @@ packaging_acceptance = _load_script("verify_ha_mcp_8_1_1_packaging")
 
 
 class ExactAddonProfileTests(unittest.TestCase):
+    def test_850_gateway_requires_the_closed_read_projection(self):
+        from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
+        policy = load_reviewed_upstream_release_registry().by_version["8.5.0"].policy
+        exposed = {entry.exposed_name for entry in policy.tools if entry.is_read_route}
+        self.assertEqual(len(exposed), 25)
+        self.assertIn("ha_get_blueprint", exposed)
+        self.assertNotIn("ha_manage_blueprints", exposed)
+        self.assertNotIn("ha_call_service", exposed)
+        self.assertEqual(policy.classification_counts,
+                         gateway_acceptance.EXPECTED_STOCK_COUNTS_BY_VERSION["8.5.0"])
+        self.assertTrue(exposed <= set(gateway_acceptance.DELEGATED_READ_CALLS)
+                        | {x["tool"] for x in gateway_acceptance.UPSTREAM_ERROR_CALLS.values()})
+        entry = policy.by_name["ha_manage_blueprints"]
+        self.assertEqual(entry.classification, "mixed_or_requires_wrapper")
+        raw = json.loads((ROOT / "docs/evidence/upstream-read-compatibility/ha-mcp-8.5.0.json").read_text())
+        tool = next(x for x in raw["tools"] if x["name"] == entry.upstream_name)
+        fingerprint = gateway_acceptance.read_annotation_fingerprint(entry, tool["annotations"])
+        self.assertEqual(fingerprint, policy.reviewed_runtime_annotation_fingerprints_by_name[entry.upstream_name])
+        self.assertIsNone(gateway_acceptance.read_annotation_fingerprint(
+            entry, {**tool["annotations"], "readOnlyHint": True}))
     def tearDown(self) -> None:
         addon_acceptance._select_exact_addon_profile("8.0.0")
         dashboard_authority_acceptance.select_exact_release("8.4.1")
@@ -510,7 +530,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "matrix.upstream_version == '8.1.1' || "
             "matrix.upstream_version == '8.2.0' || "
             "matrix.upstream_version == '8.4.1' || "
-            "matrix.upstream_version == '8.4.3')",
+            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')",
             workflow,
         )
         self.assertNotIn("--delete-branch", workflow)
@@ -710,6 +730,19 @@ def _teardown_worker_loop(loop):
 
 
 class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_850_readmission_requires_77_tools_and_exact_identity(self):
+        exact = self._exact_observed(upstream_version="8.5.0")
+        exact["gateway_health"]["observed_advertised_tool_count"] = 77
+        exact["gateway_health"]["reviewed_accounted_tool_count"] = 77
+        self.assertTrue(readmission.exact_readmission_observed(
+            exact, expected_upstream_version="8.5.0"))
+        for field, value in (("observed_advertised_tool_count", 78),
+                             ("selected_compatibility_entry_id", "ha-mcp-v8.4.3-d5cea47a"),
+                             ("fallback_count", 1)):
+            with self.subTest(field=field):
+                wrong = {**exact, "gateway_health": {**exact["gateway_health"], field: value}}
+                self.assertFalse(readmission.exact_readmission_observed(
+                    wrong, expected_upstream_version="8.5.0"))
     @staticmethod
     def _args(
         phase: str, *, expected_upstream_version: str = "8.1.0"

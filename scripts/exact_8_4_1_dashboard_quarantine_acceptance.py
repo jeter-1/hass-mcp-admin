@@ -64,6 +64,12 @@ EXACT_RELEASES: dict[str, dict[str, str]] = {
             "6d9198ed97c239390c565a532cd76a25c7bb0ad80625a709b820449af2eb78be"
         ),
     },
+    "8.5.0": {
+        "entry_id": "ha-mcp-v8.5.0-e1538bcd",
+        "source_commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+        "image_index_digest": "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
+        "attestation_fingerprint": "d3680a234ee1857e414a611001151ceeec216fb9e948bb8e12d08a79f80d2a26",
+    },
 }
 EXPECTED_DASHBOARD_TOOLS = {
     "ha_config_get_dashboard",
