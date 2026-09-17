@@ -18,6 +18,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -182,7 +183,15 @@ def cleanup(identity):
     return results
 
 
-async def run_relay():
+def relay_target(path, path_and_query):
+    if path == "/core/websocket":
+        return "http://core:8123/api/websocket"
+    if path == "/core/api" or path.startswith("/core/api/"):
+        return "http://core:8123" + path_and_query[len("/core"):]
+    return None
+
+
+def create_relay_app():
     """Synthetic /core forwarding inside an isolated, owned CI container."""
     import aiohttp
     from aiohttp import web
@@ -197,9 +206,9 @@ async def run_relay():
     async def forward(request):
         if request.path == "/_assessment/stats":
             return web.json_response(dict(stats))
-        if request.path != "/core/api" and not request.path.startswith("/core/api/"):
+        target = relay_target(request.path, request.rel_url.path_qs)
+        if target is None:
             raise web.HTTPNotFound()
-        target = "http://core:8123" + request.rel_url.path_qs[len("/core"):]
         if request.headers.get("Upgrade", "").lower() == "websocket":
             frontend = web.WebSocketResponse(max_msg_size=MAX_BYTES)
             async with app["client"].ws_connect(target, max_msg_size=MAX_BYTES) as backend:
@@ -239,13 +248,23 @@ async def run_relay():
                 require(len(data) <= MAX_BYTES, "relay_response_bound")
             return web.Response(status=response.status, body=bytes(data), headers={"Content-Type": response.headers.get("Content-Type", "application/json")})
     app.router.add_route("*", "/{path:.*}", forward)
+    return app
+
+
+async def run_relay():
+    from aiohttp import web
+    app = create_relay_app()
     runner = web.AppRunner(app, access_log=None)
     await runner.setup()
     await web.TCPSite(runner, "0.0.0.0", 80).start()
+    stopped = asyncio.Event()
+    loop = asyncio.get_running_loop()
+    loop.add_signal_handler(signal.SIGTERM, stopped.set)
     try:
-        await asyncio.Event().wait()
+        await stopped.wait()
     finally:
         await runner.cleanup()
+        loop.remove_signal_handler(signal.SIGTERM)
 
 
 async def wait_endpoint(url):

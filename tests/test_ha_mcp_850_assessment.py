@@ -1,5 +1,6 @@
 """Offline controls for the separate, synthetic exact-image assessment lane."""
 import importlib.util
+import asyncio
 import json
 from pathlib import Path
 import subprocess
@@ -79,6 +80,104 @@ class CatalogTests(unittest.TestCase):
 
     def test_512_tools_are_complete(self):
         self.assertEqual(len(lane.complete_catalog([{"tools": [{"name": str(i)} for i in range(512)]}])), 512)
+
+
+class RelayTests(unittest.IsolatedAsyncioTestCase):
+    """Actual relay HTTP/WS handlers with disposable loopback peers, never HA."""
+    async def asyncSetUp(self):
+        import aiohttp
+        from aiohttp import web
+        from aiohttp.test_utils import TestServer
+
+        self.body = b"synthetic-response\n" * 10000
+        backend = web.Application()
+        async def chunked(request):
+            response = web.StreamResponse(headers={"Content-Type": "application/octet-stream"})
+            await response.prepare(request)
+            for start in range(0, len(self.body), 4096):
+                await response.write(self.body[start:start + 4096])
+            await response.write_eof()
+            return response
+        async def service(request):
+            self.assertEqual(request.headers.get("Authorization"), "Bearer synthetic-only")
+            return web.json_response({"received": await request.json()})
+        async def websocket(request):
+            socket = web.WebSocketResponse()
+            await socket.prepare(request)
+            await socket.send_json({"type": "auth_required"})
+            self.assertEqual(await socket.receive_json(), {"type": "auth", "access_token": "synthetic-only"})
+            await socket.send_json({"type": "auth_ok"})
+            async for message in socket:
+                if message.type == aiohttp.WSMsgType.TEXT:
+                    await socket.send_str(message.data)
+            return socket
+        backend.router.add_get("/api/stream", chunked)
+        backend.router.add_post("/api/services/fan/turn_on", service)
+        backend.router.add_get("/api/websocket", websocket)
+        self.backend = TestServer(backend)
+        await self.backend.start_server()
+        self.relay = TestServer(lane.create_relay_app())
+        await self.relay.start_server()
+        original = self.relay.app["client"]
+        await original.close()
+        client = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3))
+        backend_url = self.backend.make_url
+        class MappedClient:
+            # Test-only transport substitution: runtime targets stay closed.
+            def url(self, target):
+                if not target.startswith("http://core:8123/"):
+                    raise AssertionError("Unexpected relay destination")
+                return backend_url(target[len("http://core:8123"):])
+            def request(self, method, target, **kwargs):
+                return client.request(method, self.url(target), **kwargs)
+            def ws_connect(self, target, **kwargs):
+                return client.ws_connect(self.url(target), **kwargs)
+            async def close(self):
+                await client.close()
+        self.relay.app["client"] = MappedClient()
+        self.front = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3))
+
+    async def asyncTearDown(self):
+        await self.front.close()
+        await self.relay.close()
+        await self.backend.close()
+
+    async def test_rest_reads_complete_chunked_response(self):
+        async with self.front.get(self.relay.make_url("/core/api/stream")) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.read(), self.body)
+
+    async def test_exact_service_route_and_count(self):
+        async with self.front.post(self.relay.make_url("/core/api/services/fan/turn_on"),
+                                   headers={"Authorization": "Bearer synthetic-only"},
+                                   json={"entity_id": lane.FAN}) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(await response.json(), {"received": {"entity_id": lane.FAN}})
+        async with self.front.get(self.relay.make_url("/_assessment/stats")) as response:
+            self.assertEqual((await response.json())["service_posts"], 1)
+
+    async def test_supervisor_websocket_route_auth_and_cleanup(self):
+        async with asyncio.timeout(5):
+            async with self.front.ws_connect(self.relay.make_url("/core/websocket")) as socket:
+                self.assertEqual(await socket.receive_json(), {"type": "auth_required"})
+                await socket.send_json({"type": "auth", "access_token": "synthetic-only"})
+                self.assertEqual(await socket.receive_json(), {"type": "auth_ok"})
+                command = {"id": 1, "type": "call_service", "domain": "fan"}
+                await socket.send_json(command)
+                self.assertEqual(await socket.receive_json(), command)
+            for _ in range(30):
+                async with self.front.get(self.relay.make_url("/_assessment/stats")) as response:
+                    stats = await response.json()
+                if stats.get("active_websockets") == 0:
+                    break
+                await asyncio.sleep(0)
+            self.assertEqual(stats["active_websockets"], 0)
+            self.assertEqual(stats["call_service"], 1)
+
+    async def test_unrelated_supervisor_routes_refuse(self):
+        for path in ("/addons/self/options", "/core/other", "/api/websocket", "/core/apiextra"):
+            async with self.front.get(self.relay.make_url(path)) as response:
+                self.assertEqual(response.status, 404)
 
 
 class EvidenceTests(unittest.TestCase):
