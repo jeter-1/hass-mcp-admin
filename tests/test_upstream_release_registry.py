@@ -49,6 +49,7 @@ POLICY_8111 = RUNTIME / "upstream_tool_policy_8_1_1.json"
 POLICY_8200 = RUNTIME / "upstream_tool_policy_8_2_0.json"
 POLICY_8410 = RUNTIME / "upstream_tool_policy_8_4_1.json"
 POLICY_8430 = RUNTIME / "upstream_tool_policy_8_4_3.json"
+POLICY_8500 = RUNTIME / "upstream_tool_policy_8_5_0.json"
 CAPTURE_DIRECTORY = (
     ROOT / "docs/evidence/upstream-read-compatibility"
 )
@@ -67,6 +68,7 @@ ARTIFACT_EVIDENCE_8410 = (
 ARTIFACT_EVIDENCE_8430 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.4.3-contract-review.json"
 )
+ARTIFACT_EVIDENCE_8500 = CAPTURE_DIRECTORY / "ha-mcp-8.5.0-contract-review.json"
 FAMILY_DECISION_8111 = (
     CAPTURE_DIRECTORY / "ha-mcp-8.1.1-family-decision.json"
 )
@@ -86,12 +88,10 @@ def captured_tools(version: str) -> list[dict]:
         )
     )
     tools = value["tools"]
-    if version in {"8.4.1", "8.4.3"}:
+    if version in {"8.4.1", "8.4.3", "8.5.0"}:
         review = json.loads(
             (
-                ARTIFACT_EVIDENCE_8410
-                if version == "8.4.1"
-                else ARTIFACT_EVIDENCE_8430
+                CAPTURE_DIRECTORY / f"ha-mcp-{version}-contract-review.json"
             ).read_text(encoding="utf-8")
         )
         order = review["runtime_catalog"]["runtime_tool_order"]
@@ -130,6 +130,7 @@ class RegistryFixture:
             POLICY_8200,
             POLICY_8410,
             POLICY_8430,
+            POLICY_8500,
             FAMILY_POLICY,
         ):
             shutil.copy2(path, self.runtime / path.name)
@@ -150,6 +151,7 @@ class RegistryFixture:
             "8.2.0",
             "8.4.1",
             "8.4.3",
+            "8.5.0",
         ):
             shutil.copy2(
                 CAPTURE_DIRECTORY / f"ha-mcp-{version}.json",
@@ -176,6 +178,7 @@ class RegistryFixture:
             ARTIFACT_EVIDENCE_8430,
             self.capture_directory / ARTIFACT_EVIDENCE_8430.name,
         )
+        shutil.copy2(ARTIFACT_EVIDENCE_8500, self.capture_directory / ARTIFACT_EVIDENCE_8500.name)
         self.dashboard_attestations = (
             self.runtime
             / "providers"
@@ -250,6 +253,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.2.0",
                 "8.4.1",
                 "8.4.3",
+                "8.5.0",
             ),
         )
         self.assertEqual(registry.default_version, "7.14.1")
@@ -258,8 +262,9 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             canonical_json(json.loads(REGISTRY.read_text())),
         )
         for release in registry.releases:
-            self.assertEqual(release.advertised_tool_count, 78)
-            self.assertEqual(len(release.tool_contracts), 78)
+            expected_tool_count = 77 if release.version == "8.5.0" else 78
+            self.assertEqual(release.advertised_tool_count, expected_tool_count)
+            self.assertEqual(len(release.tool_contracts), expected_tool_count)
             expected_automatic_reads = {
                 "7.14.1": 26,
                 "7.14.2": 26,
@@ -269,6 +274,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.2.0": 25,
                 "8.4.1": 25,
                 "8.4.3": 25,
+                "8.5.0": 25,
             }
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
@@ -285,6 +291,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                         "8.2.0",
                         "8.4.1",
                         "8.4.3",
+                        "8.5.0",
                     }
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
@@ -887,7 +894,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 {"description": tool["description"] + " reviewed drift"}
             ),
             "annotation_mismatch": lambda tool: tool["annotations"].update(
-                {"destructiveHint": True}
+                {"destructiveHint": not tool["annotations"].get("destructiveHint", False)}
             ),
             "output_contract_mismatch": lambda tool: tool.update(
                 {"outputSchema": {"type": "string"}}
@@ -902,7 +909,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
             automatic_names = {
                 entry.upstream_name
                 for entry in release.policy.tools
-                if entry.classification == "automatic_read"
+                if entry.is_read_route
             }
             expected_automatic_reads = {
                 "7.14.1": 26,
@@ -913,6 +920,7 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.2.0": 25,
                 "8.4.1": 25,
                 "8.4.3": 25,
+                "8.5.0": 25,
             }
             self.assertEqual(
                 len(automatic_names),

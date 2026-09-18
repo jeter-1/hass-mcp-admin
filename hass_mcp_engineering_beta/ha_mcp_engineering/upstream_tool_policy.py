@@ -69,6 +69,7 @@ REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
 # sequence to this fingerprint instead of treating alphabetical order as an
 # upstream contract.
 EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
+    "8.5.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
     "8.4.3": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
 }
@@ -358,6 +359,15 @@ def runtime_annotation_fingerprint(value: Any) -> str | None:
     ).hexdigest()
 
 
+def read_annotation_fingerprint(entry, value):
+    from .providers.upstream_blueprint import is_blueprint_adapter
+    if is_blueprint_adapter(entry):
+        expected = {"destructiveHint": True, "idempotentHint": False,
+                    "openWorldHint": True, "readOnlyHint": False, "title": "Manage Blueprints"}
+        return schema_fingerprint(value) if value == expected else None
+    return runtime_annotation_fingerprint(value)
+
+
 @dataclass(frozen=True)
 class ReviewedToolAnnotations:
     """Binary-owned MCP annotations reviewed with an exact upstream schema."""
@@ -401,6 +411,11 @@ class UpstreamToolPolicyEntry:
     timeout_seconds: float
     source_evidence: tuple[str, ...]
     reviewed_annotations: ReviewedToolAnnotations
+
+    @property
+    def is_read_route(self) -> bool:
+        from .providers.upstream_blueprint import is_blueprint_adapter
+        return self.classification == "automatic_read" or is_blueprint_adapter(self)
 
     @classmethod
     def from_mapping(cls, value: Any) -> "UpstreamToolPolicyEntry":
@@ -510,7 +525,7 @@ class UpstreamToolPolicy:
 
     @property
     def classification_counts(self) -> dict[str, int]:
-        counts = Counter(entry.classification for entry in self.tools)
+        counts = Counter("automatic_read" if entry.is_read_route else entry.classification for entry in self.tools)
         return {
             name: counts.get(name, 0)
             for name in sorted(CLASSIFICATIONS)
@@ -1241,6 +1256,13 @@ def load_upstream_tool_policy(
     if not isinstance(value["tools"], list) or not value["tools"]:
         raise UpstreamToolPolicyError("policy_tools_invalid")
     entries = tuple(UpstreamToolPolicyEntry.from_mapping(item) for item in value["tools"])
+    from .providers.upstream_blueprint import ADAPTER, SOURCE, VERSION, is_blueprint_adapter
+    for entry in entries:
+        if ADAPTER in entry.argument_restrictions and (
+            not is_blueprint_adapter(entry) or expected_version != VERSION
+            or expected_source_commit != SOURCE
+        ):
+            raise UpstreamToolPolicyError("policy_uncompiled_blueprint_adapter")
     if len(entries) != stock_tool_count:
         raise UpstreamToolPolicyError("policy_stock_catalog_count_invalid")
     names = [entry.upstream_name for entry in entries]
@@ -1261,7 +1283,7 @@ def load_upstream_tool_policy(
     automatic_names = {
         entry.upstream_name
         for entry in entries
-        if entry.classification == "automatic_read"
+        if entry.is_read_route
     }
     if (
         not isinstance(description_fingerprints, dict)
@@ -2613,7 +2635,7 @@ def generated_reviewed_release_registry(
         automatic_names = {
             entry.upstream_name
             for entry in release.policy.tools
-            if entry.classification == "automatic_read"
+            if entry.is_read_route
         }
         captured_by_name = {
             item["name"]: item for item in capture_value["tools"]
@@ -2632,8 +2654,8 @@ def generated_reviewed_release_registry(
             )
         if release.policy.reviewed_runtime_annotation_fingerprints_by_name != {
             name: (
-                runtime_annotation_fingerprint(
-                    captured_by_name[name].get("annotations")
+                read_annotation_fingerprint(
+                    release.policy.by_name[name], captured_by_name[name].get("annotations")
                 )
                 or ""
             )

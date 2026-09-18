@@ -67,6 +67,7 @@ def make_preread(
         "8.2.0": "ha-mcp-v8.2.0-dbcfc0ee",
         "8.4.1": "ha-mcp-v8.4.1-7823b365",
         "8.4.3": "ha-mcp-v8.4.3-d5cea47a",
+        "8.5.0": "ha-mcp-v8.5.0-e1538bcd",
     }[version]
     release = load_reviewed_upstream_release_registry().by_version[version]
     getter = release.tool_contracts_by_name["ha_config_get_dashboard"]

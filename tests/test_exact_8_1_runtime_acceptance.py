@@ -49,6 +49,26 @@ packaging_acceptance = _load_script("verify_ha_mcp_8_1_1_packaging")
 
 
 class ExactAddonProfileTests(unittest.TestCase):
+    def test_850_gateway_requires_the_closed_read_projection(self):
+        from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
+        policy = load_reviewed_upstream_release_registry().by_version["8.5.0"].policy
+        exposed = {entry.exposed_name for entry in policy.tools if entry.is_read_route}
+        self.assertEqual(len(exposed), 25)
+        self.assertIn("ha_get_blueprint", exposed)
+        self.assertNotIn("ha_manage_blueprints", exposed)
+        self.assertNotIn("ha_call_service", exposed)
+        self.assertEqual(policy.classification_counts,
+                         gateway_acceptance.EXPECTED_STOCK_COUNTS_BY_VERSION["8.5.0"])
+        self.assertTrue(exposed <= set(gateway_acceptance.DELEGATED_READ_CALLS)
+                        | {x["tool"] for x in gateway_acceptance.UPSTREAM_ERROR_CALLS.values()})
+        entry = policy.by_name["ha_manage_blueprints"]
+        self.assertEqual(entry.classification, "mixed_or_requires_wrapper")
+        raw = json.loads((ROOT / "docs/evidence/upstream-read-compatibility/ha-mcp-8.5.0.json").read_text())
+        tool = next(x for x in raw["tools"] if x["name"] == entry.upstream_name)
+        fingerprint = gateway_acceptance.read_annotation_fingerprint(entry, tool["annotations"])
+        self.assertEqual(fingerprint, policy.reviewed_runtime_annotation_fingerprints_by_name[entry.upstream_name])
+        self.assertIsNone(gateway_acceptance.read_annotation_fingerprint(
+            entry, {**tool["annotations"], "readOnlyHint": True}))
     def tearDown(self) -> None:
         addon_acceptance._select_exact_addon_profile("8.0.0")
         dashboard_authority_acceptance.select_exact_release("8.4.1")
@@ -171,6 +191,51 @@ class ExactAddonProfileTests(unittest.TestCase):
     def test_unknown_addon_acceptance_profile_fails_closed(self):
         with self.assertRaises(addon_acceptance.AcceptanceFailure):
             addon_acceptance._select_exact_addon_profile("8.1.2")
+
+    def _850_fixture_capture(self):
+        reviewed = json.loads((ROOT / "docs/evidence/upstream-read-compatibility/ha-mcp-8.5.0.json").read_text())
+        captured = json.loads(json.dumps(reviewed))
+        captured["error_shapes"]["missing_automation"]["shape_fingerprint"] = "965faf0ef1864aad32d79da308763a92f024cf2d70cde40344832e76dbe85ba5"
+        return captured, reviewed
+
+    def test_850_fixture_error_preserves_both_captures(self):
+        captured, reviewed = self._850_fixture_capture()
+        before = json.dumps([captured, reviewed], sort_keys=True)
+        gateway_acceptance.verify_850_gateway_fixture_capture(captured, reviewed)
+        self.assertEqual(json.dumps([captured, reviewed], sort_keys=True), before)
+        self.assertEqual(gateway_acceptance.EXPECTED_ERROR_SHAPE_FINGERPRINTS["missing_automation"].get(
+            "8.5.0", gateway_acceptance.EXPECTED_ERROR_SHAPE_FINGERPRINTS["missing_automation"]["legacy"]),
+            captured["error_shapes"]["missing_automation"]["shape_fingerprint"])
+
+    def test_850_fixture_error_refuses_other_error_contract_changes(self):
+        for shape, key, value in (("missing_automation", "shape_fingerprint", "a" * 64),
+                                  ("missing_automation", "structured_code", "SERVICE_CALL_FAILED"),
+                                  ("missing_automation", "is_error", False),
+                                  ("missing_state", "shape_fingerprint", "b" * 64)):
+            captured, reviewed = self._850_fixture_capture()
+            captured["error_shapes"][shape][key] = value
+            with self.subTest(shape=shape, key=key), self.assertRaises(gateway_acceptance.AcceptanceFailure):
+                gateway_acceptance.verify_850_gateway_fixture_capture(captured, reviewed)
+
+    def test_850_fixture_error_does_not_relax_catalog_or_identity(self):
+        for change in ("descriptor", "count", "identity"):
+            captured, reviewed = self._850_fixture_capture()
+            if change == "descriptor":
+                captured["tools"][0]["description"] += " drift"
+            elif change == "count":
+                captured["tool_count"] -= 1
+            else:
+                captured["server_version"] = "8.5.1"
+            with self.subTest(change=change), self.assertRaises(gateway_acceptance.AcceptanceFailure):
+                gateway_acceptance.verify_850_gateway_fixture_capture(captured, reviewed)
+
+    def test_850_fixture_error_requires_the_exact_reviewed_reference(self):
+        captured, reviewed = self._850_fixture_capture()
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure):
+            gateway_acceptance.verify_850_gateway_fixture_capture(reviewed, reviewed)
+        reviewed["error_shapes"]["missing_automation"]["shape_fingerprint"] = "c" * 64
+        with self.assertRaises(gateway_acceptance.AcceptanceFailure):
+            gateway_acceptance.verify_850_gateway_fixture_capture(captured, reviewed)
 
     def test_gateway_acceptance_requires_exact_dashboard_disposition(self):
         self.assertEqual(
@@ -510,7 +575,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "matrix.upstream_version == '8.1.1' || "
             "matrix.upstream_version == '8.2.0' || "
             "matrix.upstream_version == '8.4.1' || "
-            "matrix.upstream_version == '8.4.3')",
+            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')",
             workflow,
         )
         self.assertNotIn("--delete-branch", workflow)
@@ -710,6 +775,19 @@ def _teardown_worker_loop(loop):
 
 
 class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_850_readmission_requires_77_tools_and_exact_identity(self):
+        exact = self._exact_observed(upstream_version="8.5.0")
+        exact["gateway_health"]["observed_advertised_tool_count"] = 77
+        exact["gateway_health"]["reviewed_accounted_tool_count"] = 77
+        self.assertTrue(readmission.exact_readmission_observed(
+            exact, expected_upstream_version="8.5.0"))
+        for field, value in (("observed_advertised_tool_count", 78),
+                             ("selected_compatibility_entry_id", "ha-mcp-v8.4.3-d5cea47a"),
+                             ("fallback_count", 1)):
+            with self.subTest(field=field):
+                wrong = {**exact, "gateway_health": {**exact["gateway_health"], field: value}}
+                self.assertFalse(readmission.exact_readmission_observed(
+                    wrong, expected_upstream_version="8.5.0"))
     @staticmethod
     def _args(
         phase: str, *, expected_upstream_version: str = "8.1.0"

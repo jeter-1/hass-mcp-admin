@@ -32,6 +32,36 @@ UPSTREAM_RELEASE_VERSION_RE = re.compile(
 )
 
 
+def blueprint_read_projection_count(repo_root: Path, policy: dict[str, Any]) -> int:
+    """Report the compiled read projection without reclassifying its mixed provider.
+
+    This is an offline expectation, not admission or a provider authorization.
+    Read literal bindings from source so an absent adapter cannot count as a tool.
+    """
+    source = repo_root / "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_blueprint.py"
+    binding = {name: python_literal(source, name) for name in
+               ("VERSION", "SOURCE", "ADAPTER", "INPUT_FINGERPRINT")}
+    if not all(isinstance(value, str) and value for value in binding.values()):
+        return 0
+    if (policy.get("reviewed_upstream_version") != binding["VERSION"]
+            or policy.get("reviewed_source_commit") != binding["SOURCE"]):
+        return 0
+    tools = policy.get("tools")
+    if not isinstance(tools, list):
+        return 0
+    return sum(
+        1 for item in tools if isinstance(item, dict)
+        and item.get("classification") == "mixed_or_requires_wrapper"
+        and item.get("upstream_name") == "ha_manage_blueprints"
+        and item.get("exposed_name") == "ha_get_blueprint"
+        and item.get("input_schema_fingerprint") == binding["INPUT_FINGERPRINT"]
+        and item.get("argument_restrictions") == [binding["ADAPTER"]]
+        and isinstance(item.get("reviewed_annotations"), dict)
+        and item["reviewed_annotations"].get("readOnlyHint") is True
+        and item["reviewed_annotations"].get("destructiveHint") is False
+    )
+
+
 class ContextError(RuntimeError):
     """A required repository fact could not be determined."""
 
@@ -562,7 +592,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 1
                 for item in tools
                 if isinstance(item, dict) and item.get("classification") == "automatic_read"
-            )
+            ) + blueprint_read_projection_count(repo_root, policy)
             if isinstance(tools, list)
             else None
         )
@@ -712,7 +742,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
             "expected_delegated_reads": known(
                 delegated_count,
                 "expected_delegated_read_count",
-                f"{policy_path.as_posix()} automatic_read entries",
+                f"{policy_path.as_posix()} direct reads plus compiled read projections",
             ),
             "expected_connector_total": known(
                 total_count,
@@ -720,7 +750,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 f"{capabilities_path.as_posix()} plus {policy_path.as_posix()}",
             ),
             "expectation_note": (
-                "The connector total assumes every reviewed automatic-read contract matched "
+                "The connector total assumes every reviewed direct or compiled-adapter read contract matched "
                 "during the latest successful catalog evaluation; runtime admission is per-tool, "
                 "fail-closed, and may expose a smaller compatible subset."
             ),

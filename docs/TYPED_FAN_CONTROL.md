@@ -33,8 +33,11 @@ for an exact restoration action if needed.
 
 ## Provider and Core contract
 
-Only ha-mcp 8.4.3 (`ha-mcp-v8.4.3-d5cea47a`, protocol 2025-03-26) and the
-complete reviewed descriptor contract may serve this wrapper. The fixed
+Only ha-mcp 8.4.3 (`ha-mcp-v8.4.3-d5cea47a`) or exact 8.5.0
+(`ha-mcp-v8.5.0-e1538bcd`), protocol 2025-03-26, and the corresponding
+complete reviewed descriptor contract may serve this wrapper. The capability
+catalog describes the compiled family; each receipt identifies the selected
+exact contract. Historical receipts keep their original contract and hash. The fixed
 `ha_call_service` arguments contain `domain=fan`, one entity, the typed action,
 only its percentage data, `wait=false`, `return_response=false`, and
 `verbose=false`. The non-waited path avoids the upstream component fallback.
@@ -56,6 +59,11 @@ Source authority:
   `cfe36916625e40c89b395d091de87ad4230f78b854a4b126e99e2aa287731a19`.
 - ha-mcp `eac7a3aa7063432e9af17e7d7726040e909c7b8f`, service implementation
   SHA256 `3a8e95bc99287c999f71c3debc1dd1e5694b654de7c660db2c225a35c4efbe73`.
+
+The 8.5.0 source is `311d6dc273fb4e9a5b8cde0de15f69472a64fe44`;
+its separate compiled provider evidence and adoption limits are recorded in
+[8.5.0 compatibility](HA_MCP_8_5_0_COMPATIBILITY.md). Existing 8.4.3 source
+evidence above remains historical and does not identify the 8.5.0 binary.
 
 ## Execution, receipts and recovery
 

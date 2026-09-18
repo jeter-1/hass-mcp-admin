@@ -403,6 +403,30 @@ class ContextToolTests(unittest.TestCase):
         ):
             self.assertNotIn(forbidden, output)
 
+    def test_context_counts_only_the_compiled_blueprint_read_projection(self):
+        fixture = RepositoryFixture()
+        self.addCleanup(fixture.close)
+        runtime = "hass_mcp_engineering_beta/ha_mcp_engineering/"
+        policy = json.loads((ROOT / runtime / "upstream_tool_policy_8_5_0.json").read_text())
+        adapter_path = runtime + "providers/upstream_blueprint.py"
+        adapter_source = (ROOT / adapter_path).read_text()
+        fixture.write(runtime + "upstream_tool_policy.json", json.dumps(policy))
+
+        def count():
+            result = run([sys.executable, str(CONTEXT_SCRIPT), "--repo-root",
+                          str(fixture.root), "--format", "json"], cwd=fixture.root)
+            return json.loads(result.stdout)["tool_counts"]["expected_delegated_reads"]
+
+        self.assertEqual(count(), 24)  # Policy data without compiled code is not a wrapper.
+        fixture.write(adapter_path, adapter_source + "\nraise RuntimeError('must not execute')\n")
+        self.assertEqual(count(), 25)
+        blueprint = next(item for item in policy["tools"]
+                         if item["upstream_name"] == "ha_manage_blueprints")
+        self.assertEqual(blueprint["classification"], "mixed_or_requires_wrapper")
+        blueprint["argument_restrictions"] = ["uncompiled-wrapper"]
+        fixture.write(runtime + "upstream_tool_policy.json", json.dumps(policy))
+        self.assertEqual(count(), 24)
+
     def test_tool_counts_use_newest_exact_reviewed_policy_not_legacy_default(self):
         fixture = RepositoryFixture()
         try:

@@ -1,0 +1,181 @@
+{
+  "addon-call-04.json": {
+    "arguments": {
+      "action": "list",
+      "domain": "automation"
+    },
+    "result": {
+      "content": [
+        {
+          "text": "{\"success\":true,\"data\":{\"domain\":\"automation\",\"count\":1,\"blueprints\":[{\"path\":\"assessment/read.yaml\",\"domain\":\"automation\",\"name\":\"read\",\"description\":\"Synthetic offline fixture\",\"source_url\":null,\"author\":null}]}}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "structuredContent": {
+        "data": {
+          "blueprints": [
+            {
+              "author": null,
+              "description": "Synthetic offline fixture",
+              "domain": "automation",
+              "name": "read",
+              "path": "assessment/read.yaml",
+              "source_url": null
+            }
+          ],
+          "count": 1,
+          "domain": "automation"
+        },
+        "success": true
+      }
+    },
+    "tool": "ha_manage_blueprints"
+  },
+  "addon-call-05.json": {
+    "arguments": {
+      "action": "get",
+      "domain": "automation",
+      "path": "assessment/read.yaml"
+    },
+    "result": {
+      "content": [
+        {
+          "text": "{\"success\":true,\"data\":{\"path\":\"assessment/read.yaml\",\"domain\":\"automation\",\"name\":\"read\",\"metadata\":{\"name\":\"Assessment Read Fixture\",\"description\":\"Synthetic offline fixture\",\"source_url\":null,\"author\":null,\"domain\":\"automation\",\"homeassistant\":null},\"inputs\":{},\"config\":{\"blueprint\":{\"name\":\"Assessment Read Fixture\",\"description\":\"Synthetic offline fixture\",\"domain\":\"automation\",\"input\":{}},\"trigger\":[],\"condition\":[],\"action\":[]},\"yaml\":\"blueprint:\\n  name: Assessment Read Fixture\\n  description: Synthetic offline fixture\\n  domain: automation\\n  input: {}\\ntrigger: []\\ncondition: []\\naction: []\\n\",\"yaml_source\":\"component\",\"used_by\":[]}}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "structuredContent": {
+        "data": {
+          "config": {
+            "action": [],
+            "blueprint": {
+              "description": "Synthetic offline fixture",
+              "domain": "automation",
+              "input": {},
+              "name": "Assessment Read Fixture"
+            },
+            "condition": [],
+            "trigger": []
+          },
+          "domain": "automation",
+          "inputs": {},
+          "metadata": {
+            "author": null,
+            "description": "Synthetic offline fixture",
+            "domain": "automation",
+            "homeassistant": null,
+            "name": "Assessment Read Fixture",
+            "source_url": null
+          },
+          "name": "read",
+          "path": "assessment/read.yaml",
+          "used_by": [],
+          "yaml": "blueprint:\n  name: Assessment Read Fixture\n  description: Synthetic offline fixture\n  domain: automation\n  input: {}\ntrigger: []\ncondition: []\naction: []\n",
+          "yaml_source": "component"
+        },
+        "success": true
+      }
+    },
+    "tool": "ha_manage_blueprints"
+  },
+  "addon-call-07.json": {
+    "arguments": {
+      "entity_id": "sensor.assessment_missing"
+    },
+    "result": {
+      "content": [
+        {
+          "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"ENTITY_NOT_FOUND\",\n    \"message\": \"Entity 'sensor.assessment_missing' not found\",\n    \"details\": \"API error: 404 - Entity sensor.assessment_missing not found\",\n    \"suggestion\": \"Verify entity 'sensor.assessment_missing' exists in Home Assistant\",\n    \"suggestions\": [\n      \"Verify entity 'sensor.assessment_missing' exists in Home Assistant\",\n      \"Check Home Assistant connection\",\n      \"Use ha_search() to find correct entity IDs\"\n    ]\n  },\n  \"entity_id\": \"sensor.assessment_missing\"\n}",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    },
+    "tool": "ha_get_state"
+  },
+  "standalone-call-04.json": {
+    "arguments": {
+      "action": "list",
+      "domain": "automation"
+    },
+    "result": {
+      "content": [
+        {
+          "text": "{\"success\":true,\"data\":{\"domain\":\"automation\",\"count\":1,\"blueprints\":[{\"path\":\"assessment/read.yaml\",\"domain\":\"automation\",\"name\":\"read\",\"description\":\"Synthetic offline fixture\",\"source_url\":null,\"author\":null}]}}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "structuredContent": {
+        "data": {
+          "blueprints": [
+            {
+              "author": null,
+              "description": "Synthetic offline fixture",
+              "domain": "automation",
+              "name": "read",
+              "path": "assessment/read.yaml",
+              "source_url": null
+            }
+          ],
+          "count": 1,
+          "domain": "automation"
+        },
+        "success": true
+      }
+    },
+    "tool": "ha_manage_blueprints"
+  },
+  "standalone-call-05.json": {
+    "arguments": {
+      "action": "get",
+      "domain": "automation",
+      "path": "assessment/read.yaml"
+    },
+    "result": {
+      "content": [
+        {
+          "text": "{\"success\":true,\"data\":{\"path\":\"assessment/read.yaml\",\"domain\":\"automation\",\"name\":\"read\",\"metadata\":{\"name\":\"Assessment Read Fixture\",\"description\":\"Synthetic offline fixture\",\"source_url\":null,\"author\":null,\"domain\":\"automation\",\"homeassistant\":null},\"inputs\":{},\"used_by\":[]}}",
+          "type": "text"
+        }
+      ],
+      "isError": false,
+      "structuredContent": {
+        "data": {
+          "domain": "automation",
+          "inputs": {},
+          "metadata": {
+            "author": null,
+            "description": "Synthetic offline fixture",
+            "domain": "automation",
+            "homeassistant": null,
+            "name": "Assessment Read Fixture",
+            "source_url": null
+          },
+          "name": "read",
+          "path": "assessment/read.yaml",
+          "used_by": []
+        },
+        "success": true
+      }
+    },
+    "tool": "ha_manage_blueprints"
+  },
+  "standalone-call-07.json": {
+    "arguments": {
+      "entity_id": "sensor.assessment_missing"
+    },
+    "result": {
+      "content": [
+        {
+          "text": "{\n  \"success\": false,\n  \"error\": {\n    \"code\": \"ENTITY_NOT_FOUND\",\n    \"message\": \"Entity 'sensor.assessment_missing' not found\",\n    \"details\": \"API error: 404 - Entity not found.\",\n    \"suggestion\": \"Verify entity 'sensor.assessment_missing' exists in Home Assistant\",\n    \"suggestions\": [\n      \"Verify entity 'sensor.assessment_missing' exists in Home Assistant\",\n      \"Check Home Assistant connection\",\n      \"Use ha_search() to find correct entity IDs\"\n    ]\n  },\n  \"entity_id\": \"sensor.assessment_missing\"\n}",
+          "type": "text"
+        }
+      ],
+      "isError": true
+    },
+    "tool": "ha_get_state"
+  }
+}

@@ -78,6 +78,7 @@ from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     catalog_fingerprint,
     load_reviewed_upstream_release_registry,
     runtime_annotation_fingerprint,
+    read_annotation_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
 )
@@ -156,6 +157,15 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "held_for_canary": 1,
         "mixed_or_requires_wrapper": 13,
         "persistent_write": 33,
+        "physical_or_high_risk_action": 4,
+        "prohibited": 1,
+        "unsupported": 1,
+    },
+    "8.5.0": {
+        "automatic_read": 25,
+        "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 13,
+        "persistent_write": 32,
         "physical_or_high_risk_action": 4,
         "prohibited": 1,
         "unsupported": 1,
@@ -489,6 +499,7 @@ UPSTREAM_ERROR_CALLS = {
 }
 EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
     "invalid_search": {
+        "8.5.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "legacy": (
             "63e37a2f037ff46e9908c41745aca0e368c0cb6811a28104c990113055abdfee"
         ),
@@ -555,6 +566,26 @@ class AcceptanceFailure(RuntimeError):
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise AcceptanceFailure(message)
+
+
+def verify_850_gateway_fixture_capture(captured: dict, reviewed: dict) -> None:
+    """Require the exact capture, accounting only for the owned fixture's one ID.
+
+    Upstream 311d6dc tools_config_automations.py:_raise_automation_not_found
+    includes available_automation_ids. The reviewed real-Core registry had no
+    automations; this gateway fixture contains automation.gateway_fixture.
+    Keep both observations intact and reject every other contract difference.
+    """
+    require(reviewed.get("server_version") == "8.5.0", "fixture reference version changed")
+    expected = json.loads(json.dumps(reviewed))
+    error = expected["error_shapes"]["missing_automation"]
+    require(error == {
+        "is_error": True,
+        "structured_code": "RESOURCE_NOT_FOUND",
+        "shape_fingerprint": "8053f5169c2558019d1a5adab930c1ed65855ff20cf3e677863ddfbe224c3aa3",
+    }, "reviewed empty-registry error contract changed")
+    error["shape_fingerprint"] = EXPECTED_ERROR_SHAPE_FINGERPRINTS["missing_automation"]["legacy"]
+    require(captured == expected, "exact gateway fixture capture changed")
 
 
 def _exception_leaves(exc: BaseException) -> list[BaseException]:
@@ -1122,7 +1153,7 @@ async def inspect_upstream(
             )
             tools = await list_all_tools(session)
             tool_names = {item.get("name") for item in tools}
-            if expected_upstream_version in {"8.4.1", "8.4.3"}:
+            if expected_upstream_version in {"8.4.1", "8.4.3", "8.5.0"}:
                 require(
                     "ha_get_addon" not in tool_names
                     and {"ha_get_app", "ha_manage_app"} <= tool_names,
@@ -1220,7 +1251,7 @@ async def inspect_engineering(
     automatic = {
         entry.exposed_name
         for entry in policy.tools
-        if entry.classification == "automatic_read"
+        if entry.is_read_route
     }
     held = {
         entry.exposed_name
@@ -1310,7 +1341,7 @@ async def inspect_engineering(
             require("ha_call_service" not in names, "write-classified tool is advertised")
             require(len(names) == len(base_names | automatic), "unexpected tool exposed")
             for entry in policy.tools:
-                if entry.classification != "automatic_read":
+                if not entry.is_read_route:
                     continue
                 annotations = advertised_by_name[entry.exposed_name].get("annotations", {})
                 expected_annotations = {
@@ -2554,8 +2585,8 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
     annotation_mismatches = sorted(
         name
         for name, expected in reviewed_annotations.items()
-        if runtime_annotation_fingerprint(
-            observed_by_name[name].get("annotations")
+        if read_annotation_fingerprint(
+            policy.by_name[name], observed_by_name[name].get("annotations"),
         )
         != expected
     )
@@ -2598,7 +2629,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         policy=policy,
         release=release,
     )
-    if args.expected_upstream_version in {"8.4.1", "8.4.3"}:
+    if args.expected_upstream_version in {"8.4.1", "8.4.3", "8.5.0"}:
         held_settings = Settings(
             ha_url=args.ha_url,
             ha_token=args.ha_token,

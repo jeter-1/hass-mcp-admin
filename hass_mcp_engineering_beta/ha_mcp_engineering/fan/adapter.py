@@ -8,26 +8,29 @@ from ..f3.contracts import (
     NormalizedOperationOutcome as Outcome, ObservationResult, OperationTarget,
     PreflightResult, PreparedOperation, VerificationResult,
 )
-from .contracts import FanRequest, FanRefusal, FAN_CONTRACT, check_features, desired, digest
+from .contracts import FanRequest, FanRefusal, FAN_CONTRACT, FAN_CONTRACTS, check_features, desired, digest
 
 
 @dataclass(frozen=True)
 class PreparedFan(PreparedOperation):
     request: FanRequest
     baseline: dict
+    provider_contract: str
 
 
-def prepare_record(request, baseline):
-    material = {"request": request.model_dump(), "baseline": baseline, "contract": FAN_CONTRACT}
+def prepare_record(request, baseline, contract=FAN_CONTRACT):
+    if contract not in FAN_CONTRACTS:
+        raise FanRefusal("fan_contract_unknown")
+    material = {"request": request.model_dump(), "baseline": baseline, "contract": contract}
     authority_hash = digest({"kind": "authenticated_connector", "request": request.model_dump()})
     return PreparedFan(
         F3_ADAPTER_CONTRACT_MODEL, "typed_fan", request.action,
         OperationTarget("fan", request.entity_id), digest(baseline),
         digest(request.arguments()), digest(material), "physical_action",
-        digest({"fan_contract": FAN_CONTRACT}), authority_hash,
+        digest({"fan_contract": contract}), authority_hash,
         ("fan_state_or_speed_changes", "automation_reactions_possible", "consumer_coverage_incomplete"),
         "fan-exact-state-percentage-v1", digest({"desired": request.model_dump()}),
-        False, request, baseline,
+        False, request, baseline, contract,
     )
 
 
@@ -40,15 +43,16 @@ class FanAdapter:
     def __init__(self, provider, core):
         self.provider, self.core = provider, core
 
-    async def prepare(self, request):
+    async def prepare(self, request, *, contract=None):
         async def read(check):
-            await self.provider.services(request, check)
-            state = await self.provider.state(request.entity_id, check)
+            selected = await self.provider.services(request, check, contract=contract)
+            state = await self.provider.state(request.entity_id, check, contract=selected)
             check_features(request, state)
-            return state
-        return prepare_record(request, await self.core.read(
+            return state, selected
+        baseline, selected = await self.core.read(
             read, SimpleNamespace(target=OperationTarget("fan", request.entity_id)),
-        ))
+        )
+        return prepare_record(request, baseline, selected)
 
     def lock_requests(self, prepared):
         return (
@@ -61,13 +65,13 @@ class FanAdapter:
         )
 
     async def preflight(self, prepared, *, acquired_locks):
-        current = await self.prepare(prepared.request)
+        current = await self.prepare(prepared.request, contract=prepared.provider_contract)
         fresh = current.current_state_fingerprint == prepared.current_state_fingerprint
         no_op = fresh and desired(prepared.request, current.baseline)
         return PreflightResult(
             fresh and not no_op,
             Outcome.SUCCEEDED_VERIFIED if no_op else None if fresh else Outcome.PREFLIGHT_REJECTED,
-            prepared.target, current.current_state_fingerprint, FAN_CONTRACT,
+            prepared.target, current.current_state_fingerprint, prepared.provider_contract,
             "ha_call_service", digest(prepared.request.arguments()),
             digest(current.baseline), ("desired_state_already_reached",) if no_op else () if fresh else ("fan_state_changed",),
         )
@@ -79,14 +83,14 @@ class FanAdapter:
             if dispatched:
                 raise ValueError("fan_duplicate_dispatch")
             state = await self.core.read(
-                lambda check: self.provider.state(prepared.request.entity_id, check), prepared,
+                lambda check: self.provider.state(prepared.request.entity_id, check, contract=prepared.provider_contract), prepared,
             )
             if digest(state) != prepared.current_state_fingerprint:
                 raise FanRefusal("fan_state_changed")
             await before_dispatch()
             dispatched = True
         try:
-            evidence = await self.provider.dispatch(prepared.request, once)
+            evidence = await self.provider.dispatch(prepared.request, once, contract=prepared.provider_contract)
             if not dispatched:
                 raise ValueError("fan_dispatch_boundary_missing")
             return DispatchResult(Outcome.OBSERVING, True, 1, True, True,
@@ -101,7 +105,7 @@ class FanAdapter:
 
     async def observe(self, prepared, dispatch):
         state = await self.core.read(
-            lambda check: self.provider.state(prepared.request.entity_id, check), prepared,
+            lambda check: self.provider.state(prepared.request.entity_id, check, contract=prepared.provider_contract), prepared,
         )
         matches = desired(prepared.request, state)
         return ObservationResult(

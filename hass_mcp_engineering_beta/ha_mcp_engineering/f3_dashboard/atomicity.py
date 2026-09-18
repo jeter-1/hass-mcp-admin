@@ -15,6 +15,7 @@ from .models import AtomicityDecision, AtomicityStatus
 HOME_ASSISTANT_RELEASE = "2026.8.0"
 HOME_ASSISTANT_SOURCE_COMMIT = "4a9dce13f61d03960ad5d2710e2af9fd2a78af54"
 UPSTREAM_SOURCE_COMMITS = {
+    "8.5.0": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
     "7.14.2": "904c14ebbe76de700f7c3535f5cc71c017dca12e",
     "8.0.0": "9dd3ac620e3149cd34ec3c990b6ee81e778191f2",
     "8.1.1": "ae84694b50bfbd8d507042381fdee5e529bf73c5",
@@ -51,13 +52,19 @@ def assess_atomicity(upstream_version: str) -> AtomicityDecision:
             "residual_concurrent_editor_risk_explicitly_accepted",
         ],
     }
+    if upstream_version == "8.5.0":
+        source_evidence.update(
+            upstream_save="_prepare_and_save_dashboard_config: native component or legacy save",
+            home_assistant_version="2026.9.2",
+            home_assistant_source_commit="33c3e0cca60e73a8c4970ee677d75b8bc6464cdf",
+        )
     return AtomicityDecision(
         model=ATOMICITY_MODEL,
         status=AtomicityStatus.OPERATOR_ACCEPTED_NON_ATOMIC,
         mechanism="explicit_home_operator_policy_with_immediate_conflict_check",
         reason_codes=(*reasons, "residual_concurrent_editor_risk_explicitly_accepted"),
         exact_upstream_release=upstream_version,
-        home_assistant_release=HOME_ASSISTANT_RELEASE,
+        home_assistant_release=source_evidence["home_assistant_version"],
         source_evidence_sha256=engineering_sha256(source_evidence),
     )
 
