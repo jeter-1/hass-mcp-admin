@@ -883,9 +883,27 @@ jobs:
           - upstream_version: "8.5.0"
             architecture: amd64
             runner: ubuntu-latest
+            candidate_power: true
+            candidate_code: "850"
+            candidate_source: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
           - upstream_version: "8.5.0"
             architecture: arm64
             runner: ubuntu-24.04-arm
+            candidate_power: true
+            candidate_code: "850"
+            candidate_source: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+          - upstream_version: "8.4.3"
+            architecture: amd64
+            runner: ubuntu-latest
+            candidate_power: true
+            candidate_code: "843"
+            candidate_source: eac7a3aa7063432e9af17e7d7726040e909c7b8f
+          - upstream_version: "8.4.3"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+            candidate_power: true
+            candidate_code: "843"
+            candidate_source: eac7a3aa7063432e9af17e7d7726040e909c7b8f
     env:
       UPSTREAM_VERSION: ${{ matrix.upstream_version }}
       ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}
@@ -907,7 +925,7 @@ jobs:
         run: >-
           python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
       - name: Verify immutable add-on indexes and platform manifests
-        if: matrix.upstream_version != '8.5.0'
+        if: matrix.candidate_power != true
         shell: bash
         run: |
           set -euo pipefail
@@ -966,7 +984,7 @@ jobs:
             "$ADDON_ARM64_MANIFEST_DIGEST" \
             "$RUNNER_TEMP/addon-arm64-index.json"
       - name: Start synthetic Home Assistant contract fixture
-        if: matrix.upstream_version != '8.5.0'
+        if: matrix.candidate_power != true
         shell: bash
         run: |
           set -euo pipefail
@@ -982,7 +1000,7 @@ jobs:
           done
           exit 1
       - name: Execute immutable ha-mcp add-on runtime
-        if: matrix.upstream_version != '8.5.0'
+        if: matrix.candidate_power != true
         shell: bash
         run: |
           set -euo pipefail
@@ -1063,7 +1081,7 @@ jobs:
               default_addon_startup: true
             }' > "$RUNNER_TEMP/exact-addon-runtime-identity.json"
       - name: Run planning-only exact add-on runtime acceptance
-        if: matrix.upstream_version != '8.5.0'
+        if: matrix.candidate_power != true
         shell: bash
         run: |
           python scripts/exact_addon_runtime_acceptance.py \
@@ -1077,7 +1095,7 @@ jobs:
             --expected-upstream-version "$UPSTREAM_VERSION" \
             --output "$RUNNER_TEMP/exact-addon-runtime-result.json"
       - name: Verify deterministic exact add-on catalog capture
-        if: matrix.upstream_version != '8.5.0'
+        if: matrix.candidate_power != true
         shell: bash
         run: |
           set -euo pipefail
@@ -1091,7 +1109,7 @@ jobs:
             "$RUNNER_TEMP/exact-addon-contract-capture-1.json" \
             "$RUNNER_TEMP/exact-addon-contract-capture-2.json"
       - name: Stop immutable add-on runtime gracefully
-        if: always() && matrix.upstream_version != '8.5.0'
+        if: always() && matrix.candidate_power != true
         shell: bash
         run: |
           set -euo pipefail
@@ -1113,7 +1131,7 @@ jobs:
           }' > "$RUNNER_TEMP/exact-addon-runtime-shutdown.json"
           test "$exit_code" = 0
       - name: Upload bounded exact add-on runtime evidence
-        if: always() && matrix.upstream_version != '8.5.0'
+        if: always() && matrix.candidate_power != true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: exact-ha-mcp-${{ matrix.upstream_version }}-addon-runtime
@@ -1125,7 +1143,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Remove disposable exact add-on runtime environment
-        if: always() && matrix.upstream_version != '8.5.0'
+        if: always() && matrix.candidate_power != true
         shell: bash
         run: |
           docker rm -f exact-addon-runtime-upstream >/dev/null 2>&1 || true
@@ -1133,30 +1151,30 @@ jobs:
             sudo kill "$(cat "$RUNNER_TEMP/addon-runtime-ha.pid")" >/dev/null 2>&1 || true
           fi
           sudo rm -rf "$RUNNER_TEMP/exact-addon-data"
-      - if: matrix.upstream_version == '8.5.0'
+      - if: matrix.candidate_power == true
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: homeassistant-ai/ha-mcp
-          ref: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
-          path: .upstream-850
+          ref: ${{ matrix.candidate_source }}
+          path: .upstream-${{ matrix.candidate_code }}
           submodules: true
           persist-credentials: false
-      - name: Verify candidate with both exact 8.5.0 variants and Core
-        if: matrix.upstream_version == '8.5.0'
+      - name: Verify power candidate with both exact upstream variants and Core
+        if: matrix.candidate_power == true
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python scripts/ha_mcp_850_container_acceptance.py --architecture "$ASSESSMENT_ARCH"
+        run: python scripts/ha_mcp_850_container_acceptance.py --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION"
       - name: Always reconcile owned container cleanup
-        if: always() && matrix.upstream_version == '8.5.0'
+        if: always() && matrix.candidate_power == true
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/ha_mcp_850_container_acceptance.py --cleanup --architecture "$ASSESSMENT_ARCH"
+          python scripts/ha_mcp_850_container_acceptance.py --cleanup --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION"
       - name: Remove disposable private runner files
-        if: always() && matrix.upstream_version == '8.5.0'
+        if: always() && matrix.candidate_power == true
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
         shell: bash
@@ -1164,14 +1182,19 @@ jobs:
           set -euo pipefail
           [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
           [[ "$ASSESSMENT_ARCH" == amd64 || "$ASSESSMENT_ARCH" == arm64 ]]
-          prefix="h850-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASSESSMENT_ARCH-private-"
+          case "$UPSTREAM_VERSION" in
+            8.4.3) code=843 ;;
+            8.5.0) code=850 ;;
+            *) exit 1 ;;
+          esac
+          prefix="h$code-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASSESSMENT_ARCH-private-"
           # Only this run's synthetic, root-owned Core storage. Never upload it.
           find "$RUNNER_TEMP" -mindepth 1 -maxdepth 1 -type d -name "$prefix*" -exec sudo rm -rf -- {} +
       - name: Retain bounded assessment evidence
-        if: always() && matrix.upstream_version == '8.5.0'
+        if: always() && matrix.candidate_power == true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ha-mcp-850-candidate-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/h850-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.architecture }}-evidence/*.json
+          name: ha-mcp-${{ matrix.candidate_code }}-candidate-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/h${{ matrix.candidate_code }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.architecture }}-evidence/*.json
           if-no-files-found: error
           retention-days: 14

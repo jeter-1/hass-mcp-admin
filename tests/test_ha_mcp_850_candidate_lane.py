@@ -25,8 +25,15 @@ class GuardTests(unittest.TestCase):
                         GITHUB_SHA="a" * 40)
 
     def test_both_architectures(self):
-        for arch in ("amd64", "arm64"):
-            self.assertEqual(lane.execution_guard(self.env, arch), "h850-1234-1-" + arch)
+        for version, code in (("8.4.3", "843"), ("8.5.0", "850")):
+            for arch in ("amd64", "arm64"):
+                self.assertEqual(lane.execution_guard(self.env, arch, version),
+                                 f"h{code}-1234-1-{arch}")
+
+    def test_other_versions_cannot_select_images_or_resources(self):
+        for version in ("8.4.1", "8.5.1", "latest", "", "../850", None):
+            with self.subTest(version=version), self.assertRaises(lane.Refusal):
+                lane.execution_guard(self.env, "amd64", version)
 
     def test_refuses_other_repositories_branches_and_non_ci(self):
         for field, value in (("GITHUB_REPOSITORY", "other/repo"), ("GITHUB_REF", "refs/heads/unrelated"),
@@ -237,6 +244,15 @@ class EvidenceTests(unittest.TestCase):
 class CleanupTests(unittest.TestCase):
     identity = "h850-1234-1-amd64"
 
+    def test_each_version_has_separate_bounded_resources(self):
+        for version in ("843", "850"):
+            identity = f"h{version}-1234-1-arm64"
+            self.assertEqual(lane.resource_names(identity),
+                             [identity + "-" + role for role in ("standalone", "addon", "relay", "core")])
+        for invalid in ("h841-1234-1-amd64", "h843-1234-1-arm/v7", "h843-1234-1-amd64-extra"):
+            with self.assertRaises(lane.Refusal):
+                lane.resource_names(invalid)
+
     def test_diagnostics_export_only_selected_markers(self):
         def fake(*args, **kwargs):
             if args[0] == "logs":
@@ -317,16 +333,32 @@ class WorkflowTests(unittest.TestCase):
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         job = workflow["jobs"]["exact-addon-runtime-acceptance"]
-        lanes = [x for x in job["strategy"]["matrix"]["include"] if x["upstream_version"] == "8.5.0"]
-        self.assertEqual({x["architecture"] for x in lanes}, {"amd64", "arm64"})
-        self.assertEqual({x["runner"] for x in lanes}, {"ubuntu-latest", "ubuntu-24.04-arm"})
+        rows = job["strategy"]["matrix"]["include"]
+        lanes = [x for x in rows if x.get("candidate_power")]
+        self.assertEqual(len(lanes), 4)
+        self.assertEqual({(x["upstream_version"], x["architecture"]) for x in lanes},
+                         {(v, a) for v in ("8.4.3", "8.5.0") for a in ("amd64", "arm64")})
+        for row in lanes:
+            pin_path = (lane.PINS if row["upstream_version"] == "8.5.0" else
+                        ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json")
+            pins = json.loads(pin_path.read_bytes())
+            self.assertEqual(row["candidate_source"], pins["upstream_source"])
+            self.assertEqual(row["runner"], "ubuntu-latest" if row["architecture"] == "amd64" else "ubuntu-24.04-arm")
+        historical = [x for x in rows if not x.get("candidate_power")]
+        self.assertEqual({x["upstream_version"] for x in historical},
+                         {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3"})
         self.assertEqual(job["timeout-minutes"], 20)
         self.assertIn("exact-addon-runtime-acceptance", workflow["jobs"]["validate"]["needs"])
         for step in job["steps"]:
             if "uses" in step:
                 self.assertRegex(step["uses"].split()[0], r"@[a-f0-9]{40}$")
             if step.get("name", "").startswith(("Always reconcile", "Remove disposable private", "Retain bounded")):
-                self.assertEqual(step["if"], "always() && matrix.upstream_version == '8.5.0'")
+                self.assertEqual(step["if"], "always() && matrix.candidate_power == true")
+        execution = next(s for s in job["steps"] if s.get("name", "").startswith("Verify power candidate"))
+        self.assertEqual(execution["if"], "matrix.candidate_power == true")
+        self.assertIn('--upstream-version "$UPSTREAM_VERSION"', execution["run"])
+        planning = next(s for s in job["steps"] if s.get("name", "").startswith("Run planning-only"))
+        self.assertEqual(planning["if"], "matrix.candidate_power != true")
         self.assertNotIn("secrets.", json.dumps(workflow))
         self.assertNotIn("packages: write", json.dumps(workflow))
 
@@ -343,9 +375,35 @@ class WorkflowTests(unittest.TestCase):
                 for field in ("configuration", "manifest"):
                     self.assertRegex(image[field], r"^sha256:[a-f0-9]{64}$")
 
+    def test_843_power_pins_match_retained_admitted_image_identity(self):
+        pins = json.loads((ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json").read_bytes())
+        self.assertEqual(pins["version"], "8.4.3")
+        self.assertEqual(pins["upstream_source"], "eac7a3aa7063432e9af17e7d7726040e909c7b8f")
+        self.assertEqual(pins["upstream_tree"], "ffc545fa7e3ad683737454de0217e2b9f672589e")
+        self.assertEqual(pins["skills_source"], "d0c6129c2296d6a39b1955b6c36b80067382c67b")
+        self.assertEqual(pins["core_image"], json.loads(lane.PINS.read_bytes())["core_image"])
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        old = next(row for row in workflow["jobs"]["exact-addon-runtime-acceptance"]["strategy"]["matrix"]["include"]
+                   if row["upstream_version"] == "8.4.3" and not row.get("candidate_power"))
+        self.assertEqual(set(pins["images"]), {"amd64", "arm64"})
+        for arch, images in pins["images"].items():
+            self.assertEqual(set(images), {"standalone", "addon"})
+            self.assertTrue(images["addon"]["image"].endswith("@" + old[f"addon_{arch}_index_digest"]))
+            self.assertEqual(images["addon"]["manifest"], old[f"addon_{arch}_manifest_digest"])
+            self.assertTrue(images["standalone"]["image"].endswith("@" + pins["standalone_index"]))
+            for image in images.values():
+                for field in ("manifest", "configuration"):
+                    self.assertRegex(image[field], r"^sha256:[a-f0-9]{64}$")
+
 
 class PowerCandidateContractTests(unittest.IsolatedAsyncioTestCase):
     async def test_candidate_power_extension_runs_real_lifecycle_and_checks_core_counts(self):
+        await self.check_lifecycle("8.5.0")
+
+    async def test_843_power_extension_runs_real_lifecycle_and_checks_core_counts(self):
+        await self.check_lifecycle("8.4.3")
+
+    async def check_lifecycle(self, version):
         from tests.test_typed_power import PowerTransport, Clock, Core
         from ha_mcp_engineering.power.service import PowerService, PowerCoreAuthority
         from ha_mcp_engineering.providers.upstream_power import PowerProvider
@@ -360,7 +418,7 @@ class PowerCandidateContractTests(unittest.IsolatedAsyncioTestCase):
                 if tool == 'ha_call_service':
                     self.states[args['entity_id']]['attributes']['synthetic_service_calls'] += 1
                 return result
-        transport = Transport('8.5.0')
+        transport = Transport(version)
         transport.states = {entity:dict(entity_id=entity,state='off',last_updated='synthetic-1',
             attributes={'synthetic_service_calls':0}) for entity in lane.POWER_TARGETS}
         class Rest:
@@ -371,7 +429,7 @@ class PowerCandidateContractTests(unittest.IsolatedAsyncioTestCase):
             service = PowerService(directory,PowerProvider(transport,lambda *args:transport.authority),PowerCoreAuthority(core),now=clock)
             telemetry, token = begin_request('synthetic-container-lane')
             try:
-                result = await lane.power_contract(service,Rest(),telemetry,'synthetic',Path(directory))
+                result = await lane.power_contract(service,Rest(),telemetry,'synthetic',Path(directory),version)
                 self.assertEqual(result['operations'],4)
                 self.assertEqual(transport.writes,4)
                 self.assertEqual(result['restored'],'off')
@@ -379,6 +437,20 @@ class PowerCandidateContractTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(core.leases or core.commits)
             finally:
                 await service.close();end_request(token)
+
+    async def test_other_provider_contract_cannot_satisfy_843_lane(self):
+        from types import SimpleNamespace
+        from ha_mcp_engineering.power.contracts import POWER_RELEASES
+        class Rest:
+            async def request(self, method, path):
+                return {'state':'off','attributes':{'synthetic_service_calls':0}}
+        class Service:
+            async def control(self, request):
+                return dict(state='succeeded_verified',terminal=True,provider_attempt_count=1,
+                            dispatch_intent_recorded=True,provider='upstream_typed_power',
+                            provider_contract=POWER_RELEASES['8.5.0'][2])
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(lane.Refusal,'power_not_verified'):
+            await lane.power_contract(Service(),Rest(),SimpleNamespace(),'synthetic',Path(directory),'8.4.3')
 
     async def test_core_counter_mismatch_cannot_claim_lane_pass(self):
         from types import SimpleNamespace

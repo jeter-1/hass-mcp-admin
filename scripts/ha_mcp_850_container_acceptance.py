@@ -69,7 +69,13 @@ def save(folder, name, value):
         stream.write(data)
 
 
-def execution_guard(env, architecture):
+def version_code(version):
+    require(version in {"8.4.3", "8.5.0"}, "upstream_version_invalid")
+    return {"8.4.3": "843", "8.5.0": "850"}[version]
+
+
+def execution_guard(env, architecture, version="8.5.0"):
+    code = version_code(version)
     require(env.get("GITHUB_ACTIONS") == "true", "github_runner_required")
     require(env.get("GITHUB_REPOSITORY") == "jeter-1/hass-mcp-admin", "repository_mismatch")
     event, ref = env.get("GITHUB_EVENT_NAME"), env.get("GITHUB_REF", "")
@@ -84,7 +90,7 @@ def execution_guard(env, architecture):
     require(architecture in {"amd64", "arm64"}, "architecture_invalid")
     for key in ("GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT"):
         require(re.fullmatch(r"[0-9]{1,16}", env.get(key, "")) is not None, "run_identity_invalid")
-    return f"h850-{env['GITHUB_RUN_ID']}-{env['GITHUB_RUN_ATTEMPT']}-{architecture}"
+    return f"h{code}-{env['GITHUB_RUN_ID']}-{env['GITHUB_RUN_ATTEMPT']}-{architecture}"
 
 
 def complete_catalog(pages):
@@ -141,7 +147,7 @@ def docker(*args, timeout=90, check=True):
 
 
 def resource_names(identity):
-    require(re.fullmatch(r"h850-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
+    require(re.fullmatch(r"h(843|850)-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
 
@@ -305,17 +311,22 @@ async def assess(architecture, output, private, identity, pins):
     from ha_mcp_engineering.ha_core_readmission import CoreRuntime
     from core_registry_contract_lane import configure_with_test_authority
 
-    upstream_source = ROOT / ".upstream-850"
+    version = pins["version"]
+    upstream_source = ROOT / (".upstream-" + version_code(version))
     source_sha = subprocess.check_output(["git", "-C", str(upstream_source), "rev-parse", "HEAD"], text=True).strip()
     require(source_sha == pins["upstream_source"], "upstream_source_mismatch")
+    source_tree = subprocess.check_output(["git", "-C", str(upstream_source), "rev-parse", "HEAD^{tree}"], text=True).strip()
+    require(source_tree == pins["upstream_tree"], "upstream_tree_mismatch")
     skills_sha = subprocess.check_output(["git", "-C", str(upstream_source / "src/ha_mcp/resources/skills-vendor"), "rev-parse", "HEAD"], text=True).strip()
     require(skills_sha == pins["skills_source"], "upstream_skills_mismatch")
     config = private / "core"
     config.mkdir()
     (config / "custom_components").mkdir()
-    for source in (ROOT / "tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture",
-                   ROOT / "tests/fixtures/real_ha_power/custom_components/power_contract_fixture",
-                   upstream_source / "custom_components/ha_mcp_tools"):
+    components = [ROOT / "tests/fixtures/real_ha_power/custom_components/power_contract_fixture"]
+    if version == "8.5.0":
+        components += [ROOT / "tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture",
+                       upstream_source / "custom_components/ha_mcp_tools"]
+    for source in components:
         shutil.copytree(source, config / "custom_components" / source.name)
     (config / "configuration.yaml").write_text("default_config:\nautomation: !include automations.yaml\nscript: !include scripts.yaml\ninput_boolean: {}\ninput_number: {}\nkitchen_sink:\n")
     (config / "automations.yaml").write_text("[]\n")
@@ -337,22 +348,24 @@ async def assess(architecture, output, private, identity, pins):
         observed = await existing.wait_for_runtime_ready(rest)
         require(observed["version"] == "2026.9.2", "core_version_mismatch")
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
-            await existing._advance_config_flow(client, token, "beta23_device_fixture", [{"slot": "a"}])
+            if version == "8.5.0":
+                await existing._advance_config_flow(client, token, "beta23_device_fixture", [{"slot": "a"}])
             await existing._advance_config_flow(client, token, "power_contract_fixture", [{}])
         original = {"title": "Assessment", "views": [{"title": "Original", "path": "test", "cards": []}]}
-        await websocket.command({"type": "lovelace/config/save", "config": original})
-        await websocket.command({"type": "lovelace/dashboards/create", "url_path": DASHBOARD, "title": "Assessment", "require_admin": True, "show_in_sidebar": False})
-        await websocket.command({"type": "lovelace/config/save", "url_path": DASHBOARD, "config": original})
-        for _ in range(30):
-            try:
-                state = await rest.request("GET", "/states/" + FAN)
-                if state["state"] == "off":
-                    break
-            except Exception:
-                pass
-            await asyncio.sleep(1)
-        else:
-            raise Refusal("synthetic_fan_unavailable")
+        if version == "8.5.0":
+            await websocket.command({"type": "lovelace/config/save", "config": original})
+            await websocket.command({"type": "lovelace/dashboards/create", "url_path": DASHBOARD, "title": "Assessment", "require_admin": True, "show_in_sidebar": False})
+            await websocket.command({"type": "lovelace/config/save", "url_path": DASHBOARD, "config": original})
+            for _ in range(30):
+                try:
+                    state = await rest.request("GET", "/states/" + FAN)
+                    if state["state"] == "off":
+                        break
+                except Exception:
+                    pass
+                await asyncio.sleep(1)
+            else:
+                raise Refusal("synthetic_fan_unavailable")
         phase("core_authority")
         await configure_with_test_authority(core, configured, cache_path=private / "core-cache.json", expected_image=pins["core_image"])
         save(output, "core-authority.json", {"version": observed["version"], "compatible_count": core.health_snapshot()["compatible_count"], "ephemeral_test_authority": True, "production_authority": False})
@@ -360,7 +373,7 @@ async def assess(architecture, output, private, identity, pins):
         await wait_endpoint("http://127.0.0.1:18080/_assessment/stats")
         for kind in ("standalone", "addon"):
             phase(kind + "_startup")
-            if kind == "addon":
+            if kind == "addon" and version == "8.5.0":
                 # Activate only the tools component, never its embedded server.
                 async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
                     await existing._advance_config_flow(client, token, "ha_mcp_tools", [{"next_step_id": "tools"}, {}])
@@ -370,7 +383,7 @@ async def assess(architecture, output, private, identity, pins):
             require(image_id == image["configuration"], "image_configuration_mismatch")
             require(docker("image", "inspect", "--format", "{{.Architecture}}", image["image"]).stdout.strip() == architecture, "upstream_architecture_mismatch")
             labels = json.loads(docker("image", "inspect", "--format", "{{json .Config.Labels}}", image["image"]).stdout)
-            require(labels.get("org.opencontainers.image.version" if kind == "standalone" else "io.hass.version") == "8.5.0", "image_version_mismatch")
+            require(labels.get("org.opencontainers.image.version" if kind == "standalone" else "io.hass.version") == version, "image_version_mismatch")
             if kind == "standalone":
                 require(labels.get("org.opencontainers.image.revision") == image["revision"], "image_revision_mismatch")
             env_file = private / (kind + ".env")
@@ -397,7 +410,7 @@ async def assess(architecture, output, private, identity, pins):
                 async with ReviewedProtocolClientSession(read, write, client_info=types.Implementation(name="isolated-850-assessment", version="1")) as session:
                     phase(kind + "_initialize_catalog")
                     init = await session.initialize()
-                    require(init.serverInfo.name == "ha-mcp" and init.serverInfo.version == "8.5.0" and init.protocolVersion == "2025-03-26", "initialized_identity_mismatch")
+                    require(init.serverInfo.name == "ha-mcp" and init.serverInfo.version == version and init.protocolVersion == "2025-03-26", "initialized_identity_mismatch")
                     save(output, kind + "-initialize.json", init.model_dump(mode="json", by_alias=True, exclude_none=True))
                     catalogs = []
                     for capture in (1, 2):
@@ -409,25 +422,30 @@ async def assess(architecture, output, private, identity, pins):
                             if not cursor:
                                 break
                         tools = complete_catalog(pages)
-                        require(len(tools) == 77, "unexpected_catalog_count")
+                        require(len(tools) == {"8.4.3": 78, "8.5.0": 77}[version], "unexpected_catalog_count")
                         save(output, f"{kind}-catalog-{capture}.json", {"pages": pages, "tools": tools})
                         catalogs.append(tools)
                     require(catalogs[0] == catalogs[1], "catalog_changed_in_session")
                     names = {t["name"] for t in tools}
-                    require("ha_manage_blueprints" in names and "ha_get_blueprint" not in names, "blueprint_catalog_contract")
+                    require(("ha_manage_blueprints" in names and "ha_get_blueprint" not in names)
+                            if version == "8.5.0" else ("ha_get_blueprint" in names and "ha_manage_blueprints" not in names),
+                            "blueprint_catalog_contract")
             phase(kind + "_candidate_contract")
-            await candidate_contract(kind, configured, core, rest, websocket,
-                                     original, output, private)
+            if version == "8.5.0":
+                await candidate_contract(kind, configured, core, rest, websocket,
+                                         original, output, private)
+            else:
+                await power_only_candidate_contract(kind, configured, core, rest, output, private, version)
             docker("stop", "--time", "20", identity + "-" + kind, timeout=30)
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as client:
             async with client.get("http://127.0.0.1:18080/_assessment/stats") as response:
                 stats = await response.json()
-        require(stats.get("service_posts", 0) == 14, "unexpected_total_dispatch_count")
-        require(stats.get("service_posts_fan", 0) == 6, "unexpected_fan_dispatch_count")
+        require(stats.get("service_posts", 0) == (14 if version == "8.5.0" else 8), "unexpected_total_dispatch_count")
+        require(stats.get("service_posts_fan", 0) == (6 if version == "8.5.0" else 0), "unexpected_fan_dispatch_count")
         require(stats.get("service_posts_light", 0) == 4, "unexpected_light_dispatch_count")
         require(stats.get("service_posts_switch", 0) == 4, "unexpected_switch_dispatch_count")
-        require(stats.get("lovelace/config/save", 0) == 2, "legacy_dashboard_dispatch_count")
-        require(stats.get("ha_mcp_tools/dashboard_edit", 0) == 2, "native_dashboard_dispatch_count")
+        require(stats.get("lovelace/config/save", 0) == (2 if version == "8.5.0" else 0), "legacy_dashboard_dispatch_count")
+        require(stats.get("ha_mcp_tools/dashboard_edit", 0) == (2 if version == "8.5.0" else 0), "native_dashboard_dispatch_count")
         require(stats.get("active_websockets", 0) == 0, "relay_sessions_retained")
         save(output, "relay-settlement.json", stats)
     finally:
@@ -616,8 +634,57 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             await gateway._transport.aclose()
         end_request(context)
 
-async def power_contract(service, rest, telemetry, kind, output):
+async def power_only_candidate_contract(kind, configured, core, rest, output, private, version):
+    """Close the historical provider gap without replacing older contract lanes."""
+    from dataclasses import replace
+    from mcp.server.fastmcp import FastMCP
+    from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+    from ha_mcp_engineering.providers.upstream_power import PowerProvider
+    from ha_mcp_engineering.power.service import PowerService, PowerCoreAuthority
+    from ha_mcp_engineering.audit import AuditLogger
+    from ha_mcp_engineering.request_context import begin_request, end_request
+
+    require(version == "8.4.3", "power_only_version_invalid")
+    work = private / (kind + "-engineering")
+    work.mkdir()
+    configured = replace(configured, upstream_dashboard_mcp_url=ENDPOINTS[kind],
+                         audit_path=str(work / "audit.jsonl"))
+    gateway = UpstreamReadGateway()
+    gateway.configure(configured, core_runtime=core)
+    telemetry, context = begin_request("synthetic-843-" + kind)
+    service = None
+    try:
+        health = await gateway.initialize(FastMCP("candidate-843-disposable"))
+        require(health["admission_status"] == "admitted_exact", "candidate_read_admission")
+        tools = gateway._registered_tool_registry.snapshot()
+        require(len(tools) == 25 and "ha_call_service" not in tools,
+                "candidate_public_read_projection")
+        service = PowerService(str(work / "power"), PowerProvider.configured(configured, gateway),
+                               PowerCoreAuthority(core),
+                               audit=AuditLogger(configured.audit_path, "synthetic-843-access"))
+        summary = await power_contract(service, rest, telemetry, kind, output, version)
+        state = core.health_snapshot()
+        require(state["compatible_count"] == 17 and all(state[k] == 0 for k in
+                ("issued_lease_count", "active_commit_count", "fallback_count")), "candidate_core_not_settled")
+        save(output, kind + "-candidate-result.json", {
+            "status": "PASS", "engineering_source": os.environ["GITHUB_SHA"],
+            "upstream_version": version, "read_count": 25, "power": summary,
+            "core": {k: state[k] for k in
+                ("compatible_count", "issued_lease_count", "active_commit_count", "fallback_count")},
+            "physical_feedback": False, "approval": "synthetic_authenticated_connector",
+            "scope": "power_only_historical_fan_dashboard_lanes_preserved"})
+    finally:
+        telemetry.ordinary_power_binding = None
+        if service is not None:
+            await service.close()
+        if gateway._transport is not None:
+            await gateway._transport.aclose()
+        end_request(context)
+
+
+async def power_contract(service, rest, telemetry, kind, output, version="8.5.0"):
     """Exercise only the two fixed in-memory entities; read actual call counters."""
+    version_code(version)
     from uuid import uuid4
     from ha_mcp_engineering.power.contracts import PowerRequest, POWER_RELEASES, digest
     receipts = []
@@ -641,7 +708,7 @@ async def power_contract(service, rest, telemetry, kind, output):
                     and receipt["provider_attempt_count"] == 1
                     and receipt["dispatch_intent_recorded"] is True
                     and receipt["provider"] == "upstream_typed_power"
-                    and receipt["provider_contract"] == POWER_RELEASES["8.5.0"][2], "candidate_power_not_verified")
+                    and receipt["provider_contract"] == POWER_RELEASES[version][2], "candidate_power_not_verified")
             require(await service.control(request) == receipt, "candidate_duplicate_power_changed")
             readback = await rest.request("GET", "/states/" + entity)
             calls += 1
@@ -661,23 +728,26 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--relay", action="store_true")
     parser.add_argument("--cleanup", action="store_true")
+    parser.add_argument("--upstream-version", choices=("8.4.3", "8.5.0"), default="8.5.0")
     parser.add_argument("--architecture", choices=("amd64", "arm64"))
     args = parser.parse_args()
     if args.relay:
         asyncio.run(run_relay())
         return
-    identity = execution_guard(os.environ, args.architecture)
+    identity = execution_guard(os.environ, args.architecture, args.upstream_version)
     if args.cleanup:
         print(json.dumps({"cleanup": cleanup(identity)}))
         return
-    pins = json.loads(PINS.read_bytes())
+    pin_path = PINS if args.upstream_version == "8.5.0" else ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json"
+    pins = json.loads(pin_path.read_bytes())
+    require(pins["version"] == args.upstream_version, "pin_version_mismatch")
     checked_sha = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
     require(checked_sha == os.environ["GITHUB_SHA"], "candidate_checkout_mismatch")
     runner = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
     output = runner / (identity + "-evidence")
     output.mkdir(mode=0o700)
     private = Path(tempfile.mkdtemp(prefix=identity + "-private-", dir=runner))
-    receipt = {"started_at": now(), "status": "FAILED", "source": os.environ.get("GITHUB_SHA"), "assessment_base": pins["assessment_source"], "architecture": args.architecture, "production_access": False, "signing": "ephemeral_Core_test_key_only", "scope": "candidate_runtime_with_disposable_containers"}
+    receipt = {"started_at": now(), "status": "FAILED", "source": os.environ.get("GITHUB_SHA"), "assessment_base": pins["assessment_source"], "architecture": args.architecture, "upstream_version": args.upstream_version, "production_access": False, "signing": "ephemeral_Core_test_key_only", "scope": "candidate_runtime_with_disposable_containers"}
     failed = False
     try:
         async def bounded():
