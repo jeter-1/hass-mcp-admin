@@ -32,6 +32,7 @@ ENDPOINTS = {"standalone": "http://127.0.0.1:18086/synthetic-850/mcp",
              "addon": "http://127.0.0.1:19583/synthetic-850/mcp"}
 MAX_BYTES = 4_000_000
 FAN = "fan.hamcp_contract_fan"
+POWER_TARGETS = ("light.hamcp_contract_light", "switch.hamcp_contract_switch")
 DASHBOARD = "assessment-850"
 LABEL = "io.hass-mcp.assessment"
 PHASE = "preparation"
@@ -248,6 +249,9 @@ def create_relay_app():
             return frontend
         if request.method == "POST" and request.path.startswith("/core/api/services/"):
             stats["service_posts"] += 1
+            for domain in ("fan", "light", "switch"):
+                if request.path.startswith("/core/api/services/" + domain + "/"):
+                    stats["service_posts_" + domain] += 1
         headers = {key: request.headers[key] for key in ("Authorization", "Content-Type") if key in request.headers}
         async with app["client"].request(request.method, target, headers=headers, data=await request.read(), allow_redirects=False) as response:
             data = bytearray()
@@ -310,6 +314,7 @@ async def assess(architecture, output, private, identity, pins):
     config.mkdir()
     (config / "custom_components").mkdir()
     for source in (ROOT / "tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture",
+                   ROOT / "tests/fixtures/real_ha_power/custom_components/power_contract_fixture",
                    upstream_source / "custom_components/ha_mcp_tools"):
         shutil.copytree(source, config / "custom_components" / source.name)
     (config / "configuration.yaml").write_text("default_config:\nautomation: !include automations.yaml\nscript: !include scripts.yaml\ninput_boolean: {}\ninput_number: {}\nkitchen_sink:\n")
@@ -333,6 +338,7 @@ async def assess(architecture, output, private, identity, pins):
         require(observed["version"] == "2026.9.2", "core_version_mismatch")
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
             await existing._advance_config_flow(client, token, "beta23_device_fixture", [{"slot": "a"}])
+            await existing._advance_config_flow(client, token, "power_contract_fixture", [{}])
         original = {"title": "Assessment", "views": [{"title": "Original", "path": "test", "cards": []}]}
         await websocket.command({"type": "lovelace/config/save", "config": original})
         await websocket.command({"type": "lovelace/dashboards/create", "url_path": DASHBOARD, "title": "Assessment", "require_admin": True, "show_in_sidebar": False})
@@ -416,7 +422,10 @@ async def assess(architecture, output, private, identity, pins):
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as client:
             async with client.get("http://127.0.0.1:18080/_assessment/stats") as response:
                 stats = await response.json()
-        require(stats.get("service_posts", 0) == 6, "unexpected_fan_dispatch_count")
+        require(stats.get("service_posts", 0) == 14, "unexpected_total_dispatch_count")
+        require(stats.get("service_posts_fan", 0) == 6, "unexpected_fan_dispatch_count")
+        require(stats.get("service_posts_light", 0) == 4, "unexpected_light_dispatch_count")
+        require(stats.get("service_posts_switch", 0) == 4, "unexpected_switch_dispatch_count")
         require(stats.get("lovelace/config/save", 0) == 2, "legacy_dashboard_dispatch_count")
         require(stats.get("ha_mcp_tools/dashboard_edit", 0) == 2, "native_dashboard_dispatch_count")
         require(stats.get("active_websockets", 0) == 0, "relay_sessions_retained")
@@ -463,6 +472,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             "candidate_public_read_projection")
     telemetry, context = begin_request("synthetic-850-" + kind)
     fan_service = None
+    power_service = None
     try:
         for label, arguments in (("list", {}), ("get", {"path": "assessment/read.yaml"})):
             raw = await tools["ha_get_blueprint"].run(arguments)
@@ -515,6 +525,12 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
                     "candidate_fan_independent_readback")
         require(not fan_service.locks.records() and fan_service.health()["nonterminal_tasks"] == 0
                 and fan_service.health()["fallback_count"] == 0, "candidate_fan_not_settled")
+
+        from ha_mcp_engineering.power.service import PowerService, PowerCoreAuthority
+        from ha_mcp_engineering.providers.upstream_power import PowerProvider
+        power_service = PowerService(str(work / "fan"), PowerProvider.configured(configured, gateway),
+                                     PowerCoreAuthority(core), audit=AuditLogger(configured.audit_path, "synthetic-850-access"))
+        power_summary = await power_contract(power_service, rest, telemetry, kind, output)
 
         provider = UpstreamDashboardProvider()
         provider.configure(configured)
@@ -585,17 +601,60 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             "read_count": 25, "blueprint_completeness": "partial" if kind == "standalone" else "complete",
             "fan_operations": 3, "fan_restored": "off", "dashboard_operations": 2,
             "dashboard_restored": True, "component_configured": kind == "addon",
-            "f3": settled, "fan": fan_service.health(),
+            "f3": settled, "fan": fan_service.health(), "power": power_summary,
             "core": {k: core_health[k] for k in (
                 "compatible_count", "issued_lease_count", "active_commit_count", "fallback_count")},
             "physical_feedback": False, "approval": "synthetic_authenticated_principal"})
     finally:
         telemetry.ordinary_fan_binding = None
+        telemetry.ordinary_power_binding = None
+        if power_service is not None:
+            await power_service.close()
         if fan_service is not None:
             await fan_service.close()
         if gateway._transport is not None:
             await gateway._transport.aclose()
         end_request(context)
+
+async def power_contract(service, rest, telemetry, kind, output):
+    """Exercise only the two fixed in-memory entities; read actual call counters."""
+    from uuid import uuid4
+    from ha_mcp_engineering.power.contracts import PowerRequest, POWER_RELEASES, digest
+    receipts = []
+    for entity in POWER_TARGETS:
+        initial = await rest.request("GET", "/states/" + entity)
+        require(initial["state"] == "off", "power_fixture_not_off")
+        calls = initial["attributes"]["synthetic_service_calls"]
+        for action in ("turn_on", "turn_off"):
+            request = PowerRequest(entity_id=entity, action=action,
+                operation_id=f"{int(datetime.now(timezone.utc).timestamp())}-{uuid4().hex}")
+            telemetry.ordinary_power_binding = digest(request.model_dump())
+            receipt = await service.control(request)
+            save(output, f"{kind}-candidate-power-{len(receipts)+1}-initial.json", receipt)
+            for _ in range(6):
+                if receipt["terminal"]:
+                    break
+                await asyncio.sleep(2)
+                receipt = await service.reconcile(request.task_id)
+            save(output, f"{kind}-candidate-power-{len(receipts)+1}-terminal.json", receipt)
+            require(receipt["state"] == "succeeded_verified"
+                    and receipt["provider_attempt_count"] == 1
+                    and receipt["dispatch_intent_recorded"] is True
+                    and receipt["provider"] == "upstream_typed_power"
+                    and receipt["provider_contract"] == POWER_RELEASES["8.5.0"][2], "candidate_power_not_verified")
+            require(await service.control(request) == receipt, "candidate_duplicate_power_changed")
+            readback = await rest.request("GET", "/states/" + entity)
+            calls += 1
+            require(readback["state"] == ("on" if action == "turn_on" else "off")
+                    and readback["attributes"]["synthetic_service_calls"] == calls,
+                    "candidate_power_dispatch_or_readback_mismatch")
+            receipts.append(receipt)
+    require(not service.locks.records() and service.health()["nonterminal_tasks"] == 0
+            and service.health()["fallback_count"] == 0
+            and service.health()["audit_projection_failures"] == 0, "candidate_power_not_settled")
+    return {"operations": len(receipts), "restored": "off", "health": service.health(),
+            "physical_feedback_verified": False}
+
 
 def main():
     logging.disable(logging.CRITICAL)

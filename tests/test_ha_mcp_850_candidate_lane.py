@@ -342,3 +342,54 @@ class WorkflowTests(unittest.TestCase):
                 self.assertRegex(image["image"], r"@sha256:[a-f0-9]{64}$")
                 for field in ("configuration", "manifest"):
                     self.assertRegex(image[field], r"^sha256:[a-f0-9]{64}$")
+
+
+class PowerCandidateContractTests(unittest.IsolatedAsyncioTestCase):
+    async def test_candidate_power_extension_runs_real_lifecycle_and_checks_core_counts(self):
+        from tests.test_typed_power import PowerTransport, Clock, Core
+        from ha_mcp_engineering.power.service import PowerService, PowerCoreAuthority
+        from ha_mcp_engineering.providers.upstream_power import PowerProvider
+        from ha_mcp_engineering.request_context import begin_request, end_request
+        from datetime import datetime, timezone
+        from copy import deepcopy
+        clock = Clock(); clock.value = datetime.now(timezone.utc)
+        core = Core()
+        class Transport(PowerTransport):
+            async def execute_read(self, tool, args, **kwargs):
+                result = await super().execute_read(tool, args, **kwargs)
+                if tool == 'ha_call_service':
+                    self.states[args['entity_id']]['attributes']['synthetic_service_calls'] += 1
+                return result
+        transport = Transport('8.5.0')
+        transport.states = {entity:dict(entity_id=entity,state='off',last_updated='synthetic-1',
+            attributes={'synthetic_service_calls':0}) for entity in lane.POWER_TARGETS}
+        class Rest:
+            async def request(self, method, path):
+                assert method == 'GET' and path.startswith('/states/')
+                return deepcopy(transport.states[path.removeprefix('/states/')])
+        with tempfile.TemporaryDirectory() as directory:
+            service = PowerService(directory,PowerProvider(transport,lambda *args:transport.authority),PowerCoreAuthority(core),now=clock)
+            telemetry, token = begin_request('synthetic-container-lane')
+            try:
+                result = await lane.power_contract(service,Rest(),telemetry,'synthetic',Path(directory))
+                self.assertEqual(result['operations'],4)
+                self.assertEqual(transport.writes,4)
+                self.assertEqual(result['restored'],'off')
+                self.assertEqual(len(list(Path(directory).glob('synthetic-candidate-power-*.json'))),8)
+                self.assertFalse(core.leases or core.commits)
+            finally:
+                await service.close();end_request(token)
+
+    async def test_core_counter_mismatch_cannot_claim_lane_pass(self):
+        from types import SimpleNamespace
+        class Rest:
+            async def request(self, method, path):
+                return {'state':'off','attributes':{'synthetic_service_calls':0}}
+        from ha_mcp_engineering.power.contracts import POWER_RELEASES
+        class Service:
+            async def control(self, request):
+                return dict(state='succeeded_verified',terminal=True,provider_attempt_count=1,
+                            dispatch_intent_recorded=True,provider='upstream_typed_power',
+                            provider_contract=POWER_RELEASES['8.5.0'][2])
+        with tempfile.TemporaryDirectory() as directory, self.assertRaisesRegex(lane.Refusal,'dispatch_or_readback'):
+            await lane.power_contract(Service(),Rest(),SimpleNamespace(),'synthetic',Path(directory))

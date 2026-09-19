@@ -1,0 +1,10 @@
+{
+  "domain": "power_contract_fixture",
+  "name": "Synthetic Power Contract Fixture",
+  "codeowners": [],
+  "config_flow": true,
+  "documentation": "https://github.com/jeter-1/hass-mcp-admin",
+  "integration_type": "device",
+  "iot_class": "calculated",
+  "version": "1.0.0"
+}

@@ -333,6 +333,10 @@ async def _get_execution_task(task_id):
     service = FAN_OPERATIONS.service
     if service is not None and service.load(task_id) is not None:
         return await service.reconcile(task_id)
+    from ..power.service import POWER_OPERATIONS
+    service = POWER_OPERATIONS.service
+    if service is not None and service.load(task_id) is not None:
+        return await service.reconcile(task_id)
     return GOVERNANCE.require().get_execution_task(task_id)
 
 

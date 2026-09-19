@@ -44,6 +44,7 @@ class RequestTelemetry:
     provider_failure_count: int = 0
     caller_id: str = "anonymous"
     ordinary_fan_binding: str | None = field(default=None, repr=False)
+    ordinary_power_binding: str | None = field(default=None, repr=False)
     audit_context: dict[str, object] = field(default_factory=dict)
     core_dispatch_authorizer: Callable[[], bool] | None = field(
         default=None,

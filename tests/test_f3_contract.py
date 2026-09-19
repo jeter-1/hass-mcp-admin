@@ -341,7 +341,7 @@ class F3ContractDeclarationTests(unittest.TestCase):
                 "superseded",
             },
         )
-        self.assertEqual(len(registered_tools(get_registered_server())), 52)
+        self.assertEqual(len(registered_tools(get_registered_server())), 53)
 
     def test_canonical_contract_has_only_standard_library_imports(self):
         contract = (

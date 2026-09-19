@@ -3,11 +3,14 @@ from .contracts import CORE_VERSION, CORE_REQUIREMENTS, FanRefusal
 
 
 class FanCoreAuthority:
+    trigger = "fan_authority"
+    refusal = FanRefusal
+
     def __init__(self, runtime):
         self.runtime = runtime
 
     async def acquire(self, prepared=None, preflight=None):
-        await self.runtime.reconcile_once("fan_authority")
+        await self.runtime.reconcile_once(self.trigger)
         return self.runtime.acquire(
             CORE_REQUIREMENTS, expected_core_version=CORE_VERSION,
             target=getattr(prepared, "target", None),
@@ -28,14 +31,14 @@ class FanCoreAuthority:
     async def read(self, callback, prepared=None):
         authority = await self.acquire(prepared)
         if authority is None:
-            raise FanRefusal("fan_core_authority_unavailable")
+            raise self.refusal("fan_core_authority_unavailable")
         commits = self.consume(authority)
         if commits is None:
             self.release(authority)
-            raise FanRefusal("fan_core_authority_unavailable")
+            raise self.refusal("fan_core_authority_unavailable")
         def check():
             if not self.revalidate(authority, commits):
-                raise FanRefusal("fan_core_authority_retired")
+                raise self.refusal("fan_core_authority_retired")
         try:
             check()
             value = await callback(check)
