@@ -1,8 +1,8 @@
 # HA MCP Engineering Server
 
-Engineering **2.3.0-beta.2** adds exact ha-mcp 8.5.0 compatibility through the existing
-authenticated connector. This prerelease preserves received Host/Origin enforcement
-and secret-path authentication.
+Engineering **2.3.0-beta.3** adds exact light/switch ON/OFF through the existing
+authenticated connector and reviewed internal ha-mcp provider. This prerelease
+preserves received Host/Origin enforcement and secret-path authentication.
 It provides one public MCP endpoint through the existing Nabu Casa
 connector, with a unified catalog.
 Engineering selects reviewed, admitted ha-mcp or native providers internally.
@@ -13,14 +13,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.3.0-beta.2 release notes](docs/V2_3_0_BETA2_RELEASE_NOTES.md) and
-[2.3.0-beta.2 acceptance contract](docs/V2_3_0_BETA2_ACCEPTANCE.md). A source version does
+Read the [2.3.0-beta.3 release notes](docs/V2_3_0_BETA3_RELEASE_NOTES.md) and
+[2.3.0-beta.3 acceptance contract](docs/V2_3_0_BETA3_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.3.0-beta.2 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.3.0-beta.3 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -37,11 +37,11 @@ options refuse startup; historical acceptance does not establish this boundary.
    `8100`; authenticated, admin-only **HA MCP Approval** ingress uses internal
    port `8110`. The approval panel is not a second MCP endpoint.
 5. Verify the final installed artifact, reconnect the client and complete the
-   bounded [acceptance checks](docs/V2_3_0_BETA2_ACCEPTANCE.md).
+   bounded [acceptance checks](docs/V2_3_0_BETA3_ACCEPTANCE.md).
 
 The image repository remains
 `ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
-`linux/arm64` for 2.3.0-beta.2. Published 2.2.0 retains its historical
+`linux/arm64` for 2.3.0-beta.3. Published 2.2.0 retains its historical
 `linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; Engineering
 requires a supported 64-bit installation. This source change does not migrate or
 uninstall an existing system. Existing options, persistent paths, stored formats,
@@ -60,8 +60,8 @@ implement Host/Origin enforcement.
 
 ## Capabilities and compatibility
 
-The fully healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing exposes **52 static tools
-plus 25 delegated reads, 77 total**, with all **17 Core capabilities**.
+The fully healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing exposes **53 static tools
+plus 25 delegated reads, 78 total**, with all **17 Core capabilities**.
 Actual authority and provider admission determine availability. Fresh protocol
 enumeration and descriptor comparison establish the catalog; a health count or
 cached client inventory alone does not.
@@ -74,7 +74,7 @@ Provider unavailability grants no fallback authority or arbitrary forwarding.
 
 Accepted RC9 evidence includes **Core 2026.9.2 / ha-mcp 8.4.3**.
 Core 2026.9.2 requires separately configured, valid signed Core authority
-referencing existing compiled contracts. Installing 2.3.0-beta.2 does not configure
+referencing existing compiled contracts. Installing 2.3.0-beta.3 does not configure
 trust or admit an uncompiled release. Existing compiled pairings retain their
 behavior.
 
@@ -103,6 +103,21 @@ action is reconciled read-only, never blindly retried; unresolved outcomes retai
 protection for the affected fan. Verification reflects HA state, not independent
 physical feedback, and consumer coverage remains incomplete. Restoration requires
 a separate exact owner request. See [typed fan control](docs/TYPED_FAN_CONTROL.md).
+
+## Ordinary light and switch requests
+
+`control_power` supports one exact light or switch ON/OFF request under ordinary
+authenticated connector authority. The assistant manages its operation ID; no
+configuration plan or panel approval is created. The contracts require Core
+2026.9.2 and admitted ha-mcp 8.4.3 or 8.5.0. Generic services, toggle, brightness,
+color, bulk targets and other domains remain outside this tool.
+
+Power may affect critical loads, integration-defined groups and consumers.
+Coverage is incomplete, and light ON may restore integration defaults. Verify
+the authoritative task and independent HA state; physical effects are not
+independently established. Uncertainty protects the exact target and never
+permits redispatch. Restoration needs a separate exact owner request.
+See [typed power control](docs/TYPED_POWER_CONTROL.md).
 
 ## Governed changes and evidence
 
@@ -154,4 +169,4 @@ runtime is preserved by 2.2.0; its observations retain their RC9 pairing/time.
 - [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases)
 
 Historical counts, pairings, installation and rollback guidance describe their
-original release and do not replace the current 2.3.0-beta.2 contract.
+original release and do not replace the current 2.3.0-beta.3 contract.

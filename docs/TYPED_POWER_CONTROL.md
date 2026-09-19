@@ -40,9 +40,10 @@ actor can still intervene after the final preread.
 ## Closed provider authority
 
 Separate compiled power contracts cover Core **2026.9.2** with exact ha-mcp
-**8.4.3** or **8.5.0**. These are candidate contracts requiring focused review and
-candidate validation before release/adoption. They do not widen generic read
-admission or treat an advertised mixed tool as a write grant.
+**8.4.3** or **8.5.0**. Beta.3 carries these independently reviewed contracts;
+exact-candidate validation and separately authorized installed acceptance remain
+distinct gates. They do not widen generic read admission or treat an advertised
+mixed tool as a write grant.
 
 The provider independently validates the complete reviewed catalog, release
 identity, protocol `2025-03-26`, source reference and current deny-aware authority.
@@ -117,14 +118,19 @@ transport inputs and real gateway, provider, signed Core authority, shared F3,
 stores, target holds, cancellation, duplicate reconciliation, bounded receipts
 and audit. Existing fan tests and historical writer fixtures remain controls.
 
-The existing guarded 8.5.0 exact-image lane is extended with separate in-memory
-light/switch fixtures for standalone and add-on packaging. It requires four power
-operations per packaging, independent Core state and service-counter readbacks,
-no duplicate calls, exact OFF restoration and settled resources. Its relay requires
-six existing fan and eight new power service POSTs across both packagings. Old
-fan/dashboard assertions, image pins, runtime guard and container cleanup remain.
-A unit test of that runner is not a container result. Actual execution, architecture
-coverage and any missing 8.4.3 assembled power coverage must be reported separately.
+The guarded exact-image lanes cover 8.4.3 and 8.5.0, each with standalone
+and add-on packaging on native amd64/arm64 and disposable Core 2026.9.2. They
+require four power operations per packaging, independent Core state and
+service-counter readbacks, no duplicate calls, exact OFF restoration and settled
+resources. The 8.5.0 relay additionally requires its six existing fan calls and
+both legacy/native dashboard restoration paths. Historical compatibility lanes
+remain required. Inputs are immutable and the runner refuses arbitrary versions,
+endpoints or images; cleanup remains bounded and unconditional.
+
+A unit test of this runner is not a container result. Record actual candidate CI
+execution and artifact identities for all eight combinations. These candidate
+interpreter lanes are distinct from Engineering image and installed acceptance.
+See [beta.3 acceptance](V2_3_0_BETA3_ACCEPTANCE.md).
 
 The candidate adds one descriptor: 53 static plus the unchanged 25 delegated
 reads, totaling 78. Existing descriptors must remain identical. Independent
