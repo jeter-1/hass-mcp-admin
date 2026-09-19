@@ -1,0 +1,1 @@
+{"baseline": {"entity_id": "switch.synthetic_historical", "last_updated": "synthetic-beta3-revision", "state": "off"}, "model": "ordinary-power-v1", "prepared_hash": "853a158337aec5f2855d4b813cbe75347ea4abda14661376eb9170b258cecfcc", "request": {"action": "turn_on", "entity_id": "switch.synthetic_historical", "operation_id": "1789833600-11111111111111111111111111111111"}}

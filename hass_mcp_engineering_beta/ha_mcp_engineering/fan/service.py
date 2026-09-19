@@ -81,6 +81,19 @@ class FanService:
         if path.stat().st_size > 16_384:
             raise self.refusal("fan_receipt_corrupt")
         value = json.loads(path.read_bytes())
+        if isinstance(value, dict) and value.get("model") == self.namespace + "-core-bound-v2":
+            if set(value) != {"model", "request", "baseline", "prepared_hash",
+                              "provider_contract", "core_binding"} or value["core_binding"] is None:
+                raise self.refusal("fan_receipt_corrupt")
+            try:
+                request = self.request_type.model_validate(value["request"]).checked()
+                prepared = self.prepare_record(request, value["baseline"],
+                                               value["provider_contract"], value["core_binding"])
+            except (ValueError, TypeError, KeyError):
+                raise self.refusal("fan_receipt_corrupt") from None
+            if request.task_id != task_id or prepared.prepared_operation_hash != value["prepared_hash"]:
+                raise self.refusal("fan_receipt_corrupt")
+            return prepared
         if set(value) != {"model", "request", "baseline", "prepared_hash"} or value["model"] != self.namespace:
             raise self.refusal("fan_receipt_corrupt")
         request = self.request_type.model_validate(value["request"]).checked()
@@ -111,6 +124,10 @@ class FanService:
                 raise self.refusal("fan_receipt_capacity_exhausted")
             value = {"model": self.namespace, "request": request.model_dump(),
                      "baseline": prepared.baseline, "prepared_hash": prepared.prepared_operation_hash}
+            if prepared.core_binding is not None:
+                value.update(model=self.namespace + "-core-bound-v2",
+                             provider_contract=prepared.provider_contract,
+                             core_binding=prepared.core_binding)
             payload = json.dumps(value, sort_keys=True, allow_nan=False).encode()
             fd, temp = tempfile.mkstemp(prefix=".fan-", dir=self.root)
             try:
@@ -231,6 +248,7 @@ class FanService:
             "operation_hash": prepared.prepared_operation_hash,
             "authorization": "authenticated_connector", "provider": self.provider_name,
             "provider_contract": prepared.provider_contract, "fallback": "none",
+            **({"core_binding": prepared.core_binding} if prepared.core_binding is not None else {}),
             "entity_id": prepared.request.entity_id, "action": prepared.request.action,
             **self.receipt_parameters(prepared.request),
             "state": record.task_state if record else "created",

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from .power.contracts import POWER_CONTRACTS
+from .power.contracts import POWER_CONTRACTS, POWER_SEMANTIC_CONTRACTS
 
 from typing import Any
 
-from .fan.contracts import CORE_VERSION, FAN_CONTRACTS, FAN_RELEASES
+from .fan.contracts import CORE_VERSION, FAN_CONTRACTS, FAN_RELEASES, FAN_SEMANTIC_CONTRACTS
 
 from .version import (
     BUILD_DIRTY,
@@ -369,7 +369,8 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "reported_state_only_physical_feedback_not_verified",
         "security_justification": "Separate compiled power contracts fix target, ON/OFF service and empty data. No generic services or uncertain-action replay.",
         "trust_mode": "reviewed_argument_constrained",
-        "trust_profile": ", ".join(POWER_CONTRACTS),
+        "trust_profile": ", ".join((*POWER_CONTRACTS, *POWER_SEMANTIC_CONTRACTS.values())),
+        "core_applicability": "explicit_signed_core.typed_power_operation_or_exact_legacy_core_2026.9.2",
     },
     {
         "tool": "control_fan",
@@ -381,13 +382,14 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "reported_state_only_physical_feedback_not_verified",
         "fallback_policy": "none",
         "security_justification": (
-            f"Separate compiled Core {CORE_VERSION}/ha-mcp "
+            f"Signed Core operation applicability or legacy Core {CORE_VERSION}/ha-mcp "
             f"{', '.join(FAN_RELEASES)} fan contracts fix target, service and arguments; "
             "the execution receipt identifies the selected exact contract. Generic "
             "services remain closed and uncertain dispatch is reconciled without replay."
         ),
         "trust_mode": "reviewed_argument_constrained",
-        "trust_profile": ", ".join(FAN_CONTRACTS),
+        "trust_profile": ", ".join((*FAN_CONTRACTS, *FAN_SEMANTIC_CONTRACTS.values())),
+        "core_applicability": "explicit_signed_core.typed_fan_operation_or_exact_legacy_core_2026.9.2",
     },
     {
         "tool": "list_dashboards",

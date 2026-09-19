@@ -68,7 +68,12 @@ async def configure_with_test_authority(runtime, configured, *, cache_path, expe
     await runtime.reconcile_once("core_test_signed_data_available")
     after = runtime.health_snapshot()
     assert after["compatible_count"] == 17
-    assert all(p["authority_source"] == "verified_compatibility" for p in after["authority_profiles"])
+    assert all(p["authority_source"] == "verified_compatibility"
+               for p in after["authority_profiles"] if p["disposition"].startswith("admitted_"))
+    # This historical lane signs the original 17 references only. Optional
+    # ordinary-operation profiles must not inherit that authority.
+    assert all(not p["disposition"].startswith("admitted_") for p in after["authority_profiles"]
+               if p["capability_id"] in {"core.typed_fan_operation", "core.typed_power_operation"})
     assert after["fallback_count"] == 0
     print("Core data-only authority contract: " + json.dumps({
         "version": entry["version"], "before": 0, "after": 17,

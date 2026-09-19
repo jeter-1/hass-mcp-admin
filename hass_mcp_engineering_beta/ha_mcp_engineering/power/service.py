@@ -8,6 +8,8 @@ from .contracts import POWER_CONTRACTS, PROVIDER, PowerRequest, PowerRefusal
 
 
 class PowerCoreAuthority(FanCoreAuthority):
+    family = "power"
+    legacy_contracts = POWER_CONTRACTS
     trigger = "power_authority"
     refusal = PowerRefusal
 

@@ -68,6 +68,9 @@ class FanExecutionRepository(DurableExecutionRepository):
                 "operation_class": "typed_" + self.kind + "_lifecycle",
                 "redispatch_prohibited": True,
             }
+            if prepared.core_binding is not None:
+                common.update(core_binding=prepared.core_binding,
+                              provider_contract=prepared.provider_contract)
             entries = []
             # Intrinsic event facts only: later state is not backdated onto an
             # earlier event. The separate snapshot labels current durable facts.

@@ -53,6 +53,10 @@ class Core:
         self.commits = set()
     async def reconcile_once(self, trigger):
         return None
+    def route_status(self, requirements):
+        # This fixture models the shipped legacy contract, not signed
+        # applicability for the newly compiled operation profiles.
+        return {"available": False}
     def acquire(self, requirements, **kwargs):
         if not self.allowed or kwargs['expected_core_version'] != self.version:
             return None

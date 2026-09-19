@@ -410,6 +410,40 @@ CORE_CAPABILITY_PROFILES: tuple[CoreCapabilityProfile, ...] = (
 )
 
 
+# These references are deliberately separate from the original 17 profiles.
+# Existing compiled releases and signed records do not acquire new write
+# semantics merely because the executable learned a new capability.
+CORE_TYPED_OPERATION_PROFILES = tuple(
+    _contract(
+        "core.typed_" + family + "_operation",
+        CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
+        "compiled-core-single-" + family + "-v1",
+        ("rest_state_entity_shape", "service_domain_mapping", "websocket_get_config_mapping"),
+        provider_boundary="reviewed_ha_mcp_typed_" + family,
+        response_contract={
+            "domains": domains,
+            "actions": actions,
+            "target": "one_exact_available_entity",
+            "arguments": arguments,
+            "readback": readback,
+            "provider": "separate_exact_compiled_ha_mcp_contract",
+            "dispatch": "at_most_once_wait_false_return_response_false_verbose_false",
+            "recovery": "read_only_same_core_version_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    )
+    for family, domains, actions, arguments, readback in (
+        ("fan", ["fan"], ["turn_on", "turn_off", "set_percentage"],
+         "strict_optional_percentage_0_100_checked_feature_bits_zero_is_off",
+         "exact_state_and_requested_percentage_no_quantization_substitution"),
+        ("power", ["light", "switch"], ["turn_on", "turn_off"],
+         "empty_service_data_integration_defaults_may_apply", "exact_on_off_state"),
+    )
+)
+CORE_RUNTIME_CAPABILITY_PROFILES = CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES
+
+
 def compiled_exact_authority(version: str) -> tuple[CoreAuthoritySelection, ...]:
     """Return compiled per-capability decisions for one exact release."""
 
@@ -465,6 +499,8 @@ __all__ = [
     "CORE_2026_9_AUTHORITY",
     "CORE_2026_9_RELEASE_AUTHORITIES",
     "CORE_CAPABILITY_PROFILES",
+    "CORE_TYPED_OPERATION_PROFILES",
+    "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",
 ]

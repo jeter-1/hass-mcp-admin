@@ -74,7 +74,8 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.calls, 2)
         self.assertEqual(len(self.fetches), 1)
         self.assertTrue(all(p["authority_source"] == "verified_compatibility"
-                            for p in runtime.health_snapshot()["authority_profiles"]))
+                            for p in runtime.health_snapshot()["authority_profiles"]
+                            if p["disposition"].startswith("admitted_")))
 
     async def test_dependency_build_publishes_only_current_signed_core_evidence(self):
         from tests.test_dependency_build_authority import _Network

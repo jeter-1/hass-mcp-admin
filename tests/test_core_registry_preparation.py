@@ -46,6 +46,20 @@ class CoreRegistryPreparationTests(unittest.TestCase):
         self.assertEqual(parsed.accepted.entries[0].to_mapping(), self.entry)
         self.assertNotIn(b"signature", candidate)
 
+    def test_explicit_typed_references_can_be_prepared_without_changing_registry_schema(self):
+        from ha_mcp_engineering.ha_core_readmission.registry_models import CoreReleaseEntry
+        entry = core_entry('2026.9.3', typed_operations=True)
+        entry['evidence_sha256'] = hashlib.sha256(self.evidence).hexdigest()
+        self.entry = entry
+        candidate = self.candidate()
+        self.assertNotIn(b'"signature"', candidate)
+        parsed = prepare.parse_journal(self.sign(candidate), self.signer.private_key.public_key())
+        self.assertEqual(len(parsed.accepted.entries[0].capabilities), 19)
+        invalid = deepcopy(entry)
+        invalid['capabilities'][-1]['adapter_id'] = 'unknown-adapter'
+        with self.assertRaisesRegex(ValueError, 'exact capability'):
+            prepare.require_known_contracts(CoreReleaseEntry.from_mapping(invalid))
+
     def test_changed_candidate_key_evidence_or_journal_refused(self):
         candidate = self.candidate()
         with self.assertRaises(ValueError):

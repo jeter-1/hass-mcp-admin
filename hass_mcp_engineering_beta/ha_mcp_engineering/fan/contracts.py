@@ -19,6 +19,8 @@ FAN_RELEASES = {
               "core-2026.9.2-ha-mcp-8.5.0-single-fan-v1"),
 }
 FAN_CONTRACTS = tuple(item[2] for item in FAN_RELEASES.values())
+FAN_SEMANTIC_CONTRACTS = {version: "ha-mcp-" + version + "-single-fan-v2"
+                          for version in FAN_RELEASES}
 PROVIDER = "upstream_typed_fan"
 CORE_REQUIREMENTS = (
     "core.direct_entity_state_read", "core.state_service_discovery",

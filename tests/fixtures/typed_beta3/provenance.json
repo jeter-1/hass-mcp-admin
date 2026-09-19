@@ -1,0 +1,37 @@
+{
+  "source_commit": "349e0e49607e44a31eececd9ec457a5e124dbf98",
+  "synthetic": true,
+  "writer": "exact shipped FanService/PowerService.prepare_record and save",
+  "generation": "Run this script with --source pointing to the exact clean shipped checkout.",
+  "generator_sha256": "4e0f31b9f350681f26f5a3e7ea9d1233aee7263c93f013bd79dd1da0dca2d4e9",
+  "records": [
+    {
+      "file": "fan-0.json",
+      "family": "fan",
+      "contract": "core-2026.9.2-ha-mcp-8.4.3-single-fan-v1",
+      "task_id": "2536d11243a0ff7621763daafdc15a87",
+      "sha256": "557ffe74b5a928a61f53f83bda1f5af379aaa067bf1bfd2d2466ce428c9bde5a"
+    },
+    {
+      "file": "fan-1.json",
+      "family": "fan",
+      "contract": "core-2026.9.2-ha-mcp-8.5.0-single-fan-v1",
+      "task_id": "063436af5c8955205988a1de18517502",
+      "sha256": "fce038c866d92f79ec88e76cef777687934225a72d1ee571a2d1cd8ffcca9e98"
+    },
+    {
+      "file": "power-0.json",
+      "family": "power",
+      "contract": "core-2026.9.2-ha-mcp-8.4.3-single-power-v1",
+      "task_id": "403d4b51d811224da3fc05affb4eec97",
+      "sha256": "a505b843963554e46726487101c80a30f6634966dbdf7a872e74fe9cc4be91fb"
+    },
+    {
+      "file": "power-1.json",
+      "family": "power",
+      "contract": "core-2026.9.2-ha-mcp-8.5.0-single-power-v1",
+      "task_id": "973772f147151ac7914c7bf1af1bb843",
+      "sha256": "2f9814d706de65a2819ae11121ecece001bf3605f13f871d572727c40367423c"
+    }
+  ]
+}

@@ -9,7 +9,7 @@ import asyncio
 import json
 from ..clients.upstream_read import McpReadGatewayTransport
 from ..configuration import parse_upstream_dashboard_endpoint
-from ..fan.contracts import FanRequest, FanRefusal, FAN_RELEASES, checked_state, digest
+from ..fan.contracts import FanRequest, FanRefusal, FAN_RELEASES, FAN_SEMANTIC_CONTRACTS, checked_state, digest
 from ..request_context import current_telemetry
 from ..upstream_tool_policy import load_reviewed_upstream_release_registry, validate_reviewed_release_catalog
 from ..version import SERVER_VERSION
@@ -20,6 +20,7 @@ SOURCE = "eac7a3aa7063432e9af17e7d7726040e909c7b8f"
 
 class FanProvider:
     releases = FAN_RELEASES
+    semantic_contracts = FAN_SEMANTIC_CONTRACTS
     provider_name = "upstream_typed_fan"
     authority_method = "fan_provider_authority_token"
     request_type = FanRequest
@@ -38,15 +39,16 @@ class FanProvider:
         ) if endpoint else None
         return cls(transport, getattr(gateway, cls.authority_method))
 
-    def validate_catalog(self, catalog, expected_contract=None):
+    def validate_catalog(self, catalog, expected_contract=None, *, signed_core=False):
         registry = load_reviewed_upstream_release_registry()
         release = registry.by_version.get(catalog.server_version)
         selected = self.releases.get(catalog.server_version)
+        semantic = self.semantic_contracts.get(catalog.server_version)
         if (catalog.server_name != "ha-mcp" or selected is None
                 or catalog.protocol_version != "2025-03-26" or release is None
                 or catalog.catalog_complete is not True
                 or release.revoked or release.entry_id != selected[0] or release.source_commit != selected[1]
-                or (expected_contract is not None and expected_contract != selected[2])
+                or (expected_contract is not None and expected_contract not in (selected[2], semantic))
                 or release.provider_disposition("read_gateway") != "admitted"):
             raise self.refusal("fan_provider_identity_unavailable")
         result = validate_reviewed_release_catalog(
@@ -56,7 +58,8 @@ class FanProvider:
         )
         if not result.valid:
             raise self.refusal("fan_provider_contract_mismatch")
-        return (catalog.server_version, selected[2], self._authority(catalog.server_version))
+        contract = expected_contract or (semantic if signed_core else selected[2])
+        return (catalog.server_version, contract, self._authority(catalog.server_version))
 
     def _authority(self, version):
         # Retain the original callback calling convention for existing users.
@@ -75,13 +78,13 @@ class FanProvider:
             raise cls.refusal("fan_provider_response_malformed")
         return value
 
-    async def _call(self, tool, args, before, *, expected_contract=None):
+    async def _call(self, tool, args, before, *, expected_contract=None, signed_core=False):
         if self.transport is None:
             raise self.refusal("fan_provider_unconfigured")
         token = None
         def validate(catalog):
             nonlocal token
-            token = self.validate_catalog(catalog, expected_contract)
+            token = self.validate_catalog(catalog, expected_contract, signed_core=signed_core)
         async def dispatch():
             if token is None or self._authority(token[0]) != token[2]:
                 raise self.refusal("fan_provider_authority_retired")
@@ -111,12 +114,12 @@ class FanProvider:
         }, before, expected_contract=contract)
         return checked_state(value.get("data"), entity_id)
 
-    async def services(self, request, authorize, *, contract=None):
+    async def services(self, request, authorize, *, contract=None, signed_core=False):
         async def before():
             authorize()
         value, selected = await self._call("ha_list_services", {
             "domain": "fan", "limit": 50, "offset": 0, "detail_level": "summary",
-        }, before, expected_contract=contract)
+        }, before, expected_contract=contract, signed_core=signed_core)
         services = value.get("services")
         if (value.get("success") is not True or not isinstance(services, dict)
                 or "fan." + request.action not in services):
