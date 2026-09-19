@@ -16,7 +16,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 VERSION = "2.2.0-rc.2"
-CURRENT_VERSION = "2.3.0-beta.2"
+CURRENT_VERSION = "2.3.0-beta.3"
 ACCEPTANCE = ROOT / "docs" / "V2_2_0_RC2_ACCEPTANCE.md"
 RELEASE_NOTES = ROOT / "docs" / "V2_2_0_RC2_RELEASE_NOTES.md"
 
@@ -80,11 +80,11 @@ class Rc2ReleaseTests(unittest.TestCase):
         self.assertEqual(context["documents"]["resolution_status"], "exact")
         self.assertEqual(
             context["documents"]["active_acceptance_document"],
-            "docs/V2_3_0_BETA2_ACCEPTANCE.md",
+            "docs/V2_3_0_BETA3_ACCEPTANCE.md",
         )
         self.assertEqual(
             context["documents"]["active_release_notes"],
-            "docs/V2_3_0_BETA2_RELEASE_NOTES.md",
+            "docs/V2_3_0_BETA3_RELEASE_NOTES.md",
         )
 
     def test_documents_bind_release_and_preserved_catalog(self):

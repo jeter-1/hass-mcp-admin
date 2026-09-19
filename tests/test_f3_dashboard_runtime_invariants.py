@@ -74,7 +74,7 @@ class DashboardRuntimeInvariantTests(unittest.TestCase):
 
     def test_public_surface_has_one_proposal_tool_and_no_direct_write_tool(self):
         names = set(registered_tools(get_registered_server()))
-        self.assertEqual(len(names), 52)
+        self.assertEqual(len(names), 53)
         self.assertIn("create_dashboard_update_plan", names)
         self.assertNotIn("update_storage_dashboard", names)
         self.assertNotIn("update_dashboard", names)

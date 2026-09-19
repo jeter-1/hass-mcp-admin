@@ -35,6 +35,21 @@ def prepare_record(request, baseline, contract=FAN_CONTRACT):
 
 
 class FanAdapter:
+    prepare_record = staticmethod(prepare_record)
+    desired = staticmethod(desired)
+    check_features = staticmethod(check_features)
+    refusal = FanRefusal
+    target_reason = "exact_fan_target"
+    mismatch_field = "state_or_percentage"
+
+    @staticmethod
+    def diagnostic(code):
+        return code
+
+    @staticmethod
+    def domain(request):
+        return "fan"
+
     capabilities = AdapterCapabilityDescriptor(
         "typed_fan", F3_ADAPTER_CONTRACT_MODEL, "ordinary_fan",
         ("turn_on", "turn_off", "set_percentage"), False, True, True,
@@ -47,17 +62,17 @@ class FanAdapter:
         async def read(check):
             selected = await self.provider.services(request, check, contract=contract)
             state = await self.provider.state(request.entity_id, check, contract=selected)
-            check_features(request, state)
+            self.check_features(request, state)
             return state, selected
         baseline, selected = await self.core.read(
-            read, SimpleNamespace(target=OperationTarget("fan", request.entity_id)),
+            read, SimpleNamespace(target=OperationTarget(self.domain(request), request.entity_id)),
         )
-        return prepare_record(request, baseline, selected)
+        return self.prepare_record(request, baseline, selected)
 
     def lock_requests(self, prepared):
         return (
             LockRequest("entity:" + prepared.request.entity_id, (LockScope.RESOURCE,),
-                        LockMode.EXCLUSIVE, ("exact_fan_target",)),
+                        LockMode.EXCLUSIVE, (self.target_reason,)),
             LockRequest("home_assistant:core", (LockScope.RESOURCE,),
                         LockMode.SHARED, ("home_assistant_availability_dependency",)),
             LockRequest(HA_MCP_PROVIDER_LOCK_KEY, (LockScope.PROVIDER,),
@@ -67,13 +82,13 @@ class FanAdapter:
     async def preflight(self, prepared, *, acquired_locks):
         current = await self.prepare(prepared.request, contract=prepared.provider_contract)
         fresh = current.current_state_fingerprint == prepared.current_state_fingerprint
-        no_op = fresh and desired(prepared.request, current.baseline)
+        no_op = fresh and self.desired(prepared.request, current.baseline)
         return PreflightResult(
             fresh and not no_op,
             Outcome.SUCCEEDED_VERIFIED if no_op else None if fresh else Outcome.PREFLIGHT_REJECTED,
             prepared.target, current.current_state_fingerprint, prepared.provider_contract,
             "ha_call_service", digest(prepared.request.arguments()),
-            digest(current.baseline), ("desired_state_already_reached",) if no_op else () if fresh else ("fan_state_changed",),
+            digest(current.baseline), ("desired_state_already_reached",) if no_op else () if fresh else (self.diagnostic("fan_state_changed"),),
         )
 
     async def dispatch(self, prepared, preflight, *, before_dispatch):
@@ -86,7 +101,7 @@ class FanAdapter:
                 lambda check: self.provider.state(prepared.request.entity_id, check, contract=prepared.provider_contract), prepared,
             )
             if digest(state) != prepared.current_state_fingerprint:
-                raise FanRefusal("fan_state_changed")
+                raise self.refusal("fan_state_changed")
             await before_dispatch()
             dispatched = True
         try:
@@ -97,20 +112,20 @@ class FanAdapter:
                                   response_evidence_hash=evidence)
         except Exception:
             if not dispatched:
-                raise FanRefusal("fan_dispatch_refused") from None
+                raise self.refusal("fan_dispatch_refused") from None
             return DispatchResult(
                 Outcome.DISPATCH_INDETERMINATE, True, 1, True, False,
-                diagnostic_codes=("fan_response_uncertain",),
+                diagnostic_codes=(self.diagnostic("fan_response_uncertain"),),
             )
 
     async def observe(self, prepared, dispatch):
         state = await self.core.read(
             lambda check: self.provider.state(prepared.request.entity_id, check, contract=prepared.provider_contract), prepared,
         )
-        matches = desired(prepared.request, state)
+        matches = self.desired(prepared.request, state)
         return ObservationResult(
             Outcome.OBSERVING, 1, True, True, True, digest(state), matches,
-            () if matches else ("state_or_percentage",), digest(state),
+            () if matches else (self.mismatch_field,), digest(state),
         )
 
     async def verify(self, prepared, observation):

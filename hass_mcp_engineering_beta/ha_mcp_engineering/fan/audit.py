@@ -5,23 +5,23 @@ from ..f3.persistence import DurableExecutionRepository
 from .contracts import OPERATION_PATTERN, PROVIDER, digest
 
 
-def request_summary(telemetry):
+def request_summary(telemetry, *, kind="fan", provider=PROVIDER):
     """Only this typed projection crosses the authenticated gateway audit path."""
     context = telemetry.audit_context
-    safe = {"operation_class": "typed_fan", "provider": PROVIDER, "fallback": "none"}
+    safe = {"operation_class": "typed_" + kind, "provider": provider, "fallback": "none"}
     for name, pattern in (("task_id", r"[a-f0-9]{32}"),
                           ("operation_id", OPERATION_PATTERN),
                           ("operation_hash", r"[a-f0-9]{64}")):
         value = context.get(name)
         if isinstance(value, str) and re.fullmatch(pattern, value):
             safe[name] = value
-    outcome = context.get("fan_outcome")
+    outcome = context.get(kind + "_outcome")
     if isinstance(outcome, str) and outcome in {
         "created", "preflight", "dispatching", "observing", "succeeded_verified",
         "failed_pre_dispatch", "failed_post_dispatch", "manual_review_required",
         "cancelled_pre_dispatch", "request_failed_reconcile_task",
     }:
-        safe["fan_outcome"] = outcome
+        safe[kind + "_outcome"] = outcome
     for name in ("dispatch_intent_recorded", "provider_response_received", "terminal"):
         if type(context.get(name)) is bool:
             safe[name] = context[name]
@@ -37,6 +37,9 @@ class FanExecutionRepository(DurableExecutionRepository):
     from a receipt after interruption; retained audit IDs deduplicate them.
     Audit failure must never turn a persisted dispatch into retry authority.
     """
+    kind = "fan"
+    provider_name = PROVIDER
+
     def __init__(self, root, declaration, audit):
         super().__init__(root)
         self.declaration = declaration
@@ -60,9 +63,9 @@ class FanExecutionRepository(DurableExecutionRepository):
                 "operation_id": prepared.request.operation_id,
                 "operation_hash": prepared.prepared_operation_hash,
                 "entity_id": prepared.request.entity_id,
-                "provider": PROVIDER, "fallback": "none",
+                "provider": self.provider_name, "fallback": "none",
                 "authority_kind": "authenticated_connector",
-                "operation_class": "typed_fan_lifecycle",
+                "operation_class": "typed_" + self.kind + "_lifecycle",
                 "redispatch_prohibited": True,
             }
             entries = []
@@ -72,14 +75,14 @@ class FanExecutionRepository(DurableExecutionRepository):
             for event in record.events:
                 recovering |= event["event_type"] == "recovery_claimed"
                 entries.append({
-                    **common, "event": "fan_" + event["event_type"],
-                    "audit_event_id": digest({"fan_task": common["task_id"], "event": event}),
+                    **common, "event": self.kind + "_" + event["event_type"],
+                    "audit_event_id": digest({self.kind + "_task": common["task_id"], "event": event}),
                     "timestamp": event["occurred_at"],
                     "event_sequence": event["sequence"],
                     "read_only_recovery": recovering,
                 })
             snapshot = {
-                **common, "event": "fan_execution_snapshot",
+                **common, "event": self.kind + "_execution_snapshot",
                 "timestamp": record.updated_at, "event_sequence": len(record.events),
                 "state": record.task_state, "terminal": record.terminal,
                 "outcome": record.normalized_outcome,

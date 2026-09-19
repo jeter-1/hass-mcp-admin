@@ -30,15 +30,31 @@ MAX_ACTIVE = 16
 
 
 class FanService:
+    # Code-owned specializations share ownership/recovery, never domain grants.
+    namespace = "ordinary-fan-v1"
+    request_type = FanRequest
+    adapter_type = FanAdapter
+    repository_type = FanExecutionRepository
+    contracts = FAN_CONTRACTS
+    prepare_record = staticmethod(prepare_record)
+    provider_name = PROVIDER
+    binding_attribute = "ordinary_fan_binding"
+    outcome_key = "fan_outcome"
+    refusal = FanRefusal
+
+    @staticmethod
+    def receipt_parameters(request):
+        return {"percentage": request.percentage}
+
     def __init__(self, root, provider, core, *, now=lambda: datetime.now(timezone.utc), audit=None):
-        self.root = Path(root) / "ordinary-fan-v1"
+        self.root = Path(root) / self.namespace
         self.root.mkdir(parents=True, exist_ok=True)
         self.now = now
         self.provider, self.core = provider, core
-        self.adapter = FanAdapter(provider, core)
+        self.adapter = self.adapter_type(provider, core)
         # Exact shared lock namespace, independent ordinary execution records.
         self.locks = FanLockStore(root, self.load)
-        self.executions = FanExecutionRepository(self.root, self.load, audit)
+        self.executions = self.repository_type(self.root, self.load, audit)
         self.active = {}
         self.preparing = 0
         self.recovery_failures = 0
@@ -55,7 +71,7 @@ class FanService:
     def _path(self, task_id):
         import re
         if not re.fullmatch(r"[a-f0-9]{32}", task_id):
-            raise FanRefusal("fan_task_id_invalid")
+            raise self.refusal("fan_task_id_invalid")
         return self.root / (task_id + ".json")
 
     def load(self, task_id):
@@ -63,22 +79,22 @@ class FanService:
         if not path.exists():
             return None
         if path.stat().st_size > 16_384:
-            raise FanRefusal("fan_receipt_corrupt")
+            raise self.refusal("fan_receipt_corrupt")
         value = json.loads(path.read_bytes())
-        if set(value) != {"model", "request", "baseline", "prepared_hash"} or value["model"] != "ordinary-fan-v1":
-            raise FanRefusal("fan_receipt_corrupt")
-        request = FanRequest.model_validate(value["request"]).checked()
+        if set(value) != {"model", "request", "baseline", "prepared_hash"} or value["model"] != self.namespace:
+            raise self.refusal("fan_receipt_corrupt")
+        request = self.request_type.model_validate(value["request"]).checked()
         if request.task_id != task_id:
-            raise FanRefusal("fan_receipt_corrupt")
+            raise self.refusal("fan_receipt_corrupt")
         # No storage migration or relabeling: recover the exact contract from
         # the original writer's hash over a closed set of compiled projections.
         matches = []
-        for contract in FAN_CONTRACTS:
-            prepared = prepare_record(request, value["baseline"], contract)
+        for contract in self.contracts:
+            prepared = self.prepare_record(request, value["baseline"], contract)
             if prepared.prepared_operation_hash == value["prepared_hash"]:
                 matches.append(prepared)
         if len(matches) != 1:
-            raise FanRefusal("fan_receipt_corrupt")
+            raise self.refusal("fan_receipt_corrupt")
         return matches[0]
 
     def save(self, prepared):
@@ -87,13 +103,13 @@ class FanService:
             prior = self.load(request.task_id)
             if prior is not None:
                 if prior.request != request:
-                    raise FanRefusal("fan_operation_id_rebound")
+                    raise self.refusal("fan_operation_id_rebound")
                 return prior
             if not request.is_fresh(self.now()):
-                raise FanRefusal("fan_operation_id_expired")
+                raise self.refusal("fan_operation_id_expired")
             if len(list(self.root.glob("*.json"))) >= MAX_RECORDS:
-                raise FanRefusal("fan_receipt_capacity_exhausted")
-            value = {"model": "ordinary-fan-v1", "request": request.model_dump(),
+                raise self.refusal("fan_receipt_capacity_exhausted")
+            value = {"model": self.namespace, "request": request.model_dump(),
                      "baseline": prepared.baseline, "prepared_hash": prepared.prepared_operation_hash}
             payload = json.dumps(value, sort_keys=True, allow_nan=False).encode()
             fd, temp = tempfile.mkstemp(prefix=".fan-", dir=self.root)
@@ -122,10 +138,10 @@ class FanService:
         telemetry = current_telemetry()
         binding = digest(request.model_dump())
         def check(*, fresh=True):
-            if telemetry is None or telemetry.ordinary_fan_binding != binding:
-                raise FanRefusal("fan_connector_authorization_required")
+            if telemetry is None or getattr(telemetry, self.binding_attribute) != binding:
+                raise self.refusal("fan_connector_authorization_required")
             if fresh and not request.is_fresh(self.now()):
-                raise FanRefusal("fan_operation_id_expired")
+                raise self.refusal("fan_operation_id_expired")
         check(fresh=False)
         return check
 
@@ -137,27 +153,27 @@ class FanService:
             result = await self._control(request)
         except Exception:
             if telemetry:
-                telemetry.audit_context["fan_outcome"] = "request_failed_reconcile_task"
+                telemetry.audit_context[self.outcome_key] = "request_failed_reconcile_task"
             raise
         if telemetry:
             telemetry.audit_context.update({key: result[key] for key in (
                 "task_id", "operation_id", "operation_hash", "provider_attempt_count",
                 "dispatch_intent_recorded", "provider_response_received", "terminal")})
-            telemetry.audit_context["fan_outcome"] = result["state"]
+            telemetry.audit_context[self.outcome_key] = result["state"]
         return result
 
     async def _control(self, request):
-        request = FanRequest.model_validate(request.model_dump()).checked()
+        request = self.request_type.model_validate(request.model_dump()).checked()
         check = self._authorization(request)
         prior = self.load(request.task_id)
         if prior is not None:
             if prior.request != request:
-                raise FanRefusal("fan_operation_id_rebound")
+                raise self.refusal("fan_operation_id_rebound")
             # A repeated call is reconciliation only, even before durable intent.
             return await self.reconcile(request.task_id)
         check()
         if len(self.active) + self.preparing >= MAX_ACTIVE:
-            raise FanRefusal("fan_capacity_exhausted")
+            raise self.refusal("fan_capacity_exhausted")
         self.preparing += 1
         try:
             prepared = await self.adapter.prepare(request)
@@ -170,7 +186,7 @@ class FanService:
         record = self.executions.get(request.task_id)
         if record is not None:
             return await self.reconcile(request.task_id)
-        task = asyncio.create_task(self._execute(prepared, check), name="ordinary-fan-execution")
+        task = asyncio.create_task(self._execute(prepared, check), name=self.namespace + "-execution")
         self.active[request.task_id] = task
         task.add_done_callback(lambda finished: self._finished(request.task_id, finished))
         # Request cancellation never authorizes another mutation. Retirement of
@@ -213,10 +229,10 @@ class FanService:
         return {
             "task_id": task_id, "operation_id": prepared.request.operation_id,
             "operation_hash": prepared.prepared_operation_hash,
-            "authorization": "authenticated_connector", "provider": PROVIDER,
+            "authorization": "authenticated_connector", "provider": self.provider_name,
             "provider_contract": prepared.provider_contract, "fallback": "none",
             "entity_id": prepared.request.entity_id, "action": prepared.request.action,
-            "percentage": prepared.request.percentage,
+            **self.receipt_parameters(prepared.request),
             "state": record.task_state if record else "created",
             "terminal": record.terminal if record else False,
             "terminal_outcome": record.normalized_outcome if record and record.terminal else None,
@@ -264,7 +280,7 @@ class FanService:
         identity = ExecutionIdentity(task_id, None, record.execution_identity().attempt_id,
                                      record.execution_identity().request_id, uuid.uuid4().hex)
         async def refuse():
-            raise FanRefusal("fan_recovery_is_read_only")
+            raise self.refusal("fan_recovery_is_read_only")
         await executor.execute(adapter=self.adapter, prepared=prepared, identity=identity,
                                approval_consumption=refuse, dispatch_authority=self.core)
         return self.receipt(task_id)

@@ -1,0 +1,37 @@
+{
+  "upstream_source": "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
+  "upstream_tree": "ffc545fa7e3ad683737454de0217e2b9f672589e",
+  "skills_source": "d0c6129c2296d6a39b1955b6c36b80067382c67b",
+  "version": "8.4.3",
+  "core_image": "ghcr.io/home-assistant/home-assistant:2026.9.2@sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe",
+  "standalone_index": "sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
+  "images": {
+    "amd64": {
+      "standalone": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
+        "manifest": "sha256:56b631cbebc795d6c4f381be72c3ea98055033162acea5e9abe414b2dd213253",
+        "configuration": "sha256:29bbc2dd5850c32c37f0c80d75a7eb36262b2c9eba4642b0d42131e67fb7dd7f",
+        "revision": "47582a700b0889a355033ade36de7c3077780b48"
+      },
+      "addon": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:366361a088089f3cb55b51318d86eeb968f3deb913a41397d741075da879c2fb",
+        "manifest": "sha256:13ed061af93d539b0872564ea340e4e683b5d437e5a520a3ac5d4e9732442b32",
+        "configuration": "sha256:5dbc933f67ee53762aee81dd39178ecc79b6a32f3191d9d423e51feba78a3d67"
+      }
+    },
+    "arm64": {
+      "standalone": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456",
+        "manifest": "sha256:f7bb181a8b244e2ae94669d7b6a42a187f6446d949defbdcec60bc807340dbda",
+        "configuration": "sha256:37830a0b3c611c74dfd7119e52fcd43f769cb5d60428d8a2f8b5c3c9a94c9966",
+        "revision": "47582a700b0889a355033ade36de7c3077780b48"
+      },
+      "addon": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-aarch64@sha256:90e850213882d6c83dd4b2076546d34873b90e83800eadaccd94558936dd74b3",
+        "manifest": "sha256:a51107e1a1f1f9dec9c52b9a9e714362a3f2374e80613d8c4810e8f54e43c41e",
+        "configuration": "sha256:f495615866d7da8f06b3c6ac35a559d0d40c00d6ebc0972dbf080b140fa893b5"
+      }
+    }
+  },
+  "assessment_source": "931cc21a190ddf465d6cb3d08c8675fc7d2e4a4e"
+}

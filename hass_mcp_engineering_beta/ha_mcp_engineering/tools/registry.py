@@ -100,11 +100,18 @@ for canary_tool in CANARY_TOOLS:
 
 
 from .fan import control_fan
+from .power import control_power
 
 if "control_fan" not in _SDK_TOOLS.snapshot():
     _SERVER.tool(annotations=ToolAnnotations(
         readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True,
     ))(control_fan)
+
+
+if "control_power" not in _SDK_TOOLS.snapshot():
+    _SERVER.tool(annotations=ToolAnnotations(
+        readOnlyHint=False, destructiveHint=True, idempotentHint=True, openWorldHint=True,
+    ))(control_power)
 
 
 def _routed_wrapper(tool_name, original):

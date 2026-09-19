@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .power.contracts import POWER_CONTRACTS
+
 from typing import Any
 
 from .fan.contracts import CORE_VERSION, FAN_CONTRACTS, FAN_RELEASES
@@ -75,6 +77,15 @@ CAPABILITIES: tuple[dict[str, Any], ...] = (
 PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "control_power", "category": "ordinary_runtime_action",
+        "status": "beta_native", "risk": "physical_action", "additive": True,
+        "operation_class": "typed_power", "routing": "engineering_native",
+        "provider": "upstream_typed_power", "fallback": "none",
+        "policy": "authenticated_exact_light_switch_operation",
+        "external_approval_required": False, "direct_write_allowed": False,
+        "verification": "exact_ha_on_off_state",
+    },
     {
         "tool": "control_fan", "category": "ordinary_runtime_action",
         "status": "beta_native", "risk": "physical_action", "additive": True,
@@ -350,6 +361,16 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "control_power", "capability": "typed_power_execution",
+        "required_semantics": "One exact light/switch ON/OFF action under connector authority, durable ownership and independent HA state verification.",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained", "direct_ha_coverage": "not_used",
+        "selected_provider": "upstream_typed_power", "fallback_policy": "none",
+        "completeness": "reported_state_only_physical_feedback_not_verified",
+        "security_justification": "Separate compiled power contracts fix target, ON/OFF service and empty data. No generic services or uncertain-action replay.",
+        "trust_mode": "reviewed_argument_constrained",
+        "trust_profile": ", ".join(POWER_CONTRACTS),
+    },
     {
         "tool": "control_fan",
         "capability": "typed_fan_execution",
