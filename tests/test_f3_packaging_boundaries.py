@@ -64,6 +64,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_packaging_boundaries.py",
     "tests/test_typed_fan.py",
     "tests/test_typed_fan_review.py",
+    "tests/test_typed_power.py",
     "tests/test_f3_runtime_integration.py",
 }
 
@@ -348,6 +349,7 @@ class F3ImportBoundaryTests(unittest.TestCase):
             "fan/audit.py",
             "fan/locks.py",
             "fan/service.py",
+            "power/adapter.py",
             "f3_runtime/registry.py",
             "f3_runtime/repository.py",
             "f3_runtime/runtime.py",
