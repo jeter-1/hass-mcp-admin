@@ -8,7 +8,8 @@ from ..f3.contracts import (
     NormalizedOperationOutcome as Outcome, ObservationResult, OperationTarget,
     PreflightResult, PreparedOperation, VerificationResult,
 )
-from .contracts import FanRequest, FanRefusal, FAN_CONTRACT, FAN_CONTRACTS, check_features, desired, digest
+from .contracts import FanRequest, FanRefusal, FAN_CONTRACT, FAN_CONTRACTS, FAN_SEMANTIC_CONTRACTS, check_features, desired, digest
+from ..ha_core_readmission.typed_operations import checked_binding
 
 
 @dataclass(frozen=True)
@@ -16,21 +17,29 @@ class PreparedFan(PreparedOperation):
     request: FanRequest
     baseline: dict
     provider_contract: str
+    core_binding: dict | None = None
 
 
-def prepare_record(request, baseline, contract=FAN_CONTRACT):
-    if contract not in FAN_CONTRACTS:
+def prepare_record(request, baseline, contract=FAN_CONTRACT, core_binding=None):
+    if core_binding is not None:
+        core_binding = checked_binding(core_binding, "fan")
+        allowed = FAN_SEMANTIC_CONTRACTS.values()
+    else:
+        allowed = FAN_CONTRACTS
+    if contract not in allowed:
         raise FanRefusal("fan_contract_unknown")
     material = {"request": request.model_dump(), "baseline": baseline, "contract": contract}
+    if core_binding is not None:
+        material["core_binding"] = core_binding
     authority_hash = digest({"kind": "authenticated_connector", "request": request.model_dump()})
     return PreparedFan(
         F3_ADAPTER_CONTRACT_MODEL, "typed_fan", request.action,
         OperationTarget("fan", request.entity_id), digest(baseline),
         digest(request.arguments()), digest(material), "physical_action",
-        digest({"fan_contract": contract}), authority_hash,
+        digest({"fan_contract": contract, **({"core_binding": core_binding} if core_binding else {})}), authority_hash,
         ("fan_state_or_speed_changes", "automation_reactions_possible", "consumer_coverage_incomplete"),
         "fan-exact-state-percentage-v1", digest({"desired": request.model_dump()}),
-        False, request, baseline, contract,
+        False, request, baseline, contract, core_binding,
     )
 
 
@@ -58,16 +67,19 @@ class FanAdapter:
     def __init__(self, provider, core):
         self.provider, self.core = provider, core
 
-    async def prepare(self, request, *, contract=None):
+    async def prepare(self, request, *, contract=None, core_binding=None):
         async def read(check):
-            selected = await self.provider.services(request, check, contract=contract)
+            binding = check.core_binding
+            selected = await self.provider.services(request, check, contract=contract,
+                                                    signed_core=binding is not None)
             state = await self.provider.state(request.entity_id, check, contract=selected)
             self.check_features(request, state)
-            return state, selected
-        baseline, selected = await self.core.read(
-            read, SimpleNamespace(target=OperationTarget(self.domain(request), request.entity_id)),
+            return state, selected, binding
+        baseline, selected, binding = await self.core.read(
+            read, SimpleNamespace(target=OperationTarget(self.domain(request), request.entity_id),
+                                  provider_contract=contract, core_binding=core_binding),
         )
-        return self.prepare_record(request, baseline, selected)
+        return self.prepare_record(request, baseline, selected, binding)
 
     def lock_requests(self, prepared):
         return (
@@ -80,7 +92,8 @@ class FanAdapter:
         )
 
     async def preflight(self, prepared, *, acquired_locks):
-        current = await self.prepare(prepared.request, contract=prepared.provider_contract)
+        current = await self.prepare(prepared.request, contract=prepared.provider_contract,
+                                     core_binding=prepared.core_binding)
         fresh = current.current_state_fingerprint == prepared.current_state_fingerprint
         no_op = fresh and self.desired(prepared.request, current.baseline)
         return PreflightResult(

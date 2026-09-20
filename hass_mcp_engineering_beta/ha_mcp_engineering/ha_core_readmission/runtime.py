@@ -20,7 +20,7 @@ from .models import (
     fingerprint,
 )
 from .observation import CoreObservationCollector, CoreSnapshotSource
-from .profiles import CORE_CAPABILITY_PROFILES, compiled_exact_authority
+from .profiles import CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority
 from .routes import delegated_provider_compatibility, f3_requirements
 from .registry import CoreReleaseRegistry
 from .probe_profiles import compiled_probe_profile
@@ -39,6 +39,7 @@ class CoreRouteAuthority:
     generation: int
     observation_fingerprint: str
     target_fingerprint: str | None
+    core_version: str
 
 
 class CoreRuntime:
@@ -51,7 +52,7 @@ class CoreRuntime:
         self._configured = False
         self._source: CoreSnapshotSource | None = None
         self._collector: CoreObservationCollector | None = None
-        self._coordinator = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
+        self._coordinator = CoreReadmissionCoordinator(CORE_RUNTIME_CAPABILITY_PROFILES)
         self._authority_provider: Callable[
             [str], tuple[CoreAuthoritySelection, ...]
         ] = compiled_exact_authority
@@ -119,7 +120,7 @@ class CoreRuntime:
             self._release_registry = registry
             self._published_registry_token = None
             self._audit_sink = audit_sink
-            self._coordinator = CoreReadmissionCoordinator(CORE_CAPABILITY_PROFILES)
+            self._coordinator = CoreReadmissionCoordinator(CORE_RUNTIME_CAPABILITY_PROFILES)
             self._observation = None
             self._connection_epoch = 0
             self._connection_monitor_task = None
@@ -720,6 +721,7 @@ class CoreRuntime:
                 generation=generation.generation,
                 observation_fingerprint=observation.fingerprint,
                 target_fingerprint=target_fingerprint,
+                core_version=observation.version,
             )
 
     def acquire_f3(
@@ -740,7 +742,8 @@ class CoreRuntime:
         self._sync_registry_authority()
         with self._lock:
             observation = self._observation
-            if observation is None:
+            if (not isinstance(authority, CoreRouteAuthority) or observation is None
+                    or authority.core_version != observation.version):
                 self._counters["lease_failures"] += 1
                 return None
             commits = self._coordinator.commit_routes(
@@ -771,6 +774,7 @@ class CoreRuntime:
                 and generation is not None
                 and authority.generation == generation.generation
                 and authority.observation_fingerprint == observation.fingerprint
+                and authority.core_version == observation.version
                 and isinstance(commits, tuple)
                 and bool(commits)
                 and all(isinstance(item, CoreDispatchCommit) for item in commits)

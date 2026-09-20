@@ -35,6 +35,27 @@ class GuardTests(unittest.TestCase):
             with self.subTest(version=version), self.assertRaises(lane.Refusal):
                 lane.execution_guard(self.env, "amd64", version)
 
+    def test_new_core_resources_are_isolated_and_closed(self):
+        for arch in ("amd64", "arm64"):
+            identity = lane.execution_guard(self.env, arch, "8.5.0", "2026.9.3")
+            self.assertEqual(identity, f"h850c3-1234-1-{arch}")
+            self.assertNotEqual(identity, lane.execution_guard(self.env, arch))
+            self.assertTrue(all(name.startswith(identity + "-") for name in lane.resource_names(identity)))
+        for core, upstream in (("2026.9.3", "8.4.3"), ("2026.9.4", "8.5.0"), ("latest", "8.5.0")):
+            with self.subTest(core=core, upstream=upstream), self.assertRaises(lane.Refusal):
+                lane.execution_guard(self.env, "amd64", upstream, core)
+
+    def test_core_selection_preserves_reviewed_provider_pins(self):
+        original = lane.PINS.read_bytes()
+        old = lane.candidate_pins("8.5.0", "2026.9.2")
+        new = lane.candidate_pins("8.5.0", "2026.9.3")
+        self.assertEqual(new["images"], old["images"])
+        self.assertEqual(new["upstream_source"], old["upstream_source"])
+        self.assertEqual(new["core_version"], "2026.9.3")
+        self.assertRegex(new["core_image"], r"2026\.9\.3@sha256:[a-f0-9]{64}$")
+        self.assertNotEqual(new["core_image"], old["core_image"])
+        self.assertEqual(lane.PINS.read_bytes(), original)
+
     def test_refuses_other_repositories_branches_and_non_ci(self):
         for field, value in (("GITHUB_REPOSITORY", "other/repo"), ("GITHUB_REF", "refs/heads/unrelated"),
                              ("GITHUB_ACTIONS", "false"), ("GITHUB_JOB", "another"), ("GITHUB_SHA", "bad"), ("GITHUB_RUN_ID", "../x"),
@@ -335,9 +356,10 @@ class WorkflowTests(unittest.TestCase):
         job = workflow["jobs"]["exact-addon-runtime-acceptance"]
         rows = job["strategy"]["matrix"]["include"]
         lanes = [x for x in rows if x.get("candidate_power")]
-        self.assertEqual(len(lanes), 4)
-        self.assertEqual({(x["upstream_version"], x["architecture"]) for x in lanes},
-                         {(v, a) for v in ("8.4.3", "8.5.0") for a in ("amd64", "arm64")})
+        self.assertEqual(len(lanes), 6)
+        self.assertEqual({(x["upstream_version"], x["architecture"], x["candidate_core_version"]) for x in lanes},
+                         {(v, a, "2026.9.2") for v in ("8.4.3", "8.5.0") for a in ("amd64", "arm64")}
+                         | {("8.5.0", a, "2026.9.3") for a in ("amd64", "arm64")})
         for row in lanes:
             pin_path = (lane.PINS if row["upstream_version"] == "8.5.0" else
                         ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json")
@@ -357,6 +379,8 @@ class WorkflowTests(unittest.TestCase):
         execution = next(s for s in job["steps"] if s.get("name", "").startswith("Verify power candidate"))
         self.assertEqual(execution["if"], "matrix.candidate_power == true")
         self.assertIn('--upstream-version "$UPSTREAM_VERSION"', execution["run"])
+        self.assertIn('--core-version "$ASSESSMENT_CORE"', execution["run"])
+        self.assertEqual(len({(x["candidate_resource_code"], x["architecture"]) for x in lanes}), 6)
         planning = next(s for s in job["steps"] if s.get("name", "").startswith("Run planning-only"))
         self.assertEqual(planning["if"], "matrix.candidate_power != true")
         self.assertNotIn("secrets.", json.dumps(workflow))

@@ -74,7 +74,8 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(source.calls, 2)
         self.assertEqual(len(self.fetches), 1)
         self.assertTrue(all(p["authority_source"] == "verified_compatibility"
-                            for p in runtime.health_snapshot()["authority_profiles"]))
+                            for p in runtime.health_snapshot()["authority_profiles"]
+                            if p["disposition"].startswith("admitted_")))
 
     async def test_dependency_build_publishes_only_current_signed_core_evidence(self):
         from tests.test_dependency_build_authority import _Network
@@ -151,6 +152,27 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         fetches = len(self.fetches)
         await runtime.reconcile_once()
         self.assertEqual(len(self.fetches), fetches)
+
+    async def test_core3_disposable_lane_requires_exact_fixture_and_admits_typed_references(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from core_registry_contract_lane import configure_with_test_authority, lane_entry
+        from tests.test_ha_core_2026_9_integration import settings
+        runtime = CoreRuntime()
+        configure = runtime.configure
+
+        def synthetic_transport(configured, *, release_registry):
+            configure(configured, release_registry=release_registry,
+                      source=ProjectedCoreSource(release_registry, "2026.9.3", typed_operations=True))
+
+        entry = lane_entry("2026.9.3")
+        image = "ghcr.io/home-assistant/home-assistant:2026.9.3@" + entry["image_index_digest"]
+        with patch.object(runtime, "configure", side_effect=synthetic_transport):
+            await configure_with_test_authority(runtime, settings(), cache_path=self.cache,
+                                                expected_image=image, core_version="2026.9.3")
+        self.assert_admitted(runtime, 19)
+        for version in ("2026.9.4", "latest", "../core", None):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                lane_entry(version)
 
     async def test_registry_failure_keeps_compiled_pairing_but_cannot_admit_future(self):
         self.raw = OSError("synthetic transport failure")

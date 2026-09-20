@@ -74,8 +74,29 @@ def version_code(version):
     return {"8.4.3": "843", "8.5.0": "850"}[version]
 
 
-def execution_guard(env, architecture, version="8.5.0"):
+def core_code(core_version, version):
+    require((core_version, version) in {
+        ("2026.9.2", "8.4.3"), ("2026.9.2", "8.5.0"), ("2026.9.3", "8.5.0"),
+    }, "core_pair_invalid")
+    return "c3" if core_version == "2026.9.3" else ""
+
+
+def candidate_pins(version, core_version):
+    core_code(core_version, version)
+    pin_path = PINS if version == "8.5.0" else ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json"
+    pins = json.loads(pin_path.read_bytes())
+    require(pins["version"] == version, "pin_version_mismatch")
+    pins["core_version"] = core_version
+    if core_version == "2026.9.3":
+        entry = json.loads((ROOT / "tests/fixtures/core_2026_9_3_lane_provenance.json").read_bytes())
+        require(entry["version"] == core_version, "core_pin_version_mismatch")
+        pins["core_image"] = "ghcr.io/home-assistant/home-assistant:" + core_version + "@" + entry["image_index_digest"]
+    return pins
+
+
+def execution_guard(env, architecture, version="8.5.0", core_version="2026.9.2"):
     code = version_code(version)
+    code += core_code(core_version, version)
     require(env.get("GITHUB_ACTIONS") == "true", "github_runner_required")
     require(env.get("GITHUB_REPOSITORY") == "jeter-1/hass-mcp-admin", "repository_mismatch")
     event, ref = env.get("GITHUB_EVENT_NAME"), env.get("GITHUB_REF", "")
@@ -147,7 +168,7 @@ def docker(*args, timeout=90, check=True):
 
 
 def resource_names(identity):
-    require(re.fullmatch(r"h(843|850)-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
+    require(re.fullmatch(r"h(843|850|850c3)-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
 
@@ -312,6 +333,7 @@ async def assess(architecture, output, private, identity, pins):
     from core_registry_contract_lane import configure_with_test_authority
 
     version = pins["version"]
+    core_version = pins.get("core_version", "2026.9.2")
     upstream_source = ROOT / (".upstream-" + version_code(version))
     source_sha = subprocess.check_output(["git", "-C", str(upstream_source), "rev-parse", "HEAD"], text=True).strip()
     require(source_sha == pins["upstream_source"], "upstream_source_mismatch")
@@ -346,7 +368,7 @@ async def assess(architecture, output, private, identity, pins):
     core = CoreRuntime()
     try:
         observed = await existing.wait_for_runtime_ready(rest)
-        require(observed["version"] == "2026.9.2", "core_version_mismatch")
+        require(observed["version"] == core_version, "core_version_mismatch")
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
             if version == "8.5.0":
                 await existing._advance_config_flow(client, token, "beta23_device_fixture", [{"slot": "a"}])
@@ -367,7 +389,7 @@ async def assess(architecture, output, private, identity, pins):
             else:
                 raise Refusal("synthetic_fan_unavailable")
         phase("core_authority")
-        await configure_with_test_authority(core, configured, cache_path=private / "core-cache.json", expected_image=pins["core_image"])
+        await configure_with_test_authority(core, configured, cache_path=private / "core-cache.json", expected_image=pins["core_image"], core_version=core_version)
         save(output, "core-authority.json", {"version": observed["version"], "compatible_count": core.health_snapshot()["compatible_count"], "ephemeral_test_authority": True, "production_authority": False})
         docker("run", "-d", "--name", identity + "-relay", *common, "--network-alias", "supervisor", "--memory", "256m", "--read-only", "--tmpfs", "/tmp", "-p", "127.0.0.1:18080:80", "-v", str(Path(__file__).resolve()) + ":/assessment.py:ro", "--entrypoint", "python", pins["core_image"], "/assessment.py", "--relay")
         await wait_endpoint("http://127.0.0.1:18080/_assessment/stats")
@@ -433,17 +455,18 @@ async def assess(architecture, output, private, identity, pins):
             phase(kind + "_candidate_contract")
             if version == "8.5.0":
                 await candidate_contract(kind, configured, core, rest, websocket,
-                                         original, output, private)
+                                         original, output, private, core_version=core_version)
             else:
                 await power_only_candidate_contract(kind, configured, core, rest, output, private, version)
             docker("stop", "--time", "20", identity + "-" + kind, timeout=30)
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as client:
             async with client.get("http://127.0.0.1:18080/_assessment/stats") as response:
                 stats = await response.json()
-        require(stats.get("service_posts", 0) == (14 if version == "8.5.0" else 8), "unexpected_total_dispatch_count")
-        require(stats.get("service_posts_fan", 0) == (6 if version == "8.5.0" else 0), "unexpected_fan_dispatch_count")
+        extra = 4 if core_version == "2026.9.3" else 0
+        require(stats.get("service_posts", 0) == (14 if version == "8.5.0" else 8) + 2 * extra, "unexpected_total_dispatch_count")
+        require(stats.get("service_posts_fan", 0) == (6 if version == "8.5.0" else 0) + extra, "unexpected_fan_dispatch_count")
         require(stats.get("service_posts_light", 0) == 4, "unexpected_light_dispatch_count")
-        require(stats.get("service_posts_switch", 0) == 4, "unexpected_switch_dispatch_count")
+        require(stats.get("service_posts_switch", 0) == 4 + extra, "unexpected_switch_dispatch_count")
         require(stats.get("lovelace/config/save", 0) == (2 if version == "8.5.0" else 0), "legacy_dashboard_dispatch_count")
         require(stats.get("ha_mcp_tools/dashboard_edit", 0) == (2 if version == "8.5.0" else 0), "native_dashboard_dispatch_count")
         require(stats.get("active_websockets", 0) == 0, "relay_sessions_retained")
@@ -456,7 +479,7 @@ async def assess(architecture, output, private, identity, pins):
 
 
 
-async def candidate_contract(kind, configured, core, rest, websocket, original, output, private):
+async def candidate_contract(kind, configured, core, rest, websocket, original, output, private, *, core_version="2026.9.2"):
     """Actual candidate providers/executors; only synthetic targets owned by this lane."""
     from dataclasses import replace
     from uuid import uuid4
@@ -464,7 +487,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
     from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
     from ha_mcp_engineering.providers.upstream_fan import FanProvider
     from ha_mcp_engineering.providers.upstream_dashboard import UpstreamDashboardProvider
-    from ha_mcp_engineering.fan.contracts import FanRequest, FAN_RELEASES, digest
+    from ha_mcp_engineering.fan.contracts import FanRequest, FAN_RELEASES, FAN_SEMANTIC_CONTRACTS, digest
     from ha_mcp_engineering.fan.service import FanService
     from ha_mcp_engineering.fan.authority import FanCoreAuthority
     from ha_mcp_engineering.f3_dashboard.gateway import DashboardExecutionGateway
@@ -517,7 +540,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
         require(good.get("success") is True, "candidate_valid_read_after_error")
 
         fan_service = FanService(str(work / "fan"), FanProvider.configured(configured, gateway),
-                                 FanCoreAuthority(core))
+                                 FanCoreAuthority(core), audit=AuditLogger(configured.audit_path, "synthetic-850-access"))
         for number, (action, percentage) in enumerate(
                 (("turn_on", 50), ("set_percentage", 75), ("turn_off", None)), 1):
             request = FanRequest(entity_id=FAN, action=action, percentage=percentage,
@@ -534,8 +557,11 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             require(receipt["state"] == "succeeded_verified"
                     and receipt["provider_attempt_count"] == 1
                     and receipt["dispatch_intent_recorded"] is True
-                    and receipt["provider_contract"] == FAN_RELEASES["8.5.0"][2],
+                    and receipt["provider_contract"] == (FAN_SEMANTIC_CONTRACTS["8.5.0"]
+                        if core_version == "2026.9.3" else FAN_RELEASES["8.5.0"][2]),
                     "candidate_fan_not_verified")
+            require((receipt.get("core_binding") or {}).get("version") ==
+                    (core_version if core_version == "2026.9.3" else None), "fan_core_binding_mismatch")
             require(await fan_service.control(request) == receipt, "candidate_duplicate_fan_changed")
             independent = await rest.request("GET", "/states/" + FAN)
             require(independent["state"] == ("off" if action == "turn_off" else "on")
@@ -548,7 +574,11 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
         from ha_mcp_engineering.providers.upstream_power import PowerProvider
         power_service = PowerService(str(work / "fan"), PowerProvider.configured(configured, gateway),
                                      PowerCoreAuthority(core), audit=AuditLogger(configured.audit_path, "synthetic-850-access"))
-        power_summary = await power_contract(power_service, rest, telemetry, kind, output)
+        power_summary = await power_contract(power_service, rest, telemetry, kind, output, core_version=core_version)
+        if core_version == "2026.9.3":
+            from typed_core_container_contract import failure_contract
+            await failure_contract(fan_service, power_service, rest, telemetry, kind, output,
+                                   check=require, save=save)
 
         provider = UpstreamDashboardProvider()
         provider.configure(configured)
@@ -610,7 +640,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             "nonterminal_execution_count", "active_conflict_hold_count",
             "active_normal_lock_count", "fallback_count")), "candidate_dashboard_not_settled")
         core_health = core.health_snapshot()
-        require(core_health["compatible_count"] == 17
+        require(core_health["compatible_count"] == (19 if core_version == "2026.9.3" else 17)
                 and core_health["issued_lease_count"] == 0
                 and core_health["active_commit_count"] == 0
                 and core_health["fallback_count"] == 0, "candidate_core_not_settled")
@@ -618,6 +648,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             "status": "PASS", "engineering_source": os.environ["GITHUB_SHA"],
             "read_count": 25, "blueprint_completeness": "partial" if kind == "standalone" else "complete",
             "fan_operations": 3, "fan_restored": "off", "dashboard_operations": 2,
+            "typed_failure_contracts": core_version == "2026.9.3",
             "dashboard_restored": True, "component_configured": kind == "addon",
             "f3": settled, "fan": fan_service.health(), "power": power_summary,
             "core": {k: core_health[k] for k in (
@@ -682,11 +713,11 @@ async def power_only_candidate_contract(kind, configured, core, rest, output, pr
         end_request(context)
 
 
-async def power_contract(service, rest, telemetry, kind, output, version="8.5.0"):
+async def power_contract(service, rest, telemetry, kind, output, version="8.5.0", *, core_version="2026.9.2"):
     """Exercise only the two fixed in-memory entities; read actual call counters."""
     version_code(version)
     from uuid import uuid4
-    from ha_mcp_engineering.power.contracts import PowerRequest, POWER_RELEASES, digest
+    from ha_mcp_engineering.power.contracts import PowerRequest, POWER_RELEASES, POWER_SEMANTIC_CONTRACTS, digest
     receipts = []
     for entity in POWER_TARGETS:
         initial = await rest.request("GET", "/states/" + entity)
@@ -708,7 +739,10 @@ async def power_contract(service, rest, telemetry, kind, output, version="8.5.0"
                     and receipt["provider_attempt_count"] == 1
                     and receipt["dispatch_intent_recorded"] is True
                     and receipt["provider"] == "upstream_typed_power"
-                    and receipt["provider_contract"] == POWER_RELEASES[version][2], "candidate_power_not_verified")
+                    and receipt["provider_contract"] == (POWER_SEMANTIC_CONTRACTS[version]
+                        if core_version == "2026.9.3" else POWER_RELEASES[version][2]), "candidate_power_not_verified")
+            require((receipt.get("core_binding") or {}).get("version") ==
+                    (core_version if core_version == "2026.9.3" else None), "power_core_binding_mismatch")
             require(await service.control(request) == receipt, "candidate_duplicate_power_changed")
             readback = await rest.request("GET", "/states/" + entity)
             calls += 1
@@ -729,25 +763,24 @@ def main():
     parser.add_argument("--relay", action="store_true")
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--upstream-version", choices=("8.4.3", "8.5.0"), default="8.5.0")
+    parser.add_argument("--core-version", choices=("2026.9.2", "2026.9.3"), default="2026.9.2")
     parser.add_argument("--architecture", choices=("amd64", "arm64"))
     args = parser.parse_args()
     if args.relay:
         asyncio.run(run_relay())
         return
-    identity = execution_guard(os.environ, args.architecture, args.upstream_version)
+    identity = execution_guard(os.environ, args.architecture, args.upstream_version, args.core_version)
     if args.cleanup:
         print(json.dumps({"cleanup": cleanup(identity)}))
         return
-    pin_path = PINS if args.upstream_version == "8.5.0" else ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json"
-    pins = json.loads(pin_path.read_bytes())
-    require(pins["version"] == args.upstream_version, "pin_version_mismatch")
+    pins = candidate_pins(args.upstream_version, args.core_version)
     checked_sha = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
     require(checked_sha == os.environ["GITHUB_SHA"], "candidate_checkout_mismatch")
     runner = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
     output = runner / (identity + "-evidence")
     output.mkdir(mode=0o700)
     private = Path(tempfile.mkdtemp(prefix=identity + "-private-", dir=runner))
-    receipt = {"started_at": now(), "status": "FAILED", "source": os.environ.get("GITHUB_SHA"), "assessment_base": pins["assessment_source"], "architecture": args.architecture, "upstream_version": args.upstream_version, "production_access": False, "signing": "ephemeral_Core_test_key_only", "scope": "candidate_runtime_with_disposable_containers"}
+    receipt = {"started_at": now(), "status": "FAILED", "source": os.environ.get("GITHUB_SHA"), "assessment_base": pins["assessment_source"], "architecture": args.architecture, "upstream_version": args.upstream_version, "core_version": args.core_version, "core_image": pins["core_image"], "production_access": False, "signing": "ephemeral_Core_test_key_only", "scope": "candidate_runtime_with_disposable_containers"}
     failed = False
     try:
         async def bounded():

@@ -39,7 +39,7 @@ actor can still intervene after the final preread.
 
 ## Closed provider authority
 
-Separate compiled power contracts cover Core **2026.9.2** with exact ha-mcp
+Historical compiled power contracts cover Core **2026.9.2** with exact ha-mcp
 **8.4.3** or **8.5.0**. Beta.3 carries these independently reviewed contracts;
 exact-candidate validation and separately authorized installed acceptance remain
 distinct gates. They do not widen generic read admission or treat an advertised
@@ -51,6 +51,16 @@ Each receipt identifies its selected `core-2026.9.2-ha-mcp-<version>-single-powe
 contract. The existing signed Core state-read, service-discovery and F3-verification
 capabilities remain required. Missing, expired, revoked or retired authority
 refuses. No compiled Core references, trust data or trust configuration change.
+
+Future Core releases use an explicit signed reference to the compiled
+`core.typed_power_operation` semantic profile. The original 17 Core profiles alone,
+or a fan-only reference, cannot authorize this path. Stable provider contracts
+`ha-mcp-<reviewed-version>-single-power-v2` retain exact provider identity; the
+prepared operation separately binds Core's observed exact version and semantic
+fingerprint. There is no new Core version list. Historical contracts and hashes
+remain intact. See [Core applicability and storage compatibility](CORE_RELEASE_REGISTRY.md#ordinary-fan-and-power-applicability)
+for new declaration formats, recovery limits and downgrade preparation. No new
+production authority or deployment accompanies this source change.
 
 The provider constructs `ha_call_service` with the exact entity's domain, the
 selected ON/OFF service, empty `data`, `wait=false`, `return_response=false` and

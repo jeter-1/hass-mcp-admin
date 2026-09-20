@@ -329,6 +329,13 @@ jobs:
             ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.4.3@sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456"
             ha_mcp_source_commit: eac7a3aa7063432e9af17e7d7726040e909c7b8f
             ha_mcp_source_sha256: 4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc
+          - lane: ha-2026-9-3
+            ha_version: "2026.9.3"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.9.3@sha256:d8922685169707fd91e8b9729902d975f06157d005e422874d201e0261dda196"
+            ha_mcp_version: "8.5.0"
+            ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c"
+            ha_mcp_source_commit: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+            ha_mcp_source_sha256: 02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e
     env:
       HA_CONTRACT_LANE: ${{ matrix.lane }}
       HA_CONTRACT_VERSION: ${{ matrix.ha_version }}
@@ -455,6 +462,7 @@ jobs:
           docker exec "$HA_CONTRACT_CONTAINER" python \
             /tmp/disposable_ha_websockets_probe.py \
             --source-root /tmp/ha-mcp-source \
+            --upstream-version "$REAL_HA_UPSTREAM_VERSION" \
             --output /tmp/ha-mcp-disposable-ha.json
           docker cp \
             "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-disposable-ha.json" \
@@ -885,25 +893,49 @@ jobs:
             runner: ubuntu-latest
             candidate_power: true
             candidate_code: "850"
+            candidate_core_version: "2026.9.2"
+            candidate_resource_code: "850"
             candidate_source: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
           - upstream_version: "8.5.0"
             architecture: arm64
             runner: ubuntu-24.04-arm
             candidate_power: true
             candidate_code: "850"
+            candidate_core_version: "2026.9.2"
+            candidate_resource_code: "850"
             candidate_source: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
           - upstream_version: "8.4.3"
             architecture: amd64
             runner: ubuntu-latest
             candidate_power: true
             candidate_code: "843"
+            candidate_core_version: "2026.9.2"
+            candidate_resource_code: "843"
             candidate_source: eac7a3aa7063432e9af17e7d7726040e909c7b8f
           - upstream_version: "8.4.3"
             architecture: arm64
             runner: ubuntu-24.04-arm
             candidate_power: true
             candidate_code: "843"
+            candidate_core_version: "2026.9.2"
+            candidate_resource_code: "843"
             candidate_source: eac7a3aa7063432e9af17e7d7726040e909c7b8f
+          - upstream_version: "8.5.0"
+            architecture: amd64
+            runner: ubuntu-latest
+            candidate_power: true
+            candidate_code: "850"
+            candidate_core_version: "2026.9.3"
+            candidate_resource_code: "850c3"
+            candidate_source: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+          - upstream_version: "8.5.0"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+            candidate_power: true
+            candidate_code: "850"
+            candidate_core_version: "2026.9.3"
+            candidate_resource_code: "850c3"
+            candidate_source: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
     env:
       UPSTREAM_VERSION: ${{ matrix.upstream_version }}
       ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}
@@ -1163,20 +1195,23 @@ jobs:
         if: matrix.candidate_power == true
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
+          ASSESSMENT_CORE: ${{ matrix.candidate_core_version }}
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python scripts/ha_mcp_850_container_acceptance.py --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION"
+        run: python scripts/ha_mcp_850_container_acceptance.py --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION" --core-version "$ASSESSMENT_CORE"
       - name: Always reconcile owned container cleanup
         if: always() && matrix.candidate_power == true
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
+          ASSESSMENT_CORE: ${{ matrix.candidate_core_version }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/ha_mcp_850_container_acceptance.py --cleanup --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION"
+          python scripts/ha_mcp_850_container_acceptance.py --cleanup --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION" --core-version "$ASSESSMENT_CORE"
       - name: Remove disposable private runner files
         if: always() && matrix.candidate_power == true
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
+          ASSESSMENT_CORE: ${{ matrix.candidate_core_version }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1187,6 +1222,11 @@ jobs:
             8.5.0) code=850 ;;
             *) exit 1 ;;
           esac
+          case "$ASSESSMENT_CORE:$UPSTREAM_VERSION" in
+            2026.9.2:8.4.3|2026.9.2:8.5.0) ;;
+            2026.9.3:8.5.0) code=850c3 ;;
+            *) exit 1 ;;
+          esac
           prefix="h$code-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASSESSMENT_ARCH-private-"
           # Only this run's synthetic, root-owned Core storage. Never upload it.
           find "$RUNNER_TEMP" -mindepth 1 -maxdepth 1 -type d -name "$prefix*" -exec sudo rm -rf -- {} +
@@ -1194,7 +1234,7 @@ jobs:
         if: always() && matrix.candidate_power == true
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: ha-mcp-${{ matrix.candidate_code }}-candidate-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/h${{ matrix.candidate_code }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.architecture }}-evidence/*.json
+          name: ha-mcp-${{ matrix.candidate_resource_code }}-candidate-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/h${{ matrix.candidate_resource_code }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.architecture }}-evidence/*.json
           if-no-files-found: error
           retention-days: 14

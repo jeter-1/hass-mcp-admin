@@ -13,6 +13,8 @@ POWER_RELEASES = {
               "core-2026.9.2-ha-mcp-8.5.0-single-power-v1"),
 }
 POWER_CONTRACTS = tuple(item[2] for item in POWER_RELEASES.values())
+POWER_SEMANTIC_CONTRACTS = {version: "ha-mcp-" + version + "-single-power-v2"
+                            for version in POWER_RELEASES}
 ENTITY_PATTERN = r"^(light|switch)\.[a-z0-9_]{1,120}$"
 
 

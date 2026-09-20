@@ -13,7 +13,7 @@ import aiohttp
 from ..configuration import Settings
 from .device_registry import assess_device_registry
 from .models import CORE_IDENTITY
-from .profiles import CORE_CAPABILITY_PROFILES
+from .profiles import CORE_RUNTIME_CAPABILITY_PROFILES, CORE_TYPED_OPERATION_PROFILES
 from .probe_profiles import CoreProbeProfile, compiled_probe_profile
 
 
@@ -40,7 +40,7 @@ _DASHBOARD_NOT_FOUND_ERRORS = (
 def _profile(capability_id: str):
     return next(
         item
-        for item in CORE_CAPABILITY_PROFILES
+        for item in CORE_RUNTIME_CAPABILITY_PROFILES
         if item.capability_id == capability_id
     )
 
@@ -124,6 +124,7 @@ def capability_evidence_for_probes(
     websocket_results: Mapping[str, Any],
     configuration_validation: Any = None,
     probe_profile: CoreProbeProfile | None = None,
+    include_typed_operations: bool = False,
 ) -> list[dict[str, Any]]:
     """Project transient raw probes into bounded binary-owned check evidence."""
 
@@ -246,6 +247,13 @@ def capability_evidence_for_probes(
         )
         add("core.typed_helper_operation", state_shape, semantic=True)
         add("core.f3_mutation_verification", rest_ok and websocket_ok, semantic=True)
+        if include_typed_operations:
+            # Structural evidence only. An explicit signed reference must also
+            # select the exact compiled operation semantics; probes cannot grant it.
+            for profile in CORE_TYPED_OPERATION_PROFILES:
+                add(profile.capability_id,
+                    state_shape and service_shape and rest_ok and websocket_ok,
+                    semantic=True)
         add(
             "core.governed_configuration_operation",
             rest_ok and websocket_ok,
@@ -668,6 +676,7 @@ class AiohttpCoreSnapshotSource:
         if not isinstance(websocket_config, Mapping):
             raise RuntimeError("core_probe_version_invalid")
         evidence = capability_evidence_for_probes(
+            include_typed_operations=True,
             version=version,
             probe_profile=self._profile_selector(version),
             rest_config=rest_config,

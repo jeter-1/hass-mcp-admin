@@ -58,6 +58,7 @@ class CoreCapabilityClass(str, Enum):
     CONFIGURATION_VALIDATION = "configuration_validation"
     DEPENDENCY_HELPER_PLANNING = "dependency_helper_planning"
     TYPED_HELPER_OPERATION = "typed_helper_operation"
+    TYPED_ORDINARY_OPERATION = "typed_ordinary_operation"
     F3_MUTATION_VERIFICATION = "f3_mutation_verification"
     GOVERNED_CONFIGURATION_OPERATION = "governed_configuration_operation"
     GOVERNANCE_OBSERVABILITY = "governance_observability"
@@ -67,6 +68,7 @@ class CoreCapabilityClass(str, Enum):
     def mutation_capable(self) -> bool:
         return self in {
             CoreCapabilityClass.TYPED_HELPER_OPERATION,
+            CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
             CoreCapabilityClass.F3_MUTATION_VERIFICATION,
             CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
             CoreCapabilityClass.UNCLASSIFIED,
@@ -82,6 +84,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.CONFIGURATION_VALIDATION,
             CoreCapabilityClass.DEPENDENCY_HELPER_PLANNING,
             CoreCapabilityClass.TYPED_HELPER_OPERATION,
+            CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
             CoreCapabilityClass.F3_MUTATION_VERIFICATION,
             CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
         }

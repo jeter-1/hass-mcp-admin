@@ -53,6 +53,60 @@ responses; it does not expose the running Core OCI digest. Recorded release
 source/image provenance is therefore separate from installed-image evidence.
 Do not describe version agreement as a cryptographic running-image proof.
 
+## Ordinary fan and power applicability
+
+Decision (2026-09-19): Josh directed restoring signed applicability for these
+existing typed operations instead of adding another compiled Core version pair.
+This supersedes the future-release pinning approach, while preserving exact
+legacy contracts and the separation between implementation and release authority.
+
+The executable additionally defines `core.typed_fan_operation` and
+`core.typed_power_operation`. An exact signed release may explicitly select these
+compiled semantic profiles through the existing `capabilities` reference schema.
+The original 17 references and their fingerprints are unchanged. Read compatibility,
+a version prefix, or successful structural probes cannot select either operation.
+Registry preparation recognizes the new references but does not insert them into
+an existing entry automatically. Existing entry-renewal immutability still applies.
+
+The Core runtime inventories 19 profiles. A journal containing only the original
+17 references leaves the two additional profiles unavailable; it does not acquire
+new write grants. Historical Core 2026.9.2 fan/power contracts retain their separately
+compiled applicability and original receipt format. This compatibility exception
+must not become a list of future releases. Existing compiled Core release entries
+also do not acquire these new profiles automatically.
+
+For registry-selected operations, the prepared hash binds the observed exact Core
+version and compiled semantic fingerprint, independently of the exact reviewed
+ha-mcp provider contract. Preflight, dispatch acquisition and readback require that
+same version and current signed applicability. Lease/commit generation fences,
+expiry, revocation, target locks and at-most-once dispatch remain in force. A Core
+change cannot relabel an existing operation or authorize its redispatch. Recovery
+is read-only under the original binding and existing deadlines; unavailable or
+changed authority retains uncertainty and follows the existing hold/manual-review
+behavior. A settled historical receipt remains retrievable without live authority.
+
+Only new registry-selected declarations use the closed `ordinary-fan-v1-core-bound-v2`
+or `ordinary-power-v1-core-bound-v2` record model. They add `provider_contract` and
+`core_binding` to the existing fields; the binding participates in the prepared
+hash. Old declarations are read without rewriting their bytes, hashes or contracts.
+Their public receipts remain unchanged. New receipts additionally expose the
+bound version and semantic fingerprint in `core_binding`. Tool input schemas,
+registration, provider arguments and routes do not change.
+
+Before deploying this storage reader/writer, preserve an application-consistent
+backup and settle active work. Beta.3 cannot read new-model declarations: a binary
+downgrade alone is not a storage rollback. Do not delete receipts or restore an old
+execution store after a possibly dispatched action to regain availability; that
+could lose dispatch identities. Keep the compatible reader for reconciliation, or
+use a separately reviewed restoration plan accounting for all later operations.
+
+`tests/test_typed_core_continuity.py` exercises ephemeral signed entries and real
+Engineering authority/provider/execution code with synthetic I/O. This proves the
+data-driven mechanism, not compatibility of a real Core release. Release admission
+still requires exact upstream review, disposable integration validation, separate
+registry review/signing/publication and authorized installed acceptance. No new
+production registry entry, release version or deployment is supplied by this change.
+
 ## Runtime lifecycle
 
 Core reuses the existing bounded signed-journal verification, durable cache,

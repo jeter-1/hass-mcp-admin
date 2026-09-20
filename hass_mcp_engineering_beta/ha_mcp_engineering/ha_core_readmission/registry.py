@@ -6,7 +6,7 @@ from ..ha_mcp_readmission.registry import RegistryBinding, SignedReleaseRegistry
 from ..signed_registry.canonical import sha256_digest
 from .models import (CORE_IDENTITY, CORE_PROTOCOL, CoreAuthoritySelection,
                      CoreAuthoritySource, CoreAuthorityStatus)
-from .profiles import CORE_CAPABILITY_PROFILES, compiled_exact_authority
+from .profiles import CORE_RUNTIME_CAPABILITY_PROFILES, compiled_exact_authority
 from .probe_profiles import compiled_probe_profile, known_probe_profile
 from .registry_models import CORE_REGISTRY_ID, CORE_REGISTRY_KEY_ID, CoreRegistryEnvelope
 
@@ -59,13 +59,14 @@ class CoreReleaseRegistry(SignedReleaseRegistry):
         authority = self.authority()
         denied = authority.surface_denied or authority.revoked(CORE_IDENTITY, version)
         compiled = compiled_exact_authority(version)
-        if not denied and compiled:
-            return compiled
         entry = authority.entry_for(CORE_IDENTITY, version)
         probe = self.probe_profile_for(version)
         references = {} if entry is None else {p.capability_id: p for p in entry.capabilities}
-        result = []
-        for profile in CORE_CAPABILITY_PROFILES:
+        result = list(compiled) if not denied else []
+        compiled_ids = {capability for item in result for capability in item.capability_ids}
+        for profile in CORE_RUNTIME_CAPABILITY_PROFILES:
+            if profile.capability_id in compiled_ids:
+                continue
             reference = references.get(profile.capability_id)
             matches = bool(
                 probe is not None and reference is not None

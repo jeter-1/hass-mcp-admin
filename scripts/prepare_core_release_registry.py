@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.ha_core_readmission.probe_profiles import known_probe_profile
-from ha_mcp_engineering.ha_core_readmission.profiles import CORE_CAPABILITY_PROFILES
+from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
 from ha_mcp_engineering.ha_core_readmission.registry import CORE_REGISTRY_BINDING
 from ha_mcp_engineering.ha_core_readmission.registry_models import (
     CORE_REGISTRY_ID, CORE_REGISTRY_KEY_ID, CoreReleaseEntry,
@@ -84,7 +84,7 @@ def parse_journal(raw: bytes | None, public_key):
 def require_known_contracts(entry: CoreReleaseEntry) -> None:
     if known_probe_profile(entry.probe_profile_id, entry.probe_profile_sha256) is None:
         raise ValueError("review requires an existing compiled probe profile")
-    profiles = {p.capability_id: p for p in CORE_CAPABILITY_PROFILES}
+    profiles = {p.capability_id: p for p in CORE_RUNTIME_CAPABILITY_PROFILES}
     for reference in entry.capabilities:
         profile = profiles.get(reference.capability_id)
         if profile is None or not profile.auto_eligible or any(

@@ -1,0 +1,31 @@
+{
+  "scope": "Source comparison and immutable disposable inputs; not production compatibility authority",
+  "repository": "home-assistant/core",
+  "base_commit": "33c3e0cca60e73a8c4970ee677d75b8bc6464cdf",
+  "target_commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+  "target_tree": "da6a7e906ca9c5dafed62ce4d3955d09d6e8662e",
+  "comparison_url": "https://github.com/home-assistant/core/compare/33c3e0cca60e73a8c4970ee677d75b8bc6464cdf...6de5eb18cd4502f94af44cfff3a02250d88716ed",
+  "changed_file_count": 67,
+  "ahead_by": 27,
+  "source_archive_url": "https://codeload.github.com/home-assistant/core/legacy.tar.gz/6de5eb18cd4502f94af44cfff3a02250d88716ed",
+  "source_archive_sha256": "0d85f3417986364e30d7074980c2d5d2d610e0435efb0a529b4e36df88fb814a",
+  "unchanged_reviewed_boundary_files": {
+    "homeassistant/components/fan/__init__.py": "cfe36916625e40c89b395d091de87ad4230f78b854a4b126e99e2aa287731a19",
+    "homeassistant/components/light/__init__.py": "16e15a88d9cfef37f092bd17aed0cfee85f97f1bbc7c5ec3cdc3885c754a6dd0",
+    "homeassistant/components/switch/__init__.py": "d1c2aaabdaa05529831da206575d2a010539587989c9eab8931a5fc4959d5428",
+    "homeassistant/components/api/__init__.py": "2e7e2fc88c90759cff9d63402c219163ab215250e940e47db71d2af931a50385",
+    "homeassistant/components/websocket_api/commands.py": "77208b87ab671b7254d52306a016f2719f4ce3d9f3798f20d05adb2f7db42c26",
+    "homeassistant/helpers/device_registry.py": "eece8b54675bdf14260e596e2c29c539c1deb212768d7210c132641a290e571b",
+    "homeassistant/helpers/entity_registry.py": "b103dca1dccb7c18c2473a959454e1cac775d77f3b0cd4defff6fd36420b189d"
+  },
+  "observations": [
+    "Fan service schemas preserve bounded percentage and feature bits SET_SPEED=1, TURN_OFF=16, TURN_ON=32.",
+    "Light and switch on/off registration and API service dispatch remain unchanged from reviewed Core 2026.9.2.",
+    "Source comparison does not establish real Core integration or household compatibility.",
+    "Core OCI configuration labels report the expected version and architectures but contain no source revision; no source-build attestation is claimed."
+  ],
+  "disposable_provenance_fixture": "tests/fixtures/core_2026_9_3_lane_provenance.json",
+  "required_execution_evidence": "docs/V2_3_0_BETA4_ACCEPTANCE.md",
+  "production_signature": false,
+  "production_registry_modified": false
+}

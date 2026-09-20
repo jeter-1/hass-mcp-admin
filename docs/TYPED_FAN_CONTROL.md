@@ -43,7 +43,7 @@ only its percentage data, `wait=false`, `return_response=false`, and
 `verbose=false`. The non-waited path avoids the upstream component fallback.
 The public mixed-purpose upstream tool remains withheld.
 
-The new binary-owned contract applies only to Core 2026.9.2. It additionally
+The historical binary-owned contract applies only to Core 2026.9.2. It additionally
 requires current Core entity-state, service-discovery and F3-verification
 capabilities. Core identity is checked inside lease acquisition. The existing
 17 signed references do not grant fan authority: the compiled fan contract is a
@@ -52,6 +52,16 @@ refusal and generation retirement still withhold the required base authority.
 No existing profile/probe fingerprint, signed entry or signing policy changes.
 Other Core releases retain their existing capabilities and cannot use this fan
 contract merely by matching older read profiles.
+
+Future compatible Core releases can instead select the explicitly compiled
+`core.typed_fan_operation` profile through reviewed signed Core data. This uses
+stable provider contracts `ha-mcp-<reviewed-version>-single-fan-v2` and records the
+actual Core version and semantic fingerprint separately. The original three base
+capabilities remain mandatory. The signed power profile alone does not authorize
+fan control. Exact provider admission, arguments, readback and F3 ownership remain
+unchanged. See [Core applicability and storage compatibility](CORE_RELEASE_REGISTRY.md#ordinary-fan-and-power-applicability)
+for the new-record, recovery and downgrade boundaries. Existing signed data is not
+expanded by this implementation; real-release admission remains separate.
 
 Source authority:
 
