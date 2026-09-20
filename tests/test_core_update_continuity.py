@@ -153,6 +153,27 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         await runtime.reconcile_once()
         self.assertEqual(len(self.fetches), fetches)
 
+    async def test_core3_disposable_lane_requires_exact_fixture_and_admits_typed_references(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from core_registry_contract_lane import configure_with_test_authority, lane_entry
+        from tests.test_ha_core_2026_9_integration import settings
+        runtime = CoreRuntime()
+        configure = runtime.configure
+
+        def synthetic_transport(configured, *, release_registry):
+            configure(configured, release_registry=release_registry,
+                      source=ProjectedCoreSource(release_registry, "2026.9.3", typed_operations=True))
+
+        entry = lane_entry("2026.9.3")
+        image = "ghcr.io/home-assistant/home-assistant:2026.9.3@" + entry["image_index_digest"]
+        with patch.object(runtime, "configure", side_effect=synthetic_transport):
+            await configure_with_test_authority(runtime, settings(), cache_path=self.cache,
+                                                expected_image=image, core_version="2026.9.3")
+        self.assert_admitted(runtime, 19)
+        for version in ("2026.9.4", "latest", "../core", None):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                lane_entry(version)
+
     async def test_registry_failure_keeps_compiled_pairing_but_cannot_admit_future(self):
         self.raw = OSError("synthetic transport failure")
         runtime, source = await self.runtime("2026.9.1")

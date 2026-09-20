@@ -119,7 +119,7 @@ HA_CONTRACT_CONTAINER = os.environ.get(
 )
 UPSTREAM_PORT = int(os.environ.get("REAL_HA_UPSTREAM_PORT", "18086"))
 UPSTREAM_SECRET_PATH = "/beta23-real-ha-mcp"
-CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1", "2026.9.2"})
+CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3"})
 MIGRATION_AUTOMATION_ID = "beta23_composite_device_reference"
 FIXTURE_PLATFORM = "beta23_device_fixture"
 RESOURCE_ORDER = (
@@ -1390,11 +1390,12 @@ async def _run_governed_helper_state_contract(
     with tempfile.TemporaryDirectory(prefix="helper-core-authority-") as directory:
         try:
             configured = settings(token)
-            if EXPECTED_HA_VERSION == "2026.9.2":
+            if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
                 from core_registry_contract_lane import configure_with_test_authority
                 await configure_with_test_authority(
                     core_runtime, configured, cache_path=Path(directory) / "core.json",
-                    expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
+                    expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                    core_version=EXPECTED_HA_VERSION)
             else:
                 core_runtime.configure(configured)
                 await core_runtime.reconcile_once("startup")
@@ -1574,7 +1575,7 @@ async def _run_governed_helper_state_with_authority(
                 )
             assert helper_dependency.get("home_assistant_version_observed") == EXPECTED_HA_VERSION
             assert dependency_index.snapshot.semantic_evidence.matches(EXPECTED_HA_VERSION)
-            if EXPECTED_HA_VERSION == "2026.9.2":
+            if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
                 assert helper_dependency.get("reviewed_core_semantics", {}).get("core_version") == EXPECTED_HA_VERSION
             _assert_device_contract(
                 (await exact_gateway.read_state(entity_id))["state"] == "off",
@@ -3068,14 +3069,14 @@ async def _run_core_2026_9_child_contract(
     websocket: HomeAssistantWebSocketClient,
     token: str,
 ) -> None:
-    """Prove exact 8.4.3 child-device reads on disposable Core 2026.9."""
+    """Prove reviewed child-device reads on exact disposable Core releases."""
 
     _assert_device_contract(
         EXPECTED_HA_VERSION in CORE_2026_9_VERSIONS,
         "child_device_registry",
     )
     _assert_device_contract(
-        UPSTREAM_VERSION == "8.4.3", "child_consumer_catalog"
+        UPSTREAM_VERSION == ("8.5.0" if EXPECTED_HA_VERSION == "2026.9.3" else "8.4.3"), "child_consumer_catalog"
     )
     devices = await websocket.command({"type": "config/device_registry/list"})
     entities = await websocket.command({"type": "config/entity_registry/list"})
@@ -3162,9 +3163,9 @@ async def _run_core_2026_9_child_contract(
         await _start_exact_upstream(token)
         configured = settings(token)
         core_runtime = CoreRuntime()
-        if EXPECTED_HA_VERSION == "2026.9.2":
+        if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
             # CI-only ephemeral authority exercises data admission without
-            # adding .2 to the production compiled release table.
+            # adding test releases to the production compiled release table.
             sys.path.insert(0, str(ROOT / "scripts"))
             from core_registry_contract_lane import configure_with_test_authority
             registry_directory = tempfile.TemporaryDirectory(prefix="core-data-contract-")
@@ -3172,6 +3173,7 @@ async def _run_core_2026_9_child_contract(
                 core_runtime, configured,
                 cache_path=Path(registry_directory.name) / "core.json",
                 expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""),
+                core_version=EXPECTED_HA_VERSION,
             )
         else:
             core_runtime.configure(configured)
@@ -3184,7 +3186,7 @@ async def _run_core_2026_9_child_contract(
         )
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.reconcile_until_initialized(server)
-        if EXPECTED_HA_VERSION == "2026.9.2":
+        if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)
         device_assessment = assess_device_registry(devices)
@@ -3275,7 +3277,7 @@ async def _run_core_2026_9_child_contract(
             _assert_device_contract(
                 isinstance(metadata, dict)
                 and metadata.get("provider") == "upstream_read_gateway"
-                and metadata.get("upstream_version") == "8.4.3"
+                and metadata.get("upstream_version") == UPSTREAM_VERSION
                 and metadata.get("fallback") == "none",
                 consumer_scenario,
                 missing_key="engineering_metadata",
