@@ -7,7 +7,15 @@ from importlib import metadata
 import json
 from pathlib import Path
 import sys
+import tomllib
 import types
+
+
+REVIEWED_VENDOR_VERSIONS = {
+    "8.2.0": "17.0.1",
+    "8.4.3": "17.0.1",
+    "8.5.0": "17.1",
+}
 
 
 def distribution_version(name: str) -> str | None:
@@ -20,11 +28,15 @@ def distribution_version(name: str) -> str | None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument("--upstream-version", choices=REVIEWED_VENDOR_VERSIONS, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     package_root = args.source_root.resolve() / "src/ha_mcp"
     if not package_root.is_dir():
         raise SystemExit("exact source package is unavailable")
+    project = tomllib.loads((args.source_root / "pyproject.toml").read_text(encoding="utf-8"))
+    if project.get("project", {}).get("version") != args.upstream_version:
+        raise SystemExit("upstream source version changed")
 
     shared_before = distribution_version("websockets")
     shared_imported_before = "websockets" in sys.modules
@@ -36,7 +48,7 @@ def main() -> None:
     shared_after = distribution_version("websockets")
     shared_imported_after = "websockets" in sys.modules
     vendor_path = Path(vendored.__file__).resolve()
-    if vendored.__version__ != "17.0.1":
+    if vendored.__version__ != REVIEWED_VENDOR_VERSIONS[args.upstream_version]:
         raise SystemExit("vendored websocket version changed")
     if package_root not in vendor_path.parents:
         raise SystemExit("vendored import escaped exact source tree")
@@ -51,6 +63,7 @@ def main() -> None:
             {
                 "result": "PASS",
                 "model": "disposable-ha-vendored-websockets-isolation-v1",
+                "upstream_version": args.upstream_version,
                 "vendored_version": vendored.__version__,
                 "vendored_path_scoped_to_exact_source": True,
                 "shared_distribution_version_before": shared_before,

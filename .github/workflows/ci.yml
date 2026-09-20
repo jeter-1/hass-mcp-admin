@@ -462,6 +462,7 @@ jobs:
           docker exec "$HA_CONTRACT_CONTAINER" python \
             /tmp/disposable_ha_websockets_probe.py \
             --source-root /tmp/ha-mcp-source \
+            --upstream-version "$REAL_HA_UPSTREAM_VERSION" \
             --output /tmp/ha-mcp-disposable-ha.json
           docker cp \
             "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-disposable-ha.json" \
