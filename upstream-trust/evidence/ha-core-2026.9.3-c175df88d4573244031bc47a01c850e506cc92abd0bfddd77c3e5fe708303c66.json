@@ -1,0 +1,477 @@
+{
+  "model": "core-release-applicability-review-evidence-v1",
+  "status": "UNSIGNED PREPARATION; independent review and owner signing pending",
+  "prepared_at": "2026-09-20T06:50:28.549378+00:00",
+  "target_version": "2026.9.3",
+  "engineering": {
+    "source": "c07bc54ae0cf9d52a3bd205f2a24de704f7b8296",
+    "tree": "db6157653fe0efd3e0ad6daca4084243e6641e69",
+    "version": "2.3.0-beta.4",
+    "checkout_clean": true,
+    "published_image_index": "sha256:89b32ec889b5e2b0259a4da7385f38ebb0d0c2312477fe16cab5bee3e7d2f2cd",
+    "installed_image_binding": {
+      "status": "PASS",
+      "platform": "linux/amd64",
+      "configuration_digest": "sha256:16ec6557b4782e644302df6232d2e12d3e2d5144efc69ca66b3b1dcb61d51127",
+      "receipt_sha256": "f4e0e203e8b680d654dd70875a2c8251abb869d6e716af91d9d8e3c5cc68deb0"
+    },
+    "household_functional_acceptance": "Josh reports PASS on Core 2026.9.2; not re-executed in this preparation"
+  },
+  "public_signing_identity": {
+    "key_id": "ha-core-release-registry-v1",
+    "decoded_public_key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+    "public_key_base64": "+uYOo+DWf3XLPNGRkaOHa54qu2o4+hF4mVRLwUD5NTw=",
+    "basis": "Existing authenticated published journal and retained successful owner activation receipt; no fresh live options read",
+    "private_key_access": false
+  },
+  "previous_journal": {
+    "sha256": "fb1aa37a46e04a75b293d511e8ad46cb89cfdf365edaf39aa72f73ed5a68b558",
+    "sequence": 1,
+    "checkpoint_sequence": 1,
+    "published_url": "https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/main/upstream-trust/ha-core-release-registry.json",
+    "signature_verified": true,
+    "unchanged_release": "2026.9.2",
+    "unchanged_reference_count": 17
+  },
+  "core_provenance": {
+    "server_name": "home-assistant-core",
+    "version": "2026.9.3",
+    "source_commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+    "source_tree": "da6a7e906ca9c5dafed62ce4d3955d09d6e8662e",
+    "source_archive_sha256": "0d85f3417986364e30d7074980c2d5d2d610e0435efb0a529b4e36df88fb814a",
+    "image_index_digest": "sha256:d8922685169707fd91e8b9729902d975f06157d005e422874d201e0261dda196",
+    "architecture_manifests": {
+      "linux/amd64": "sha256:1aeeebfba2a977182dfc60495ebf24460ac8f0710cac34d86e83aaad53ee4892",
+      "linux/arm64": "sha256:efdb6f91e54a596859ae5499b5681867796b9c46c44354dffec345429ac942a7"
+    }
+  },
+  "source_archive": {
+    "sha256": "0d85f3417986364e30d7074980c2d5d2d610e0435efb0a529b4e36df88fb814a",
+    "bytes": 29302437,
+    "url": "https://codeload.github.com/home-assistant/core/legacy.tar.gz/6de5eb18cd4502f94af44cfff3a02250d88716ed"
+  },
+  "source_review": {
+    "comparison_url": "https://github.com/home-assistant/core/compare/33c3e0cca60e73a8c4970ee677d75b8bc6464cdf...6de5eb18cd4502f94af44cfff3a02250d88716ed",
+    "changed_file_count": 67,
+    "ahead_by": 27,
+    "unchanged_boundary_file_count": 420,
+    "boundary_groups": {
+      "core_and_identity": [
+        "homeassistant/core.py",
+        "homeassistant/bootstrap.py",
+        "homeassistant/auth/",
+        "homeassistant/components/auth/"
+      ],
+      "http_rest": [
+        "homeassistant/components/api/",
+        "homeassistant/components/http/",
+        "homeassistant/components/config/"
+      ],
+      "websocket": [
+        "homeassistant/components/websocket_api/"
+      ],
+      "registries": [
+        "homeassistant/helpers/device_registry.py",
+        "homeassistant/helpers/entity_registry.py",
+        "homeassistant/helpers/area_registry.py",
+        "homeassistant/helpers/floor_registry.py",
+        "homeassistant/helpers/label_registry.py"
+      ],
+      "template_state_service": [
+        "homeassistant/helpers/template/",
+        "homeassistant/helpers/template.py",
+        "homeassistant/helpers/service.py",
+        "homeassistant/components/template/",
+        "homeassistant/components/input_boolean/"
+      ],
+      "automation_trace": [
+        "homeassistant/components/automation/",
+        "homeassistant/components/script/",
+        "homeassistant/components/trace/"
+      ],
+      "dashboard_backend": [
+        "homeassistant/components/lovelace/"
+      ],
+      "nabu_casa_backend": [
+        "homeassistant/components/cloud/"
+      ],
+      "typed_fan_power": [
+        "homeassistant/components/fan/",
+        "homeassistant/components/light/",
+        "homeassistant/components/switch/"
+      ],
+      "shared_helpers": [
+        "homeassistant/helpers/"
+      ],
+      "additional_helper_families": [
+        "homeassistant/components/input_number/",
+        "homeassistant/components/input_text/",
+        "homeassistant/components/input_select/",
+        "homeassistant/components/input_datetime/",
+        "homeassistant/components/input_button/",
+        "homeassistant/components/counter/",
+        "homeassistant/components/timer/",
+        "homeassistant/components/scene/"
+      ]
+    },
+    "boundary_verification_sha256": "032d8e3e1346f2db786bbfd4b1c49eabd00bdf48235cead0d11d92d0a31f3797",
+    "material_other_changes": [
+      "Backup archive expectation adds Supervisor metadata archive.",
+      "Onboarding validates username before creating the user.",
+      "Recorder change corrects a deprecation message.",
+      "Core dependency hassil changes 3.12.0 to 3.12.1; other integration dependency/configuration fixes remain outside this Engineering applicability grant."
+    ]
+  },
+  "oci_provenance": [
+    {
+      "platform": "linux/amd64",
+      "manifest": "sha256:1aeeebfba2a977182dfc60495ebf24460ac8f0710cac34d86e83aaad53ee4892",
+      "statement_sha256": "c276d0f74373bf072336e780478f85272d145a3f0cace6e1afcf9341d341647a",
+      "builder": {
+        "id": "https://github.com/home-assistant/core/actions/runs/35343329916/attempts/1"
+      },
+      "vcs_revision": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "workflow_sha": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "subject_digest_verified": true,
+      "attestation_signature_verification_performed": false
+    },
+    {
+      "platform": "linux/arm64",
+      "manifest": "sha256:efdb6f91e54a596859ae5499b5681867796b9c46c44354dffec345429ac942a7",
+      "statement_sha256": "99e25cc91a16d167599d8a3675a7dbe68dbaa413dff03dfd71fcf94810e48270",
+      "builder": {
+        "id": "https://github.com/home-assistant/core/actions/runs/35343329916/attempts/1"
+      },
+      "vcs_revision": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "workflow_sha": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "subject_digest_verified": true,
+      "attestation_signature_verification_performed": false
+    }
+  ],
+  "applicability": {
+    "probe_profile_id": "core-probes-child-devices-v1",
+    "probe_profile_sha256": "sha256:c2706d08f75ecef2a7d37265df6eddb03f95bc97d87a08d8632f861202594f46",
+    "capability_count": 19,
+    "references": [
+      {
+        "reference": {
+          "capability_id": "core.basic_rest_read",
+          "profile_id": "core_basic_rest_read_v1",
+          "contract_fingerprint": "sha256:3c76c2789952f16340ec51c83122e43cceb1de9581b4dfdf15821d9fc8282cc8",
+          "adapter_id": "compiled-core-rest-read-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "http_rest",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.basic_websocket_read",
+          "profile_id": "core_basic_websocket_read_v1",
+          "contract_fingerprint": "sha256:e1c15f0d838c44f40c2bcf7ae9df408c9cd186cea7874ab7976945be405294cc",
+          "adapter_id": "compiled-core-websocket-read-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "websocket",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.state_service_discovery",
+          "profile_id": "core_state_service_discovery_v1",
+          "contract_fingerprint": "sha256:f6647dfe70a6b477b97c7866d7b2f91f4ba00452547c9d16a8b8298a147c7225",
+          "adapter_id": "compiled-core-state-service-discovery-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "template_state_service",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.non_device_registry_read",
+          "profile_id": "core_non_device_registry_read_v1",
+          "contract_fingerprint": "sha256:4e29009423e7f2438a6b5e0a9cccfcc6add46de73fc05a1edd9fdde9be639615",
+          "adapter_id": "compiled-core-non-device-registry-read-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "registries",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.direct_device_registry_read",
+          "profile_id": "core_direct_device_registry_read_v1",
+          "contract_fingerprint": "sha256:df4afeeea54fa4c59dbe5f8f5b63e63fab516ae69808d7d6ba4d0821b6818ee9",
+          "adapter_id": "compiled-core-direct-device-registry-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "registries",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.delegated_device_effective_area",
+          "profile_id": "core_delegated_device_effective_area_v1",
+          "contract_fingerprint": "sha256:b1c2352fe0e87b59a4f9451113d650ac474a56d9135f715d17d2ca31d25645ad",
+          "adapter_id": "compiled-core-delegated-device-effective-area-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "registries",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.direct_entity_state_read",
+          "profile_id": "core_direct_entity_state_read_v1",
+          "contract_fingerprint": "sha256:a42cec05d830e66ce830d07e413b8875dfcfd8d985ba2111b94419ef847cf9d1",
+          "adapter_id": "compiled-core-direct-entity-state-read-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "http_rest",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.automation_configuration_read",
+          "profile_id": "core_automation_configuration_read_v1",
+          "contract_fingerprint": "sha256:ec4344e7dc0a0f4b1a84a2dfbbeae1b412432cf787bcdf41d58ea21a6edb45ad",
+          "adapter_id": "compiled-core-automation-configuration-read-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "automation_trace",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.automation_trace_read",
+          "profile_id": "core_automation_trace_read_v1",
+          "contract_fingerprint": "sha256:7f45584511fb1069561ba4ef7a43c4cd6e9a5f41cb9b2f2aac5bdadcd6511c9c",
+          "adapter_id": "compiled-core-automation-trace-read-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "automation_trace",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.dashboard_configuration_read",
+          "profile_id": "core_dashboard_configuration_read_v1",
+          "contract_fingerprint": "sha256:134fa8fa48bdd085a491d2f311ee69c48f53c844a651c334974899e8b79f6424",
+          "adapter_id": "compiled-core-dashboard-configuration-read-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "dashboard_backend",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.template_semantics",
+          "profile_id": "core_template_semantics_v1",
+          "contract_fingerprint": "sha256:0f6d682f1b4d02be622173bc56699ef6de208b5c45b52454cd6fc7a5a083cbe7",
+          "adapter_id": "compiled-core-template-semantics-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "template_state_service",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.configuration_validation",
+          "profile_id": "core_configuration_validation_v1",
+          "contract_fingerprint": "sha256:f998f871e47ded521c5ff713fd738b48c813b0363385237b19c472a1ab540b9a",
+          "adapter_id": "compiled-core-configuration-validation-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "http_rest",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.dependency_helper_planning",
+          "profile_id": "core_dependency_helper_planning_v1",
+          "contract_fingerprint": "sha256:4e981b75c8bf81ef24c3fa123827786ca57762db0d2e09108e499a5e8312efe9",
+          "adapter_id": "compiled-core-dependency-helper-planning-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "template_state_service",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.typed_helper_operation",
+          "profile_id": "core_typed_helper_operation_v1",
+          "contract_fingerprint": "sha256:7ae55a050860e86089756ef8d9104977c630e7c6e593bee2dbd46c6bd2535936",
+          "adapter_id": "compiled-core-typed-helper-operation-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "template_state_service",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.f3_mutation_verification",
+          "profile_id": "core_f3_mutation_verification_v1",
+          "contract_fingerprint": "sha256:274c9beef6b4f6137715b7ab60a25cfcb93fbd1d1b2737ad776004dd3e47c873",
+          "adapter_id": "compiled-core-f3-mutation-verification-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "http_rest",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.governed_configuration_operation",
+          "profile_id": "core_governed_configuration_operation_v1",
+          "contract_fingerprint": "sha256:d517fa73878f8dafea857b5306db750304d3c65522481898800cf86fb091f441",
+          "adapter_id": "compiled-core-governed-configuration-operation-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "http_rest",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.governance_observability",
+          "profile_id": "core_governance_observability_v1",
+          "contract_fingerprint": "sha256:b4fa34c413a21ea643de830de00477c7c4953efb43916a1d83fa1e3cbd9eb3e2",
+          "adapter_id": "compiled-core-governance-observability-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "core_and_identity",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.typed_fan_operation",
+          "profile_id": "core_typed_fan_operation_v1",
+          "contract_fingerprint": "sha256:25b3b6fdd25ca9c5ba8a7811d850f801fc7d3deefadd4a6bafbf1e9f6a6c042b",
+          "adapter_id": "compiled-core-single-fan-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "typed_fan_power",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      },
+      {
+        "reference": {
+          "capability_id": "core.typed_power_operation",
+          "profile_id": "core_typed_power_operation_v1",
+          "contract_fingerprint": "sha256:9242b795a2d5ed3deeb3b8ea46fba13fc299c14fb274e3b29ed97a30b607001a",
+          "adapter_id": "compiled-core-single-power-v1",
+          "profile_version": 1
+        },
+        "unchanged_source_group": "typed_fan_power",
+        "validation": "real Core .3 contracts plus source boundary comparison; fan/power additionally four native architecture/provider-form combinations"
+      }
+    ]
+  },
+  "executed_ci": {
+    "run_id": 35490790485,
+    "attempt": 1,
+    "source": "c07bc54ae0cf9d52a3bd205f2a24de704f7b8296",
+    "run_conclusion": "success",
+    "jobs_passed": 36,
+    "run_url": "https://github.com/jeter-1/hass-mcp-admin/actions/runs/35490790485",
+    "real_core_contract_job_id": 106025239844,
+    "real_core_contract_log_sha256": "715b767e90af7346c91639630c5a1b15eab9aaeca6c6520c2332add8a03defcd",
+    "native_matrix": [
+      {
+        "architecture": "amd64",
+        "source": "c07bc54ae0cf9d52a3bd205f2a24de704f7b8296",
+        "status": "PASS",
+        "variants": [
+          "standalone",
+          "addon"
+        ],
+        "compatible_count": 19,
+        "relay": {
+          "active_websockets": 0,
+          "ha_mcp_tools/dashboard_edit": 2,
+          "lovelace/config/save": 2,
+          "service_posts": 22,
+          "service_posts_fan": 10,
+          "service_posts_light": 4,
+          "service_posts_switch": 8
+        },
+        "cleanup": "removed"
+      },
+      {
+        "architecture": "arm64",
+        "source": "c07bc54ae0cf9d52a3bd205f2a24de704f7b8296",
+        "status": "PASS",
+        "variants": [
+          "standalone",
+          "addon"
+        ],
+        "compatible_count": 19,
+        "relay": {
+          "active_websockets": 0,
+          "ha_mcp_tools/dashboard_edit": 2,
+          "lovelace/config/save": 2,
+          "service_posts": 22,
+          "service_posts_fan": 10,
+          "service_posts_light": 4,
+          "service_posts_switch": 8
+        },
+        "cleanup": "removed"
+      }
+    ],
+    "artifact_reconciliation_sha256": "903bf474ea0d870bbee2ea0c83f0940731589e02c419aea5e21aca7e5855c43e",
+    "original_full_suite": {
+      "discovered": 3932,
+      "passed": 3912,
+      "skipped": 20,
+      "failures": 0,
+      "errors": 0
+    },
+    "newly_executed_here": false,
+    "execution_scope": "Exact Engineering source under CI interpreter against immutable real Core/provider containers; not Engineering installed-image Core .3 execution"
+  },
+  "local_targeted_validation": {
+    "command": "python -m unittest -v tests.test_core_registry_preparation tests.test_core_update_continuity tests.test_core_semantic_continuity tests.test_typed_core_continuity",
+    "source": "c07bc54ae0cf9d52a3bd205f2a24de704f7b8296",
+    "interpreter": "CPython 3.12.14 controlled isolated environment",
+    "run": 83,
+    "passed": 83,
+    "skipped": 0,
+    "failures": 0,
+    "errors": 0,
+    "log_sha256": "780da188290a7ded59f2d4e3a685e09446a545fb187262d099ca5c081e716af5"
+  },
+  "source_hashes": {
+    "scripts/prepare_core_release_registry.py": "73b6547be3bf5b396cb5a655f6bdb13f26666308ed80a36622079bc59c92d9a8",
+    "scripts/core_registry_contract_lane.py": "f4d6efc49fd53eb43b6b1440505df985ecb3222b51ea99e0450b81f5277ca073",
+    "scripts/real_ha_contract_tests.py": "52b629cabe2396859a595d40244c2d8c3e554d2542bdba0922ef680a969c94e1",
+    "scripts/ha_mcp_850_container_acceptance.py": "a6f7a53d34a3a6e7dc09dae22df057fd75a5a2b119ab0093b276e9e8ef2092f8",
+    "docs/CORE_RELEASE_REGISTRY.md": "7b545a7ccbbc8ba2cfbd029f5ddd6f75acd5406a46a465b7a2af4876f8e1651f",
+    "docs/V2_3_0_BETA4_ACCEPTANCE.md": "acad18c675033521fbb816a5f3352630ce785cf67110fec519a54b74398edd1f",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/probe_profiles.py": "bd2c9ee100fce927d6493c056b2102e2f861ad296fa4c549bf907d04fc496cb0",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/device_registry.py": "d1e89c93cb8605395174cb418734406618fa8e4d0baecc1f52302c36685ac6a6",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/observation.py": "2b6bbf0a8890e3878a098c0372e8dcb6192d004cc1092be1c087e23ea43cde7a",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/__init__.py": "1b0aa86b5d7e93791d84180f25af4caf9873c4e6f70f3ab6c2053a1d40e82b04",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/profiles.py": "f073cf46444133610d4966ec3b186a32accd65e3d31ed7ce6c63453278aa20ce",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/typed_operations.py": "1df282004f8fb38ff0789299429559276b5701a7f05d2e22ac00df324fdc3f60",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/registry_models.py": "0d976bf73c737f67fb60d437e90e4174adba083e3b1c5d0b39e5781bbc107865",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/source.py": "0723258419afe9e307b00417cc446eaa88c9be9c694b520c51a01dbbf54f0c1c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/models.py": "ec9bf0ff37486e50bfb466647986d342f2c0b8b72e44fe42dd95b23f93410267",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/runtime.py": "daf2095f6872bf97be61b2631c0ce00927f565028ca1440e38cee297ebc348f9",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py": "7fb269a2863f4e1f477f367d69ad172548038209eacfb48a2f7097325cb098a5",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/coordinator.py": "78b38de5450232a45512dc2716a2bce8e2b1a0812ea15e53e2b5bd8845b636eb",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/registry.py": "39b4bb7f7f37664901663b14aaa71787f4236f97c33ce786eae1bf1cd76213bc"
+  },
+  "limits": [
+    "This unsigned data selects existing semantic contracts only; no new routes, actions, argument forms, providers or fallback.",
+    "Original Core .2 entry and its 17 references remain unchanged. .3 explicitly selects the two typed profiles.",
+    "Digest-linked OCI source declarations observed; cryptographic attestation signatures not verified. GitHub reports the source commit signature valid; not locally GPG-verified.",
+    "Response-loss and 121-second owner expiry are disposable fault injection; not an actual process crash, elapsed wait or installed Core transition.",
+    "Container tests use ephemeral signing keys. No production signature or authority is produced here.",
+    "Core .3 is not installed in the household. Backup/recovery, integration readiness, owner update authorization and installed acceptance remain separate.",
+    "A compatible reader is required after new Core-bound records; beta.3 binary downgrade alone is not storage rollback.",
+    "Registry refresh is polling; no claim of immediate remote revocation. Stale-state, provider admission, leases, dispatch ownership, approval and readback remain independently required."
+  ],
+  "later_gates": [
+    "Independent review of exact candidate bytes",
+    "Owner-authorized signing with fresh current-journal and key binding",
+    "Separately authorized signed-data publication and runtime acceptance",
+    "Distinct Core-update authorization and bounded installed validation"
+  ]
+}
