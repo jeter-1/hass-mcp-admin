@@ -1196,7 +1196,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         by_version = {item["ha_version"]: item for item in matrix}
         self.assertEqual(
             set(by_version),
-            {"2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0", "2026.9.1", "2026.9.2"},
+            {"2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3"},
         )
         self.assertEqual(
             by_version["2026.9.0"]["ha_image"],
@@ -1228,6 +1228,18 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertEqual(by_version["2026.9.2"]["ha_image"],
                          "ghcr.io/home-assistant/home-assistant:2026.9.2@"
                          "sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe")
+        core3 = by_version["2026.9.3"]
+        self.assertEqual(core3["ha_image"],
+                         "ghcr.io/home-assistant/home-assistant:2026.9.3@"
+                         "sha256:d8922685169707fd91e8b9729902d975f06157d005e422874d201e0261dda196")
+        self.assertEqual(core3["ha_mcp_version"], "8.5.0")
+        self.assertEqual(core3["ha_mcp_image"],
+                         "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@"
+                         "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c")
+        self.assertEqual(core3["ha_mcp_source_commit"],
+                         "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
+        self.assertEqual(core3["ha_mcp_source_sha256"],
+                         "02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e")
         self.assertEqual(job["env"]["HA_CONTRACT_IMAGE"], "${{ matrix.ha_image }}")
         self.assertEqual(job["env"]["HA_FIXTURE_WRITER_IMAGE"], matrix[0]["ha_image"])
         self.assertEqual(
@@ -1484,8 +1496,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.0"))
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.1"))
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.2"))
+        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.3"))
         with self.assertRaises(ValueError):
-            expected_adapter(home_assistant_version="2026.9.3")
+            expected_adapter(home_assistant_version="2026.9.4")
 
     def test_composite_device_contract_evidence_is_bounded_and_structural(self):
         project = self.contract._bounded_device_lookup_shape
