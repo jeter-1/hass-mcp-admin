@@ -1,13 +1,14 @@
 # HA MCP Engineering Server Beta
 
-**Engineering 2.3.0-beta.3** adds exact light/switch ON/OFF on this existing
-installation path through the reviewed internal ha-mcp provider. This prerelease
-retains Host/Origin enforcement, secret-path authentication and the technical Beta name.
-See [2.3.0-beta.3 acceptance](../docs/V2_3_0_BETA3_ACCEPTANCE.md) and
-[2.3.0-beta.3 release notes](../docs/V2_3_0_BETA3_RELEASE_NOTES.md).
+**Engineering 2.3.0-rc.1** stabilizes the existing beta.4 runtime for stable
+2.3.0 and the first protected automatic publication. Typed fan/light/switch
+operations, signed Core applicability, Host/Origin enforcement, secret-path
+authentication and the technical Beta installation identity remain unchanged.
+See [2.3.0-rc.1 acceptance](../docs/V2_3_0_RC1_ACCEPTANCE.md) and
+[2.3.0-rc.1 release notes](../docs/V2_3_0_RC1_RELEASE_NOTES.md).
 
 Read the [Host/Origin policy](../docs/INBOUND_SECURITY.md) before an authorized
-2.3.0-beta.3 update. Configure exact aliases for MCP paths beyond its loopback-authority
+2.3.0-rc.1 update. Configure exact aliases for MCP paths beyond its loopback-authority
 defaults; explicit host lists replace those defaults. Native clients may omit
 Origin; browser MCP clients require an explicit origin. Approval ingress retains
 its separate authentication. Invalid options refuse startup, so retain independent
@@ -21,7 +22,7 @@ installed acceptance.
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures for 2.3.0-beta.3 | `amd64`, `aarch64` |
+| Architectures for 2.3.0-rc.1 | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
 | Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
 | Server ID | `hass-mcp-engineering-beta` |
@@ -43,7 +44,7 @@ belongs to this milestone.
 
 Historical v1.1.2 in `hass_mcp_admin/` is frozen and operationally retired,
 outside the Engineering dependency audit and not an Engineering rollback.
-2.3.0-beta.3 preserves existing options, persistence formats, ports, ingress and image
+2.3.0-rc.1 preserves existing options, persistence formats, ports, ingress and image
 repository. The existing options, `mcp_allowed_hosts` and `mcp_allowed_origins`,
 enforce the received-header boundary before ordinary MCP behavior. The private
 observer retains its [existing contract](../docs/INBOUND_TOPOLOGY_CAPTURE.md),
@@ -56,17 +57,19 @@ Clients use the existing Engineering Nabu Casa connector. Engineering selects
 suitable admitted ha-mcp or native providers, enforcing provider admission,
 target binding, authority, dispatch, attribution and verification internally.
 
-The healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing requires **17 Core capabilities**
-and exposes **53 static plus 25 delegated tools, 78 total**.
+The healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing exposes **53 static plus
+25 delegated tools, 78 total**. The Core inventory represents **19 profiles**,
+whose admission depends on exact current Core authority.
 `ha_get_operation_status` stays held. Fresh raw descriptor comparison is
 required catalog evidence; a cached inventory or count alone is insufficient.
 Provider unavailability grants no fallback, arbitrary forwarding or alternate
 provider retry.
 
-Accepted RC9 evidence includes **Core 2026.9.2 / ha-mcp 8.4.3** under
-separately configured, valid signed Core authority. Installing 2.3.0-beta.3 does not
-activate trust or admit an uncompiled Core version. Existing compiled pairings
-retain their behavior. Exact 8.5.0 adoption requires separate deployment and installed acceptance.
+The RC installed-acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0**, with
+reviewed signed applicability for all 19 profiles. Core 2026.9.2 retains its
+immutable 17-reference entry and historical typed fan/power route; the two signed
+typed references are intentionally unavailable on that entry. Installation does
+not activate trust or update Core. Existing compiled pairings retain their behavior.
 
 The [8.5.0 compatibility contract](../docs/HA_MCP_8_5_0_COMPATIBILITY.md)
 preserves the public blueprint getter through a closed list/get adapter.
@@ -86,8 +89,10 @@ The additive `control_fan` tool uses ordinary authenticated connector authority
 for one exact `turn_on`, `turn_off` or `set_percentage` request. The assistant
 manages the operation ID automatically and reuses it for reconciliation. No
 configuration plan or panel approval is created. Generic services and fallback
-remain unavailable. Its compiled semantics require Core 2026.9.2 / ha-mcp 8.4.3 or 8.5.0
-and current authority; the existing signed references alone do not grant fan writes.
+remain unavailable. Operations require exact Core authority and admitted ha-mcp
+8.4.3 or 8.5.0. Core 2026.9.3 uses the reviewed signed typed applicability;
+Core 2026.9.2 retains its historical route. A generic read grant cannot authorize
+typed actions, and other Core versions need separately reviewed applicability.
 
 At most one mutation may dispatch per operation. Verify authoritative task state
 and exact HA state/percentage, retaining uncertainty and incomplete consumer
@@ -101,8 +106,9 @@ See [typed fan control](../docs/TYPED_FAN_CONTROL.md) for the full contract.
 
 `control_power` adds exact light/switch ON/OFF with assistant-managed operation IDs
 and ordinary authenticated connector authority. It creates no configuration plan,
-notification or panel approval. Core 2026.9.2 and exact admitted ha-mcp 8.4.3 or
-8.5.0 are required. Generic services, toggle, brightness/color, bulk selectors
+notification or panel approval. Exact Core authority and admitted ha-mcp 8.4.3
+or 8.5.0 are required, including the signed Core .3 and historical .2 routes above.
+Generic services, toggle, brightness/color, bulk selectors
 and other domains remain closed.
 
 At-most-once dispatch, independent HA state verification, target-local uncertainty
@@ -134,6 +140,12 @@ Shared dependency builds own their authority independently of callers.
 The cooperative build deadline stays **300 seconds**, with **600-second soft**
 and **3600-second hard** evidence TTLs. Source fences and semantic applicability
 remain enforced. Cancellation and deadlines do not guarantee remote abort.
+Dependency coverage remains partial: reliable script, scene, group, template and
+dashboard configuration coverage is unavailable; dynamic references remain opaque.
+
+Beta.3 cannot read beta.4's new Core-bound fan/power records. Preserve current
+execution IDs, receipts, holds and uncertain work. Binary downgrade alone is not
+storage recovery; a compatible artifact and exact recovery plan are required.
 
 - [Governance](../docs/CHANGE_GOVERNANCE.md) and
   [external approval](../docs/EXTERNAL_APPROVAL.md)
@@ -164,13 +176,16 @@ Materialize versions in the same PR with the shipped promotion tool. Keep the
 candidate draft for review. A version-changing main merge can automatically
 publish on the retained image path; owner authorization must cover that
 consequence. Deployment and verification of the final installation are separate.
+See the [current roadmap](../docs/2_1_ROADMAP.md#current-direction) for the
+RC-to-stable gates and subsequent feature priorities.
 
 ## Acceptance and history
 
-Retained RC9 and 2.2.0 source/build, installed-image, catalog and live receipts
-remain bound to their original source, pairing and observation time. They do
-not establish 2.3.0-beta.3 installed acceptance. The
-[2.3.0-beta.3 contract](../docs/V2_3_0_BETA3_ACCEPTANCE.md) separately
+Retained RC9, 2.2.0 and beta.3/beta.4 source/build, installed-image, catalog and
+live receipts remain bound to their original source, pairing, time and attribution.
+The beta.3 raw-catalog runtime-bracket qualification remains unchanged. They do
+not establish 2.3.0-rc.1 installed acceptance. The
+[2.3.0-rc.1 contract](../docs/V2_3_0_RC1_ACCEPTANCE.md) separately
 requires final publication/image identity, fresh catalog and bounded installed
 verification.
 
