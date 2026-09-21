@@ -208,6 +208,23 @@ The publisher continues to call the entire reusable CI workflow before release
 detection or publication. Its enclosing job is also named `validate`; it is not
 the renamed `validate_source` worker. The aggregate adds no publishing authority.
 
+The disposable exact add-on harness accepts that publisher's `workflow_run`
+context only on `refs/heads/main` with the exact caller workflow reference. It
+preserves repository, job, SHA, run/attempt, architecture and checkout checks;
+cleanup retains the same resource identity and ownership checks. This permits
+disposable validation, not release approval. The later independent handoff,
+claim and provenance checks remain responsible for publication authority.
+
+When changing a workflow trigger, validate its complete reusable call chain.
+GitHub [preserves the caller's context in a reusable workflow](https://docs.github.com/en/actions/reference/workflows-and-actions/reusing-workflow-configurations#github-context),
+so a passing PR run does not establish a passing `workflow_run` invocation.
+`tests/test_publication_ci_event_context.py` derives the publisher triggers and
+candidate matrix from the workflow files and runs the harness's real acceptance
+and cleanup entry points with those contexts. Git observations and disposable
+container operations are substituted for these offline regressions; real image
+acceptance remains in CI and automatic publication remains a separate release
+acceptance step.
+
 ### CI scheduling and bounds
 
 Standalone PR CI uses a repository/PR-number concurrency group in the dedicated
