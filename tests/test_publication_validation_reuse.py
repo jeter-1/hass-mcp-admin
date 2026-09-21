@@ -61,6 +61,13 @@ class PublicationValidationReuseTests(unittest.TestCase):
         self.assertEqual(self.decide(), "reuse_same_run")
         self.assertLess(len(json.dumps(self.receipt).encode()), validation.MAX_RECEIPT)
 
+    def test_verified_handoff_event_keeps_exact_same_run_validation_binding(self):
+        self.env["GITHUB_EVENT_NAME"] = "workflow_run"
+        self.env["SOURCE_VALIDATION_RECEIPT"] = json.dumps(validation.record(self.root, self.env))
+        self.assertEqual(self.decide(), "reuse_same_run")
+        with self.assertRaises(validation.Refusal):
+            self.decide(dict(self.env, GITHUB_RUN_ATTEMPT="2"))
+
     def test_historical_source_runs_discovery_even_when_trees_are_identical(self):
         self.git("commit", "--allow-empty", "-qm", "New workflow authority")
         trigger = self.git("rev-parse", "HEAD")

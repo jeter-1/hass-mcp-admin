@@ -1,6 +1,9 @@
 name: Publish reviewed Engineering release
 
 on:
+  workflow_run:
+    workflows: [Merge owner-authorized pull request]
+    types: [completed]
   push:
     branches:
       - main
@@ -16,6 +19,10 @@ on:
         type: string
       recovery_run_id:
         description: Failed authorized publication run that produced an untagged digest
+        required: false
+        type: string
+      recovery_run_attempt:
+        description: Exact failed attempt, including one predating a later rerun (optional)
         required: false
         type: string
       recovery_source_digest:
@@ -39,6 +46,7 @@ env:
 jobs:
   validate:
     name: Complete validation gate
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
@@ -47,7 +55,10 @@ jobs:
     name: Detect Engineering release transition
     needs: validate
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
+      actions: read
+      pull-requests: read
       contents: read
     outputs:
       release_action: ${{ steps.detect.outputs.release_action }}
@@ -57,6 +68,7 @@ jobs:
       release_mode: ${{ steps.detect.outputs.release_mode }}
       source_mode: ${{ steps.detect.outputs.source_mode }}
       recovery_run_id: ${{ steps.detect.outputs.recovery_run_id }}
+      recovery_run_attempt: ${{ steps.detect.outputs.recovery_run_attempt }}
       recovery_source_digest: ${{ steps.detect.outputs.recovery_source_digest }}
       recovery_build_time: ${{ steps.detect.outputs.recovery_build_time }}
     steps:
@@ -64,6 +76,21 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Independently verify completed merge handoff
+        id: handoff
+        if: github.event_name == 'workflow_run'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ github.event.workflow_run.id }}
+          SOURCE_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin refs/heads/main:refs/remotes/origin/main
+          python3 scripts/publication_handoff.py verify \
+            --run-id "$SOURCE_RUN_ID" --attempt "$SOURCE_RUN_ATTEMPT" \
+            --authority "$WORKFLOW_AUTHORITY_SHA" --github-output "$GITHUB_OUTPUT"
       - id: detect
         shell: bash
         env:
@@ -75,9 +102,13 @@ jobs:
           EVENT_RELEASE_SHA: ${{ inputs.release_sha }}
           EVENT_RECOVERY_BUILD_TIME: ${{ inputs.recovery_build_time }}
           EVENT_RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+          EVENT_RECOVERY_RUN_ATTEMPT: ${{ inputs.recovery_run_attempt }}
           EVENT_RECOVERY_SOURCE_DIGEST: ${{ inputs.recovery_source_digest }}
           EVENT_TRIGGERING_ACTOR: ${{ github.triggering_actor }}
           TRIGGER_SHA: ${{ github.sha }}
+          HANDOFF_ACTION: ${{ steps.handoff.outputs.release_action }}
+          HANDOFF_RELEASE_SHA: ${{ steps.handoff.outputs.release_sha }}
+          HANDOFF_BASE_SHA: ${{ steps.handoff.outputs.validation_base }}
         run: |
           set -euo pipefail
 
@@ -87,6 +118,7 @@ jobs:
           expected_version=""
           source_mode="build"
           recovery_run_id=""
+          recovery_run_attempt=""
           recovery_source_digest=""
           recovery_build_time=""
           trigger_checkout_sha="$(git rev-parse HEAD)"
@@ -96,7 +128,16 @@ jobs:
             exit 1
           fi
 
-          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+          if [[ "$EVENT_NAME" == "workflow_run" ]]; then
+            if [[ "$HANDOFF_ACTION" == "none" ]]; then
+              echo "release_action=none" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            [[ "$HANDOFF_ACTION" == "inspect" && "$HANDOFF_RELEASE_SHA" =~ ^[0-9a-f]{40}$ && "$HANDOFF_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            release_sha="$HANDOFF_RELEASE_SHA"
+            validation_base="$HANDOFF_BASE_SHA"
+            release_mode="protected_merge_handoff"
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
             if [[ "$EVENT_ACTOR" != "jeter-1" || "$EVENT_TRIGGERING_ACTOR" != "jeter-1" ]]; then
               echo "::error::Only the repository owner may request or rerun manual publication recovery."
               exit 1
@@ -115,6 +156,13 @@ jobs:
             [[ -n "$EVENT_RECOVERY_RUN_ID" ]] && recovery_field_count=$((recovery_field_count + 1))
             [[ -n "$EVENT_RECOVERY_SOURCE_DIGEST" ]] && recovery_field_count=$((recovery_field_count + 1))
             [[ -n "$EVENT_RECOVERY_BUILD_TIME" ]] && recovery_field_count=$((recovery_field_count + 1))
+            if [[ -n "$EVENT_RECOVERY_RUN_ATTEMPT" ]]; then
+              if [[ "$recovery_field_count" -ne 3 || ! "$EVENT_RECOVERY_RUN_ATTEMPT" =~ ^([1-9][0-9]?|100)$ ]]; then
+                echo "::error::An exact recovery attempt requires all digest recovery fields and an attempt from 1 through 100."
+                exit 1
+              fi
+              recovery_run_attempt="$EVENT_RECOVERY_RUN_ATTEMPT"
+            fi
             if [[ "$recovery_field_count" -ne 0 && "$recovery_field_count" -ne 3 ]]; then
               echo "::error::Digest recovery requires run ID, source digest, and build time together."
               exit 1
@@ -191,6 +239,7 @@ jobs:
               echo "release_mode=$release_mode"
               echo "source_mode=$source_mode"
               echo "recovery_run_id=$recovery_run_id"
+              echo "recovery_run_attempt=$recovery_run_attempt"
               echo "recovery_source_digest=$recovery_source_digest"
               echo "recovery_build_time=$recovery_build_time"
             } >> "$GITHUB_OUTPUT"
@@ -230,6 +279,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RECOVERY_RUN_ID: ${{ needs.detect-release.outputs.recovery_run_id }}
+          RECOVERY_RUN_ATTEMPT: ${{ needs.detect-release.outputs.recovery_run_attempt }}
           WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
@@ -244,10 +294,17 @@ jobs:
             exit 1
           fi
           recovery_run_json="$RUNNER_TEMP/recovery-run.json"
-          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}" > "$recovery_run_json"
+          recovery_route="repos/${GITHUB_REPOSITORY}/actions/runs/${RECOVERY_RUN_ID}"
+          attempt_arguments=()
+          if [[ -n "$RECOVERY_RUN_ATTEMPT" ]]; then
+            [[ "$RECOVERY_RUN_ATTEMPT" =~ ^([1-9][0-9]?|100)$ ]]
+            recovery_route="${recovery_route}/attempts/${RECOVERY_RUN_ATTEMPT}"
+            attempt_arguments=(--expected-run-attempt "$RECOVERY_RUN_ATTEMPT")
+          fi
+          gh api "$recovery_route" > "$recovery_run_json"
           python "$verifier" verify-recovery-run \
             --run-json "$recovery_run_json" \
-            --expected-run-id "$RECOVERY_RUN_ID" \
+            --expected-run-id "$RECOVERY_RUN_ID" "${attempt_arguments[@]}" \
             --expected-repository "$GITHUB_REPOSITORY" \
             --expected-owner "jeter-1" \
             --github-output "$GITHUB_OUTPUT"
@@ -306,6 +363,18 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Materialize protected publication policy
+        shell: bash
+        env:
+          WORKFLOW_AUTHORITY_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_AUTHORITY_SHA" =~ ^[0-9a-f]{40}$ ]]
+          mkdir -p "$RUNNER_TEMP/publication-policy"
+          for policy in publication_handoff.py publication_claim.py validate_ci_provenance.py validate_ready_authorization.py; do
+            git show "${WORKFLOW_AUTHORITY_SHA}:scripts/${policy}" > "$RUNNER_TEMP/publication-policy/${policy}"
+          done
 
       - name: Validate protected release commit
         id: prepare
@@ -377,6 +446,9 @@ jobs:
               echo "::error::Protected main no longer advertises the authorized recovery version."
               exit 1
             fi
+          elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
+            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+              --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
             exit 1
@@ -457,7 +529,7 @@ jobs:
             source_workflow_sha="$RECOVERY_SOURCE_WORKFLOW_SHA"
             source_run_attempt="$RECOVERY_SOURCE_RUN_ATTEMPT"
             source_event_name="$RECOVERY_SOURCE_EVENT_NAME"
-            if [[ ! "$source_workflow_sha" =~ ^[0-9a-f]{40}$ || ! "$source_run_attempt" =~ ^[1-9][0-9]{0,2}$ || "$source_event_name" != "workflow_dispatch" ]]; then
+            if [[ ! "$source_workflow_sha" =~ ^[0-9a-f]{40}$ || ! "$source_run_attempt" =~ ^[1-9][0-9]{0,2}$ || ( "$source_event_name" != "workflow_dispatch" && "$source_event_name" != "workflow_run" && "$source_event_name" != "push" ) ]]; then
               echo "::error::The read-only recovery-source job did not provide exact failed-run authority."
               exit 1
             fi
@@ -621,6 +693,9 @@ jobs:
               echo "::error::Protected main no longer advertises the authorized recovery version."
               exit 1
             fi
+          elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
+            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+              --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
             exit 1
@@ -652,6 +727,32 @@ jobs:
           bash scripts/assert_registry_tags_absent.sh \
             "${IMAGE_REPOSITORY}:${PREPARED_VERSION}" \
             "${IMAGE_REPOSITORY}:sha-${PREPARED_RELEASE_SHA}"
+
+      - name: Consume create-only publication attempt authority
+        id: attempt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.prepare.outputs.release_sha }}
+          VERSION: ${{ steps.prepare.outputs.version }}
+          SOURCE_MODE: ${{ needs.detect-release.outputs.source_mode }}
+          RECOVERY_RUN_ID: ${{ needs.detect-release.outputs.recovery_run_id }}
+          SOURCE_RUN_ATTEMPT: ${{ steps.prepare.outputs.source_run_attempt }}
+          SOURCE_WORKFLOW_SHA: ${{ steps.prepare.outputs.source_workflow_sha }}
+          SOURCE_EVENT: ${{ steps.prepare.outputs.source_event_name }}
+        run: |
+          set -euo pipefail
+          if [[ "$SOURCE_MODE" == "build" ]]; then
+            python "$RUNNER_TEMP/publication-policy/publication_claim.py" create \
+              --release "$RELEASE_SHA" --version "$VERSION"
+          elif [[ "$SOURCE_MODE" == "resume_digest" ]]; then
+            python "$RUNNER_TEMP/publication-policy/publication_claim.py" resume \
+              --release "$RELEASE_SHA" --version "$VERSION" \
+              --run-id "$RECOVERY_RUN_ID" --attempt "$SOURCE_RUN_ATTEMPT" \
+              --workflow-sha "$SOURCE_WORKFLOW_SHA" --event "$SOURCE_EVENT"
+          else
+            exit 1
+          fi
 
       - name: Log in to GHCR
         if: needs.detect-release.outputs.source_mode == 'build'
@@ -846,6 +947,9 @@ jobs:
               echo "::error::Protected main no longer advertises the authorized recovery version."
               exit 1
             fi
+          elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
+            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+              --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
             exit 1
@@ -1011,6 +1115,9 @@ jobs:
               echo "::error::Protected main no longer advertises the authorized recovery version."
               exit 1
             fi
+          elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
+            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+              --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
             exit 1
@@ -1142,6 +1249,9 @@ jobs:
               echo "::error::Protected main no longer advertises the authorized recovery version."
               exit 1
             fi
+          elif [[ "$DETECTED_RELEASE_MODE" == "protected_merge_handoff" ]]; then
+            python "$RUNNER_TEMP/publication-policy/publication_handoff.py" guard \
+              --release "$DETECTED_RELEASE_SHA" --authority "$TRIGGER_SHA"
           elif [[ "$DETECTED_RELEASE_MODE" != "protected_main_push" ]]; then
             echo "::error::The detected release mode is unsupported."
             exit 1
@@ -1225,6 +1335,7 @@ jobs:
           SOURCE_IMAGE_REUSED: ${{ steps.source.outputs.source_image_reused || 'false' }}
           SOURCE_MODE: ${{ needs.detect-release.outputs.source_mode }}
           SOURCE_IMAGE_VERIFIED: ${{ steps.verify_source.outputs.source_image_verified || 'false' }}
+          ATTEMPT_AUTHORITY_OUTCOME: ${{ steps.attempt.outcome || 'not_attempted' }}
         run: |
           {
             if [[ "$RELEASE_COMPLETE" == "true" ]]; then
@@ -1235,6 +1346,11 @@ jobs:
             echo "- Version: $VERSION"
             echo "- Tag: $RELEASE_TAG"
             echo "- Release commit: $RELEASE_SHA"
+            echo "- Publication attempt authority step: $ATTEMPT_AUTHORITY_OUTCOME"
+            if [[ -n "$VERSION" ]]; then
+              echo "- Attempt record to inspect: refs/tags/engineering-publication-attempt/v${VERSION}"
+              echo "- A failed or interrupted claim can have consumed build authority even when no image tag exists. Inspect its exact run and attempt; do not delete the marker or blindly rerun the build."
+            fi
             echo "- Version image: ${IMAGE_REPOSITORY}:${VERSION}"
             echo "- Commit image: ${IMAGE_REPOSITORY}:sha-${RELEASE_SHA}"
             echo "- OCI digest: $DIGEST"

@@ -348,12 +348,30 @@ commit. Because materialization occurred before review, publication does not
 trigger another model review. It does not deploy the add-on or modify Home
 Assistant.
 
-Publication still has its own event boundary. A merge performed with the
-workflow's `GITHUB_TOKEN` does not start another workflow from its push event.
-After such a merge, observe whether a publication run exists for the actual
-merge SHA; if none exists, use the existing owner-authorized manual publication
-entry point with that exact SHA and expected version. Do not dispatch a duplicate
-run or introduce a new credential or automatic handoff to bridge this boundary.
+The publisher also receives the successful completion of `Merge owner-authorized
+pull request` through `workflow_run`. This bridges the `GITHUB_TOKEN` push-event
+suppression without another credential or routine owner approval. The merge
+workflow retains a bounded JSON receipt in an immutable, run/attempt-named
+artifact. A read-only publisher job independently verifies the workflow ID/path,
+repository, source event, owner and rerun actor, completed merge job, current
+attempt, artifact digest, PR, Ready lifecycle, reviewed base/head, two-parent
+merge and recomputed tree. It compares the producer policy with protected base
+policy. The exact merge must remain on main's first-parent history; Engineering
+source and staged state must agree with current authority. The receipt is data,
+not executable code or a substitute for these checks.
+
+An ordinary merge has no version transition and produces no publication writes.
+A release handoff must pass complete CI, exact release-document authority,
+materialized version/metadata checks and all existing publisher guards. Protected
+main is fenced again before registry access, final image tags, the release Git
+tag and GitHub Release. Movement stops the run; a later owner-authorized recovery
+can reconcile the same release SHA. Publication never installs or deploys.
+
+The workflow installation itself may be merged by the older producer, which has
+no handoff artifact. That receiving run must refuse rather than invent a receipt.
+The first controlled automatic publication is the next owner-approved release
+whose protected base already contains this producer. Offline tests and PR CI do
+not establish that the cross-workflow GitHub event has run successfully.
 
 This workflow pull request must cross the preexisting receipt-required pipeline
 one final time. After it merges, removing `codex-review-receipt` from the active
@@ -373,7 +391,8 @@ that the reviewed release failed validation. See GitHub's
 
 The publication workflow has one recovery-only manual entry point. It does not
 publish its own workflow-fix commit. A dispatch either performs the original
-fresh digest build or, only when all three recovery fields are supplied, resumes
+fresh digest build when no attempt has been consumed or, only when all three
+recovery fields are supplied, resumes
 one exact digest from one exact failed publication run. It accepts an earlier
 release commit only when all of these conditions remain true:
 
@@ -387,9 +406,13 @@ release commit only when all of these conditions remain true:
 - the release SHA still contains a bounded version transition from its first
   parent, and neither it nor current protected main contains a staged release
   declaration; and
-- digest resume names a completed failed `workflow_dispatch` run of this exact
-  workflow on `main`, owned and triggered by Josh in this repository, plus its
-  exact lowercase digest and UTC build timestamp; and
+- digest resume names a completed failed `workflow_dispatch`, verified
+  `workflow_run`, or claimed protected `push` publication run of this exact workflow on `main`, owned and
+  triggered by Josh in this repository, plus its exact lowercase digest and UTC
+  build timestamp; newer runs also require the matching immutable attempt record;
+  optional `recovery_run_attempt` selects the exact failed attempt through the
+  attempt-specific API, so a later rerun cannot hide the original digest evidence;
+  and
 - the immutable version tag, commit tag, GitHub Release and image tags are all
   proven absent before any registry login or write.
 
@@ -437,6 +460,37 @@ in reconciliation output, including the case where a registry applies a write
 but its response is lost. The recovery is not a retry mechanism after partial
 publication; an existing, partial, unknown, or ambiguous artifact is a stop
 condition requiring reconciliation.
+
+Before any fresh build, the publisher atomically creates the annotated Git ref
+`refs/tags/engineering-publication-attempt/v<VERSION>`. Its JSON binds the exact
+release SHA/version, workflow SHA, run ID/attempt and event. The existing
+`contents: write` permission creates this audit marker; no Actions-write grant,
+new secret or repository setting is introduced. The Git refs **create** operation
+rejects an existing ref, even one with the same object ID. Exact readback is
+required before registry login. This is at-most-once fresh-build authority for
+cooperating repository workflows, not atomic publication across GitHub and GHCR.
+Privileged external ref deletion or package writes remain outside that guarantee.
+
+Concurrent, delayed and rerun events cannot consume the same version again.
+Unknown write acknowledgment or failed readback stops without retrying, deleting
+or moving the marker. A rejected duplicate may leave an unreachable annotated
+tag object; it cannot create another attempt ref or image. Keep the marker after
+failure. Inspect the original run and digest; owner-authorized digest recovery
+must match its exact claim and pass all existing artifact-absence and provenance
+checks. A failure before a recoverable digest exists requires a concrete owner
+reconciliation decision; blindly rerunning the build or deleting the marker is
+not recovery. Existing partial image tags/releases also remain a reconciliation
+stop. Recovery of historical owner-dispatch runs whose protected workflow code
+predates attempt records remains supported; new automatic runs cannot use that
+exception.
+
+Lost or expired handoff evidence does not authorize a guessed merge or a generic
+redispatch. Inspect the original PR, merge and publication runs. If no claim or
+publication artifacts exist, Josh may authorize the existing manual entry point
+with that same exact retained merge SHA/version. If a claim exists, inspect that
+run and use digest recovery only when its complete evidence is available. GitHub
+workflow concurrency can replace an older pending run; the immutable claim, not
+queue ordering or artifact retention, supplies duplicate suppression.
 
 Fresh manual recovery still builds only the exact historical release checkout.
 Digest resume cannot invoke that build. Failed-run metadata is read and

@@ -95,11 +95,11 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         cls.steps = cls.promote["steps"]
         cls.text = PUBLISH_PATH.read_text(encoding="utf-8")
 
-    def test_only_main_push_or_guarded_manual_recovery_can_publish(self):
+    def test_only_main_push_verified_handoff_or_guarded_manual_recovery_can_publish(self):
         events = workflow_events(self.workflow)
         self.assertEqual(
             set(events),
-            {"push", "workflow_dispatch"},
+            {"push", "workflow_dispatch", "workflow_run"},
         )
         self.assertEqual(events["push"], {"branches": ["main"]})
         dispatch = events["workflow_dispatch"]
@@ -110,6 +110,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 "release_sha",
                 "expected_version",
                 "recovery_run_id",
+                "recovery_run_attempt",
                 "recovery_source_digest",
                 "recovery_build_time",
             },
@@ -120,6 +121,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             self.assertEqual(value["type"], "string")
         for name in (
             "recovery_run_id",
+            "recovery_run_attempt",
             "recovery_source_digest",
             "recovery_build_time",
         ):
@@ -437,6 +439,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
         event_ref="refs/heads/main",
         event_expected_version=None,
         recovery_run_id="",
+        recovery_run_attempt="",
         recovery_source_digest="",
         recovery_build_time="",
         manual_target="release",
@@ -573,6 +576,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                     "EVENT_RELEASE_SHA": manual_release_sha,
                     "EVENT_RECOVERY_BUILD_TIME": recovery_build_time,
                     "EVENT_RECOVERY_RUN_ID": recovery_run_id,
+                    "EVENT_RECOVERY_RUN_ATTEMPT": recovery_run_attempt,
                     "EVENT_RECOVERY_SOURCE_DIGEST": recovery_source_digest,
                     "EVENT_TRIGGERING_ACTOR": (
                         event_triggering_actor
@@ -582,6 +586,9 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                     "GITHUB_OUTPUT": str(output),
                     "GITHUB_STEP_SUMMARY": str(summary),
                     "TRIGGER_SHA": trigger_sha,
+                    "HANDOFF_ACTION": "inspect",
+                    "HANDOFF_RELEASE_SHA": release_sha,
+                    "HANDOFF_BASE_SHA": before,
                 }
             )
             detector = str(self.jobs["detect-release"]["steps"][-1]["run"])
@@ -1144,6 +1151,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 "release_mode": "protected_main_push",
                 "source_mode": "build",
                 "recovery_run_id": "",
+                "recovery_run_attempt": "",
                 "recovery_source_digest": "",
                 "recovery_build_time": "",
             },
@@ -1157,6 +1165,17 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertEqual(none_values, {"release_action": "none"})
         self.assertIn("No reviewed Engineering version transition", none_summary)
+
+    def test_verified_handoff_publishes_release_and_ordinary_merge_is_no_op(self):
+        values, _summary, _result, identities = self.run_release_detector(
+            subject="Reviewed release", event_name="workflow_run", release_topology="feature_merge")
+        self.assertEqual(values["release_action"], "publish")
+        self.assertEqual(values["release_mode"], "protected_merge_handoff")
+        self.assertEqual(values["release_sha"], identities["release_sha"])
+        values, _summary, _result, _identities = self.run_release_detector(
+            subject="Ordinary change", event_name="workflow_run",
+            previous_version=CURRENT_REPOSITORY_VERSION)
+        self.assertEqual(values, {"release_action": "none"})
 
     def test_release_detector_rejects_unmaterialized_or_legacy_markers(self):
         cases = (
@@ -1200,6 +1219,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 "release_mode": "manual_recovery",
                 "source_mode": "build",
                 "recovery_run_id": "",
+                "recovery_run_attempt": "",
                 "recovery_source_digest": "",
                 "recovery_build_time": "",
             },
@@ -1256,6 +1276,18 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
                 )
                 self.assertEqual(rejected, {})
                 self.assertIn("::error::", result.stdout)
+
+    def test_digest_recovery_can_select_original_failed_attempt_after_rerun(self):
+        fields = {"recovery_run_id": "123", "recovery_source_digest": "sha256:" + "a" * 64,
+                  "recovery_build_time": "2026-09-20T00:00:00Z"}
+        values, _summary, _result, _identities = self.run_release_detector(
+            subject="Reviewed release", event_name="workflow_dispatch", recovery_run_attempt="1", **fields)
+        self.assertEqual(values["recovery_run_attempt"], "1")
+        for attempt, complete in (("0", True), ("101", True), ("1/other", True), ("1", False)):
+            with self.subTest(attempt=attempt, complete=complete):
+                self.run_release_detector(subject="Reviewed release", event_name="workflow_dispatch",
+                                          recovery_run_attempt=attempt, expect_success=False,
+                                          **(fields if complete else {}))
 
     def test_manual_recovery_requires_protected_main_first_parent_commit(self):
         values, _summary, _result, identities = self.run_release_detector(
@@ -1553,7 +1585,7 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertEqual(
             self.jobs["detect-release"]["permissions"],
-            {"contents": "read"},
+            {"contents": "read", "actions": "read", "pull-requests": "read"},
         )
         self.assertEqual(
             self.jobs["recovery-source"]["permissions"],
@@ -1631,7 +1663,8 @@ raise SystemExit(f"unexpected gh arguments: {args!r}")
         )
         self.assertLess(prepare_index, login_index)
         self.assertLess(qemu_index, recheck_index)
-        self.assertEqual(recheck_index + 1, login_index)
+        self.assertEqual(names[recheck_index + 1], "Consume create-only publication attempt authority")
+        self.assertEqual(recheck_index + 2, login_index)
         self.assertEqual(login_index + 1, build_index)
         self.assertEqual(build_index + 1, source_index)
         self.assertEqual(source_index + 1, source_verify_index)

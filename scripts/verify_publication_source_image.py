@@ -813,19 +813,22 @@ def verify_recovery_run(args: argparse.Namespace) -> None:
         "name": WORKFLOW_NAME,
         "status": "completed",
         "conclusion": "failure",
-        "event": "workflow_dispatch",
         "head_branch": "main",
         "path": WORKFLOW_PATH,
     }
     for key, value in expected.items():
         if run.get(key) != value:
             _fail(f"RECOVERY_RUN_{key.upper()}_MISMATCH")
+    if run.get("event") not in {"workflow_dispatch", "workflow_run", "push"}:
+        _fail("RECOVERY_RUN_EVENT_MISMATCH")
     head_sha = _exact_pattern(
         run.get("head_sha"), SHA_PATTERN, "RECOVERY_WORKFLOW_SHA_INVALID"
     )
     run_attempt = run.get("run_attempt")
     if type(run_attempt) is not int or run_attempt < 1 or run_attempt > 100:
         _fail("RECOVERY_RUN_ATTEMPT_INVALID")
+    if args.expected_run_attempt is not None and run_attempt != args.expected_run_attempt:
+        _fail("RECOVERY_RUN_ATTEMPT_MISMATCH")
     actor = _mapping(run.get("actor"), "RECOVERY_RUN_ACTOR_INVALID")
     triggering_actor = _mapping(
         run.get("triggering_actor"), "RECOVERY_RUN_TRIGGERING_ACTOR_INVALID"
@@ -844,7 +847,7 @@ def verify_recovery_run(args: argparse.Namespace) -> None:
         (
             f"source_workflow_sha={head_sha}",
             f"source_run_attempt={run_attempt}",
-            "source_event_name=workflow_dispatch",
+            f"source_event_name={run['event']}",
         ),
     )
 
@@ -914,7 +917,7 @@ def verify_source(args: argparse.Namespace) -> None:
     )
     if args.expected_run_attempt < 1 or args.expected_run_attempt > 100:
         _fail("EXPECTED_RUN_ATTEMPT_INVALID")
-    if args.expected_event_name not in {"push", "workflow_dispatch"}:
+    if args.expected_event_name not in {"push", "workflow_dispatch", "workflow_run"}:
         _fail("EXPECTED_EVENT_NAME_INVALID")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repository):
         _fail("EXPECTED_REPOSITORY_INVALID")
@@ -1148,6 +1151,7 @@ def parser() -> argparse.ArgumentParser:
     run = commands.add_parser("verify-recovery-run")
     run.add_argument("--run-json", type=Path, required=True)
     run.add_argument("--expected-run-id", required=True)
+    run.add_argument("--expected-run-attempt", type=int)
     run.add_argument("--expected-repository", required=True)
     run.add_argument("--expected-owner", required=True)
     run.add_argument("--github-output", type=Path, required=True)
