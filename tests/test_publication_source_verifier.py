@@ -925,13 +925,33 @@ class PublicationSourceVerifierTests(unittest.TestCase):
             self.assertEqual(values["source_workflow_sha"], WORKFLOW_SHA)
             self.assertEqual(values["source_run_attempt"], str(RUN_ATTEMPT))
             self.assertEqual(values["source_event_name"], "workflow_dispatch")
+            automatic = valid_run_metadata()
+            automatic["event"] = "workflow_run"
+            run_path.write_bytes(json_bytes(automatic))
+            automatic_output = root / "automatic-output"
+            self.assertEqual(MODULE.main([*arguments[:-1], str(automatic_output)]), 0)
+            self.assertIn("source_event_name=workflow_run", automatic_output.read_text())
+            exact_output = root / "exact-attempt"
+            self.assertEqual(MODULE.main([*arguments[:-1], str(exact_output),
+                                         "--expected-run-attempt", str(RUN_ATTEMPT)]), 0)
+            wrong_attempt_output = root / "wrong-attempt"
+            self.assertEqual(MODULE.main([*arguments[:-1], str(wrong_attempt_output),
+                                         "--expected-run-attempt", str(RUN_ATTEMPT + 1)]), 1)
+            self.assertFalse(wrong_attempt_output.exists())
+            automatic["event"] = "push"
+            run_path.write_bytes(json_bytes(automatic))
+            push_output = root / "push-output"
+            self.assertEqual(MODULE.main([*arguments[:-1], str(push_output)]), 0)
+            self.assertIn("source_event_name=push", push_output.read_text())
+
+
 
             for key, value in (
                 ("id", int(RUN_ID) + 1),
                 ("name", "Other workflow"),
                 ("status", "in_progress"),
                 ("conclusion", "success"),
-                ("event", "push"),
+                ("event", "pull_request"),
                 ("head_branch", "other"),
                 ("path", ".github/workflows/other.yml"),
                 ("head_sha", "bad"),

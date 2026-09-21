@@ -186,7 +186,7 @@ class ReviewWorkflowTests(unittest.TestCase):
         self.assertNotIn("validate_native_codex_review", wait_script)
         self.assertNotIn("codex-review-receipt", wait_script)
 
-        merge_script = str(job["steps"][-1]["run"])
+        merge_script = str(next(step["run"] for step in job["steps"] if step.get("name") == "Revalidate Ready authority and merge the exact head"))
         self.assertIn("issues/${PR_NUMBER}/timeline?per_page=100", merge_script)
         self.assertIn("scripts/validate_ready_authorization.py", merge_script)
         self.assertIn("scripts/validate_ci_provenance.py", merge_script)
@@ -325,7 +325,7 @@ fi
 
     def test_merge_script_reaches_only_the_authorized_exact_head(self):
         script = str(
-            self.auto_merge["jobs"]["merge-authorized-head"]["steps"][-1]["run"]
+            next(step["run"] for step in self.auto_merge["jobs"]["merge-authorized-head"]["steps"] if step.get("name") == "Revalidate Ready authority and merge the exact head")
         )
         base_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],

@@ -45,6 +45,7 @@ BUILD_TYPE = (
 )
 WORKFLOW_NAME = "Publish reviewed Engineering release"
 WORKFLOW_PATH = ".github/workflows/publish-rc-image.yml"
+MERGE_WORKFLOW_PATH = ".github/workflows/enable-auto-merge.yml"
 SOURCE_DIRECTORY = "hass_mcp_engineering_beta"
 
 REQUIRED_PLATFORMS = {
@@ -813,19 +814,22 @@ def verify_recovery_run(args: argparse.Namespace) -> None:
         "name": WORKFLOW_NAME,
         "status": "completed",
         "conclusion": "failure",
-        "event": "workflow_dispatch",
         "head_branch": "main",
         "path": WORKFLOW_PATH,
     }
     for key, value in expected.items():
         if run.get(key) != value:
             _fail(f"RECOVERY_RUN_{key.upper()}_MISMATCH")
+    if run.get("event") not in {"workflow_dispatch", "workflow_run", "push"}:
+        _fail("RECOVERY_RUN_EVENT_MISMATCH")
     head_sha = _exact_pattern(
         run.get("head_sha"), SHA_PATTERN, "RECOVERY_WORKFLOW_SHA_INVALID"
     )
     run_attempt = run.get("run_attempt")
     if type(run_attempt) is not int or run_attempt < 1 or run_attempt > 100:
         _fail("RECOVERY_RUN_ATTEMPT_INVALID")
+    if args.expected_run_attempt is not None and run_attempt != args.expected_run_attempt:
+        _fail("RECOVERY_RUN_ATTEMPT_MISMATCH")
     actor = _mapping(run.get("actor"), "RECOVERY_RUN_ACTOR_INVALID")
     triggering_actor = _mapping(
         run.get("triggering_actor"), "RECOVERY_RUN_TRIGGERING_ACTOR_INVALID"
@@ -844,7 +848,7 @@ def verify_recovery_run(args: argparse.Namespace) -> None:
         (
             f"source_workflow_sha={head_sha}",
             f"source_run_attempt={run_attempt}",
-            "source_event_name=workflow_dispatch",
+            f"source_event_name={run['event']}",
         ),
     )
 
@@ -898,6 +902,59 @@ def _require_items(container: dict[str, Any], expected: dict[str, Any], reason: 
             _fail(reason)
 
 
+def _expected_handoff(raw: str, event: str, release_sha: str) -> dict[str, Any] | None:
+    # This is trusted-job/claim evidence, never derived from the received image.
+    if event != "workflow_run":
+        if raw:
+            _fail("UNEXPECTED_HANDOFF_BINDING")
+        return None
+    if not raw or len(raw) > 2048:
+        _fail("EXPECTED_HANDOFF_BINDING_MISSING")
+    value = _mapping(_decode_json(raw.encode(), "EXPECTED_HANDOFF_BINDING_INVALID"),
+                     "EXPECTED_HANDOFF_BINDING_INVALID")
+    if set(value) != {"release_sha", "run_id", "run_attempt", "workflow_id", "event", "head_sha"}:
+        _fail("EXPECTED_HANDOFF_BINDING_INVALID")
+    for key in ("run_id", "run_attempt", "workflow_id"):
+        if type(value[key]) is not int or not RUN_ID_PATTERN.fullmatch(str(value[key])):
+            _fail("EXPECTED_HANDOFF_BINDING_INVALID")
+    _exact_pattern(value["head_sha"], SHA_PATTERN, "EXPECTED_HANDOFF_BINDING_INVALID")
+    if (value["release_sha"] != release_sha or value["run_attempt"] > 100
+            or value["event"] not in {"pull_request_target", "issue_comment"}):
+        _fail("EXPECTED_HANDOFF_BINDING_INVALID")
+    return value
+
+
+def _verify_workflow_run_payload(payload: dict[str, Any], binding: dict[str, Any],
+                                 repository: str, owner: str) -> None:
+    # GitHub supplies no top-level ref for this event. The publisher's protected
+    # main ref is independently required in internalParameters for every event.
+    if payload.get("action") != "completed":
+        _fail("SOURCE_SLSA_HANDOFF_ACTION_MISMATCH")
+    workflow = _mapping(payload.get("workflow"), "SOURCE_SLSA_HANDOFF_WORKFLOW_INVALID")
+    _require_items(workflow, {"id": binding["workflow_id"], "path": MERGE_WORKFLOW_PATH},
+                   "SOURCE_SLSA_HANDOFF_WORKFLOW_MISMATCH")
+    run = _mapping(payload.get("workflow_run"), "SOURCE_SLSA_HANDOFF_RUN_INVALID")
+    for field in ("id", "run_attempt", "workflow_id"):
+        if type(run.get(field)) is not int:
+            _fail("SOURCE_SLSA_HANDOFF_RUN_MISMATCH")
+    if type(workflow.get("id")) is not int:
+        _fail("SOURCE_SLSA_HANDOFF_WORKFLOW_MISMATCH")
+    _require_items(run, {
+        "id": binding["run_id"], "run_attempt": binding["run_attempt"],
+        "workflow_id": binding["workflow_id"], "event": binding["event"],
+        "head_sha": binding["head_sha"], "path": MERGE_WORKFLOW_PATH,
+        "status": "completed", "conclusion": "success",
+    }, "SOURCE_SLSA_HANDOFF_RUN_MISMATCH")
+    for field in ("repository", "head_repository"):
+        item = _mapping(run.get(field), "SOURCE_SLSA_HANDOFF_REPOSITORY_INVALID")
+        if item.get("full_name") != repository:
+            _fail("SOURCE_SLSA_HANDOFF_REPOSITORY_MISMATCH")
+    for field in ("actor", "triggering_actor"):
+        item = _mapping(run.get(field), "SOURCE_SLSA_HANDOFF_OWNER_INVALID")
+        if item.get("login") != owner:
+            _fail("SOURCE_SLSA_HANDOFF_OWNER_MISMATCH")
+
+
 def verify_source(args: argparse.Namespace) -> None:
     release_sha = _exact_pattern(
         args.expected_release_sha, SHA_PATTERN, "EXPECTED_RELEASE_SHA_INVALID"
@@ -914,12 +971,13 @@ def verify_source(args: argparse.Namespace) -> None:
     )
     if args.expected_run_attempt < 1 or args.expected_run_attempt > 100:
         _fail("EXPECTED_RUN_ATTEMPT_INVALID")
-    if args.expected_event_name not in {"push", "workflow_dispatch"}:
+    if args.expected_event_name not in {"push", "workflow_dispatch", "workflow_run"}:
         _fail("EXPECTED_EVENT_NAME_INVALID")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repository):
         _fail("EXPECTED_REPOSITORY_INVALID")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", args.owner):
         _fail("EXPECTED_OWNER_INVALID")
+    handoff = _expected_handoff(args.expected_handoff, args.expected_event_name, release_sha)
 
     platforms = release_platforms(args.release_repo, release_sha)
     build_inputs = release_build_inputs(args.release_repo, release_sha)
@@ -1068,7 +1126,7 @@ def verify_source(args: argparse.Namespace) -> None:
             internal.get("github_event_payload"),
             "SOURCE_SLSA_EVENT_PAYLOAD_INVALID",
         )
-        if event_payload.get("ref") != "refs/heads/main":
+        if args.expected_event_name != "workflow_run" and event_payload.get("ref") != "refs/heads/main":
             _fail("SOURCE_SLSA_EVENT_REF_MISMATCH")
         payload_repository = _mapping(
             event_payload.get("repository"),
@@ -1076,6 +1134,8 @@ def verify_source(args: argparse.Namespace) -> None:
         )
         if payload_repository.get("full_name") != args.repository:
             _fail("SOURCE_SLSA_EVENT_REPOSITORY_MISMATCH")
+        if handoff is not None:
+            _verify_workflow_run_payload(event_payload, handoff, args.repository, args.owner)
         if args.expected_event_name == "workflow_dispatch":
             inputs = _mapping(
                 event_payload.get("inputs"), "SOURCE_SLSA_EVENT_INPUTS_INVALID"
@@ -1148,6 +1208,7 @@ def parser() -> argparse.ArgumentParser:
     run = commands.add_parser("verify-recovery-run")
     run.add_argument("--run-json", type=Path, required=True)
     run.add_argument("--expected-run-id", required=True)
+    run.add_argument("--expected-run-attempt", type=int)
     run.add_argument("--expected-repository", required=True)
     run.add_argument("--expected-owner", required=True)
     run.add_argument("--github-output", type=Path, required=True)
@@ -1166,6 +1227,7 @@ def parser() -> argparse.ArgumentParser:
     source.add_argument("--expected-run-attempt", type=int, required=True)
     source.add_argument("--expected-workflow-sha", required=True)
     source.add_argument("--expected-event-name", required=True)
+    source.add_argument("--expected-handoff", default="")
     source.add_argument("--repository", required=True)
     source.add_argument("--owner", required=True)
     source.add_argument("--github-output", type=Path, required=True)

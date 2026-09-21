@@ -66,7 +66,7 @@ def context(env):
             and workflow_ref.startswith(REPOSITORY + "/.github/workflows/")
             and "\n" not in workflow_ref, "wrong_workflow_ref")
     event = env.get("GITHUB_EVENT_NAME")
-    require(event in {"pull_request", "push", "workflow_dispatch"}, "unsupported_event")
+    require(event in {"pull_request", "push", "workflow_dispatch", "workflow_run"}, "unsupported_event")
     return {
         "repository": REPOSITORY,
         "run_id": positive(env.get("GITHUB_RUN_ID")),
@@ -131,7 +131,7 @@ def decide(root, env, installed_lock, python_version=None):
     require(env.get("COMPLETE_CI_RESULT") == "success", "complete_ci_did_not_succeed")
     bound = context(env)
     require(bound["workflow_ref"] == REPOSITORY + "/" + WORKFLOW + "@refs/heads/main"
-            and bound["event"] in {"push", "workflow_dispatch"}
+            and bound["event"] in {"push", "workflow_dispatch", "workflow_run"}
             and bound["workflow_sha"] == bound["trigger_sha"], "wrong_publication_workflow")
     expected = {
         "schema_version": 1, "status": "success", "command": COMMAND,
