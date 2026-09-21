@@ -102,7 +102,14 @@ def execution_guard(env, architecture, version="8.5.0", core_version="2026.9.2")
     event, ref = env.get("GITHUB_EVENT_NAME"), env.get("GITHUB_REF", "")
     require(
         event == "pull_request" and re.fullmatch(r"refs/pull/[1-9][0-9]*/merge", ref)
-        or event in {"push", "workflow_dispatch"} and ref == BRANCH,
+        or event in {"push", "workflow_dispatch"} and ref == BRANCH
+        # Reusable CI inherits the publisher's event and workflow reference.
+        # This admits disposable validation only; the publisher independently
+        # verifies the merge handoff before it can claim or publish a release.
+        or event == "workflow_run" and ref == BRANCH
+        and env.get("GITHUB_WORKFLOW_REF") == (
+            "jeter-1/hass-mcp-admin/.github/workflows/publish-rc-image.yml@" + BRANCH
+        ),
         "candidate_ref_required",
     )
     require(env.get("GITHUB_JOB") == "exact-addon-runtime-acceptance", "candidate_job_required")
