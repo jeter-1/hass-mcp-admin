@@ -471,6 +471,27 @@ required before registry login. This is at-most-once fresh-build authority for
 cooperating repository workflows, not atomic publication across GitHub and GHCR.
 Privileged external ref deletion or package writes remain outside that guarantee.
 
+Automatic `workflow_run` claims use schema 2 and additionally retain the
+independently verified merge-workflow run, attempt, workflow ID, source event,
+source head SHA and resulting release SHA. Push and owner-dispatch claims retain
+schema 1. The image verifier checks the real completed-workflow event payload
+against that binding; it does not require a nonexistent top-level event `ref`.
+The publisher's protected-main ref, workflow SHA, run/attempt, owner, image digest
+and release-source checks still apply. Push/manual event ref checks and exact
+manual inputs remain required.
+
+Digest recovery reads that original binding from the create-only claim, after
+matching the failed publisher run and attempt, and verifies the original image
+without a new build. An automatic claim lacking this binding is refused; it is
+not upgraded, deleted or reconstructed from the image's own assertions. Such a
+record requires explicit reconciliation. These event shapes follow the
+[GitHub workflow_run payload contract](https://docs.github.com/en/webhooks/webhook-events-and-payloads#workflow_run);
+Buildx v0.37.0's [exact context implementation](https://github.com/docker/buildx/blob/ac30b249211430b85fb8f37b6e7154b5c47ba0b6/util/ghutil/ghutil.go)
+copies the event payload without adding a ref. Offline regressions exercise
+raw digest-linked provenance for automatic publication and original-attempt
+recovery. First automatic publication on an approved beta remains a separate
+operational acceptance check.
+
 Concurrent, delayed and rerun events cannot consume the same version again.
 Unknown write acknowledgment or failed readback stops without retrying, deleting
 or moving the marker. A rejected duplicate may leave an unreachable annotated

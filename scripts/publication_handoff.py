@@ -33,6 +33,21 @@ def sha(value):
     return value
 
 
+def check_binding(value, release):
+    """Bounded source identity carried from verification into the attempt claim."""
+    require(isinstance(value, dict) and set(value) == {
+        "release_sha", "run_id", "run_attempt", "workflow_id", "event", "head_sha"
+    }, "handoff_binding_shape")
+    require(sha(value["release_sha"]) == release, "handoff_binding_release")
+    sha(value["head_sha"])
+    for key in ("run_id", "run_attempt", "workflow_id"):
+        positive_id(value[key])
+        require(value[key] < 10 ** 20, "handoff_binding_identity")
+    require(value["run_attempt"] <= 100
+            and value["event"] in {"pull_request_target", "issue_comment"}, "handoff_binding_identity")
+    return value
+
+
 def read_api(route, binary=False):
     with tempfile.TemporaryFile() as output:
         try:
@@ -203,7 +218,12 @@ def verify(run_id, attempt, authority, api=read_api, run_git=git):
     require(all(current.get(key) == run.get(key) for key in (
         "id", "workflow_id", "path", "head_sha", "run_attempt", "event", "status", "conclusion",
         "actor", "triggering_actor", "repository", "head_repository")), "source_run_changed")
-    return {"release_action": "inspect", "release_sha": merge, "validation_base": base}
+    binding = check_binding({
+        "release_sha": merge, "run_id": run_id, "run_attempt": attempt,
+        "workflow_id": workflow_id, "event": run["event"], "head_sha": run["head_sha"],
+    }, merge)
+    return {"release_action": "inspect", "release_sha": merge, "validation_base": base,
+            "source_handoff": json.dumps(binding, sort_keys=True, separators=(",", ":"))}
 
 
 def guard(release, authority, run_git=git):

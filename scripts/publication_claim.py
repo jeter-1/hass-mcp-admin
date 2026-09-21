@@ -8,10 +8,11 @@ there is no automatic mutation retry and no cleanup of consumed authority.
 import argparse
 import json
 import os
+from pathlib import Path
 import re
 import subprocess
 
-from publication_handoff import PREFIX, REPOSITORY, git, read_api, sha
+from publication_handoff import PREFIX, REPOSITORY, check_binding, git, read_api, sha
 from validate_ci_provenance import Refusal, positive_id, require, unique_keys
 
 
@@ -34,7 +35,7 @@ def post(route, payload):
     return json.loads(result.stdout, object_pairs_hook=unique_keys)
 
 
-def identity(env, release, version):
+def identity(env, release, version, handoff=""):
     require(env.get("GITHUB_REPOSITORY") == REPOSITORY
             and env.get("GITHUB_REF") == "refs/heads/main"
             and env.get("GITHUB_WORKFLOW_REF") == REPOSITORY + "/.github/workflows/publish-rc-image.yml@refs/heads/main"
@@ -43,13 +44,36 @@ def identity(env, release, version):
     require(env.get("GITHUB_EVENT_NAME") in {"push", "workflow_dispatch", "workflow_run"},
             "wrong_claim_event")
     ref(version)
-    return {
+    value = {
         "schema": 1, "release_sha": sha(release), "version": version,
         "workflow_sha": sha(env.get("GITHUB_SHA")),
         "run_id": positive_id(int(env["GITHUB_RUN_ID"])),
         "run_attempt": positive_id(int(env["GITHUB_RUN_ATTEMPT"])),
         "event": env["GITHUB_EVENT_NAME"],
     }
+    if value["event"] == "workflow_run":
+        require(isinstance(handoff, str) and 0 < len(handoff) <= 2048, "handoff_binding_missing")
+        value["handoff"] = check_binding(json.loads(handoff, object_pairs_hook=unique_keys), release)
+        value["schema"] = 2
+    else:
+        require(not handoff, "unexpected_handoff_binding")
+    return value
+
+
+def check(value):
+    require(isinstance(value, dict), "claim_shape")
+    automatic = value.get("event") == "workflow_run"
+    fields = {"schema", "release_sha", "version", "workflow_sha", "run_id", "run_attempt", "event"}
+    require(set(value) == fields | ({"handoff"} if automatic else set()), "claim_shape")
+    require(type(value["schema"]) is int and value["schema"] == (2 if automatic else 1), "claim_schema")
+    ref(value["version"])
+    sha(value["release_sha"])
+    sha(value["workflow_sha"])
+    positive_id(value["run_id"])
+    positive_id(value["run_attempt"])
+    require(value["event"] in {"push", "workflow_dispatch", "workflow_run"}, "claim_event")
+    if automatic:
+        check_binding(value["handoff"], value["release_sha"])
 
 
 def read(version, api=read_api):
@@ -63,20 +87,14 @@ def read(version, api=read_api):
     message = tag.get("message")
     require(isinstance(message, str) and len(message) <= 4096, "claim_message_bound")
     value = json.loads(message, object_pairs_hook=unique_keys)
-    require(isinstance(value, dict) and set(value) == {
-        "schema", "release_sha", "version", "workflow_sha", "run_id", "run_attempt", "event"
-    }, "claim_shape")
-    require(type(value["schema"]) is int and value["schema"] == 1
-            and value["version"] == version
-            and tag["object"].get("sha") == sha(value["release_sha"]), "claim_target_mismatch")
-    sha(value["workflow_sha"])
-    positive_id(value["run_id"])
-    positive_id(value["run_attempt"])
-    require(value["event"] in {"push", "workflow_dispatch", "workflow_run"}, "claim_event")
+    check(value)
+    require(value["version"] == version
+            and tag["object"].get("sha") == value["release_sha"], "claim_target_mismatch")
     return value
 
 
 def create(value, mutate=post, api=read_api):
+    check(value)
     version = value["version"]
     tag = mutate(f"{PREFIX}/git/tags", {
         "tag": ref(version)[5:], "message": json.dumps(value, sort_keys=True),
@@ -93,11 +111,15 @@ def create(value, mutate=post, api=read_api):
 
 def resume(value, run_id, run_attempt, workflow_sha, source_event, api=read_api):
     claim = read(value["version"], api)
-    require(claim == {
+    expected = {
         "schema": 1, "release_sha": value["release_sha"], "version": value["version"],
         "run_id": positive_id(run_id), "run_attempt": positive_id(run_attempt),
         "workflow_sha": sha(workflow_sha), "event": source_event,
-    }, "recovery_claim_mismatch")
+    }
+    if source_event == "workflow_run":
+        expected.update(schema=2, handoff=claim.get("handoff"))
+    require(claim == expected, "recovery_claim_mismatch")
+    return claim.get("handoff")
 
 
 def main():
@@ -109,9 +131,12 @@ def main():
     parser.add_argument("--attempt", type=int)
     parser.add_argument("--workflow-sha")
     parser.add_argument("--event")
+    parser.add_argument("--handoff", default="")
+    parser.add_argument("--github-output", type=Path)
     args = parser.parse_args()
     try:
-        value = identity(os.environ, args.release, args.version)
+        value = identity(os.environ, args.release, args.version, args.handoff)
+        binding = value.get("handoff")
         if args.operation == "create":
             create(value)
         else:
@@ -120,9 +145,13 @@ def main():
             marker = git("ls-tree", "--name-only", sha(args.workflow_sha), "--",
                          "scripts/publication_claim.py")
             if marker:
-                resume(value, args.run_id, args.attempt, args.workflow_sha, args.event)
+                binding = resume(value, args.run_id, args.attempt, args.workflow_sha, args.event)
             else:
                 require(args.event == "workflow_dispatch", "unclaimed_automatic_recovery")
+        if args.github_output:
+            with args.github_output.open("a") as output:
+                encoded = json.dumps(binding, sort_keys=True, separators=(",", ":")) if binding else ""
+                output.write("source_handoff=" + encoded + "\n")
         print("Publication attempt authority verified; no rebuild retry is authorized.")
     except (Refusal, ValueError, KeyError, TypeError, AttributeError, OSError):
         parser.exit(1, "Publication claim refused or uncertain; inspect existing attempt before recovery.\n")

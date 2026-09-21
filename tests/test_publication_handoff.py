@@ -105,6 +105,10 @@ class HandoffTests(unittest.TestCase):
     def git(self, *args):
         return self.git_data[args]
 
+    def binding(self):
+        return {"release_sha": MERGE, "run_id": 7, "run_attempt": 1,
+                "workflow_id": 8, "event": self.run["event"], "head_sha": self.run["head_sha"]}
+
     def verify(self):
         return handoff.verify(7, 1, MERGE, self.api, self.git)
 
@@ -119,7 +123,8 @@ class HandoffTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             handoff.produce({**env, "GITHUB_WORKFLOW_SHA": HEAD}, {"event_id": 10}, self.api, self.git)
         self.assertEqual(self.verify(), {"release_action": "inspect", "release_sha": MERGE,
-                                         "validation_base": BASE})
+                                         "validation_base": BASE,
+                                         "source_handoff": json.dumps(self.binding(), sort_keys=True, separators=(",", ":"))})
         self.assertEqual(self.calls.count(f"{PREFIX}/actions/runs/7"), 2)
 
     def test_owner_comment_retry_uses_base_run_identity(self):
@@ -283,8 +288,10 @@ class HandoffTests(unittest.TestCase):
 
 class ClaimTests(unittest.TestCase):
     def setUp(self):
-        self.value = {"schema": 1, "release_sha": MERGE, "version": "2.3.0-beta.5",
-                      "workflow_sha": MERGE, "run_id": 9, "run_attempt": 1, "event": "workflow_run"}
+        self.value = {"schema": 2, "release_sha": MERGE, "version": "2.3.0-beta.5",
+                      "workflow_sha": MERGE, "run_id": 9, "run_attempt": 1, "event": "workflow_run",
+                      "handoff": {"release_sha": MERGE, "run_id": 7, "run_attempt": 1,
+                                  "workflow_id": 8, "event": "pull_request_target", "head_sha": HEAD}}
         self.tags = {}
         self.reference = None
         self.lock = threading.Lock()
@@ -316,12 +323,44 @@ class ClaimTests(unittest.TestCase):
             "GITHUB_SHA": MERGE, "GITHUB_WORKFLOW_SHA": MERGE,
             "GITHUB_RUN_ID": "9", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "workflow_run",
         }
-        self.assertEqual(claim.identity(env, MERGE, self.value["version"]), self.value)
+        self.assertEqual(claim.identity(env, MERGE, self.value["version"], json.dumps(self.value["handoff"])), self.value)
         for key, wrong in (("GITHUB_WORKFLOW_REF", "untrusted/workflow"),
                            ("GITHUB_WORKFLOW_SHA", HEAD), ("GITHUB_REF", "refs/heads/feature"),
                            ("GITHUB_REPOSITORY", "foreign/repo"), ("GITHUB_EVENT_NAME", "pull_request")):
             with self.subTest(key=key), self.assertRaises(ValueError):
-                claim.identity({**env, key: wrong}, MERGE, self.value["version"])
+                claim.identity({**env, key: wrong}, MERGE, self.value["version"], json.dumps(self.value["handoff"]))
+
+    def test_automatic_claim_requires_bounded_binding_before_any_write(self):
+        candidates = [{key: value for key, value in self.value.items() if key != "handoff"},
+                      {**self.value, "schema": 1}]
+        for key, bad in (("run_id", True), ("run_id", 10 ** 20), ("run_attempt", 101),
+                         ("workflow_id", 0), ("release_sha", HEAD), ("event", "push"),
+                         ("head_sha", "invalid")):
+            candidates.append({**self.value, "handoff": {**self.value["handoff"], key: bad}})
+        for candidate in candidates:
+            with self.subTest(candidate=candidate), self.assertRaises(ValueError):
+                claim.create(candidate, self.post, self.api)
+        self.assertEqual(self.writes, [])
+
+    def test_push_and_manual_schema_one_claims_remain_recoverable(self):
+        for event in ("push", "workflow_dispatch"):
+            with self.subTest(event=event):
+                self.setUp()
+                value = {key: item for key, item in self.value.items() if key != "handoff"}
+                value.update(schema=1, event=event)
+                claim.create(value, self.post, self.api)
+                self.assertIsNone(claim.resume(value, 9, 1, MERGE, event, self.api))
+                self.assertEqual(len(self.writes), 2)
+
+    def test_unbound_automatic_record_is_not_repaired_or_recovered(self):
+        claim.create(self.value, self.post, self.api)
+        tag = self.tags[self.reference["object"]["sha"]]
+        unbound = {key: value for key, value in self.value.items() if key != "handoff"}
+        unbound["schema"] = 1
+        tag["message"] = json.dumps(unbound)
+        with self.assertRaises(ValueError):
+            claim.resume(self.value, 9, 1, MERGE, "workflow_run", self.api)
+        self.assertEqual(len(self.writes), 2)
 
     def test_create_and_exact_digest_resume_succeed_without_new_writes(self):
         claim.create(self.value, self.post, self.api)

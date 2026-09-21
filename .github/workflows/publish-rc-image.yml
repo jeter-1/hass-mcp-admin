@@ -71,6 +71,7 @@ jobs:
       recovery_run_attempt: ${{ steps.detect.outputs.recovery_run_attempt }}
       recovery_source_digest: ${{ steps.detect.outputs.recovery_source_digest }}
       recovery_build_time: ${{ steps.detect.outputs.recovery_build_time }}
+      source_handoff: ${{ steps.handoff.outputs.source_handoff }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -740,16 +741,19 @@ jobs:
           SOURCE_RUN_ATTEMPT: ${{ steps.prepare.outputs.source_run_attempt }}
           SOURCE_WORKFLOW_SHA: ${{ steps.prepare.outputs.source_workflow_sha }}
           SOURCE_EVENT: ${{ steps.prepare.outputs.source_event_name }}
+          SOURCE_HANDOFF: ${{ needs.detect-release.outputs.source_handoff }}
         run: |
           set -euo pipefail
           if [[ "$SOURCE_MODE" == "build" ]]; then
             python "$RUNNER_TEMP/publication-policy/publication_claim.py" create \
-              --release "$RELEASE_SHA" --version "$VERSION"
+              --release "$RELEASE_SHA" --version "$VERSION" \
+              --handoff "$SOURCE_HANDOFF" --github-output "$GITHUB_OUTPUT"
           elif [[ "$SOURCE_MODE" == "resume_digest" ]]; then
             python "$RUNNER_TEMP/publication-policy/publication_claim.py" resume \
               --release "$RELEASE_SHA" --version "$VERSION" \
               --run-id "$RECOVERY_RUN_ID" --attempt "$SOURCE_RUN_ATTEMPT" \
-              --workflow-sha "$SOURCE_WORKFLOW_SHA" --event "$SOURCE_EVENT"
+              --workflow-sha "$SOURCE_WORKFLOW_SHA" --event "$SOURCE_EVENT" \
+              --github-output "$GITHUB_OUTPUT"
           else
             exit 1
           fi
@@ -828,6 +832,7 @@ jobs:
           BUILD_TIME: ${{ steps.prepare.outputs.build_time }}
           EXPECTED_DIGEST: ${{ steps.source.outputs.digest }}
           EXPECTED_EVENT_NAME: ${{ steps.prepare.outputs.source_event_name }}
+          EXPECTED_HANDOFF: ${{ steps.attempt.outputs.source_handoff }}
           EXPECTED_RUN_ATTEMPT: ${{ steps.prepare.outputs.source_run_attempt }}
           EXPECTED_RUN_ID: ${{ needs.detect-release.outputs.recovery_run_id || github.run_id }}
           EXPECTED_WORKFLOW_SHA: ${{ steps.prepare.outputs.source_workflow_sha }}
@@ -889,6 +894,7 @@ jobs:
             --expected-run-attempt "$EXPECTED_RUN_ATTEMPT" \
             --expected-workflow-sha "$EXPECTED_WORKFLOW_SHA" \
             --expected-event-name "$EXPECTED_EVENT_NAME" \
+            --expected-handoff "$EXPECTED_HANDOFF" \
             --repository "$GITHUB_REPOSITORY" \
             --owner "jeter-1" \
             --github-output "$GITHUB_OUTPUT"
