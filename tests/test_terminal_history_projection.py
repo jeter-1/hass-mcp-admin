@@ -288,6 +288,8 @@ class TerminalHistoryTests(unittest.IsolatedAsyncioTestCase):
             lambda d: d["approval"]["elevated_risk_acknowledgement"].update(approver_principal="synthetic-owner"),
             lambda d: d["dry_run_results"].update(provider_dispatch_occurred=True),
             lambda d: d["operational"]["verification"].update(attempt_count=1),
+            lambda d: d["operational"].update(requested_name=[]),
+            lambda d: d["operational"]["baseline"].update(state=[]),
             lambda d: d["events"].reverse(),
         )
         for mutate in mutations:
@@ -362,6 +364,30 @@ class TerminalHistoryTests(unittest.IsolatedAsyncioTestCase):
                             self.service.get_plan(plan.plan_id)
                         self.assertNotIn(secret, str(caught.exception))
                         self.assertNotIn(secret, json.dumps(caught.exception.details))
+        self.unchanged()
+
+    def test_unhashable_automation_mode_is_a_bounded_projection_failure(self):
+        for name in NAMES[1:]:
+            for mode in ([], {}):
+                data = value(name)
+                data["proposed_config"]["mode"] = mode
+                data["normalized_proposed_config"] = normalize_automation(data["proposed_config"])
+                data["proposed_config_hash"] = stable_hash(data["normalized_proposed_config"])
+                historical_tests.HistoricalPolicyProjectionTests._rebind_snapshot_hashes(data)
+                path = self.saved[name]
+                path.write_text(json.dumps(data))
+                service = ChangeGovernanceService(
+                    ChangePlanRepository(self.plan_root), self.gateway,
+                    now=lambda: datetime(2026, 9, 22, tzinfo=timezone.utc),
+                )
+                with self.assertRaises(GovernanceError):
+                    service.get_plan(data["plan_id"])
+                listed = service.list_plans(limit=10)
+                self.assertTrue(listed["partial"])
+                self.assertEqual(listed["count"], 2)
+                self.assertEqual(service.health_summary()["projection_failure_count"], 1)
+                self.assertEqual(json.loads(path.read_bytes()), data)
+                path.write_bytes(raw(name))
         self.unchanged()
 
 

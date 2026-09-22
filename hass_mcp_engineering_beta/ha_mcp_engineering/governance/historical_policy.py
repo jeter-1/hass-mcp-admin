@@ -634,6 +634,7 @@ def _expired_incomplete_helper_matches(plan: ChangePlan) -> bool:
         or plan.status is not PlanStatus.EXPIRED
         or plan.normalization_version != 1
         or plan.target_type != "input_boolean"
+        or not isinstance(plan.target_id, str)
         or re.fullmatch(r"input_boolean\.[a-z0-9_]+", plan.target_id) is None
         or _decision_shape(plan.policy_decision) != expected
         or plan.approval.state is not ApprovalState.INVALIDATED
@@ -645,6 +646,7 @@ def _expired_incomplete_helper_matches(plan: ChangePlan) -> bool:
         or operational.schema_version != 1
         or operational.family != plan.plan_family
         or operational.operation != plan.operation.value
+        or not isinstance(operational.requested_name, str)
         or operational.requested_name not in {"on", "off"}
         or operational.provider != "direct_home_assistant_state"
         or operational.rollback_available
@@ -665,6 +667,7 @@ def _expired_incomplete_helper_matches(plan: ChangePlan) -> bool:
         and dependency.get("evidence_complete") is False
         and dependency.get("execution_eligible") is False
         and baseline.get("entity_id") == plan.target_id
+        and isinstance(baseline.get("state"), str)
         and baseline.get("state") in {"on", "off"}
         and plan.current_config
         == plan.normalized_current_config
@@ -750,7 +753,14 @@ def _validation_failed_automation_matches(plan: ChangePlan) -> bool:
         )
     ):
         return False
-    valid, errors, _ = validate_automation(plan.target_id, plan.proposed_config)
+    try:
+        valid, errors, _ = validate_automation(
+            plan.target_id, plan.proposed_config
+        )
+    except (TypeError, ValueError):
+        # Malformed values rejected by the writer cannot qualify as its
+        # persisted history or break projection of unrelated valid records.
+        return False
     return bool(
         not valid
         # The shipped writer refuses these before persisting any record.
