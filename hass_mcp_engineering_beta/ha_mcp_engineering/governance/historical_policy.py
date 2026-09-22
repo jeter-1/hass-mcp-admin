@@ -2,15 +2,18 @@
 
 Policy decisions are immutable authority snapshots, but the original
 ``f2-v1`` identifier did not change when the retained-effect rule changed.
-This module recognizes only the two source-reviewed transition decisions and
-only when the plan is already terminal.  It is a projection compatibility
+The original transition matcher and the separate nonexecution matcher recognize
+only source-reviewed terminal records. This is a projection compatibility
 boundary; it never authorizes approval, task creation, or provider dispatch.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime
 import hmac
+import json
+import re
 
 from .models import (
     ApprovalActionKind,
@@ -22,10 +25,17 @@ from .models import (
     PhysicalConsequence,
     PlanStatus,
     RiskDelta,
+    RiskLevel,
 )
-from .normalize import stable_hash
-from .policy import evaluate_change_policy, policy_subject_payload
+from .normalize import normalize_automation, stable_hash, state_fingerprint
+from .policy import (
+    evaluate_change_policy,
+    persisted_f2_v1_policy_snapshot_matches,
+    policy_snapshot_matches,
+    policy_subject_payload,
+)
 from .storage import is_terminal_plan
+from .validation import validate_automation
 
 
 HISTORICAL_POLICY_PROJECTION_MODEL = (
@@ -34,7 +44,12 @@ HISTORICAL_POLICY_PROJECTION_MODEL = (
 HISTORICAL_POLICY_PROJECTION_PROFILES = (
     "beta32_retained_effect_prohibited",
     "beta33_initial_retained_effect_reason",
+    "beta38_expired_incomplete_helper",
+    "f2_v1_validation_failed_automation",
+    "f2_v2_validation_failed_automation",
 )
+BETA38_TERMINAL_SOURCE_COMMIT = "171e4769faef9a188e0a57cfa024f401f6313e1a"
+BETA4_TERMINAL_SOURCE_COMMIT = "c07bc54ae0cf9d52a3bd205f2a24de704f7b8296"
 BETA32_POLICY_SOURCE_COMMIT = (
     "f9d660499a05edef6af7fd9a590d7827b5983e3a"
 )
@@ -568,4 +583,253 @@ def historical_policy_projection_match(
     return _historical_policy_projection_candidate(
         plan,
         require_approval_integrity=True,
+    )
+
+
+def _terminal_chronology_matches(plan: ChangePlan, *, expired: bool) -> bool:
+    """Check writer chronology without equating record dates with provenance."""
+    try:
+        created, updated, expires = (
+            datetime.fromisoformat(value)
+            for value in (plan.created_at, plan.updated_at, plan.expires_at)
+        )
+        events = [
+            datetime.fromisoformat(event.timestamp) for event in plan.events
+        ]
+        return bool(
+            all(
+                value.tzinfo is not None
+                for value in (created, updated, expires, *events)
+            )
+            and created < expires
+            and created <= events[0] <= events[-1] <= updated
+            and events == sorted(events)
+            and (events[-1] >= expires if expired else updated < expires)
+        )
+    except (ValueError, TypeError, IndexError):
+        return False
+
+
+def _expired_incomplete_helper_matches(plan: ChangePlan) -> bool:
+    operational = plan.operational
+    expected = _DecisionShape(
+        "f2-v1",
+        ApprovalPolicyClass.ELEVATED_ADMIN,
+        RiskDelta.HIGH,
+        PhysicalConsequence.INDIRECT,
+        (
+            "exact_input_boolean_state_elevated_policy",
+            "helper_dependency_evidence_incomplete",
+            "low_risk_not_established",
+        ),
+        (
+            ApprovalActionKind.PLAN_APPROVAL,
+            ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT,
+        ),
+    )
+    if (
+        plan.contract_version != 3
+        or plan.plan_family != "operational_administration"
+        or plan.operation is not ChangeOperation.SET_INPUT_BOOLEAN_STATE
+        or plan.status is not PlanStatus.EXPIRED
+        or plan.normalization_version != 1
+        or plan.target_type != "input_boolean"
+        or not isinstance(plan.target_id, str)
+        or re.fullmatch(r"input_boolean\.[a-z0-9_]+", plan.target_id) is None
+        or _decision_shape(plan.policy_decision) != expected
+        or plan.approval.state is not ApprovalState.INVALIDATED
+        or plan.approval.bundle_state != "invalidated"
+        or not _invalidated_elevated_acknowledgement_matches(plan)
+        or operational is None
+        or not isinstance(operational.baseline, dict)
+        or not isinstance(operational.provider_capability_evidence, dict)
+        or operational.schema_version != 1
+        or operational.family != plan.plan_family
+        or operational.operation != plan.operation.value
+        or not isinstance(operational.requested_name, str)
+        or operational.requested_name not in {"on", "off"}
+        or operational.provider != "direct_home_assistant_state"
+        or operational.rollback_available
+        or operational.final_outcome is not None
+        or plan.execution_outcome != "not_applied"
+        or plan.rollback.status != "unavailable"
+    ):
+        return False
+    baseline = operational.baseline
+    dependency = baseline.get("dependency_risk")
+    if not isinstance(dependency, dict):
+        return False
+    desired = {"state": operational.requested_name}
+    provider = operational.provider_capability_evidence
+    return bool(
+        dependency.get("model") == "helper-dependency-risk-v2"
+        and dependency.get("entity_id") == plan.target_id
+        and dependency.get("evidence_complete") is False
+        and dependency.get("execution_eligible") is False
+        and baseline.get("entity_id") == plan.target_id
+        and isinstance(baseline.get("state"), str)
+        and baseline.get("state") in {"on", "off"}
+        and plan.current_config
+        == plan.normalized_current_config
+        == {"state": baseline["state"]}
+        and plan.proposed_config == plan.normalized_proposed_config == desired
+        and plan.current_state_fingerprint == stable_hash(baseline)
+        and plan.proposed_config_hash == stable_hash(
+            {
+                "operation": plan.operation.value,
+                "entity_id": plan.target_id,
+                "desired_state": operational.requested_name,
+            }
+        )
+        and provider.get("provider") == operational.provider
+        and provider.get("provider_contract_model")
+        == "direct-ha-exact-input-boolean-v1"
+        and provider.get("fallback") == "none"
+        and provider.get("fallback_occurred") is False
+        and operational.dispatch == {
+            "attempt_count": 0,
+            "attempted_at": None,
+            "dispatched": False,
+            "provider_response_received": False,
+            "request_id": None,
+        }
+        and asdict(operational.verification) == {
+            "contract_version": 1,
+            "status": "not_run",
+            "attempt_count": 0,
+            "checked_at": None,
+            "operation_completed": None,
+            "inventory_readable": None,
+            "archive_integrity_validated": False,
+            "mismatch_fields": [],
+            "evidence": {},
+        }
+        and plan.validation_results.get("valid") is True
+        and plan.validation_results.get("planning_write_performed") is False
+        and plan.validation_results.get("dependency_evidence_complete") is False
+        and plan.dry_run_results.get("provider_dispatch_occurred") is False
+        and plan.dry_run_results.get("rollback_available") is False
+        and tuple((e.event, e.result_status, e.error_code) for e in plan.events) == (
+            ("set_input_boolean_state_plan_created", "success", None),
+            ("change_plan_expired", "rejected", "change_plan_expired"),
+        )
+        and _terminal_chronology_matches(plan, expired=True)
+    )
+
+
+def _validation_failed_automation_matches(plan: ChangePlan) -> bool:
+    if (
+        plan.contract_version != 1
+        or plan.plan_family != "configuration_change"
+        or plan.operation is not ChangeOperation.UPDATE_AUTOMATION
+        or plan.status is not PlanStatus.VALIDATION_FAILED
+        or plan.normalization_version != 3
+        or plan.target_type != "automation"
+        or not plan.target_id
+        or plan.operational is not None
+        or plan.current_config is not None
+        or plan.normalized_current_config is not None
+        or plan.current_state_fingerprint != state_fingerprint(None)
+        or plan.approval.state is not ApprovalState.REQUIRED
+        or plan.approval.bundle_state != "prohibited"
+        or plan.approval.elevated_risk_acknowledgement is not None
+        or plan.execution_outcome is not None
+        or plan.rollback.status != "not_yet_available"
+        or plan.normalized_proposed_config
+        != normalize_automation(plan.proposed_config)
+        or plan.proposed_config_hash != stable_hash(plan.normalized_proposed_config)
+    ):
+        return False
+    decision = plan.policy_decision
+    expected = replace(
+        _BETA32_RETAINED_EFFECT_SHAPE, policy_version=decision.policy_version
+    )
+    if (
+        decision.policy_version not in {"f2-v1", "f2-v2"}
+        or _decision_shape(decision) != expected
+        or not (
+            policy_snapshot_matches(plan)
+            or persisted_f2_v1_policy_snapshot_matches(plan)
+        )
+    ):
+        return False
+    try:
+        valid, errors, _ = validate_automation(
+            plan.target_id, plan.proposed_config
+        )
+    except (TypeError, ValueError):
+        # Malformed values rejected by the writer cannot qualify as its
+        # persisted history or break projection of unrelated valid records.
+        return False
+    return bool(
+        not valid
+        # The shipped writer refuses these before persisting any record.
+        and not any("cannot be persisted" in error for error in errors)
+        and plan.validation_results == {"valid": False, "errors": errors}
+        and tuple((e.event, e.result_status, e.error_code) for e in plan.events) == (
+            (
+                "change_plan_validation_failed",
+                "failure",
+                "automation_validation_failed",
+            ),
+        )
+        and _terminal_chronology_matches(plan, expired=False)
+    )
+
+
+def terminal_nonexecution_projection_match(
+    plan: ChangePlan,
+    *,
+    sensitive_values: tuple[str, ...] = (),
+) -> HistoricalPolicyProjectionMatch | None:
+    """Recognize only the three diagnosed, never-executed terminal shapes.
+
+    Separate from historical_policy_projection_match: that older predicate is
+    also used by shared prohibited-plan validation. This predicate may be used
+    only at read projection/accounting boundaries. The service must additionally
+    establish task absence before accepting a read; task storage errors are fatal.
+    """
+    if (
+        plan.policy_decision is None
+        or plan.plan_version != 1
+        or plan.operations
+        or plan.risk.apply_allowed
+        or plan.risk.level is not RiskLevel.HIGH
+        or plan.rollback.available
+        or not isinstance(plan.validation_results, dict)
+        or not isinstance(plan.dry_run_results, dict)
+        or any(
+            secret and secret in json.dumps(plan.proposed_config, default=str)
+            for secret in sensitive_values
+        )
+        or not persisted_policy_snapshot_integrity_matches(plan)
+        or not _approval_decision_binding_matches(plan)
+        or not _top_level_authority_is_absent(plan)
+        or not _execution_and_rollback_are_inert(plan)
+        or any(
+            event.operation_id is not None
+            or event.operation_order is not None
+            or event.resource_type is not None
+            or event.resource_id is not None
+            for event in plan.events
+        )
+    ):
+        return None
+    if _expired_incomplete_helper_matches(plan):
+        profile = "beta38_expired_incomplete_helper"
+        source = BETA38_TERMINAL_SOURCE_COMMIT
+    elif _validation_failed_automation_matches(plan):
+        legacy = plan.policy_decision.policy_version == "f2-v1"
+        profile = (
+            "f2_v1_validation_failed_automation"
+            if legacy else "f2_v2_validation_failed_automation"
+        )
+        source = (
+            BETA38_TERMINAL_SOURCE_COMMIT
+            if legacy else BETA4_TERMINAL_SOURCE_COMMIT
+        )
+    else:
+        return None
+    return HistoricalPolicyProjectionMatch(
+        HISTORICAL_POLICY_PROJECTION_MODEL, profile, source
     )

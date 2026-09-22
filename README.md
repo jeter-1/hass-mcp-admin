@@ -1,9 +1,10 @@
 # HA MCP Engineering Server
 
-Engineering **2.3.0-rc.1** is the feature-frozen candidate for stable 2.3.0.
-It retains exact fan/light/switch operations and signed Core applicability from
-beta.4, with protected automatic-publication corrections and current release
-guidance. Received Host/Origin enforcement and secret-path authentication remain.
+Engineering **2.3.0-rc.2** is the feature-frozen candidate for stable 2.3.0.
+It restores bounded reads of expired helper and rejected automation history
+without reviving approval or execution authority. Exact fan/light/switch operations,
+signed Core applicability and protected automatic publication remain unchanged.
+Received Host/Origin enforcement and secret-path authentication remain.
 It provides one public MCP endpoint through the existing Nabu Casa
 connector, with a unified catalog.
 Engineering selects reviewed, admitted ha-mcp or native providers internally.
@@ -14,14 +15,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.3.0-rc.1 release notes](docs/V2_3_0_RC1_RELEASE_NOTES.md) and
-[2.3.0-rc.1 acceptance contract](docs/V2_3_0_RC1_ACCEPTANCE.md). A source version does
+Read the [2.3.0-rc.2 release notes](docs/V2_3_0_RC2_RELEASE_NOTES.md) and
+[2.3.0-rc.2 acceptance contract](docs/V2_3_0_RC2_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.3.0-rc.1 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.3.0-rc.2 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -38,11 +39,11 @@ options refuse startup; historical acceptance does not establish this boundary.
    `8100`; authenticated, admin-only **HA MCP Approval** ingress uses internal
    port `8110`. The approval panel is not a second MCP endpoint.
 5. Verify the final installed artifact, reconnect the client and complete the
-   bounded [acceptance checks](docs/V2_3_0_RC1_ACCEPTANCE.md).
+   bounded [acceptance checks](docs/V2_3_0_RC2_ACCEPTANCE.md).
 
 The image repository remains
 `ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
-`linux/arm64` for 2.3.0-rc.1. Published 2.2.0 retains its historical
+`linux/arm64` for 2.3.0-rc.2. Published 2.2.0 retains its historical
 `linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; Engineering
 requires a supported 64-bit installation. This source change does not migrate or
 uninstall an existing system. Existing options, persistent paths, stored formats,
@@ -80,7 +81,7 @@ opaque. An analysis with no detected references does not prove none exist.
 The RC acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0** under the
 reviewed signed Core registry covering all 19 profiles. Core 2026.9.2 retains its
 immutable 17-reference entry and historical typed fan/power route; its two new
-signed typed references remain unavailable as intended. Installing rc.1 neither
+signed typed references remain unavailable as intended. Installing rc.2 neither
 configures trust nor updates Core. Admission still requires exact current
 Core/provider identity and valid authority.
 
@@ -184,4 +185,4 @@ runtime is preserved by 2.2.0; its observations retain their RC9 pairing/time.
 - [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases)
 
 Historical counts, pairings, installation and rollback guidance describe their
-original release and do not replace the current 2.3.0-rc.1 contract.
+original release and do not replace the current 2.3.0-rc.2 contract.

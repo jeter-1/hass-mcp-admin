@@ -1,5 +1,44 @@
 # HA MCP Engineering Server Architecture
 
+## Current architecture entry point
+
+Use [README.md](README.md) and `python scripts/codex-context.py --format json`
+to resolve the current source version, exact acceptance document, static tool
+inventory and conditional delegated-read counts. Source state is distinct from
+the published image, installed runtime and completed acceptance evidence.
+
+The supported product has one assistant-facing Engineering MCP connector.
+Engineering owns admission, routing, attribution and operation-specific authority;
+reviewed `ha-mcp` capabilities are internal providers. A client does not choose
+between two public connectors. Current implementation lives under
+[`hass_mcp_engineering_beta/ha_mcp_engineering/`](hass_mcp_engineering_beta/ha_mcp_engineering/),
+with application assembly in `application.py`, the inbound gateway in `routing.py`,
+and capability declarations in `capabilities.py`. Frozen, operationally retired
+`hass_mcp_admin/` v1.1.2 is historical code, not the current implementation target
+or an Engineering rollback.
+
+Current contract entry points:
+
+- [Owner-authoritative product direction](docs/architecture/ADR-022-OWNER-AUTHORITATIVE-PRODUCT-DIRECTION.md)
+  and [upstream source authority](docs/architecture/ADR-021-HOME-ASSISTANT-SOURCE-AUTHORITY.md).
+- [Host/Origin enforcement](docs/INBOUND_SECURITY.md), before MCP authentication.
+- [Typed fan](docs/TYPED_FAN_CONTROL.md) and [typed light/switch power](docs/TYPED_POWER_CONTROL.md)
+  contracts; these do not expose a generic service escape hatch.
+- [Signed Core release applicability](docs/CORE_RELEASE_REGISTRY.md) and the
+  exact provider contracts selected by the current source.
+- [Development and release procedures](docs/CODEX_WORKFLOW.md). Runtime action
+  approval requirements do not by themselves create approval requirements for
+  ordinary source edits; project and task authority govern coding work.
+
+## Historical architecture notes
+
+All remaining sections preserve earlier release/design snapshots. Their version
+counts, current-tense descriptions, provider relationships and generic service
+diagram describe those historical stages, not current implementation or new
+execution authority. Accepted decisions retain their provenance; use the current
+entry points above for implementation and the exact versioned acceptance document
+for a release. Do not rewrite historical receipts to imply later results.
+
 ## 2.2.0-beta.15 exact lifecycle add-on response contracts
 
 Exact lifecycle response decoding is selected only after reviewed release and
@@ -376,11 +415,12 @@ or dispatch writes. Beta 22 adds a final logical-source coverage normalization
 boundary, active-versus-historical governance classification, and consistent
 resolved automation scope. See [`docs/HANDOFF_GENERATION.md`](docs/HANDOFF_GENERATION.md).
 
-## Status
+## Historical design status
 
-This document defines both the **current implementation** and the **intended architectural direction** of this repository.
-
-The current release remains compatible with its existing HA MCP Admin tool set. The engineering-server direction described here is a roadmap and design boundary, not a claim that every planned capability already exists.
+The following original design material mixed the then-current HA MCP Admin
+implementation with the proposed Engineering direction. It is retained as a
+historical snapshot. Its use of "current" and "future" is relative to that
+snapshot; the current architecture entry point above supersedes it for new work.
 
 ## Purpose
 
@@ -438,7 +478,7 @@ The general `ha-mcp` server should normally remain the primary execution and bro
 
 The engineering server may retain direct Home Assistant read access where it materially improves analysis. Write and physical-action capabilities should exist only where they provide stronger governance, verification, or safety than direct use of the general server.
 
-## Current Implementation
+## Historical implementation snapshot
 
 The v2 beta has 40 statically registered tools and implements governance,
 verification, rollback, persistence, audit, and request correlation. It has
@@ -478,9 +518,12 @@ Home Assistant
     |- read-only blueprint/config mount
 ```
 
-The current implementation is primarily contained in `hass_mcp_admin/server.py`. It communicates with Home Assistant through the Supervisor proxy on HAOS or through a configured URL and token in standalone deployments.
+The legacy v1 implementation described by that diagram is primarily contained in
+`hass_mcp_admin/server.py`. It communicated with Home Assistant through the
+Supervisor proxy on HAOS or through a configured URL/token in standalone
+deployments. It is not the current Engineering source target.
 
-## Current Capability Groups
+## Historical capability groups
 
 The current public tools fall into these broad groups:
 

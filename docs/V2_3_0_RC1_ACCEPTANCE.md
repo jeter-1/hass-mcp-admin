@@ -74,8 +74,13 @@ dashboard dependency configuration coverage remains unavailable and dynamic
 references opaque. No-result analysis cannot establish absence of dependencies.
 
 The single upgrade-associated authority failure recovered; the precise exception
-remains unknown. Two historical projection-only failures retain their compatible
-classification. Neither is a newly failed execution. Complete Android navigation,
+remains unknown. The two retained-effect records counted as historically
+compatible are distinct from the three unreadable plans reproduced during rc.1
+acceptance. The latter comprise one expired helper snapshot and two rejected
+automation-planning records; they are historical read-projection findings, not
+newly failed executions. See [the bounded correction](TERMINAL_HISTORY_PROJECTION_CORRECTION.md)
+for their diagnosis and separate source-validation scope; this does not relabel
+the installed rc.1 runtime as fixed. Complete Android navigation,
 cache-only outage startup and independent backup-content/restore verification
 remain unestablished. F3 observation counters do not establish diagnostic-observer
 dormancy. Do not expand or silently clear these qualifications.

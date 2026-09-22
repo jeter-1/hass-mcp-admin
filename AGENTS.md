@@ -31,6 +31,12 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Begin every task by fetching when authorized and reporting the exact base SHA,
   HEAD SHA, branch, worktree status, and relevant stable and Engineering version
   metadata.
+- Start the coding session in the deliberate task worktree and identify its
+  loaded root and applicable nested instructions. Fetching `origin/main` does
+  not update a checked-out `AGENTS.md` or the instruction chain of an existing
+  session. Compare the checkout's instruction revision with the intended base;
+  explain intentional differences and preserve unrelated historical branches.
+  See **Instruction Discovery** in `docs/CODEX_WORKFLOW.md` for the entry check.
 - Historical chat, old release notes, prior pull-request descriptions, and
   remembered hard-coded values are not proof of current source or runtime
   behavior. Resolve conflicts from current source, tests, executable validation,
@@ -102,14 +108,15 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Prepare draft pull requests by default. Review the complete final diff before
   declaring completion.
 - Complete Full/Evidence validation on a stable review candidate before
-  independent review. The implementer must not act as its own repeated
-  independent reviewer. The default budget is one read-only review in a
-  separate Codex session or worktree, one batch of accepted corrections, and
-  at most one focused delta rereview. Require a full rereview only when the
-  corrections materially change architecture or scope. Provider, write,
+  independent review. The implementer's self-review is not independent review.
+  Use a separately tasked reviewer/session that did not implement the change;
+  a separate worktree provides optional file isolation, not independence.
+  The default budget is one read-only independent review, one batch of accepted
+  corrections, and at most one focused delta rereview. Require a full rereview
+  only when the corrections materially change architecture or scope. Provider, write,
   workflow, cryptographic, persistence, and release-authority changes require a
   security section; a second specialized reviewer is exceptional rather than
-  routine.
+  routine. This budget does not permit accepting a serious unresolved defect.
 - A `Ready for review` action performed by Josh (`jeter-1`) on a same-repository
   pull request targeting `main` attests that the bounded independent review is
   complete and acceptable, and is explicit standing authorization for the
