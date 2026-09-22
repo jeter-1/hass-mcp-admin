@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.0-rc.2 - Terminal historical plan readability
+
+- Restore supported reads of reviewed expired-helper and rejected automation
+  writer families with original terminal status, policy and immutable hashes.
+- Preserve refusal of damaged or unsupported records, task/approval/dispatch
+  evidence and persistence-unsafe proposals. Bound malformed-history failures
+  without interrupting unrelated reads.
+- Count these three compatibility profiles separately from projection failures,
+  with no authorization effect, persisted-record rewrite or new execution path.
+- Preserve the 78-tool catalog, providers, signed Core authority, installation
+  configuration, controlled dependencies and frozen stable-v1. Require RC2
+  publication/image binding and separately authorized original-record readback
+  before stable promotion; no new household device cycle is required.
+
 ## Unreleased - Configuration metadata separation
 
 - Treat Home Assistant automation/script `category` as bounded read-only

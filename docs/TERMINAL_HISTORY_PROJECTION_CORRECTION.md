@@ -2,7 +2,8 @@
 
 This correction restores read access to two diagnosed historical record families.
 It does not change the installed rc.1 runtime, policy classification, approval or
-execution authority, persisted bytes, providers, tool schemas or release version.
+execution authority, persisted bytes, providers or tool schemas.
+The correction is included in the separately authorized 2.3.0-rc.2 preparation.
 Its baseline is rc.1 `df860eeffdc9031bd0596a9a9892b9e1c9c08f1e`.
 
 ## Diagnosis and accepted shapes
@@ -90,16 +91,18 @@ useful get/list, mixed failed/compatible accounting, deep audit/restart, secret
 boundaries, task-storage failure, tampered hashes, rehashed unsupported lifecycles,
 dependency/dispatch/approval evidence and all authority paths. Existing historical
 and current approved-change/readback/recovery tests must still pass. Run the
-repository Evidence gate with both changed runtime files explicitly declared as
-protected scope, then independent review. Source validation does not prove live
+repository Evidence gate with both changed governance files and the materialized
+release files explicitly declared as protected scope, then independent review. Source validation does not prove live
 readback of the original records.
 
 ## Release and acceptance disposition
 
 PR #132's dashboard planner/approval work is outside this correction. Stable-v1,
-schemas, workflows, trust registry, packaging and release metadata remain unchanged.
-This functional correction needs its own reviewed release decision before stable
-promotion; no version transition or deployment is included here.
+schemas, workflows, trust registry and controlled build inputs remain unchanged.
+Josh subsequently authorized RC2 release preparation around this correction.
+The version declarations and current release documentation advance in the same
+PR; see [RC2 acceptance](V2_3_0_RC2_ACCEPTANCE.md). This source preparation does
+not authorize deployment or establish installed readback.
 
 After a separately authorized deployment, read the same three retained plans once
 and verify original status, policy, hashes, no task/approval/dispatch authority and
