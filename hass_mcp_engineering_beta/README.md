@@ -1,15 +1,14 @@
 # HA MCP Engineering Server Beta
 
-**Engineering 2.3.0-rc.2** restores bounded reads of expired helper and rejected
-automation history before stable 2.3.0, without reviving approval or execution
-authority. Typed fan/light/switch operations, signed Core applicability,
-Host/Origin enforcement, secret-path
-authentication and the technical Beta installation identity remain unchanged.
-See [2.3.0-rc.2 acceptance](../docs/V2_3_0_RC2_ACCEPTANCE.md) and
-[2.3.0-rc.2 release notes](../docs/V2_3_0_RC2_RELEASE_NOTES.md).
+**Engineering 2.3.0** is the stable release of accepted RC2 behavior. This
+version/documentation transition preserves historical plan readability, typed
+fan/light/switch operations, signed Core applicability, Host/Origin enforcement,
+secret-path authentication and the technical Beta installation identity.
+See [2.3.0 acceptance](../docs/V2_3_0_ACCEPTANCE.md) and
+[2.3.0 release notes](../docs/V2_3_0_RELEASE_NOTES.md).
 
 Read the [Host/Origin policy](../docs/INBOUND_SECURITY.md) before an authorized
-2.3.0-rc.2 update. Configure exact aliases for MCP paths beyond its loopback-authority
+2.3.0 update. Configure exact aliases for MCP paths beyond its loopback-authority
 defaults; explicit host lists replace those defaults. Native clients may omit
 Origin; browser MCP clients require an explicit origin. Approval ingress retains
 its separate authentication. Invalid options refuse startup, so retain independent
@@ -23,7 +22,7 @@ installed acceptance.
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures for 2.3.0-rc.2 | `amd64`, `aarch64` |
+| Architectures for 2.3.0 | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
 | Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
 | Server ID | `hass-mcp-engineering-beta` |
@@ -45,7 +44,7 @@ belongs to this milestone.
 
 Historical v1.1.2 in `hass_mcp_admin/` is frozen and operationally retired,
 outside the Engineering dependency audit and not an Engineering rollback.
-2.3.0-rc.2 preserves existing options, persistence formats, ports, ingress and image
+2.3.0 preserves existing options, persistence formats, ports, ingress and image
 repository. The existing options, `mcp_allowed_hosts` and `mcp_allowed_origins`,
 enforce the received-header boundary before ordinary MCP behavior. The private
 observer retains its [existing contract](../docs/INBOUND_TOPOLOGY_CAPTURE.md),
@@ -66,7 +65,7 @@ required catalog evidence; a cached inventory or count alone is insufficient.
 Provider unavailability grants no fallback, arbitrary forwarding or alternate
 provider retry.
 
-The RC installed-acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0**, with
+The stable installed-acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0**, with
 reviewed signed applicability for all 19 profiles. Core 2026.9.2 retains its
 immutable 17-reference entry and historical typed fan/power route; the two signed
 typed references are intentionally unavailable on that entry. Installation does
@@ -182,11 +181,11 @@ RC-to-stable gates and subsequent feature priorities.
 
 ## Acceptance and history
 
-Retained RC9, 2.2.0 and beta.3/beta.4 source/build, installed-image, catalog and
+Retained RC9, 2.2.0, beta.3/beta.4 and RC2 source/build, installed-image, catalog and
 live receipts remain bound to their original source, pairing, time and attribution.
 The beta.3 raw-catalog runtime-bracket qualification remains unchanged. They do
-not establish 2.3.0-rc.2 installed acceptance. The
-[2.3.0-rc.2 contract](../docs/V2_3_0_RC2_ACCEPTANCE.md) separately
+not establish 2.3.0 installed acceptance. The
+[2.3.0 contract](../docs/V2_3_0_ACCEPTANCE.md) separately
 requires final publication/image identity, fresh catalog and bounded installed
 verification.
 

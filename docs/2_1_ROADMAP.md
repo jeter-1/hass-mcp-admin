@@ -2,25 +2,24 @@
 
 ## Current direction
 
-Updated 2026-09-22 for the **2.3.0-rc.2** release candidate. This source contract
+Updated 2026-09-22 for **2.3.0** stable-release preparation. This source contract
 is not evidence of publication or deployment. Engineering remains one public
 connector with reviewed internal providers, concrete evidence, useful approved
 implementation, exact readback and operation-specific recovery.
 
-1. **Finish 2.3 stabilization.** Deliver the reviewed historical projection fix
-   in materialized rc.2, with candidate Evidence/CI and independent release-delta
-   review before Josh's Ready decision. The protected merge/publication flow,
-   installed-image binding and separately authorized readback of the three
-   retained records remain gates alongside catalog, authority and settlement.
-   Promote to stable 2.3.0 only after RC2 acceptance. Preserve completed functional
-   evidence and its original qualifications; this read-only correction requires
-   no new household device cycle.
+1. **Complete stable 2.3.0.** RC2 installed acceptance is closed with its original
+   evidence attribution and qualifications retained. Prepare the version-only
+   stable transition with fresh candidate Evidence/CI and independent review
+   before Josh's Ready decision. Verify protected merge/publication, then obtain
+   separate deployment authority and close stable installed-image, catalog,
+   useful-read and settlement gates. Carry accepted RC2 functionality forward;
+   no repeat beta campaign or new household device cycle is required.
 2. **Proposed next feature: script dependency coverage.** Existing analysis reports
    unavailable script configuration coverage. Establish bounded complete inventory,
    canonical identifiers and provider provenance before adding readable scripts to
    the existing dependency index. Prove useful reference detection and truthful
    partial results for unreadable, truncated or dynamically opaque evidence. This
-   is a separate implementation decision after stable, not part of rc.2.
+   is a separate implementation decision after stable, not part of this release.
 3. **Then select one broader administration operation.** Prioritize a real blocked
    household task, with a typed target, exact effect, readback and a usable recovery
    contract. Registry metadata, integration options and additional configuration
@@ -39,8 +38,9 @@ Tracking reconciliation at this source baseline:
 
 - [#176](https://github.com/jeter-1/hass-mcp-admin/issues/176): publication handoff
   and workflow_run corrections are merged. The real non-release path passed in
-  run 35638306215. Retain rc.1 publication evidence under its original contract;
-  RC2 requires its own exact publication and installed-image binding.
+  run 35638306215. RC2 automatic publication run 35690377391 and installed-image
+  binding passed; retain their original source and attribution. Stable requires
+  its own publication and installed-image evidence.
 - [#174](https://github.com/jeter-1/hass-mcp-admin/issues/174): dashboard provider
   identity work was incorporated in #179. Old draft #132 overlaps that work;
   its remaining scope needs reconciliation rather than another blind merge.
@@ -49,7 +49,7 @@ Tracking reconciliation at this source baseline:
   A second public provider connector is not the supported product topology.
 
 This documentation does not close issues or pull requests. The
-[rc.2 acceptance contract](V2_3_0_RC2_ACCEPTANCE.md) defines the current release
+[2.3.0 acceptance contract](V2_3_0_ACCEPTANCE.md) defines the current release
 and installed checks; historical milestones below retain their original context.
 
 ## Historical 2.1 and 2.2 foundation roadmap
