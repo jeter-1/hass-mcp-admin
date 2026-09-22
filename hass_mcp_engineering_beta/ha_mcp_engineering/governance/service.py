@@ -49,6 +49,7 @@ from .historical_policy import (
     HistoricalPolicyProjectionMatch,
     historical_policy_projection_has_only_approval_mismatch,
     historical_policy_projection_match,
+    terminal_nonexecution_projection_match,
 )
 from .models import (
     ApprovalActionKind,
@@ -603,7 +604,10 @@ class ChangeGovernanceService:
             if error is not None:
                 failures[plan.plan_id] = error
                 continue
-            match = historical_policy_projection_match(plan)
+            match = (
+                historical_policy_projection_match(plan)
+                or terminal_nonexecution_projection_match(plan)
+            )
             if match is not None:
                 historical[plan.plan_id] = match
         self._projection_failure_index = failures
@@ -632,7 +636,10 @@ class ChangeGovernanceService:
         error = self._projection_failure_for_plan(plan)
         if error is None:
             self._projection_failure_index.pop(plan.plan_id, None)
-            match = historical_policy_projection_match(plan)
+            match = (
+                historical_policy_projection_match(plan)
+                or terminal_nonexecution_projection_match(plan)
+            )
             if match is None:
                 self._historical_policy_projection_index.pop(
                     plan.plan_id, None
@@ -879,6 +886,17 @@ class ChangeGovernanceService:
         pre-intent execution continue through current-policy authority.
         """
 
+        if terminal_nonexecution_projection_match(plan) is not None:
+            try:
+                task = self.task_repository.get_for_plan(plan.plan_id)
+            except ExecutionTaskStorageError as exc:
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                ) from exc
+            if task is None:
+                return
+            # A task invalidates the never-executed profile. Shared authority
+            # checks below retain their original refusal and error semantics.
         if policy_snapshot_matches(plan):
             self._require_policy_snapshot(plan)
             return
@@ -12448,7 +12466,10 @@ class ChangeGovernanceService:
             plan.plan_id: match
             for plan in plans
             if (
-                match := historical_policy_projection_match(plan)
+                match := (
+                    historical_policy_projection_match(plan)
+                    or terminal_nonexecution_projection_match(plan)
+                )
             )
             is not None
         }

@@ -1,0 +1,54 @@
+{
+  "generator": "tests/generate_terminal_projection_fixtures.py",
+  "generator_sha256": "6444a2c928579916f4e57fc7b26e232371aed30a6d566f608cda9dd48aa3bf27",
+  "fixtures": [
+    {
+      "profile": "expired_helper",
+      "source_commit": "171e4769faef9a188e0a57cfa024f401f6313e1a",
+      "fixture": "terminal_expired_helper.json",
+      "sha256": "f3d8e4d4427f8b68edf288af7b9f810fc14afbd921389d518a2da0a16461ea92",
+      "writer": "create_helper_state_plan",
+      "creation_error": null,
+      "historical_read_error": null,
+      "status": "expired",
+      "policy_version": "f2-v1",
+      "provider_dispatch_count": 0,
+      "execution_task_count": 0,
+      "sanitized_before_writer": true,
+      "persisted_bytes_edited": false
+    },
+    {
+      "profile": "invalid_automation_f2_v1",
+      "source_commit": "171e4769faef9a188e0a57cfa024f401f6313e1a",
+      "fixture": "terminal_invalid_automation_f2_v1.json",
+      "sha256": "b47ef026c7bd00053fbfd934d0ef13793f357245e10bbed322a29c1422fd2fc9",
+      "writer": "create_plan",
+      "creation_error": "automation_validation_failed",
+      "historical_read_error": "approval_sequence_failure",
+      "status": "validation_failed",
+      "policy_version": "f2-v1",
+      "provider_dispatch_count": 0,
+      "execution_task_count": 0,
+      "sanitized_before_writer": true,
+      "persisted_bytes_edited": false
+    },
+    {
+      "profile": "invalid_automation_f2_v2",
+      "source_commit": "c07bc54ae0cf9d52a3bd205f2a24de704f7b8296",
+      "fixture": "terminal_invalid_automation_f2_v2.json",
+      "sha256": "b2bbec1ab3c4bb55d11ab0a8392a1dd215ba3737dace33e5d491259b13d0739c",
+      "writer": "create_plan",
+      "creation_error": "automation_validation_failed",
+      "historical_read_error": "approval_sequence_failure",
+      "status": "validation_failed",
+      "policy_version": "f2-v2",
+      "provider_dispatch_count": 0,
+      "execution_task_count": 0,
+      "sanitized_before_writer": true,
+      "persisted_bytes_edited": false
+    }
+  ],
+  "process": "Fresh interpreter per exact clean shipped writer; deterministic UUIDs/clock and synthetic inputs before hashing; unchanged persisted bytes.",
+  "network": "denied",
+  "production_records": false
+}

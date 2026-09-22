@@ -508,6 +508,7 @@ class HistoricalPolicyProjectionTests(unittest.IsolatedAsyncioTestCase):
                 "model": HISTORICAL_POLICY_PROJECTION_MODEL,
                 "compatible_count": 2,
                 "profile_counts": {
+                    **dict.fromkeys(HISTORICAL_POLICY_PROJECTION_PROFILES, 0),
                     HISTORICAL_POLICY_PROJECTION_PROFILES[0]: 1,
                     HISTORICAL_POLICY_PROJECTION_PROFILES[1]: 1,
                 },
@@ -822,6 +823,7 @@ class LegacyRetainedEffectProjectionTests(
                 "model": HISTORICAL_POLICY_PROJECTION_MODEL,
                 "compatible_count": 2,
                 "profile_counts": {
+                    **dict.fromkeys(HISTORICAL_POLICY_PROJECTION_PROFILES, 0),
                     "beta32_retained_effect_prohibited": 2,
                     "beta33_initial_retained_effect_reason": 0,
                 },
