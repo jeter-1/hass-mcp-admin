@@ -1,6 +1,6 @@
 # ADR-022: Owner-authoritative product direction
 
-Status: accepted; Beta 54 runtime implementation staged for review
+Status: accepted. The Beta 54 staging observation below is historical.
 
 Date: 2026-08-31
 
@@ -150,10 +150,19 @@ distinct authority or recovery boundary, such as a separately authorized
 rollback, or a separately justified destructive or difficult-to-recover step;
 classifier severity alone is not a reason to collect duplicative approvals.
 
-The advertised Beta 53 policy remains authoritative for deployed behavior.
-Beta 54 stages the separately scoped runtime implementation of this distinction;
-it grants no deployed authority until it is reviewed, promoted, published, and
-deployed through their separate boundaries.
+### Historical implementation status at the Beta 53 / Beta 54 decision
+
+The following observation records the original rollout boundary. It does not
+identify the current advertised or installed version; derive those independently
+from current source context and authorized runtime evidence. The accepted product
+decisions above remain in effect.
+
+Original 2026-08-31 implementation-status observation:
+
+> The advertised Beta 53 policy remains authoritative for deployed behavior.
+> Beta 54 stages the separately scoped runtime implementation of this distinction;
+> it grants no deployed authority until it is reviewed, promoted, published, and
+> deployed through their separate boundaries.
 
 ## Proportional safety
 

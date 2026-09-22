@@ -35,6 +35,33 @@ alone to activate nested guidance. This rule applies equally to Desktop keyboard
 work, CLI or IDE work, connected-host Remote or mobile work, and Codex cloud work
 when the environment starts at the repository root.
 
+### Verify the project entry point
+
+Start a fresh coding/review session in the intended task worktree. Record its
+path, branch or detached state, HEAD, intended base, and the root/nested
+instruction files actually loaded. After an authorized fetch, compare:
+
+```sh
+git status --short --branch
+git rev-parse HEAD
+git rev-parse HEAD:AGENTS.md
+git rev-parse origin/main:AGENTS.md
+```
+
+Different instruction blobs require an explanation, not an automatic reset:
+historical investigation or an instruction-changing PR can legitimately differ.
+Inspect relevant nested files and any user-level override separately. Fetching
+updates `origin/main`; it does not update checkout files or rebuild an existing
+session's instruction chain. Begin a fresh session in the deliberate current
+worktree when the old entry point supplies unintended historical policy. Preserve
+unrelated branches, worktrees, commits and uncommitted changes.
+
+Check that the loaded root includes the owner-direction/ADR-022, independent
+review and Ready contracts intended for the task. Reading current-main policy
+explicitly can inform a review, but does not prove the default desktop entry
+point was repaired. Record that local operational check separately from a
+repository documentation correction.
+
 ## Home Assistant source authority
 
 Before making or reviewing a claim about Home Assistant semantics, browser
@@ -294,9 +321,11 @@ or deployment.
 Review begins only after implementation reaches a stable candidate and
 Full/Evidence validation has completed. Use this bounded default sequence:
 
-1. A separate Codex session or worktree reviews the exact base/head without
-   editing. Findings state severity, file-and-line evidence, impact, cause,
-   correction, and a proving test.
+1. A separately tasked reviewer/session that did not implement the change reviews
+   the exact base/head without editing. A separate worktree is optional file
+   isolation; moving the implementer to another worktree is still self-review.
+   Findings state severity, file-and-line evidence, impact, cause, correction,
+   and a proving test.
 2. The implementer verifies and batches accepted findings into one correction
    pass.
 3. One focused delta rereview verifies every accepted finding, the
@@ -307,9 +336,10 @@ Full/Evidence validation has completed. Use this bounded default sequence:
    changes include a security section in that independent review. A second
    specialized reviewer is exceptional rather than the default.
 
-The implementer must not serve as its own repeated independent reviewer. The
+The implementer must not serve as its own independent reviewer. The
 default review budget is one full independent review and at most one delta
 rereview, not a fresh exact-head review after every corrective commit.
+The budget does not make a newly discovered serious unresolved defect acceptable.
 
 Native Codex and CodeRabbit remain available as optional manual escalation
 tools. Neither runs automatically and neither is a merge prerequisite. Josh may
@@ -379,23 +409,44 @@ not executable code or a substitute for these checks.
 
 An ordinary merge has no version transition and produces no publication writes.
 A release handoff must pass complete CI, exact release-document authority,
-materialized version/metadata checks and all existing publisher guards. Protected
-main is fenced again before registry access, final image tags, the release Git
-tag and GitHub Release. Movement stops the run; a later owner-authorized recovery
-can reconcile the same release SHA. Publication never installs or deploys.
+materialized version/metadata checks and all existing publisher guards.
+
+Admission and revalidation depend on the event:
+
+- For the protected `workflow_run` handoff, the release SHA may initially be an
+  earlier first-parent commit retained under the publisher's captured current
+  main authority SHA. Reviewed producer policy, Engineering/release state and
+  absence of staging must still match the guard's requirements. At each later
+  guard, fetched `origin/main` must equal that captured authority SHA. Main
+  movement stops that run even when the release remains an ancestor.
+- Owner `workflow_dispatch` recovery likewise binds the current main authority
+  captured for that request and rechecks its exact historical release/run/digest
+  eligibility. It is not an automatic substitute for a refused handoff.
+- The protected `push` route binds its triggering release commit and applies its
+  own ancestry and pre-write guards. Do not substitute ancestry alone for the
+  stronger handoff or manual-recovery checks.
+
+Revalidation occurs before registry access, final image tags, the release Git
+tag and GitHub Release. See `scripts/publication_handoff.py` and the publisher's
+event-specific guards; the later recovery decision must reconcile any claim or
+partial artifacts before proceeding. Publication never installs or deploys.
 
 The workflow installation itself may be merged by the older producer, which has
 no handoff artifact. That receiving run must refuse rather than invent a receipt.
-The first controlled automatic publication is the next owner-approved release
-whose protected base already contains this producer. Offline tests and PR CI do
-not establish that the cross-workflow GitHub event has run successfully.
+That installation case is historical, not a request to reinstall the handoff.
+Automatic publication uses the protected producer already present in the release
+PR's base. Verify each release's actual run/attempt and final artifacts; offline
+tests and PR CI do not establish successful publication.
 
-This workflow pull request must cross the preexisting receipt-required pipeline
-one final time. After it merges, removing `codex-review-receipt` from the active
-ruleset and changing the repository's native Codex setting from automatic to
-manual/off are separate administrative actions requiring Josh's authorization.
-Until both are verified, do not claim that the manual-review steady state is
-fully active.
+Historical review-pipeline rollout required its migration PR to cross the old
+receipt-required pipeline one final time. Removing `codex-review-receipt` and
+changing native Codex review settings were separate administrative actions.
+This is not a current rollout checklist or authority to change settings. The
+2026-09-22 repository ruleset observation at source `df860ee` required only
+`validate`, bound to GitHub Actions integration `15368`, with strict checks.
+Native Codex installation settings were not inspected in that observation.
+Reinspect effective rules and applicable installation settings when a task
+depends on them; do not revive a completed migration from historical prose.
 
 ### Missed protected-main publication recovery
 
@@ -539,13 +590,21 @@ current protected-main workflow-authority SHA after that SHA has passed the
 actor, ref, current-head, first-parent, source-tree and staged-state guards. They
 are publication tooling only and never enter the historical image context.
 
-After the recovery workflow change itself is merged and exact-head review and CI
-are complete, use the GitHub Actions page for **Publish reviewed Engineering
-release**, choose **Run workflow**, select `main`, and enter the reviewed release
-SHA and expected version. Beta 53 run `33379623142` completed every validation
-job and created the untagged digest below before its old local-Docker verifier
-failed while switching platforms. The bounded completion inputs reuse only that
-digest; they do not rebuild it:
+For an authorized current recovery, derive `release_sha`, `expected_version` and,
+when resuming a digest, the original `recovery_run_id`, exact `recovery_run_attempt`,
+`recovery_source_digest` and `recovery_build_time` from the inspected incident.
+Use **Publish reviewed Engineering release** -> **Run workflow** on protected
+`main` only after the applicable recovery checks and owner authorization above.
+Omit digest-recovery fields for a permitted fresh recovery with no existing claim
+or artifacts. Ambiguous identities or partial publication remain stop conditions.
+
+#### Historical Beta 53 recovery example — not current dispatch inputs
+
+The following August 2026 incident predates the current handoff. It is retained
+for provenance and must not be copied into a new recovery. Beta 53 run
+`33379623142` created an untagged digest before its old local-Docker verifier
+failed while switching platforms. Its then-proposed completion reused that
+exact digest without rebuilding it:
 
 ```text
 release_sha: 153b4dd7e2e60806c7117bb83c6c83b8adf02ff8
@@ -555,15 +614,18 @@ recovery_source_digest: sha256:2cd84c96aec6c1772e8933f9c78127bc8a13c02743fc8056b
 recovery_build_time: 2026-08-31T10:10:06Z
 ```
 
-The equivalent authenticated GitHub CLI command is:
+The historical equivalent authenticated GitHub CLI command was:
 
 ```powershell
 gh workflow run publish-rc-image.yml --repo jeter-1/hass-mcp-admin --ref main -f release_sha=153b4dd7e2e60806c7117bb83c6c83b8adf02ff8 -f expected_version=2.2.0-beta.53 -f recovery_run_id=33379623142 -f recovery_source_digest=sha256:2cd84c96aec6c1772e8933f9c78127bc8a13c02743fc8056b23d3f9275eb8b40 -f recovery_build_time=2026-08-31T10:10:06Z
 ```
 
-Dispatch is a distinct publication action and still requires Josh's explicit
-authorization after the workflow fix is merged. Successful publication does not
-authorize Home Assistant backup, update, restart, deployment or canary work.
+Those historical values are evidence, not standing publication authorization.
+Current recovery still requires Josh's explicit incident-specific authorization.
+Successful publication does not authorize Home Assistant backup, update,
+restart, deployment or canary work.
+
+### Revised heads and execution environments
 
 Only Josh may mark the draft ready. Converting the pull request back to draft,
 closing it, or pushing a new head withdraws the immediate merge path. The
@@ -581,11 +643,11 @@ policy.
 
 ## GitHub Authentication Readiness
 
-### Local Windows and connected-host Remote
+### Local development and connected-host Remote
 
-Local Windows work and connected-host Remote work use the trusted host's GitHub
-CLI and Git credentials. On that Windows host, run only these bounded readiness
-checks:
+Record the actual execution host and OS independently of the desktop or Android
+interface. A trusted Windows or Debian/Linux host uses its own GitHub CLI and
+Git credentials. On that execution host, run these bounded readiness checks:
 
 ```powershell
 gh auth status
@@ -596,7 +658,7 @@ gh repo view jeter-1/hass-mcp-admin
 Run them before leaving the keyboard for remote work, before authorizing a remote
 branch push or draft-PR creation, and whenever authentication may have expired.
 Missing or expired authentication is an environment-readiness failure: stop and
-authenticate interactively on the trusted Windows host, for example with
+authenticate interactively on the trusted execution host, for example with
 `gh auth login`. Do not work around the failure by putting a token in a prompt or
 script.
 
@@ -610,24 +672,26 @@ credential automation or a `.codex` configuration merely for authentication.
 ### Codex cloud
 
 Codex cloud uses its separately authorized GitHub connection. It does not inherit
-the Windows host's GitHub CLI login, so connected-host readiness and Codex-cloud
+the connected host's GitHub CLI login, so connected-host readiness and Codex-cloud
 authorization are distinct checks. Configure cloud repository access through the
 Codex GitHub connection; do not add credentials or authentication automation to
 this repository.
 
 ## Remote and Mobile Workflow
 
-- For connected-host work, leave the trusted Windows host online, at a clean
-  named worktree, with dependencies already available. Prefer repository-contained
-  cloud work when local Windows state is unnecessary.
+- For connected-host work, leave the trusted execution host online, at a clean
+  named worktree, with dependencies already available. Record its OS and use the
+  matching shell/interpreter; the desktop/Android interface does not imply
+  Windows execution. Prefer repository-contained cloud work when host-local
+  state is unnecessary.
 - Do not authorize remote work in a specialized subtree until the applicable
   nested instruction file has been read into the task context.
-- Before deployment preparation, run `codex-context.py` and require exact current
-  document resolution with `documents.active_acceptance_document` known. Before
-  promotion preparation, require the declared staged version and exact
-  `staged_release.documents` resolution with its `active_acceptance_document`
-  known. Missing exact acceptance authority is a stop condition. Historical
-  references cannot authorize current acceptance, and release notes are not
+- Before release/deployment preparation, run `codex-context.py` and select the
+  lifecycle state in **Release Preparation** below. A staged candidate requires
+  exact `staged_release.documents`; a materialized candidate or deployment uses
+  exact `documents` with its `active_acceptance_document` known. Consumed staging
+  is expected to be absent. Missing exact acceptance authority is a stop condition.
+  Historical references cannot authorize current acceptance, and release notes are not
   acceptance instructions.
 - Preauthorize only the named branch push and draft-PR creation. Agents do not
   mark pull requests ready. Josh's later Ready action may authorize bounded
@@ -688,15 +752,24 @@ These are distinct profiles; “Codex access” is not one universal permission.
 
 ### Release Preparation
 
-> Prepare release evidence for `<version>` without publishing. Verify authoritative
-> current and staged version declarations, require
-> `staged_release.documents.resolution_status` to be `exact`, and read only the
-> known `staged_release.documents.active_acceptance_document` as promotion
-> acceptance authority. Missing exact staged acceptance is a stop condition;
-> historical references cannot authorize current acceptance, and release notes
-> are not acceptance instructions. Verify image/tag/provenance preconditions and
-> rollback, report CI-only checks accurately, and stop for a separate human
-> publication/deployment decision.
+> Prepare release evidence for `<version>` without publishing. Run `codex-context.py`
+> and identify authoring, staged, or materialized state using the rules below.
+> Require the exact acceptance document for that state; historical references
+> cannot authorize current acceptance, and release notes are not acceptance
+> instructions. Verify image/tag/provenance preconditions and recovery, and
+> report CI-only checks accurately. Leave delivery draft for Josh's applicable
+> Ready decision; installation and live acceptance require separate authorization.
+
+| State | Required evidence and continuation |
+| --- | --- |
+| Authoring a future release | Create the authorized exact version declaration and matching acceptance/release-notes documents. Missing staged authority during authoring means preparation is incomplete; it does not authorize promotion, publication or deployment. |
+| Validating a staged candidate | Require the declared target version, `staged_release.documents.resolution_status` equal to `exact`, and known `staged_release.documents.active_acceptance_document`. Validate the preview, then materialize the authorized candidate in its original PR. |
+| Validating a materialized candidate | Require all three authoritative version declarations to agree with `<version>`, no `.release/next-version`, `documents.resolution_status` equal to `exact`, and known `documents.active_acceptance_document`. Missing staged resolution is expected after consumption; never recreate staging merely to satisfy a template. Continue final candidate validation and review. |
+
+Missing, mismatched, partial or unsupported acceptance authority for the selected
+state blocks that state's promotion/publication/deployment action. Existing
+context and metadata validators remain authoritative; this guide adds no new
+version transition or bypass.
 
 ### One-pull-request protected release
 
@@ -709,19 +782,18 @@ review and CI validation. Publication of that reviewed state does not trigger
 another model review.
 
 After that pull request is merged through the protected path, the publication
-workflow compares the exact new `main` commit with its prior protected commit,
-requires the bounded version transition and exact document authority, reruns
-complete validation, and publishes from the current `main` commit. It may create
+workflow compares the exact release merge commit with its reviewed prior
+protected commit, requires the bounded version transition and exact document
+authority, reruns complete validation, and publishes from that guarded release commit. It may create
 the immutable image, annotated tag, and GitHub Release, but it never writes a
 promotion commit or branch to `main`, opens a second pull request, deploys the
 add-on, or changes live Home Assistant.
 
-Publication remains bound to the reviewed triggering commit. If an ordinary
-pull request merges while that release is being validated or published, the
-release continues only when the triggering commit remains an ancestor of current
-protected `main`; a divergent or removed commit fails closed. The publication
-concurrency group serializes release runs, so a later release transition cannot
-overtake an earlier one.
+Publication remains bound to the reviewed release commit and the event-specific
+admission/revalidation described in **Independent review and Ready automation**.
+The concurrency group does not guarantee FIFO ordering or delivery of every
+pending run. Immutable claims supply duplicate suppression; a replaced, lost,
+refused or partially completed attempt requires the bounded recovery procedure.
 
 ### Engineering architecture retirement
 

@@ -6,6 +6,13 @@ two rejected automation-planning writer families. Original terminal status,
 policy and immutable hashes remain intact; no approval or execution authority
 is revived, and reads do not migrate or rewrite the records.
 
+The [instruction-guidance reconciliation](INSTRUCTION_GUIDANCE_RECONCILIATION.md)
+also corrects development/release lifecycle prose, marks historical architecture
+and rollout guidance, and clarifies instruction discovery, offline loopback
+fixtures and independent review. It changes no workflow execution or runtime
+approval policy. The desktop entrypoint verification remains a local operator
+check; repository prose does not establish that it was performed.
+
 The [correction contract](TERMINAL_HISTORY_PROJECTION_CORRECTION.md) defines the
 exact accepted shapes. Damaged hashes, unsupported lifecycles, task/dispatch
 evidence and persistence-unsafe proposals remain refused. Malformed historical

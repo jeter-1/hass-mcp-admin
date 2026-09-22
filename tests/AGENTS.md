@@ -20,8 +20,12 @@ instructions still apply; this file takes precedence if guidance conflicts.
   routing, attribution, admission, and no-fallback behavior must remain aligned.
 - Include stable-v1 compatibility checks when a shared development surface could
   affect it.
-- Use deterministic, offline fixtures and disposable repositories. Tests must not
-  require network access, Docker, GitHub credentials, Home Assistant, or
-  production endpoints/data.
+- Use deterministic, offline fixtures and disposable repositories. Offline means
+  no external or live dependency: disposable loopback HTTP/WebSocket peers with
+  synthetic data are permitted when the execution sandbox allows local sockets.
+  These fixtures must not require external network access, Docker, GitHub
+  credentials, live Home Assistant, or production endpoints/data. Separately
+  scoped disposable container/CI acceptance is distinct from offline fixtures.
+  This guidance does not grant sandbox permissions or authorize live access.
 - Never place real credentials in fixtures. Synthetic values must be unmistakable
   and must not be printed by context or evidence tooling.

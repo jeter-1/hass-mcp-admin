@@ -557,7 +557,8 @@ fi
         flattened = " ".join(guide.split())
         self.assertIn("one full independent review", flattened)
         self.assertIn("at most one delta rereview", flattened)
-        self.assertIn("must not serve as its own repeated independent reviewer", flattened)
+        self.assertIn("must not serve as its own independent reviewer", flattened)
+        self.assertIn("moving the implementer to another worktree is still self-review", flattened)
         self.assertIn("`@codex review` requests only the optional review", flattened)
         self.assertIn("`@merge` comment may retry", flattened)
         self.assertIn("load only from the protected base commit", flattened)
@@ -565,6 +566,7 @@ fi
         self.assertIn("Ready does not start another CI run", flattened)
         self.assertIn("one final time", flattened)
         self.assertIn("separate administrative actions", flattened)
+        self.assertIn("This is not a current rollout checklist", flattened)
         self.assertIn("attests that the bounded independent review", instructions)
         self.assertNotIn("native Codex review receipt gate", instructions)
 

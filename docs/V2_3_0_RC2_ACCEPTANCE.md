@@ -29,6 +29,14 @@ stable-v1 1.1.2 and installation configuration. The existing compatibility count
 map gains only the three documented profile keys; its authorization effect remains
 `none_projection_only`.
 
+The accompanying [guidance reconciliation](INSTRUCTION_GUIDANCE_RECONCILIATION.md)
+requires a bounded review of the instruction/documentation delta and its affected
+checks. Keep the original runtime correction and fixture identities separately
+verified. The final candidate needs fresh clean-head Evidence and exact-head CI;
+prior-head passes remain historical evidence. The guidance delta requires no
+additional live or household canary. Do not claim the desktop entrypoint or
+unavailable private audit artifacts were independently verified.
+
 The expected reviewed catalog is 78 tools (53 static, 25 delegated reads).
 Core 2026.9.3 / ha-mcp 8.5.0 remains the installed acceptance pairing with all
 19 Core profiles admitted under valid authority. Preserve Core .2's original

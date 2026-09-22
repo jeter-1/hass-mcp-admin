@@ -1743,11 +1743,11 @@ class InstructionFileTests(unittest.TestCase):
             "gh auth status",
             "git fetch --prune origin",
             "gh repo view jeter-1/hass-mcp-admin",
-            "authenticate interactively on the trusted Windows host",
+            "authenticate interactively on the trusted execution host",
             "Never print or export GitHub tokens",
             "read or dump Git credential-store contents",
             "read or copy SSH private keys",
-            "does not inherit the Windows host's GitHub CLI login",
+            "does not inherit the connected host's GitHub CLI login",
             "connected-host readiness and Codex-cloud authorization are distinct checks",
         ):
             self.assertIn(phrase, normalized)
@@ -1757,6 +1757,7 @@ class InstructionFileTests(unittest.TestCase):
         )
         self.assertIn("token in a prompt or script", normalized)
         self.assertIn("not add credentials or authentication automation", normalized)
+        self.assertIn("Record the actual execution host and OS", normalized)
 
     def test_release_guidance_requires_exact_acceptance_authority(self):
         text = (ROOT / "docs" / "CODEX_WORKFLOW.md").read_text(encoding="utf-8")
