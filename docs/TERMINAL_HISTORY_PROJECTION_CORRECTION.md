@@ -25,6 +25,9 @@ prohibited/high/safety-critical decision, immutable subject and decision hashes,
 proposal normalization/hash, reproducible rejected validation result, original
 single-event chronology, and absence of approval, challenge, task and execution
 evidence. Configuration remains invalid; no success is manufactured.
+Persistence-safety rejections are excluded because the shipped writer rejects
+secret-bearing fields and authenticated MCP URLs before writing any record.
+Configured sensitive values likewise cannot qualify for this compatibility path.
 
 These shape checks identify reviewed writer families, not the exact binary that
 originally wrote a production record. Record dates and plan IDs are not provenance
@@ -38,6 +41,8 @@ matcher, which also participates in shared prohibited-plan validation. Only read
 projection and compatibility accounting call the new matcher. The service checks
 task absence before admitting a read, and task-storage failure stays fatal.
 The current-policy validator and shared event allowlist are unchanged.
+Malformed helper evidence containers remain bounded projection failures, allowing
+other valid records to stay readable through startup, list and health reporting.
 
 Public get/list preserve original status, policy and hashes, with no actionable
 approval or apply result. Reads, external-review discovery, restart and recovery

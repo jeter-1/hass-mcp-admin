@@ -20,9 +20,11 @@ from ha_mcp_engineering.governance.historical_policy import (
     terminal_nonexecution_projection_match,
 )
 from ha_mcp_engineering.governance.models import ChangePlan
+from ha_mcp_engineering.governance.normalize import normalize_automation, stable_hash
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
 from ha_mcp_engineering.governance.storage import ChangePlanRepository
 from ha_mcp_engineering.governance.task_storage import ExecutionTaskStorageError
+from ha_mcp_engineering.governance.validation import validate_automation
 from tests import test_beta34_historical_policy_projection as historical_tests
 
 FIXTURES = ROOT / "tests/fixtures"
@@ -308,6 +310,59 @@ class TerminalHistoryTests(unittest.IsolatedAsyncioTestCase):
                 if any(isinstance(x, ast.Call) and isinstance(x.func, ast.Name) and x.func.id == "terminal_nonexecution_projection_match" for x in ast.walk(node)):
                     calls.add(node.name)
         self.assertEqual(calls, {"_require_projection_policy_snapshot", "_rebuild_projection_failure_index", "_update_projection_failure_index", "_build_health_summary"})
+
+    def test_malformed_helper_containers_remain_isolated_read_failures(self):
+        for field in ("validation_results", "dry_run_results", "baseline", "provider_capability_evidence"):
+            for malformed in ([], "synthetic-invalid", 42):
+                with self.subTest(field=field, malformed=malformed):
+                    data = value("expired_helper")
+                    container = data["operational"] if field in ("baseline", "provider_capability_evidence") else data
+                    container[field] = malformed
+                    path = self.saved["expired_helper"]
+                    path.write_text(json.dumps(data))
+                    service = ChangeGovernanceService(
+                        ChangePlanRepository(self.plan_root), self.gateway,
+                        now=lambda: datetime(2026, 9, 22, tzinfo=timezone.utc),
+                    )
+                    with self.assertRaises(GovernanceError) as caught:
+                        service.get_plan(data["plan_id"])
+                    self.assertEqual(caught.exception.code, ErrorCode.POLICY_SNAPSHOT_MISMATCH)
+                    listed = service.list_plans(limit=10)
+                    self.assertTrue(listed["partial"])
+                    self.assertEqual(listed["count"], 2)
+                    self.assertEqual(service.health_summary()["projection_failure_count"], 1)
+                    self.assertEqual(json.loads(path.read_bytes()), data)
+        self.assertEqual(self.gateway.calls, [])
+
+    def test_impossible_writer_sensitive_proposals_never_project(self):
+        secret = "synthetic-terminal-secret-no-real-credential"
+        proposals = (
+            {"variables": {"token": secret}},
+            {"variables": {"callback": "https://synthetic.invalid/mcp/private-path"}},
+            {"description": secret},
+        )
+        for name in NAMES[1:]:
+            for addition in proposals:
+                with self.subTest(name=name, addition=addition):
+                    data = value(name)
+                    data["proposed_config"].update(addition)
+                    data["normalized_proposed_config"] = normalize_automation(data["proposed_config"])
+                    data["proposed_config_hash"] = stable_hash(data["normalized_proposed_config"])
+                    _valid, errors, _warnings = validate_automation(
+                        ChangePlan.from_dict(data).target_id,
+                        data["proposed_config"],
+                    )
+                    data["validation_results"] = {"valid": False, "errors": errors}
+                    historical_tests.HistoricalPolicyProjectionTests._rebind_snapshot_hashes(data)
+                    plan = ChangePlan.from_dict(data)
+                    known = (secret,) if "description" in addition else ()
+                    self.assertIsNone(terminal_nonexecution_projection_match(plan, sensitive_values=known))
+                    with patch.object(self.service, "sensitive_values", known), patch.object(self.service.repository, "get", return_value=plan):
+                        with self.assertRaises(GovernanceError) as caught:
+                            self.service.get_plan(plan.plan_id)
+                        self.assertNotIn(secret, str(caught.exception))
+                        self.assertNotIn(secret, json.dumps(caught.exception.details))
+        self.unchanged()
 
 
 if __name__ == "__main__":

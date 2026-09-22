@@ -606,7 +606,9 @@ class ChangeGovernanceService:
                 continue
             match = (
                 historical_policy_projection_match(plan)
-                or terminal_nonexecution_projection_match(plan)
+                or terminal_nonexecution_projection_match(
+                    plan, sensitive_values=self.sensitive_values
+                )
             )
             if match is not None:
                 historical[plan.plan_id] = match
@@ -638,7 +640,9 @@ class ChangeGovernanceService:
             self._projection_failure_index.pop(plan.plan_id, None)
             match = (
                 historical_policy_projection_match(plan)
-                or terminal_nonexecution_projection_match(plan)
+                or terminal_nonexecution_projection_match(
+                    plan, sensitive_values=self.sensitive_values
+                )
             )
             if match is None:
                 self._historical_policy_projection_index.pop(
@@ -886,7 +890,9 @@ class ChangeGovernanceService:
         pre-intent execution continue through current-policy authority.
         """
 
-        if terminal_nonexecution_projection_match(plan) is not None:
+        if terminal_nonexecution_projection_match(
+            plan, sensitive_values=self.sensitive_values
+        ) is not None:
             try:
                 task = self.task_repository.get_for_plan(plan.plan_id)
             except ExecutionTaskStorageError as exc:
@@ -12468,7 +12474,9 @@ class ChangeGovernanceService:
             if (
                 match := (
                     historical_policy_projection_match(plan)
-                    or terminal_nonexecution_projection_match(plan)
+                    or terminal_nonexecution_projection_match(
+                        plan, sensitive_values=self.sensitive_values
+                    )
                 )
             )
             is not None

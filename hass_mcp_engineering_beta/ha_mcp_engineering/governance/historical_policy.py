@@ -12,6 +12,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 import hmac
+import json
 import re
 
 from .models import (
@@ -639,6 +640,8 @@ def _expired_incomplete_helper_matches(plan: ChangePlan) -> bool:
         or plan.approval.bundle_state != "invalidated"
         or not _invalidated_elevated_acknowledgement_matches(plan)
         or operational is None
+        or not isinstance(operational.baseline, dict)
+        or not isinstance(operational.provider_capability_evidence, dict)
         or operational.schema_version != 1
         or operational.family != plan.plan_family
         or operational.operation != plan.operation.value
@@ -750,6 +753,8 @@ def _validation_failed_automation_matches(plan: ChangePlan) -> bool:
     valid, errors, _ = validate_automation(plan.target_id, plan.proposed_config)
     return bool(
         not valid
+        # The shipped writer refuses these before persisting any record.
+        and not any("cannot be persisted" in error for error in errors)
         and plan.validation_results == {"valid": False, "errors": errors}
         and tuple((e.event, e.result_status, e.error_code) for e in plan.events) == (
             (
@@ -764,6 +769,8 @@ def _validation_failed_automation_matches(plan: ChangePlan) -> bool:
 
 def terminal_nonexecution_projection_match(
     plan: ChangePlan,
+    *,
+    sensitive_values: tuple[str, ...] = (),
 ) -> HistoricalPolicyProjectionMatch | None:
     """Recognize only the three diagnosed, never-executed terminal shapes.
 
@@ -779,6 +786,12 @@ def terminal_nonexecution_projection_match(
         or plan.risk.apply_allowed
         or plan.risk.level is not RiskLevel.HIGH
         or plan.rollback.available
+        or not isinstance(plan.validation_results, dict)
+        or not isinstance(plan.dry_run_results, dict)
+        or any(
+            secret and secret in json.dumps(plan.proposed_config, default=str)
+            for secret in sensitive_values
+        )
         or not persisted_policy_snapshot_integrity_matches(plan)
         or not _approval_decision_binding_matches(plan)
         or not _top_level_authority_is_absent(plan)
