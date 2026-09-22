@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.0 - Stable Engineering release
+
+- Promote the accepted RC2 implementation through a version/documentation-only
+  transition. Preserve runtime behavior, all 78 tool contracts, signed Core
+  authority, provider boundaries and historical projection compatibility.
+- Keep the existing technical Beta installation, options, data formats, image
+  path and dependencies. No migration or new device cycle is required.
+- Carry RC2 acceptance with its original attribution and limitations; require
+  fresh stable candidate validation, publication and installed artifact binding.
+  Frozen historical stable-v1 1.1.2 remains unchanged.
+
 ## 2.3.0-rc.2 - Terminal historical plan readability
 
 - Restore supported reads of reviewed expired-helper and rejected automation
