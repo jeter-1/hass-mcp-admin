@@ -46,14 +46,15 @@ env:
 jobs:
   validate:
     name: Complete validation gate
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-release
+    if: needs.detect-release.outputs.release_action == 'publish'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
   detect-release:
     name: Detect Engineering release transition
-    needs: validate
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -132,6 +133,7 @@ jobs:
           if [[ "$EVENT_NAME" == "workflow_run" ]]; then
             if [[ "$HANDOFF_ACTION" == "none" ]]; then
               echo "release_action=none" >> "$GITHUB_OUTPUT"
+              echo "Verified merge handoff requires no publication; full publication CI is not needed." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             [[ "$HANDOFF_ACTION" == "inspect" && "$HANDOFF_RELEASE_SHA" =~ ^[0-9a-f]{40}$ && "$HANDOFF_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]

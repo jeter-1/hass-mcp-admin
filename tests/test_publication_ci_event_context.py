@@ -77,7 +77,10 @@ class PublicationCIContextTests(unittest.TestCase):
             "workflows": ["Merge owner-authorized pull request"], "types": ["completed"]})
         self.assertEqual(self.publisher["jobs"]["validate"]["uses"], "./.github/workflows/ci.yml")
         self.assertEqual(self.publisher["jobs"]["validate"]["permissions"], {"contents": "read"})
-        self.assertEqual(self.publisher["jobs"]["detect-release"]["needs"], "validate")
+        self.assertNotIn("needs", self.publisher["jobs"]["detect-release"])
+        self.assertEqual(self.publisher["jobs"]["validate"]["needs"], "detect-release")
+        self.assertEqual(self.publisher["jobs"]["validate"]["if"],
+                         "needs.detect-release.outputs.release_action == 'publish'")
         self.assertEqual(len(self.rows), 6)
         for event in (*triggers, "pull_request"):
             for row in self.rows:

@@ -444,14 +444,37 @@ workflow retains a bounded JSON receipt in an immutable, run/attempt-named
 artifact. A read-only publisher job independently verifies the workflow ID/path,
 repository, source event, owner and rerun actor, completed merge job, current
 attempt, artifact digest, PR, Ready lifecycle, reviewed base/head, two-parent
-merge and recomputed tree. It compares the producer policy with protected base
-policy. The exact merge must remain on main's first-parent history; Engineering
-source and staged state must agree with current authority. The receipt is data,
-not executable code or a substitute for these checks.
+merge and recomputed tree. The exact merge must remain on main's first-parent
+history; Engineering source and staged state must agree with current authority.
+The receipt is data, not executable code or a substitute for these checks.
 
-An ordinary merge has no version transition and produces no publication writes.
-A release handoff must pass complete CI, exact release-document authority,
-materialized version/metadata checks and all existing publisher guards.
+The read-only detector runs before complete publication CI. After authenticating
+the handoff and rechecking source-run identity, it reads the bounded, unambiguous
+Engineering version at the reviewed base and merged commit and refuses staged
+release records. An unchanged version returns only `release_action=none`, with
+no publication binding. This also permits authenticated maintenance merges that
+change producer-policy bytes, such as an action-pin refresh: there is no release
+authority to transfer. Complete publication CI, recovery-source work and the
+write-capable publication job are skipped. A failed detector cannot start them.
+
+For an actual version transition, every producer-policy path must still match
+protected base policy exactly before a handoff binding is emitted. Combining a
+policy change with a release continues to refuse. A release handoff must then
+pass complete CI, exact release-document authority, materialized version/metadata
+checks and all existing publisher guards. Push and owner-requested manual
+recovery use the same early detector order; eligible digest recovery still
+requires complete CI and the original verified source binding, without another
+attempt claim or build. Publication cannot run after failed, cancelled or
+skipped validation or recovery-source verification.
+
+Offline regression coverage composes a disposable Git merge, synthetic GitHub
+API evidence, the real handoff producer/verifier and the workflow's detector.
+It proves useful release eligibility and the unchanged-version policy-edit
+case, alongside refusal and job-dependency checks. The dependency model is not
+a GitHub scheduler run. After an authorized maintenance merge, verify that its
+actual publisher run detects no publication and skips full publication CI and
+publication writes. Do not create a release or dispatch recovery solely to test
+this optimization; actual release acceptance remains separately required.
 
 Admission and revalidation depend on the event:
 

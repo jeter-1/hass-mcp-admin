@@ -82,6 +82,9 @@ class HandoffTests(unittest.TestCase):
             ("rev-list", "--first-parent", MERGE): f"{MERGE}\n{BASE}",
             ("diff", "--name-only", MERGE, MERGE, "--", "hass_mcp_engineering_beta", ".release"): "",
             ("ls-tree", "--name-only", MERGE, "--", ".release/next-version"): "",
+            ("ls-tree", "--name-only", BASE, "--", ".release/next-version"): "",
+            ("show", f"{BASE}:hass_mcp_engineering_beta/config.yaml"): 'version: "2.3.0"',
+            ("show", f"{MERGE}:hass_mcp_engineering_beta/config.yaml"): 'version: "2.3.1"',
         }
         for path in handoff.POLICY_PATHS:
             for commit in (BASE, MERGE):
@@ -133,6 +136,83 @@ class HandoffTests(unittest.TestCase):
         self.receipt["source_event"] = "issue_comment"
         self.bind_artifact()
         self.assertEqual(self.verify()["release_sha"], MERGE)
+
+    def test_authenticated_maintenance_emits_no_authority_even_after_policy_edits(self):
+        self.git_data[("show", f"{MERGE}:hass_mcp_engineering_beta/config.yaml")] = 'version: "2.3.0"'
+        for path in handoff.POLICY_PATHS:
+            with self.subTest(path=path):
+                self.git_data[("rev-parse", f"{MERGE}:{path}")] = "changed policy"
+                self.assertEqual(self.verify(), {"release_action": "none"})
+
+    def test_actual_release_refuses_each_changed_policy(self):
+        for path in handoff.POLICY_PATHS:
+            with self.subTest(path=path):
+                key = ("rev-parse", f"{MERGE}:{path}")
+                old = self.git_data[key]
+                self.git_data[key] = "changed policy"
+                with self.assertRaisesRegex(ValueError, "producer_policy_changed"):
+                    self.verify()
+                self.git_data[key] = old
+
+    def test_maintenance_still_requires_authentic_current_handoff(self):
+        self.git_data[("show", f"{MERGE}:hass_mcp_engineering_beta/config.yaml")] = 'version: "2.3.0"'
+        # Repeat the authority and race probes with the no-publication candidate.
+        # A same-version comparison cannot excuse forged or stale evidence.
+        for probe in (
+            self.test_forged_failed_or_replayed_run_is_refused,
+            self.test_exact_job_and_complete_collections_required,
+            self.test_receipt_identity_and_schema_are_not_authority,
+            self.test_untrusted_archive_shapes_and_digest_are_refused,
+            self.test_ready_replaced_or_wrong_owner_refuses,
+            self.test_run_rerun_during_verification_is_refused,
+        ):
+            with self.subTest(probe=probe.__name__):
+                self.setUp()
+                self.git_data[("show", f"{MERGE}:hass_mcp_engineering_beta/config.yaml")] = 'version: "2.3.0"'
+                probe()
+
+    def test_base_staging_refuses_even_when_versions_match(self):
+        self.git_data[("show", f"{MERGE}:hass_mcp_engineering_beta/config.yaml")] = 'version: "2.3.0"'
+        self.git_data[("ls-tree", "--name-only", BASE, "--", ".release/next-version")] = ".release/next-version"
+        with self.assertRaisesRegex(ValueError, "unmaterialized_release"):
+            self.verify()
+
+    def test_maintenance_still_requires_exact_merge_and_retained_current_state(self):
+        self.git_data[("show", f"{MERGE}:hass_mcp_engineering_beta/config.yaml")] = 'version: "2.3.0"'
+        for args, bad in (
+            (("show", "-s", "--format=%P", MERGE), HEAD),
+            (("merge-tree", "--write-tree", BASE, HEAD), "e" * 40),
+            (("rev-parse", "refs/remotes/origin/main"), HEAD),
+            (("rev-list", "--first-parent", MERGE), BASE),
+            (("diff", "--name-only", MERGE, MERGE, "--", "hass_mcp_engineering_beta", ".release"), "changed.py"),
+            (("ls-tree", "--name-only", MERGE, "--", ".release/next-version"), ".release/next-version"),
+        ):
+            with self.subTest(args=args):
+                original = self.git_data[args]
+                self.git_data[args] = bad
+                with self.assertRaises(ValueError):
+                    self.verify()
+                self.git_data[args] = original
+
+    def test_version_comparison_requires_one_bounded_unambiguous_scalar(self):
+        for ref in (BASE, MERGE):
+            key = ("show", f"{ref}:hass_mcp_engineering_beta/config.yaml")
+            original = self.git_data[key]
+            for text in ("name: missing", 'version: ""', "version: [2.3.0]",
+                         'version: "2.3.0"\nversion: "2.3.1"',
+                         'version: "2.3.0"\n"version": "2.3.1"',
+                         'version: "2.3.0" # unsupported spelling',
+                         "version: " + "1" * 65, "x" * 65_537):
+                with self.subTest(ref=ref, text=text[:80]):
+                    self.git_data[key] = text
+                    with self.assertRaisesRegex(ValueError, "release_version_unavailable"):
+                        self.verify()
+            self.git_data[key] = original
+
+    def test_version_quote_style_does_not_create_a_release(self):
+        for value in ('"2.3.0"', "'2.3.0'", "2.3.0"):
+            self.git_data[("show", f"{MERGE}:hass_mcp_engineering_beta/config.yaml")] = "version: " + value
+            self.assertEqual(self.verify(), {"release_action": "none"})
 
     def test_lifecycle_only_success_is_no_op_without_artifact_access(self):
         self.job["conclusion"] = "skipped"
