@@ -75,6 +75,48 @@ relationship in review evidence. Moving branches, documentation examples, and
 skills are useful discovery or guidance, but they do not replace exact source or
 executable validation.
 
+## GitHub Actions runtime
+
+The workflow actions below explicitly use Node 24. All references remain full
+commit pins; release names in comments are review aids, not floating authority.
+Node 24 actions require Actions Runner 2.327.1 or later. The current workflows
+use GitHub-hosted runners; verify the actual runner version in candidate CI.
+
+| Action | Reviewed release | Immutable commit |
+| --- | --- | --- |
+| `actions/checkout` | v5.1.0 | [`fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09`](https://github.com/actions/checkout/blob/fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09/action.yml) |
+| `actions/setup-python` | v6.3.0 | [`ece7cb06caefa5fff74198d8649806c4678c61a1`](https://github.com/actions/setup-python/blob/ece7cb06caefa5fff74198d8649806c4678c61a1/action.yml) |
+| `actions/upload-artifact` | v6.0.0 | [`b7c566a772e6b6bfb58ed0dc250532a479d7789f`](https://github.com/actions/upload-artifact/blob/b7c566a772e6b6bfb58ed0dc250532a479d7789f/action.yml) |
+| `docker/setup-qemu-action` | v4.4.0 | [`99012661954931238ded8c8b007157a8430204e1`](https://github.com/docker/setup-qemu-action/blob/99012661954931238ded8c8b007157a8430204e1/action.yml) |
+| `docker/setup-buildx-action` | v4.4.1 | [`f87e5991a6d7451dcb8d9637bfbc97413f497069`](https://github.com/docker/setup-buildx-action/blob/f87e5991a6d7451dcb8d9637bfbc97413f497069/action.yml) |
+| `docker/login-action` | v4.6.0 | [`dbcb813823bdd20940b903addbd779551569679f`](https://github.com/docker/login-action/blob/dbcb813823bdd20940b903addbd779551569679f/action.yml) |
+| `docker/build-push-action` | v7.4.0 | [`c3c9e263c25d99ce0380d002d59b67737d91b0dc`](https://github.com/docker/build-push-action/blob/c3c9e263c25d99ce0380d002d59b67737d91b0dc/action.yml) |
+
+These are scoped compatibility selections, not a blanket upgrade to every newest
+major. Checkout v5.1 retains the existing credential-storage model and includes
+the upstream fork-checkout guard; no workflow opts out of that guard. Existing
+trusted base/release refs and `persist-credentials` choices remain unchanged.
+Setup-python v6.3 preserves the configured Python/cache inputs; optional package
+installation inputs are unused. Upload-artifact v6 explicitly selects Node 24
+while retaining the ZIP contract consumed by handoff verification. Artifact
+names, paths, retention, hidden-file policy and missing-file failures are unchanged.
+
+The Docker actions retain the configured GHCR login, local build context,
+push-by-digest output, SBOM and maximum provenance. Removed Buildx inputs
+`install`, `config`, `config-inline` and legacy outputs `endpoint`, `status`,
+`flags` are unused. Removed build-push summary/export environment aliases are
+also unused. QEMU's optional emulator reset remains disabled. The selected
+Docker releases include scoped-credential path and metadata-log fixes. Their
+existing builder/image defaults are not new immutable build-input guarantees.
+
+For future refreshes, inspect exact upstream metadata, release notes and relevant
+source changes before changing pins. Run the existing checkout/permission,
+artifact/handoff, publication/refusal and recovery tests, then candidate CI and
+independent workflow/security review. Ordinary CI exercises checkout, Python,
+artifact upload, QEMU and Buildx; it does not prove a new production registry
+login or publication. Do not publish a release merely to test a maintenance PR.
+Keep publication eligibility/scheduling changes separate from action updates.
+
 ## Keyboard Workflow
 
 1. Open the repository or a clean Codex-managed worktree. Use one worktree and
