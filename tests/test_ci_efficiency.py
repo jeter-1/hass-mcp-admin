@@ -134,7 +134,7 @@ class CIEfficiencyTests(unittest.TestCase):
         for name in ("validate_prerequisites", "validate_source", "validate_packaging"):
             checkout = self.jobs[name]["steps"][0]
             self.assertEqual(checkout["uses"],
-                             "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683")
+                             "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09")
             self.assertNotIn("ref", checkout.get("with", {}))
 
     def test_preflight_preserves_checks_and_fixture_cleanup(self):

@@ -868,15 +868,15 @@ if actual_raw == selected_release.catalog_fingerprint:
             workflow,
         )
         self.assertIn(
-            "actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683",
+            "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
             workflow,
         )
         self.assertIn(
-            "actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d",
+            "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
             workflow,
         )
         self.assertIn(
-            "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+            "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f",
             workflow,
         )
         self.assertIn(

@@ -88,10 +88,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12.14"
           cache: pip
@@ -187,10 +187,10 @@ jobs:
     outputs:
       source_validation: ${{ steps.source_receipt.outputs.source_validation }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12.14"
           cache: pip
@@ -214,15 +214,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0
       - name: Set up QEMU for declared RC architectures
-        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
         with:
           platforms: arm64
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build retired stable-v1 image packaging
         run: docker build -t hass-mcp-admin:test ./hass_mcp_admin
       - name: Build beta image
@@ -273,7 +273,7 @@ jobs:
           printf '%s\n' "$build_sha" > "$RUNNER_TEMP/build-input-evidence/source-sha.txt"
       - name: Retain per-architecture build input evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: engineering-build-inputs
           path: ${{ runner.temp }}/build-input-evidence/
@@ -352,8 +352,8 @@ jobs:
       HA_CONTRACT_CONTAINER: beta25-real-ha-${{ matrix.lane }}
       HA_CONTRACT_NETWORK: beta-rc2-contract-${{ matrix.lane }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12.14"
           cache: pip
@@ -473,7 +473,7 @@ jobs:
         run: python scripts/real_ha_contract_tests.py
       - name: Upload bounded disposable Home Assistant packaging evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ha-mcp-${{ matrix.ha_mcp_version }}-disposable-${{ matrix.lane }}
           path: |
@@ -498,8 +498,8 @@ jobs:
     outputs:
       matrix: ${{ steps.reviewed-registry.outputs.matrix }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12.14"
           cache: pip
@@ -532,8 +532,8 @@ jobs:
       EXPECTED_ARCHITECTURE_IMAGE_DIGESTS: ${{ toJSON(matrix.architecture_image_digests) }}
       ENGINEERING_ACCESS_SECRET: synthetic-engineering-access-secret
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12.14"
           cache: pip
@@ -790,7 +790,7 @@ jobs:
           fi
       - name: Upload bounded exact-image result
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: exact-image-read-gateway-${{ matrix.upstream_version }}
           path: |
@@ -800,7 +800,7 @@ jobs:
           retention-days: 14
       - name: Upload exact 8.2.0 dashboard resolver evidence
         if: always() && matrix.upstream_version == '8.2.0'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: exact-8.2.0-dashboard-setter
           path: ${{ runner.temp }}/exact-8.2.0-dashboard-setter-result.json
@@ -808,7 +808,7 @@ jobs:
           retention-days: 14
       - name: Upload exact reviewed dashboard authority evidence
         if: always() && (matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: exact-${{ matrix.upstream_version }}-dashboard-authority
           path: |
@@ -818,7 +818,7 @@ jobs:
           retention-days: 14
       - name: Upload bounded 8.1+ lifecycle evidence
         if: always() && (matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: exact-image-readmission-${{ matrix.upstream_version }}
           path: |
@@ -947,8 +947,8 @@ jobs:
       ADDON_ARM64_INDEX_DIGEST: ${{ matrix.addon_arm64_index_digest }}
       ADDON_ARM64_MANIFEST_DIGEST: ${{ matrix.addon_arm64_manifest_digest }}
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.6.0
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12.14"
           cache: pip
@@ -1164,7 +1164,7 @@ jobs:
           test "$exit_code" = 0
       - name: Upload bounded exact add-on runtime evidence
         if: always() && matrix.candidate_power != true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: exact-ha-mcp-${{ matrix.upstream_version }}-addon-runtime
           path: |
@@ -1184,7 +1184,7 @@ jobs:
           fi
           sudo rm -rf "$RUNNER_TEMP/exact-addon-data"
       - if: matrix.candidate_power == true
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           repository: homeassistant-ai/ha-mcp
           ref: ${{ matrix.candidate_source }}
@@ -1232,7 +1232,7 @@ jobs:
           find "$RUNNER_TEMP" -mindepth 1 -maxdepth 1 -type d -name "$prefix*" -exec sudo rm -rf -- {} +
       - name: Retain bounded assessment evidence
         if: always() && matrix.candidate_power == true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ha-mcp-${{ matrix.candidate_resource_code }}-candidate-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/h${{ matrix.candidate_resource_code }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.architecture }}-evidence/*.json

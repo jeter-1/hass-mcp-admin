@@ -60,7 +60,7 @@ class ExactImageWorkflowTests(unittest.TestCase):
 
     def test_workflow_always_sanitizes_uploads_and_cleans_up(self):
         self.assertGreaterEqual(self.source.count("if: always()"), 3)
-        self.assertIn("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02", self.source)
+        self.assertIn("actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f", self.source)
         self.assertIn("retention-days: 7", self.source)
         self.assertIn("docker rm -f", self.source)
         self.assertIn("docker network rm", self.source)
