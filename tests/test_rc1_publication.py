@@ -199,7 +199,10 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             self.jobs["validate"]["uses"],
             "./.github/workflows/ci.yml",
         )
-        self.assertEqual(self.jobs["detect-release"]["needs"], "validate")
+        self.assertNotIn("needs", self.jobs["detect-release"])
+        self.assertEqual(self.jobs["validate"]["needs"], "detect-release")
+        self.assertEqual(self.jobs["validate"]["if"],
+                         "needs.detect-release.outputs.release_action == 'publish'")
         self.assertEqual(
             set(self.promote["needs"]),
             {"validate", "detect-release", "recovery-source"},

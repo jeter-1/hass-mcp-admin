@@ -166,6 +166,45 @@ def check_receipt(value, run_id, attempt):
     require(value["source_event"] in {"pull_request_target", "issue_comment"}, "receipt_event")
 
 
+def config_version(ref, run_git):
+    """Bind the bounded version spelling to one semantic root YAML field.
+
+    Compose nodes without constructing objects or expanding alias graphs.
+    This is eligibility, not full configuration or release validation. Import
+    the locked parser only here: production of receipts/claims remains stdlib.
+    """
+    text = run_git("show", f"{sha(ref)}:hass_mcp_engineering_beta/config.yaml")
+    require(len(text.encode("utf-8")) <= 65_536, "release_version_unavailable")
+    try:
+        import yaml
+    except ImportError as exc:
+        raise Refusal("release_version_parser_unavailable") from exc
+    try:
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+    except (yaml.YAMLError, RecursionError) as exc:
+        raise Refusal("release_version_unavailable") from exc
+    string_tag = "tag:yaml.org,2002:str"
+    require(isinstance(root, yaml.MappingNode) and root.tag == "tag:yaml.org,2002:map",
+            "release_version_unavailable")
+    # Merge and complex keys cannot supply implicit version authority. Inspect
+    # nodes before any constructor can discard duplicate or aliased root keys.
+    require(all(isinstance(key, yaml.ScalarNode) and key.tag == string_tag
+                for key, _ in root.value), "release_version_unavailable")
+    versions = [value for key, value in root.value if key.value == "version"]
+    require(len(versions) == 1 and isinstance(versions[0], yaml.ScalarNode)
+            and versions[0].tag == string_tag, "release_version_unavailable")
+    candidates = [line for line in text.splitlines()
+                  if re.match(r"^(?:version|[\"']version[\"'])[ \t]*:", line)]
+    require(len(candidates) == 1, "release_version_unavailable")
+    value = r"[0-9A-Za-z][0-9A-Za-z.+-]{0,63}"
+    match = re.fullmatch(rf"version:[ \t]*(?:\"({value})\"|'({value})'|({value}))[ \t]*",
+                         candidates[0])
+    require(match is not None, "release_version_unavailable")
+    version = next(item for item in match.groups() if item is not None)
+    require(version == versions[0].value, "release_version_unavailable")
+    return version
+
+
 def verify(run_id, attempt, authority, api=read_api, run_git=git):
     positive_id(run_id)
     positive_id(attempt)
@@ -207,10 +246,6 @@ def verify(run_id, attempt, authority, api=read_api, run_git=git):
     require(value["source_event"] == run["event"], "source_event_mismatch")
     require(run.get("head_sha") == (head if run["event"] == "pull_request_target" else base),
             "source_commit_mismatch")
-    # The completed source ran reviewed base policy, not policy supplied by the PR.
-    for path in POLICY_PATHS:
-        require(run_git("rev-parse", f"{base}:{path}") == run_git("rev-parse", f"{authority}:{path}"),
-                "producer_policy_changed")
     merged_pr(value["pr_number"], base, head, merge, api, run_git)
     ready_before_merge(timeline(value["pr_number"], api), merge, value["ready_event_id"])
     guard(merge, authority, run_git)
@@ -218,6 +253,18 @@ def verify(run_id, attempt, authority, api=read_api, run_git=git):
     require(all(current.get(key) == run.get(key) for key in (
         "id", "workflow_id", "path", "head_sha", "run_attempt", "event", "status", "conclusion",
         "actor", "triggering_actor", "repository", "head_repository")), "source_run_changed")
+    require(not run_git("ls-tree", "--name-only", base, "--", ".release/next-version"),
+            "unmaterialized_release")
+    previous_version, current_version = config_version(base, run_git), config_version(merge, run_git)
+    if previous_version == current_version:
+        # Authenticated maintenance, including policy edits, has no publication
+        # authority to transfer. Never emit a binding on this no-op path.
+        return {"release_action": "none"}
+    # A real release still requires the exact reviewed producer policy. This is
+    # never waived because the new policy appears equivalent or was owner-merged.
+    for path in POLICY_PATHS:
+        require(run_git("rev-parse", f"{base}:{path}") == run_git("rev-parse", f"{authority}:{path}"),
+                "producer_policy_changed")
     binding = check_binding({
         "release_sha": merge, "run_id": run_id, "run_attempt": attempt,
         "workflow_id": workflow_id, "event": run["event"], "head_sha": run["head_sha"],

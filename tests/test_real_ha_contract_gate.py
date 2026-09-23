@@ -1575,7 +1575,10 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             jobs["validate"]["uses"],
             "./.github/workflows/ci.yml",
         )
-        self.assertEqual(jobs["detect-release"]["needs"], "validate")
+        self.assertNotIn("needs", jobs["detect-release"])
+        self.assertEqual(jobs["validate"]["needs"], "detect-release")
+        self.assertEqual(jobs["validate"]["if"],
+                         "needs.detect-release.outputs.release_action == 'publish'")
         self.assertIn("validate", jobs["promote"]["needs"])
 
 

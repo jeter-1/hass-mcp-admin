@@ -46,14 +46,15 @@ env:
 jobs:
   validate:
     name: Complete validation gate
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    needs: detect-release
+    if: needs.detect-release.outputs.release_action == 'publish'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
 
   detect-release:
     name: Detect Engineering release transition
-    needs: validate
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -77,6 +78,17 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - if: github.event_name == 'workflow_run'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
+      - name: Install locked eligibility parser dependencies
+        if: github.event_name == 'workflow_run'
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all:
+          --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
       - name: Independently verify completed merge handoff
         id: handoff
         if: github.event_name == 'workflow_run'
@@ -132,6 +144,7 @@ jobs:
           if [[ "$EVENT_NAME" == "workflow_run" ]]; then
             if [[ "$HANDOFF_ACTION" == "none" ]]; then
               echo "release_action=none" >> "$GITHUB_OUTPUT"
+              echo "Verified merge handoff requires no publication; full publication CI is not needed." >> "$GITHUB_STEP_SUMMARY"
               exit 0
             fi
             [[ "$HANDOFF_ACTION" == "inspect" && "$HANDOFF_RELEASE_SHA" =~ ^[0-9a-f]{40}$ && "$HANDOFF_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
