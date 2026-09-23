@@ -457,6 +457,17 @@ change producer-policy bytes, such as an action-pin refresh: there is no release
 authority to transfer. Complete publication CI, recovery-source work and the
 write-capable publication job are skipped. A failed detector cannot start them.
 
+For `workflow_run`, the detector uses the existing pinned Python version and
+restores the existing hash-locked runtime requirements to obtain PyYAML. No
+dependency version or lock is added. It composes YAML nodes without constructing
+objects, requires one semantic root `version` field and checks its value against
+the bounded scalar spelling. Alternate duplicate keys, root merges/complex keys,
+multiple documents and version-looking text inside multiline content cannot
+silently become no publication. Missing parser or malformed/ambiguous input
+refuses detection. The producer and later authority guards remain standard-library
+only; push and manual detection do not need this parser setup. Full configuration
+validation remains a separate release gate.
+
 For an actual version transition, every producer-policy path must still match
 protected base policy exactly before a handoff binding is emitted. Combining a
 policy change with a release continues to refuse. A release handoff must then

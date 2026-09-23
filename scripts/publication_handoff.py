@@ -167,13 +167,32 @@ def check_receipt(value, run_id, attempt):
 
 
 def config_version(ref, run_git):
-    """Read only the repository's bounded, scalar top-level version spelling.
+    """Bind the bounded version spelling to one semantic root YAML field.
 
-    This is an eligibility check, not YAML or release-transition validation.
-    Unsupported spellings refuse; full validation remains required to publish.
+    Compose nodes without constructing objects or expanding alias graphs.
+    This is eligibility, not full configuration or release validation. Import
+    the locked parser only here: production of receipts/claims remains stdlib.
     """
     text = run_git("show", f"{sha(ref)}:hass_mcp_engineering_beta/config.yaml")
     require(len(text.encode("utf-8")) <= 65_536, "release_version_unavailable")
+    try:
+        import yaml
+    except ImportError as exc:
+        raise Refusal("release_version_parser_unavailable") from exc
+    try:
+        root = yaml.compose(text, Loader=yaml.SafeLoader)
+    except (yaml.YAMLError, RecursionError) as exc:
+        raise Refusal("release_version_unavailable") from exc
+    string_tag = "tag:yaml.org,2002:str"
+    require(isinstance(root, yaml.MappingNode) and root.tag == "tag:yaml.org,2002:map",
+            "release_version_unavailable")
+    # Merge and complex keys cannot supply implicit version authority. Inspect
+    # nodes before any constructor can discard duplicate or aliased root keys.
+    require(all(isinstance(key, yaml.ScalarNode) and key.tag == string_tag
+                for key, _ in root.value), "release_version_unavailable")
+    versions = [value for key, value in root.value if key.value == "version"]
+    require(len(versions) == 1 and isinstance(versions[0], yaml.ScalarNode)
+            and versions[0].tag == string_tag, "release_version_unavailable")
     candidates = [line for line in text.splitlines()
                   if re.match(r"^(?:version|[\"']version[\"'])[ \t]*:", line)]
     require(len(candidates) == 1, "release_version_unavailable")
@@ -181,7 +200,9 @@ def config_version(ref, run_git):
     match = re.fullmatch(rf"version:[ \t]*(?:\"({value})\"|'({value})'|({value}))[ \t]*",
                          candidates[0])
     require(match is not None, "release_version_unavailable")
-    return next(item for item in match.groups() if item is not None)
+    version = next(item for item in match.groups() if item is not None)
+    require(version == versions[0].value, "release_version_unavailable")
+    return version
 
 
 def verify(run_id, attempt, authority, api=read_api, run_git=git):

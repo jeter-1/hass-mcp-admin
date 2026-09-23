@@ -121,7 +121,9 @@ class HandoffTests(unittest.TestCase):
                "AUTHORIZED_HEAD_SHA": HEAD, "PR_NUMBER": "5", "GITHUB_RUN_ID": "7",
                "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "pull_request_target",
                "GITHUB_WORKFLOW_SHA": BASE}
-        result = handoff.produce(env, {"event_id": 10}, self.api, self.git)
+        with patch.dict(sys.modules, {"yaml": None}):
+            result = handoff.produce(env, {"event_id": 10}, self.api, self.git)
+            handoff.guard(MERGE, MERGE, self.git)
         self.assertEqual(result, self.receipt)
         with self.assertRaises(ValueError):
             handoff.produce({**env, "GITHUB_WORKFLOW_SHA": HEAD}, {"event_id": 10}, self.api, self.git)
@@ -213,6 +215,70 @@ class HandoffTests(unittest.TestCase):
         for value in ('"2.3.0"', "'2.3.0'", "2.3.0"):
             self.git_data[("show", f"{MERGE}:hass_mcp_engineering_beta/config.yaml")] = "version: " + value
             self.assertEqual(self.verify(), {"release_action": "none"})
+
+    def test_semantic_duplicate_version_keys_refuse_at_both_refs(self):
+        cases = (
+            'version: "2.3.0"\n? version\n: "2.3.1"',
+            'version: "2.3.0"\n"ver\\u0073ion": "2.3.1"',
+            'version: "2.3.0"\n!!str version: "2.3.1"',
+            'version: "2.3.0"\n&key version: "2.3.0"\n*key : "2.3.1"',
+        )
+        for text in cases:
+            self.assertEqual(yaml.safe_load(text)["version"], "2.3.1")
+            for ref in (BASE, MERGE):
+                with self.subTest(text=text, ref=ref):
+                    self.setUp()
+                    self.git_data[("show", f"{ref}:hass_mcp_engineering_beta/config.yaml")] = text
+                    with self.assertRaisesRegex(ValueError, "release_version_unavailable"):
+                        self.verify()
+
+    def test_multiline_yaml_cannot_masquerade_as_a_root_version(self):
+        cases = (
+            'description: "first\nversion: 2.3.0\n  last"',
+            'options:\n  name: "first\nversion: 2.3.0\nname: end"',
+            'options:\n  name: [\nversion: 2.3.0\n]',
+        )
+        for text in cases:
+            self.assertNotIn("version", yaml.safe_load(text))
+            for ref in (BASE, MERGE):
+                with self.subTest(text=text, ref=ref):
+                    self.setUp()
+                    self.git_data[("show", f"{ref}:hass_mcp_engineering_beta/config.yaml")] = text
+                    with self.assertRaisesRegex(ValueError, "release_version_unavailable"):
+                        self.verify()
+
+    def test_unsupported_documents_keys_and_version_continuation_refuse(self):
+        cases = (
+            'version: "2.3.0"\n---\nname: other-document',
+            'version: "2.3.0"\n<<: {version: "2.3.1"}',
+            'version: "2.3.0"\n? [complex, key]\n: other',
+            'version: 2.3.0\n  continued',
+            'version: "2.3.0"\noptions: [',
+        )
+        for ref in (BASE, MERGE):
+            for text in cases:
+                with self.subTest(text=text, ref=ref):
+                    self.setUp()
+                    self.git_data[("show", f"{ref}:hass_mcp_engineering_beta/config.yaml")] = text
+                    with self.assertRaisesRegex(ValueError, "release_version_unavailable"):
+                        self.verify()
+
+    def test_complete_repository_config_is_read_without_constructing_objects(self):
+        text = (ROOT / "hass_mcp_engineering_beta/config.yaml").read_text()
+        expected = yaml.safe_load(text)["version"]
+        for ref in (BASE, MERGE):
+            self.git_data[("show", f"{ref}:hass_mcp_engineering_beta/config.yaml")] = text
+        with patch.object(yaml.SafeLoader, "construct_object", side_effect=AssertionError("No constructors")):
+            self.assertEqual(handoff.config_version(BASE, self.git), expected)
+            self.assertEqual(self.verify(), {"release_action": "none"})
+
+    def test_missing_parser_or_parser_failure_refuses_without_no_op(self):
+        with patch.dict(sys.modules, {"yaml": None}):
+            with self.assertRaisesRegex(ValueError, "release_version_parser_unavailable"):
+                self.verify()
+        with patch.object(yaml, "compose", side_effect=RecursionError):
+            with self.assertRaisesRegex(ValueError, "release_version_unavailable"):
+                self.verify()
 
     def test_lifecycle_only_success_is_no_op_without_artifact_access(self):
         self.job["conclusion"] = "skipped"

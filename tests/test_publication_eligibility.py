@@ -187,6 +187,26 @@ class PublicationEligibilityTests(unittest.TestCase):
             for job in ("validate", "recovery-source"):
                 self.assertFalse(job_runs(self.jobs[job], {"detect-release": status}, context))
 
+    def test_handoff_detector_restores_existing_hash_locked_parser(self):
+        steps = self.jobs["detect-release"]["steps"]
+        setup = next(step for step in steps if step.get("uses", "").startswith("actions/setup-python@"))
+        install = next(step for step in steps if step.get("name") == "Install locked eligibility parser dependencies")
+        verify = next(step for step in steps if step.get("id") == "handoff")
+        ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        existing_setup = next(step for step in ci["jobs"]["validate_prerequisites"]["steps"]
+                              if step.get("uses", "").startswith("actions/setup-python@"))
+        self.assertEqual(setup["uses"], existing_setup["uses"])
+        self.assertEqual(setup["with"]["python-version"], existing_setup["with"]["python-version"])
+        for step in (setup, install):
+            self.assertEqual(step["if"], "github.event_name == 'workflow_run'")
+        self.assertLess(steps.index(setup), steps.index(install))
+        self.assertLess(steps.index(install), steps.index(verify))
+        self.assertEqual(install["run"],
+                         "python -m pip --isolated install --require-hashes --only-binary=:all: "
+                         "--index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock")
+        self.assertRegex((ROOT / "hass_mcp_engineering_beta/requirements.lock").read_text(),
+                         r"(?mi)^pyyaml==[0-9.]+ \\\n    --hash=sha256:[0-9a-f]{64}")
+
     def test_event_gate_keeps_push_and_manual_paths_and_refuses_failed_producer(self):
         for event in ("push", "workflow_dispatch", "workflow_run"):
             for conclusion in ("success", "failure", "cancelled", "skipped"):
