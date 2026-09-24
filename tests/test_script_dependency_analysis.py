@@ -596,12 +596,26 @@ class DisposableScriptFixtureTests(unittest.IsolatedAsyncioTestCase):
             ([entry], None, []),
             ([entry, entry], "script.package", []),
             ([entry], "script.package", [{"entity_id": "script.package"}]),
+            ([entry], "script.package", [{"entity_id": "script.package", "state": "unavailable", "attributes": {}}]),
+            ([entry], "script.package", [{"entity_id": "script.package", "state": "off", "attributes": {"restored": True}}]),
         ):
             rest.request = AsyncMock(return_value=states)
             websocket.command = AsyncMock()
             with self.assertRaises(AssertionError):
                 await _remove_disposable_script_package_entry(rest, websocket, rows, "package", entity)
             websocket.command.assert_not_awaited()
+    async def test_package_cleanup_accepts_core_restored_placeholder_then_verifies_absence(self):
+        from scripts.real_ha_contract_tests import _remove_disposable_script_package_entry
+        entry = registry("script.package", "package")
+        rest, websocket = Mock(), Mock()
+        rest.request = AsyncMock(side_effect=[
+            [{"entity_id": "script.package", "state": "unavailable", "attributes": {"restored": True}}], []])
+        websocket.command = AsyncMock(side_effect=[None, []])
+        self.assertEqual(await _remove_disposable_script_package_entry(
+            rest, websocket, [entry], "package", "script.package"), [])
+        self.assertEqual(rest.request.await_count, 2)
+
+
 
 if __name__ == "__main__":
     unittest.main()

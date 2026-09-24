@@ -3163,15 +3163,28 @@ class _ScriptDependencyReadCapture:
 
 
 async def _remove_disposable_script_package_entry(rest, websocket, rows, key, entity):
-    """Remove one captured package registry entry only after its state disappears."""
+    """Remove one unloaded owned package entry, including Core's restored placeholder."""
     matches = [row for row in rows if row.get("unique_id") == key and row.get("platform") == "script"]
     assert len(matches) <= 1
     if not matches:
         return rows
     assert isinstance(entity, str) and matches[0]["entity_id"] == entity
     states = await rest.request("GET", "/states")
-    assert entity not in {row.get("entity_id") for row in states}
+    observed = [row for row in states if row.get("entity_id") == entity]
+    assert len(observed) <= 1
+    if observed:
+        # Exact Core async_remove retains this unavailable/restored placeholder
+        # for enabled registry entries after unloading the package configuration.
+        state = observed[0]
+        assert (state.get("state") == "unavailable" and isinstance(state.get("attributes"), dict)
+                and state["attributes"].get("restored") is True)
     await websocket.command({"type": "config/entity_registry/remove", "entity_id": entity})
+    for _ in range(10):
+        states = await rest.request("GET", "/states")
+        if entity not in {row.get("entity_id") for row in states}:
+            break
+        await asyncio.sleep(0.1)
+    assert entity not in {row.get("entity_id") for row in states}
     return await websocket.command({"type": "config/entity_registry/list"})
 
 
