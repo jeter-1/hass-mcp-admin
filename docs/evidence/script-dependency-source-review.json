@@ -64,6 +64,13 @@
       "path": "homeassistant/helpers/entity_component.py",
       "url": "https://github.com/home-assistant/core/blob/6de5eb18cd4502f94af44cfff3a02250d88716ed/homeassistant/helpers/entity_component.py",
       "sha256": "b0d62f7639c248739ed4b4a369791b666505f92bd95ba3180010b3c7f7a13a79"
+    },
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "homeassistant/components/config/entity_registry.py",
+      "url": "https://github.com/home-assistant/core/blob/6de5eb18cd4502f94af44cfff3a02250d88716ed/homeassistant/components/config/entity_registry.py",
+      "sha256": "746786b869f40bd45b9091f8baf6f3dc600f4ae0aca77b3ca626952c102f03ef"
     }
   ],
   "runtime_version_pins_added": false,

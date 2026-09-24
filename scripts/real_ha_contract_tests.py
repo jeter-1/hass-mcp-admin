@@ -2594,6 +2594,7 @@ _DEVICE_CONTRACT_SCENARIOS = frozenset(
         "child_effective_area",
         "child_entity",
         "dependency_index",
+        "script_dependency",
         "direct_device_target",
         "impact_analysis",
         "helper_state_control",
@@ -3161,6 +3162,19 @@ class _ScriptDependencyReadCapture:
         return await self.transport_read(tool_name, arguments, **kwargs)
 
 
+async def _remove_disposable_script_package_entry(rest, websocket, rows, key, entity):
+    """Remove one captured package registry entry only after its state disappears."""
+    matches = [row for row in rows if row.get("unique_id") == key and row.get("platform") == "script"]
+    assert len(matches) <= 1
+    if not matches:
+        return rows
+    assert isinstance(entity, str) and matches[0]["entity_id"] == entity
+    states = await rest.request("GET", "/states")
+    assert entity not in {row.get("entity_id") for row in states}
+    await websocket.command({"type": "config/entity_registry/remove", "entity_id": entity})
+    return await websocket.command({"type": "config/entity_registry/list"})
+
+
 async def _run_script_dependency_contract(configured, core_runtime, read_gateway):
     """Exact disposable Core/upstream success, limitations, fault isolation and cleanup."""
     import inspect
@@ -3185,14 +3199,31 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
     created = []
     files_prepared = False
     original_hash = None
+    stage = "inventory_preflight"
+    identities = {}
     runtime = DependencyAnalysisRuntime()
     file_program = "from pathlib import Path\n" + inspect.getsource(_script_dependency_files)
 
     async def fixture_files(action):
-        return (await _docker_command(
-            "exec", HA_CONTRACT_CONTAINER, "python", "-c",
-            file_program + f"\nprint(_script_dependency_files(Path('/config'), {action!r}))\n",
-        )).strip()
+        # Emit only a digest or exception class; never raw exception text/paths.
+        program = file_program + (
+            "\nimport json\ntry:\n"
+            f"    print(json.dumps({{'sha256': _script_dependency_files(Path('/config'), {action!r})}}))\n"
+            "except Exception as exc:\n"
+            "    print(json.dumps({'failure_type': type(exc).__name__}))\n"
+        )
+        outcome = json.loads(await _docker_command(
+            "exec", HA_CONTRACT_CONTAINER, "python", "-c", program))
+        if "sha256" not in outcome:
+            error = RuntimeError("Disposable script file operation failed")
+            failure_type = outcome.get("failure_type")
+            allowed = {"RuntimeError", "FileNotFoundError", "PermissionError", "ModuleNotFoundError", "AttributeError"}
+            setattr(error, "contract_diagnostic", {
+                "file_operation": action,
+                "failure_type": failure_type if failure_type in allowed else "other",
+            })
+            raise error
+        return outcome["sha256"]
 
     def script_coverage(result):
         return next(row for row in result.data["source_coverage"] if row["source_type"] == "script")
@@ -3201,16 +3232,19 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
         existing = await websocket.command({"type": "config/entity_registry/list"})
         if any(item.get("unique_id") in all_keys for item in existing):
             raise RuntimeError("Script dependency fixture identity already exists")
+        stage = "file_prepare"
         original_hash = await fixture_files("prepare")
         assert len(original_hash) == 64
         files_prepared = True
+        stage = "stored_fixture_create"
         for key in keys:
             # Track attempted creation, including an uncertain response, for cleanup.
             created.append(key)
             await rest.request("POST", f"/config/script/config/{key}", bodies[key])
+        stage = "fixture_reload"
         # Reload and registry changes are disposable setup, outside feature capture.
         await rest.request("POST", "/services/script/reload", {})
-        identities = {}
+        stage = "registry_identity_readback"
         for _ in range(30):
             entries = await websocket.command({"type": "config/entity_registry/list"})
             identities = {row["unique_id"]: row["entity_id"] for row in entries
@@ -3219,6 +3253,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
                 break
             await asyncio.sleep(1)
         assert len(identities) == len(all_keys), "Disposable script identities did not load"
+        stage = "rename_and_disable"
         renamed = "script.script_dependency_contract_new_name"
         await websocket.command({"type": "config/entity_registry/update",
                                  "entity_id": identities[keys[1]], "new_entity_id": renamed})
@@ -3232,6 +3267,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             await asyncio.sleep(1)
         assert identities[keys[2]] not in {row.get("entity_id") for row in states}
         assert identities[package_key] in {row.get("entity_id") for row in states}
+        stage = "stored_configuration_readback"
         for key in keys:
             readback = await rest.request("GET", f"/config/script/config/{key}")
             for field in ("sequence", "use_blueprint"):
@@ -3242,6 +3278,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
         service = runtime.require()
         service.index.provider.script_reader_factory = read_gateway.script_dependency_reader
         with patch.object(read_gateway._transport, "execute_read", capture.execute_read):
+            stage = "useful_script_analysis"
             result = await service.analyze(entity_id=target, source_types=["automation", "blueprint", "script"], detail_level="evidence")
             findings = result.data["findings"]
             for key in keys:
@@ -3273,6 +3310,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
                     return response
                 return replace(reader, read=read)
 
+            stage = "identity_mismatch_injection"
             service.index.provider.script_reader_factory = mismatched_reader
             runtime.invalidate("disposable_script_identity_fault")
             mismatch = await service.analyze(entity_id=target, source_types=["script"], detail_level="evidence")
@@ -3280,6 +3318,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             assert any(item["source_id"] == keys[1] for item in mismatch.data["findings"])
             assert "script_response_incomplete_or_identity_mismatch: 1" in script_coverage(mismatch)["warnings"]
 
+            stage = "provider_loss_injection"
             before_loss = len([call for call in capture.calls if call[0] == "upstream"])
             service.index.provider.script_reader_factory = lambda: None
             runtime.invalidate("disposable_script_provider_loss")
@@ -3288,13 +3327,20 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             assert len([call for call in capture.calls if call[0] == "upstream"]) == before_loss
             assert tuple(service.index.snapshot.findings) == shared_findings
             assert tuple(service.index.snapshot.obligations) == shared_obligations
+            stage = "provider_recovery"
             # Restore the real factory and prove useful recovery through the same route.
             service.index.provider.script_reader_factory = read_gateway.script_dependency_reader
             runtime.invalidate("disposable_script_provider_restored")
             recovered = await service.analyze(entity_id=target, source_types=["script"], detail_level="evidence")
             assert any(item["source_id"] == keys[0] for item in recovered.data["findings"])
+        stage = "read_capture_verification"
         assert not capture.violations
         assert all(any(call[0] == family for call in capture.calls) for family in ("rest", "websocket", "upstream"))
+    except Exception as exc:
+        setattr(exc, "contract_scenario", "script_dependency")
+        diagnostic = getattr(exc, "contract_diagnostic", {})
+        setattr(exc, "contract_diagnostic", {**diagnostic, "script_stage": stage})
+        raise
     finally:
         await runtime.shutdown()
         cleanup_errors = []
@@ -3312,11 +3358,18 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             try:
                 await rest.request("POST", "/services/script/reload", {})
                 remaining = await websocket.command({"type": "config/entity_registry/list"})
+                # Core removes package runtime entities on reload, but preserves
+                # their registry entries. Delete only this fixture's captured entry.
+                remaining = await _remove_disposable_script_package_entry(
+                    rest, websocket, remaining, package_key, identities.get(package_key))
                 assert not any(row.get("unique_id") in all_keys and row.get("platform") == "script" for row in remaining)
             except Exception:
                 cleanup_errors.append("script_registry_cleanup_failed")
         if cleanup_errors:
-            raise RuntimeError("Disposable script cleanup failed: " + ",".join(cleanup_errors))
+            error = RuntimeError("Disposable script cleanup failed")
+            setattr(error, "contract_scenario", "script_dependency")
+            setattr(error, "contract_diagnostic", {"script_stage": stage, "cleanup_failures": cleanup_errors})
+            raise error
     assert all(core_runtime.health_snapshot()[name] == 0 for name in (
         "issued_lease_count", "active_commit_count", "fallback_count"))
     print(json.dumps({"script_dependency_contract": "PASS", "stored_script_fixtures": len(keys),
