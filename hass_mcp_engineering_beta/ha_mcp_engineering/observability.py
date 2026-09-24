@@ -230,6 +230,7 @@ class RuntimeMetrics:
             "engineering",
             "standard_ha_mcp",
             "direct_ha_api",
+            "supervisor_core_logs",
             "upstream_dashboard",
             "upstream_read_gateway",
             "policy",

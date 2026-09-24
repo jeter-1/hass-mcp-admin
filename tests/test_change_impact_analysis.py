@@ -1780,11 +1780,12 @@ class DirectProviderTests(unittest.IsolatedAsyncioTestCase):
 class ToolCompatibilityTests(unittest.TestCase):
     def test_additive_dev14_tools_preserve_the_f2_compatible_schema_set(self):
         tools = registered_tools(get_registered_server()).values()
-        self.assertEqual(len(tools), 53)
+        self.assertEqual(len(tools), 54)
         current = {item.name: item for item in tools}
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
             {
+                "get_core_log_history",
                 "change_impact_analysis",
                 "configuration_integrity_analysis",
                 "incident_correlation",

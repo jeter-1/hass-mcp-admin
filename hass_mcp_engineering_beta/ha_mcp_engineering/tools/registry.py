@@ -149,6 +149,11 @@ for capability in CAPABILITIES:
     setattr(compatibility, name, wrapped)
 
 
+from .core_logs import registered_tool as core_log_tool
+
+_SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_tool()})
+
+
 # Freeze the exact local catalog before any admitted upstream reads are added.
 # Exact-image and readmission contracts import this one executable declaration
 # rather than maintaining independent numeric copies.

@@ -1,0 +1,74 @@
+@middleware
+async def token_validation(
+    self, request: Request, handler: Callable[[Request], Awaitable[StreamResponse]]
+) -> StreamResponse:
+    """Check security access of this layer."""
+    request_from: CoreSysAttributes | None = None
+    supervisor_token = extract_supervisor_token(request)
+    patterns = _get_app_security_patterns(request)
+
+    # Blacklist
+    if BLACKLIST.match(request.path):
+        _LOGGER.error("%s is blacklisted!", request.path)
+        raise HTTPForbidden
+
+    # Ignore security check
+    if patterns.no_security_check.match(request.path):
+        _LOGGER.debug("Passthrough %s", request.path)
+        request[REQUEST_FROM] = None
+        return await handler(request)
+
+    # Not token
+    if not supervisor_token:
+        _LOGGER.warning("No API token provided for %s", request.path)
+        raise HTTPUnauthorized
+
+    # Home-Assistant
+    if supervisor_token == self.sys_homeassistant.supervisor_token:
+        _LOGGER.debug("%s access from Home Assistant", request.path)
+        request_from = self.sys_homeassistant
+    elif patterns.core_only.match(request.path):
+        _LOGGER.warning(
+            "Attempted access to %s from client besides Home Assistant",
+            request.path,
+        )
+        raise HTTPForbidden
+
+    # Host
+    if supervisor_token == self.sys_plugins.cli.supervisor_token:
+        _LOGGER.debug("%s access from Host", request.path)
+        request_from = self.sys_host
+
+    # Observer
+    if supervisor_token == self.sys_plugins.observer.supervisor_token:
+        if not OBSERVER_CHECK.match(request.path):
+            _LOGGER.warning("%s invalid Observer access", request.path)
+            raise HTTPForbidden
+        _LOGGER.debug("%s access from Observer", request.path)
+        request_from = self.sys_plugins.observer
+
+    # App
+    app = None
+    if supervisor_token and not request_from:
+        app = self.sys_apps.from_token(supervisor_token)
+
+    # Check App API access
+    if app and patterns.api_bypass.match(request.path):
+        _LOGGER.debug("Passthrough %s from %s", request.path, app.slug)
+        request_from = app
+    elif app and app.access_hassio_api:
+        # Check Role
+        if patterns.role_access[app.hassio_role].match(request.path):
+            _LOGGER.info("%s access from %s", request.path, app.slug)
+            request_from = app
+        else:
+            _LOGGER.warning("%s no role for %s", request.path, app.slug)
+    elif app:
+        _LOGGER.warning("%s missing API permission for %s", app.slug, request.path)
+
+    if request_from:
+        request[REQUEST_FROM] = request_from
+        return await handler(request)
+
+    _LOGGER.error("Invalid token for access %s", request.path)
+    raise HTTPForbidden

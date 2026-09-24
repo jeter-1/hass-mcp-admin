@@ -1,0 +1,14 @@
+def extract_supervisor_token(request: web.Request) -> str | None:
+    """Extract Supervisor token from request."""
+    if supervisor_token := request.headers.get(HEADER_TOKEN):
+        return supervisor_token
+
+    # Old Supervisor fallback
+    if supervisor_token := request.headers.get(HEADER_TOKEN_OLD):
+        return supervisor_token
+
+    # API access only
+    if supervisor_token := request.headers.get(AUTHORIZATION):
+        return supervisor_token.split(" ")[-1]
+
+    return None

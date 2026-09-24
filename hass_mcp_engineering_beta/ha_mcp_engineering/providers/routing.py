@@ -92,6 +92,8 @@ _PROHIBITED = {
 
 class RoutingPolicy:
     def resolve(self, capability: ProviderCapability) -> RoutingDecision:
+        if capability == ProviderCapability.CORE_LOG_HISTORY:
+            return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "supervisor_core_logs")
         if capability in _ENGINEERING_NATIVE:
             return RoutingDecision(capability, CapabilityRoute.ENGINEERING_NATIVE, "engineering")
         if capability in _STANDARD_PREFERRED:
@@ -129,6 +131,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_history": ProviderCapability.HISTORY_READ,
     "get_logbook": ProviderCapability.LOGBOOK_READ,
     "get_error_log": ProviderCapability.ERROR_LOG_READ,
+    "get_core_log_history": ProviderCapability.CORE_LOG_HISTORY,
     "list_automations": ProviderCapability.AUTOMATION_LIST,
     "get_automation_config": ProviderCapability.AUTOMATION_CONFIG,
     "list_devices": ProviderCapability.DEVICE_REGISTRY_READ,
@@ -394,6 +397,18 @@ def direct_ha_policy_for_tool(tool_name: str) -> dict[str, str] | None:
 
     policy = DIRECT_HA_READ_POLICIES.get(tool_name)
     return dict(policy) if policy else None
+
+
+def core_log_policy_allows_read() -> bool:
+    """Dedicated native contract; no general Supervisor forwarding capability."""
+    decision = routing_for_tool("get_core_log_history")
+    return (
+        decision.capability == ProviderCapability.CORE_LOG_HISTORY
+        and decision.route == CapabilityRoute.ENGINEERING_NATIVE
+        and decision.preferred_provider == "supervisor_core_logs"
+        and not decision.fallback_providers
+        and not decision.explicit_direct_fallback_allowed
+    )
 
 
 def routing_for_tool(tool_name: str, policy: RoutingPolicy | None = None) -> RoutingDecision:

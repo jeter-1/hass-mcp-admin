@@ -1,0 +1,15 @@
+@dataclass(slots=True, frozen=True)
+class _AppSecurityPatterns:
+    """All compiled regex patterns for app API access control, per API version."""
+
+    # Paths where an installed app's token bypasses normal role checks
+    api_bypass: re.Pattern[str]
+
+    # Paths that only Home Assistant Core may call
+    core_only: re.Pattern[str]
+
+    # Per-role allowed path patterns for installed apps
+    role_access: dict[str, re.Pattern[str]]
+
+    # Paths that skip token validation entirely
+    no_security_check: re.Pattern[str]

@@ -9,6 +9,8 @@ arch:
 image: ghcr.io/jeter-1/hass-mcp-engineering-beta
 init: false
 homeassistant_api: true
+hassio_api: true
+hassio_role: homeassistant
 ingress: true
 ingress_port: 8110
 panel_admin: true

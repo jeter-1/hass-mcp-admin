@@ -78,6 +78,15 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
+        "tool": "get_core_log_history", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "supervisor_core_logs", "fallback": "none",
+        "policy": "bounded_core_journal_read_v1", "direct_write_allowed": False,
+        "source": "core_journal", "transport": "supervisor_api",
+        "retention_coverage": "unknown",
+    },
+    {
         "tool": "control_power", "category": "ordinary_runtime_action",
         "status": "beta_native", "risk": "physical_action", "additive": True,
         "operation_class": "typed_power", "routing": "engineering_native",
@@ -361,6 +370,17 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "get_core_log_history", "capability": "core_log_history",
+        "required_semantics": "One bounded retained Core journal window with explicit source, sanitization and unknown retention coverage.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable",
+        "direct_ha_coverage": "not_used",
+        "selected_provider": "supervisor_core_logs", "fallback_policy": "none",
+        "completeness": "partial_retention_and_window_completeness_unknown",
+        "security_justification": "Fixed Supervisor GET /core/logs only; owner-approved homeassistant role is broader at the process boundary, but no caller-selected endpoint or write is exposed.",
+        "trust_mode": "reviewed_native_read",
+        "trust_profile": "bounded_core_journal_read_v1",
+    },
     {
         "tool": "control_power", "capability": "typed_power_execution",
         "required_semantics": "One exact light/switch ON/OFF action under connector authority, durable ownership and independent HA state verification.",

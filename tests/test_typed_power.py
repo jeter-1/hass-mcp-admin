@@ -373,7 +373,7 @@ class PowerBoundaryTests(unittest.TestCase):
         self.assertEqual(set(tool.parameters['properties']), {'entity_id','action','operation_id'})
         self.assertEqual(tool.parameters['properties']['action']['enum'], ['turn_on','turn_off'])
         self.assertFalse(tool.annotations.readOnlyHint)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 53)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 54)
         self.assertEqual(capability_for_tool('control_power')['provider'], 'upstream_typed_power')
         self.assertEqual(routing_for_tool('control_power').fallback_providers, ())
         matrix = next(x for x in CAPABILITY_PROVIDER_MATRIX if x['tool']=='control_power')

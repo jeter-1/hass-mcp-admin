@@ -1,0 +1,89 @@
+{
+  "repository": "https://github.com/home-assistant/supervisor",
+  "release": "2026.09.1",
+  "commit": "40e3ee7640a3c44abe67f1a1397f39c3cd949806",
+  "method": "Python AST selects named node with decorators; exact source lines, textwrap.dedent only; no rewritten behavior",
+  "fragments": [
+    {
+      "path": "supervisor/api/middleware/security.py",
+      "full_source_sha256": "7681f01fc2c930fd5f0088b9c407a1e577db18af830b92518e4f41746bbb80b2",
+      "name": "_V1_FRONTEND_PATHS",
+      "start_line": 30,
+      "end_line": 33,
+      "file": "_V1_FRONTEND_PATHS.txt",
+      "sha256": "da5c23a1e3b8a3ed0c88e25d46e7d57cfef2c6ef39c01b44622c7a03d7eee3fe"
+    },
+    {
+      "path": "supervisor/api/middleware/security.py",
+      "full_source_sha256": "7681f01fc2c930fd5f0088b9c407a1e577db18af830b92518e4f41746bbb80b2",
+      "name": "BLACKLIST",
+      "start_line": 45,
+      "end_line": 50,
+      "file": "BLACKLIST.txt",
+      "sha256": "9122b624027c7911cd2137077388524a18af131c3a894b41167f6dd9f95f84f2"
+    },
+    {
+      "path": "supervisor/api/middleware/security.py",
+      "full_source_sha256": "7681f01fc2c930fd5f0088b9c407a1e577db18af830b92518e4f41746bbb80b2",
+      "name": "OBSERVER_CHECK",
+      "start_line": 53,
+      "end_line": 57,
+      "file": "OBSERVER_CHECK.txt",
+      "sha256": "ad57de66ce00635e02783639761e511aa7db6558633a15bf9cfdc1a40d5f44ea"
+    },
+    {
+      "path": "supervisor/api/middleware/security.py",
+      "full_source_sha256": "7681f01fc2c930fd5f0088b9c407a1e577db18af830b92518e4f41746bbb80b2",
+      "name": "_AppSecurityPatterns",
+      "start_line": 79,
+      "end_line": 93,
+      "file": "_AppSecurityPatterns.txt",
+      "sha256": "7ab1dfc51eadfd1a967db9bc60caf0c60b4fd52c2f90f28d8020a030b5dd18ad"
+    },
+    {
+      "path": "supervisor/api/middleware/security.py",
+      "full_source_sha256": "7681f01fc2c930fd5f0088b9c407a1e577db18af830b92518e4f41746bbb80b2",
+      "name": "_V1_PATTERNS",
+      "start_line": 98,
+      "end_line": 177,
+      "file": "_V1_PATTERNS.txt",
+      "sha256": "a2b65074b5ffeeec512c4802e889d0de10abc9daac8a03add36d6114a65b7a22"
+    },
+    {
+      "path": "supervisor/api/middleware/security.py",
+      "full_source_sha256": "7681f01fc2c930fd5f0088b9c407a1e577db18af830b92518e4f41746bbb80b2",
+      "name": "token_validation",
+      "start_line": 310,
+      "end_line": 383,
+      "file": "token_validation.txt",
+      "sha256": "617b9fce4986a6c40b254dfd786972461898fe7f2eb43ed1493b0e64c14ea3a0"
+    },
+    {
+      "path": "supervisor/api/host.py",
+      "full_source_sha256": "921102748acbc5cccde1ca4a83d9086d32416faf48548b726ca50aa15ceb980d",
+      "name": "advanced_logs_handler",
+      "start_line": 284,
+      "end_line": 404,
+      "file": "advanced_logs_handler.txt",
+      "sha256": "e83b325cd3f487bcb9c5160176ebd4d67507ae1ca09c581892bcc6f12512316c"
+    },
+    {
+      "path": "supervisor/api/__init__.py",
+      "full_source_sha256": "112d0046007c7368fef18a6f0c218374c7ced89a002c570261831752acad65dc",
+      "name": "_register_advanced_logs",
+      "start_line": 167,
+      "end_line": 222,
+      "file": "_register_advanced_logs.txt",
+      "sha256": "7e7b6e84c928b49ae74ddaacd9e1bea70241f5e7bc2b79bed1d67f89c1d969ef"
+    },
+    {
+      "path": "supervisor/api/utils.py",
+      "full_source_sha256": "69c5893202a47fbd7f56fdbb61c861557974d7fa22dbd482f9c2454cfb14d730",
+      "name": "extract_supervisor_token",
+      "start_line": 88,
+      "end_line": 101,
+      "file": "extract_supervisor_token.txt",
+      "sha256": "cad823e75d43acc486488893efa0217ac3db2db7a5d6f80e45e13afc9424e7bc"
+    }
+  ]
+}
