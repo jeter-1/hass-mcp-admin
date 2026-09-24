@@ -272,6 +272,10 @@ Assessment values are deliberately cautious:
 A missing entity with references is a possible stale-reference condition. Zero findings
 never imply absolute safety when relevant sources were not inspected.
 
+Script entity identities longer than the existing 128-character evidence bound
+are refused as source-local gaps before dispatch; they are never truncated into
+exact findings. Canonical storage keys remain separately validated.
+
 ## Index, pagination, and invalidation
 
 The process-local index stores bounded normalized edges and safe metadata, not raw

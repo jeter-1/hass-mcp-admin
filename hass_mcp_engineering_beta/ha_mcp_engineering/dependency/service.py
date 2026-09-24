@@ -304,7 +304,8 @@ def _coverage_for(items, requested, findings, *, cache_hit: bool):
         else:
             copy.evidence_count = sum(
                 (finding.source_type == item.source_type)
-                or (item.source_type == "blueprint" and finding.relation.startswith("blueprint"))
+                or (item.source_type == "blueprint" and finding.source_type != "script"
+                    and finding.relation.startswith("blueprint"))
                 for finding in findings
             )
         output.append(copy)

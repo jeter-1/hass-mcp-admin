@@ -50,6 +50,20 @@
       "path": "tests/src/unit/test_rest_client_scripts.py",
       "url": "https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/tests/src/unit/test_rest_client_scripts.py",
       "sha256": "13be75b84a6e7b0978f4e48ab550cb6501ce902e3f58e7bc7e4597f63d89c89c"
+    },
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "homeassistant/config.py",
+      "url": "https://github.com/home-assistant/core/blob/6de5eb18cd4502f94af44cfff3a02250d88716ed/homeassistant/config.py",
+      "sha256": "7f62be48f6030f63abc59c73afbbf69f6d4c6dda2a081f60e6382554e9c53d35"
+    },
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "homeassistant/helpers/entity_component.py",
+      "url": "https://github.com/home-assistant/core/blob/6de5eb18cd4502f94af44cfff3a02250d88716ed/homeassistant/helpers/entity_component.py",
+      "sha256": "b0d62f7639c248739ed4b4a369791b666505f92bd95ba3180010b3c7f7a13a79"
     }
   ],
   "runtime_version_pins_added": false,

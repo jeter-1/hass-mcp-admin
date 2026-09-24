@@ -24,7 +24,7 @@ MAX_SCRIPT_SOURCES = 1_000
 MAX_SCRIPT_FINDINGS = 10_000
 MAX_SCRIPT_DYNAMIC_REFERENCES = 1_000
 SCRIPT_SCAN_SECONDS = 60.0
-_ENTITY = re.compile(r"script\.[a-z0-9_]{1,128}\Z", re.ASCII)
+_ENTITY = re.compile(r"script\.[a-z0-9_]{1,121}\Z", re.ASCII)
 _KEY = re.compile(r"[a-z0-9_]{1,128}\Z", re.ASCII)
 _GAPS = (
     "State/registry discovery does not enumerate every stored or package-defined script.",
@@ -82,6 +82,8 @@ async def collect_script_diagnostics(
         for row in rows:
             entity = row.get("entity_id") if isinstance(row, dict) else None
             if not isinstance(entity, str) or not entity.startswith("script."):
+                if rows is registry and isinstance(row, dict) and row.get("platform") == "script":
+                    errors["invalid_script_identity"] += 1
                 continue
             if not _ENTITY.fullmatch(entity):
                 errors["invalid_script_identity"] += 1
@@ -100,9 +102,9 @@ async def collect_script_diagnostics(
         errors["script_inventory_limit_exceeded"] += 1
     identities: dict[str, str | None] = {}
     for row in registry:
-        if not isinstance(row, dict) or row.get("entity_id") not in selected:
+        entity = row.get("entity_id") if isinstance(row, dict) else None
+        if not isinstance(entity, str) or entity not in selected:
             continue
-        entity = row["entity_id"]
         key = row.get("unique_id")
         valid = (
             registry_complete and row.get("platform") == "script"

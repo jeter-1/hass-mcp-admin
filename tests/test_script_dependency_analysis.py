@@ -5,6 +5,7 @@ from dataclasses import replace
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 from mcp.server.fastmcp import FastMCP
@@ -167,6 +168,28 @@ class ScriptCollectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.findings)
         self.assertIn("script_identity_unavailable_or_ambiguous: 1", result.coverage.warnings)
 
+    async def test_entity_identity_bound_preserves_exact_findings_and_dynamics(self):
+        for length in (127, 128, 129, 135):
+            with self.subTest(length=length):
+                entity = "script." + "a" * (length - 7)
+                body = {"sequence": [
+                    {"condition": "state", "entity_id": "light.fixture", "state": "on"},
+                    {"condition": "template", "value_template": "{{ states(states('input_text.selector')) }}"},
+                ]}
+                reader = Reader({entity: response(body=body)})
+                result = await collect(reader, rows=[registry(entity)])
+                if length <= 128:
+                    self.assertEqual(reader.calls, [entity])
+                    self.assertTrue(result.findings)
+                    self.assertTrue(result.dynamic_references)
+                    for item in (*result.findings, *result.dynamic_references):
+                        self.assertEqual(item.source_entity_id, entity)
+                else:
+                    self.assertFalse(reader.calls)
+                    self.assertFalse(result.findings)
+                    self.assertFalse(result.dynamic_references)
+                    self.assertIn("invalid_script_identity: 1", result.coverage.warnings)
+
     async def test_registry_loss_does_not_dispatch(self):
         reader = Reader()
         result = await collect(reader, registry_complete=False)
@@ -261,6 +284,39 @@ class ScriptIndexTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.partial)
         self.assertFalse(result.data["findings"])
         self.assertEqual(index.generation, 1)
+
+    async def test_malformed_script_registry_ids_preserve_shared_automation_scan(self):
+        for malformed in ([], {}, None, 1, "light.wrong_domain"):
+            for available in (True, False):
+                with self.subTest(malformed=malformed, available=available):
+                    class Registry(dependency_fixtures.DirectProviderTests.WebSocket):
+                        async def command(self, payload):
+                            rows = await super().command(payload)
+                            if payload["type"] == "config/entity_registry/list":
+                                rows += [registry(), registry(malformed, "bad")]
+                            return rows
+                    provider = DirectHaDependencyProvider(
+                        dependency_fixtures.DirectProviderTests.Rest(), Registry(),
+                        script_reader_factory=lambda: Reader() if available else None)
+                    result = await provider.scan()
+                    self.assertEqual(len(result.findings), 2)
+                    self.assertIn("invalid_script_identity: 1", result.script_diagnostics.coverage.warnings)
+                    self.assertEqual(len(result.script_diagnostics.findings), int(available))
+
+    async def test_script_blueprint_coverage_has_only_delegated_attribution(self):
+        diagnostic = await collect(Reader({"script.renamed": response(body={
+            "use_blueprint": {"path": "synthetic.yaml", "input": {"target": "light.fixture"}}
+        })}))
+        for requested in (None, ["automation", "blueprint", "script"], ["script"], ["automation"]):
+            index = await self.build(diagnostic)
+            kwargs = {} if requested is None else {"source_types": requested}
+            result = await EntityDependencyAnalysisService(index).analyze(entity_id="light.fixture", **kwargs)
+            coverage = {row["source_type"]: row for row in result.data["source_coverage"]}
+            self.assertEqual(coverage["blueprint"]["evidence_count"], 0)
+            expected = int(requested is None or "script" in requested)
+            self.assertEqual(coverage["script"]["evidence_count"], expected)
+            if expected:
+                self.assertEqual(coverage["script"]["provider"], "upstream_read_gateway")
 
     async def build(self, diagnostic):
         original = scan([finding(target="light.fixture")])
@@ -362,7 +418,7 @@ class ScriptGatewayTests(unittest.IsolatedAsyncioTestCase):
     async def test_parent_authority_failure_and_invalid_ids_cannot_dispatch(self):
         gateway, _server, transport = await self.gateway()
         reader = gateway.script_dependency_reader()
-        for identity in ("../script.foo", "script.foo/bar", "script.", "light.foo"):
+        for identity in ("../script.foo", "script.foo/bar", "script.", "light.foo", "script." + "a" * 122, "script." + "a" * 128):
             self.assertFalse((await reader.read(identity))["success"])
         telemetry, token = begin_request()
         telemetry.core_dispatch_authorizer = lambda: False
@@ -460,6 +516,69 @@ class ScriptGatewayTests(unittest.IsolatedAsyncioTestCase):
             await gateway.script_dependency_reader(audit=audit).read("script.renamed")
         self.assertIsNone(current_telemetry())
         self.assertEqual(core.finish_calls, 1)
+
+
+class DisposableScriptFixtureTests(unittest.IsolatedAsyncioTestCase):
+    async def test_files_round_trip_and_existing_configuration_refusal(self):
+        from scripts.real_ha_contract_tests import _script_dependency_files
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_file = root / "configuration.yaml"
+            original = b"default_config:\nscript: !include scripts.yaml\n"
+            config_file.write_bytes(original)
+            digest = _script_dependency_files(root, "prepare")
+            self.assertIn(b"packages:", config_file.read_bytes())
+            with self.assertRaises(RuntimeError):
+                _script_dependency_files(root, "prepare")
+            self.assertEqual(_script_dependency_files(root, "restore"), digest)
+            self.assertEqual(config_file.read_bytes(), original)
+            self.assertFalse((root / ".script-dependency-contract-original.yaml").exists())
+            self.assertFalse((root / "blueprints/script/dependency_contract/entities.yaml").exists())
+            existing = b"homeassistant:\n  name: Existing\n"
+            config_file.write_bytes(existing)
+            with self.assertRaises(RuntimeError):
+                _script_dependency_files(root, "prepare")
+            self.assertEqual(config_file.read_bytes(), existing)
+
+    async def test_cleanup_preserves_backup_on_unexpected_change(self):
+        from scripts.real_ha_contract_tests import _script_dependency_files
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config_file = root / "configuration.yaml"
+            original = b"default_config:\n"
+            config_file.write_bytes(original)
+            _script_dependency_files(root, "prepare")
+            config_file.write_bytes(b"unexpected: change\n")
+            with self.assertRaises(RuntimeError):
+                _script_dependency_files(root, "restore")
+            self.assertEqual((root / ".script-dependency-contract-original.yaml").read_bytes(), original)
+            self.assertEqual(config_file.read_bytes(), b"unexpected: change\n")
+
+    async def test_read_capture_preserves_dispatch_guards_and_blocks_writes(self):
+        from scripts.real_ha_contract_tests import _ScriptDependencyReadCapture
+        rest, websocket, transport = Mock(), Mock(), Mock()
+        rest.request = AsyncMock(return_value=[])
+        websocket.command = AsyncMock(return_value=[])
+        transport.execute_read = AsyncMock(return_value={})
+        capture = _ScriptDependencyReadCapture(rest, websocket, transport)
+        validator, commit = Mock(), Mock()
+        await capture.request("GET", "/states")
+        await capture.command({"type": "config/entity_registry/list"})
+        await capture.execute_read("ha_config_get_script", {"script_id": "script.fixture"},
+                                   timeout_seconds=5, catalog_validator=validator, before_dispatch=commit)
+        self.assertIs(transport.execute_read.call_args.kwargs["catalog_validator"], validator)
+        self.assertIs(transport.execute_read.call_args.kwargs["before_dispatch"], commit)
+        for operation in (
+            capture.request("POST", "/services/script/reload", {}),
+            capture.command({"type": "config/entity_registry/update"}),
+            capture.execute_read("ha_call_service", {"script_id": "script.fixture"}),
+        ):
+            with self.assertRaises(AssertionError):
+                await operation
+        self.assertEqual(rest.request.await_count, 1)
+        self.assertEqual(websocket.command.await_count, 1)
+        self.assertEqual(transport.execute_read.await_count, 1)
+        self.assertEqual(len(capture.violations), 3)
 
 
 if __name__ == "__main__":

@@ -3141,7 +3141,7 @@ class UpstreamReadGateway:
                 return False
 
         async def read(entity_id: str) -> dict[str, Any]:
-            if not isinstance(entity_id, str) or not re.fullmatch(r"script\.[a-z0-9_]{1,128}", entity_id):
+            if not isinstance(entity_id, str) or not re.fullmatch(r"script\.[a-z0-9_]{1,121}", entity_id):
                 return {"success": False, "details": {"failure_category": "argument_validation"}}
             if not current():
                 return {"success": False, "details": {"failure_category": "provider_authority_changed"}}

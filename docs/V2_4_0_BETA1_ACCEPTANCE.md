@@ -30,14 +30,18 @@ provider loss and a read-only feature request trace. Synthetic setup writes belo
 only to the disposable fixture. Record provenance, independent readbacks, cleanup
 and lease/task settlement. Unit doubles alone do not close this integration gate.
 
-The existing disposable `real_ha_contract_tests.py` Core 2026.9.3 lane now includes
-stored normal/renamed/disabled script fixtures, independent configuration readback
-and cleanup. Its success marker is scoped to those three fixtures. Package-only,
-blueprint/template, mismatch/provider-loss and read-only request-capture scenarios
-still require the remaining integration evidence; that marker alone does not
-close this gate. While `.release/next-version` is unmaterialized, PR CI deliberately
-refuses release eligibility. A draft may retain that state; do not claim CI or
-disposable integration passed from local unit results.
+The existing disposable `real_ha_contract_tests.py` Core 2026.9.3 lane includes
+stored normal/renamed/disabled, blueprint and template scripts plus a package-only
+script. It checks independent configuration readback, bounded feature-boundary
+read capture (not a wire capture of upstream internals), injected canonical-key
+mismatch and provider loss, useful provider recovery, unchanged shared automation
+evidence, exact file restoration and registry cleanup. Setup writes are outside
+the measured feature calls. Its success marker follows cleanup. The exact-head CI
+result, not the presence of these fixtures, closes this integration gate.
+
+While `.release/next-version` is unmaterialized, PR CI deliberately refuses release
+eligibility. A draft may retain that state; do not claim overall CI or disposable
+integration passed from local unit results.
 
 ## Later installed acceptance
 
