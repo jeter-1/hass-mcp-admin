@@ -2643,9 +2643,11 @@ class UpstreamReadGateway:
         telemetry: Any,
         route_context: dict[str, Any],
         live_contract_failure: dict[str, Any],
+        require_parent_authority: bool = False,
     ) -> tuple[_AdmittedRoute, Any]:
         """Bind one call to the current route and same-session target contract."""
 
+        owner_task = asyncio.current_task()
         with self._lock:
             mapping = self._exposed.get(exposed_name)
             if (
@@ -2989,6 +2991,11 @@ class UpstreamReadGateway:
                 # This is the dispatch linearization point. The registered
                 # single-use lease is consumed after all same-session checks
                 # and immediately before tools/call.
+                if require_parent_authority and (
+                    owner_task is None or owner_task.done() or owner_task.cancelling()
+                    or telemetry is None or not telemetry.authorize_core_dispatch()
+                ):
+                    raise DashboardTransportError("prohibited_delegation")
                 if mapping.profile_id is not None:
                     coordinator = self._readmission_coordinator
                     if (
@@ -3222,6 +3229,7 @@ class UpstreamReadGateway:
                 telemetry=telemetry,
                 route_context=route_context,
                 live_contract_failure=live_contract_failure,
+                require_parent_authority=require_unmodified_script,
             )
             route_was_admitted = True
             if exchange.call_result.get("isError") is True:

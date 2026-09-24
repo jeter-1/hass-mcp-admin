@@ -374,6 +374,53 @@ class ScriptGatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await reader.read("script.renamed"))["success"])
         self.assertFalse(transport.calls)
 
+    async def test_manager_retirement_during_catalog_negotiation_prevents_dispatch(self):
+        core = CompositeCoreRuntime()
+        gateway, _server, transport = await self.gateway(core=core)
+        active = True
+        original = transport.execute_read
+
+        async def delayed(*args, **kwargs):
+            nonlocal active
+            active = False
+            return await original(*args, **kwargs)
+
+        transport.execute_read = delayed
+        telemetry, token = begin_request()
+        telemetry.core_dispatch_authorizer = lambda: active
+        try:
+            result = await gateway.script_dependency_reader().read("script.renamed")
+            self.assertFalse(result["success"])
+        finally:
+            end_request(token)
+        self.assertFalse(transport.calls)
+        self.assertEqual(core.consume_calls, 0)
+        self.assertEqual(core.release_calls, 1)
+
+    async def test_retained_transport_cannot_dispatch_after_owner_cancellation(self):
+        core = CompositeCoreRuntime()
+        gateway, _server, transport = await self.gateway(core=core)
+        started = asyncio.Event()
+        original = transport.execute_read
+
+        async def delayed(*args, **kwargs):
+            started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                # A retained transport worker tries to continue after cancellation.
+                return await original(*args, **kwargs)
+
+        transport.execute_read = delayed
+        task = asyncio.create_task(gateway.script_dependency_reader().read("script.renamed"))
+        await started.wait()
+        task.cancel()
+        result = await task
+        self.assertFalse(result["success"])
+        self.assertFalse(transport.calls)
+        self.assertEqual(core.consume_calls, 0)
+        self.assertEqual(core.release_calls, 1)
+
     async def test_unconfigured_gateway_never_supplies_a_reader(self):
         self.assertIsNone(UpstreamReadGateway().script_dependency_reader())
 
