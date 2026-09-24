@@ -159,6 +159,14 @@ class ScriptCollectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(reader.calls), 1)
         self.assertEqual(len(result.findings), 1)
 
+    async def test_identity_collision_outside_candidate_limit_is_still_ambiguous(self):
+        reader = Reader()
+        with patch.object(scripts, "MAX_SCRIPT_SOURCES", 1):
+            result = await collect(reader, rows=[registry(), registry("script.z", "original")])
+        self.assertFalse(reader.calls)
+        self.assertFalse(result.findings)
+        self.assertIn("script_identity_unavailable_or_ambiguous: 1", result.coverage.warnings)
+
     async def test_registry_loss_does_not_dispatch(self):
         reader = Reader()
         result = await collect(reader, registry_complete=False)

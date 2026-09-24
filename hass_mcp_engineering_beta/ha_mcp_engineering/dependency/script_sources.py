@@ -113,12 +113,20 @@ async def collect_script_diagnostics(
             identities[entity] = None
         elif entity not in identities:
             identities[entity] = key
-    # Two current entity IDs cannot independently claim the same script key.
-    key_counts = Counter(key for key in identities.values() if key is not None)
+    # Check selected keys against the entire observed registry, including rows
+    # outside the candidate bound. Keep at most one claimant per selected key.
+    claimants = {key: entity for entity, key in identities.items() if key is not None}
+    ambiguous_keys = set()
+    for row in registry:
+        if not isinstance(row, dict) or row.get("platform") != "script":
+            continue
+        key = row.get("unique_id")
+        if isinstance(key, str) and key in claimants and row.get("entity_id") != claimants[key]:
+            ambiguous_keys.add(key)
     candidates = []
     for entity in sorted(selected):
         key = identities.get(entity)
-        if key is None or key_counts[key] != 1:
+        if key is None or key in ambiguous_keys:
             errors["script_identity_unavailable_or_ambiguous"] += 1
         else:
             candidates.append((entity, key))
