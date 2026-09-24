@@ -7,8 +7,10 @@ that an absent event never occurred.
 
 This source increment adds one static tool: **54 static + 25 admitted delegated
 reads = 79** with the healthy reviewed upstream pairing. Published
-`2.4.0-beta.1` retains its original **53 + 25 = 78** contract. This increment
-does not choose a release version or establish publication/installed acceptance.
+`2.4.0-beta.1` retains its original **53 + 25 = 78** contract. Josh authorized
+local [2.4.0-beta.2 staging](V2_4_0_BETA2_ACCEPTANCE.md); the advertised version
+remains beta.1 until separately authorized materialization. Staging establishes
+neither publication nor installed acceptance.
 
 ## Owner decision and boundary
 
@@ -67,8 +69,10 @@ retried. A truncated successful read remains explicitly partial. Known retained
 text is useful evidence even though retention coverage remains unknown.
 
 The new Supervisor read requires no Core API capability or healthy Core process;
-Core logs remain useful during a Core outage. Supervisor authentication and the
-dedicated native routing contract enforce this fixed read. No signed Core
+Core logs remain useful during a Core outage. This provider property does not
+guarantee public Nabu Casa availability: the deployed webhook path can still
+depend on Core. Supervisor authentication and the dedicated native routing
+contract enforce this fixed read. No signed Core
 profile or registry data is added or rewritten, and existing tools retain their
 Core requirements. Signed Core authority does not certify Supervisor semantics.
 
@@ -102,8 +106,10 @@ and deployment evidence; source fragments alone do not close those gates.
 
 ## Release and installed acceptance
 
-Before release, select the next version and update its release/acceptance
-contract in a separately authorized release transition. Preserve existing
+The next version is locally staged as 2.4.0-beta.2 with its exact
+[acceptance contract](V2_4_0_BETA2_ACCEPTANCE.md) and
+[release notes](V2_4_0_BETA2_RELEASE_NOTES.md). Materializing the advertised
+version and publication require their respective authorization. Preserve existing
 signed authority, upstream admission and no-fallback controls. Retain exact
 Supervisor assembled integration evidence, independent review and candidate CI.
 

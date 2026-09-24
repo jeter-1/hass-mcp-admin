@@ -3,8 +3,9 @@
 Unreleased source work adds [bounded Core log history](docs/CORE_LOG_HISTORY.md). It uses a
 fixed native Supervisor read and the owner-approved `homeassistant` role. This
 branch has 54 static tools (79 with the 25 admitted reads); the published beta.1
-release described below retains its original 53/78 inventory. No new release
-version or deployment is declared by this change.
+release described below retains its original 53/78 inventory. Local
+[2.4.0-beta.2 staging](docs/V2_4_0_BETA2_ACCEPTANCE.md) declares the next candidate;
+its advertised version is not yet materialized and no deployment is authorized.
 
 Engineering **2.4.0-beta.1** is the materialized candidate for bounded script
 dependency evidence. **2.3.0** remains the last accepted stable release.
