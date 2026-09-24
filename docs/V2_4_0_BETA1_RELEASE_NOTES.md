@@ -1,7 +1,9 @@
 # Engineering 2.4.0-beta.1 release notes
 
-This is an authoring-stage candidate, not a published or installed release.
-Advertised versions remain 2.3.0 until separately authorized materialization.
+This is a materialized source candidate for 2.4.0-beta.1, not evidence of a
+published or installed release. The three version authorities agree and
+`.release/next-version` has been consumed. Engineering 2.3.0 remains the last
+accepted stable release.
 
 The candidate adds bounded script configuration evidence to the existing
 `entity_dependency_analysis` tool through the admitted internal ha-mcp reader.

@@ -1,6 +1,6 @@
 # Engineering 2.4.0-beta.1 acceptance
 
-Authoring-stage candidate. Implementation base:
+Materialized source candidate. Implementation base:
 `6ab7568604817afebe29ba7167392e5abad1dd42`. This document defines gates; it does not
 assert they have passed. Preserve accepted stable 2.3.0 and all prior evidence.
 
@@ -9,9 +9,10 @@ assert they have passed. Preserve accepted stable 2.3.0 and all prior evidence.
 Require clean-candidate Full/Evidence validation, exact-head CI and independent
 implementation/security review. Identify all skips and unavailable lanes. Verify
 unchanged public schemas, tool count, provider policy, signed registry data,
-historical records, stable-v1, packaging and workflow permissions. The staged
-version and documents must resolve exactly; materialization is separately
-authorized and required before Ready/merge/publication.
+historical records, stable-v1, packaging contracts and workflow permissions.
+The only packaging change is the declared version. All three advertised version
+authorities must agree on 2.4.0-beta.1, `.release/next-version` must be consumed,
+and the active documents must resolve exactly before Ready/merge/publication.
 
 Prove literal and nested script references, renamed and disabled identities,
 missing target references, prose exclusion, blueprint/template opacity, partial
@@ -39,9 +40,11 @@ evidence, exact file restoration and registry cleanup. Setup writes are outside
 the measured feature calls. Its success marker follows cleanup. The exact-head CI
 result, not the presence of these fixtures, closes this integration gate.
 
-While `.release/next-version` is unmaterialized, PR CI deliberately refuses release
-eligibility. A draft may retain that state; do not claim overall CI or disposable
-integration passed from local unit results.
+Materialization removes the authoring-stage release-eligibility refusal; it does
+not establish validation success. Require complete CI and disposable integration
+on the final candidate; local unit results do not replace those checks. Josh's
+Ready action authorizes the protected exact-head merge and publication under the
+repository contract. Deployment remains a separate decision.
 
 ## Later installed acceptance
 
