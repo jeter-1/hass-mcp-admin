@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 import hashlib
 import json
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .script_sources import ScriptDiagnostics
 
 from ..sanitization import sanitize_untrusted_data
 from .semantic_registry import ReviewedCoreSemantics
@@ -508,6 +511,8 @@ class DependencyScanResult:
     home_assistant_version: str | None = None
     home_assistant_version_status: str = "unavailable"
     semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
+    # Diagnostic-only partition; never consumed by helper execution binding.
+    script_diagnostics: ScriptDiagnostics | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -553,6 +558,8 @@ class DependencyIndexSnapshot:
     # the evidence says, and approval binding must not churn on fences.
     source_epoch: int = 0
     semantic_evidence: ReviewedCoreSemantics | None = field(default=None, repr=False, compare=False)
+    # Diagnostic-only partition; never consumed by helper execution binding.
+    script_diagnostics: ScriptDiagnostics | None = field(default=None, repr=False, compare=False)
 
 
 def obligation_material(item: DependencyObligation) -> dict[str, Any]:

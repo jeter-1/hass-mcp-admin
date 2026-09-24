@@ -517,6 +517,15 @@ class _AdmittedRoute:
 
 
 @dataclass(frozen=True)
+class ScriptDependencyReader:
+    """One fixed admitted read generation; never a caller-selected route."""
+
+    read: Callable[[str], Awaitable[dict[str, Any]]]
+    current: Callable[[], bool]
+    provenance: str
+
+
+@dataclass(frozen=True)
 class _HeldCanaryRoute:
     """Reviewed held-tool evidence captured by the active exact admission."""
 
@@ -3080,6 +3089,98 @@ class UpstreamReadGateway:
         elif core_authority is not None:
             core_runtime.release(core_authority)
 
+    def script_dependency_reader(self, *, audit=None) -> ScriptDependencyReader | None:
+        """Capture the existing script read route for bounded diagnostic use."""
+
+        with self._lock:
+            routes = [
+                (name, route) for name, route in self._exposed.items()
+                if route.entry.upstream_name == "ha_config_get_script"
+                and route.entry.classification == "automatic_read"
+            ]
+            if len(routes) != 1:
+                return None
+            name, route = routes[0]
+            core_epoch = self._core_reconciliation_epoch
+
+        def current() -> bool:
+            try:
+                with self._lock:
+                    if (self._exposed.get(name) is not route
+                            or self._core_reconciliation_epoch != core_epoch):
+                        return False
+                    _policy, _release, selection = self._validate_identity(
+                        REVIEWED_UPSTREAM_SERVER, route.server_version,
+                        route.protocol_version,
+                    )
+                    if route.profile_id is not None:
+                        coordinator = self._readmission_coordinator
+                        generation = coordinator.generation_for(UpstreamSurface.HA_MCP) if coordinator else None
+                        decision = generation.decision_for(route.entry.upstream_name) if generation else None
+                        if (selection is None or selection.authority_token != route.authority_token
+                                or generation is None or generation.generation != route.generation
+                                or decision is None or not decision.disposition.admitted):
+                            return False
+                    if self._core_runtime is not None:
+                        status = self._core_runtime.route_status(
+                            delegated_requirements(route.entry.upstream_name),
+                            delegated_tool=route.entry.upstream_name,
+                            delegated_adapter_version=route.adapter_version,
+                        )
+                        if status.get("available") is not True:
+                            return False
+                return True
+            except Exception:
+                return False
+
+        async def read(entity_id: str) -> dict[str, Any]:
+            if not isinstance(entity_id, str) or not re.fullmatch(r"script\.[a-z0-9_]{1,128}", entity_id):
+                return {"success": False, "details": {"failure_category": "argument_validation"}}
+            if not current():
+                return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
+            parent = current_telemetry()
+            telemetry, token = begin_request()
+            telemetry.tool_name = "dependency_script_read"
+            if parent is not None:
+                telemetry.caller_id = parent.caller_id
+                telemetry.core_dispatch_authorizer = parent.core_dispatch_authorizer
+                telemetry.audit_context["parent_request_id"] = parent.request_id
+            result: dict[str, Any] = {}
+            try:
+                if not telemetry.authorize_core_dispatch():
+                    return {"success": False, "details": {"failure_category": "provider_authority_changed"}}
+                result = json.loads(await self.execute(
+                    exposed_name=name, arguments={"script_id": entity_id},
+                    reviewed_schema=route.observed_tool["inputSchema"],
+                    policy_entry=route.entry, admission_generation=route.generation,
+                    contract_fingerprint=route.contract_fingerprint,
+                    require_unmodified_script=True,
+                ))
+                if not current() or not telemetry.authorize_core_dispatch():
+                    result = {"success": False, "details": {"failure_category": "provider_authority_changed"}}
+                return result
+            finally:
+                try:
+                    if audit is not None:
+                        audit.write({
+                            "event": "dependency_script_read", "request_id": telemetry.request_id,
+                            "parent_request_id": parent.request_id if parent else None,
+                            "provider": PROVIDER_ID, "upstream_tool": "ha_config_get_script",
+                            "upstream_version": route.server_version,
+                            "contract_fingerprint": route.contract_fingerprint,
+                            "result_status": "success" if result.get("success") is True else "failed_or_cancelled",
+                            "provider_dispatch_count": telemetry.provider_dispatch_count,
+                            "fallback_occurred": False,
+                        })
+                finally:
+                    end_request(token)
+
+        return ScriptDependencyReader(
+            read=read, current=current,
+            provenance=(f"ha-mcp {route.server_version}; contract {route.contract_fingerprint}; "
+                        "identity inventory direct_ha_api; diagnostic only; no fallback"),
+        ) if current() else None
+
     async def execute(
         self,
         *,
@@ -3089,6 +3190,7 @@ class UpstreamReadGateway:
         policy_entry: UpstreamToolPolicyEntry,
         admission_generation: int,
         contract_fingerprint: str,
+        require_unmodified_script: bool = False,
     ) -> str:
         started = time.perf_counter()
         mapping: _AdmittedRoute | None = None
@@ -3108,6 +3210,8 @@ class UpstreamReadGateway:
             # allowing its direct Core reads to run without an authorizer.
             telemetry, telemetry_token = begin_request()
         try:
+            if require_unmodified_script and policy_entry.upstream_name != "ha_config_get_script":
+                raise _GatewayFailure("prohibited_delegation", dispatched=False)
             mapping, exchange = await self._dispatch_current_route(
                 exposed_name=exposed_name,
                 arguments=arguments,
@@ -3210,6 +3314,8 @@ class UpstreamReadGateway:
                 max_string=max(2_000, min(response_limit // 2, 20_000)),
             )
             if sanitation.failed_closed:
+                raise _GatewayFailure("sanitization_failed", dispatched=True)
+            if require_unmodified_script and sanitation.redaction_applied:
                 raise _GatewayFailure("sanitization_failed", dispatched=True)
             encoded_size = len(
                 json.dumps(

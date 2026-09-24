@@ -3065,6 +3065,78 @@ async def _run_device_migration_contract(
     )
 
 
+async def _run_script_dependency_contract(configured, core_runtime, read_gateway):
+    """Stored, renamed and disabled fixtures; collection itself performs reads only.
+
+    Additional package/blueprint and failure-injection integration scenarios remain
+    explicit release gates in V2_4_0_BETA1_ACCEPTANCE.md.
+    """
+    rest = HomeAssistantRestClient(configured)
+    websocket = HomeAssistantWebSocketClient(configured)
+    prefix = "script_dependency_contract_"
+    keys = [prefix + name for name in ("normal", "renamed", "disabled")]
+    target = "input_boolean.script_dependency_missing_target"
+    body = {"alias": "Script dependency disposable fixture", "mode": "single",
+            "sequence": [{"condition": "state", "entity_id": target, "state": "on"}]}
+    created = []
+    runtime = DependencyAnalysisRuntime()
+    try:
+        existing = await websocket.command({"type": "config/entity_registry/list"})
+        if any(item.get("unique_id") in keys for item in existing):
+            raise RuntimeError("Script dependency fixture identity already exists")
+        for key in keys:
+            await rest.request("POST", f"/config/script/config/{key}", body)
+            created.append(key)
+        # Reload is disposable fixture setup, never a collector operation.
+        await rest.request("POST", "/services/script/reload", {})
+        identities = {}
+        for _ in range(30):
+            entries = await websocket.command({"type": "config/entity_registry/list"})
+            identities = {row["unique_id"]: row["entity_id"] for row in entries
+                          if row.get("platform") == "script" and row.get("unique_id") in keys}
+            if len(identities) == len(keys):
+                break
+            await asyncio.sleep(1)
+        assert len(identities) == len(keys)
+        renamed = "script.script_dependency_contract_new_name"
+        await websocket.command({"type": "config/entity_registry/update",
+                                 "entity_id": identities[keys[1]], "new_entity_id": renamed})
+        identities[keys[1]] = renamed
+        await websocket.command({"type": "config/entity_registry/update",
+                                 "entity_id": identities[keys[2]], "disabled_by": "user"})
+        for _ in range(30):
+            states = await rest.request("GET", "/states")
+            if identities[keys[2]] not in {row.get("entity_id") for row in states}:
+                break
+            await asyncio.sleep(1)
+        assert identities[keys[2]] not in {row.get("entity_id") for row in states}
+        for key in keys:
+            readback = await rest.request("GET", f"/config/script/config/{key}")
+            assert readback["sequence"] == body["sequence"]
+        runtime.configure(rest, websocket, secret=configured.ha_token, core_runtime=core_runtime)
+        runtime.require().index.provider.script_reader_factory = read_gateway.script_dependency_reader
+        result = await runtime.require().analyze(entity_id=target, source_types=["script"], detail_level="evidence")
+        findings = result.data["findings"]
+        for key in keys:
+            assert any(item["source_id"] == key and item["source_entity_id"] == identities[key]
+                       and item["config_path"] == "$.sequence[0].entity_id" for item in findings)
+        coverage = next(item for item in result.data["source_coverage"] if item["source_type"] == "script")
+        assert coverage["provider"] == "upstream_read_gateway"
+        assert coverage["completeness"] == "partial"
+        assert not coverage["fallback_occurred"]
+        print(json.dumps({"script_dependency_contract": "PASS", "stored_script_fixtures": 3,
+                          "core": EXPECTED_HA_VERSION, "upstream": UPSTREAM_VERSION,
+                          "script_execution": False, "integration_scope": "stored_renamed_disabled"}))
+    finally:
+        await runtime.shutdown()
+        for key in reversed(created):
+            await rest.request("DELETE", f"/config/script/config/{key}")
+        if created:
+            await rest.request("POST", "/services/script/reload", {})
+            remaining = await websocket.command({"type": "config/entity_registry/list"})
+            assert not any(row.get("unique_id") in keys and row.get("platform") == "script" for row in remaining)
+
+
 async def _run_core_2026_9_child_contract(
     websocket: HomeAssistantWebSocketClient,
     token: str,
@@ -3186,6 +3258,8 @@ async def _run_core_2026_9_child_contract(
         )
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.reconcile_until_initialized(server)
+        if EXPECTED_HA_VERSION == "2026.9.3":
+            await _run_script_dependency_contract(configured, core_runtime, read_gateway)
         if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)

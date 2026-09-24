@@ -615,6 +615,7 @@ class DependencyIndex:
             ),
             source_epoch=source_epoch,
             semantic_evidence=scan.semantic_evidence,
+            script_diagnostics=(scan.script_diagnostics.visible() if scan.script_diagnostics is not None else None),
         )
         # Revalidate after the last read and all parsing, before publishing.
         # The synchronous publication keeps the existing invalidation/fence

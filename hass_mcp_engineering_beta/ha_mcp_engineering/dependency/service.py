@@ -63,7 +63,18 @@ class EntityDependencyAnalysisService:
             METRICS.record_dependency_analysis_failure("request_validation")
             raise InvalidRequestError(details={"operation": "entity_dependency_analysis"})
 
-        query_fingerprint = _query_fingerprint(target, detail_level, include_indirect, max_depth, requested)
+        def visible_scripts(snapshot):
+            return (
+                snapshot.script_diagnostics.visible()
+                if snapshot is not None and snapshot.script_diagnostics is not None
+                and "script" in requested else None
+            )
+
+        def query_identity(diagnostic):
+            parts = (target, detail_level, include_indirect, max_depth, requested)
+            return _query_fingerprint(*parts, diagnostic.fingerprint) if diagnostic else _query_fingerprint(*parts)
+
+        query_fingerprint = query_identity(visible_scripts(self.index.snapshot))
         offset = 0
         if cursor:
             try:
@@ -90,8 +101,18 @@ class EntityDependencyAnalysisService:
             METRICS.record_dependency_analysis_failure("internal_error")
             raise GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE) from exc
 
+        diagnostic = visible_scripts(snapshot)
+        if cursor and query_fingerprint != query_identity(diagnostic):
+            raise GovernanceError(ErrorCode.STALE_CURSOR)
+        query_fingerprint = query_identity(diagnostic)
+        analysis_findings = snapshot.findings + (diagnostic.findings if diagnostic else ())
+        analysis_dynamic = snapshot.dynamic_references + (diagnostic.dynamic_references if diagnostic else ())
+        analysis_coverage = tuple(
+            diagnostic.coverage if diagnostic and item.source_type == "script" else item
+            for item in snapshot.coverage
+        )
         direct, findings = select_dependency_findings(
-            snapshot.findings,
+            analysis_findings,
             target,
             requested,
             include_indirect=include_indirect,
@@ -117,13 +138,13 @@ class EntityDependencyAnalysisService:
         metadata = _safe_target_metadata(metadata)
 
         coverage = _coverage_for(
-            snapshot.coverage,
+            analysis_coverage,
             requested,
             findings,
             cache_hit=not rebuilt,
         )
         partial = any(item.completeness in {"partial", "unavailable", "unsupported"} for item in coverage if item.completeness != "not_requested")
-        dynamic = [item for item in snapshot.dynamic_references if item.source_type in requested][:10]
+        dynamic = [item for item in analysis_dynamic if item.source_type in requested][:10]
         warnings = [warning for item in coverage for warning in item.warnings]
         warnings.extend(item.warning + f" Source: {item.source_type}/{item.source_id}, path {item.config_path}." for item in dynamic)
         if has_more:
@@ -164,7 +185,7 @@ class EntityDependencyAnalysisService:
                 "next_cursor": next_cursor,
             },
             "index": {
-                "fingerprint": snapshot.fingerprint[:16],
+                "fingerprint": (_query_fingerprint(snapshot.fingerprint, diagnostic.fingerprint) if diagnostic else snapshot.fingerprint)[:16],
                 "generation": snapshot.generation,
                 "built_at": snapshot.built_at,
                 "cache_hit": not rebuilt,
@@ -185,6 +206,8 @@ class EntityDependencyAnalysisService:
 
 
 def source_selected(item: DependencyFinding, requested: list[str]) -> bool:
+    if item.source_type == "script":
+        return "script" in requested
     if item.relation.startswith("blueprint"):
         return "blueprint" in requested or "automation" in requested
     return item.source_type in requested

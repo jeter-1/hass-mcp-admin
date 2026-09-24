@@ -1,0 +1,57 @@
+{
+  "purpose": "Exact source inspection supporting script diagnostic collection; not candidate integration or installed acceptance.",
+  "implementation_base": "6ab7568604817afebe29ba7167392e5abad1dd42",
+  "sources": [
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "homeassistant/components/script/__init__.py",
+      "url": "https://github.com/home-assistant/core/blob/6de5eb18cd4502f94af44cfff3a02250d88716ed/homeassistant/components/script/__init__.py",
+      "sha256": "ae005c979c7a0f2e77750490e5776d61408513923ead5c48f81ce3bcddc0b2f1"
+    },
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "homeassistant/components/config/script.py",
+      "url": "https://github.com/home-assistant/core/blob/6de5eb18cd4502f94af44cfff3a02250d88716ed/homeassistant/components/config/script.py",
+      "sha256": "b1c819eaf861baa08dda5f13c3d2a48e3a34defd778aca4c35e72de17f2d5bff"
+    },
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "homeassistant/components/config/view.py",
+      "url": "https://github.com/home-assistant/core/blob/6de5eb18cd4502f94af44cfff3a02250d88716ed/homeassistant/components/config/view.py",
+      "sha256": "dc36ee22897a925ae4f8583800b9a7dd9f5fc05ba1117b2bc8b162d75bb68ade"
+    },
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "tests/components/config/test_script.py",
+      "url": "https://github.com/home-assistant/core/blob/6de5eb18cd4502f94af44cfff3a02250d88716ed/tests/components/config/test_script.py",
+      "sha256": "a0be2b204cc4318e49e587661515ef088073e7c5eb7d76bffb63f1b1e29725c8"
+    },
+    {
+      "repository": "homeassistant-ai/ha-mcp",
+      "commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+      "path": "src/ha_mcp/client/rest_client.py",
+      "url": "https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/client/rest_client.py",
+      "sha256": "0259696b92b3c113bb03651927b6c409a004a91408680fd339191fe25d80ea1c"
+    },
+    {
+      "repository": "homeassistant-ai/ha-mcp",
+      "commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+      "path": "src/ha_mcp/tools/tools_config_scripts.py",
+      "url": "https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/src/ha_mcp/tools/tools_config_scripts.py",
+      "sha256": "6aba40b81a78ac632558ab2f15e0b7a89e91e1f01eb5afb3204c7148806b3a0f"
+    },
+    {
+      "repository": "homeassistant-ai/ha-mcp",
+      "commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+      "path": "tests/src/unit/test_rest_client_scripts.py",
+      "url": "https://github.com/homeassistant-ai/ha-mcp/blob/311d6dc273fb4e9a5b8cde0de15f69472a64fe44/tests/src/unit/test_rest_client_scripts.py",
+      "sha256": "13be75b84a6e7b0978f4e48ab550cb6501ce902e3f58e7bc7e4597f63d89c89c"
+    }
+  ],
+  "runtime_version_pins_added": false,
+  "live_access": false
+}

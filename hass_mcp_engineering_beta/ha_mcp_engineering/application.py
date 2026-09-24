@@ -336,6 +336,9 @@ def create_application(
     UPSTREAM_READ_GATEWAY.configure(
         settings, core_runtime=CORE_READMISSION
     )
+    DEPENDENCY_ANALYSIS.require().index.provider.script_reader_factory = (
+        lambda: UPSTREAM_READ_GATEWAY.script_dependency_reader(audit=audit)
+    )
     FAN_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     POWER_OPERATIONS.configure(settings, CORE_READMISSION, UPSTREAM_READ_GATEWAY, audit=audit)
     CORE_READMISSION.register_reconciliation_listener(
