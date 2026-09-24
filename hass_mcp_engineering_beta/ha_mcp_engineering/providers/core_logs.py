@@ -67,8 +67,6 @@ class CoreLogReader(HomeAssistantRestClient):
     async def read_window(self, *, limit: int, offset: int) -> dict:
         limit, offset = validate_arguments({"limit": limit, "offset": offset})
         telemetry = current_telemetry()
-        if telemetry and not telemetry.authorize_core_dispatch():
-            raise _failure(ErrorCode.PROVIDER_UNAVAILABLE, "core_authority_unavailable")
         # Only the add-on credential is valid here. Never send a configured
         # standalone Core token to Supervisor or select a different backend.
         supervisor_token = os.environ.get("SUPERVISOR_TOKEN", "")

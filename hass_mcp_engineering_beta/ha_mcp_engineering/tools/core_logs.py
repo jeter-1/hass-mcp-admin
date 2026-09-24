@@ -24,7 +24,8 @@ async def get_core_log_history(
     """Read one bounded Core journal window through the fixed Supervisor API.
 
     limit counts journal entries; offset skips newer entries (maximum 10000).
-    HAOS/Supervised only. One request, at most 10 seconds and 256 KiB received;
+    HAOS/Supervised only, including while Core is down. One request with a
+    10-second network deadline and 256 KiB body consumed;
     sanitized log evidence is capped at 32 KiB. No follow, retries or fallback.
     Windows are not snapshots: rotation/growth can skip or repeat records.
     Retention and upstream stream completeness remain unknown. Empty output

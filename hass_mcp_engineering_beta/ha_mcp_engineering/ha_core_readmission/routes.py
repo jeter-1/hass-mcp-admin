@@ -96,10 +96,9 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_history": ("core.basic_rest_read",),
     "get_logbook": ("core.basic_rest_read",),
     "get_error_log": ("core.basic_websocket_read",),
-    # Basic REST authority is a connectivity prerequisite, not a claim that
-    # the signed profile certifies Supervisor journal semantics. The dedicated
-    # fixed-route reader enforces its own bounded representation contract.
-    "get_core_log_history": ("core.basic_rest_read",),
+    # Supervisor journal diagnostics remain available while Core is down.
+    # Their fixed native provider does not consume any Core API authority.
+    "get_core_log_history": (),
     "list_automations": ("core.automation_configuration_read",),
     "get_automation_config": ("core.automation_configuration_read",),
     "list_devices": ("core.direct_device_registry_read",),

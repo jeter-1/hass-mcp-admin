@@ -41,7 +41,7 @@ backend. No new credential setting or client-facing connector is introduced.
 | Inputs | Strict integers: `limit` 2–200, `offset` 0–10000; all other fields rejected before SDK coercion |
 | Provider / transport / source | `supervisor_core_logs` / `supervisor_api` / `core_journal` |
 | Request | Fixed GET; `Range: entries=:-{offset + limit - 1}:{limit}`; no redirects, retries, fallback or automatic paging |
-| Bounds | One concurrent read; at most 10 seconds (or lower configured HA timeout), 256 KiB received, 32 KiB sanitized log text in the serialized response (lower when response budget requires it) |
+| Bounds | One concurrent read; network deadline of 10 seconds (or lower configured HA timeout), 256 KiB response body consumed, 32 KiB sanitized log text in the serialized response (lower when response budget requires it) |
 | Representation | UTF-8 `text/plain`, identity encoding; other representations refused |
 | Evidence | Original source order, timestamps and multiline text; no invented event times; arrival time is labeled separately |
 | Sanitization | Existing fail-closed redactor plus exact Supervisor/Core/access secrets; sanitization precedes shortening; incomplete final lines are omitted |
@@ -49,7 +49,9 @@ backend. No new credential setting or client-facing connector is introduced.
 | Navigation | Suggested older offset only for nonempty, untruncated output within the bound; never a verified cursor |
 | Audit / metrics | Request correlation, selected provider, source, timing and actual dispatched outcome; no log body added to audit context |
 
-`download_complete=true` means HTTP EOF was observed before the byte cap; it
+`downloaded_bytes` counts response-body bytes consumed by this reader, not raw
+socket traffic; HTTP/OS buffering can read ahead. The byte cap bounds application
+evidence processing. `download_complete=true` means HTTP EOF was observed before the byte cap; it
 does **not** certify that Supervisor completed the requested journal window.
 Supervisor can close a started stream after a journal error without returning
 an HTTP error. Lines are not journal-entry counts. Rotation or growth can cause
@@ -64,10 +66,11 @@ Cancellation closes the request and releases the single-read slot; it is not
 retried. A truncated successful read remains explicitly partial. Known retained
 text is useful evidence even though retention coverage remains unknown.
 
-Existing `core.basic_rest_read` authority remains a prerequisite at the
-Engineering request boundary; it does not certify Supervisor journal semantics.
-No signed Core profile or registry data is added or rewritten. The dedicated
-native routing contract enforces this reader's provider and no-fallback policy.
+The new Supervisor read requires no Core API capability or healthy Core process;
+Core logs remain useful during a Core outage. Supervisor authentication and the
+dedicated native routing contract enforce this fixed read. No signed Core
+profile or registry data is added or rewritten, and existing tools retain their
+Core requirements. Signed Core authority does not certify Supervisor semantics.
 
 ## Exact upstream evidence
 

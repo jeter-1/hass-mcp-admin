@@ -7,10 +7,12 @@ import json
 import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 from aiohttp import web
+import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.configuration import Settings
@@ -206,15 +208,38 @@ class CoreLogHistoryTests(unittest.IsolatedAsyncioTestCase):
         release.set()
         self.assertEqual(len(self.calls), 1)
 
-    async def test_core_authority_denial_has_zero_requests(self):
-        telemetry, token = begin_request("synthetic-core-logs-authority")
-        telemetry.core_dispatch_authorizer = lambda: False
-        try:
-            result = await self.result()
-            self.assertEqual(result["error_code"], "provider_unavailable")
-            self.assertEqual(self.calls, [])
-        finally:
-            end_request(token)
+    async def test_authenticated_supervisor_read_survives_core_authority_outage(self):
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.routing import AuthenticatedMcpGateway
+        unavailable_core = SimpleNamespace(acquire=Mock(return_value=None))
+        async def app(scope, receive, send):
+            rpc = json.loads((await receive())["body"])
+            tool = registered_tools(get_registered_server())[rpc["params"]["name"]]
+            rendered = await tool.run(rpc["params"]["arguments"])
+            payload = {"jsonrpc": "2.0", "id": rpc["id"], "result": {
+                "content": [{"type": "text", "text": rendered}], "isError": False}}
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [(b"content-type", b"application/json")]})
+            await send({"type": "http.response.body", "body": json.dumps(payload).encode()})
+        gateway = AuthenticatedMcpGateway(app, self.settings,
+            AuditLogger("unused", self.settings.access_secret, enabled=False),
+            core_runtime=unavailable_core)
+        with patch.object(core_logs, "READER", self.reader):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gateway),
+                                        base_url="http://127.0.0.1:8100") as client:
+                rpc = {"jsonrpc": "2.0", "id": "core-log-outage", "method": "tools/call",
+                       "params": {"name": "get_core_log_history", "arguments": {}}}
+                response = await client.post(f"/{self.settings.access_secret}/mcp", json=rpc)
+                result = json.loads(response.json()["result"]["content"][0]["text"])
+                self.assertTrue(result["success"])
+                self.assertIn("retained event", result["data"]["log"])
+                unavailable_core.acquire.assert_not_called()
+                self.assertEqual(len(self.calls), 1)
+                rpc["params"]["name"] = "get_error_log"
+                refused = await client.post(f"/{self.settings.access_secret}/mcp", json=rpc)
+                self.assertIn("CoreCapabilityUnavailable", refused.text)
+                unavailable_core.acquire.assert_called_once()
+                self.assertEqual(len(self.calls), 1)
 
     async def test_removed_direct_policy_denies_read(self):
         with patch.object(core_logs, "core_log_policy_allows_read", return_value=False):
@@ -339,7 +364,7 @@ class CoreLogHistoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(tool.annotations.destructiveHint)
         self.assertTrue(core_log_policy_allows_read())
         self.assertEqual(routing_for_tool(tool.name).preferred_provider, "supervisor_core_logs")
-        self.assertEqual(static_tool_requirements(tool.name), ("core.basic_rest_read",))
+        self.assertEqual(static_tool_requirements(tool.name), ())
 
 
 if __name__ == "__main__":
