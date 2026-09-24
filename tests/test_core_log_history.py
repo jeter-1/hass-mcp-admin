@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch, Mock
@@ -221,8 +222,11 @@ class CoreLogHistoryTests(unittest.IsolatedAsyncioTestCase):
             await send({"type": "http.response.start", "status": 200,
                         "headers": [(b"content-type", b"application/json")]})
             await send({"type": "http.response.body", "body": json.dumps(payload).encode()})
+        audit_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(audit_dir.cleanup)
+        audit_path = Path(audit_dir.name) / "audit.jsonl"
         gateway = AuthenticatedMcpGateway(app, self.settings,
-            AuditLogger("unused", self.settings.access_secret, enabled=False),
+            AuditLogger(str(audit_path), self.settings.access_secret),
             core_runtime=unavailable_core)
         with patch.object(core_logs, "READER", self.reader):
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=gateway),
@@ -240,6 +244,14 @@ class CoreLogHistoryTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIn("CoreCapabilityUnavailable", refused.text)
                 unavailable_core.acquire.assert_called_once()
                 self.assertEqual(len(self.calls), 1)
+        audit_text = audit_path.read_text()
+        record = next(json.loads(line) for line in audit_text.splitlines()
+                      if json.loads(line).get("tool_name") == "get_core_log_history")
+        self.assertEqual(record["analysis_summary"]["provider"], "supervisor_core_logs")
+        self.assertEqual(record["analysis_summary"]["source"], "core_journal")
+        self.assertEqual(record["result_status"], "partial")
+        self.assertNotIn("retained event", audit_text)
+        self.assertNotIn("synthetic-supervisor-token", audit_text)
 
     async def test_removed_direct_policy_denies_read(self):
         with patch.object(core_logs, "core_log_policy_allows_read", return_value=False):

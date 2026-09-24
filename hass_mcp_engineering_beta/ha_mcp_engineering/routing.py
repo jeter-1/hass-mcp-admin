@@ -1009,6 +1009,7 @@ class AuthenticatedMcpGateway:
                             "incident_correlation",
                             "handoff_generation",
                             "run_held_read_canary",
+                            "get_core_log_history",
                         }
                         else {
                             "operation_class": (
