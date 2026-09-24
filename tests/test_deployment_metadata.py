@@ -417,11 +417,12 @@ class AddonMetadataValidationTests(unittest.TestCase):
     @patch.object(VALIDATOR, "staged_release_version", return_value=None)
     def test_unreleased_check_cannot_allow_an_older_version(self, _staged):
         integrity_check = Mock()
+        next_major = int(str(self.beta["version"]).split(".", 1)[0]) + 1
         with self.assertRaises(VALIDATOR.MetadataValidationError):
             VALIDATOR.validate_repository(
                 ROOT,
                 base_ref="origin/main",
-                deployed_version="2.3.1",
+                deployed_version=f"{next_major}.0.0",
                 paths={"hass_mcp_engineering_beta/config.yaml"},
                 unreleased_integrity_check=integrity_check,
             )

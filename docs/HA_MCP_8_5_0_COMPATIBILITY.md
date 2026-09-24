@@ -33,6 +33,25 @@ Error-shape bindings additionally use exact-source execution against a disposabl
 local fixture. Missing-state and invalid-blueprint errors were observed in the
 actual images; the remaining error probes require candidate integration coverage.
 
+## Internal script dependency consumption — staged 2.4.0-beta.1
+
+The existing automatic `ha_config_get_script` read also supplies bounded native
+dependency diagnostics. This adds no policy entry, public tool/schema or fallback.
+Engineering sends an exact observed script entity ID and validates the returned
+storage key against its independent script-platform registry mapping, preserving
+renamed IDs. Per-script success must be complete and unchanged by sanitization.
+Errors, truncation and identity mismatch leave neighboring script evidence usable
+but cannot become exact findings. Catalog drift, Core/upstream retirement and
+existing admission expiry remain authoritative, including for cached diagnostics.
+
+ha-mcp 8.5.0 reads stored REST configuration here; its identity resolver has fallback
+cases, so a successful upstream response alone does not prove identity. The reader
+does not enumerate package-only or every stored script. Source-family completeness
+remains partial even when all discovered reads succeed. Exact inspected source
+bindings are retained in the [source review](evidence/script-dependency-source-review.json).
+Candidate disposable integration remains a separate gate from upstream source
+inspection and synthetic regressions.
+
 ## Blueprint read contract
 
 The public name and schema remain `ha_get_blueprint`. An absent/null path maps

@@ -2594,6 +2594,7 @@ _DEVICE_CONTRACT_SCENARIOS = frozenset(
         "child_effective_area",
         "child_entity",
         "dependency_index",
+        "script_dependency",
         "direct_device_target",
         "impact_analysis",
         "helper_state_control",
@@ -3065,6 +3066,331 @@ async def _run_device_migration_contract(
     )
 
 
+def _script_dependency_files(root: Path, action: str) -> str:
+    """Create/restore only owned synthetic package/blueprint files in disposable HA."""
+    import hashlib
+    import yaml
+
+    config = root / "configuration.yaml"
+    backup = root / ".script-dependency-contract-original.yaml"
+    blueprint = root / "blueprints/script/dependency_contract/entities.yaml"
+    addition = b'''\nhomeassistant:
+  packages:
+    script_dependency_contract:
+      script:
+        script_dependency_contract_package:
+          alias: Script dependency package fixture
+          mode: single
+          sequence:
+            - condition: state
+              entity_id: input_boolean.script_dependency_missing_target
+              state: "on"
+'''
+    blueprint_text = '''blueprint:
+  name: Synthetic script dependency fixture
+  domain: script
+  input:
+    target:
+      selector:
+        entity: {}
+sequence:
+  - condition: state
+    entity_id: !input target
+    state: "on"
+'''
+    if action == "prepare":
+        original = config.read_bytes()
+        parsed = yaml.load(original, Loader=yaml.BaseLoader)
+        if (not isinstance(parsed, dict) or "homeassistant" in parsed
+                or backup.exists() or blueprint.exists()):
+            raise RuntimeError("Disposable script fixture would overwrite existing data")
+        with backup.open("xb") as handle:
+            handle.write(original)
+        try:
+            blueprint.parent.mkdir(parents=True, exist_ok=True)
+            with blueprint.open("x") as handle:
+                handle.write(blueprint_text)
+            config.write_bytes(original + addition)
+        except BaseException:
+            config.write_bytes(original)
+            blueprint.unlink(missing_ok=True)
+            backup.unlink()
+            raise
+    elif action == "restore":
+        original = backup.read_bytes()
+        if config.read_bytes() != original + addition or blueprint.read_text() != blueprint_text:
+            raise RuntimeError("Disposable script fixture changed unexpectedly; preserve backup")
+        config.write_bytes(original)
+        assert config.read_bytes() == original
+        blueprint.unlink()
+        backup.unlink()
+    else:
+        raise ValueError("Unknown disposable fixture file operation")
+    return hashlib.sha256(original).hexdigest()
+
+
+class _ScriptDependencyReadCapture:
+    """Feature-boundary calls, not a claim of an upstream network/wire capture."""
+
+    def __init__(self, rest, websocket, transport):
+        self.rest = rest
+        self.websocket = websocket
+        self.transport_read = transport.execute_read
+        self.calls = []
+        self.violations = []
+
+    async def request(self, method, path, *args, **kwargs):
+        if method != "GET":
+            self.violations.append("REST write")
+            raise AssertionError("Script dependency feature attempted a REST write")
+        self.calls.append(("rest", method, path))
+        return await self.rest.request(method, path, *args, **kwargs)
+
+    async def command(self, payload):
+        if payload.get("type") not in {"config/entity_registry/list", "config/label_registry/list"}:
+            self.violations.append("unreviewed WebSocket command")
+            raise AssertionError("Script dependency feature attempted an unreviewed WebSocket command")
+        self.calls.append(("websocket", payload["type"]))
+        return await self.websocket.command(payload)
+
+    async def execute_read(self, tool_name, arguments, **kwargs):
+        if tool_name != "ha_config_get_script" or set(arguments) != {"script_id"}:
+            self.violations.append("unreviewed upstream operation")
+            raise AssertionError("Script dependency feature attempted another upstream operation")
+        self.calls.append(("upstream", tool_name, arguments["script_id"]))
+        # Preserve catalog validation, dispatch ownership and all transport options.
+        return await self.transport_read(tool_name, arguments, **kwargs)
+
+
+async def _remove_disposable_script_package_entry(rest, websocket, rows, key, entity):
+    """Remove one unloaded owned package entry, including Core's restored placeholder."""
+    matches = [row for row in rows if row.get("unique_id") == key and row.get("platform") == "script"]
+    assert len(matches) <= 1
+    if not matches:
+        return rows
+    assert isinstance(entity, str) and matches[0]["entity_id"] == entity
+    states = await rest.request("GET", "/states")
+    observed = [row for row in states if row.get("entity_id") == entity]
+    assert len(observed) <= 1
+    if observed:
+        # Exact Core async_remove retains this unavailable/restored placeholder
+        # for enabled registry entries after unloading the package configuration.
+        state = observed[0]
+        assert (state.get("state") == "unavailable" and isinstance(state.get("attributes"), dict)
+                and state["attributes"].get("restored") is True)
+    await websocket.command({"type": "config/entity_registry/remove", "entity_id": entity})
+    for _ in range(10):
+        states = await rest.request("GET", "/states")
+        if entity not in {row.get("entity_id") for row in states}:
+            break
+        await asyncio.sleep(0.1)
+    assert entity not in {row.get("entity_id") for row in states}
+    return await websocket.command({"type": "config/entity_registry/list"})
+
+
+async def _run_script_dependency_contract(configured, core_runtime, read_gateway):
+    """Exact disposable Core/upstream success, limitations, fault isolation and cleanup."""
+    import inspect
+    from dataclasses import replace
+    from unittest.mock import patch
+
+    rest = HomeAssistantRestClient(configured)
+    websocket = HomeAssistantWebSocketClient(configured)
+    prefix = "script_dependency_contract_"
+    names = ("normal", "renamed", "disabled", "blueprint", "template")
+    keys = [prefix + name for name in names]
+    package_key = prefix + "package"
+    all_keys = {*keys, package_key}
+    target = "input_boolean.script_dependency_missing_target"
+    body = {"alias": "Script dependency disposable fixture", "mode": "single",
+            "sequence": [{"condition": "state", "entity_id": target, "state": "on"}]}
+    bodies = {key: copy.deepcopy(body) for key in keys}
+    bodies[keys[3]] = {"alias": "Script dependency blueprint fixture",
+                      "use_blueprint": {"path": "dependency_contract/entities.yaml", "input": {"target": target}}}
+    bodies[keys[4]]["sequence"].append({"condition": "template", "value_template":
+        "{{ states(states('input_text.script_dependency_selector')) == 'on' }}"})
+    created = []
+    files_prepared = False
+    original_hash = None
+    stage = "inventory_preflight"
+    identities = {}
+    runtime = DependencyAnalysisRuntime()
+    file_program = "from pathlib import Path\n" + inspect.getsource(_script_dependency_files)
+
+    async def fixture_files(action):
+        # Emit only a digest or exception class; never raw exception text/paths.
+        program = file_program + (
+            "\nimport json\ntry:\n"
+            f"    print(json.dumps({{'sha256': _script_dependency_files(Path('/config'), {action!r})}}))\n"
+            "except Exception as exc:\n"
+            "    print(json.dumps({'failure_type': type(exc).__name__}))\n"
+        )
+        outcome = json.loads(await _docker_command(
+            "exec", HA_CONTRACT_CONTAINER, "python", "-c", program))
+        if "sha256" not in outcome:
+            error = RuntimeError("Disposable script file operation failed")
+            failure_type = outcome.get("failure_type")
+            allowed = {"RuntimeError", "FileNotFoundError", "PermissionError", "ModuleNotFoundError", "AttributeError"}
+            setattr(error, "contract_diagnostic", {
+                "file_operation": action,
+                "failure_type": failure_type if failure_type in allowed else "other",
+            })
+            raise error
+        return outcome["sha256"]
+
+    def script_coverage(result):
+        return next(row for row in result.data["source_coverage"] if row["source_type"] == "script")
+
+    try:
+        existing = await websocket.command({"type": "config/entity_registry/list"})
+        if any(item.get("unique_id") in all_keys for item in existing):
+            raise RuntimeError("Script dependency fixture identity already exists")
+        stage = "file_prepare"
+        original_hash = await fixture_files("prepare")
+        assert len(original_hash) == 64
+        files_prepared = True
+        stage = "stored_fixture_create"
+        for key in keys:
+            # Track attempted creation, including an uncertain response, for cleanup.
+            created.append(key)
+            await rest.request("POST", f"/config/script/config/{key}", bodies[key])
+        stage = "fixture_reload"
+        # Reload and registry changes are disposable setup, outside feature capture.
+        await rest.request("POST", "/services/script/reload", {})
+        stage = "registry_identity_readback"
+        for _ in range(30):
+            entries = await websocket.command({"type": "config/entity_registry/list"})
+            identities = {row["unique_id"]: row["entity_id"] for row in entries
+                          if row.get("platform") == "script" and row.get("unique_id") in all_keys}
+            if len(identities) == len(all_keys):
+                break
+            await asyncio.sleep(1)
+        assert len(identities) == len(all_keys), "Disposable script identities did not load"
+        stage = "rename_and_disable"
+        renamed = "script.script_dependency_contract_new_name"
+        await websocket.command({"type": "config/entity_registry/update",
+                                 "entity_id": identities[keys[1]], "new_entity_id": renamed})
+        identities[keys[1]] = renamed
+        await websocket.command({"type": "config/entity_registry/update",
+                                 "entity_id": identities[keys[2]], "disabled_by": "user"})
+        for _ in range(30):
+            states = await rest.request("GET", "/states")
+            if identities[keys[2]] not in {row.get("entity_id") for row in states}:
+                break
+            await asyncio.sleep(1)
+        assert identities[keys[2]] not in {row.get("entity_id") for row in states}
+        assert identities[package_key] in {row.get("entity_id") for row in states}
+        stage = "stored_configuration_readback"
+        for key in keys:
+            readback = await rest.request("GET", f"/config/script/config/{key}")
+            for field in ("sequence", "use_blueprint"):
+                if field in bodies[key]:
+                    assert readback[field] == bodies[key][field]
+        capture = _ScriptDependencyReadCapture(rest, websocket, read_gateway._transport)
+        runtime.configure(capture, capture, secret=configured.ha_token, core_runtime=core_runtime)
+        service = runtime.require()
+        service.index.provider.script_reader_factory = read_gateway.script_dependency_reader
+        with patch.object(read_gateway._transport, "execute_read", capture.execute_read):
+            stage = "useful_script_analysis"
+            result = await service.analyze(entity_id=target, source_types=["automation", "blueprint", "script"], detail_level="evidence")
+            findings = result.data["findings"]
+            for key in keys:
+                path = "$.use_blueprint.input.target" if key == keys[3] else "$.sequence[0].entity_id"
+                assert any(item["source_id"] == key and item["source_entity_id"] == identities[key]
+                           and item["config_path"] == path for item in findings), key
+            assert not any(item["source_id"] == package_key for item in findings)
+            diagnostic = service.index.snapshot.script_diagnostics
+            assert any(item.source_id == keys[4] for item in diagnostic.dynamic_references)
+            coverage = script_coverage(result)
+            assert coverage["provider"] == "upstream_read_gateway"
+            assert coverage["completeness"] == "partial" and not coverage["fallback_occurred"]
+            assert coverage["failed_item_count"] >= 2  # package read gap + unexpanded blueprint
+            assert "script_blueprint_body_unresolved: 1" in coverage["warnings"]
+            assert next(row for row in result.data["source_coverage"] if row["source_type"] == "blueprint")["evidence_count"] == 0
+            assert ("upstream", "ha_config_get_script", identities[package_key]) in capture.calls
+            shared_findings = tuple(service.index.snapshot.findings)
+            shared_obligations = tuple(service.index.snapshot.obligations)
+
+            # Fault injection follows a real admitted read; no admission is fabricated.
+            def mismatched_reader():
+                reader = read_gateway.script_dependency_reader()
+                assert reader is not None
+                async def read(entity):
+                    response = await reader.read(entity)
+                    if entity == identities[keys[0]] and response.get("success"):
+                        response = copy.deepcopy(response)
+                        response["data"]["script_id"] = "synthetic_wrong_key"
+                    return response
+                return replace(reader, read=read)
+
+            stage = "identity_mismatch_injection"
+            service.index.provider.script_reader_factory = mismatched_reader
+            runtime.invalidate("disposable_script_identity_fault")
+            mismatch = await service.analyze(entity_id=target, source_types=["script"], detail_level="evidence")
+            assert not any(item["source_id"] == keys[0] for item in mismatch.data["findings"])
+            assert any(item["source_id"] == keys[1] for item in mismatch.data["findings"])
+            assert "script_response_incomplete_or_identity_mismatch: 1" in script_coverage(mismatch)["warnings"]
+
+            stage = "provider_loss_injection"
+            before_loss = len([call for call in capture.calls if call[0] == "upstream"])
+            service.index.provider.script_reader_factory = lambda: None
+            runtime.invalidate("disposable_script_provider_loss")
+            lost = await service.analyze(entity_id=target, source_types=["script"], detail_level="evidence")
+            assert script_coverage(lost)["completeness"] == "unavailable" and not lost.data["findings"]
+            assert len([call for call in capture.calls if call[0] == "upstream"]) == before_loss
+            assert tuple(service.index.snapshot.findings) == shared_findings
+            assert tuple(service.index.snapshot.obligations) == shared_obligations
+            stage = "provider_recovery"
+            # Restore the real factory and prove useful recovery through the same route.
+            service.index.provider.script_reader_factory = read_gateway.script_dependency_reader
+            runtime.invalidate("disposable_script_provider_restored")
+            recovered = await service.analyze(entity_id=target, source_types=["script"], detail_level="evidence")
+            assert any(item["source_id"] == keys[0] for item in recovered.data["findings"])
+        stage = "read_capture_verification"
+        assert not capture.violations
+        assert all(any(call[0] == family for call in capture.calls) for family in ("rest", "websocket", "upstream"))
+    except Exception as exc:
+        setattr(exc, "contract_scenario", "script_dependency")
+        diagnostic = getattr(exc, "contract_diagnostic", {})
+        setattr(exc, "contract_diagnostic", {**diagnostic, "script_stage": stage})
+        raise
+    finally:
+        await runtime.shutdown()
+        cleanup_errors = []
+        for key in reversed(created):
+            try:
+                await rest.request("DELETE", f"/config/script/config/{key}")
+            except Exception:
+                cleanup_errors.append("stored_script_cleanup_failed")
+        if files_prepared:
+            try:
+                assert await fixture_files("restore") == original_hash
+            except Exception:
+                cleanup_errors.append("fixture_file_restoration_failed")
+        if created or files_prepared:
+            try:
+                await rest.request("POST", "/services/script/reload", {})
+                remaining = await websocket.command({"type": "config/entity_registry/list"})
+                # Core removes package runtime entities on reload, but preserves
+                # their registry entries. Delete only this fixture's captured entry.
+                remaining = await _remove_disposable_script_package_entry(
+                    rest, websocket, remaining, package_key, identities.get(package_key))
+                assert not any(row.get("unique_id") in all_keys and row.get("platform") == "script" for row in remaining)
+            except Exception:
+                cleanup_errors.append("script_registry_cleanup_failed")
+        if cleanup_errors:
+            error = RuntimeError("Disposable script cleanup failed")
+            setattr(error, "contract_scenario", "script_dependency")
+            setattr(error, "contract_diagnostic", {"script_stage": stage, "cleanup_failures": cleanup_errors})
+            raise error
+    assert all(core_runtime.health_snapshot()[name] == 0 for name in (
+        "issued_lease_count", "active_commit_count", "fallback_count"))
+    print(json.dumps({"script_dependency_contract": "PASS", "stored_script_fixtures": len(keys),
+                      "package_only_fixtures": 1, "core": EXPECTED_HA_VERSION, "upstream": UPSTREAM_VERSION,
+                      "script_execution": False, "feature_boundary_read_capture": True,
+                      "injected_faults": ["canonical_key_mismatch", "provider_unavailable"],
+                      "provider_recovery": "PASS", "file_and_registry_cleanup": "PASS"}))
+
 async def _run_core_2026_9_child_contract(
     websocket: HomeAssistantWebSocketClient,
     token: str,
@@ -3186,6 +3512,8 @@ async def _run_core_2026_9_child_contract(
         )
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.reconcile_until_initialized(server)
+        if EXPECTED_HA_VERSION == "2026.9.3":
+            await _run_script_dependency_contract(configured, core_runtime, read_gateway)
         if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)

@@ -22,18 +22,63 @@ entity is analyzed normally because stale references may remain.
 
 ## Current provider coverage
 
-| Source | Beta 7 status | Provider and behavior |
+| Source | Current source status | Provider and behavior |
 | --- | --- | --- |
 | Automations | complete or partial per scan | Direct HA automation configuration API with bounded concurrency |
 | Blueprint inputs | complete when automation input is readable | Direct automation configuration evidence |
 | Blueprint role resolution | complete or partial | Read-only blueprint mount, safe paths, YAML `!input` resolution |
 | Entity current state | transitional direct | Exact entity state requires direct HA REST; no fallback or Standard MCP claim |
 | Entity registry | transitional direct | HA WebSocket entity registry |
-| Scripts, scenes, groups, template source, dashboards | unavailable | No reliable complete configuration adapter yet |
+| Scripts (staged 2.4.0-beta.1) | partial or unavailable | Admitted internal `ha_config_get_script`; exact registry identity, bounded per-script stored configuration |
+| Scenes, groups, template source, dashboards | unavailable | No reliable complete configuration adapter yet |
 | Static YAML/packages/custom integrations | outside coverage | No arbitrary filesystem or `.storage` scan |
 
-Standard HA MCP lacks an exact entity-ID contract for this evidence and is never fabricated.
-Direct evidence is labeled `direct_ha_api`.
+Direct inventory and automation evidence is labeled `direct_ha_api`. Script
+configuration is labeled `upstream_read_gateway`, with the actual upstream version
+and reviewed contract fingerprint in the existing coverage policy metadata. No
+second connector or client-selected provider is required.
+
+### Script diagnostics — staged 2.4.0-beta.1
+
+The approved increment uses the union of state and entity-registry observations,
+including disabled registry-only scripts. `source_id` is the registry's canonical
+storage key; `source_entity_id` is the current (possibly renamed) entity ID. The
+returned configuration key must independently match that mapping. Contradictory,
+missing, sanitized or unsafe identities are withheld; prefix stripping is not
+identity proof. Configuration is retrieved only through the existing admitted
+reader and its same-session catalog, Core and upstream authority checks.
+
+Known readable scripts can yield exact findings while overall script coverage
+remains partial. State/registry discovery cannot enumerate all stored or
+package-defined scripts, and the reviewed REST-backed reader reads `scripts.yaml`.
+There is no loaded-config WebSocket or filesystem fallback. Empty discovery and
+zero matches do not establish global absence. Provider errors, truncation,
+sanitization and unreadable neighbors remain explicit gaps. Failure counts include
+source-level gap events and per-document failures, not unique failed script counts.
+
+The phase admits at most 1,000 candidates, at most eight concurrent reads (also
+limited by configured dependency concurrency), and 60 seconds within the existing
+300-second build deadline. Configuration retains the existing gateway response
+limit. Script findings and dynamic references have separate 10,000/1,000 bounds;
+overflow belongs to scripts. An inventory limit discloses that the exact omitted
+identity count is unknown. Requests and cumulative read timing appear under
+`delegated_script_configuration` in the scan profile; they count gateway read
+attempts, not all internal transport requests.
+
+Only `entity_dependency_analysis` consumes this diagnostic partition. Automation,
+blueprint, helper consequence/lock, impact, integrity, incident and handoff evidence
+retain their existing shared snapshot and coverage. Scripts cannot consume their
+selector budget or alter the helper risk model. Script-aware query fingerprints
+and cursors include the diagnostic evidence identity. Cached evidence retains its
+origin and is withheld when its admitted provider authority retires; its cursor is
+then stale. A provider becoming available later requires a normal later rebuild,
+not an automatic refresh loop. Source TTL still bounds configuration freshness.
+
+Extraction is parse-only. Blueprint inputs remain inspectable but blueprint bodies
+are not expanded in this increment. Direct `script.<service>` names are not entity
+references; script service call graphs and transitive effects remain out of scope.
+No script is run by analysis. See the [candidate acceptance](V2_4_0_BETA1_ACCEPTANCE.md)
+for required disposable and later installed evidence; staging is not publication.
 
 ## Matching and response semantics
 
@@ -226,6 +271,10 @@ Assessment values are deliberately cautious:
 
 A missing entity with references is a possible stale-reference condition. Zero findings
 never imply absolute safety when relevant sources were not inspected.
+
+Script entity identities longer than the existing 128-character evidence bound
+are refused as source-local gaps before dispatch; they are never truncated into
+exact findings. Canonical storage keys remain separately validated.
 
 ## Index, pagination, and invalidation
 

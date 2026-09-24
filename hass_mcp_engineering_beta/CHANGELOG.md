@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.4.0-beta.1 - Bounded script dependency evidence
+
+- Add canonical script configuration evidence to existing dependency diagnostics,
+  including renamed and disabled identities through the admitted internal reader.
+  Report partial inventory, source-local failures and dynamic/blueprint opacity.
+- Isolate script evidence from the shared helper execution/consequence ledger.
+  Preserve provider authority retirement, bounded collection and zero fallback.
+- Preserve the 78-tool catalog, public schemas, stored formats, installation
+  identity and frozen stable-v1. No script execution or new write is included.
+  Source materialization does not establish publication or installed acceptance.
+
 ## 2.3.0 - Stable Engineering release
 
 - Promote the accepted RC2 implementation through a version/documentation-only

@@ -157,7 +157,8 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         }
     )
 
-    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 8, timeout: float = 60.0):
+    def __init__(self, rest_client, websocket_client, *, secret: str = "", concurrency: int = 8, timeout: float = 60.0, script_reader_factory=None):
+        self.script_reader_factory = script_reader_factory
         self.rest_client = rest_client
         self.websocket_client = websocket_client
         self.secret = secret
@@ -907,6 +908,19 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             )
         )
         parsing_ms = (time.perf_counter() - parse_started) * 1000
+        # Keep scripts outside the helper ledger and its registry-selector budgets.
+        # Only entity_dependency_analysis consumes this diagnostic partition.
+        from .script_sources import collect_script_diagnostics
+        script_diagnostics = None
+        if self.script_reader_factory is not None:
+            script_diagnostics = await collect_script_diagnostics(
+                states, registry, registry_complete=entity_registry_complete,
+                reader_factory=self.script_reader_factory, secret=self.secret,
+                concurrency=self.concurrency,
+            )
+            request_counts["delegated_script_configuration"] += script_diagnostics.profile["read_attempts"]
+            request_time_ms["delegated_script_configuration"] += script_diagnostics.profile["read_time_ms"]
+            maximum_concurrency = max(maximum_concurrency, script_diagnostics.profile["maximum_concurrent_reads"])
         return DependencyScanResult(
             findings,
             dynamic,
@@ -919,6 +933,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     key: round(value, 3) for key, value in sorted(request_time_ms.items())
                 },
                 "automation_count": len(automations),
+                "script_diagnostics": script_diagnostics.profile if script_diagnostics is not None else {},
                 "dependency_obligation_count": len(obligations),
                 "dependency_coverage_failure_count": sum(
                     item.outcome == "coverage_failure"
@@ -948,6 +963,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             home_assistant_version=home_assistant_version,
             home_assistant_version_status=home_assistant_version_status,
             semantic_evidence=semantic_evidence,
+            script_diagnostics=script_diagnostics,
             automation_action_profiles=automation_action_profiles,
             automation_read_failures=automation_read_failures,
             label_memberships=label_memberships,

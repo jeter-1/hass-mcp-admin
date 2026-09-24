@@ -16,7 +16,6 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 VERSION = "2.2.0-rc.2"
-CURRENT_VERSION = "2.3.0"
 ACCEPTANCE = ROOT / "docs" / "V2_2_0_RC2_ACCEPTANCE.md"
 RELEASE_NOTES = ROOT / "docs" / "V2_2_0_RC2_RELEASE_NOTES.md"
 
@@ -35,6 +34,10 @@ METADATA = _load_module(
     "rc2_validate_addon_metadata",
     ROOT / "scripts" / "validate_addon_metadata.py",
 )
+CURRENT_VERSION = METADATA.BETA_VERSION
+CURRENT_DOCUMENT_STEM = "V" + re.sub(
+    r"-(beta|rc)\.(\d+)", r"_\1\2", CURRENT_VERSION
+).replace(".", "_").upper()
 
 sys.path.insert(0, str(BETA))
 from ha_mcp_engineering.ha_core_readmission import (  # noqa: E402
@@ -54,8 +57,10 @@ class Rc2ReleaseTests(unittest.TestCase):
             version_source,
             rf'(?m)^SERVER_VERSION = "{re.escape(CURRENT_VERSION)}"$',
         )
-        self.assertEqual(METADATA.BETA_VERSION, CURRENT_VERSION)
-        self.assertFalse((ROOT / ".release" / "next-version").exists())
+        # The advertised current version stays materialized during later
+        # authoring. Validate a next-version marker rather than forbidding it.
+        marker = ROOT / ".release" / "next-version"
+        staged = METADATA.staged_release_version(ROOT, CURRENT_VERSION) if marker.exists() else None
 
         result = subprocess.run(
             [
@@ -76,15 +81,21 @@ class Rc2ReleaseTests(unittest.TestCase):
         context = json.loads(result.stdout)
         self.assertEqual(context["versions"]["engineering"], CURRENT_VERSION)
         self.assertEqual(context["versions"]["stable"], "1.1.2")
-        self.assertEqual(context["versions"]["staged"], "unknown")
+        self.assertEqual(context["versions"]["staged"], staged or "unknown")
+        if staged:
+            self.assertEqual(context["staged_release"]["version"], staged)
+            staged_documents = context["staged_release"]["documents"]
+            self.assertEqual(staged_documents["resolution_status"], "exact")
+            for key in ("active_release_notes", "active_acceptance_document"):
+                self.assertTrue((ROOT / staged_documents[key]).is_file())
         self.assertEqual(context["documents"]["resolution_status"], "exact")
         self.assertEqual(
             context["documents"]["active_acceptance_document"],
-            "docs/V2_3_0_ACCEPTANCE.md",
+            f"docs/{CURRENT_DOCUMENT_STEM}_ACCEPTANCE.md",
         )
         self.assertEqual(
             context["documents"]["active_release_notes"],
-            "docs/V2_3_0_RELEASE_NOTES.md",
+            f"docs/{CURRENT_DOCUMENT_STEM}_RELEASE_NOTES.md",
         )
 
     def test_documents_bind_release_and_preserved_catalog(self):

@@ -2,6 +2,19 @@
 
 ## Current direction
 
+2026-09-24 release preparation: Josh selected **script dependency coverage** as
+the next increment after stable 2.3.0 acceptance. The materialized **2.4.0-beta.1** candidate
+adds bounded, partial script diagnostics through the existing admitted reader;
+it does not claim a complete all-script inventory or script execution. See the
+[source contract](ENTITY_DEPENDENCY_ANALYSIS.md) and
+[acceptance gates](V2_4_0_BETA1_ACCEPTANCE.md). Advertised source versions now agree
+on 2.4.0-beta.1; 2.3.0 remains the last accepted stable release. Final candidate
+validation/review, publication, deployment and installed acceptance remain
+separate gates. The September 22 preparation record below is retained
+as historical context, not an instruction to repeat completed stable acceptance.
+
+### Retained September 22 release preparation record
+
 Updated 2026-09-22 for **2.3.0** stable-release preparation. This source contract
 is not evidence of publication or deployment. Engineering remains one public
 connector with reviewed internal providers, concrete evidence, useful approved
