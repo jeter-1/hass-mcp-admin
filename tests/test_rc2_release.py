@@ -55,7 +55,10 @@ class Rc2ReleaseTests(unittest.TestCase):
             rf'(?m)^SERVER_VERSION = "{re.escape(CURRENT_VERSION)}"$',
         )
         self.assertEqual(METADATA.BETA_VERSION, CURRENT_VERSION)
-        self.assertFalse((ROOT / ".release" / "next-version").exists())
+        # The published current version stays materialized during later
+        # authoring. Validate a next-version marker rather than forbidding it.
+        marker = ROOT / ".release" / "next-version"
+        staged = METADATA.staged_release_version(ROOT, CURRENT_VERSION) if marker.exists() else None
 
         result = subprocess.run(
             [
@@ -76,7 +79,13 @@ class Rc2ReleaseTests(unittest.TestCase):
         context = json.loads(result.stdout)
         self.assertEqual(context["versions"]["engineering"], CURRENT_VERSION)
         self.assertEqual(context["versions"]["stable"], "1.1.2")
-        self.assertEqual(context["versions"]["staged"], "unknown")
+        self.assertEqual(context["versions"]["staged"], staged or "unknown")
+        if staged:
+            self.assertEqual(context["staged_release"]["version"], staged)
+            staged_documents = context["staged_release"]["documents"]
+            self.assertEqual(staged_documents["resolution_status"], "exact")
+            for key in ("active_release_notes", "active_acceptance_document"):
+                self.assertTrue((ROOT / staged_documents[key]).is_file())
         self.assertEqual(context["documents"]["resolution_status"], "exact")
         self.assertEqual(
             context["documents"]["active_acceptance_document"],

@@ -64,7 +64,10 @@ class Rc1ReleaseTransitionTests(unittest.TestCase):
             resolution["active_acceptance_document"],
             "docs/V2_2_0_RC1_ACCEPTANCE.md",
         )
-        if marker.exists():
+        # A later release's authoring marker does not put historical RC1 back
+        # into its beta.58 staging state.
+        if versions == {"2.2.0-beta.58"}:
+            self.assertTrue(marker.exists())
             self.assertEqual(versions, {"2.2.0-beta.58"})
             self.assertEqual(marker.read_text(encoding="utf-8"), target + "\n")
             self.assertIn("staged source candidate", documents)
