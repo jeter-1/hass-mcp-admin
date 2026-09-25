@@ -1,9 +1,13 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.0-beta.2** is the materialized candidate for
-[bounded Core log history](docs/CORE_LOG_HISTORY.md). It adds one native Supervisor
-read using the owner-approved `homeassistant` role, which grants broader Core
-administration to the process. The MCP tool exposes only the fixed log read.
+Engineering **2.4.0-beta.3** is the materialized candidate for
+[dashboard planning capacity and safe diagnostics](docs/F3_DASHBOARD_WRITE_CONTRACT.md#semantic-capacity-and-safe-diagnostics).
+It raises the semantic patch ceiling from 16 to 256 leaves while preserving the
+other bounds, approval binding, one-dispatch execution and exact readback.
+Oversized patches report their actual count and limit without configuration content.
+[Bounded Core log history](docs/CORE_LOG_HISTORY.md) remains available through the
+existing native Supervisor reader. Its owner-approved `homeassistant` role grants
+broader Core administration to the process; the MCP tool exposes only the fixed log read.
 The candidate has 54 static tools plus 25 admitted delegated reads (79 total);
 published beta.1 retains its original 53/78 inventory. Existing bounded script
 dependency evidence is preserved. **2.3.0** remains the last accepted stable release.
@@ -20,14 +24,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.0-beta.2 release notes](docs/V2_4_0_BETA2_RELEASE_NOTES.md) and
-[2.4.0-beta.2 acceptance contract](docs/V2_4_0_BETA2_ACCEPTANCE.md). A source version does
+Read the [2.4.0-beta.3 release notes](docs/V2_4_0_BETA3_RELEASE_NOTES.md) and
+[2.4.0-beta.3 acceptance contract](docs/V2_4_0_BETA3_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.0-beta.2 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.0-beta.3 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -44,11 +48,11 @@ options refuse startup; historical acceptance does not establish this boundary.
    `8100`; authenticated, admin-only **HA MCP Approval** ingress uses internal
    port `8110`. The approval panel is not a second MCP endpoint.
 5. Verify the final installed artifact, reconnect the client and complete the
-   bounded [acceptance checks](docs/V2_4_0_BETA2_ACCEPTANCE.md).
+   bounded [acceptance checks](docs/V2_4_0_BETA3_ACCEPTANCE.md).
 
 The image repository remains
 `ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
-`linux/arm64` for 2.4.0-beta.2. Published 2.2.0 retains its historical
+`linux/arm64` for 2.4.0-beta.3. Published 2.2.0 retains its historical
 `linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; Engineering
 requires a supported 64-bit installation. This source change does not migrate or
 uninstall an existing system. Existing options, persistent paths, stored formats,
@@ -90,7 +94,7 @@ no detected references does not prove none exist. See
 The candidate acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0** under the
 reviewed signed Core registry covering all 19 profiles. Core 2026.9.2 retains its
 immutable 17-reference entry and historical typed fan/power route; its two new
-signed typed references remain unavailable as intended. Installing 2.4.0-beta.2 neither
+signed typed references remain unavailable as intended. Installing 2.4.0-beta.3 neither
 configures trust nor updates Core. Admission still requires exact current
 Core/provider identity and valid authority.
 
@@ -196,4 +200,4 @@ runtime is preserved by 2.2.0; its observations retain their RC9 pairing/time.
 - [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases)
 
 Historical counts, pairings, installation and rollback guidance describe their
-original release and do not replace the current 2.4.0-beta.2 contract.
+original release and do not replace the current 2.4.0-beta.3 contract.

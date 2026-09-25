@@ -3,13 +3,15 @@
 ## Current direction
 
 2026-09-25: Josh selected **dashboard planning capacity of 256 semantic leaves
-plus actionable diagnostics**. Source implements that bounded correction on
-the 2.4.0-beta.2 baseline; this entry makes no new publication, deployment or
-installed-acceptance claim. The advertised version remains beta.2, with 79
-supported tools (54 static + 25 delegated). Script dependency coverage and
-bounded retained Core-log access are already delivered in beta.1/beta.2; see
-the [beta.2 acceptance contract](V2_4_0_BETA2_ACCEPTANCE.md). Stable 2.3.0 remains
-the previously accepted stable Engineering release.
+plus actionable diagnostics**, then authorized **2.4.0-beta.3** metadata and
+release/acceptance preparation in the same PR. The materialized candidate builds
+on the 2.4.0-beta.2 baseline with 79 supported tools (54 static + 25 delegated).
+This entry makes no publication, deployment or installed-acceptance claim. See
+the [beta.3 release notes](V2_4_0_BETA3_RELEASE_NOTES.md) and
+[beta.3 acceptance contract](V2_4_0_BETA3_ACCEPTANCE.md). Script dependency coverage
+and bounded retained Core-log access are retained from beta.1/beta.2; their
+evidence keeps its original scope. Stable 2.3.0 remains the previously accepted
+stable Engineering release.
 
 The dashboard correction retains current array-suffix accounting and complete
 approval projection. The original four-operation Home fixture needs 54 leaves,
@@ -24,13 +26,14 @@ projection are already present; this fresh correction addresses the residual
 capacity and diagnostic gaps without restoring its old counting implementation.
 The old PR and branch remain preserved; this document does not close or merge
 them. Candidate validation, independent review and Josh's Ready decision remain
-separate from any future version transition, publication, deployment or live test.
+required for this materialized candidate. Publication, deployment and live tests
+retain their separate authority boundaries.
 
 After this increment, select one remaining exact helper operation from
 [#92](https://github.com/jeter-1/hass-mcp-admin/issues/92) or one concrete blocked
 administration task. General script inventory completeness, transitive dependency
 analysis and broader configuration families remain separate decisions. No new
-feature or release number is authorized by this roadmap entry.
+feature beyond the dashboard correction is authorized by this roadmap entry.
 
 ### Retained September 24 release preparation record
 
