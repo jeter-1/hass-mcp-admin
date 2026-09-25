@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
+import json
 import math
 from pathlib import Path
 import sys
@@ -29,7 +31,11 @@ from ha_mcp_engineering.f3_dashboard.patch import (  # noqa: E402
     parse_pointer,
     semantic_leaf_difference,
 )
-from f3_dashboard_support import load_dashboard  # noqa: E402
+from f3_dashboard_support import (  # noqa: E402
+    home_dashboard_patch_operations,
+    load_dashboard,
+    load_home_dashboard,
+)
 
 
 def operation(kind: str, path: str, value=..., operation_id: str = "change"):
@@ -198,13 +204,13 @@ class DashboardPatchCompilerTests(unittest.TestCase):
         )
         self.assertEqual(compiled.semantic_leaf_change_count, 9)
 
-        beyond_bound = {"items": list(range(16))}
+        beyond_bound = {"items": list(range(256))}
         for candidate in (
             operation("add", "/items/0", -1),
             operation("remove", "/items/0"),
         ):
             with self.subTest(operation=candidate["operation"]), self.assertRaisesRegex(
-                PatchCompilationError, "16-leaf semantic review bound"
+                PatchCompilationError, "semantic leaf change limit"
             ):
                 compile_dashboard_patch(beyond_bound, [candidate])
 
@@ -218,10 +224,17 @@ class DashboardPatchCompilerTests(unittest.TestCase):
             operation("add", f"/items/{index}", index, f"append-{index}")
             for index in range(16)
         ]
-        with self.assertRaisesRegex(
-            PatchCompilationError, "16-leaf semantic review bound"
-        ):
-            compile_dashboard_patch({"items": []}, sixteen_appends)
+        compiled = compile_dashboard_patch({"items": []}, sixteen_appends)
+        self.assertEqual(compiled.semantic_leaf_change_count, 32)
+        self.assertEqual(compiled.resulting_configuration["items"], list(range(16)))
+        larger_appends = [
+            operation("add", f"/items/{index}", list(range(16)), f"append-{index}")
+            for index in range(16)
+        ]
+        with self.assertRaises(PatchCompilationError) as caught:
+            compile_dashboard_patch({"items": []}, larger_appends)
+        self.assertEqual(caught.exception.constraint, "semantic_leaf_changes")
+        self.assertGreater(caught.exception.observed, 256)
 
     def test_duplicate_alias_and_parent_child_paths_are_rejected(self):
         with self.assertRaises(PatchValidationError):
@@ -293,10 +306,10 @@ class DashboardPatchCompilerTests(unittest.TestCase):
                 self.compile(candidate)
 
     def test_broad_subtree_replacement_cannot_bypass_leaf_bound(self):
-        replacement = {f"leaf_{index}": index + 1 for index in range(17)}
-        with self.assertRaisesRegex(PatchCompilationError, "16-leaf"):
+        replacement = {f"leaf_{index}": index + 1 for index in range(257)}
+        with self.assertRaisesRegex(PatchCompilationError, "semantic leaf change limit"):
             compile_dashboard_patch(
-                {"views": {f"leaf_{index}": index for index in range(17)}},
+                {"views": {f"leaf_{index}": index for index in range(257)}},
                 [operation("replace", "/views", replacement)],
             )
         self.assertEqual(
@@ -329,23 +342,65 @@ class DashboardPatchCompilerTests(unittest.TestCase):
             2,
         )
 
-    def test_seventeen_boolean_number_changes_exceed_leaf_bound(self):
+    def test_257_boolean_number_changes_exceed_leaf_bound(self):
         for before_value, after_value in ((True, 1), (False, 0)):
             before = {
                 "values": {
-                    f"item_{index}": before_value for index in range(17)
+                    f"item_{index}": before_value for index in range(257)
                 }
             }
             after = {
-                f"item_{index}": after_value for index in range(17)
+                f"item_{index}": after_value for index in range(257)
             }
             with self.subTest(before_value=before_value), self.assertRaisesRegex(
-                PatchCompilationError, "16-leaf"
+                PatchCompilationError, "semantic leaf change limit"
             ):
                 compile_dashboard_patch(
                     before,
                     [operation("replace", "/values", after)],
                 )
+
+    def test_exact_semantic_limit_and_counted_diagnostics(self):
+        for count in (255, 256, 257, 300):
+            before = {"values": {f"k{i}": 0 for i in range(count)}}
+            after = {f"k{i}": 1 for i in range(count)}
+            with self.subTest(count=count):
+                if count <= 256:
+                    compiled = compile_dashboard_patch(
+                        before, [operation("replace", "/values", after)]
+                    )
+                    self.assertEqual(compiled.semantic_leaf_change_count, count)
+                    self.assertEqual(compiled.resulting_configuration, {"values": after})
+                else:
+                    with self.assertRaises(PatchCompilationError) as caught:
+                        compile_dashboard_patch(
+                            before, [operation("replace", "/values", after)]
+                        )
+                    self.assertEqual(caught.exception.diagnostic_details(), {
+                        "reason": "dashboard_patch_compilation_failed",
+                        "dashboard_error_code": "dashboard_patch_compilation_failed",
+                        "constraint": "semantic_leaf_changes",
+                        "stage": "compilation",
+                        "observed": count,
+                        "limit": 256,
+                    })
+                self.assertEqual(before["values"], {f"k{i}": 0 for i in range(count)})
+
+    def test_original_home_fixture_provenance_and_current_suffix_accounting(self):
+        directory = ROOT / "tests" / "fixtures" / "f3_dashboard"
+        provenance = json.loads((directory / "home_dashboard_provenance.json").read_text())
+        for name, evidence in (
+            ("home_dashboard_existing.json", provenance["configuration"]),
+            ("home_dashboard_patch.json", provenance["operations"]),
+        ):
+            self.assertEqual(hashlib.sha256((directory / name).read_bytes()).hexdigest(),
+                             evidence["sha256"])
+        compiled = compile_dashboard_patch(
+            load_home_dashboard(), home_dashboard_patch_operations()
+        )
+        self.assertEqual(compiled.semantic_leaf_change_count, 54)
+        self.assertEqual([effect.leaf_change_count for effect in compiled.effects],
+                         [8, 2, 4, 40])
 
     def test_unknown_fields_falsey_values_and_order_are_preserved(self):
         original = deepcopy(self.config)

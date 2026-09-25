@@ -145,7 +145,7 @@ async def create_dashboard_update_plan(
         metrics.record(
             "planning.patch_validation_failures", target=url_path, codes=(exc.code,)
         )
-        if "16-leaf" in str(exc):
+        if exc.constraint == "semantic_leaf_changes" and exc.stage == "compilation":
             metrics.record("planning.broad_subtree_rejections", target=url_path)
         raise
     if compilation.preread_sha256 != raw.engineering_config_sha256:

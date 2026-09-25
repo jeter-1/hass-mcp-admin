@@ -3998,9 +3998,12 @@ class ChangeGovernanceService:
                 plan_id=self._new_id(),
             )
         except DashboardFoundationError as exc:
+            details = {"reason": exc.code}
+            if exc.constraint == "semantic_leaf_changes" and exc.stage == "compilation":
+                details = {**exc.diagnostic_details(), "reason": exc.code}
             raise GovernanceError(
                 ErrorCode.CONFIGURATION_VALIDATION_FAILED,
-                details={"reason": exc.code},
+                details=details,
             ) from None
         except GovernanceError:
             raise

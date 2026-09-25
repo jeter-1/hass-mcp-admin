@@ -390,7 +390,13 @@ def compile_dashboard_patch(
         raise PatchCompilationError("Patch compilation mutated its input")
     leaf_count = sum(effect.leaf_change_count for effect in effects)
     if leaf_count > MAX_SEMANTIC_LEAF_CHANGES:
-        raise PatchCompilationError("Patch exceeds the 16-leaf semantic review bound")
+        raise PatchCompilationError(
+            "Patch exceeds the semantic leaf change limit",
+            constraint="semantic_leaf_changes",
+            observed=leaf_count,
+            limit=MAX_SEMANTIC_LEAF_CHANGES,
+            stage="compilation",
+        )
     original_size = serialized_size(original, ensure_ascii=True)
     result_size = serialized_size(result, ensure_ascii=True)
     growth = result_size - original_size
