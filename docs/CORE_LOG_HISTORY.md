@@ -1,4 +1,4 @@
-# Bounded Core log history (unreleased)
+# Bounded Core log history (2.4.0-beta.2 candidate)
 
 `get_core_log_history(limit=100, offset=0)` reads one retained Core journal
 window from Supervisor. It complements the existing `get_error_log` System Log
@@ -8,9 +8,9 @@ that an absent event never occurred.
 This source increment adds one static tool: **54 static + 25 admitted delegated
 reads = 79** with the healthy reviewed upstream pairing. Published
 `2.4.0-beta.1` retains its original **53 + 25 = 78** contract. Josh authorized
-local [2.4.0-beta.2 staging](V2_4_0_BETA2_ACCEPTANCE.md); the advertised version
-remains beta.1 until separately authorized materialization. Staging establishes
-neither publication nor installed acceptance.
+[2.4.0-beta.2 materialization](V2_4_0_BETA2_ACCEPTANCE.md) and draft-PR delivery;
+the three advertised authorities now agree and the staging declaration is
+consumed. Source versioning establishes neither publication nor installed acceptance.
 
 ## Owner decision and boundary
 
@@ -106,10 +106,10 @@ and deployment evidence; source fragments alone do not close those gates.
 
 ## Release and installed acceptance
 
-The next version is locally staged as 2.4.0-beta.2 with its exact
+The candidate is materialized as 2.4.0-beta.2 with its exact
 [acceptance contract](V2_4_0_BETA2_ACCEPTANCE.md) and
-[release notes](V2_4_0_BETA2_RELEASE_NOTES.md). Materializing the advertised
-version and publication require their respective authorization. Preserve existing
+[release notes](V2_4_0_BETA2_RELEASE_NOTES.md). Publication requires Josh's
+applicable Ready decision after final review and required CI. Preserve existing
 signed authority, upstream admission and no-fallback controls. Retain exact
 Supervisor assembled integration evidence, independent review and candidate CI.
 

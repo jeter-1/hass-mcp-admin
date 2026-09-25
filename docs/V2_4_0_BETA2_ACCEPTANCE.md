@@ -1,6 +1,6 @@
 # Engineering 2.4.0-beta.2 acceptance
 
-Owner-authorized local authoring-stage contract. Implementation base:
+Materialized source candidate. Implementation base:
 `c828a2d8082809cf23a1202f74054ea299cf20e5`. No gate is asserted passed by
 this document. Preserve accepted stable 2.3.0, published beta.1 and prior evidence.
 
@@ -37,11 +37,17 @@ The reader and authenticated internal gateway must work without Core API
 authority. This does not prove public Nabu transport availability during a Core
 outage: the deployed webhook path can still depend on Core.
 
-Local staging leaves advertised beta.1 unchanged. Before Ready/merge/publication,
-a separately authorized materialization must consume `.release/next-version`,
-make all three version authorities agree on beta.2 and resolve its documents
-exactly. Revalidate/review the final release candidate. Local staging authorizes
-neither that materialization nor remote publication or deployment.
+All three advertised version authorities must agree on 2.4.0-beta.2,
+`.release/next-version` must be consumed and active documents must resolve
+exactly. Require clean final-candidate Evidence, focused independent review of
+the materialization delta and exact-head CI before Ready. Materialization itself
+establishes no gate success. Josh's Ready action authorizes the protected
+exact-head merge/publication contract; deployment remains separate.
+
+The installed target remains Core 2026.9.3 / ha-mcp 8.5.0 with the existing
+signed 19-profile authority. No Core update or registry transition is included.
+Supervisor 2026.09.1 is the exact reviewed provider contract; reconcile a different
+observed installed version before the dependent live read.
 
 ## Later installed acceptance
 

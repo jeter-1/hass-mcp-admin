@@ -1,8 +1,8 @@
 # Engineering 2.4.0-beta.2 release notes
 
-Owner-authorized local authoring-stage candidate, not published or deployed. The
-advertised source version remains beta.1 until separately authorized
-materialization. Engineering 2.3.0 remains the accepted stable baseline.
+Materialized source candidate: all three advertised version authorities agree
+on 2.4.0-beta.2 and `.release/next-version` is consumed. This is not evidence
+of publication or deployment. Engineering 2.3.0 remains the accepted stable baseline.
 
 Adds `get_core_log_history(limit, offset)` for bounded, sanitized retained Core
 journal evidence through the native Supervisor provider. It complements the
