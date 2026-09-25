@@ -1,0 +1,25 @@
+{
+  "source_repository": "jeter-1/hass-mcp-admin",
+  "source_commit": "d97d214f72b9de04077a44ad0438790240406980",
+  "configuration": {
+    "source_path": "tests/fixtures/f3_dashboard/home_dashboard_existing.json",
+    "sha256": "5a8f974a6fd7cd0c95b09ae7220b2be998ffc010e2c281d6f7e1ff65badaab8a",
+    "generation": "Exact git show bytes, unchanged"
+  },
+  "operations": {
+    "source_path": "tests/f3_dashboard_support.py",
+    "source_file_sha256": "010da8164c509d2183928055692fb62035873f927eb65272becb82202af286e0",
+    "source_function": "home_dashboard_patch_operations",
+    "fixture": "home_dashboard_patch.json",
+    "sha256": "997ddf42f1f2e5d7ba3b3a38fc40c28ec824804e8394324d93843f6bfd13e742",
+    "generation": "Parse the exact function with ast.parse; resolve literal assignments and return using only Constant, Name, Dict, List nodes; serialize json.dumps(indent=2, ensure_ascii=False) plus newline. No historical module executed."
+  },
+  "scope": "Synthetic configuration and literal patch, not persisted production records. Current code creates plans, hashes, approval projections and execution records.",
+  "current_semantic_leaf_count": 54,
+  "per_operation_leaf_counts": [
+    8,
+    2,
+    4,
+    40
+  ]
+}

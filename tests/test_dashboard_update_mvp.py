@@ -15,7 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from f3_dashboard_support import make_preread  # noqa: E402
+from f3_dashboard_support import (  # noqa: E402
+    home_dashboard_patch_operations,
+    load_home_dashboard,
+    make_preread,
+)
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
 from ha_mcp_engineering.clients.mcp import (  # noqa: E402
     DashboardTransportError,
@@ -36,6 +40,10 @@ from ha_mcp_engineering.f3_dashboard.errors import (  # noqa: E402
 from ha_mcp_engineering.f3_dashboard.gateway import (  # noqa: E402
     DashboardExecutionGateway,
 )
+from ha_mcp_engineering.f3_dashboard.approval_projection import (  # noqa: E402
+    build_dashboard_approval_projection,
+)
+from ha_mcp_engineering.f3_dashboard.patch import compile_dashboard_patch  # noqa: E402
 from ha_mcp_engineering.f3_dashboard.json_codec import (  # noqa: E402
     upstream_config_hash,
 )
@@ -585,7 +593,7 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             expiration_minutes=30,
         )
 
-    async def _approve(self, created):
+    async def _approve(self, created, *, expected_projection=None):
         pending = self.service.approve(
             created["plan_id"], created["plan_hash"]
         )
@@ -597,10 +605,13 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("dashboard_review", review)
         projection = review["dashboard_review"]["approval_projection"]
         self.assertTrue(projection["complete"])
-        self.assertEqual(projection["operation_count"], 1)
-        self.assertEqual(
-            projection["operations"][0]["proposed"]["state"], "value"
-        )
+        if expected_projection is None:
+            self.assertEqual(projection["operation_count"], 1)
+            self.assertEqual(
+                projection["operations"][0]["proposed"]["state"], "value"
+            )
+        else:
+            self.assertEqual(projection, expected_projection)
         granted = await self.service.decide_external_approval(
             plan_id=created["plan_id"],
             challenge_id=pending["challenge_id"],
@@ -680,6 +691,130 @@ class DashboardUpdateRuntimeTests(unittest.IsolatedAsyncioTestCase):
             created["approval_lifecycle"], "approval_not_requested"
         )
         self.assertEqual(self.dashboard.preread_count, 1)
+        self.assertEqual(self.dashboard.write_count, 0)
+
+    async def test_home_fixture_approved_apply_duplicate_and_exact_restoration(self):
+        self.dashboard.version = "8.5.0"
+        original = load_home_dashboard()
+        self.dashboard.configuration = deepcopy(original)
+        operations = home_dashboard_patch_operations()
+        expected = deepcopy(original)
+        sections = expected["views"][0]["sections"]
+        sections[0]["cards"][1]["chips"].insert(2, deepcopy(operations[0]["value"]))
+        sections[1]["cards"][1]["chips"][2] = deepcopy(operations[1]["value"])
+        sections[1]["cards"][1]["chips"].pop(3)
+        sections[0]["cards"].append(deepcopy(operations[3]["value"]))
+        compiled = compile_dashboard_patch(original, operations)
+        self.assertEqual(compiled.semantic_leaf_change_count, 54)
+        self.assertEqual(compiled.resulting_configuration, expected)
+        created = await self.service.create_dashboard_update_plan(
+            title="Synthetic Home dashboard change", description="Offline fixture",
+            url_path="main-operations", patch_operations=operations, expiration_minutes=30,
+        )
+        self.assertEqual(created["status"], "awaiting_approval")
+        self.assertEqual(created["approval_lifecycle"], "approval_not_requested")
+        self.assertEqual(self.dashboard.write_count, 0)
+        self.assertEqual(self.service.task_repository.list(), [])
+        await self._approve(
+            created, expected_projection=build_dashboard_approval_projection(compiled)
+        )
+        applied = await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(applied["task_state"], "succeeded_verified")
+        self.assertEqual(self.dashboard.configuration, expected)
+        self.assertEqual(self.dashboard.write_count, 1)
+        repeated = await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(repeated["task_id"], applied["task_id"])
+        self.assertEqual(self.dashboard.write_count, 1)
+        original_chips = original["views"][0]["sections"][1]["cards"][1]["chips"]
+        inverse = [
+            {"operation_id": "remove-attention", "operation": "remove",
+             "path": "/views/0/sections/0/cards/3"},
+            {"operation_id": "restore-prompted", "operation": "add",
+             "path": "/views/0/sections/1/cards/1/chips/3", "value": original_chips[3]},
+            {"operation_id": "restore-climate", "operation": "replace",
+             "path": "/views/0/sections/1/cards/1/chips/2", "value": original_chips[2]},
+            {"operation_id": "remove-cleaner", "operation": "remove",
+             "path": "/views/0/sections/0/cards/1/chips/2"},
+        ]
+        restoration = await self.service.create_dashboard_update_plan(
+            title="Separately approved exact restoration", description="No automatic rollback",
+            url_path="main-operations", patch_operations=inverse, expiration_minutes=30,
+        )
+        self.assertEqual(self.dashboard.write_count, 1)
+        await self._approve(restoration, expected_projection=build_dashboard_approval_projection(
+            compile_dashboard_patch(expected, inverse)
+        ))
+        restored = await self.service.apply(restoration["plan_id"], restoration["plan_hash"])
+        self.assertEqual(restored["task_state"], "succeeded_verified")
+        self.assertEqual(self.dashboard.write_count, 2)
+        self.assertEqual(self.dashboard.configuration, original)
+        self.assertEqual(upstream_config_hash(self.dashboard.configuration),
+                         upstream_config_hash(original))
+
+    async def test_exact_256_leaf_plan_is_completely_approvable_and_verified(self):
+        self.dashboard.version = "8.5.0"
+        original = {"values": {f"k{i}": 0 for i in range(256)}}
+        after = {f"k{i}": 1 for i in range(256)}
+        self.dashboard.configuration = deepcopy(original)
+        operations = [{"operation_id": "change", "operation": "replace",
+                       "path": "/values", "value": after}]
+        created = await self.service.create_dashboard_update_plan(
+            title="Exact capacity", description="Offline boundary test",
+            url_path="main-operations", patch_operations=operations, expiration_minutes=30,
+        )
+        await self._approve(created, expected_projection=build_dashboard_approval_projection(
+            compile_dashboard_patch(original, operations)
+        ))
+        result = await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        self.assertEqual(self.dashboard.configuration, {"values": after})
+        self.assertEqual(self.dashboard.write_count, 1)
+
+    async def test_limit_diagnostics_preserve_error_identity_without_creating_work(self):
+        self.dashboard.version = "8.5.0"
+        for count in (257, 300):
+            with self.subTest(count=count):
+                original = {"synthetic_private_path": {
+                    f"k{i}": "synthetic-private-content" for i in range(count)
+                }}
+                self.dashboard.configuration = deepcopy(original)
+                with self.assertRaises(GovernanceError) as caught:
+                    await self.service.create_dashboard_update_plan(
+                        title="Oversized synthetic proposal", description="Offline refusal",
+                        url_path="main-operations", expiration_minutes=30,
+                        patch_operations=[{"operation_id": "limit", "operation": "replace",
+                                           "path": "/synthetic_private_path",
+                                           "value": {f"k{i}": 1 for i in range(count)}}],
+                    )
+                self.assertEqual(caught.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+                self.assertEqual(caught.exception.details, {
+                    "reason": "dashboard_patch_compilation_failed",
+                    "dashboard_error_code": "dashboard_patch_compilation_failed",
+                    "constraint": "semantic_leaf_changes", "stage": "compilation",
+                    "observed": count, "limit": 256,
+                })
+                self.assertEqual(self.repository.list(), [])
+                self.assertEqual(self.service.task_repository.list(), [])
+                self.assertEqual(self.dashboard.write_count, 0)
+                self.assertEqual(self.dashboard.best_practice_count, 0)
+                self.assertEqual(self.dashboard.configuration, original)
+                audit = self.root / "audit.jsonl"
+                public = json.dumps(caught.exception.details) + (audit.read_text() if audit.exists() else "")
+                self.assertNotIn("synthetic-private-content", public)
+                self.assertNotIn("synthetic_private_path", public)
+
+    async def test_unrelated_compiler_error_keeps_legacy_details(self):
+        with self.assertRaises(GovernanceError) as caught:
+            await self.service.create_dashboard_update_plan(
+                title="Invalid exact path", description="Offline refusal",
+                url_path="main-operations", expiration_minutes=30,
+                patch_operations=[{"operation_id": "missing", "operation": "remove",
+                                   "path": "/synthetic-private-missing"}],
+            )
+        self.assertEqual(caught.exception.code, ErrorCode.CONFIGURATION_VALIDATION_FAILED)
+        self.assertEqual(caught.exception.details, {"reason": "dashboard_patch_compilation_failed"})
+        self.assertEqual(self.repository.list(), [])
+        self.assertEqual(self.service.task_repository.list(), [])
         self.assertEqual(self.dashboard.write_count, 0)
 
     async def test_disclosed_consequence_classes_remain_owner_actionable(self):

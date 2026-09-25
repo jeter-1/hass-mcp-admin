@@ -16,7 +16,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from ha_mcp_engineering.f3_dashboard.artifact_store import DashboardArtifactStore  # noqa: E402
-from ha_mcp_engineering.f3_dashboard.errors import PlanningError, RawEvidenceError  # noqa: E402
+from ha_mcp_engineering.f3_dashboard.errors import PatchCompilationError, PlanningError, RawEvidenceError  # noqa: E402
 from ha_mcp_engineering.f3_dashboard.models import AtomicityStatus  # noqa: E402
 from ha_mcp_engineering.f3_dashboard.observability import DashboardWriteObservability  # noqa: E402
 from ha_mcp_engineering.f3_dashboard.planning import (  # noqa: E402
@@ -110,6 +110,38 @@ class RawDashboardEvidenceTests(unittest.TestCase):
 
 
 class DashboardPlanningTests(unittest.IsolatedAsyncioTestCase):
+    async def test_semantic_limit_metric_uses_typed_failure_and_stays_bounded(self):
+        cases = (
+            ({"values": {f"k{i}": 0 for i in range(257)}},
+             {"operation_id": "limit", "operation": "replace", "path": "/values",
+              "value": {f"k{i}": 1 for i in range(257)}}, 1),
+            ({"title": "synthetic-private-text"},
+             {"operation_id": "missing", "operation": "remove",
+              "path": "/synthetic-private-path"}, 0),
+        )
+        for configuration, operation, expected_count in cases:
+            with self.subTest(operation=operation["operation_id"]):
+                metrics = DashboardWriteObservability()
+                reader = FakeExactReader(make_preread(configuration, version="8.5.0"))
+                with self.assertRaises(PatchCompilationError):
+                    await create_dashboard_update_plan(
+                        reader=reader, url_path="synthetic-dashboard",
+                        operations=[operation], title="Synthetic rejection",
+                        description="Offline diagnostic test", expiration_minutes=30,
+                        requested_by="test.operator", observability=metrics,
+                    )
+                snapshot = metrics.snapshot()
+                self.assertEqual(snapshot["counts"]["planning.broad_subtree_rejections"],
+                                 expected_count)
+                self.assertEqual(snapshot["counts"]["planning.patch_validation_failures"], 1)
+                self.assertEqual(snapshot["counts"]["provider.dispatch_attempts"], 0)
+                self.assertEqual(reader.mutation_count, 0)
+                self.assertEqual(snapshot["fallback_count"], 0)
+                encoded = json.dumps(snapshot)
+                for private_value in ("synthetic-private-text", "synthetic-private-path",
+                                      "synthetic-dashboard"):
+                    self.assertNotIn(private_value, encoded)
+
     async def test_plan_is_immutable_exactly_bound_and_zero_dispatch(self):
         proposal, reader = await make_proposal()
         self.assertEqual(reader.preread_count, 1)

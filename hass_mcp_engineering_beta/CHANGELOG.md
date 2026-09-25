@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0-beta.3 - Dashboard capacity and bounded diagnostics
+
+- Raise existing-dashboard patch capacity from 16 to 256 semantic leaves with
+  unchanged array-suffix accounting, operation/byte/depth/node bounds and full
+  approval projection. Retain exact targets, stale-state checks, one-dispatch
+  execution and authoritative readback.
+- Report the actual count, limit and fixed constraint/stage for oversized
+  patches while preserving public error identity and excluding configuration
+  content. Keep unrelated compiler errors unchanged.
+- Preserve the 79-tool inventory, provider contracts, authority, stored formats,
+  installation settings and frozen stable-v1. The provider read/save interval
+  remains non-atomic; restoration needs a separately approved exact plan.
+  Source preparation does not establish publication or installed acceptance.
+
 ## 2.4.0-beta.1 - Bounded script dependency evidence
 
 - Add canonical script configuration evidence to existing dependency diagnostics,

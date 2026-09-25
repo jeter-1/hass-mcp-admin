@@ -42,6 +42,18 @@ def load_dashboard() -> dict[str, Any]:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
+def load_home_dashboard() -> dict[str, Any]:
+    return json.loads(
+        (FIXTURE.parent / "home_dashboard_existing.json").read_text(encoding="utf-8")
+    )
+
+
+def home_dashboard_patch_operations() -> list[dict[str, Any]]:
+    return json.loads(
+        (FIXTURE.parent / "home_dashboard_patch.json").read_text(encoding="utf-8")
+    )
+
+
 def make_preread(
     configuration: dict[str, Any] | None = None,
     *,

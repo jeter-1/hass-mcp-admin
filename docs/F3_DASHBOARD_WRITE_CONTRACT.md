@@ -1,6 +1,7 @@
 # Governed existing-dashboard update contract
 
-Status: approved bounded MVP implementation contract (2026-08-08)
+Status: approved bounded MVP contract (2026-08-08), with Josh's capacity and
+diagnostics decision of 2026-09-25 incorporated in source.
 
 This contract supersedes the Beta 17 execution deferral for one narrowly
 defined operation: updating an existing Home Assistant storage-mode dashboard.
@@ -39,7 +40,10 @@ sequence, locking, and F3 checks pass.
 
 The executable provider contract is admitted only for an exact reviewed
 `ha-mcp` release, protocol `2025-03-26`, and the corresponding exact
-compatibility entry. Current compiled support covers 8.1.1, 8.2.0, and 8.4.1.
+compatibility entry. The current exact entries are defined in
+[`f3_dashboard/provider.py`](../hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/provider.py)
+and the reviewed upstream release registry. The historical MVP included 8.1.1,
+8.2.0 and 8.4.1; the capacity correction adds no provider admission.
 The 8.4.1 entry is `ha-mcp-v8.4.1-7823b365`, source tag `v8.4.1`, commit
 `701a7c26ac0e2309c7883a627d31873ab1510077`, and immutable image index
 `sha256:7823b36587a6e62efed271b26f3f72380b49f47364e5385580584e7ab2c60722`.
@@ -80,7 +84,8 @@ The patch representation is `f3-dashboard-json-pointer-patch-v1`:
   selectors are prohibited;
 - `replace` and `remove` require an existing exact path;
 - `add` requires an existing unambiguous parent and cannot overwrite;
-- recursive semantic leaf changes must fit the 16-change approval projection;
+- recursive semantic leaf changes must total at most 256, including displaced
+  array suffixes; complete approval projection has its own independent bound;
 - the result is built from a deep copy of the complete raw configuration; and
 - undeclared structure, including custom-card fields, must remain equal.
 
@@ -98,6 +103,57 @@ One authenticated owner plan approval authorizes a fresh exact f2-v2 dashboard
 operation. High or uncertain frontend consequence remains disclosed and
 elevated, but classifier severity alone does not create a second acknowledgement.
 Historical approval bundles retain their original interpretation.
+
+## Semantic capacity and safe diagnostics
+
+Josh selected **256 leaves plus diagnostics** on 2026-09-25. The retained
+synthetic Home dashboard fixture from PR #132 requires 54 leaves under current
+accounting (8 + 2 + 4 + 40); the former ceiling of 16 blocked that useful
+four-operation proposal. Alternatives were 64 plus diagnostics, which fits that
+case with less headroom, or diagnostics alone, which leaves the change blocked.
+The larger ceiling is an approved capacity choice, not proof of human review
+sufficiency. Reconsider it when a concrete task or measured resource/review
+behavior warrants another decision.
+
+When compilation exceeds the leaf ceiling, the public error remains
+`CONFIGURATION_VALIDATION_FAILED` with
+`details.reason = "dashboard_patch_compilation_failed"`. Additive details are:
+
+```json
+{
+  "dashboard_error_code": "dashboard_patch_compilation_failed",
+  "constraint": "semantic_leaf_changes",
+  "stage": "compilation",
+  "observed": 257,
+  "limit": 256
+}
+```
+
+`observed` is the actual total, not a clipped count. These details contain only
+fixed categories and integer counts; no configuration values, pointers or raw
+exception text are exposed. Other compilation failures retain their prior
+error details. A refused proposal creates no plan, task or provider write.
+The existing broad-subtree rejection metric uses the typed constraint rather
+than matching error-message text.
+
+Every other bound remains: 16 operations; 8,192 bytes per value; 16,384 bytes
+for each of the patch, growth and semantic diff; 40,000 bytes for raw/result
+configuration; 131,072 bytes for complete approval projection; and 262,144 bytes
+for the artifact. Pointer and JSON depth/node bounds remain unchanged. An
+under-limit leaf count does not bypass another limit or execution check. Clients
+must not silently split or reorder a patch to evade these bounds.
+
+The complete approval binding, stale/provider checks, one-dispatch ownership,
+exact readback and truthful uncertain-result recovery remain unchanged. The
+provider read/save interval is non-atomic. Restoration requires its own exact
+plan and approval; automatic rollback is unavailable. Reverting the source
+limit does not establish compatibility of larger new plans with an older
+binary, so binary downgrade alone is not a proven recovery procedure.
+
+Regression coverage includes the retained fixture through simulated approval,
+apply, duplicate suppression and exact restoration; 256-leaf approval/apply;
+257-and-larger safe refusal; and preservation of the existing bounds. Synthetic
+tests do not establish deployed acceptance or actual browser rendering.
 
 ## Canonical operational provider identity
 
