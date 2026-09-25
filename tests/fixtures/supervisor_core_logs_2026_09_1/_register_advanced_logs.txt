@@ -1,0 +1,56 @@
+def _register_advanced_logs(
+    self,
+    path: str,
+    syslog_identifier: str,
+    app: web.Application,
+    default_verbose: bool = False,
+) -> None:
+    """Register logs endpoint for a given path, returning logs for single syslog identifier."""
+    app.add_routes(
+        [
+            web.get(
+                f"{path}/logs",
+                partial(
+                    self._api_host.advanced_logs,
+                    identifier=syslog_identifier,
+                    default_verbose=default_verbose,
+                ),
+            ),
+            web.get(
+                f"{path}/logs/follow",
+                partial(
+                    self._api_host.advanced_logs,
+                    identifier=syslog_identifier,
+                    follow=True,
+                    default_verbose=default_verbose,
+                ),
+            ),
+            web.get(
+                f"{path}/logs/latest",
+                partial(
+                    self._api_host.advanced_logs,
+                    identifier=syslog_identifier,
+                    latest=True,
+                    no_colors=True,
+                    default_verbose=default_verbose,
+                ),
+            ),
+            web.get(
+                f"{path}/logs/boots/{{bootid}}",
+                partial(
+                    self._api_host.advanced_logs,
+                    identifier=syslog_identifier,
+                    default_verbose=default_verbose,
+                ),
+            ),
+            web.get(
+                f"{path}/logs/boots/{{bootid}}/follow",
+                partial(
+                    self._api_host.advanced_logs,
+                    identifier=syslog_identifier,
+                    follow=True,
+                    default_verbose=default_verbose,
+                ),
+            ),
+        ]
+    )

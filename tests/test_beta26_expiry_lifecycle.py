@@ -485,6 +485,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             for tool in tools
             if tool.name
             not in {
+                "get_core_log_history",
                 "list_dashboards",
                 "get_dashboard_config",
                 "create_configuration_plan",
@@ -504,9 +505,9 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
         }
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 53)
+        self.assertEqual(len(tools), 54)
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 53)
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 54)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

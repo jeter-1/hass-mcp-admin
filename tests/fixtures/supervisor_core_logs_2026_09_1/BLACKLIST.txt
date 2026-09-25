@@ -1,0 +1,6 @@
+BLACKLIST: Final = re.compile(
+    r"^(?:/v2)?(?:"  # both implicit v1 and v2 paths
+    r"|/homeassistant/api/hassio(?:/|_).*"
+    r"|/core/api/hassio(?:/|_).*"
+    r")$"
+)

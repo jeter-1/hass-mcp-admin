@@ -1,0 +1,4 @@
+_V1_FRONTEND_PATHS: Final = (
+    r"|/app/.*\.(?:js|gz|json|map|woff2)"
+    r"|/(store/)?addons/" + RE_SLUG + r"/(logo|icon)"
+)

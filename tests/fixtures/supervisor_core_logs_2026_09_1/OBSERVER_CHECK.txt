@@ -1,0 +1,5 @@
+OBSERVER_CHECK: Final = re.compile(
+    r"^(?:"
+    r"|/.+/info"
+    r")$"
+)

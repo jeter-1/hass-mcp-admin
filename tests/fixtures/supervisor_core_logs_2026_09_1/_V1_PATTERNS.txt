@@ -1,0 +1,80 @@
+_V1_PATTERNS: Final = _AppSecurityPatterns(
+    api_bypass=re.compile(
+        r"^(?:"
+        r"|/addons/self/(?!security|update)[^/]+"
+        r"|/addons/self/options/config"
+        r"|/info"
+        r"|/services.*"
+        r"|/discovery.*"
+        r"|/auth"
+        r")$"
+    ),
+    core_only=re.compile(
+        r"^(?:"
+        r"/addons/" + RE_SLUG + r"/sys_options"
+        r"|/os/ssh/authorized_keys"
+        r")$"
+    ),
+    role_access={
+        ROLE_DEFAULT: re.compile(
+            r"^(?:"
+            r"|/.+/info"
+            r")$"
+        ),
+        ROLE_HOMEASSISTANT: re.compile(
+            r"^(?:"
+            r"|/.+/info"
+            r"|/core/.+"
+            r"|/homeassistant/.+"
+            r")$"
+        ),
+        ROLE_BACKUP: re.compile(
+            r"^(?:"
+            r"|/.+/info"
+            r"|/backups.*"
+            r")$"
+        ),
+        ROLE_MANAGER: re.compile(
+            r"^(?:"
+            r"|/.+/info"
+            r"|/addons(?:/" + RE_SLUG + r"/(?!security).+|/reload)?"
+            r"|/audio/.+"
+            r"|/auth/cache"
+            r"|/available_updates"
+            r"|/backups.*"
+            r"|/cli/.+"
+            r"|/core/.+"
+            r"|/dns/.+"
+            r"|/docker/.+"
+            r"|/jobs/.+"
+            r"|/hardware/.+"
+            r"|/homeassistant/.+"
+            r"|/host/.+"
+            r"|/mounts.*"
+            r"|/multicast/.+"
+            r"|/network/.+"
+            r"|/observer/.+"
+            r"|/os/(?!datadisk/wipe|ssh/authorized_keys).+"
+            r"|/refresh_updates"
+            r"|/resolution/.+"
+            r"|/security/.+"
+            r"|/snapshots.*"
+            r"|/store.*"
+            r"|/supervisor/.+"
+            r"|/time/.+"
+            r")$"
+        ),
+        ROLE_ADMIN: re.compile(r".*"),
+    },
+    no_security_check=re.compile(
+        r"^(?:"
+        r"|/homeassistant/api/.*"
+        r"|/homeassistant/websocket"
+        r"|/core/api/.*"
+        r"|/core/websocket"
+        r"|/supervisor/ping"
+        r"|/ingress/[-_A-Za-z0-9]+/.*"
+        + _V1_FRONTEND_PATHS
+        + r")$"
+    ),
+)
