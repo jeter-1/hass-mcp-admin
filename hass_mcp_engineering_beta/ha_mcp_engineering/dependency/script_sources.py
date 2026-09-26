@@ -15,6 +15,7 @@ from typing import Any, Callable
 
 from ..sanitization import sanitize_untrusted_data
 from .extraction import extract_document_with_obligations
+from .script_calls import extract_script_calls, MAX_CALLS
 from .models import (
     DependencyFinding, DynamicReference, SourceCoverageItem,
     dynamic_reference_fingerprint,
@@ -28,7 +29,7 @@ _ENTITY = re.compile(r"script\.[a-z0-9_]{1,121}\Z", re.ASCII)
 _KEY = re.compile(r"[a-z0-9_]{1,128}\Z", re.ASCII)
 _GAPS = (
     "State/registry discovery does not enumerate every stored or package-defined script.",
-    "Direct script-service call graphs and transitive effects are outside diagnostic coverage.",
+    "Script call paths cover literal supported invocations only; dynamic calls and undiscovered sources remain unknown.",
 )
 _FAILURES = frozenset({
     "resource_not_found", "authentication_failed", "authorization_failed", "timeout",
@@ -45,6 +46,9 @@ class ScriptDiagnostics:
     fingerprint: str
     authority_current: Callable[[], bool] | None = None
     profile: dict[str, Any] = field(default_factory=dict, compare=False)
+
+    call_findings: tuple[DependencyFinding, ...] = ()
+    call_gaps: tuple[str, ...] = ()
 
     def visible(self) -> ScriptDiagnostics:
         """A retired route cannot lend its cached findings current authority."""
@@ -71,6 +75,7 @@ def _digest(value: Any) -> str:
 async def collect_script_diagnostics(
     states: list, registry: list, *, registry_complete: bool,
     reader_factory: Callable | None, secret: str, concurrency: int,
+    automation_documents: tuple = (),
 ) -> ScriptDiagnostics:
     """Reuse already read inventory; dispatch only independently mapped identities."""
     started = time.monotonic()
@@ -133,6 +138,25 @@ async def collect_script_diagnostics(
         else:
             candidates.append((entity, key))
 
+    mapped = dict(candidates)
+    calls: list[DependencyFinding] = []
+    call_errors: Counter[str] = Counter()
+
+    def collect_calls(source_type, source_id, source_entity_id, config):
+        extracted_calls, gaps = extract_script_calls(
+            config, source_type=source_type, source_id=source_id,
+            source_entity_id=source_entity_id, identities=mapped, secret=secret,
+        )
+        call_errors.update(gaps)
+        if len(calls) + len(extracted_calls) > MAX_CALLS:
+            call_errors["script_call_edge_limit_exceeded"] += 1
+        calls[:] = heapq.nsmallest(MAX_CALLS, chain(calls, extracted_calls), key=lambda item: item.evidence_id)
+
+    # Reuse the bounded automation configuration reads. These edges never enter
+    # the shared helper/impact snapshot or its obligation budgets.
+    for source_id, source_entity_id, config in automation_documents:
+        collect_calls("automation", source_id, source_entity_id, config)
+
     try:
         reader = reader_factory() if reader_factory is not None else None
     except Exception:
@@ -193,6 +217,7 @@ async def collect_script_diagnostics(
                         source_type="script", source_id=key, source_entity_id=entity,
                         config=config, secret=secret,
                     )
+                    collect_calls("script", key, entity, config)
                     documents.append((key, _digest(config)))
                     successes += 1
                     if any(item.outcome == "coverage_failure" for item in obligations):
@@ -231,6 +256,7 @@ async def collect_script_diagnostics(
     if evidence_bounded:
         errors["script_diagnostic_evidence_limit_exceeded"] += 1
     findings.sort(key=lambda item: item.evidence_id)
+    calls.sort(key=lambda item: item.evidence_id)
     dynamic.sort(key=dynamic_reference_fingerprint)
     coverage = SourceCoverageItem(
         "script", "upstream_read_gateway" if reader else "none", "script_configuration",
@@ -248,9 +274,12 @@ async def collect_script_diagnostics(
         tuple(findings), tuple(dynamic), coverage,
         _digest([sorted(documents), sorted(errors.items()), coverage.policy,
                  [item.evidence_id for item in findings],
-                 [dynamic_reference_fingerprint(item) for item in dynamic]]),
+                 [dynamic_reference_fingerprint(item) for item in dynamic],
+                 [(item.evidence_id, item.source_entity_id) for item in calls],
+                 sorted(mapped.items()), sorted(call_errors.items())]),
         reader.current if reader else None,
         {"read_attempts": read_count, "successful_documents": successes,
          "read_time_ms": round(read_time_ms, 3), "maximum_concurrent_reads": maximum_reads},
+        tuple(calls), tuple(f"{key}: {count}" for key, count in sorted(call_errors.items())),
     )
     return result.visible()

@@ -29,7 +29,7 @@ entity is analyzed normally because stale references may remain.
 | Blueprint role resolution | complete or partial | Read-only blueprint mount, safe paths, YAML `!input` resolution |
 | Entity current state | transitional direct | Exact entity state requires direct HA REST; no fallback or Standard MCP claim |
 | Entity registry | transitional direct | HA WebSocket entity registry |
-| Scripts (staged 2.4.0-beta.1) | partial or unavailable | Admitted internal `ha_config_get_script`; exact registry identity, bounded per-script stored configuration |
+| Scripts (introduced in 2.4.0-beta.1) | partial or unavailable | Admitted internal `ha_config_get_script`; exact registry identity, bounded per-script stored configuration |
 | Scenes, groups, template source, dashboards | unavailable | No reliable complete configuration adapter yet |
 | Static YAML/packages/custom integrations | outside coverage | No arbitrary filesystem or `.storage` scan |
 
@@ -38,7 +38,7 @@ configuration is labeled `upstream_read_gateway`, with the actual upstream versi
 and reviewed contract fingerprint in the existing coverage policy metadata. No
 second connector or client-selected provider is required.
 
-### Script diagnostics — staged 2.4.0-beta.1
+### Script diagnostics — introduced in 2.4.0-beta.1
 
 The approved increment uses the union of state and entity-registry observations,
 including disabled registry-only scripts. `source_id` is the registry's canonical
@@ -75,10 +75,12 @@ then stale. A provider becoming available later requires a normal later rebuild,
 not an automatic refresh loop. Source TTL still bounds configuration freshness.
 
 Extraction is parse-only. Blueprint inputs remain inspectable but blueprint bodies
-are not expanded in this increment. Direct `script.<service>` names are not entity
-references; script service call graphs and transitive effects remain out of scope.
-No script is run by analysis. See the [candidate acceptance](V2_4_0_BETA1_ACCEPTANCE.md)
-for required disposable and later installed evidence; staging is not publication.
+are not expanded. The subsequent approved [script-call increment](SCRIPT_CALL_DEPENDENCIES.md)
+adds literal invocation edges and bounded transitive paths in this diagnostic
+partition, using registry storage-key mappings rather than treating service names
+as generic entity references. No script is run by analysis. The original
+[beta.1 acceptance](V2_4_0_BETA1_ACCEPTANCE.md) remains historical; the new contract
+defines additional source/disposable and separately authorized installed checks.
 
 ## Matching and response semantics
 
@@ -303,8 +305,9 @@ Device triggers may not map to one entity. General or multi-hop runtime automati
 action-to-trigger causality is not inferred. The exact helper provider's bounded
 `state_changed` and `call_service` event-trigger contracts are modeled so those direct
 downstream effects cannot disappear. Imported custom-template source is not retrieved. Dashboard,
-static YAML/package, script, scene, group, template-source, and custom-integration
-coverage remains unavailable unless a later reviewed provider supplies it.
+static YAML/package, scene, group, template-source, and custom-integration
+coverage remains unavailable unless a later reviewed provider supplies it. Script
+coverage is partial through the reviewed reader described above.
 
 The historical Beta 18 manifest contained 36 tools. Beta 18 changed no tool schema, so
 connector recreation is not normally required. Refresh only the beta connector if it

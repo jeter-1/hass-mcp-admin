@@ -3209,6 +3209,11 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
                       "use_blueprint": {"path": "dependency_contract/entities.yaml", "input": {"target": target}}}
     bodies[keys[4]]["sequence"].append({"condition": "template", "value_template":
         "{{ states(states('input_text.script_dependency_selector')) == 'on' }}"})
+    # Stored service names survive registry entity renaming. These are inert
+    # configuration fixtures: no script is ever run by this diagnostic lane.
+    bodies[keys[0]]["sequence"].append({"action": f"script.{keys[1]}"})
+    bodies[keys[4]]["sequence"].append({"action": "script.turn_on", "target": {
+        "entity_id": f"script.{keys[0]}"}})
     created = []
     files_prepared = False
     original_hash = None
@@ -3286,6 +3291,10 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             for field in ("sequence", "use_blueprint"):
                 if field in bodies[key]:
                     assert readback[field] == bodies[key][field]
+        services = await rest.request("GET", "/services")
+        script_services = next(row["services"] for row in services if row["domain"] == "script")
+        assert keys[1] in script_services
+        assert renamed.split(".", 1)[1] not in script_services
         capture = _ScriptDependencyReadCapture(rest, websocket, read_gateway._transport)
         runtime.configure(capture, capture, secret=configured.ha_token, core_runtime=core_runtime)
         service = runtime.require()
@@ -3308,6 +3317,15 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
             assert "script_blueprint_body_unresolved: 1" in coverage["warnings"]
             assert next(row for row in result.data["source_coverage"] if row["source_type"] == "blueprint")["evidence_count"] == 0
             assert ("upstream", "ha_config_get_script", identities[package_key]) in capture.calls
+            stage = "script_call_paths"
+            graph = await service.analyze(entity_id=target, source_types=["script"],
+                                          include_indirect=True, max_depth=3, detail_level="evidence")
+            assert any(item["source_id"] == keys[0] and item["depth"] == 2
+                       and not item["direct"] for item in graph.data["findings"])
+            assert any(item["source_id"] == keys[4] and item["depth"] == 3
+                       and len(item["evidence_path"]) == 3 for item in graph.data["findings"])
+            assert graph.partial and graph.data["index"]["cache_hit"]
+            assert graph.data["script_call_graph"]["fallback_occurred"] is False
             shared_findings = tuple(service.index.snapshot.findings)
             shared_obligations = tuple(service.index.snapshot.obligations)
 
@@ -3388,6 +3406,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
     print(json.dumps({"script_dependency_contract": "PASS", "stored_script_fixtures": len(keys),
                       "package_only_fixtures": 1, "core": EXPECTED_HA_VERSION, "upstream": UPSTREAM_VERSION,
                       "script_execution": False, "feature_boundary_read_capture": True,
+                      "renamed_service_and_three_edge_call_paths": "PASS",
                       "injected_faults": ["canonical_key_mismatch", "provider_unavailable"],
                       "provider_recovery": "PASS", "file_and_registry_cleanup": "PASS"}))
 

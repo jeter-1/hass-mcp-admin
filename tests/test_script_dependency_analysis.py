@@ -129,7 +129,8 @@ class ScriptCollectionTests(unittest.IsolatedAsyncioTestCase):
                 {"action": "notify.fixture", "data": {"message": "sensor.fixture"}}]}
         result = await collect(Reader({"script.renamed": response(body=body)}))
         self.assertFalse(result.findings)
-        self.assertIn("transitive", result.coverage.warnings[1])
+        self.assertIn("dynamic calls", result.coverage.warnings[1])
+        self.assertIn("script_call_service_identity_unavailable: 1", result.call_gaps)
 
     async def test_templates_remain_parse_only_and_opaque(self):
         body = {"sequence": [{"action": "light.turn_on", "target": {"entity_id": "{{ states('input_text.target') }}"}}]}

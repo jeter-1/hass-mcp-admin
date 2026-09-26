@@ -34,7 +34,10 @@ async def entity_dependency_analysis(
 
     The entity may be valid but currently missing. detail_level is summary,
     standard, or evidence. Optional indirect traversal follows only explicit
-    group/template edges to max_depth 1-3. source_types may contain automation,
+    group/template and literal script-invocation edges to max_depth 1-3.
+    Script discovery is partial; no matches do not prove global absence.
+    source_types filters reported sources, including across script intermediates,
+    and may contain automation,
     blueprint, script, scene, group, template, or dashboard. Pagination cursors
     are opaque and tied to one dependency-index generation.
     """
@@ -58,7 +61,7 @@ async def entity_dependency_analysis(
             operation="entity_dependency_analysis",
             summary=(
                 "Found bounded Home Assistant configuration dependencies."
-                if output.data["overview"]["direct_reference_count"]
+                if output.data["findings"]
                 else "No dependencies were detected within the reported source coverage."
             ),
             data=output.data,

@@ -1,0 +1,27 @@
+{
+  "scope": "Read-only static invocation semantics; not runtime compatibility authority",
+  "reviewed_at": "2026-09-26",
+  "core_version": "2026.9.3",
+  "sources": [
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "homeassistant/components/script/__init__.py",
+      "sha256": "ae005c979c7a0f2e77750490e5776d61408513923ead5c48f81ce3bcddc0b2f1"
+    },
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "homeassistant/helpers/script.py",
+      "sha256": "f7be0386517eb685d1d8e3ba0e4ccff58f85811af6e9601fb17b6631726eba3e"
+    },
+    {
+      "repository": "home-assistant/core",
+      "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+      "path": "tests/components/script/test_init.py",
+      "sha256": "ab1dc8cbce8559d4c95497e744155a4a37ad4ab801285cee9ab55b07bedb3621"
+    }
+  ],
+  "runtime_version_pins_added": false,
+  "live_access": false
+}

@@ -2,6 +2,23 @@
 
 ## Current direction
 
+2026-09-26: Josh approved the household-audit roadmap and bounded architecture
+adjustments. The immediate increment is [script-call dependency analysis](SCRIPT_CALL_DEPENDENCIES.md):
+automation → script → entity and script → script paths using the existing index,
+with explicit partial coverage. This supersedes the prior helper/administration
+next-step selection. It does not authorize all-family inventory, a release change,
+publication, deployment or live testing. Beta.3 dashboard acceptance remains separate.
+
+Next, in order: restart/reload lifecycle analysis; a sanitized integration inspector
+with integration-specific evidence; audit configuration baseline/diff; dashboard
+semantic/control analysis; snapshot-indexed search; optional retained execution
+summaries. Each requires its own bounded contract before implementation. Reuse
+existing generations, fingerprints and coverage metadata; never equate a stable
+index generation with an atomic HA snapshot or unknown coverage with absence.
+Use existing reviewed applicability mechanisms rather than new ad hoc Core pins.
+
+### Retained September 25 release preparation record
+
 2026-09-25: Josh selected **dashboard planning capacity of 256 semantic leaves
 plus actionable diagnostics**, then authorized **2.4.0-beta.3** metadata and
 release/acceptance preparation in the same PR. The materialized candidate builds
@@ -29,11 +46,12 @@ them. Candidate validation, independent review and Josh's Ready decision remain
 required for this materialized candidate. Publication, deployment and live tests
 retain their separate authority boundaries.
 
-After this increment, select one remaining exact helper operation from
+The September 25 next-step recommendation was to select one remaining exact helper operation from
 [#92](https://github.com/jeter-1/hass-mcp-admin/issues/92) or one concrete blocked
 administration task. General script inventory completeness, transitive dependency
 analysis and broader configuration families remain separate decisions. No new
-feature beyond the dashboard correction is authorized by this roadmap entry.
+feature beyond the dashboard correction was authorized by that historical entry.
+The September 26 decision above supersedes that ordering.
 
 ### Retained September 24 release preparation record
 

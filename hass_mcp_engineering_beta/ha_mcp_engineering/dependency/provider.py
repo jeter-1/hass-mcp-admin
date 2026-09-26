@@ -412,6 +412,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
         auto_started = time.perf_counter()
         results = await asyncio.gather(*(fetch_automation(state) for state in automations))
         failed = 0
+        automation_call_documents = []
         blueprint_failures = 0
         parse_started = time.perf_counter()
         for state, config, failure in results:
@@ -447,6 +448,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                     )
                 )
                 continue
+            automation_call_documents.append((internal_id, source_entity_id, config))
             blueprint = config.get("use_blueprint")
             parsed_blueprint = None
             blueprint_read_failure = None
@@ -917,6 +919,7 @@ class DirectHaDependencyProvider(DependencySourceProvider):
                 states, registry, registry_complete=entity_registry_complete,
                 reader_factory=self.script_reader_factory, secret=self.secret,
                 concurrency=self.concurrency,
+                automation_documents=tuple(automation_call_documents),
             )
             request_counts["delegated_script_configuration"] += script_diagnostics.profile["read_attempts"]
             request_time_ms["delegated_script_configuration"] += script_diagnostics.profile["read_time_ms"]
