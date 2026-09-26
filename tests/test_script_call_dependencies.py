@@ -98,6 +98,29 @@ class CallExtractionTests(unittest.TestCase):
         self.assertLessEqual(len(edges), 3)
         self.assertIn("script_call_target_items_exceeded", gaps)
 
+    def test_malformed_nested_selectors_share_production_budget_across_actions(self):
+        for width in (calls.MAX_CALLS // 2, calls.MAX_CALLS):
+            with self.subTest(width=width):
+                actions = [{"action": "script.turn_on", "target": {"entity_id": "script.outer"}}]
+                actions.extend(
+                    {"action": "script.turn_on", "target": {"entity_id": [[] for _ in range(width)]}}
+                    for _ in range(2)
+                )
+                actions.append({"action": "script.turn_on", "target": {"entity_id": "script.renamed"}})
+                edges, gaps = extract({"action": actions})
+                self.assertEqual([edge.target_entity_id for edge in edges], ["script.outer"])
+                self.assertGreater(gaps["script_call_target_unresolved"], 0)
+                self.assertLessEqual(gaps["script_call_target_unresolved"], calls.MAX_CALLS)
+                self.assertIn("script_call_target_items_exceeded", gaps)
+
+    def test_valid_selector_budget_is_shared_without_rejecting_small_inputs(self):
+        edges, gaps = extract({"action": [
+            {"action": "script.turn_on", "target": {"entity_id": ["script.outer"]}},
+            {"action": "script.turn_on", "data": {"entity_id": ["script.renamed"]}},
+        ]})
+        self.assertEqual([edge.target_entity_id for edge in edges], ["script.outer", "script.renamed"])
+        self.assertFalse(gaps)
+
     def test_reserved_service_collision_is_not_assumed_to_be_builtin(self):
         with patch.dict(MAPPING, {"script.collision": "turn_on"}):
             edges, gaps = extract({"action": [{"action": "script.turn_on", "target": {"entity_id": "script.outer"}}]})
@@ -119,6 +142,18 @@ class CallExtractionTests(unittest.TestCase):
         with patch.object(calls, "MAX_ACTION_NODES", 3):
             edges, gaps = extract({"action": [[], [], [], {"action": "script.stored"}]})
         self.assertFalse(edges)
+        self.assertIn("script_call_action_nodes_exceeded", gaps)
+
+    def test_depth_rejected_nodes_consume_production_budget_before_later_sibling(self):
+        sequence = [{"delay": 0} for _ in range(12_000)]
+        for _ in range(16):
+            sequence = [{"sequence": sequence}]
+        edges, gaps = extract({"action": [
+            {"action": "script.outer"}, *sequence, {"action": "script.stored"},
+        ]})
+        self.assertEqual([edge.target_entity_id for edge in edges], ["script.outer"])
+        self.assertGreater(gaps["script_call_action_depth_exceeded"], 0)
+        self.assertLessEqual(gaps["script_call_action_depth_exceeded"], calls.MAX_ACTION_NODES)
         self.assertIn("script_call_action_nodes_exceeded", gaps)
 
     def test_node_depth_and_edge_bounds(self):

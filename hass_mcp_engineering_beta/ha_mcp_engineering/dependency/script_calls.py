@@ -66,6 +66,7 @@ def extract_script_calls(
                     gaps["script_call_target_items_exceeded"] += 1
                     break
                 if isinstance(member, list):
+                    targets_seen += 1
                     gaps["script_call_target_unresolved"] += 1
                 else:
                     target_values(member, f"{path}[{i}]")
@@ -129,12 +130,13 @@ def extract_script_calls(
 
     def walk(value: Any, path: str, depth: int) -> None:
         nonlocal visited
-        if depth > MAX_ACTION_DEPTH:
-            gaps["script_call_action_depth_exceeded"] += 1
-            return
+        # Rejected nodes consume work too, including children past the depth cap.
         visited += 1
         if visited > MAX_ACTION_NODES:
             gaps["script_call_action_nodes_exceeded"] += 1
+            return
+        if depth > MAX_ACTION_DEPTH:
+            gaps["script_call_action_depth_exceeded"] += 1
             return
         if isinstance(value, list):
             for i, item in enumerate(value):
