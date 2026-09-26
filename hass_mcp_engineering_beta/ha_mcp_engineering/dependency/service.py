@@ -14,6 +14,7 @@ from ..observability import METRICS
 from .extraction import valid_entity_id
 from .index import DependencyIndex
 from .models import DependencyFinding, SOURCE_TYPES, SourceCoverageItem
+from .script_calls import traverse_script_calls, MAX_GRAPH_RESULTS, MAX_GRAPH_STEPS
 
 
 @dataclass
@@ -67,7 +68,7 @@ class EntityDependencyAnalysisService:
             return (
                 snapshot.script_diagnostics.visible()
                 if snapshot is not None and snapshot.script_diagnostics is not None
-                and "script" in requested else None
+                and ("script" in requested or "automation" in requested) else None
             )
 
         def query_identity(diagnostic):
@@ -106,6 +107,12 @@ class EntityDependencyAnalysisService:
             raise GovernanceError(ErrorCode.STALE_CURSOR)
         query_fingerprint = query_identity(diagnostic)
         analysis_findings = snapshot.findings + (diagnostic.findings if diagnostic else ())
+        call_findings = diagnostic.call_findings if diagnostic else ()
+        # Prefer the invocation classification to a duplicate structured target
+        # at the same path; leave the shared snapshot untouched.
+        call_keys = {(x.source_type, x.source_id, x.config_path, x.target_entity_id) for x in call_findings}
+        analysis_findings = tuple(x for x in analysis_findings
+            if (x.source_type, x.source_id, x.config_path, x.target_entity_id) not in call_keys) + call_findings
         analysis_dynamic = snapshot.dynamic_references + (diagnostic.dynamic_references if diagnostic else ())
         analysis_coverage = tuple(
             diagnostic.coverage if diagnostic and item.source_type == "script" else item
@@ -118,6 +125,14 @@ class EntityDependencyAnalysisService:
             include_indirect=include_indirect,
             max_depth=max_depth,
         )
+
+        graph_gaps = list(diagnostic.call_gaps) if diagnostic else []
+        if diagnostic and include_indirect:
+            indirect, traversal_gaps = traverse_script_calls(
+                analysis_findings, call_findings, target=target, requested=requested, max_depth=max_depth,
+            )
+            graph_gaps.extend(traversal_gaps)
+            findings = sorted({x.evidence_id: x for x in (*findings, *indirect)}.values(), key=_sort_key)
 
         if cursor and snapshot.fingerprint != str(self.index.active_identity().get("fingerprint") or ""):
             raise GovernanceError(ErrorCode.STALE_CURSOR)
@@ -144,8 +159,20 @@ class EntityDependencyAnalysisService:
             cache_hit=not rebuilt,
         )
         partial = any(item.completeness in {"partial", "unavailable", "unsupported"} for item in coverage if item.completeness != "not_requested")
+        # Even automation-only indirect results depend on partial script
+        # discovery/read coverage; filtering source rows must not erase that gap.
+        graph_requested = bool({"automation", "script"}.intersection(requested)) and (
+            include_indirect or target.startswith("script.") or "script" in requested or bool(graph_gaps)
+        )
+        if graph_requested:
+            partial = True
         dynamic = [item for item in analysis_dynamic if item.source_type in requested][:10]
         warnings = [warning for item in coverage for warning in item.warnings]
+        if graph_requested:
+            warnings.extend(diagnostic.coverage.warnings if diagnostic else [
+                "Script call evidence is unavailable; indirect script dependencies cannot be excluded."
+            ])
+            warnings.extend(graph_gaps)
         warnings.extend(item.warning + f" Source: {item.source_type}/{item.source_id}, path {item.config_path}." for item in dynamic)
         if has_more:
             warnings.append("Findings were truncated; continue with the returned cursor.")
@@ -154,6 +181,16 @@ class EntityDependencyAnalysisService:
             warnings.append("The target entity is missing but configuration references remain; this may be stale configuration.")
 
         assessment_status, reason = _assessment(bool(direct), any(not item.direct for item in findings), partial, possible_stale)
+        path_ids = {edge for item in page if not item.direct and item.relation == "script_call"
+                    for edge in item.evidence_path}
+        path_evidence = [
+            {"evidence_id": item.evidence_id, "source_type": item.source_type,
+             "source_id": item.source_id, "source_entity_id": item.source_entity_id,
+             "target_entity_id": item.target_entity_id, "relation": item.relation,
+             "config_path": item.config_path,
+             "provider": "upstream_read_gateway" if item.source_type == "script" else "direct_ha_api"}
+            for item in analysis_findings if item.evidence_id in path_ids
+        ]
         data = {
             "target": metadata,
             "overview": {
@@ -183,6 +220,22 @@ class EntityDependencyAnalysisService:
                 "total": len(findings),
                 "has_more": has_more,
                 "next_cursor": next_cursor,
+            },
+            "script_call_graph": {
+                "considered": bool(diagnostic),
+                "completeness": ("unavailable" if diagnostic is None or diagnostic.coverage.completeness == "unavailable"
+                                 else "partial"),
+                "max_depth": max_depth,
+                "maximum_indirect_results": MAX_GRAPH_RESULTS,
+                "maximum_traversal_steps": MAX_GRAPH_STEPS,
+                "gaps": graph_gaps,
+                "path_evidence": sorted(path_evidence, key=lambda item: item["evidence_id"]),
+                "configuration_providers": list(dict.fromkeys(
+                    [provider for provider in ("direct_ha_api", diagnostic.coverage.provider) if provider != "none"]
+                )) if diagnostic else [],
+                "script_provider_policy": diagnostic.coverage.policy if diagnostic else None,
+                "limitations": diagnostic.coverage.warnings[:10] if diagnostic else [],
+                "fallback_occurred": False,
             },
             "index": {
                 "fingerprint": (_query_fingerprint(snapshot.fingerprint, diagnostic.fingerprint) if diagnostic else snapshot.fingerprint)[:16],
