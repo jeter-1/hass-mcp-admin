@@ -132,16 +132,16 @@ def extract_script_calls(
         if depth > MAX_ACTION_DEPTH:
             gaps["script_call_action_depth_exceeded"] += 1
             return
+        visited += 1
+        if visited > MAX_ACTION_NODES:
+            gaps["script_call_action_nodes_exceeded"] += 1
+            return
         if isinstance(value, list):
             for i, item in enumerate(value):
                 if visited >= MAX_ACTION_NODES:
                     gaps["script_call_action_nodes_exceeded"] += 1
                     return
                 walk(item, f"{path}[{i}]", depth + 1)
-            return
-        visited += 1
-        if visited > MAX_ACTION_NODES:
-            gaps["script_call_action_nodes_exceeded"] += 1
             return
         if not isinstance(value, dict):
             gaps["script_call_action_invalid"] += 1

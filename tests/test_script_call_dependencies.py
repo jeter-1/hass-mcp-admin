@@ -115,11 +115,17 @@ class CallExtractionTests(unittest.TestCase):
                              ({"action": [42]}, "action_invalid")):
             self.assertIn("script_call_" + reason, extract(body)[1])
 
+    def test_empty_nested_containers_cannot_bypass_work_bound(self):
+        with patch.object(calls, "MAX_ACTION_NODES", 3):
+            edges, gaps = extract({"action": [[], [], [], {"action": "script.stored"}]})
+        self.assertFalse(edges)
+        self.assertIn("script_call_action_nodes_exceeded", gaps)
+
     def test_node_depth_and_edge_bounds(self):
         body = {"action": [{"action": "script.stored"}] * 8}
         with patch.object(calls, "MAX_ACTION_NODES", 3):
             edges, gaps = extract(body)
-        self.assertEqual(len(edges), 3)
+        self.assertEqual(len(edges), 2)
         self.assertIn("script_call_action_nodes_exceeded", gaps)
         with patch.object(calls, "MAX_CALLS", 2):
             edges, gaps = extract(body)
