@@ -162,6 +162,15 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
     async def test_output_omissions_are_frozen_before_first_page_and_replay(self):
         service, client, _, _, token = setup_service(limit=16_000)
         self.addCleanup(end_request, token)
+        collect = service.provider.collect
+        async def deterministic_collect(target):
+            report = await collect(target)
+            # This is an exact-byte packing fixture, not a latency test. Timing
+            # digit widths must not move the borderline row across its budget.
+            for source in report["sources"]:
+                source["duration_ms"] = 0.0
+            return report
+        service.provider.collect = deterministic_collect
         first = await service.inspect(alarm_entity_id=TARGET, limit=50)
         pages, cursors, records = [], [], []
         page = first
