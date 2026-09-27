@@ -2554,7 +2554,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["home_assistant_core_authority"], projection)
 
     async def test_material_reconciliation_audit_is_bounded_and_redacted(self):
-        from ha_mcp_engineering.ha_core_readmission.profiles import CORE_TYPED_OPERATION_PROFILES
+        from ha_mcp_engineering.ha_core_readmission.profiles import (
+            CORE_TYPED_OPERATION_PROFILES, CORE_INTEGRATION_INSPECTION_PROFILES,
+        )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
         runtime = CoreRuntime()
@@ -2575,11 +2577,11 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         summary = event["analysis_summary"]
         self.assertEqual(summary["observed_core_version"], "2026.9.0")
         self.assertEqual(summary["admitted_count"], len(CORE_CAPABILITY_PROFILES))
-        self.assertEqual(summary["withheld_count"], len(CORE_TYPED_OPERATION_PROFILES))
+        self.assertEqual(summary["withheld_count"], len(CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
-            {p.capability_id for p in CORE_TYPED_OPERATION_PROFILES},
+            {p.capability_id for p in CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES},
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)
