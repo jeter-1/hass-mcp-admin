@@ -405,7 +405,10 @@ The durable binding uses the existing terminal event vocabulary and a fixed
 `unrecorded_lock_tokens_bound` diagnostic. Existing restart-safe event auditing
 and orphan reconciliation supply the audit trail outside transaction callbacks.
 Known-active tokenless claims with retained locks are deferred, not cancelled.
-Children that never acquired locks retain existing cancellation behavior.
+Cancellation rechecks the observed claim generation and, for retained tokenless
+locks, expiry inside its execution transaction. A raced replacement claim is
+not cancelled. Children that never acquired locks retain existing cancellation
+behavior when the observed claim is unchanged.
 
 `get_execution_task` child projections and reconciliation items add bounded
 `lock_recovery` diagnostics: retained/active/expired counts, token persistence,

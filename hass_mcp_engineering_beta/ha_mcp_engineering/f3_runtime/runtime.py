@@ -2914,7 +2914,9 @@ class F3RuntimeIntegration:
         )
         reconciliation = self.reconciliation_items()
         pending_reconciliation = bool(reconciliation)
-        status = "manual_intervention_required" if holds else (
+        manual_recovery = any(item["lock_recovery"]["requires_manual_intervention"]
+                              for item in reconciliation)
+        status = "manual_intervention_required" if holds or manual_recovery else (
             "recovering"
             if child["nonterminal_execution_count"] or pending_reconciliation
             else "ready"
@@ -3589,8 +3591,9 @@ class F3RuntimeIntegration:
         record = self.children.get(child_id)
         if record is None or record.dispatch_intent is not None:
             return False, False
-        if (not record.lock_tokens and datetime.fromisoformat(record.claim_expires_at) > now
-            and self._related_lock_records(declaration, record, self.locks.records())):
+        tokenless_retained = bool(not record.lock_tokens and self._related_lock_records(
+            declaration, record, self.locks.records()))
+        if tokenless_retained and datetime.fromisoformat(record.claim_expires_at) > now:
             # Never cancel or reconstruct acquisition while its owner can run.
             return False, False
         terminalized = False
@@ -3599,6 +3602,8 @@ class F3RuntimeIntegration:
                 child_id,
                 now=now,
                 diagnostic_codes=(ORPHAN_RECONCILIATION_REASON,),
+                expected_claim_generation=record.claim_generation,
+                require_expired_claim=tokenless_retained,
             ):
                 return False, False
             terminalized = True

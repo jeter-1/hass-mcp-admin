@@ -286,6 +286,7 @@ class TokenlessRuntimeTests(ConfigurationPlanTestCase):
         self.assertEqual(calls, self.gateway.calls)
         self.assertEqual((), self.runtime.locks.records())
         self.assertEqual('failed_pre_dispatch', self.service.get_execution_task(provenance['public_task_id'])['state'])
+        self.assertFalse(self.service._public(self.service._load(provenance['plan_id']), include_configs=False)['apply_allowed'])
         await self.runtime.recover_once('periodic')
         self.assertEqual([], self.runtime.reconciliation_items())
         self.assertEqual(0, self.runtime.health()['recovery_failures'])
@@ -300,6 +301,36 @@ class TokenlessRuntimeTests(ConfigurationPlanTestCase):
         diagnostics = self.runtime.reconciliation_items()[0]['lock_recovery']
         self.assertEqual('storage_error', diagnostics['last_failure_category'])
         self.assertNotIn('synthetic private detail', str(diagnostics))
+
+    async def test_replacement_claim_racing_orphan_cancellation_is_preserved(self):
+        from tests.test_f3_orphan_child_recovery import _PreparedStub
+        _, _, declaration, _, claim = await self.tokenless(terminal=False)
+        retained = self.runtime.locks.records()
+        original = self.runtime.children.cancel
+        def raced_cancel(*args, **kwargs):
+            self.runtime.children.claim(
+                identity=replace(claim.record.execution_identity(), owner_id='replacement'),
+                prepared=_PreparedStub(declaration), timing=EXECUTION_TIMING, now=self.instant)
+            return original(*args, **kwargs)
+        with patch.object(self.runtime.children, 'cancel', side_effect=raced_cancel):
+            self.assertEqual((False, False), self.runtime._reconcile_orphaned_child(declaration, now=self.instant))
+        current = self.runtime.children.get(declaration['child_id'])
+        self.assertEqual('replacement', current.identity['owner_id'])
+        self.assertFalse(current.terminal)
+        self.assertEqual(retained, self.runtime.locks.records())
+
+    async def test_real_runtime_recording_failure_cleans_up_without_audit_reentry(self):
+        created = await self.create_automation_plan()
+        await self.approve(created)
+        with patch.object(self.runtime.children, 'record_locks', side_effect=ExecutionStorageError('synthetic private failure')):
+            result = await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual('failed_pre_dispatch', result['task_state'])
+        self.assertEqual((), self.runtime.locks.records())
+        self.assertEqual(0, sum(call[0] == 'write' for call in self.gateway.calls))
+        declaration = self.runtime.children.declarations_for_task(result['task_id'])[0]
+        record = self.runtime.children.get(declaration['child_id'])
+        self.assertEqual(0, record.dispatch_count)
+        self.assertTrue(any('lock_cleanup_completed' in event['diagnostic_codes'] for event in record.events))
 
     async def test_expired_retained_locks_are_visible_before_recovery(self):
         _, task, declaration, handle, _ = await self.tokenless()
@@ -319,6 +350,7 @@ class TokenlessRuntimeTests(ConfigurationPlanTestCase):
         self.assertEqual(retained, self.runtime.locks.records())
         item = self.runtime.reconciliation_items()[0]
         self.assertTrue(item['lock_recovery']['requires_manual_intervention'])
+        self.assertEqual('manual_intervention_required', self.runtime.health()['status'])
         self.assertEqual('ownership_proof_unavailable', item['lock_recovery']['last_failure_category'])
         self.assertEqual([], self.runtime.children.get(declaration['child_id']).lock_tokens)
 

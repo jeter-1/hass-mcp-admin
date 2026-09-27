@@ -898,6 +898,8 @@ class DurableExecutionRepository:
         *,
         now: datetime | None = None,
         diagnostic_codes: tuple[str, ...] = (),
+        expected_claim_generation: int | None = None,
+        require_expired_claim: bool = False,
     ) -> bool:
         now_text = timestamp(now or utc_now())
         bounded = (
@@ -908,6 +910,10 @@ class DurableExecutionRepository:
         with self._exclusive_transaction():
             record = self._read_unlocked(task_id)
             if record is None:
+                return False
+            if expected_claim_generation is not None and record.claim_generation != expected_claim_generation:
+                return False
+            if require_expired_claim and parse_timestamp(record.claim_expires_at, field_name="claim_expires_at") > (now or utc_now()):
                 return False
             if record.dispatch_intent is not None:
                 append_execution_event(
