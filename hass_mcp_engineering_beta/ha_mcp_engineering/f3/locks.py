@@ -396,16 +396,6 @@ class DurableLockStore:
             if conflicts:
                 keys = _bytewise(conflicts)
                 self.metrics.increment("conflicts")
-                for key in keys:
-                    self.event_sink(
-                        {
-                            "event_type": "lock_conflict",
-                            "task_id": owner.task_id,
-                            "attempt_id": owner.attempt_id,
-                            "owner_id": owner.owner_id,
-                            "lock_key": key,
-                        }
-                    )
                 raise LockConflict(keys)
 
             tokens: list[LockToken] = []
@@ -441,7 +431,22 @@ class DurableLockStore:
             handle.validate()
             return handle, True
 
-        handle = self._transact(mutate)
+        try:
+            handle = self._transact(mutate)
+        except LockConflict as exc:
+            # Audit may read execution authority. Never call it while holding
+            # the lock store: recovery orders execution before lock storage.
+            for key in exc.keys:
+                try:
+                    self.event_sink({
+                        "event_type": "lock_conflict", "task_id": owner.task_id,
+                        "attempt_id": owner.attempt_id, "owner_id": owner.owner_id,
+                        "lock_key": key,
+                    })
+                except Exception:
+                    # An audit failure cannot change the refusal or its keys.
+                    pass
+            raise
         self.metrics.increment("acquisitions")
         for token in handle.tokens:
             self.event_sink(

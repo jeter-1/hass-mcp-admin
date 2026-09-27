@@ -217,7 +217,7 @@ class TokenlessRuntimeTests(ConfigurationPlanTestCase):
             configuration_gateway=_ExactFakeConfigurationGateway(self.gateway), backup_gateway=None,
             lifecycle_gateway=None, provider_identity_reader=_provider_identity, retention_days=90)
 
-    async def tokenless(self, *, terminal=True):
+    async def tokenless(self, *, terminal=True, terminal_outcome='failed_pre_dispatch'):
         created = await self.create_automation_plan()
         await self.approve(created)
         plan = self.service._load(created['plan_id'])
@@ -231,9 +231,12 @@ class TokenlessRuntimeTests(ConfigurationPlanTestCase):
         owner = LockOwner(ident.owner_id, ident.task_id, ident.plan_id, prepared[0].operation, ident.attempt_id)
         handle = self.runtime.locks.acquire_once(complete, owner=owner, timing=LOCK_TIMING, now=self.instant)
         if terminal:
-            self.runtime.children.terminalize_pre_dispatch(ident.task_id, owner_id=ident.owner_id,
-                claim_generation=claim.claim_generation, outcome='failed_pre_dispatch',
-                diagnostic_codes=('lock_storage_failure',), now=self.instant)
+            if terminal_outcome == 'cancelled_pre_dispatch':
+                self.runtime.children.cancel(ident.task_id, now=self.instant)
+            else:
+                self.runtime.children.terminalize_pre_dispatch(ident.task_id, owner_id=ident.owner_id,
+                    claim_generation=claim.claim_generation, outcome=terminal_outcome,
+                    diagnostic_codes=('lock_storage_failure',), now=self.instant)
             self.runtime._project(plan, task)
         self.instant += timedelta(seconds=121)
         return created, task, declaration, handle, claim
@@ -385,6 +388,308 @@ class TokenlessRuntimeTests(ConfigurationPlanTestCase):
         self.assertEqual(retained, self.runtime.locks.records())
         self.assertEqual(0, self.runtime.health()['recovery_failures'])
         self.assertTrue(self.runtime.reconciliation_items()[0]['lock_recovery']['waiting_for_claim_expiry'])
+
+
+    async def test_conflict_callback_is_outside_transaction_and_preserves_refusal(self):
+        import fcntl
+        from ha_mcp_engineering.f3.locks import LockConflict
+        _, _, declaration, handle, _ = await self.tokenless()
+        records = self.runtime.locks.records()
+        request = tuple(LockRequest(r.key, tuple(LockScope(s) for s in r.scopes),
+                                    LockMode(r.mode), r.evidence_references) for r in records)
+        seen = []
+        def callback(event):
+            if event['event_type'] != 'lock_conflict':
+                return
+            with open(self.runtime.locks.transaction_path, 'a+b') as stream:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            seen.append(event['lock_key'])
+            self.runtime._emit_f3_audit_event(event)
+        before = self.runtime.locks.metrics.snapshot()
+        with patch.object(self.runtime.locks, 'event_sink', side_effect=callback):
+            with self.assertRaises(LockConflict) as caught:
+                self.runtime.locks.acquire_once(request, owner=replace(handle.owner, owner_id='other'),
+                                               timing=LOCK_TIMING, now=self.instant)
+        expected = sorted((r.key for r in records), key=lambda key: key.encode())
+        self.assertEqual(expected, list(caught.exception.keys))
+        self.assertEqual(expected, seen)
+        self.assertEqual(records, self.runtime.locks.records())
+        self.assertEqual(before['conflicts'] + 1, self.runtime.locks.metrics.snapshot()['conflicts'])
+        self.assertEqual(before['acquisitions'], self.runtime.locks.metrics.snapshot()['acquisitions'])
+
+    async def test_conflict_audit_failure_does_not_replace_refusal(self):
+        from ha_mcp_engineering.f3.locks import LockConflict
+        _, _, _, handle, _ = await self.tokenless()
+        records = self.runtime.locks.records()
+        request = tuple(LockRequest(r.key, tuple(LockScope(s) for s in r.scopes),
+                                    LockMode(r.mode), r.evidence_references) for r in records)
+        with patch.object(self.runtime.locks, 'event_sink', side_effect=RuntimeError('synthetic audit')):
+            with self.assertRaises(LockConflict) as caught:
+                self.runtime.locks.acquire_once(request, owner=replace(handle.owner, owner_id='other'),
+                                               timing=LOCK_TIMING, now=self.instant)
+        self.assertEqual({r.key for r in records}, set(caught.exception.keys))
+        self.assertEqual(records, self.runtime.locks.records())
+
+    async def test_conflict_audit_and_both_execution_cleanup_transactions_complete(self):
+        import os
+        import select
+        import signal
+        import time
+        from ha_mcp_engineering.f3.locks import LockConflict
+        for settlement in (True, False):
+            with self.subTest(settlement=settlement):
+                _, _, declaration, handle, claim = await self.tokenless(terminal=settlement)
+                runtime = self.runtime
+                records = runtime.locks.records()
+                request = tuple(LockRequest(r.key, tuple(LockScope(s) for s in r.scopes),
+                                            LockMode(r.mode), r.evidence_references) for r in records)
+                ready_r, ready_w = os.pipe()
+                conflict_r, conflict_w = os.pipe()
+                children = []
+                def barrier():
+                    os.write(ready_w, b'1')
+                    if not select.select([conflict_r], [], [], 4)[0]:
+                        raise AssertionError('conflict barrier timed out')
+                    if os.read(conflict_r, 1) != b'1':
+                        raise AssertionError('invalid conflict barrier')
+                try:
+                    child = os.fork()
+                    if child == 0:
+                        try:
+                            if settlement:
+                                original = runtime.locks.settle_unrecorded
+                                def settled(**kwargs):
+                                    barrier()
+                                    return original(**kwargs)
+                                runtime.locks.settle_unrecorded = settled
+                                runtime._release_orphaned_child_locks(declaration,
+                                    runtime.children.get(declaration['child_id']))
+                            else:
+                                def cleanup():
+                                    barrier()
+                                    runtime.locks.release(handle, pre_dispatch_cleanup=True)
+                                runtime.children.fail_lock_acquisition(declaration['child_id'],
+                                    owner_id=handle.owner.owner_id, claim_generation=claim.claim_generation,
+                                    cleanup=cleanup, now=self.instant)
+                            os._exit(0)
+                        except BaseException:
+                            os._exit(90)
+                    children.append(child)
+                    self.assertTrue(select.select([ready_r], [], [], 4)[0], 'execution barrier')
+                    self.assertEqual(b'1', os.read(ready_r, 1))
+                    child = os.fork()
+                    if child == 0:
+                        try:
+                            def callback(event):
+                                if event['event_type'] == 'lock_conflict':
+                                    os.write(conflict_w, b'1')
+                                    runtime._emit_f3_audit_event(event)
+                            runtime.locks.event_sink = callback
+                            try:
+                                runtime.locks.acquire_once(request,
+                                    owner=replace(handle.owner, owner_id='competing-owner'),
+                                    timing=LOCK_TIMING, now=self.instant)
+                            except LockConflict:
+                                os._exit(0)
+                            os._exit(92)
+                        except BaseException:
+                            os._exit(91)
+                    children.append(child)
+                    deadline = time.monotonic() + 5
+                    statuses = []
+                    while children and time.monotonic() < deadline:
+                        for pid in tuple(children):
+                            waited, status = os.waitpid(pid, os.WNOHANG)
+                            if waited:
+                                children.remove(pid)
+                                statuses.append(status)
+                        if children:
+                            time.sleep(0.01)
+                    self.assertFalse(children, 'execution/lock/audit cycle did not complete')
+                    self.assertEqual([0, 0], statuses)
+                    self.assertEqual((), runtime.locks.records())
+                    self.assertEqual(0, runtime.children.get(declaration['child_id']).dispatch_count)
+                finally:
+                    for pid in children:
+                        os.kill(pid, signal.SIGKILL)
+                        os.waitpid(pid, 0)
+                    for fd in (ready_r, ready_w, conflict_r, conflict_w):
+                        os.close(fd)
+
+    async def test_failed_binding_audit_converges_at_every_release_and_audit_boundary(self):
+        import json
+        from ha_mcp_engineering.f3_runtime.runtime import ORPHAN_RECONCILIATION_RESULT
+        for boundary in ('released', 'audit_failed', 'audit_partial', 'audit_cursor', 'final_marker'):
+            with self.subTest(boundary=boundary):
+                created, task, declaration, _, _ = await self.tokenless()
+                child_id = declaration['child_id']
+                runtime = self.runtime
+                calls = list(self.gateway.calls)
+                release = runtime._release_orphaned_child_locks
+                update = runtime.children.update_runtime
+                batch = self.service.audit.write_batch
+                if boundary == 'audit_partial':
+                    runtime.children.update_runtime(child_id, changes={'audited_event_count': 0})
+                def release_then_stop(*args):
+                    release(*args)
+                    raise SystemExit('synthetic crash after release')
+                def interrupted_update(key, *, changes):
+                    if (boundary == 'audit_cursor' and 'audited_event_count' in changes) or (
+                        boundary == 'final_marker' and changes.get('reconciliation_result') == ORPHAN_RECONCILIATION_RESULT):
+                        raise SystemExit('synthetic crash after audit')
+                    return update(key, changes=changes)
+                def bounded_batch(entries):
+                    return 0 if boundary == 'audit_failed' else batch(tuple(entries)[:1])
+                if boundary == 'released':
+                    with patch.object(runtime, '_release_orphaned_child_locks', side_effect=release_then_stop):
+                        with self.assertRaises(SystemExit):
+                            runtime._reconcile_orphaned_child(declaration, now=self.instant)
+                elif boundary in {'audit_failed', 'audit_partial'}:
+                    with patch.object(self.service.audit, 'write_batch', side_effect=bounded_batch):
+                        runtime._reconcile_orphaned_child(declaration, now=self.instant)
+                else:
+                    with patch.object(runtime.children, 'update_runtime', side_effect=interrupted_update):
+                        with self.assertRaises(SystemExit):
+                            runtime._reconcile_orphaned_child(declaration, now=self.instant)
+                self.assertEqual((), runtime.locks.records())
+                self.assertIn(child_id, [item['child_id'] for item in runtime.reconciliation_items()])
+                self.assertEqual('recovering', runtime.health()['status'])
+                for _ in range(3):
+                    self.runtime = self.new_runtime()
+                    self.service.f3_runtime = self.runtime
+                    await self.runtime.recover_once('startup')
+                    await self.runtime.recover_once('periodic')
+                    record = self.runtime.children.get(child_id)
+                    state = self.runtime.children.runtime(child_id)
+                    self.assertEqual(len(record.events), state['audited_event_count'])
+                    self.assertEqual(ORPHAN_RECONCILIATION_RESULT, state['reconciliation_result'])
+                    self.assertEqual('failed_pre_dispatch', record.normalized_outcome)
+                    self.assertEqual(0, record.dispatch_count)
+                    self.assertEqual([], self.runtime.reconciliation_items())
+                entries = [json.loads(line) for line in Path(self.service.audit.path).read_text().splitlines()]
+                binding = [entry for entry in entries if entry.get('child_execution_id') == child_id
+                           and entry.get('evidence_references', {}).get('reason_code') == 'terminal_zero_dispatch_only']
+                self.assertEqual(1, len(binding))
+                self.assertEqual(calls, self.gateway.calls)
+                self.assertFalse(self.service._public(self.service._load(created['plan_id']),
+                                                      include_configs=False)['apply_allowed'])
+
+    async def test_cancelled_binding_remains_pending_even_with_old_completion_marker(self):
+        from ha_mcp_engineering.f3_runtime.runtime import ORPHAN_RECONCILIATION_RESULT
+        _, _, declaration, _, _ = await self.tokenless(terminal_outcome='cancelled_pre_dispatch')
+        child_id = declaration['child_id']
+        # Simulate earlier cancellation audit completion, followed by token
+        # recovery and process loss before updating the runtime projection.
+        self.runtime.children.update_runtime(child_id,
+            changes={'reconciliation_result': ORPHAN_RECONCILIATION_RESULT})
+        self.runtime._release_orphaned_child_locks(declaration, self.runtime.children.get(child_id))
+        self.assertEqual((), self.runtime.locks.records())
+        self.assertIn(child_id, [item['child_id'] for item in self.runtime.reconciliation_items()])
+        self.runtime = self.new_runtime()
+        self.service.f3_runtime = self.runtime
+        await self.runtime.recover_once('startup')
+        record = self.runtime.children.get(child_id)
+        self.assertEqual('cancelled_pre_dispatch', record.normalized_outcome)
+        self.assertEqual(0, record.dispatch_count)
+        self.assertEqual(len(record.events), self.runtime.children.runtime(child_id)['audited_event_count'])
+        self.assertEqual([], self.runtime.reconciliation_items())
+
+    async def test_real_cleanup_audit_preserves_fixed_categories_and_primary_storage_error(self):
+        import fcntl
+        import json
+        from contextlib import ExitStack
+        for terminal_write in (1, 2):
+            for cleanup_fails in (False, True):
+                for audit_mode in ('healthy', 'failed', 'raises'):
+                    with self.subTest(write=terminal_write, cleanup_fails=cleanup_fails, audit=audit_mode):
+                        # Each failure has its own stores, so retained locks from
+                        # one injected failure cannot invalidate the next case.
+                        case = TokenlessRuntimeTests()
+                        await case.asyncSetUp()
+                        try:
+                            created = await case.create_automation_plan()
+                            await case.approve(created)
+                            runtime = case.runtime
+                            original_write = runtime.children._write_unlocked
+                            original_audit = case.service.audit.write
+                            terminal_writes = 0
+                            terminal_error = ExecutionStorageError('synthetic-private-terminal-error')
+                            cleanup_events = []
+                            retained_before_cleanup = []
+                            original_release = runtime.locks.release
+                            def cleanup(handle, **kwargs):
+                                retained_before_cleanup.extend(runtime.locks.records())
+                                if cleanup_fails:
+                                    raise LockStorageError('synthetic-private-release-error')
+                                return original_release(handle, **kwargs)
+                            def failing_write(record):
+                                nonlocal terminal_writes
+                                if record.terminal:
+                                    terminal_writes += 1
+                                    if terminal_writes == terminal_write:
+                                        raise terminal_error
+                                return original_write(record)
+                            def report(entry):
+                                if entry.get('event') != 'f3_lock_failure_cleanup':
+                                    return original_audit(entry)
+                                with open(runtime.children.transaction_path, 'a+b') as stream:
+                                    fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+                                cleanup_events.append(entry)
+                                if audit_mode == 'failed':
+                                    return False
+                                if audit_mode == 'raises':
+                                    raise RuntimeError('synthetic-private-audit-error')
+                                return original_audit(entry)
+                            with ExitStack() as stack:
+                                stack.enter_context(patch.object(runtime.children, 'record_locks',
+                                    side_effect=ValueError('synthetic-private-token-error')))
+                                stack.enter_context(patch.object(runtime.children, '_write_unlocked', side_effect=failing_write))
+                                stack.enter_context(patch.object(case.service.audit, 'write', side_effect=report))
+                                stack.enter_context(patch.object(runtime.locks, 'release', side_effect=cleanup))
+                                consume = stack.enter_context(patch.object(runtime, '_consume_approval_counted',
+                                    side_effect=AssertionError('approval must not be consumed')))
+                                with self.assertRaises(ExecutionStorageError) as raised:
+                                    await case.service.apply(created['plan_id'], created['plan_hash'])
+                                self.assertIs(terminal_error, raised.exception)
+                                consume.assert_not_called()
+                            self.assertEqual(1, len(cleanup_events))
+                            codes = cleanup_events[0]['diagnostic_codes']
+                            self.assertIn('lock_storage_failure', codes)
+                            self.assertIn('lock_cleanup_failed' if cleanup_fails else 'lock_cleanup_completed', codes)
+                            if terminal_write == 1:
+                                self.assertIn('lock_terminalization_failed', codes)
+                            self.assertEqual('error', cleanup_events[0]['result_status'])
+                            task = case.service.task_repository.get_for_plan(created['plan_id'])
+                            declaration = runtime.children.declarations_for_task(task.task_id)[0]
+                            record = runtime.children.get(declaration['child_id'])
+                            self.assertEqual(0, record.dispatch_count)
+                            self.assertIsNone(record.dispatch_intent)
+                            self.assertEqual(0, len(task.provider_attempts))
+                            locks = runtime.locks.records()
+                            self.assertEqual(4, len(retained_before_cleanup))
+                            self.assertEqual(tuple(retained_before_cleanup) if cleanup_fails else (), locks)
+                            self.assertTrue(all(item.task_id == declaration['child_id'] for item in locks))
+                            entries = [json.loads(line) for line in Path(case.service.audit.path).read_text().splitlines()]
+                            cleanup_entries = [entry for entry in entries if entry.get('event') == 'f3_lock_failure_cleanup']
+                            self.assertEqual(1 if audit_mode == 'healthy' else 0, len(cleanup_entries))
+                            self.assertNotIn('synthetic-private-', json.dumps(entries + cleanup_events))
+                        finally:
+                            await case.asyncTearDown()
+
+    async def test_cleanup_audit_projection_does_not_reflect_unknown_codes(self):
+        _, _, declaration, _, _ = await self.tokenless()
+        projected = self.runtime._f3_audit_entry({'event_type': 'lock_failure_cleanup',
+            'task_id': declaration['child_id'], 'diagnostic_codes': [
+                'lock_storage_failure', 'synthetic-private-secret', {}, 'lock_cleanup_failed',
+                'outside-bound']})
+        self.assertEqual(['lock_storage_failure', 'lock_cleanup_failed'], projected['diagnostic_codes'])
+        self.assertNotIn('synthetic-private-secret', str(projected))
+        with patch.object(self.runtime, '_emit_f3_audit_event') as sink:
+            self.runtime.children.event_sink({'event_type': 'execution_started'})
+            sink.assert_not_called()
+
 
 
 class UnrecordedProofTests(unittest.TestCase):

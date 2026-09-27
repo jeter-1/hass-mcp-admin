@@ -281,3 +281,15 @@ than sixteen tokens, including a dispatch intent carrying that expanded set.
 A binary downgrade alone is therefore not a supported recovery for such records.
 Preserve compatible durable state and the repaired binary for recovery; never
 restore older execution state over newer dispatch history.
+
+Conflict detection and metrics remain inside the lock-store transaction, but
+conflict audit callbacks run only after that transaction exits. Recovery and
+failed-acquisition cleanup retain execution-store → lock-store ordering. An
+audit exception cannot replace the original conflict refusal or storage error.
+The runtime wires only the fixed `lock_failure_cleanup` repository callback to
+its independent audit channel; other repository events keep durable replay.
+Its bounded diagnostic vocabulary distinguishes the original lock-storage
+failure, cleanup completed/failed/not-acquired, and failed terminalization.
+Raw exception text is excluded. When both child persistence and audit fail, no
+durable cleanup-report guarantee is possible; retained state still requires
+reconciliation and the primary storage error remains the reported failure.

@@ -451,9 +451,14 @@ class DurableExecutionRepository:
                 return record, codes
         finally:
             if codes:
-                self.event_sink({"event_type": "lock_failure_cleanup",
-                                 "task_id": task_id, "owner_id": owner_id,
-                                 "diagnostic_codes": list(codes)})
+                try:
+                    self.event_sink({"event_type": "lock_failure_cleanup",
+                                     "task_id": task_id, "owner_id": owner_id,
+                                     "diagnostic_codes": list(codes)})
+                except Exception:
+                    # Reporting cannot replace the original storage error or
+                    # claim that a failed terminal write became durable.
+                    pass
 
     def replace_recovery_locks(
         self,

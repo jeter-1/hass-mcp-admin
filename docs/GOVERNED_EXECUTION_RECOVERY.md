@@ -130,3 +130,11 @@ Offline regression evidence uses synthetic providers and an exact beta.5 writer
 fixture under `tests/fixtures/f3_lock_recovery/`, with source hashes and unedited
 serialized bytes. No production records, live provider calls, forced cleanup,
 restart or device canary are part of source validation.
+
+Installed recovery acceptance must also distinguish lock settlement from audit
+completion: a recovered child can have no retained locks while its binding audit
+is still pending. Verify that bounded retry converges, that the effective binding
+audit entry appears once, and that the failed outcome and zero dispatch persist.
+Independent offline regressions cover concurrent conflict auditing, all release/
+audit crash windows, and terminal-write plus cleanup/audit failures. These tests
+do not establish the corresponding production observations.

@@ -418,3 +418,11 @@ with the existing 100-item scan cap, sixteen child details, precision and omissi
 flags. Cumulative recovery failures remain cumulative. A zero active-lock count
 must not be interpreted as zero retained expired locks. These are diagnostic
 additions; no tool input, registration, provider route or approval state changes.
+
+A durable token-binding event keeps terminal-child reconciliation pending after
+locks are released, including failed and cancelled outcomes. This covers process
+loss before the pending runtime marker, partial/failed audit append, and loss
+between append, audit cursor, and final reconciliation marker. Existing stable
+audit event IDs deduplicate replay. Health retains a recovering backlog until
+both audit export and reconciliation complete; zero retained locks alone cannot
+close that work. No outcome, approval or dispatch authority is revived.

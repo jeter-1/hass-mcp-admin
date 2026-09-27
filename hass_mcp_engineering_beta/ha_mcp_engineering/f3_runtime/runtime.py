@@ -726,7 +726,8 @@ class F3RuntimeIntegration:
         self.service = service
         self.core_runtime = core_runtime
         self.children = ChildExecutionRepository(
-            storage_root, retention_days=retention_days
+            storage_root, retention_days=retention_days,
+            event_sink=self._emit_lock_cleanup_audit_event,
         )
         self.children.recover_initialization(service.task_repository)
         self.locks = RuntimeLockStore(
@@ -979,6 +980,16 @@ class F3RuntimeIntegration:
             except Exception:
                 return None
         event_type = str(event.get("event_type", "f3_event"))[:64]
+        cleanup_codes: list[str] = []
+        if event_type == "lock_failure_cleanup":
+            raw_codes = event.get("diagnostic_codes")
+            if isinstance(raw_codes, (list, tuple)):
+                cleanup_codes = [code for code in raw_codes[:4]
+                                 if isinstance(code, str) and code in {
+                                     "lock_storage_failure", "lock_cleanup_not_acquired",
+                                     "lock_cleanup_completed", "lock_cleanup_failed",
+                                     "lock_terminalization_failed",
+                                 }]
         return {
             "event": f"f3_{event_type}",
             **(
@@ -1012,10 +1023,18 @@ class F3RuntimeIntegration:
                     "dispatch_count", "observation_count", "verification_count",
                 }
             },
-            "result_status": "success",
+            **({"diagnostic_codes": cleanup_codes} if cleanup_codes else {}),
+            "result_status": "error" if event_type == "lock_failure_cleanup" else "success",
             "fallback_occurred": False,
             "fallback": "none",
         }
+
+    def _emit_lock_cleanup_audit_event(self, event: dict[str, object]) -> bool:
+        # This sole repository callback is emitted after its transaction exits.
+        # Other repository events keep the existing durable replay path.
+        if event.get("event_type") != "lock_failure_cleanup":
+            return False
+        return self._emit_f3_audit_event(event)
 
     def _emit_f3_audit_event(self, event: dict[str, object]) -> bool:
         """Project a bounded core or lock event into the existing audit sink."""
@@ -3021,11 +3040,18 @@ class F3RuntimeIntegration:
         if start > len(record.events):
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
         return any(
-            item["event_type"] == "execution_cancelled"
-            and ORPHAN_RECONCILIATION_REASON
-            in tuple(item.get("diagnostic_codes") or ())
+            (item["event_type"] == "execution_cancelled"
+             and ORPHAN_RECONCILIATION_REASON
+             in tuple(item.get("diagnostic_codes") or ()))
+            or self._is_unrecorded_binding_event(item)
             for item in record.events[start:]
         )
+
+    @staticmethod
+    def _is_unrecorded_binding_event(item: dict[str, Any]) -> bool:
+        return (item["event_type"] in {"pre_dispatch_terminal", "execution_cancelled"}
+                and "unrecorded_lock_tokens_bound"
+                in tuple(item.get("diagnostic_codes") or ()))
 
     def _orphan_cleanup_pending(
         self,
@@ -3050,7 +3076,9 @@ class F3RuntimeIntegration:
         ) or runtime["selective_hold_tokens"]:
             return True
         return (
-            record.normalized_outcome == "cancelled_pre_dispatch"
+            (record.normalized_outcome == "cancelled_pre_dispatch"
+             or any(self._is_unrecorded_binding_event(item)
+                    for item in record.events))
             and (
                 runtime["reconciliation_result"]
                 != ORPHAN_RECONCILIATION_RESULT
