@@ -171,6 +171,84 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                             await asyncio.gather(collector, return_exceptions=True)
                         end_request(token)
 
+    async def test_authority_replacement_preserves_new_snapshot_after_stale_capture(self):
+        for warm_cache in (False, True):
+            for stage in ("before_fitting", "during_fitting", "before_publication"):
+                for replacement in ("generation", "version", "both"):
+                    with self.subTest(warm_cache=warm_cache, stage=stage, replacement=replacement):
+                        service, client, core, _, token = setup_service()
+                        entered, release = asyncio.Event(), asyncio.Event()
+                        collector = None
+                        try:
+                            warm = await service.inspect(alarm_entity_id=TARGET, limit=1) if warm_cache else None
+                            initial_epoch = service.invalidation_generation
+                            retain, sleep = service._retain, asyncio.sleep
+
+                            async def pause():
+                                entered.set()
+                                await release.wait()
+
+                            async def held_retain(report, binding):
+                                if asyncio.current_task() is collector and stage == "before_fitting":
+                                    await pause()
+                                return await retain(report, binding)
+
+                            async def held_sleep(delay, *args, **kwargs):
+                                if asyncio.current_task() is collector and not entered.is_set():
+                                    if stage == "during_fitting" or (stage == "before_publication"
+                                            and len(service.snapshots) == int(warm_cache) + 1):
+                                        await pause()
+                                return await sleep(delay, *args, **kwargs)
+
+                            with patch.object(service, "_retain", held_retain), patch("asyncio.sleep", held_sleep):
+                                collector = asyncio.create_task(service.inspect(alarm_entity_id=TARGET, limit=1))
+                                await asyncio.wait_for(entered.wait(), 2)
+                                self.assertEqual(len(client.calls), 9 * (int(warm_cache) + 1))
+                                if replacement in ("generation", "both"):
+                                    core.generation += 1
+                                if replacement in ("version", "both"):
+                                    # Synthetic admitted authority; not a new real-Core contract.
+                                    core.current_observation.version = "2026.9.2"
+                                recovered = await service.inspect(alarm_entity_id=TARGET, limit=1)
+                                self.assertEqual(recovered["membership"]["configured_members_retained"], 4)
+                                self.assertEqual(service.invalidation_generation, initial_epoch + 1)
+                                snapshots_before = tuple(service.snapshots)
+                                cursors_before = dict(service.cursors)
+                                self.assertEqual(len(snapshots_before), 1)
+                                self.assertTrue(cursors_before)
+                                self.assertEqual(service.active, 1)
+                                expected_calls = 9 * (int(warm_cache) + 2)
+                                self.assertEqual(len(client.calls), expected_calls)
+
+                                release.set()
+                                with self.assertRaises(InspectionError) as stale:
+                                    await collector
+                                self.assertEqual(stale.exception.reason, "authority_unavailable")
+                                self.assertEqual(service.active, 0)
+                                self.assertEqual(tuple(service.snapshots), snapshots_before)
+                                self.assertEqual(service.cursors, cursors_before)
+                                if warm is not None:
+                                    with self.assertRaises(InspectionError) as old:
+                                        await service.inspect(alarm_entity_id=TARGET, limit=1,
+                                            cursor=warm["pagination"]["next_cursor"])
+                                    self.assertEqual(old.exception.reason, "invalid_cursor")
+                                continued = await service.inspect(alarm_entity_id=TARGET, limit=1,
+                                    cursor=recovered["pagination"]["next_cursor"])
+                                self.assertEqual(continued["pagination"]["snapshot_fingerprint"],
+                                                 recovered["pagination"]["snapshot_fingerprint"])
+                                self.assertEqual(continued["pagination"]["offset"], 1)
+                                self.assertTrue(continued["records"])
+                                self.assertEqual(continued["membership"]["configured_members_retained"], 4)
+                                self.assertEqual(len(client.calls), expected_calls)
+                                self.assertEqual(service.invalidation_generation, initial_epoch + 1)
+                        finally:
+                            release.set()
+                            if collector is not None:
+                                if not collector.done():
+                                    collector.cancel()
+                                await asyncio.gather(collector, return_exceptions=True)
+                            end_request(token)
+
     async def test_eviction_has_no_recollection(self):
         service, client, _, _, token = setup_service()
         self.addCleanup(end_request, token)

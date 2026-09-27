@@ -2,7 +2,8 @@
 
 This source-only increment implements `get_integration_inspection` behind the
 existing Engineering endpoint. It has not been released, deployed or accepted
-against the household installation. Beta.5 metadata remains unchanged.
+against the household installation. This branch incorporates beta.6's lock
+recovery repair and retains its version metadata; no inspector release is prepared.
 
 The tool takes an exact `alarm_control_panel` entity, `integration="alarmo"`,
 `limit=25` (strict integer, 1–50), and an optional opaque cursor. Extra arguments
@@ -100,8 +101,11 @@ snapshots and tokens and advances a private invalidation generation. Pending
 captures bind that generation before collection and recheck it at cooperative
 fitting boundaries, before insertion and before publication. A capture predating
 the loss cannot repopulate the cache; its refusal also cannot purge a later
-authorized capture. A new authority generation invalidates snapshots bound to
-the previous generation. This is request-time invalidation, not a background
+authorized capture. An observed Core authority generation or version replacement
+also advances the private generation once, before issuing a new binding. The
+last observed authority is tracked independently of cached snapshots, so even
+a pending-only old capture cannot invalidate a newer valid continuation. This
+is request-time invalidation, not a background
 revocation observer or a new provider read.
 
 Whole rows and their evidence are packed within a 49,152-byte working page and
@@ -121,6 +125,6 @@ See [acceptance](ALARMO_INSPECTION_ACCEPTANCE.md),
 [source references](evidence/alarmo-inspection-source-review.json), and
 [ADR-024](architecture/ADR-024-SANITIZED-INTEGRATION-INSPECTION.md).
 The source-only authorization does not include delivery, release, activation,
-deployment or live tests. Existing beta.5 acceptance and operational holds remain
+deployment or live tests. Beta.6 acceptance and existing operational holds remain
 separate. Removing this unactivated increment requires a source revert; no
 production record format or installed configuration has changed.

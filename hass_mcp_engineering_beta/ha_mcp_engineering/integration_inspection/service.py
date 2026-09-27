@@ -52,6 +52,7 @@ class IntegrationInspectionService:
         self.cursors = {}
         self.active = 0
         self.invalidation_generation = 0
+        self._authority_signature = None
 
     def _invalidate(self):
         self.invalidation_generation += 1
@@ -71,9 +72,11 @@ class IntegrationInspectionService:
         except InspectionError:
             self._invalidate()
             raise
-        for key, snapshot in tuple(self.snapshots.items()):
-            if snapshot.binding[4:6] != authority:
-                self._remove(key)
+        # Remember authority independently of cache: a pending-only capture
+        # also needs fencing before a replacement authority issues a binding.
+        if self._authority_signature is not None and self._authority_signature != authority:
+            self._invalidate()
+        self._authority_signature = authority
         return caller, target, integration, limit, *authority, self.invalidation_generation
 
     def _remove(self, key):
