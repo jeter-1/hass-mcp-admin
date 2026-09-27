@@ -51,6 +51,16 @@ class IntegrationInspectionService:
         self.snapshots = OrderedDict()
         self.cursors = {}
         self.active = 0
+        self.invalidation_generation = 0
+
+    def _invalidate(self):
+        self.invalidation_generation += 1
+        self.snapshots.clear()
+        self.cursors.clear()
+
+    def _require_current(self, binding):
+        if binding[-1] != self.invalidation_generation:
+            raise InspectionError("authority_unavailable")
 
     def _binding(self, target, integration, limit):
         caller = current_caller_id()
@@ -59,13 +69,12 @@ class IntegrationInspectionService:
         try:
             authority = self.provider.authority()
         except InspectionError:
-            self.snapshots.clear()
-            self.cursors.clear()
+            self._invalidate()
             raise
         for key, snapshot in tuple(self.snapshots.items()):
-            if snapshot.binding[4:] != authority:
+            if snapshot.binding[4:6] != authority:
                 self._remove(key)
-        return caller, target, integration, limit, *authority
+        return caller, target, integration, limit, *authority, self.invalidation_generation
 
     def _remove(self, key):
         snapshot = self.snapshots.pop(key)
@@ -106,6 +115,7 @@ class IntegrationInspectionService:
         return max(sizes)
 
     async def _retain(self, report, binding):
+        self._require_current(binding)
         records = report["records"]
         header_bytes = self._header_budget(report, binding[3], 0)
         page_budget = min(c.PAGE_BYTES, self.response_limit - 2048)
@@ -117,6 +127,7 @@ class IntegrationInspectionService:
         for index, entry in enumerate(report["evidence_entries"]):
             if index % 32 == 0:
                 await asyncio.sleep(0)
+                self._require_current(binding)
             key = entry["source_id"], entry["pointer"]
             if key in entries:
                 raise InspectionError("malformed_response")
@@ -125,6 +136,7 @@ class IntegrationInspectionService:
         for index, row in enumerate(records):
             if index % 16 == 0:
                 await asyncio.sleep(0)
+                self._require_current(binding)
             refs = set(references(row))
             if not refs.issubset(entries):
                 raise InspectionError("malformed_response")
@@ -138,6 +150,7 @@ class IntegrationInspectionService:
             for index, (row, refs, size) in enumerate(rows):
                 if index % 16 == 0:
                     await asyncio.sleep(0)
+                    self._require_current(binding)
                 single_bytes = header_bytes + size + sum(sizes[key] for key in refs) + max(0, len(refs) - 1)
                 if single_bytes > page_budget:
                     omitted += 1
@@ -166,6 +179,7 @@ class IntegrationInspectionService:
         report["evidence_entries"] = [entry for key, entry in entries.items() if key in wanted]
         report["pagination"].update(total_retained_records=len(retained), snapshot_fingerprint="")
         await asyncio.sleep(0)
+        self._require_current(binding)
         report["pagination"]["snapshot_fingerprint"] = c.digest(report)
         encoded = c.canonical(report)
         footprint = len(encoded) + (len(retained) + 1) * 256 + 64
@@ -189,11 +203,13 @@ class IntegrationInspectionService:
         try:
             async with asyncio.timeout(c.COLLECTION_SECONDS):
                 report = await self.provider.collect(target)
+                self._require_current(binding)
                 if self._binding(target, integration, limit) != binding:
                     raise InspectionError("identity_drift")
                 Inspection.model_validate(report)
                 key, snapshot = await self._retain(report, binding)
                 await asyncio.sleep(0)
+                self._require_current(binding)
                 report = self._page(snapshot, 0, limit, continuation=False)
                 if time.monotonic() - started >= c.COLLECTION_SECONDS:
                     raise InspectionError("timeout")
@@ -204,9 +220,11 @@ class IntegrationInspectionService:
         except TimeoutError:
             raise InspectionError("timeout") from None
         except InspectionError as exc:
-            if exc.authority_lost or exc.reason in ("authority_unavailable", "identity_drift"):
-                self.snapshots.clear()
-                self.cursors.clear()
+            if exc.authority_lost or (exc.reason in ("authority_unavailable", "identity_drift")
+                                     and binding[-1] == self.invalidation_generation):
+                # A new loss invalidates pending captures as well as cache. An
+                # obsolete capture must not purge data collected after that loss.
+                self._invalidate()
             raise
         finally:
             if not published and key is not None and key in self.snapshots:

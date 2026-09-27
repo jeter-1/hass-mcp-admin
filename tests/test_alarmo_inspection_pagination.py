@@ -49,6 +49,9 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(InspectionError):
             await service.inspect(alarm_entity_id=TARGET, limit=1, cursor=cursor)
         telemetry.caller_id = "synthetic_authenticated_caller"
+        replay = await service.inspect(alarm_entity_id=TARGET, limit=1, cursor=cursor)
+        self.assertEqual(replay["pagination"]["snapshot_fingerprint"], first["pagination"]["snapshot_fingerprint"])
+        self.assertEqual(len(service.snapshots), 1)
         core.available = False
         with self.assertRaises(InspectionError) as found:
             await service.inspect(alarm_entity_id=TARGET, limit=1, cursor=cursor)
@@ -90,6 +93,83 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(client.calls), 9 if mode == "generation" else 10)
                 finally:
                     end_request(token)
+
+    async def test_concurrent_authority_loss_fences_pending_captures_and_allows_recovery(self):
+        for stage in ("before_fitting", "during_fitting", "before_publication"):
+            for recovery_before_resume in (False, True):
+                with self.subTest(stage=stage, recovery_before_resume=recovery_before_resume):
+                    service, client, _, _, token = setup_service()
+                    entered, release = asyncio.Event(), asyncio.Event()
+                    collector = None
+                    try:
+                        warm = await service.inspect(alarm_entity_id=TARGET, limit=1)
+                        manifest = client.values["manifest"]
+                        retain, sleep = service._retain, asyncio.sleep
+
+                        async def pause():
+                            entered.set()
+                            await release.wait()
+
+                        async def held_retain(report, binding):
+                            if asyncio.current_task() is collector and stage == "before_fitting":
+                                await pause()
+                            return await retain(report, binding)
+
+                        async def held_sleep(delay, *args, **kwargs):
+                            # Suspend at actual cooperative boundaries: fitting
+                            # before insertion, or the first yield after insertion.
+                            if asyncio.current_task() is collector and not entered.is_set():
+                                if stage == "during_fitting" or (stage == "before_publication" and len(service.snapshots) == 2):
+                                    await pause()
+                            return await sleep(delay, *args, **kwargs)
+
+                        with patch.object(service, "_retain", held_retain), patch("asyncio.sleep", held_sleep):
+                            collector = asyncio.create_task(service.inspect(alarm_entity_id=TARGET, limit=1))
+                            await asyncio.wait_for(entered.wait(), 2)
+                            self.assertEqual(len(client.calls), 18)
+                            client.values["manifest"] = InspectionError("access_denied", authority_lost=True)
+                            with self.assertRaises(InspectionError) as denied:
+                                await service.inspect(alarm_entity_id=TARGET, limit=1)
+                            self.assertEqual(denied.exception.reason, "access_denied")
+                            self.assertEqual(service.snapshots, {})
+                            self.assertEqual(service.cursors, {})
+                            self.assertEqual(service.active, 1)
+                            with self.assertRaises(InspectionError) as expired:
+                                await service.inspect(alarm_entity_id=TARGET, limit=1, cursor=warm["pagination"]["next_cursor"])
+                            self.assertEqual(expired.exception.reason, "invalid_cursor")
+                            self.assertEqual(len(client.calls), 19)
+
+                            recovered = None
+                            if recovery_before_resume:
+                                client.values["manifest"] = manifest
+                                recovered = await service.inspect(alarm_entity_id=TARGET, limit=1)
+                                self.assertEqual(recovered["membership"]["configured_members_retained"], 4)
+                            calls_before_resume = len(client.calls)
+                            release.set()
+                            with self.assertRaises(InspectionError) as stale:
+                                await collector
+                            self.assertEqual(stale.exception.reason, "authority_unavailable")
+                            self.assertEqual(len(client.calls), calls_before_resume)
+                            self.assertEqual(service.active, 0)
+                            if recovered is None:
+                                self.assertEqual(service.snapshots, {})
+                                self.assertEqual(service.cursors, {})
+                                client.values["manifest"] = manifest
+                                recovered = await service.inspect(alarm_entity_id=TARGET, limit=1)
+                            self.assertEqual(len(service.snapshots), 1)
+                            continued = await service.inspect(alarm_entity_id=TARGET, limit=1,
+                                cursor=recovered["pagination"]["next_cursor"])
+                            self.assertEqual(continued["pagination"]["snapshot_fingerprint"],
+                                             recovered["pagination"]["snapshot_fingerprint"])
+                            self.assertEqual(continued["membership"]["configured_members_retained"], 4)
+                            self.assertEqual(len(client.calls), 28)
+                    finally:
+                        release.set()
+                        if collector is not None:
+                            if not collector.done():
+                                collector.cancel()
+                            await asyncio.gather(collector, return_exceptions=True)
+                        end_request(token)
 
     async def test_eviction_has_no_recollection(self):
         service, client, _, _, token = setup_service()

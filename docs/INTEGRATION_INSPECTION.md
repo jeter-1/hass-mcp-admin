@@ -96,7 +96,11 @@ target, integration, limit, offset, fingerprint and Core generation. Continuatio
 rechecks current authority and performs zero provider reads. Expiration, eviction,
 revocation or a mismatched cursor never causes implicit recollection.
 Observed read-authority/authentication loss purges this inspector's cached
-snapshots and tokens. A new authority generation invalidates snapshots bound to
+snapshots and tokens and advances a private invalidation generation. Pending
+captures bind that generation before collection and recheck it at cooperative
+fitting boundaries, before insertion and before publication. A capture predating
+the loss cannot repopulate the cache; its refusal also cannot purge a later
+authorized capture. A new authority generation invalidates snapshots bound to
 the previous generation. This is request-time invalidation, not a background
 revocation observer or a new provider read.
 
