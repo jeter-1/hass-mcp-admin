@@ -1,5 +1,18 @@
 # Beta provider security boundaries
 
+## Source-only Alarmo inspection
+
+The [inspector](INTEGRATION_INSPECTION.md) adds one separately gated read route.
+Core metadata applicability and the code-owned Alarmo profile are independent.
+The new transport constructs only closed read commands and rechecks request
+authority before connection, dispatch and publication. It refuses redirects,
+retries, unknown versions, ambiguous targets and stale authority without fallback.
+Positive-field selection precedes hashing/caching/audit; user/code/MQTT/action
+data and extended registry options never enter retained results. Rejected input
+keys/values and exception bodies are not reflected. Cursor authority is bound to
+the authenticated caller, never a connector session. No new permission, mount,
+secret or listener is introduced. R3 activation and P0b remain later gates.
+
 ## 2.1A Beta 2 operational authority
 
 Beta 2 does not reclassify or generically expose `ha_reload_core`,

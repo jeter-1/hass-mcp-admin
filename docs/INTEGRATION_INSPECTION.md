@@ -1,0 +1,104 @@
+# Bounded Alarmo configuration inspection
+
+This source-only increment implements `get_integration_inspection` behind the
+existing Engineering endpoint. It has not been released, deployed or accepted
+against the household installation. Beta.5 metadata remains unchanged.
+
+The tool takes an exact `alarm_control_panel` entity, `integration="alarmo"`,
+`limit=25` (strict integer, 1–50), and an optional opaque cursor. Extra arguments
+are rejected before SDK validation. The new source catalog has 55 static tools
+and 25 delegated reads (80 total under healthy upstream admission). All 54
+previous static descriptors and the 25 delegated contracts remain unchanged.
+
+## Identity and authority
+
+The code-owned adapter reviews official Alarmo 1.10.19 at
+`169e134f4b70d87aae36ba54a72a398ecc960afd`. The manifest must match that profile;
+reported version is not proof of installed file integrity or absence of local
+modifications. P0b remains a later installed-acceptance requirement. No installed
+compatibility is inferred from synthetic fixtures.
+
+Core authority requires both `core.basic_websocket_read` and the additive
+`core.integration_inspection_metadata_read`. The new profile is semantic and
+read-only. Production observation opts in to its structural evidence using the
+existing reviewed probe/transport; it sends no additional startup probes. The
+original 19 declarations/fingerprints and compiled exact authority are unchanged.
+Existing signed Core 2026.9.3 data can admit 19 of the 20 known references and
+correctly withholds this tool. A structural observation alone cannot admit it.
+
+The [unsigned applicability record](evidence/alarmo-inspection-core-applicability.json)
+does not authorize dispatch. R3 remains open: the current registry preparer
+refuses replacement of an existing release's capability list during renewal.
+A separately scoped correction, review and owner-authorized signing/activation
+are required. No trust data, registry mechanism or preparation script changes
+are included here.
+
+## Collection and interpretation
+
+Nine sequential application reads maximum: manifest, domain-filtered config
+entries, Alarmo entities, areas, sensors, selected general configuration, sensor
+groups, exact-ID registry enrichment, and final manifest. The five Alarmo
+callbacks collect integration-wide collections; Engineering projects the
+selected area or master. Registry IDs are derived internally (513 maximum).
+No generic command, options flow, diagnostic dump, filesystem, user, action,
+readiness or subscription interface is exposed. `ha_get_integration` remains
+mixed/requires-wrapper and unexposed; no ha-mcp feature call or fallback occurs.
+
+The response distinguishes complete selected fields, partial evidence,
+unavailable sources, empty membership, omitted records and stale identity.
+It reports per-area/per-mode configured times. Explicit null, zero, false,
+empty collections and missing fields remain distinct. Sensor-specific timings
+are excluded; no aggregate or effective delay is inferred.
+
+Static mode eligibility uses three-valued logic:
+`enabled AND area_mode.enabled AND (mode IN configured_modes OR always_on)`.
+This is configured eligibility, not proof of arming, current protection,
+readiness, bypass behavior or the actual runtime watcher set. A false conjunct
+can prove exclusion despite another unknown; other unknowns remain indeterminate.
+
+Every fact reference resolves to an included safe excerpt with original field
+names and JSON Pointer hierarchy. Source fingerprints hash only positively
+selected sanitized projections. Names, codes/hashes, code lengths, users, MQTT,
+action payloads, templates and registry options are excluded before hashing,
+caching or audit, even when global redaction is disabled. Known-secret filtering
+also removes matching identifiers without reconstructing them from another source.
+
+## Bounds and continuation
+
+Collection is limited to 30 seconds including parsing/cleanup, five seconds per
+command, one second socket close, and two concurrent collections without a queue.
+Transport accepts only the expected three-frame exchange (stricter than the
+16-frame ceiling), 64 KiB auth frames, 2 MiB results and 8 MiB aggregate budget.
+It rejects duplicate JSON keys, nonfinite numbers, unsolicited frames and
+redirects, with no automatic retry. Auth frames are reserved before selecting
+the remaining result budget. Oversized messages are refused before JSON decoding;
+these are application-message bounds, not a claim to control a peer's wire traffic.
+
+Projection shares 50,000 examined structural items and depth 16 across sources;
+only recognized fields are visited, including malformed/rejected items. Opaque
+excluded subtrees are never walked. Caps are 32 areas, five modes each, 512 sensors,
+128 groups, 2,048 member edges, 513 registry IDs, 128-character identifiers and
+512-character pointers. Sixteen fixed-code gaps are retained with omissions.
+
+Snapshots contain sanitized data only, maximum 2 MiB each, eight snapshots/16 MiB
+total, five-minute TTL and LRU eviction. Opaque tokens bind authenticated caller,
+target, integration, limit, offset, fingerprint and Core generation. Continuation
+rechecks current authority and performs zero provider reads. Expiration, eviction,
+revocation or a mismatched cursor never causes implicit recollection.
+
+Whole rows and their evidence are packed within a 49,152-byte working page and
+60,000-byte complete response ceiling, further restricted by the configured
+response limit. A large row is explicitly omitted with an advancing cursor;
+known positive membership counts and unknown omission totals survive. Mandatory
+metadata that cannot fit produces a fixed failure. All captures are non-atomic;
+stable manifest/fingerprint does not establish unchanged configuration.
+
+## Validation and stage
+
+See [acceptance](ALARMO_INSPECTION_ACCEPTANCE.md),
+[source references](evidence/alarmo-inspection-source-review.json), and
+[ADR-024](architecture/ADR-024-SANITIZED-INTEGRATION-INSPECTION.md).
+The source-only authorization does not include delivery, release, activation,
+deployment or live tests. Existing beta.5 acceptance and operational holds remain
+separate. Removing this unactivated increment requires a source revert; no
+production record format or installed configuration has changed.

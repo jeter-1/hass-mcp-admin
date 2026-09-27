@@ -1,5 +1,10 @@
 # HA MCP Engineering Server
 
+Source-only development adds a [bounded Alarmo configuration inspector](docs/INTEGRATION_INSPECTION.md).
+This checkout now defines 55 static tools plus 25 delegated reads (80 total).
+Its new Core authority is withheld by existing signed data; release, activation,
+disposable integration and installed acceptance remain separate gates.
+
 Engineering **2.4.0-beta.5** is the materialized candidate for
 [bounded automation lifecycle analysis](docs/AUTOMATION_LIFECYCLE_ANALYSIS.md).
 The existing reliability analyzer reports possible interruption hazards in one
@@ -12,7 +17,7 @@ remain, with unchanged approval binding, one-dispatch execution and exact readba
 [Bounded Core log history](docs/CORE_LOG_HISTORY.md) remains available through the
 existing native Supervisor reader. Its owner-approved `homeassistant` role grants
 broader Core administration to the process; the MCP tool exposes only the fixed log read.
-The candidate has 54 static tools plus 25 admitted delegated reads (79 total);
+Beta.5's original catalog has 54 static tools plus 25 admitted delegated reads (79 total);
 published beta.1 retains its original 53/78 inventory. Existing bounded script
 dependency evidence is preserved. **2.3.0** remains the last accepted stable release.
 Historical plan readability, exact fan/light/switch operations, signed Core

@@ -3533,6 +3533,15 @@ async def _run_core_2026_9_child_contract(
         await read_gateway.reconcile_until_initialized(server)
         if EXPECTED_HA_VERSION == "2026.9.3":
             await _run_script_dependency_contract(configured, core_runtime, read_gateway)
+            # Explicit disposable fixture setup is required. Preserve existing
+            # lanes; absence is an OPEN new integration gate, never a pass.
+            alarmo_receipt = _environment_path("REAL_HA_ALARMO_FIXTURE_RECEIPT")
+            if alarmo_receipt is None:
+                print('Alarmo disposable inspection contract: {"result":"NOT_RUN","reason":"fixture_not_prepared"}')
+            else:
+                from alarmo_inspection_contract_acceptance import run_disposable
+                await run_disposable(configured, core_runtime, fixture_receipt=alarmo_receipt,
+                                     expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
         if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)

@@ -2,6 +2,16 @@
 
 Date: 2026-07-10
 
+## Source-only Alarmo inspector addition (2026-09-27)
+
+`get_integration_inspection` is native read-only evidence, orchestrated by
+Engineering with `direct_ha_api` data, zero delegated feature calls and no
+fallback. Eight closed command variants permit nine sequential reads. The
+source catalog is 55 static + 25 delegated = 80; previous descriptors are
+unchanged. Existing signed authority withholds the added metadata read profile.
+`ha_get_integration` remains mixed/requires-wrapper and unexposed. This adds no
+plans, approval or physical execution. See [contract](docs/INTEGRATION_INSPECTION.md).
+
 ## Purpose
 
 This document classifies every tool currently exposed by the custom HA MCP Engineering Server against the project's intended role: engineering analysis, governance, verification, and documentation that complements the standard `ha-mcp` server.
