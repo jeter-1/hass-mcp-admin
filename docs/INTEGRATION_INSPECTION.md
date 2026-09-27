@@ -50,6 +50,15 @@ It reports per-area/per-mode configured times. Explicit null, zero, false,
 empty collections and missing fields remain distinct. Sensor-specific timings
 are excluded; no aggregate or effective delay is inferred.
 
+Missing or malformed final identity evidence preserves useful facts as partial
+with an unavailable manifest bracket; only a validated conflicting identity
+establishes drift. A master entity contradicting an observed disabled master
+flag remains visible with a scope gap. A group member whose area cannot be joined
+does not prove an outside-area member: scope is unknown unless another known
+member proves it, and the unresolved join still makes coverage partial. A report
+with only identity or unavailable placeholders returns a fixed unavailable
+failure; observed false/zero/null facts and exact empty membership remain useful.
+
 Static mode eligibility uses three-valued logic:
 `enabled AND area_mode.enabled AND (mode IN configured_modes OR always_on)`.
 This is configured eligibility, not proof of arming, current protection,
@@ -65,7 +74,8 @@ also removes matching identifiers without reconstructing them from another sourc
 
 ## Bounds and continuation
 
-Collection is limited to 30 seconds including parsing/cleanup, five seconds per
+The fresh request is limited to 30 seconds including parsing/cleanup, normalization,
+snapshot fitting and first-page packing, five seconds per
 command, one second socket close, and two concurrent collections without a queue.
 Transport accepts only the expected three-frame exchange (stricter than the
 16-frame ceiling), 64 KiB auth frames, 2 MiB results and 8 MiB aggregate budget.
@@ -88,8 +98,12 @@ revocation or a mismatched cursor never causes implicit recollection.
 
 Whole rows and their evidence are packed within a 49,152-byte working page and
 60,000-byte complete response ceiling, further restricted by the configured
-response limit. A large row is explicitly omitted with an advancing cursor;
-known positive membership counts and unknown omission totals survive. Mandatory
+response limit. Rows and evidence are sized once, with cooperative fitting
+batches and bounded metadata-width refinement; fitting does not repeatedly
+serialize the remaining report. Output omissions are determined before freezing
+the snapshot. Every page and replay retains the same assessment, omissions and
+positive membership counts, including unknown omission totals. Smaller rows
+following an oversized row remain eligible. Mandatory
 metadata that cannot fit produces a fixed failure. All captures are non-atomic;
 stable manifest/fingerprint does not establish unchanged configuration.
 

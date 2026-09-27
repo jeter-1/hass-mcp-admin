@@ -1,5 +1,6 @@
 """Bounded frozen sanitized snapshots; continuations never recollect evidence."""
 
+import asyncio
 from collections import OrderedDict
 from dataclasses import dataclass
 import json
@@ -68,36 +69,102 @@ class IntegrationInspectionService:
             if snapshot.expires <= self.clock():
                 self._remove(key)
 
-    def _retain(self, report, binding):
-        # Scope and counts survive any snapshot-size omission. Evidence is
-        # pruned with its row; no emitted pointer loses its local excerpt.
+    @staticmethod
+    def _omissions(report, count):
+        result = {**report, "pagination": {**report["pagination"]}}
+        if count:
+            result["assessment"] = "partial"
+            before = report["truncation"]
+            result["truncation"] = {"occurred": True,
+                "reasons": sorted(set(before["reasons"] + ["output_bytes"])),
+                "omitted_count": None if before["omitted_count"] is None else before["omitted_count"] + count}
+            previous = report["pagination"]["omitted_records"]
+            result["pagination"]["omitted_records"] = None if previous is None else previous + count
+        return result
+
+    def _header_budget(self, report, limit, omitted):
+        # Upper bound the stored header and a single-row continuation header.
+        # Only normalized metadata is serialized; record bodies are sized once.
+        sizes = []
+        for count in (0, max(1, omitted)):
+            header = self._omissions(report, count)
+            header["records"], header["evidence_entries"] = [], []
+            header["freshness"] = {**report["freshness"], "status": "frozen_snapshot",
+                "served_at": "9999-12-31T23:59:59.999999Z"}
+            header["pagination"].update(requested_limit=limit, effective_limit=1,
+                offset=max(0, len(report["records"]) - 1), returned=1, has_more=True,
+                next_cursor="x" * 43, snapshot_fingerprint="0" * 64)
+            sizes.append(len(c.canonical(header)))
+        return max(sizes)
+
+    async def _retain(self, report, binding):
         records = report["records"]
-        omitted = 0
-        original_truncation = report["truncation"]
-        original_omissions = report["pagination"]["omitted_records"]
-        while True:
-            report["evidence_entries"] = page_evidence(report, records)
-            report["records"] = records
-            report["pagination"]["total_retained_records"] = len(records)
-            report["pagination"]["snapshot_fingerprint"] = ""
-            if omitted:
-                report["assessment"] = "partial"
-                report["truncation"] = {"occurred": True,
-                    "reasons": sorted(set(original_truncation["reasons"] + ["output_bytes"])),
-                    "omitted_count": None if original_truncation["omitted_count"] is None else original_truncation["omitted_count"] + omitted}
-                report["pagination"]["omitted_records"] = None if original_omissions is None else original_omissions + omitted
-            # Reserve per-offset token bookkeeping in the bounded cache budget.
-            encoded = c.canonical(report)
-            if len(encoded) + (len(records) + 1) * 256 + 64 <= c.SNAPSHOT_BYTES:
+        header_bytes = self._header_budget(report, binding[3], 0)
+        page_budget = min(c.PAGE_BYTES, self.response_limit - 2048)
+        if header_bytes > page_budget or header_bytes + 320 > c.SNAPSHOT_BYTES:
+            raise InspectionError("output_budget_unavailable")
+        # One index and one sizing pass replace quadratic full-report trimming.
+        # Yield during bounded batches so deadlines and cancellation can run.
+        entries, sizes = {}, {}
+        for index, entry in enumerate(report["evidence_entries"]):
+            if index % 32 == 0:
+                await asyncio.sleep(0)
+            key = entry["source_id"], entry["pointer"]
+            if key in entries:
+                raise InspectionError("malformed_response")
+            entries[key], sizes[key] = entry, len(c.canonical(entry))
+        rows = []
+        for index, row in enumerate(records):
+            if index % 16 == 0:
+                await asyncio.sleep(0)
+            refs = set(references(row))
+            if not refs.issubset(entries):
+                raise InspectionError("malformed_response")
+            rows.append((row, refs, len(c.canonical(row))))
+        # Refit sizes only if decimal omission counters grow the header. At
+        # most 801 normalized rows exist; four passes cover every digit width.
+        # No row or report is reserialized during fitting.
+        for _ in range(4):
+            retained, wanted = [], set()
+            row_bytes = evidence_bytes = omitted = 0
+            for index, (row, refs, size) in enumerate(rows):
+                if index % 16 == 0:
+                    await asyncio.sleep(0)
+                single_bytes = header_bytes + size + sum(sizes[key] for key in refs) + max(0, len(refs) - 1)
+                if single_bytes > page_budget:
+                    omitted += 1
+                    continue
+                added = refs - wanted
+                next_evidence_bytes = evidence_bytes + sum(sizes[key] for key in added)
+                next_evidence_count = len(wanted) + len(added)
+                # Canonical JSON array payloads add exactly one comma per gap.
+                next_size = (header_bytes + row_bytes + size + len(retained)
+                             + next_evidence_bytes + max(0, next_evidence_count - 1))
+                if next_size + (len(retained) + 2) * 256 + 64 > c.SNAPSHOT_BYTES:
+                    omitted += len(records) - index
+                    break
+                retained.append(row)
+                wanted.update(added)
+                row_bytes += size
+                evidence_bytes = next_evidence_bytes
+            required_header = self._header_budget(report, binding[3], omitted)
+            if required_header <= header_bytes:
                 break
-            if not records:
-                raise InspectionError("output_budget_unavailable")
-            records = records[:-1]
-            omitted += 1
+            header_bytes = required_header
+        else:
+            raise InspectionError("output_budget_unavailable")
+        report = self._omissions(report, omitted)
+        report["records"] = retained
+        report["evidence_entries"] = [entry for key, entry in entries.items() if key in wanted]
+        report["pagination"].update(total_retained_records=len(retained), snapshot_fingerprint="")
+        await asyncio.sleep(0)
         report["pagination"]["snapshot_fingerprint"] = c.digest(report)
         encoded = c.canonical(report)
-        tokens = tuple(secrets.token_urlsafe(32) for _ in range(len(records) + 1))
-        snapshot = Snapshot(encoded, self.clock() + c.SNAPSHOT_TTL, binding, tokens, len(encoded) + len(tokens) * 256)
+        footprint = len(encoded) + (len(retained) + 1) * 256 + 64
+        if footprint > c.SNAPSHOT_BYTES:
+            raise InspectionError("output_budget_unavailable")
+        tokens = tuple(secrets.token_urlsafe(32) for _ in range(len(retained) + 1))
+        snapshot = Snapshot(encoded, self.clock() + c.SNAPSHOT_TTL, binding, tokens, footprint)
         key = secrets.token_hex(16)
         self._expire()
         while self.snapshots and (len(self.snapshots) >= c.MAX_SNAPSHOTS or
@@ -107,6 +174,30 @@ class IntegrationInspectionService:
         for offset, token in enumerate(tokens):
             self.cursors[token] = (key, offset)
         return key, snapshot
+
+    async def _fresh(self, target, integration, limit, binding):
+        started = time.monotonic()
+        key, published = None, False
+        try:
+            async with asyncio.timeout(c.COLLECTION_SECONDS):
+                report = await self.provider.collect(target)
+                if self._binding(target, integration, limit) != binding:
+                    raise InspectionError("identity_drift")
+                Inspection.model_validate(report)
+                key, snapshot = await self._retain(report, binding)
+                await asyncio.sleep(0)
+                report = self._page(snapshot, 0, limit, continuation=False)
+                if time.monotonic() - started >= c.COLLECTION_SECONDS:
+                    raise InspectionError("timeout")
+                if self._binding(target, integration, limit) != binding:
+                    raise InspectionError("authority_unavailable")
+                published = True
+                return report
+        except TimeoutError:
+            raise InspectionError("timeout") from None
+        finally:
+            if not published and key is not None and key in self.snapshots:
+                self._remove(key)
 
     async def inspect(self, *, alarm_entity_id, integration="alarmo", limit=25, cursor=""):
         c.validate_arguments(dict(alarm_entity_id=alarm_entity_id, integration=integration, limit=limit, cursor=cursor))
@@ -123,22 +214,15 @@ class IntegrationInspectionService:
             if binding != snapshot.binding:
                 raise InspectionError("invalid_cursor")
             self.snapshots.move_to_end(key)
+            report = self._page(snapshot, offset, limit, continuation=True)
         else:
             if self.active >= c.MAX_COLLECTORS:
                 raise InspectionError("capacity_busy")
             self.active += 1
             try:
-                report = await self.provider.collect(alarm_entity_id)
-                if self._binding(alarm_entity_id, integration, limit) != binding:
-                    raise InspectionError("identity_drift")
-                # Validating sanitized output is safe: provider values cannot
-                # flow into public error text (the tool uses fixed failures).
-                Inspection.model_validate(report)
-                key, snapshot = self._retain(report, binding)
+                report = await self._fresh(alarm_entity_id, integration, limit, binding)
             finally:
                 self.active -= 1
-            offset = 0
-        report = self._page(snapshot, offset, limit, continuation=bool(cursor))
         if self._binding(alarm_entity_id, integration, limit) != binding:
             raise InspectionError("authority_unavailable")
         telemetry = current_telemetry()
@@ -164,17 +248,11 @@ class IntegrationInspectionService:
         if page_budget < 2048:
             raise InspectionError("output_budget_unavailable")
         next_offset = offset
-        omitted = 0
 
         def finish(candidate):
             candidate["pagination"] = {**frozen["pagination"], "requested_limit": limit,
                 "effective_limit": len(candidate["records"]), "offset": offset, "returned": len(candidate["records"]),
                 "has_more": next_offset < len(records), "next_cursor": snapshot.tokens[next_offset] if next_offset < len(records) else None}
-            if omitted:
-                candidate["assessment"] = "partial"
-                candidate["truncation"] = {"occurred": True, "reasons": sorted(set(frozen["truncation"]["reasons"] + ["output_bytes"])),
-                                           "omitted_count": None if frozen["truncation"]["omitted_count"] is None else frozen["truncation"]["omitted_count"] + omitted}
-                candidate["pagination"]["omitted_records"] = None if frozen["pagination"]["omitted_records"] is None else frozen["pagination"]["omitted_records"] + omitted
             return candidate
 
         while next_offset < len(records) and len(report["records"]) < limit:
@@ -186,8 +264,9 @@ class IntegrationInspectionService:
                 if report["records"]:
                     next_offset -= 1
                     break
-                omitted += 1
-                continue
+                # Single-row fit was established before freezing coverage.
+                # Refuse an invariant failure rather than silently changing it.
+                raise InspectionError("output_budget_unavailable")
             report = candidate
         report = finish(report)
         if len(c.canonical(report)) > page_budget:

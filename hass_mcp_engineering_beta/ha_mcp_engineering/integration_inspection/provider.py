@@ -143,7 +143,8 @@ class AlarmoProvider:
         registry_ids = tuple(sorted({target, *chosen, *unresolved}))
         registry = await read(c.ReadKind.ENTITY_REGISTRY, entity_ids=registry_ids)
         final_manifest = await read(c.ReadKind.MANIFEST, final=True)
-        if final_manifest.available and final_manifest.value != manifest.value:
+        final_identity_valid = final_manifest.available and not final_manifest.gap_count
+        if final_identity_valid and final_manifest.value != manifest.value:
             raise InspectionError("identity_drift")
         if self.authority() != authority:
             raise InspectionError("identity_drift")
@@ -152,9 +153,13 @@ class AlarmoProvider:
         scope_complete = all(area_id in (areas.value or {}) for area_id in area_ids)
         if not scope_complete:
             extra_gaps.append({"reason": "scope_incomplete", "source_id": "areas", "pointer": None})
+        master_enabled = general.fact("/master/enabled")
+        master_present = any(type(row["area_id"]) is int and row["area_id"] == 0 for row in entities.value)
+        if master_present and master_enabled.status == "observed" and master_enabled.value is False:
+            extra_gaps.append({"reason": "scope_incomplete", "source_id": "general", "pointer": "/master/enabled"})
         gaps = [gap.model_dump() for p in projections.values() for gap in p.gaps] + extra_gaps
         all_gap_count = sum(p.gap_count for p in projections.values()) + len(extra_gaps)
-        bracket = "match" if final_manifest.available and not final_manifest.gap_count else "unavailable"
+        bracket = "match" if final_identity_valid else "unavailable"
         if bracket != "match":
             gaps.append({"reason": "freshness_unverified", "source_id": "manifest_final", "pointer": None})
             all_gap_count += 1
@@ -167,7 +172,11 @@ class AlarmoProvider:
             "total_in_scope": retained if membership_complete else None,
             "count_precision": "exact" if membership_complete else "lower_bound" if retained else "unknown",
         }
-        if not records or not any(p.available for p in (areas, sensors, general, groups)):
+        # Identity/placeholder rows alone do not answer a configuration question.
+        # Observed null/false/zero facts and an exact empty membership do.
+        useful_facts = any(type(value) is dict and value.get("status") == "observed"
+                           for row in records for value in row.values())
+        if not (membership_complete or retained or useful_facts):
             raise InspectionError("source_unavailable")
         finished_at = utc_now()
         return {
@@ -231,8 +240,14 @@ def build_records(projections, area_ids, chosen, unresolved):
             group_matches[entity].append(key)
         if not members.intersection(listed):
             continue
-        outside = None if not sensors.available or sensors.gap_count else any(
-            (sensors.value.get(entity) or {}).get("area") not in area_ids for entity in listed)
+        assignments = []
+        for entity in listed:
+            sensor = (sensors.value or {}).get(entity)
+            area = sensor.get("area") if type(sensor) is dict else None
+            assignments.append(None if area is None or area not in (areas.value or {}) else area not in area_ids)
+        if None in assignments:
+            gap("scope_incomplete", "sensor_groups", "/" + key + "/entities")
+        outside = True if True in assignments else None if None in assignments else False
         relevant_groups.append({"kind": "sensor_group", "group_id": key,
             "configured_members": fact(groups, "/" + key + "/entities"),
             "timeout_seconds": fact(groups, "/" + key + "/timeout"),

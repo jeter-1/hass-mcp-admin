@@ -1,7 +1,9 @@
 """Frozen continuation, revocation, byte packing and collection concurrency."""
 
 import asyncio
+import copy
 import json
+import time
 import unittest
 from unittest.mock import patch
 
@@ -101,7 +103,7 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         report["truncation"] = {"occurred": True, "reasons": ["structural_budget"], "omitted_count": None}
         before = len(report["records"])
         with patch.object(c, "SNAPSHOT_BYTES", 24_000):
-            _, snapshot = service._retain(report, service._binding(TARGET, "alarmo", 25))
+            _, snapshot = await service._retain(report, service._binding(TARGET, "alarmo", 25))
         frozen = json.loads(snapshot.encoded)
         self.assertLess(len(frozen["records"]), before)
         self.assertIsNone(frozen["pagination"]["omitted_records"])
@@ -156,3 +158,130 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(found.exception.reason, "identity_drift")
         self.assertEqual(service.snapshots, {})
         self.assertEqual(len(client.calls), 5)
+
+    async def test_output_omissions_are_frozen_before_first_page_and_replay(self):
+        service, client, _, _, token = setup_service(limit=16_000)
+        self.addCleanup(end_request, token)
+        first = await service.inspect(alarm_entity_id=TARGET, limit=50)
+        pages, cursors, records = [], [], []
+        page = first
+        while True:
+            pages.append(page)
+            records.extend(page["records"])
+            self.assertEqual(page["assessment"], "partial")
+            self.assertEqual(page["truncation"], {"occurred": True, "reasons": ["output_bytes"], "omitted_count": 1})
+            self.assertEqual(page["pagination"]["omitted_records"], 1)
+            self.assertEqual(page["pagination"]["total_retained_records"], 15)
+            self.assertEqual(page["membership"]["configured_members_retained"], 4)
+            for key in ("sources", "gaps", "membership"):
+                self.assertEqual(page[key], first[key])
+            self.assertEqual(page["pagination"]["snapshot_fingerprint"], first["pagination"]["snapshot_fingerprint"])
+            self.assertLessEqual(len(c.canonical(page)), 16_000 - 2048)
+            if not page["pagination"]["has_more"]:
+                break
+            cursors.append(page["pagination"]["next_cursor"])
+            page = await service.inspect(alarm_entity_id=TARGET, limit=50, cursor=cursors[-1])
+        self.assertEqual(len(records), 15)
+        sensor_ids = [r["configured_entity_id"] for r in records if r["kind"] == "sensor"]
+        self.assertNotIn("binary_sensor.synthetic_disabled", sensor_ids)
+        self.assertIn("binary_sensor.synthetic_door", sensor_ids)  # Smaller rows after the omitted row survive.
+        for cursor, original in zip(cursors, pages[1:]):
+            replay = await service.inspect(alarm_entity_id=TARGET, limit=50, cursor=cursor)
+            for key in ("records", "pagination", "truncation", "assessment", "sources", "gaps"):
+                self.assertEqual(replay[key], original[key])
+        self.assertEqual(len(client.calls), 9)
+
+    async def test_maximum_report_fitting_is_responsive_and_preserves_counts(self):
+        data = fixture()
+        prototype = data["sensors"]["binary_sensor.synthetic_door"]
+        identifiers = ["binary_sensor.synthetic_" + "a" * 96 + str(i).zfill(4) for i in range(c.MAX_SENSORS)]
+        data["sensors"], data["sensor_groups"] = {}, {}
+        data["entity_registry"] = {TARGET: {"entity_id": TARGET, "id": "synthetic_master_registry", "disabled_by": None}}
+        for index, entity in enumerate(identifiers):
+            group = "synthetic_group_" + str(index // 4)
+            data["sensors"][entity] = {**copy.deepcopy(prototype), "entity_id": entity, "area": "0", "group": group}
+            data["entity_registry"][entity] = {"entity_id": entity, "id": "synthetic_registry_" + str(index), "disabled_by": None}
+        for index in range(c.MAX_GROUPS):
+            group = "synthetic_group_" + str(index)
+            data["sensor_groups"][group] = {"group_id": group, "entities": identifiers[4 * index:4 * index + 4], "timeout": 0, "event_count": 2}
+        service, client, _, _, token = setup_service(data)
+        self.addCleanup(end_request, token)
+        gaps = []
+        async def heartbeat():
+            last = time.monotonic()
+            while True:
+                await asyncio.sleep(.01)
+                now = time.monotonic()
+                gaps.append(now - last)
+                last = now
+        ticker = asyncio.create_task(heartbeat())
+        await asyncio.sleep(0)
+        try:
+            report = await service.inspect(alarm_entity_id=TARGET, limit=50)
+            await asyncio.sleep(.02)
+        finally:
+            ticker.cancel()
+            await asyncio.gather(ticker, return_exceptions=True)
+        self.assertLess(max(gaps), 2, "Fitting must not monopolize the event loop.")
+        self.assertEqual(report["membership"]["configured_members_retained"], 512)
+        self.assertEqual(report["assessment"], "partial")
+        self.assertIn("output_bytes", report["truncation"]["reasons"])
+        snapshot = next(iter(service.snapshots.values()))
+        frozen = json.loads(snapshot.encoded)
+        self.assertLessEqual(snapshot.footprint, c.SNAPSHOT_BYTES)
+        self.assertEqual(len(frozen["records"]) + frozen["pagination"]["omitted_records"], 651)
+        self.assertEqual(set(references(frozen["records"])), {(e["source_id"], e["pointer"]) for e in frozen["evidence_entries"]})
+        self.assertEqual(len(client.calls), 9)
+        self.assertEqual(service.active, 0)
+
+    async def test_total_deadline_covers_retention(self):
+        service, client, _, _, token = setup_service()
+        self.addCleanup(end_request, token)
+        retain = service._retain
+        async def late_retention(*args):
+            await asyncio.sleep(.2)
+            return await retain(*args)
+        with patch.object(c, "COLLECTION_SECONDS", .1), patch.object(service, "_retain", late_retention):
+            with self.assertRaises(InspectionError) as found:
+                await service.inspect(alarm_entity_id=TARGET)
+        self.assertEqual(found.exception.reason, "timeout")
+        self.assertEqual(service.active, 0)
+        self.assertEqual(service.snapshots, {})
+        self.assertEqual(service.cursors, {})
+        self.assertEqual(len(client.calls), 9)
+
+    async def test_deadline_after_packing_removes_unpublished_snapshot(self):
+        service, client, _, _, token = setup_service()
+        self.addCleanup(end_request, token)
+        page = service._page
+        def late_page(*args, **kwargs):
+            result = page(*args, **kwargs)
+            # Synchronous packing cannot return success after its deadline,
+            # even before the event loop gets to deliver timeout cancellation.
+            time.sleep(.12)
+            return result
+        with patch.object(c, "COLLECTION_SECONDS", .1), patch.object(service, "_page", late_page):
+            with self.assertRaises(InspectionError) as found:
+                await service.inspect(alarm_entity_id=TARGET)
+        self.assertEqual(found.exception.reason, "timeout")
+        self.assertEqual(service.active, 0)
+        self.assertEqual(service.snapshots, {})
+        self.assertEqual(service.cursors, {})
+        self.assertEqual(len(client.calls), 9)
+
+    async def test_cancellation_during_fitting_releases_capacity_without_snapshot(self):
+        service, client, _, _, token = setup_service()
+        self.addCleanup(end_request, token)
+        entered = asyncio.Event()
+        async def blocked_retention(*args):
+            entered.set()
+            await asyncio.Event().wait()
+        with patch.object(service, "_retain", blocked_retention):
+            task = asyncio.create_task(service.inspect(alarm_entity_id=TARGET))
+            await entered.wait()
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        self.assertEqual(service.active, 0)
+        self.assertEqual(service.snapshots, {})
+        self.assertEqual(len(client.calls), 9)

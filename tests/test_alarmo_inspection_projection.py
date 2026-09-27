@@ -1,6 +1,7 @@
 """Truthful null/empty/partial facts, scope joins, and shared processing bounds."""
 
 import copy
+import json
 import unittest
 from unittest.mock import patch
 
@@ -8,10 +9,105 @@ from test_integration_inspection_contract import TARGET, fixture, setup_service
 from ha_mcp_engineering.integration_inspection import contracts as c
 from ha_mcp_engineering.integration_inspection.models import InspectionError
 from ha_mcp_engineering.integration_inspection.projection import Budget, Projector
+from ha_mcp_engineering.integration_inspection.runtime import INTEGRATION_INSPECTION
 from ha_mcp_engineering.request_context import end_request
+from ha_mcp_engineering.tools import integration_inspection as public
 
 
 class ProjectionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_final_identity_requires_valid_evidence_in_public_envelope(self):
+        malformed = ({}, {"domain": "alarmo"}, {"version": c.ALARMO_VERSION},
+                     {"domain": None, "version": c.ALARMO_VERSION},
+                     {"domain": 123, "version": c.ALARMO_VERSION},
+                     {"domain": "alarmo", "version": None},
+                     {"domain": "alarmo", "version": 123},
+                     {"domain": "alarmo", "version": "SYNTHETIC_FINAL_SECRET"}, [], None)
+        for final in (*malformed, {"domain": "alarmo", "version": "99.0.0"}):
+            with self.subTest(final=final):
+                service, client, _, _, token = setup_service(known_secrets=("SYNTHETIC_FINAL_SECRET",))
+                async def replace_final(kind, kwargs):
+                    if len(client.calls) == 9:
+                        client.values["manifest"] = final
+                client.hook = replace_final
+                try:
+                    with patch.object(INTEGRATION_INSPECTION, "service", service):
+                        response = json.loads(await public.get_integration_inspection(alarm_entity_id=TARGET))
+                    if final in malformed:
+                        self.assertTrue(response["success"], response)
+                        report = response["data"]
+                        self.assertEqual(report["assessment"], "partial")
+                        self.assertEqual(report["freshness"]["status"], "unverified")
+                        self.assertEqual(report["freshness"]["manifest_bracket"], "unavailable")
+                        self.assertEqual(report["membership"]["configured_members_retained"], 4)
+                        self.assertTrue(any(r["kind"] == "sensor" for r in report["records"]))
+                    else:
+                        self.assertFalse(response["success"])
+                        self.assertIn("identity_drift", json.dumps(response))
+                        self.assertEqual(service.snapshots, {})
+                    self.assertEqual(len(client.calls), 9)
+                    self.assertNotIn("SYNTHETIC_FINAL_SECRET", json.dumps(response))
+                finally:
+                    end_request(token)
+
+    async def test_master_contradiction_retains_observations_as_partial(self):
+        for enabled in (True, False):
+            raw = fixture()
+            raw["general"]["master"]["enabled"] = enabled
+            report = await self.inspect(raw)
+            general = next(r for r in report["records"] if r["kind"] == "general")
+            self.assertEqual(general["master_enabled"]["status"], "observed")
+            self.assertIs(general["master_enabled"]["value"], enabled)
+            self.assertEqual(report["target"]["scope"], {"kind": "master"})
+            self.assertEqual(report["assessment"], "complete" if enabled else "partial")
+            conflict = {"reason": "scope_incomplete", "source_id": "general", "pointer": "/master/enabled"}
+            self.assertEqual(conflict in report["gaps"], not enabled)
+
+    async def test_group_scope_uses_three_valued_join_and_keeps_references(self):
+        door, other, unknown = "binary_sensor.synthetic_door", "binary_sensor.synthetic_always", "binary_sensor.synthetic_unknown"
+        for members, expected, partial in (([door], False, False), ([door, other], True, False),
+                                           ([door, unknown], None, True), ([door, other, unknown], True, True)):
+            with self.subTest(members=members):
+                raw = fixture()
+                raw["sensor_groups"]["synthetic_group"]["entities"] = members
+                if other not in members:
+                    raw["sensors"][other]["group"] = None
+                service, client, _, _, token = setup_service(raw)
+                try:
+                    report = await service.inspect(alarm_entity_id="alarm_control_panel.synthetic_0", limit=50)
+                    group = next(r for r in report["records"] if r["kind"] == "sensor_group")
+                    self.assertIs(group["includes_members_outside_target_area"], expected)
+                    self.assertEqual(group["configured_members"]["value"], members)
+                    self.assertEqual(report["assessment"], "partial" if partial else "complete")
+                    gap = {"reason": "scope_incomplete", "source_id": "sensor_groups", "pointer": "/synthetic_group/entities"}
+                    self.assertEqual(gap in report["gaps"], partial)
+                    self.assertEqual(len(client.calls), 9)
+                finally:
+                    end_request(token)
+
+    async def test_no_useful_facts_refuses_but_observed_false_is_useful(self):
+        for useful in (False, True):
+            raw = fixture()
+            raw["areas"] = InspectionError("source_unavailable")
+            raw["sensors"] = InspectionError("source_unavailable")
+            raw["general"] = {"master": {"enabled": False}} if useful else {}
+            raw["sensor_groups"] = {}
+            service, client, _, _, token = setup_service(raw)
+            try:
+                with patch.object(INTEGRATION_INSPECTION, "service", service):
+                    response = json.loads(await public.get_integration_inspection(alarm_entity_id=TARGET))
+                self.assertEqual(response["success"], useful, response)
+                if useful:
+                    report = response["data"]
+                    self.assertEqual(report["assessment"], "partial")
+                    self.assertIsNone(report["membership"]["total_in_scope"])
+                    self.assertEqual(report["records"][0]["master_enabled"]["value"], False)
+                else:
+                    self.assertIn("source_unavailable", json.dumps(response))
+                    self.assertEqual(service.snapshots, {})
+                self.assertEqual(len(client.calls), 9)
+            finally:
+                end_request(token)
+
     async def inspect(self, data):
         service, client, _, _, token = setup_service(data)
         self.addCleanup(end_request, token)

@@ -15,6 +15,17 @@ binding/expiry/eviction/revocation, byte/record/node/edge limits, and no fallbac
 Run transport tests with synthetic loopback peers only. Test privacy through the
 public tool and gateway, including rejected argument names/values and audit.
 
+Include the valid 512-sensor/128-group report with bounded synthetic source
+latency: complete within the 30-second fresh-request deadline or return a fixed
+timeout, with responsive cancellation and no collector/snapshot leak. At a
+16,000-byte response limit, traverse and replay the positive fixture: one omitted
+sensor, 15 emitted rows, stable partial assessment/omission counts on every page,
+and zero continuation reads. Check missing/malformed final manifest evidence
+through the public envelope, preserving useful partial facts; a validated version
+conflict still refuses. Test contradictory master observations and known-inside,
+known-outside, unresolved and mixed group joins. Unavailable placeholders alone
+must fail while observed false/zero/null or exact empty membership can succeed.
+
 Prove original 54 static descriptors and 19 Core fingerprints remain exact;
 source adds one native descriptor and one runtime-only authority reference.
 Use ephemeral signatures for absent, correct and mismatched/revoked applicability;
