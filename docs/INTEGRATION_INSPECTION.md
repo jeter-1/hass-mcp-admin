@@ -95,6 +95,10 @@ total, five-minute TTL and LRU eviction. Opaque tokens bind authenticated caller
 target, integration, limit, offset, fingerprint and Core generation. Continuation
 rechecks current authority and performs zero provider reads. Expiration, eviction,
 revocation or a mismatched cursor never causes implicit recollection.
+Observed read-authority/authentication loss purges this inspector's cached
+snapshots and tokens. A new authority generation invalidates snapshots bound to
+the previous generation. This is request-time invalidation, not a background
+revocation observer or a new provider read.
 
 Whole rows and their evidence are packed within a 49,152-byte working page and
 60,000-byte complete response ceiling, further restricted by the configured

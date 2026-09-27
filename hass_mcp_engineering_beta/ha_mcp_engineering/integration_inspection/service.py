@@ -53,10 +53,18 @@ class IntegrationInspectionService:
         self.active = 0
 
     def _binding(self, target, integration, limit):
-        authority = self.provider.authority()
         caller = current_caller_id()
         if caller == "anonymous":
             raise InspectionError("authority_unavailable")
+        try:
+            authority = self.provider.authority()
+        except InspectionError:
+            self.snapshots.clear()
+            self.cursors.clear()
+            raise
+        for key, snapshot in tuple(self.snapshots.items()):
+            if snapshot.binding[4:] != authority:
+                self._remove(key)
         return caller, target, integration, limit, *authority
 
     def _remove(self, key):
@@ -195,6 +203,11 @@ class IntegrationInspectionService:
                 return report
         except TimeoutError:
             raise InspectionError("timeout") from None
+        except InspectionError as exc:
+            if exc.authority_lost or exc.reason in ("authority_unavailable", "identity_drift"):
+                self.snapshots.clear()
+                self.cursors.clear()
+            raise
         finally:
             if not published and key is not None and key in self.snapshots:
                 self._remove(key)

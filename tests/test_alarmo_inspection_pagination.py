@@ -53,12 +53,43 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(InspectionError) as found:
             await service.inspect(alarm_entity_id=TARGET, limit=1, cursor=cursor)
         self.assertEqual(found.exception.reason, "authority_unavailable")
+        self.assertEqual(service.snapshots, {})
+        self.assertEqual(service.cursors, {})
         core.available = True
+        with self.assertRaises(InspectionError) as found:
+            await service.inspect(alarm_entity_id=TARGET, limit=1, cursor=cursor)
+        self.assertEqual(found.exception.reason, "invalid_cursor")
+        self.assertEqual(len(client.calls), 9)
+        fresh = await service.inspect(alarm_entity_id=TARGET, limit=1)
+        cursor = fresh["pagination"]["next_cursor"]
         now[0] = c.SNAPSHOT_TTL
         with self.assertRaises(InspectionError) as found:
             await service.inspect(alarm_entity_id=TARGET, limit=1, cursor=cursor)
         self.assertEqual(found.exception.reason, "snapshot_expired")
-        self.assertEqual(len(client.calls), 9)
+        self.assertEqual(len(client.calls), 18)
+
+    async def test_generation_change_and_authentication_loss_clear_old_snapshots(self):
+        for mode in ("generation", "authentication"):
+            with self.subTest(mode=mode):
+                service, client, core, _, token = setup_service()
+                try:
+                    first = await service.inspect(alarm_entity_id=TARGET, limit=1)
+                    self.assertTrue(service.snapshots)
+                    if mode == "generation":
+                        core.generation += 1
+                        arguments = {"cursor": first["pagination"]["next_cursor"]}
+                    else:
+                        client.values["manifest"] = InspectionError("access_denied", authority_lost=True)
+                        arguments = {}
+                    with self.assertRaises(InspectionError) as found:
+                        await service.inspect(alarm_entity_id=TARGET, limit=1, **arguments)
+                    self.assertEqual(found.exception.reason, "invalid_cursor" if mode == "generation" else "access_denied")
+                    self.assertEqual(service.snapshots, {})
+                    self.assertEqual(service.cursors, {})
+                    self.assertEqual(service.active, 0)
+                    self.assertEqual(len(client.calls), 9 if mode == "generation" else 10)
+                finally:
+                    end_request(token)
 
     async def test_eviction_has_no_recollection(self):
         service, client, _, _, token = setup_service()
