@@ -19,6 +19,7 @@ from ..facilitation import DetailLevel
 from ..observability import METRICS
 from ..providers import EvidenceRequest, ProviderCapability, ProviderCompleteness, ProviderFailureCategory
 from ..request_context import current_telemetry
+from .lifecycle import analyze_lifecycle
 from .models import ReliabilityAnalysisOutput, ReliabilityEvidenceBundle
 from .rules import build_root_cause_groups, evaluate_rules
 from .timestamps import normalize_timestamp, parse_timestamp
@@ -196,6 +197,12 @@ class AutomationReliabilityAnalysisService:
         METRICS.record_provider_result(
             result.provider_id, result.completeness.value, dispatched=True
         )
+        lifecycle = analyze_lifecycle(
+            bundle.configuration, automation_id=normalized_id,
+            configuration_fingerprint=bundle.configuration_fingerprint,
+            analysis_timestamp=analysis_timestamp, detail_level=detail_level,
+        )
+        lifecycle_partial = not lifecycle["coverage_complete"]
         fingerprint = _analysis_fingerprint(
             bundle.evidence_fingerprint(), analysis_timestamp
         )
@@ -204,7 +211,7 @@ class AutomationReliabilityAnalysisService:
         page = findings[offset : offset + effective_limit]
         has_more = offset + len(page) < len(findings)
         next_cursor = None
-        partial = result.completeness == ProviderCompleteness.PARTIAL or bundle.partial or has_more
+        partial = result.completeness == ProviderCompleteness.PARTIAL or bundle.partial or lifecycle_partial or has_more
         if has_more:
             METRICS.record_reliability_truncation()
 
@@ -275,13 +282,15 @@ class AutomationReliabilityAnalysisService:
 
         if partial:
             assessment = "partial_evidence"
-        elif findings:
+        elif findings or lifecycle["hazards_detected"]:
             assessment = "findings_present"
         else:
             assessment = "no_findings"
         warnings = list(dict.fromkeys(result.warnings + [
             warning for item in bundle.coverage for warning in item.warnings
         ]))[:20]
+        if lifecycle_partial:
+            warnings.append("Lifecycle inspection is incomplete; consult its bounded coverage and limiting reasons.")
         snapshot_warnings = tuple(warnings)
         if has_more:
             warnings.append("Findings were paginated; use next_cursor for the next bounded page.")
@@ -319,6 +328,7 @@ class AutomationReliabilityAnalysisService:
                 )
             ],
             "evidence_references": evidence,
+            "lifecycle_analysis": lifecycle,
             "configuration_fingerprint": bundle.configuration_fingerprint,
             "evidence_fingerprint": fingerprint,
             "evidence_source_coverage": coverage,
@@ -385,7 +395,7 @@ class AutomationReliabilityAnalysisService:
                 warnings=snapshot_warnings,
                 metadata=copy.deepcopy(metadata),
                 source_partial=(
-                    result.completeness == ProviderCompleteness.PARTIAL or bundle.partial
+                    result.completeness == ProviderCompleteness.PARTIAL or bundle.partial or lifecycle_partial
                 ),
             )
             snapshot_id = self.pagination_snapshots.put(snapshot)
@@ -459,7 +469,7 @@ class AutomationReliabilityAnalysisService:
             "result_status": "partial" if partial else "success",
             "overall_assessment": (
                 "partial_evidence" if partial
-                else "findings_present" if snapshot.findings
+                else "findings_present" if snapshot.findings or data["lifecycle_analysis"]["hazards_detected"]
                 else "no_findings"
             ),
             "findings": list(page),
