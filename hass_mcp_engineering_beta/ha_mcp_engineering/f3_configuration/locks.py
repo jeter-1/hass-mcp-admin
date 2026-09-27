@@ -6,6 +6,7 @@ import re
 from collections.abc import Iterable
 
 from ha_mcp_engineering.f3.contracts import LockMode, LockRequest, LockScope
+from ha_mcp_engineering.f3.models import MAX_LOCK_TOKENS
 
 from ..dependency.extraction import (
     extract_document_with_obligations,
@@ -254,6 +255,8 @@ def normalize_lock_requests(
         if request.mode == LockMode.EXCLUSIVE:
             mode = LockMode.EXCLUSIVE
         merged[request.key] = scopes, mode, reasons
+        if len(merged) > MAX_LOCK_TOKENS:
+            raise ValueError("complete lock set exceeds the lock-token limit")
 
     result = []
     for key in sorted(merged, key=lambda item: item.encode("utf-8")):

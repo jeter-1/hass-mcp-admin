@@ -17,6 +17,10 @@ EXECUTION_RECORD_SCHEMA_VERSION = 1
 MAX_IDENTIFIER_LENGTH = 128
 MAX_LOCK_KEY_LENGTH = 320
 MAX_EVIDENCE_ITEMS = 16
+# Complete sequence locks have a separate budget from diagnostic evidence.
+# Eight targets + four reload domains + core + the dynamic helper guard leave
+# 242 distinct causal helper dependencies in a 256-lock union.
+MAX_LOCK_TOKENS = 256
 MAX_DIAGNOSTIC_ITEMS = 16
 MAX_DIAGNOSTIC_LENGTH = 96
 MAX_EXECUTION_EVENTS = 128
@@ -277,8 +281,8 @@ class LockHandle:
     def validate(self) -> None:
         self.owner.validate()
         self.timing.validate()
-        if not self.tokens:
-            raise ValueError("lock handle is empty")
+        if not self.tokens or len(self.tokens) > MAX_LOCK_TOKENS:
+            raise ValueError("lock handle cardinality is invalid")
         keys = tuple(token.key for token in self.tokens)
         if keys != tuple(sorted(keys, key=lambda item: item.encode("utf-8"))):
             raise ValueError("lock tokens are not bytewise sorted")
@@ -812,7 +816,7 @@ class ExecutionRecord:
 
     @staticmethod
     def _validate_lock_tokens(value: object) -> None:
-        if not isinstance(value, list) or len(value) > MAX_EVIDENCE_ITEMS:
+        if not isinstance(value, list) or len(value) > MAX_LOCK_TOKENS:
             raise ValueError("execution lock tokens are invalid")
         keys: list[str] = []
         for item in value:

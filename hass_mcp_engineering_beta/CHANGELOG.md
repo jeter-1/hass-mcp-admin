@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.4.0-beta.6 - F3 lock persistence and exact recovery
+
+- Separate a 256-lock capacity from unchanged evidence limits; support complete
+  configuration unions above sixteen locks and refuse excess before acquisition,
+  approval consumption or provider dispatch.
+- Preserve failures and exact fenced cleanup when token recording fails. Recover
+  only proven terminal zero-dispatch tokenless configuration children by binding
+  exact generations before release; ambiguous ownership remains unresolved.
+- Prevent conflict-audit transaction inversion, retain binding-audit work across
+  restart and report fixed cleanup diagnostics without masking primary failures.
+  Surface bounded current retained/expired/pending diagnostics.
+- Deployment can automatically settle qualifying internal records. Preserve
+  current evidence and compatible recovery before separate deployment approval.
+  Beta.5 cannot read expanded token records above sixteen; an older binary or
+  stale execution-state restore is not a sufficient recovery plan.
+- Preserve the 79-tool catalog, providers/approval boundaries, installation
+  settings, dependencies, workflows and frozen stable-v1. The separate Alarmo
+  inspector is excluded. Source preparation is not installed acceptance.
+
 ## 2.4.0-beta.5 - Bounded automation lifecycle analysis
 
 - Add static interruption-hazard findings for supported trigger holds and inline

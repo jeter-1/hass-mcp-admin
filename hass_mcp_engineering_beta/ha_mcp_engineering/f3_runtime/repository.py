@@ -14,11 +14,15 @@ import time
 from typing import Any, Callable, Iterable
 
 from ..f3.models import (
+    EXECUTION_CLASS_TERMINAL_PRE_DISPATCH,
     ExecutionRecord,
+    LockHandle,
+    append_execution_event,
     LockToken,
     parse_timestamp,
     validate_identifier,
     validate_sha256,
+    timestamp,
 )
 from ..f3.persistence import (
     DurableExecutionRepository,
@@ -47,6 +51,10 @@ ACTIVE_RECOVERY_CHECKPOINT_SCHEMA_VERSION = 1
 ACTIVE_RECOVERY_CHECKPOINT_FILE = ".active-recovery-checkpoint.json"
 ACTIVE_RECOVERY_CHECKPOINT_LIMIT = 16
 RECOVERY_DECLARATION_PAGE_SIZE = 1_024
+
+
+class UnrecordedLockAuthorityError(ExecutionStorageError):
+    """Valid storage lacks sufficient authority for tokenless settlement."""
 
 
 def canonical_hash(value: Any) -> str:
@@ -444,6 +452,57 @@ class ChildExecutionRepository(DurableExecutionRepository):
             self._path(child_id),
             {"declaration": envelope["declaration"], "execution": record.to_dict(), "runtime": runtime},
         )
+
+    def settle_unrecorded_locks(
+        self, child_id: str, *, now: Any,
+        settle: Callable[[dict[str, Any], ExecutionRecord, Callable[[LockHandle], None]], int],
+    ) -> int:
+        """Hold execution authority through exact token binding and release."""
+        with self._exclusive_transaction():
+            envelope = self._raw_envelope(child_id)
+            record = self._read_unlocked(child_id)
+            if envelope is None or record is None:
+                raise ExecutionRecordCorrupt("unrecorded execution is missing")
+            declaration = envelope["declaration"]
+            identity = record.execution_identity()
+            if (
+                record.execution_class() != EXECUTION_CLASS_TERMINAL_PRE_DISPATCH
+                or record.lock_tokens
+                or record.preflight_completed
+                or declaration["plan_contract_version"] not in {1, 2}
+                or identity.task_id != declaration["child_id"]
+                or identity.plan_id != declaration["plan_id"]
+                or identity.attempt_id != declaration["attempt_id"]
+                or record.operation != declaration["capability_id"]
+                or record.adapter_id != declaration["adapter_id"]
+                or record.target != {"target_type": declaration["target_type"], "target_id": declaration["target_id"]}
+                or parse_timestamp(record.claim_expires_at, field_name="claim_expires_at") > now
+                or envelope["runtime"]["selective_hold_tokens"]
+                or envelope["runtime"]["hold_release_authority"] is not None
+            ):
+                raise UnrecordedLockAuthorityError("unrecorded execution authority is unresolved")
+
+            def persist(handle: LockHandle) -> None:
+                handle.validate()
+                if (handle.owner.owner_id != identity.owner_id
+                    or handle.owner.task_id != identity.task_id
+                    or handle.owner.plan_id != identity.plan_id
+                    or handle.owner.attempt_id != identity.attempt_id
+                    or handle.owner.operation_id != record.operation):
+                    raise ExecutionStorageError("unrecorded lock owner changed")
+                record.lock_tokens = [
+                    {"key": item.key, "generation": item.generation,
+                     "mode": item.mode, "owner_id": identity.owner_id}
+                    for item in handle.tokens
+                ]
+                event_type = ("execution_cancelled" if record.normalized_outcome == "cancelled_pre_dispatch"
+                              else "pre_dispatch_terminal")
+                append_execution_event(record, event_type=event_type,
+                                       occurred_at=timestamp(now),
+                                       diagnostic_codes=("terminal_zero_dispatch_only", "unrecorded_lock_tokens_bound"))
+                self._write_unlocked(record)
+
+            return settle(declaration, record, persist)
 
     def _atomic_write(self, path: Path, value: dict[str, Any]) -> None:
         temporary = path.with_name(

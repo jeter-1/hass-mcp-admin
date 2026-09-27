@@ -88,7 +88,9 @@ class _PreparedStub:
 
     def __init__(self, declaration):
         self.adapter_id = declaration["adapter_id"]
-        self.operation = declaration["operation_id"]
+        self.operation = (declaration["capability_id"]
+                          if declaration["plan_contract_version"] in {1, 2}
+                          else declaration["operation_id"])
         self.prepared_operation_hash = declaration["prepared_operation_hash"]
         self.plan_id = declaration["plan_id"]
         self.target = type(
