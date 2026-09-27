@@ -426,6 +426,7 @@ class SharedOperationExecutor:
                 sleep=self.sleep,
                 cancelled=lambda: self._cancelled(identity.task_id),
             )
+            self._inject("after_lock_acquisition_before_token_persistence")
             self.execution_repository.record_locks(
                 identity.task_id,
                 owner_id=identity.owner_id,
@@ -452,14 +453,16 @@ class SharedOperationExecutor:
             if record is None:
                 raise OperationExecutorError("cancelled execution record is missing")
             return self._result(record)
-        except (DurableLockError, ValueError) as exc:
-            record = self._terminal_pre_dispatch(
-                claim,
-                identity,
-                outcome="failed_pre_dispatch",
-                code="lock_storage_failure",
+        except (DurableLockError, ExecutionStorageError, ValueError):
+            record, codes = self.execution_repository.fail_lock_acquisition(
+                identity.task_id,
+                owner_id=identity.owner_id,
+                claim_generation=claim.claim_generation,
+                cleanup=(None if handle is None else lambda: self.lock_store.release(
+                    handle, pre_dispatch_cleanup=True)),
+                now=self.now(),
             )
-            return self._result(record)
+            return self._result(record, extra_codes=codes)
 
         try:
             preflight = await getattr(adapter, "preflight")(

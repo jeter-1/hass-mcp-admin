@@ -41,6 +41,8 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_fault_injection.py",
     "tests/test_ha_core_2026_9_integration.py",
     "tests/test_f3_lock_manager.py",
+    "tests/test_f3_tokenless_lock_recovery.py",
+    "tests/fixtures/f3_lock_recovery/generate.py",
     "tests/f3_configuration_fixtures.py",
     "tests/test_f3_configuration_identity.py",
     "tests/test_f3_configuration_lifecycle.py",

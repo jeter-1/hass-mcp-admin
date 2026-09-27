@@ -366,6 +366,8 @@ class DurableExecutionRepository:
         handle.validate()
 
         def update(record: ExecutionRecord) -> None:
+            if record.terminal:
+                raise ExecutionStorageError("terminal execution cannot acquire locks")
             if record.dispatch_intent is not None:
                 raise BlindRedispatchProhibited(
                     "locks cannot create a new dispatch after durable intent"
@@ -391,6 +393,72 @@ class DurableExecutionRepository:
             claim_generation=claim_generation,
             mutator=update,
         )
+
+    def fail_lock_acquisition(
+        self,
+        task_id: str,
+        *,
+        owner_id: str,
+        claim_generation: int,
+        cleanup: Callable[[], None] | None,
+        now: datetime | None = None,
+    ) -> tuple[ExecutionRecord, tuple[str, ...]]:
+        """Fence cleanup against claim/intent changes, even if a write fails.
+
+        The execution transaction precedes the lock-store transaction. Cleanup
+        never follows a failed authority read, a lost claim or dispatch intent.
+        A process loss remains recoverable from the durable stores, not finally.
+        """
+        now_text = timestamp(now or utc_now())
+        codes: tuple[str, ...] = ()
+        try:
+            with self._exclusive_transaction():
+                record = self._read_unlocked(task_id)
+                if record is None:
+                    raise ExecutionStorageError("failed lock execution is missing")
+                self._require_claim(record, owner_id=owner_id, claim_generation=claim_generation)
+                if record.dispatch_intent is not None or record.dispatch_count:
+                    raise BlindRedispatchProhibited("post-intent locks require recovery")
+                if record.terminal:
+                    raise ExecutionStorageError("terminal execution cannot be reclassified")
+                record.normalized_outcome = "failed_pre_dispatch"
+                record.task_state = "failed_pre_dispatch"
+                record.state = "terminal"
+                record.terminal = True
+                append_execution_event(record, event_type="pre_dispatch_terminal",
+                                       occurred_at=now_text, diagnostic_codes=("lock_storage_failure",))
+                write_error: Exception | None = None
+                try:
+                    self._write_unlocked(record)
+                except (ExecutionStorageError, ValueError) as exc:
+                    write_error = exc
+                cleanup_code = "lock_cleanup_not_acquired"
+                if cleanup is not None:
+                    try:
+                        cleanup()
+                        cleanup_code = "lock_cleanup_completed"
+                    except Exception:
+                        # Deliberate process loss (BaseException) is not swallowed.
+                        cleanup_code = "lock_cleanup_failed"
+                codes = ("lock_storage_failure", cleanup_code)
+                if write_error is not None:
+                    codes += ("lock_terminalization_failed",)
+                if write_error is not None:
+                    raise write_error
+                append_execution_event(record, event_type="pre_dispatch_terminal",
+                                       occurred_at=now_text, diagnostic_codes=codes)
+                self._write_unlocked(record)
+                return record, codes
+        finally:
+            if codes:
+                try:
+                    self.event_sink({"event_type": "lock_failure_cleanup",
+                                     "task_id": task_id, "owner_id": owner_id,
+                                     "diagnostic_codes": list(codes)})
+                except Exception:
+                    # Reporting cannot replace the original storage error or
+                    # claim that a failed terminal write became durable.
+                    pass
 
     def replace_recovery_locks(
         self,
@@ -835,6 +903,8 @@ class DurableExecutionRepository:
         *,
         now: datetime | None = None,
         diagnostic_codes: tuple[str, ...] = (),
+        expected_claim_generation: int | None = None,
+        require_expired_claim: bool = False,
     ) -> bool:
         now_text = timestamp(now or utc_now())
         bounded = (
@@ -845,6 +915,10 @@ class DurableExecutionRepository:
         with self._exclusive_transaction():
             record = self._read_unlocked(task_id)
             if record is None:
+                return False
+            if expected_claim_generation is not None and record.claim_generation != expected_claim_generation:
+                return False
+            if require_expired_claim and parse_timestamp(record.claim_expires_at, field_name="claim_expires_at") > (now or utc_now()):
                 return False
             if record.dispatch_intent is not None:
                 append_execution_event(
