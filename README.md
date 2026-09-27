@@ -80,9 +80,10 @@ implement Host/Origin enforcement.
 
 ## Capabilities and compatibility
 
-The fully healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing exposes **54 static tools
-plus 25 delegated reads, 79 total**. The Core inventory represents **19
-capability profiles**; exact signed applicability determines their admission.
+This development source paired with reviewed **ha-mcp 8.4.3 or 8.5.0** defines
+**55 static tools plus 25 delegated reads, 80 total**. The Core inventory represents
+**20 capability profiles**. Existing signed authority covers the original 19;
+the new inspection metadata profile remains withheld until separately activated.
 Actual authority and provider admission determine availability. Fresh protocol
 enumeration and descriptor comparison establish the catalog; a health count or
 cached client inventory alone does not.
@@ -100,8 +101,8 @@ dynamic references and script blueprint bodies remain opaque. An analysis with
 no detected references does not prove none exist. See
 [dependency coverage](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
-The candidate acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0** under the
-reviewed signed Core registry covering all 19 profiles. Core 2026.9.2 retains its
+The beta.5 baseline acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0** under the
+reviewed signed Core registry covering its original 19 profiles. Core 2026.9.2 retains its
 immutable 17-reference entry and historical typed fan/power route; its two new
 signed typed references remain unavailable as intended. Installing 2.4.0-beta.5 neither
 configures trust nor updates Core. Admission still requires exact current

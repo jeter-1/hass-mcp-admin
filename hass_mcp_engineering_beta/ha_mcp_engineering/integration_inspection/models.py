@@ -251,7 +251,7 @@ class Inspection(Strict):
 class InspectionError(GovernanceError):
     """Only a closed reason reaches error/audit serialization."""
 
-    def __init__(self, reason: Reason):
+    def __init__(self, reason: Reason, *, authority_lost: bool = False):
         # Validation forbids exception text or provider-derived diagnostics.
         reason = Gap(reason=reason).reason
         code = (ErrorCode.PROVIDER_UNAVAILABLE if reason == "authority_unavailable" else
@@ -259,3 +259,6 @@ class InspectionError(GovernanceError):
                 else ErrorCode.ANALYSIS_UNAVAILABLE)
         super().__init__(code, details={"reason": reason})
         self.reason = reason
+        # Internal transport classification only; never a public argument or
+        # provider-derived value in the error envelope.
+        self.authority_lost = authority_lost

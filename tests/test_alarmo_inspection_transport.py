@@ -17,6 +17,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.ledger, self.connections = [], 0
         self.frame = '{"id":1,"type":"result","success":true,"result":{"domain":"alarmo","version":"1.10.19"}}'
         self.auth_version = "2026.9.3"
+        self.auth_type = "auth_ok"
         self.after_auth = None
         self.hold = False
         self.drop = False
@@ -36,7 +37,7 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 await ws.receive_json()
                 if self.after_auth:
                     self.after_auth()
-                await ws.send_json({"type": "auth_ok", "ha_version": self.auth_version})
+                await ws.send_json({"type": self.auth_type, "ha_version": self.auth_version})
                 command = await ws.receive()
                 if command.type == web.WSMsgType.TEXT:
                     self.ledger.append(json.loads(command.data))
@@ -103,7 +104,16 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(InspectionError) as found:
                 await self.read()
             self.assertEqual(found.exception.reason, reason)
+            self.assertFalse(found.exception.authority_lost)
             self.assertNotIn("SYNTHETIC_PRIVATE_ERROR", str(found.exception))
+
+    async def test_authentication_loss_is_distinct_from_command_denial(self):
+        self.auth_type = "auth_invalid"
+        with self.assertRaises(InspectionError) as found:
+            await self.read()
+        self.assertEqual(found.exception.reason, "access_denied")
+        self.assertTrue(found.exception.authority_lost)
+        self.assertEqual(self.ledger, [])
 
     async def test_version_or_authority_drift_after_auth_zero_application_commands(self):
         self.auth_version = "2026.9.99"

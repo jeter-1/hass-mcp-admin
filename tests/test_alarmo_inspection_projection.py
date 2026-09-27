@@ -95,6 +95,28 @@ class ProjectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["membership"]["configured_members_retained"], 4)
         self.assertTrue(any(r["kind"] == "mode" for r in report["records"]))
 
+    async def test_source_local_denial_preserves_modes_but_authentication_loss_is_fatal(self):
+        for fatal in (False, True):
+            raw = fixture()
+            raw["sensors"] = InspectionError("access_denied", authority_lost=fatal)
+            service, client, _, _, token = setup_service(raw)
+            try:
+                if fatal:
+                    with self.assertRaises(InspectionError) as found:
+                        await service.inspect(alarm_entity_id=TARGET)
+                    self.assertTrue(found.exception.authority_lost)
+                    self.assertEqual(len(client.calls), 5)
+                    self.assertEqual(service.snapshots, {})
+                else:
+                    report = await service.inspect(alarm_entity_id=TARGET)
+                    self.assertEqual(report["assessment"], "partial")
+                    self.assertEqual(report["membership"]["outcome"], "unavailable")
+                    self.assertIsNone(report["membership"]["total_in_scope"])
+                    self.assertTrue(any(r["kind"] == "mode" for r in report["records"]))
+                    self.assertEqual(len(client.calls), 9)
+            finally:
+                end_request(token)
+
     def test_sensor_limit_exact_and_plus_one(self):
         example = fixture()["sensors"]["binary_sensor.synthetic_door"]
         for count in (512, 513):

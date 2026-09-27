@@ -165,7 +165,7 @@ class HomeAssistantWebSocketClient:
                         await websocket.send_json({"type": "auth", "access_token": self.settings.ha_token})
                         auth = await receive(auth=True)
                         if auth.get("type") != "auth_ok":
-                            raise InspectionError("access_denied")
+                            raise InspectionError("access_denied", authority_lost=True)
                         if auth.get("ha_version") != core_version:
                             raise InspectionError("identity_drift")
                         authorized()
@@ -191,7 +191,8 @@ class HomeAssistantWebSocketClient:
             timed_out = True
             raise InspectionError("timeout") from None
         except aiohttp.WSServerHandshakeError as exc:
-            raise InspectionError("access_denied" if exc.status in (401, 403) else "source_unavailable") from None
+            raise InspectionError("access_denied" if exc.status in (401, 403) else "source_unavailable",
+                                  authority_lost=exc.status in (401, 403)) from None
         except (aiohttp.ClientError, OSError, ValueError, TypeError, RecursionError):
             raise InspectionError("source_unavailable") from None
         finally:

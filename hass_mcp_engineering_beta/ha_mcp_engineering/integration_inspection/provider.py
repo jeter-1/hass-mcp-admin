@@ -74,7 +74,7 @@ class AlarmoProvider:
                 if time.monotonic() - started >= c.COLLECTION_SECONDS:
                     raise InspectionError("timeout")
             except InspectionError as exc:
-                if exc.reason in ("authority_unavailable", "identity_drift", "access_denied"):
+                if exc.authority_lost or exc.reason in ("authority_unavailable", "identity_drift"):
                     raise
                 # A failed frame may have consumed the whole remaining frame
                 # allowance. Charge conservatively; never retry that source.
