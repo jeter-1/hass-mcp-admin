@@ -255,6 +255,29 @@ class ServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(metrics["finding_counts_by_severity"], {"info": 1})
         self.assertEqual(METRICS.snapshot()["provider_routing"]["requests_by_provider"]["engineering"], 1)
 
+    async def test_public_lifecycle_response_keeps_legacy_contract_and_provider_count(self):
+        from ha_mcp_engineering.tools.analysis import automation_reliability_analysis
+        from ha_mcp_engineering.reliability.runtime import RELIABILITY_ANALYSIS
+
+        value = bundle(config={"action": [{"delay": 5}]})
+        provider = FakeProvider(value)
+        service = AutomationReliabilityAnalysisService(provider, clock=lambda: ANALYSIS_INSTANT)
+        for detail in ("summary", "standard", "evidence"):
+            with patch.object(RELIABILITY_ANALYSIS, "service", service):
+                output = json.loads(await automation_reliability_analysis(
+                    automation_id=AUTOMATION_ID, detail_level=detail,
+                ))
+            self.assertTrue(output["success"])
+            self.assertEqual(output["operation"], "automation_reliability_analysis")
+            self.assertEqual(output["data"]["overall_assessment"], "findings_present")
+            self.assertEqual(output["data"]["lifecycle_analysis"]["hazard_count"], 1)
+            self.assertEqual(output["data"]["findings"], [])
+            self.assertEqual(output["data"]["pagination"]["total"], 0)
+            self.assertEqual(output["data"]["unique_root_cause_count"], 0)
+            self.assertEqual(output["metadata"]["routing"]["provider"], "engineering")
+            self.assertFalse(output["metadata"]["routing"]["fallback_occurred"])
+        self.assertEqual(len(provider.calls), 3)
+
     async def test_total_timeout_is_structured_provider_timeout(self):
         class SlowProvider:
             async def fetch(self, _request):

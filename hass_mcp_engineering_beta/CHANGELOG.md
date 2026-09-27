@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0-beta.5 - Bounded automation lifecycle analysis
+
+- Add static interruption-hazard findings for supported trigger holds and inline
+  delays/waits to the existing automation reliability analysis, with exact
+  configuration paths, conditional consequences and bounded review notes.
+- Exclude disabled/proven-unreachable steps, preserve conditional findings under
+  unresolved error continuation, and report unsupported/dynamic syntax,
+  stored-script/blueprint gaps and truncation explicitly. Freeze lifecycle
+  evidence across continuation pages without changing legacy accounting.
+- Preserve tool inputs, provider collection, foundational error behavior,
+  the 79-tool inventory, execution authority, stored formats and stable-v1.
+  This first inline increment does not prove observed execution or restart
+  recovery. Source preparation does not establish publication or deployment.
+
 ## 2.4.0-beta.3 - Dashboard capacity and bounded diagnostics
 
 - Raise existing-dashboard patch capacity from 16 to 256 semantic leaves with

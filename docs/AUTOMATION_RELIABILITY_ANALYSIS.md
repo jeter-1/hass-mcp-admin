@@ -185,3 +185,21 @@ reads and aggregate counter inflation without concealing new evidence on a new c
 - Home Assistant retains only a bounded trace history, so a successful lookback query
   cannot prove that older executions never occurred.
 - Beta 14 does not change the 34-tool manifest; connector recreation is not required.
+
+## Additive static lifecycle inspection
+
+The owner-approved first lifecycle increment adds `data.lifecycle_analysis` for
+one automation's triggers and inline actions, using the same captured config.
+It distinguishes eligible conditional interruption hazards, informational review
+notes, suppression and explicit coverage gaps. Stored script bodies, blueprint
+expansion, historical downtime and verified recovery remain outside this scope.
+See [the exact rules, response table, bounds and source authority](AUTOMATION_LIFECYCLE_ANALYSIS.md).
+
+The tool arguments/count and provider reads remain unchanged. Legacy finding
+arrays, severity/root-cause counters and pagination count only legacy findings;
+a lifecycle-only positive uses its own `hazard_count`. Partial lifecycle evidence
+makes the response partial without discarding positive counts. Summary display
+omission is not processing truncation. Cursor pages freeze the same bounded
+lifecycle object without recollection. The existing foundational trace-failure
+gate remains unchanged; static hazards cannot bypass it. Neither these findings
+nor startup syntax establish actual execution, failure or durable recovery.

@@ -101,6 +101,10 @@ async def automation_reliability_analysis(
     list_automations, not an automation entity_id. The operation is read-only:
     it cannot trigger an automation, call a service, or modify configuration.
     Results are evidence-backed, paginated, and explicit about partial coverage.
+    The additive lifecycle_analysis inspects triggers and inline actions for
+    conditional static interruption hazards, not observed failures. Stored script
+    bodies and blueprint expansion are outside its scope. Legacy finding counts
+    and pagination exclude these separately reported lifecycle hazards.
     """
     started = time.perf_counter()
     telemetry = current_telemetry()
