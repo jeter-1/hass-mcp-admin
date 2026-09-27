@@ -246,3 +246,38 @@ and simulated mutation count are each one per attempt.
 - Dashboard transformation, dashboard risk classification, backup conflict
   edges, and provider-specific lock matrices remain intentionally unresolved in
   their owning tracks.
+
+## Acquired-lock persistence repair (source candidate)
+
+The execution lock-token limit is independently bounded at 256. It is not the
+16-item evidence limit, and no evidence/diagnostic or selective-hold limit is
+increased. A supported eight-operation configuration sequence can require eight
+targets, four reload-domain locks, the Core lock, a dynamic helper-dependency
+guard, and literal dependency locks. Reserving those fourteen structural slots
+leaves 242 literal dependencies within this explicit capacity. This is a
+capacity limit, not a claim that all possible configurations fit. The complete
+normalized union is rejected above 256 before acquisition, preflight, approval
+consumption or provider dispatch; locks are never truncated or omitted.
+Synthetic tests cover 16, 17, 18, 256, and refusal at 257, plus a real eight-operation
+configuration-adapter sequence with eighteen locks and exact verification.
+
+After acquisition, a token-recording error terminalizes the child before exact
+handle cleanup while holding the execution transaction. The lock-store release
+checks owner and generation and refuses a newly promoted hold or mode mismatch.
+Cleanup outcome is recorded separately from the original failure. Even when the
+terminal write fails, cleanup is attempted if the original claim is still owned
+and no dispatch intent exists. Failure to read or prove authority prevents
+cleanup. Audit callbacks occur outside the execution transaction, avoiding
+re-entry through child declaration lookup. An interrupted write is not success.
+
+Process loss before tokens become durable is a distinct boundary. The retained
+lock records stay in place; expiry alone does not free them. The runtime's
+terminal zero-dispatch recovery uses the narrowly defined proof below. It never
+makes a failed task successful and never authorizes provider dispatch.
+
+Persisted field names and schema versions remain unchanged. Current readers
+accept the old tokenless shape. Older readers reject records containing more
+than sixteen tokens, including a dispatch intent carrying that expanded set.
+A binary downgrade alone is therefore not a supported recovery for such records.
+Preserve compatible durable state and the repaired binary for recovery; never
+restore older execution state over newer dispatch history.

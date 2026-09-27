@@ -23,6 +23,8 @@ from ..f3.contracts import (
 )
 from ..f3.locks import (
     DurableLockStore,
+    LockOwnershipError,
+    LockStorageError,
     StaleRecoveryAction,
     StaleRecoveryDecision,
 )
@@ -89,6 +91,7 @@ from .registry import ClosedAdapterRegistry
 from .repository import (
     ACTIVE_RECOVERY_CHECKPOINT_LIMIT,
     ChildExecutionRepository,
+    UnrecordedLockAuthorityError,
     MAX_F3_PUBLIC_TASKS,
     RECOVERY_DECLARATION_PAGE_SIZE,
     canonical_hash,
@@ -2509,8 +2512,10 @@ class F3RuntimeIntegration:
 
     def _public_child_projection(self, task: Any) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
+        lock_records = self.locks.records()
         for declaration in self.children.declarations_for_task(task.task_id):
             record = self.children.get(declaration["child_id"])
+            runtime = self.children.runtime(declaration["child_id"])
             state, outcome = self._orphaned_child_state(task, record)
             dispatch_count = 0 if record is None else record.dispatch_count
             rows.append(
@@ -2525,6 +2530,9 @@ class F3RuntimeIntegration:
                         "state": state,
                         "normalized_outcome": outcome,
                         "dispatch_count": dispatch_count,
+                        "lock_recovery": self._lock_recovery_diagnostics(
+                            declaration, record, runtime, lock_records
+                        ),
                         "evidence_deadline": (
                             None
                             if record is None
@@ -2547,6 +2555,31 @@ class F3RuntimeIntegration:
                 }
             )
         return rows
+
+    def _lock_recovery_diagnostics(self, declaration, record, runtime, lock_records):
+        """Bounded projection; never an authority to release or dispatch."""
+        related = [item for item in lock_records if item.task_id == declaration["child_id"]]
+        now = self.service.now()
+        active = sum(item.conflict_hold or datetime.fromisoformat(item.lease_expires_at) > now
+                     for item in related)
+        missing = bool(related and record is not None and not record.lock_tokens)
+        result = runtime["reconciliation_result"]
+        category = {
+            "unrecorded_locks_authority_unresolved": "ownership_proof_unavailable",
+            "unrecorded_locks_storage_error": "storage_error",
+            "unrecorded_locks_unexpected_error": "unexpected_error",
+        }.get(result)
+        return {
+            "retained_lock_count": len(related), "active_lock_count": active,
+            "expired_lock_count": len(related) - active,
+            "token_persistence": "missing" if missing else (
+                "persisted" if record is not None and record.lock_tokens else "none_recorded"),
+            "waiting_for_claim_expiry": bool(missing and datetime.fromisoformat(record.claim_expires_at) > now),
+            "last_reconciliation_at": runtime["last_reconciliation_at"],
+            "last_failure_category": category,
+            "requires_manual_intervention": category == "ownership_proof_unavailable",
+            "next_retry_at": runtime["next_eligible_at"],
+        }
 
     def reconciliation_items(self) -> list[dict[str, Any]]:
         items = []
@@ -2626,6 +2659,9 @@ class F3RuntimeIntegration:
                     "last_reconciliation_at": runtime["last_reconciliation_at"],
                     "reconciliation_result": runtime["reconciliation_result"],
                     "last_readback_summary": runtime["last_readback_summary"],
+                    "lock_recovery": self._lock_recovery_diagnostics(
+                        declaration, record, runtime, lock_records
+                    ),
                 }
             )
             if len(items) >= 100:
@@ -2876,7 +2912,8 @@ class F3RuntimeIntegration:
         task_navigation = (
             self.service.task_repository.navigation_metrics()
         )
-        pending_reconciliation = bool(self.reconciliation_items())
+        reconciliation = self.reconciliation_items()
+        pending_reconciliation = bool(reconciliation)
         status = "manual_intervention_required" if holds else (
             "recovering"
             if child["nonterminal_execution_count"] or pending_reconciliation
@@ -2925,6 +2962,18 @@ class F3RuntimeIntegration:
             "fallback_count": self._fallback_count,
             "recovery_single_flight_collisions": self._sweep_collisions,
             "recovery_failures": self._sweep_failures,
+            "recovery_backlog": {
+                "returned_count": len(reconciliation),
+                "count_precision": "lower_bound" if len(reconciliation) == 100 else "exact",
+                "retained_lock_count": int(lock.get("current_active_lock_count", 0)) + int(lock.get("current_expired_lease_count", 0)),
+                "expired_lock_count": int(lock.get("current_expired_lease_count", 0)),
+                "pending_children": [
+                    {"child_id": item["child_id"], **item["lock_recovery"]}
+                    for item in reconciliation[:16]
+                ],
+                "details_truncated": len(reconciliation) > 16,
+                "collection_truncated": len(reconciliation) == 100,
+            },
             "recovery_cadence_seconds": RECOVERY_CADENCE_SECONDS,
             "recovery_batch_size": RECOVERY_BATCH_SIZE,
             "lock_profile": {
@@ -3378,6 +3427,9 @@ class F3RuntimeIntegration:
         declaration: dict[str, Any], record: Any, lock_record: Any
     ) -> bool:
         identity = record.execution_identity()
+        expected_operation = (declaration["capability_id"]
+                              if declaration["plan_contract_version"] in {1, 2}
+                              else declaration["operation_id"])
         token_matches = [
             item
             for item in record.lock_tokens
@@ -3392,8 +3444,8 @@ class F3RuntimeIntegration:
             and lock_record.task_id == declaration["child_id"]
             and identity.plan_id == declaration["plan_id"]
             and lock_record.plan_id == declaration["plan_id"]
-            and record.operation == declaration["operation_id"]
-            and lock_record.operation_id == declaration["operation_id"]
+            and record.operation == expected_operation
+            and lock_record.operation_id == expected_operation
             and identity.attempt_id == declaration["attempt_id"]
             and lock_record.attempt_id == declaration["attempt_id"]
         )
@@ -3457,6 +3509,34 @@ class F3RuntimeIntegration:
         )
         if not lock_records:
             return 0
+        if not record.lock_tokens:
+            parent = self.service.task_repository.get(declaration["public_task_id"])
+            if (parent is None or not self._is_terminal_zero_dispatch_parent(parent)
+                or parent.plan_id != declaration["plan_id"]
+                or parent.plan_hash != declaration["plan_hash"]
+                or parent.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY
+                or child_id not in parent.legacy_projection.get("child_execution_ids", ())):
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+
+            def settle(current_declaration, current_record, persist):
+                if current_declaration != declaration:
+                    raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                identity = current_record.execution_identity()
+                return self.locks.settle_unrecorded(
+                    owner=LockOwner(owner_id=identity.owner_id, task_id=identity.task_id,
+                                    plan_id=identity.plan_id, operation_id=current_record.operation,
+                                    attempt_id=identity.attempt_id),
+                    expected_records=tuple(lock_records),
+                    complete_request_hash=current_declaration["complete_lock_request_hash"],
+                    execution_created_at=current_record.created_at,
+                    execution_updated_at=current_record.updated_at,
+                    persist_tokens=persist, timing=PRODUCTION_LOCK_TIMING,
+                    now=self.service.now(),
+                )
+
+            return self.children.settle_unrecorded_locks(
+                child_id, now=self.service.now(), settle=settle,
+            )
         if any(
             not self._lock_record_matches_execution_authority(
                 declaration, record, item
@@ -3509,6 +3589,10 @@ class F3RuntimeIntegration:
         record = self.children.get(child_id)
         if record is None or record.dispatch_intent is not None:
             return False, False
+        if (not record.lock_tokens and datetime.fromisoformat(record.claim_expires_at) > now
+            and self._related_lock_records(declaration, record, self.locks.records())):
+            # Never cancel or reconstruct acquisition while its owner can run.
+            return False, False
         terminalized = False
         if not record.terminal:
             if not self.children.cancel(
@@ -3523,6 +3607,9 @@ class F3RuntimeIntegration:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
 
         self._release_orphaned_child_locks(declaration, record)
+        record = self.children.get(child_id)
+        if record is None:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
         if self._related_lock_records(
             declaration, record, self.locks.records()
         ):
@@ -3633,7 +3720,7 @@ class F3RuntimeIntegration:
                     declaration, now=now
                 )
                 terminalized += int(child_terminalized)
-            except Exception:
+            except Exception as exc:
                 self._sweep_failures += 1
                 runtime = self.children.runtime(declaration["child_id"])
                 backoff = min(
@@ -3643,7 +3730,12 @@ class F3RuntimeIntegration:
                     declaration["child_id"],
                     changes={
                         "last_reconciliation_at": now.isoformat(),
-                        "reconciliation_result": "bounded_retry",
+                        "reconciliation_result": (
+                            ("unrecorded_locks_authority_unresolved" if isinstance(exc, (UnrecordedLockAuthorityError, LockOwnershipError, GovernanceError))
+                             else "unrecorded_locks_storage_error" if isinstance(exc, (ExecutionStorageError, LockStorageError))
+                             else "unrecorded_locks_unexpected_error")
+                            if record is not None and not record.lock_tokens else "bounded_retry"
+                        ),
                         "backoff_seconds": backoff,
                         "next_eligible_at": (
                             now + timedelta(seconds=backoff)

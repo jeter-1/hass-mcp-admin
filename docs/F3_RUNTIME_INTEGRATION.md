@@ -372,3 +372,46 @@ canonical plus 23 Engineering-native equals 48 local. Exact 7.14.2 remains
 78 advertised, 26 delegated, zero held, and 74 total. Exact 8.0.0 remains 78
 advertised, 24 delegated, two held, and 72 total. Held tools remain exactly
 `ha_search` and `ha_get_operation_status`.
+
+## Terminal tokenless configuration-lock settlement (source candidate)
+
+For contract-1/2 configuration children only, the immutable declaration identifies
+the capability, prepared-operation hash, target, plan/hash, attempt and complete
+sequence lock hash. Execution records use the capability name as `operation`;
+the declaration's `operation_id` is the plan's step label. Recovery compares the
+capability identity for these contracts. Other contract identities are unchanged.
+
+A terminal zero-dispatch parent and child may settle retained tokenless locks
+only when the child has no preflight/intent, its claim has expired, and the exact
+plan/hash/child membership, adapter, target and attempt agree. Under the child
+execution transaction and then the lock-store transaction, recovery rechecks:
+
+- all records for that child are the exact observed snapshot and exact owner;
+- the entire immutable key/scope/mode/reason union hashes identically;
+- no hold, active lease or renewal exists;
+- acquisition is one timestamp within the execution's recorded lifetime with
+  consecutive byte-sorted generations.
+
+The existing generations are first written to the child record, preserving the
+terminal outcome, and only then removed from the lock store. A binding failure
+leaves all locks; a crash or lock write failure after binding leaves normal
+exact-token recovery available. A raced replacement, later acquisition, partial
+union, different owner, wrong hash, hold or uncertain dispatch leaves the records
+untouched. These checks assume the existing trusted local storage boundary;
+ordinary hashes neither authenticate an owner nor withstand arbitrary coordinated
+storage forgery. No live provider is consulted to construct historical authority.
+
+The durable binding uses the existing terminal event vocabulary and a fixed
+`unrecorded_lock_tokens_bound` diagnostic. Existing restart-safe event auditing
+and orphan reconciliation supply the audit trail outside transaction callbacks.
+Known-active tokenless claims with retained locks are deferred, not cancelled.
+Children that never acquired locks retain existing cancellation behavior.
+
+`get_execution_task` child projections and reconciliation items add bounded
+`lock_recovery` diagnostics: retained/active/expired counts, token persistence,
+claim-expiry deferral, last reconciliation time, fixed failure category, retry
+eligibility and manual-intervention requirement. Health adds `recovery_backlog`
+with the existing 100-item scan cap, sixteen child details, precision and omission
+flags. Cumulative recovery failures remain cumulative. A zero active-lock count
+must not be interpreted as zero retained expired locks. These are diagnostic
+additions; no tool input, registration, provider route or approval state changes.

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -19,6 +20,7 @@ from typing import Any, TypeVar
 from .models import (
     LOCK_RECORD_SCHEMA_VERSION,
     LOCK_STATE_SCHEMA_VERSION,
+    MAX_LOCK_TOKENS,
     LockHandle,
     LockOwner,
     LockRecord,
@@ -31,6 +33,7 @@ from .models import (
     timestamp,
     utc_now,
     validate_lock_key,
+    validate_sha256,
 )
 from .observability import EventSink, LockMetrics, null_event_sink
 
@@ -130,6 +133,8 @@ def normalize_lock_requests(
             key,
             {"scopes": set(), "mode": "shared", "reasons": set()},
         )
+        if len(merged) > MAX_LOCK_TOKENS:
+            raise ValueError("complete lock set exceeds the lock-token limit")
         entry["scopes"].update(scopes)
         entry["reasons"].update(canonical_reasons)
         if mode == "exclusive":
@@ -570,7 +575,9 @@ class DurableLockStore:
         self.metrics.increment("renewals")
         return result
 
-    def release(self, handle: LockHandle) -> tuple[str, ...]:
+    def release(
+        self, handle: LockHandle, *, pre_dispatch_cleanup: bool = False
+    ) -> tuple[str, ...]:
         handle.validate()
         reverse_tokens = tuple(reversed(handle.tokens))
 
@@ -584,6 +591,8 @@ class DurableLockStore:
                 ]
                 if len(matches) != 1 or not self._same_owner(matches[0], handle.owner):
                     raise LockOwnershipError("durable lock release was fenced")
+                if pre_dispatch_cleanup and (matches[0].conflict_hold or matches[0].mode != token.mode):
+                    raise LockOwnershipError("pre-dispatch cleanup authority changed")
                 selected.append(matches[0])
             self._inject("during_lock_release")
             for record in selected:
@@ -597,7 +606,9 @@ class DurableLockStore:
             self.metrics.increment("fencing_rejections")
             raise
         self.metrics.increment("releases")
-        for key in released:
+        # Cleanup is audited by the durable execution event after the caller
+        # leaves its execution transaction; callbacks here would re-enter it.
+        for key in (() if pre_dispatch_cleanup else released):
             self.event_sink(
                 {
                     "event_type": "lock_released",
@@ -608,6 +619,84 @@ class DurableLockStore:
                 }
             )
         return released
+
+    def settle_unrecorded(
+        self,
+        *,
+        owner: LockOwner,
+        expected_records: tuple[LockRecord, ...],
+        complete_request_hash: str,
+        execution_created_at: str,
+        execution_updated_at: str,
+        persist_tokens: Callable[[LockHandle], None],
+        timing: LockTiming,
+        now: datetime,
+    ) -> int:
+        """Bind then release one complete pre-intent acquisition atomically.
+
+        Caller holds the execution transaction and proves terminal zero-dispatch
+        authority from the immutable configuration child declaration. Only the
+        exact observed, expired, never-renewed, non-held acquisition is eligible.
+        A partial set, newer snapshot or any ownership mismatch is not repaired.
+        """
+        owner.validate()
+        timing.validate()
+        validate_sha256(complete_request_hash, field_name="complete lock hash")
+        if not expected_records or len(expected_records) > MAX_LOCK_TOKENS:
+            raise LockOwnershipError("unrecorded lock proof is incomplete")
+        created = parse_timestamp(execution_created_at, field_name="created_at")
+        updated = parse_timestamp(execution_updated_at, field_name="updated_at")
+
+        def mutate(state: dict[str, Any]) -> tuple[int, bool]:
+            selected = sorted(
+                (item for item in state["records"] if item.task_id == owner.task_id),
+                key=lambda item: item.key.encode("utf-8"),
+            )
+            expected = sorted(expected_records, key=lambda item: item.key.encode("utf-8"))
+            if selected != expected or any(
+                not self._same_owner(item, owner)
+                or item.conflict_hold
+                or self._record_active(item, now)
+                or item.last_renewed_at != item.acquired_at
+                or not created <= parse_timestamp(item.acquired_at, field_name="acquired_at") <= updated
+                for item in selected
+            ):
+                raise LockOwnershipError("unrecorded lock authority changed")
+            # One atomic acquisition has a single timestamp and consecutive
+            # byte-sorted generations. The immutable hash proves the full set.
+            if len({item.acquired_at for item in selected}) != 1 or any(
+                right.generation != left.generation + 1
+                for left, right in zip(selected, selected[1:])
+            ):
+                raise LockOwnershipError("unrecorded acquisition is inconsistent")
+            payload = [{"key": item.key, "scopes": list(item.scopes),
+                        "mode": item.mode, "reason_codes": list(item.evidence_references)}
+                       for item in selected]
+            digest = hashlib.sha256(json.dumps(payload, sort_keys=True,
+                                    separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
+            if digest != complete_request_hash:
+                raise LockOwnershipError("unrecorded complete lock hash mismatched")
+            handle = LockHandle(
+                owner=owner,
+                tokens=tuple(LockToken(item.key, item.generation, item.mode) for item in selected),
+                acquired_at=selected[0].acquired_at,
+                lease_expires_at=selected[0].lease_expires_at,
+                timing=timing,
+            )
+            handle.validate()
+            # If this durable write fails, no lock changes. If process loss
+            # occurs afterward, the original generation tokens are recoverable.
+            persist_tokens(handle)
+            self._inject("after_unrecorded_token_binding_before_release")
+            for item in selected:
+                state["records"].remove(item)
+            return len(selected), True
+
+        count = self._transact(mutate)
+        self.metrics.increment("releases")
+        # The bound durable child event and existing orphan-reconciliation
+        # event are audited outside the enclosing execution transaction.
+        return count
 
     def promote_to_conflict_hold(
         self,
