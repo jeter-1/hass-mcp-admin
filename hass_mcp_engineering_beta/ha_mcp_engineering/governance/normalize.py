@@ -285,6 +285,23 @@ def _validate_simple_action(
     value: dict[str, Any], family: str
 ) -> None:
     allowed = AUTOMATION_SIMPLE_ACTION_FIELDS[family]
+    if family == "condition" and value[family] == "trigger":
+        # A trigger condition's id is behavioral, unlike the top-level
+        # automation id. Keep its exact scalar/list form, order and values;
+        # this admits reviewed syntax without introducing coercion or a new
+        # verification equivalence. Do not admit id on other condition types.
+        allowed = AUTOMATION_ACTION_STEP_MODIFIERS | {"condition", "id"}
+        trigger_ids = value.get("id")
+        if not (
+            isinstance(trigger_ids, str)
+            or (
+                isinstance(trigger_ids, list)
+                and all(isinstance(item, str) for item in trigger_ids)
+            )
+        ):
+            raise AutomationVerificationNormalizationError(
+                "unsupported automation trigger condition ids"
+            )
     if not set(value).issubset(allowed):
         raise AutomationVerificationNormalizationError(
             "unsupported automation simple action fields"
@@ -627,9 +644,9 @@ def normalize_automation_for_verification(
     """Normalize only reviewed Home Assistant readback equivalences.
 
     This representation is deliberately separate from immutable plan binding
-    and stale-state fingerprints. It is used only after a configuration write
-    (or while proving the already-written state) and never changes the payload
-    dispatched to Home Assistant.
+    and stale-state fingerprints. It proves candidate comparability before
+    dispatch and compares readback after a configuration write (or while
+    proving the already-written state). It never changes the dispatched payload.
     """
 
     if config is not None:

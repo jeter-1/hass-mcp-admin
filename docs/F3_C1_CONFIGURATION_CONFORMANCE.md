@@ -119,7 +119,12 @@ The accepted order is:
 Preflight validates exact prepared identity, plan/task/operation/target,
 expiration, policy and approval hashes, risk evidence, provider admission,
 complete locks, static schema, full Home Assistant configuration validity,
-create absence or update existence, and the exact current fingerprint. The
+reflexive candidate comparability under the readback verifier, create absence
+or update existence, and the exact current fingerprint. Unsupported comparison
+syntax returns `configuration_not_verifiable` before approval consumption or
+provider mutation. Existing configuration-validation failures retain precedence.
+This check is per operation; it does not make a multi-operation sequence atomic.
+The
 last mutable-state decision is the authoritative read at the end of preflight.
 Stale state is rejected; the proposal is never rebased.
 
@@ -140,6 +145,13 @@ Provider response is not success. Observation rereads the exact target and
 compares canonical identity, existence, resource-specific normalized content,
 expected proposed hash, and post-write configuration validity. Evidence retains
 only hashes and bounded mismatch categories.
+
+Standalone `condition: trigger` actions accept an `id` string or list of strings,
+including in supported nested action sequences. The verifier preserves their
+exact form, order, and values; it never drops an inner `id` as resource metadata.
+Other condition subtypes do not gain an `id` field. See the
+[trigger-condition verification contract](TRIGGER_CONDITION_VERIFICATION.md)
+for source authority, tests, and historical-task limitations.
 
 Exact readback produces `succeeded_verified`. A different authoritative result
 produces `verification_mismatch`. Unreadable evidence remains `observing` until
