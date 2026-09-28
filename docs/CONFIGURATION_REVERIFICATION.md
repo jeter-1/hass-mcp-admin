@@ -154,10 +154,12 @@ principal separation or renewed execution permission is implied by this call.
 
 This isolated source candidate adds one static tool: expected healthy inventory
 80 = 55 static + 25 delegated. It does not include the separate Alarmo candidate.
-Version declarations remain unchanged pending a release decision; deployed beta.6
-inventory is not inferred from this candidate. Existing descriptors, admission,
-provider fallback, stable-v1, packaging, signed registries and workflows are outside
-scope. Release metadata validation remains a separate required gate.
+This implementation is included in the materialized 2.4.0-beta.7 candidate; source
+metadata does not establish publication, deployment or installed acceptance.
+Existing descriptors, admission, provider fallback, stable-v1, package construction,
+signed registries and workflows are preserved. See the
+[beta.7 acceptance contract](V2_4_0_BETA7_ACCEPTANCE.md) for the distinct release,
+installation and exact historical-task observation gates.
 
 ## Validation and later acceptance
 

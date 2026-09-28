@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.0-beta.7 - Configuration verification and dated re-verification
+
+- Preserve literal standalone trigger-condition IDs in verification; refuse
+  unsupported comparisons before that operation consumes approval or dispatches.
+- Add native configuration-task re-verification with exact original history,
+  reconstructed approval/consumption witnesses, current read authority, all-object
+  readback/check and bounded durable supplementary receipts. No configuration
+  resend, device action, renewed approval or original-outcome rewriting.
+- Preserve dated replay and truthful partial/refusal/uncertain-persistence results;
+  no automatic re-verification, retries, fallback or evidence pruning. Keep the
+  optional receipt namespace during rollback and preserve beta.6 recovery limits.
+- Catalog: 80 tools (55 static + 25 delegated). Preserve existing input contracts,
+  admission, installation settings, dependencies, workflows and frozen stable-v1.
+  Alarmo is excluded. Release preparation does not establish installed acceptance.
+
 ## 2.4.0-beta.6 - F3 lock persistence and exact recovery
 
 - Separate a 256-lock capacity from unchanged evidence limits; support complete
