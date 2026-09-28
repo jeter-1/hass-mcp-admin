@@ -367,3 +367,230 @@ class ConfigurationReverificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["data"]["review_resolved"], result)
         self.assertEqual(len(self.gateway.calls), 3)
         self.assert_unchanged()
+
+    async def test_approval_grant_and_consumption_witnesses_must_agree(self):
+        plan_path = self.root / 'plans' / (self.plan.plan_id + '.json')
+        task_path = next((self.root / 'plans' / 'execution-tasks-v1').glob('*.json'))
+        child_path = next((self.root / 'plans' / 'f3-child-execution-v1').glob('*.child.json'))
+        cases = [
+            (plan_path, ('approval', 'approver_principal'), 'different_synthetic_principal'),
+            (plan_path, ('approval', 'consumed_at'), '2026-07-24T12:00:00+00:00'),
+            (plan_path, ('apply_request_id',), 'different_synthetic_request'),
+            (task_path, ('approval_reference', 'plan_approval', 'consumed_at'), None),
+            (child_path, ('runtime', 'approval_consumption_reference', 'plan_hash'), 'b' * 64),
+            (child_path, ('runtime', 'approval_consumption_reference', 'policy_decision_hash'), 'b' * 64),
+            (child_path, ('runtime', 'approval_consumption_reference', 'public_task_id'), 'b' * 32),
+            (child_path, ('runtime', 'approval_consumption_reference', 'sequence_hash'), 'b' * 64),
+            (child_path, ('runtime', 'approval_consumption_reference', 'consumed_at'), None),
+            (child_path, ('runtime', 'approval_consumption_reference'), None),
+            (child_path, ('declaration', 'approval_bundle_hash'), 'b' * 64),
+        ]
+        for path, keys, changed in cases:
+            original = path.read_bytes()
+            with self.subTest(keys=keys):
+                try:
+                    value = json.loads(original)
+                    target = value
+                    for key in keys[:-1]:
+                        target = target[key]
+                    target[keys[-1]] = changed
+                    path.write_text(json.dumps(value))
+                    result = await self.run_check(request_id=str(uuid.uuid4()))
+                    self.assertFalse(result['review_resolved'], result)
+                    self.assertEqual(self.gateway.calls, [])
+                finally:
+                    path.write_bytes(original)
+        self.assertTrue((await self.run_check())['review_resolved'])
+        self.assert_unchanged()
+
+    async def test_consumption_witness_drift_during_reads_preserves_partial_evidence(self):
+        child = next((self.root / 'plans' / 'f3-child-execution-v1').glob('*.child.json'))
+        original = child.read_bytes()
+        read = self.gateway.read
+        async def drift(*args):
+            result = await read(*args)
+            data = json.loads(original)
+            data['runtime']['approval_consumption_reference']['consumed_at'] = '2026-07-24T12:00:00+00:00'
+            child.write_text(json.dumps(data))
+            return result
+        try:
+            with patch.object(self.gateway, 'read', side_effect=drift):
+                result = await self.run_check()
+            self.assertEqual(result['status'], 'integrity_failure', result)
+            self.assertEqual(len(result['operations']), 2)
+            self.assertFalse(result['review_resolved'])
+        finally:
+            child.write_bytes(original)
+        self.assert_unchanged()
+
+    async def test_fresh_preflight_refusals_supersede_success_durably_without_reads(self):
+        from contextlib import ExitStack
+        plan_path = self.root / 'plans' / (self.plan.plan_id + '.json')
+        plan_bytes = plan_path.read_bytes()
+        for cause in ('audit', 'core', 'legacy_conflict', 'original_lock', 'source'):
+            with self.subTest(cause=cause):
+                accepted_id = str(uuid.uuid4())
+                self.assertTrue((await self.run_check(request_id=accepted_id))['review_resolved'])
+                calls = list(self.gateway.calls)
+                held = None
+                try:
+                    with ExitStack() as context:
+                        if cause == 'audit':
+                            context.enter_context(patch.object(self.service.audit, 'enabled', False))
+                        elif cause == 'core':
+                            context.enter_context(patch.object(self.runtime, 'core_runtime', None))
+                        elif cause == 'legacy_conflict':
+                            context.enter_context(patch.object(self.runtime, '_has_active_legacy_conflict', return_value=True))
+                        elif cause == 'original_lock':
+                            task, _, _, requests, _ = await self.reverification._history(self.binding)
+                            owner = LockOwner('original-owner', task.legacy_projection['child_execution_ids'][0],
+                                              self.plan.plan_id, 'synthetic', 'synthetic-attempt')
+                            held = self.runtime.locks.acquire_once(requests, owner=owner, timing=TIMING, now=self.service.now())
+                        else:
+                            data = json.loads(plan_bytes)
+                            data['approval']['approver_principal'] = 'different_synthetic_principal'
+                            plan_path.write_text(json.dumps(data))
+                        refused_id = str(uuid.uuid4())
+                        result = await self.run_check(request_id=refused_id)
+                        self.assertFalse(result['review_resolved'], result)
+                        self.assertTrue(result['receipt_persisted'], result)
+                        if cause == 'audit':
+                            self.assertIsNone(result['audit_event_id'])
+                    self.assertEqual(self.gateway.calls, calls)
+                    self.runtime.configuration_reverification = ConfigurationReverification(self.runtime, str(self.root / 'plans'))
+                    self.reverification = self.runtime.configuration_reverification
+                    projected = self.service.get_execution_task(self.binding['task_id'])['review_resolution']
+                    self.assertFalse(projected['review_resolved'], projected)
+                    self.assertEqual(projected['request_id'], refused_id)
+                    replay = await self.run_check(request_id=accepted_id)
+                    self.assertTrue(replay['review_resolved'])
+                    self.assertTrue(replay['replayed'])
+                    self.assertEqual(self.gateway.calls, calls)
+                    self.assertFalse(self.service.get_execution_task(self.binding['task_id'])['review_resolution']['review_resolved'])
+                finally:
+                    plan_path.write_bytes(plan_bytes)
+                    if held is not None:
+                        self.runtime.locks.release(held)
+        self.assert_unchanged()
+
+    async def test_bad_binding_cannot_supersede_dated_success(self):
+        self.assertTrue((await self.run_check())['review_resolved'])
+        calls = list(self.gateway.calls)
+        for change in ({'expected_plan_hash': 'b' * 64}, {'request_id': 'invalid'}, {'task_id': 'a' * 32}):
+            result = await self.run_check(**{'request_id': str(uuid.uuid4()), **change})
+            self.assertFalse(result['review_resolved'])
+            self.assertTrue(self.service.get_execution_task(self.binding['task_id'])['review_resolution']['review_resolved'])
+        self.assertEqual(self.gateway.calls, calls)
+        self.assert_unchanged()
+
+    async def test_unpersisted_fresh_refusal_reports_uncertainty(self):
+        self.assertTrue((await self.run_check())['review_resolved'])
+        original = self.reverification.store.path.read_bytes()
+        def fail(stage):
+            if stage == 'before_replace':
+                raise OSError('SYNTHETIC_PRIVATE_STORAGE_ERROR')
+        self.reverification.store.fault_hook = fail
+        with patch.object(self.service.audit, 'enabled', False):
+            result = await self.run_check(request_id=str(uuid.uuid4()))
+        self.assertEqual(result['status'], 'evidence_persistence_failed')
+        self.assertTrue(result['evidence_uncertain'])
+        self.assertFalse(result['receipt_persisted'])
+        self.assertFalse(self.service.get_execution_task(self.binding['task_id'])['review_resolution']['review_resolved'])
+        self.assertEqual(original, self.reverification.store.path.read_bytes())
+        self.reverification.store.fault_hook = None
+        self.assert_unchanged()
+
+    async def test_receipt_read_damage_and_io_errors_have_fixed_distinct_outcomes(self):
+        self.assertTrue((await self.run_check())['review_resolved'])
+        store = self.reverification.store
+        original = store.path.read_bytes()
+        calls = list(self.gateway.calls)
+        damaged = json.loads(original)
+        damaged['events'][0]['hash'] = 'f' * 64
+        for raw in ('invalid JSON SYNTHETIC_PRIVATE_BODY', json.dumps(damaged)):
+            store.path.write_text(raw)
+            result = await self.run_check(request_id=str(uuid.uuid4()))
+            self.assertEqual(result['status'], 'integrity_failure')
+            self.assertNotIn('SYNTHETIC_PRIVATE_BODY', json.dumps(result))
+        store.path.write_bytes(original)
+        with patch.object(store, 'read', side_effect=ReceiptStorageError('receipt_storage_unavailable')):
+            result = await self.run_check(request_id=str(uuid.uuid4()))
+        self.assertEqual(result['status'], 'evidence_unavailable')
+        self.assertEqual(self.gateway.calls, calls)
+        self.assert_unchanged()
+
+    async def test_tool_outer_timeout_is_reported_but_external_cancellation_is_not(self):
+        from ha_mcp_engineering.tools import get_registered_server, registered_tools, governance
+        from ha_mcp_engineering.governance import configuration_reverification as module
+        from ha_mcp_engineering.request_context import begin_request, end_request
+        entered = asyncio.Event()
+        async def hung(*args):
+            entered.set()
+            await asyncio.Event().wait()
+        tool = registered_tools(get_registered_server())['reverify_configuration_task']
+        with patch.object(self.gateway, 'read', side_effect=hung), patch.object(module, 'DEADLINE_SECONDS', .02), patch.object(governance.GOVERNANCE, 'require', return_value=self.service):
+            result = json.loads(await tool.run(self.binding))
+        self.assertEqual(result['data']['status'], 'read_timeout')
+        self.assertTrue(result['timing']['timeout_occurred'])
+        self.assertEqual(result['timing']['retry_count'], 0)
+        # Resolve the interrupted request, then externally cancel a fresh one.
+        await self.run_check()
+        entered.clear()
+        telemetry, token = begin_request()
+        try:
+            with patch.object(self.gateway, 'read', side_effect=hung):
+                pending = asyncio.create_task(self.run_check(request_id=str(uuid.uuid4())))
+                await asyncio.wait_for(entered.wait(), 2)
+                pending.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await pending
+            self.assertFalse(telemetry.timeout_occurred)
+            self.assertEqual(telemetry.ha_active_requests, 0)
+        finally:
+            end_request(token)
+        self.assert_unchanged()
+
+    async def test_authenticated_invalid_fields_do_not_echo_private_names_or_values(self):
+        from tests.test_rc2dev6_auth_audit import asgi_request
+        from tests.test_beta_observability import settings
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.routing import AuthenticatedMcpGateway
+        from ha_mcp_engineering.tools import get_registered_server, registered_tools, governance
+        tool = registered_tools(get_registered_server())['reverify_configuration_task']
+        async def app(scope, receive, send):
+            rpc = json.loads((await receive())['body'])
+            rendered = await tool.run(rpc['params']['arguments'])
+            payload = {'jsonrpc': '2.0', 'id': rpc['id'], 'result': {'content': [{'type': 'text', 'text': rendered}], 'isError': False}}
+            await send({'type': 'http.response.start', 'status': 200, 'headers': [(b'content-type', b'application/json')]})
+            await send({'type': 'http.response.body', 'body': json.dumps(payload).encode()})
+        path = self.root / 'synthetic-auth-audit.jsonl'
+        configured = settings(str(path))
+        gateway = AuthenticatedMcpGateway(app, configured, AuditLogger(str(path), configured.access_secret))
+        marker = 'SYNTHETIC_PRIVATE_UNTRUSTED_TEXT'
+        for extra in ({marker: marker}, {marker * 100: marker}, {'task_id': marker}, {'request_id': marker}, {'expected_plan_hash': marker}, {'force': marker}):
+            rpc = {'jsonrpc': '2.0', 'id': 'synthetic-audit-input', 'method': 'tools/call', 'params': {'name': tool.name, 'arguments': {**self.binding, **extra}}}
+            with patch.object(governance.GOVERNANCE, 'require', return_value=self.service):
+                status, response, _ = await asgi_request(gateway, f'/{configured.access_secret}/mcp', body=json.dumps(rpc).encode())
+            self.assertEqual(status, 200)
+            self.assertNotIn(marker, response.decode())
+            self.assertNotIn(marker, path.read_text())
+        self.assertEqual(self.gateway.calls, [])
+        self.assert_unchanged()
+
+    async def test_uncertain_start_commit_does_not_attempt_a_second_write(self):
+        self.assertTrue((await self.run_check())['review_resolved'])
+        calls = list(self.gateway.calls)
+        stages = []
+        def fail(stage):
+            stages.append(stage)
+            if stage == 'after_replace':
+                raise OSError('SYNTHETIC_PRIVATE_DURABILITY')
+        self.reverification.store.fault_hook = fail
+        result = await self.run_check(request_id=str(uuid.uuid4()))
+        self.assertEqual(result['status'], 'evidence_persistence_failed')
+        self.assertTrue(result['receipt_commit_unknown'])
+        self.assertTrue(result['evidence_uncertain'])
+        self.assertEqual(stages, ['before_write', 'before_replace', 'after_replace'])
+        self.assertEqual(self.gateway.calls, calls)
+        self.assertFalse(self.service.get_execution_task(self.binding['task_id'])['review_resolution']['review_resolved'])
+        self.assert_unchanged()

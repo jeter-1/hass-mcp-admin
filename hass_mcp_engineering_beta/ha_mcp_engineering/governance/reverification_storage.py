@@ -21,6 +21,12 @@ MODEL = "configuration-reverification-v1"
 MAX_EVENTS = 512
 MAX_EVENT_BYTES = 262_144
 MAX_STORE_BYTES = 16 * 1024 * 1024
+REFUSAL_STATUSES = frozenset({
+    "unsupported_history", "read_authority_or_audit_unavailable", "concurrent_change",
+    "original_execution_locks_unresolved", "read_timeout", "integrity_failure",
+    "history_unavailable", "history_or_read_unavailable", "evidence_unavailable",
+    "evidence_persistence_failed", "receipt_capacity_exceeded",
+})
 
 
 class ReceiptStorageError(RuntimeError):
@@ -69,11 +75,26 @@ def validate_body(kind, body):
                 keys.append(request["key"])
             if keys != sorted(set(keys)):
                 raise ValueError
+        elif kind == "refused":
+            at = datetime.fromisoformat(body["checked_at"])
+            if (set(body) != {"binding", "plan_id", "checked_at", "status", "review_resolved",
+                             "receipt_persisted", "replayed", "audit_event_id", "fallback",
+                             "configuration_mutations", "device_commands", "approval_consumptions", "redispatches"}
+                    or body["status"] not in REFUSAL_STATUSES
+                    or body["review_resolved"] is not False
+                    or body["receipt_persisted"] is not False or body["replayed"] is not False
+                    or body["fallback"] != "none"
+                    or (body["audit_event_id"] is not None
+                        and not re.fullmatch(r"[a-f0-9]{64}", body["audit_event_id"]))
+                    or any(type(body[key]) is not int or body[key] != 0 for key in (
+                        "configuration_mutations", "device_commands", "approval_consumptions", "redispatches"))):
+                raise ValueError
         elif kind == "finished":
             at = datetime.fromisoformat(body["checked_at"])
             statuses = {"current_configuration_verified", "configuration_mismatch", "read_unavailable",
                         "authority_unavailable", "authority_changed", "concurrent_change",
-                        "read_timeout", "authority_cleanup_failed", "interrupted_read"}
+                        "read_timeout", "authority_cleanup_failed", "interrupted_read",
+                        "integrity_failure", "history_unavailable"}
             if (body["status"] not in statuses
                     or type(body["review_resolved"]) is not bool
                     or body["review_resolved"] != (body["status"] == "current_configuration_verified")
@@ -152,7 +173,7 @@ class ReverificationStore:
                 if (not isinstance(event, dict)
                         or set(event) != {"sequence", "kind", "body", "previous", "hash"}
                         or type(event["sequence"]) is not int or event["sequence"] != index
-                        or event["kind"] not in {"started", "finished"}
+                        or event["kind"] not in {"started", "finished", "refused"}
                         or not isinstance(event["body"], dict)
                         or len(encoded(event)) > MAX_EVENT_BYTES
                         or event["previous"] != previous):
@@ -165,7 +186,15 @@ class ReverificationStore:
                         or not all(isinstance(v, str) for v in binding.values())):
                     raise ReceiptStorageError("receipt_storage_invalid")
                 request_id = binding["request_id"]
-                if event["kind"] == "started":
+                if event["kind"] == "refused":
+                    if (request_id in started or any(k not in finished for k in started)
+                            or not any(prior["binding"]["task_id"] == binding["task_id"]
+                                       and prior["binding"]["expected_plan_hash"] == binding["expected_plan_hash"]
+                                       and prior["plan_id"] == body["plan_id"] for prior in started.values())):
+                        raise ReceiptStorageError("receipt_sequence_invalid")
+                    started[request_id] = body
+                    finished.add(request_id)
+                elif event["kind"] == "started":
                     if request_id in started or any(k not in finished for k in started):
                         raise ReceiptStorageError("receipt_sequence_invalid")
                     started[request_id] = body
@@ -184,7 +213,9 @@ class ReverificationStore:
             return value["events"]
         except ReceiptStorageError:
             raise
-        except (OSError, ValueError, TypeError, RecursionError, OverflowError):
+        except (ValueError, TypeError, RecursionError, OverflowError):
+            raise ReceiptStorageError("receipt_integrity_failure") from None
+        except OSError:
             raise ReceiptStorageError("receipt_storage_unavailable") from None
 
     @contextmanager
@@ -256,7 +287,15 @@ class ReceiptTransaction:
             raise ReceiptStorageError("receipt_capacity_exceeded")
         validate_body(kind, body)
         prior = self.events[-1] if self.events else None
-        if kind == "started":
+        if kind == "refused":
+            binding = body["binding"]
+            if ((prior is not None and prior["kind"] == "started")
+                    or any(e["body"]["binding"]["request_id"] == binding["request_id"] for e in self.events)
+                    or not any(e["body"]["binding"]["task_id"] == binding["task_id"]
+                               and e["body"]["binding"]["expected_plan_hash"] == binding["expected_plan_hash"]
+                               and e["body"]["plan_id"] == body["plan_id"] for e in self.events)):
+                raise ReceiptStorageError("receipt_sequence_invalid")
+        elif kind == "started":
             if ((prior is not None and prior["kind"] == "started")
                     or any(e["body"]["binding"]["request_id"] == body["binding"]["request_id"] for e in self.events)):
                 raise ReceiptStorageError("receipt_sequence_invalid")

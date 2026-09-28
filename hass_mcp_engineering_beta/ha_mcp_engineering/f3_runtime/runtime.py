@@ -1189,6 +1189,32 @@ class F3RuntimeIntegration:
             value.approval.elevated_risk_acknowledgement.state = ApprovalState.APPROVED
         return value
 
+    def _historical_approval_witnesses(self, plan, task, declarations):
+        """Check consumed history against its original grant without renewing it."""
+        approval_hash = _approval_bundle_hash(self._approved_copy(plan))
+        sequence_hash = task.legacy_projection.get("sequence_hash")
+        if (plan.apply_request_id != task.execution_request_id
+                or task.approval_reference != self.service._task_approval_reference(plan)
+                or sequence_hash != self.children.manifest_for_task(task.task_id)["sequence_hash"]):
+            raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
+        expected = {
+            "plan_hash": task.plan_hash,
+            "policy_decision_hash": plan.approval.policy_decision_hash,
+            "approval_bundle_hash": approval_hash,
+            "public_task_id": task.task_id,
+            "sequence_hash": sequence_hash,
+            "consumed_at": plan.approval.consumed_at,
+        }
+        witnesses = []
+        for declaration in declarations:
+            witness = self.children.runtime(declaration["child_id"])["approval_consumption_reference"]
+            if (declaration["approval_bundle_hash"] != approval_hash
+                    or declaration["request_id"] != task.execution_request_id
+                    or witness != expected):
+                raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
+            witnesses.append(witness)
+        return witnesses
+
     async def _prepare(
         self,
         plan: Any,

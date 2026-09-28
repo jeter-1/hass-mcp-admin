@@ -9,6 +9,7 @@ import time
 import uuid
 
 from ..clients.single_read import SINGLE_READ
+from ..errors import GovernanceError, ErrorCode
 from ..f3.locks import DurableLockStore, DurableLockError
 from ..f3.models import LockOwner, LockHandle, LockToken, LockTiming
 from ..ha_core_readmission.routes import f3_requirements
@@ -60,6 +61,7 @@ class ConfigurationReverification:
         self.runtime, self.service = runtime, runtime.service
         self.store = ReverificationStore(root)
         self.root = root
+        self.unrecorded_refusals = set()
 
     def _audit(self, body):
         audit = self.service.audit
@@ -143,6 +145,7 @@ class ConfigurationReverification:
             raise ReverificationRefused("unsupported_history")
         if not any(r is not None and r.normalized_outcome == "verification_mismatch" for r in records):
             raise ReverificationRefused("unsupported_history")
+        witnesses = runtime._historical_approval_witnesses(plan, task, declarations)
         prepared, requests = await runtime._load_prepared(plan, task)
         for declaration, record, operation in zip(declarations, records, prepared, strict=True):
             if (record is None or not record.terminal or record.dispatch_count != 1
@@ -158,12 +161,14 @@ class ConfigurationReverification:
                                              operation=operation, complete_requests=requests,
                                              record=record)
         identity = fingerprint({"plan": plan.to_dict(), "task": task.to_dict(),
-                                "declarations": declarations,
+                                "declarations": declarations, "approval_witnesses": witnesses,
                                 "records": [r.to_dict() for r in records]})
         return task, plan, prepared, requests, identity
 
     def projection(self, task):
         try:
+            if task.task_id in self.unrecorded_refusals:
+                raise ReceiptStorageError("receipt_evidence_unavailable")
             events = self.store.read()
             matching = [e for e in events if e["body"]["binding"]["task_id"] == task.task_id]
             if not matching:
@@ -171,7 +176,7 @@ class ConfigurationReverification:
             event = matching[-1]
             body = event["body"]
             valid = body["binding"]["expected_plan_hash"] == task.plan_hash
-            finished = event["kind"] == "finished"
+            finished = event["kind"] in {"finished", "refused"}
             return {
                 "model": "configuration-reverification-v1",
                 "status": body["status"] if valid and finished else "unresolved",
@@ -186,6 +191,81 @@ class ConfigurationReverification:
         except (ReceiptStorageError, KeyError, TypeError, ValueError):
             return {"status": "evidence_unavailable", "review_resolved": False,
                     "original_outcome_unchanged": True}
+
+    @staticmethod
+    def _storage_status(exc):
+        # Interpret only fixed internal diagnostics, never arbitrary exception text.
+        code = exc.args[0] if exc.args else None
+        if code in {"receipt_integrity_failure", "receipt_storage_invalid",
+                    "receipt_body_invalid", "receipt_sequence_invalid", "receipt_namespace_invalid"}:
+            return "integrity_failure"
+        if code == "receipt_capacity_exceeded":
+            return "receipt_capacity_exceeded"
+        if code in {"receipt_persistence_failed", "receipt_commit_unknown"}:
+            return "evidence_persistence_failed"
+        return "evidence_unavailable"
+
+    @staticmethod
+    def _history_status(exc):
+        if exc.code in {ErrorCode.APPROVAL_HASH_MISMATCH, ErrorCode.POLICY_SNAPSHOT_MISMATCH,
+                        ErrorCode.APPROVAL_SEQUENCE_FAILURE, ErrorCode.APPROVAL_PRINCIPAL_MISMATCH,
+                        ErrorCode.APPROVAL_AUTHORITY_MISMATCH}:
+            return "integrity_failure"
+        return "history_unavailable"
+
+    def _record_refusal(self, binding, result, transaction):
+        # Only a previously established exact task/hash can acquire a refusal
+        # projection. Invalid/mismatched input cannot supersede that evidence.
+        events = transaction.events
+        if any(e["body"]["binding"]["request_id"] == binding["request_id"] for e in events):
+            return result  # A durable pending/finished attempt already exists.
+        previous = next((e for e in reversed(events)
+                         if e["body"]["binding"]["task_id"] == binding["task_id"]
+                         and e["body"]["binding"]["expected_plan_hash"] == binding["expected_plan_hash"]), None)
+        if previous is None:
+            return result
+        if self.store.commit_unknown:
+            self.unrecorded_refusals.add(binding["task_id"])
+            return {**result, "evidence_uncertain": True, "receipt_commit_unknown": True}
+        body = _result(result["status"], binding=binding, plan_id=previous["body"]["plan_id"],
+                       checked_at=self.service.now().isoformat(), audit_event_id=None)
+        try:
+            body["audit_event_id"] = self._audit(body)
+        except ReverificationRefused:
+            # An unaudited refusal is never a successful observation. Preserve
+            # the absence of audit evidence rather than hiding the failed attempt.
+            pass
+        try:
+            event = transaction.append("refused", body)
+        except ReceiptStorageError as exc:
+            self.unrecorded_refusals.add(binding["task_id"])
+            return {**result, "observed_result": result["status"], "status": self._storage_status(exc),
+                    "evidence_uncertain": True, "receipt_commit_unknown": self.store.commit_unknown}
+        self.unrecorded_refusals.discard(binding["task_id"])
+        return {**body, "receipt_hash": event["hash"], "receipt_persisted": True}
+
+    async def _attempt(self, binding, transaction, locks):
+        try:
+            async with asyncio.timeout(DEADLINE_SECONDS):
+                result = await self._read_and_record(binding, transaction, locks)
+        except ReceiptStorageError as exc:
+            result = _result(self._storage_status(exc))
+        except ReverificationRefused as exc:
+            result = _result(str(exc))
+        except GovernanceError as exc:
+            result = _result(self._history_status(exc))
+        except TimeoutError:
+            telemetry = current_telemetry()
+            if telemetry is not None:
+                telemetry.timeout_occurred = True
+            result = _result("read_timeout")
+        except DurableLockError:
+            result = _result("concurrent_change")
+        except Exception:
+            result = _result("history_or_read_unavailable")
+        if result["review_resolved"]:
+            self.unrecorded_refusals.discard(binding["task_id"])
+        return self._record_refusal(binding, result, transaction)
 
     async def run(self, *, task_id, expected_plan_hash, request_id):
         try:
@@ -211,12 +291,11 @@ class ConfigurationReverification:
                             "receipt_persisted": True, "replayed": True}
                 if len(transaction.events) > MAX_EVENTS - 2:
                     return _result("receipt_capacity_exceeded")
-                async with asyncio.timeout(DEADLINE_SECONDS):
-                    return await self._read_and_record(binding, transaction, locks)
+                return await self._attempt(binding, transaction, locks)
         except ReceiptBusy:
             return _result("reverification_in_progress")
-        except ReceiptStorageError:
-            return _result("evidence_persistence_failed")
+        except ReceiptStorageError as exc:
+            return _result(self._storage_status(exc), receipt_commit_unknown=self.store.commit_unknown)
         except ReverificationRefused as exc:
             return _result(str(exc))
         except TimeoutError:
@@ -318,7 +397,11 @@ class ConfigurationReverification:
         except DurableLockError:
             status = "concurrent_change"
         except TimeoutError:
+            if telemetry is not None:
+                telemetry.timeout_occurred = True
             status = "read_timeout"
+        except GovernanceError as exc:
+            status = self._history_status(exc)
         except Exception:
             status = "read_unavailable"
         finally:

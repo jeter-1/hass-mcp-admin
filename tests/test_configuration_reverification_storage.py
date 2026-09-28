@@ -125,3 +125,37 @@ class ReverificationStorageTests(unittest.TestCase):
                 with self.assertRaises(storage.ReceiptStorageError):
                     tx.append("started", body)
             self.assertFalse(self.store.path.exists())
+
+    def test_bound_refusal_is_durable_replayable_and_never_positive(self):
+        self.populate()
+        body = finish_body()
+        body['binding'] = {**body['binding'], 'request_id': '00000000-0000-4000-8000-000000000002'}
+        body['status'] = 'read_authority_or_audit_unavailable'
+        body['audit_event_id'] = None
+        with self.store.transaction() as tx:
+            tx.append('refused', body)
+        restored = storage.ReverificationStore(self.root).read()
+        self.assertEqual(restored[-1]['kind'], 'refused')
+        self.assertFalse(restored[-1]['body']['review_resolved'])
+        self.assertIsNone(restored[-1]['body']['audit_event_id'])
+        with self.store.transaction() as tx:
+            with self.assertRaises(storage.ReceiptStorageError):
+                tx.append('refused', body)
+            changed = deepcopy(body)
+            changed['binding']['request_id'] = '00000000-0000-4000-8000-000000000003'
+            changed['binding']['expected_plan_hash'] = 'f' * 64
+            with self.assertRaises(storage.ReceiptStorageError):
+                tx.append('refused', changed)
+            changed['binding']['expected_plan_hash'] = body['binding']['expected_plan_hash']
+            changed['review_resolved'] = True
+            with self.assertRaises(storage.ReceiptStorageError):
+                tx.append('refused', changed)
+
+    def test_read_io_is_distinct_from_damaged_serialization(self):
+        self.populate()
+        with patch.object(storage.os, 'open', side_effect=PermissionError('SYNTHETIC_PRIVATE_IO')):
+            with self.assertRaisesRegex(storage.ReceiptStorageError, '^receipt_storage_unavailable$'):
+                self.store.read()
+        self.store.path.write_text('invalid JSON SYNTHETIC_PRIVATE_BODY')
+        with self.assertRaisesRegex(storage.ReceiptStorageError, '^receipt_integrity_failure$'):
+            self.store.read()

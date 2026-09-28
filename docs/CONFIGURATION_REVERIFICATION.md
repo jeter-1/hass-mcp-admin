@@ -16,7 +16,12 @@ configuration, target, provider, override or success assertion is accepted.
 The initial family is a retained F3 configuration task in terminal
 `manual_review_required`, with 1–8 immutable operations. Its original plan,
 consumed approval, task identity, child declarations, candidate hashes and complete
-lock union must agree. Every child must be terminal, have exactly one dispatch,
+lock union must agree. The original approval grant is reconstructed using the
+existing approved-copy semantics (consumption legitimately changes its state),
+then bound to every declaration. Task and child consumption witnesses must match
+the plan, policy, sequence, original request and consumption time. These witnesses
+are included in the final source recheck; no approval is renewed or consumed.
+Every child must be terminal, have exactly one dispatch,
 and be either `succeeded_verified` or `verification_mismatch`; at least one must
 have mismatched. Unknown dispatch, missing children, unsupported history,
 corruption, unresolved original locks, conflict holds and concurrent Engineering
@@ -55,9 +60,13 @@ Receipts contain original-history fingerprints, approved and observed per-object
 fingerprints, exact target identities, comparison results, configuration-check
 status, timestamps, verifier source/version, current Core identity, provider
 attribution and explicit zero mutation/approval/redispatch facts. They contain no
-raw configuration, validation error body or provider exception text. Partial rows
+raw configuration, validation error body or provider exception text. Invalid-input
+audits use only the three allowed argument names and an unknown-fields boolean;
+arbitrary unknown names and values are excluded. Partial rows
 are retained when available. Timeout/cancellation can interrupt collection before
-it can finish a receipt; that attempt remains unresolved. Observations across HA
+it can finish a receipt; that attempt remains unresolved. The owned deadline sets
+timeout telemetry; ordinary caller cancellation does not impersonate a timeout.
+Observations across HA
 objects are **non-atomic**. Engineering locks cannot fence an unrelated HA writer.
 A stable receipt is not a guarantee of continuous correctness.
 
@@ -69,9 +78,22 @@ alter the previous dated receipt. `get_execution_task` adds `review_resolution`
 only when supplementary evidence exists (or its store cannot be validated); it
 does not initiate a readback. The projection explicitly reports that continuous
 current configuration verification is false. Historical task/health counters
-retain their original meanings.
+retain their original meanings. If an exact task/plan binding already has a receipt,
+a fresh preflight refusal is recorded separately and supersedes that projection,
+including after restart. Audit-unavailable refusals explicitly carry no audit ID;
+they are never successful observations. Refusals cannot invent a task/plan binding.
+Invalid or mismatched input does not supersede a prior receipt.
 
-Fixed outcomes distinguish configuration mismatch, read unavailability/timeout,
+If a later refusal cannot be persisted, its response reports evidence uncertainty
+and the current process withholds a resolved projection. The surviving disk receipt
+has not thereby changed: after restart it remains only the original dated evidence,
+and cannot prove the unrecorded later attempt. Inspect the storage failure before
+claiming durable reconciliation; do not describe process-local invalidation as a
+new durable receipt.
+
+Fixed outcomes distinguish retained-evidence integrity failure/read unavailability
+from new-evidence persistence failure, plus configuration mismatch, read
+unavailability/timeout,
 authority unavailable/changed, concurrency conflict, unsupported history,
 interrupted read, audit failure, receipt capacity and storage failure. The public
 structured envelope describes processing of the request; callers must inspect
@@ -84,8 +106,10 @@ partial evidence with `review_resolved=false` and no successful receipt claim.
 
 The optional `configuration-reverification-v1/` namespace is created lazily beneath
 the existing F3 persistence root. It uses an append-only sequence of start/finish
-events in an atomically replaced, hash-chained ledger: maximum 512 events (256
-completed requests), 256 KiB per event, and 16 MiB overall. Capacity exhaustion
+events, plus terminal preflight-refusal events, in an atomically replaced,
+hash-chained ledger: maximum 512 events (up to 256 complete read requests;
+refusal events also consume that shared budget), 256 KiB per event, and 16 MiB
+overall. Capacity exhaustion
 refuses before a new read. There is no automatic pruning, migration, retention
 extension or silent deletion. A future reviewed retention decision is required
 before extending that bound. Hashes detect accidental damage, not a disk writer

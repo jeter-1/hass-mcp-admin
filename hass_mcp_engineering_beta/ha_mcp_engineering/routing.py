@@ -788,6 +788,15 @@ class AuthenticatedMcpGateway:
                             str(key)[:64] for key in parameters
                         )[:32],
                     }
+                    if tool_name == "reverify_configuration_task":
+                        # Unknown field names are caller content too. Only the
+                        # fixed public schema names may enter this tool's audit.
+                        allowed = {"task_id", "expected_plan_hash", "request_id"}
+                        audit_parameters = {
+                            "validation": "rejected",
+                            "argument_fields": sorted(allowed.intersection(parameters)),
+                            "unknown_fields_present": any(key not in allowed for key in parameters),
+                        }
                     if (
                         capability.get("category")
                         == "upstream_read_gateway"
