@@ -16,7 +16,7 @@ from tests.test_dev14_configuration_plans import PROPOSED_AUTOMATION
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.governance.models import ApprovalState, PlanStatus
 from ha_mcp_engineering.governance.storage import ChangePlanRepository, ChangePlanStorageError
-from ha_mcp_engineering.governance.task_storage import ExecutionTaskStorageError
+from ha_mcp_engineering.governance.task_storage import ExecutionTaskRepository, ExecutionTaskStorageError
 
 
 class GovernanceHealthCacheTests(unittest.IsolatedAsyncioTestCase):
@@ -278,6 +278,56 @@ class RestartHealthCacheTests(unittest.IsolatedAsyncioTestCase):
 
 
 class F3HealthCacheTests(unittest.IsolatedAsyncioTestCase):
+    async def test_task_save_between_snapshot_and_health_rejects_stale_aggregate(self):
+        for external_writer in (False, True):
+            with self.subTest(external_writer=external_writer):
+                fixture = f3_fixtures.F3ConfigurationActivationTests()
+                await fixture.asyncSetUp()
+                try:
+                    service = fixture.service
+                    created = await service.create_configuration_plan(
+                        title="Cache boundary", description="Synthetic current-writer history",
+                        operations=[{"operation_id": "update", "resource_type": "automation", "action": "update", "target_id": "apply_hvac_comfort", "depends_on": [], "proposed_config": copy.deepcopy(PROPOSED_AUTOMATION)}],
+                    )
+                    await fixture.approve(created)
+                    applied = await service.apply(created["plan_id"], created["plan_hash"])
+                    self.assertEqual(applied["task_state"], "succeeded_verified")
+                    repository = service.task_repository
+                    task = repository.list()[0]
+                    writer = (
+                        ExecutionTaskRepository(repository.governance_root)
+                        if external_writer else repository
+                    )
+                    original_health = repository.health
+                    before_calls = list(fixture.gateway.calls)
+                    changed = False
+
+                    def save_before_metadata_read():
+                        nonlocal changed
+                        if not changed:
+                            changed = True
+                            latest = writer.get(task.task_id)
+                            latest.append_event("duplicate_apply_prevented", service.now().isoformat())
+                            writer.save(latest)
+                        return original_health()
+
+                    with patch.object(repository, "health", side_effect=save_before_metadata_read):
+                        with self.assertRaises(GovernanceError) as error:
+                            service.health_summary()
+                    self.assertEqual(error.exception.code, ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                    self.assertIsNone(service._health_cache_key)
+                    persisted = repository.get(task.task_id)
+                    self.assertEqual(sum(event.event_type == "duplicate_apply_prevented" for event in persisted.events), 1)
+                    for _ in range(2):
+                        health = service.health_summary()
+                        self.assertEqual(health["execution_tasks"]["no_blind_redispatch_preventions"], 1)
+                        self.assertEqual(health["execution_tasks"]["event_count"], len(persisted.events))
+                        self.assertEqual(health["execution_tasks"]["verified_successes"], 1)
+                    self.assertEqual(health["plan_store_scaling"]["hot_paths"]["governance_health"]["terminal_plan_records_deserialized"], 0)
+                    self.assertEqual(fixture.gateway.calls, before_calls)
+                finally:
+                    await fixture.asyncTearDown()
+
     async def test_current_writer_terminal_history_hits_and_duplicate_is_not_dispatched(self):
         fixture = f3_fixtures.F3ConfigurationActivationTests()
         await fixture.asyncSetUp()

@@ -18,6 +18,10 @@ and at the end of the rebuild. An observed generation change during assembly
 fails with the existing storage error category; it cannot certify mixed data as
 a current cache. A failed build invalidates reuse. A projection-only index
 rebuild cannot retag an older health aggregate.
+Task generations are captured immediately after reading task history, before
+storage-health metadata can observe a later supported save. A change detected
+there rejects the mixed aggregate; a subsequent request rebuilds from current
+records rather than retaining stale outcome counts under the newer generation.
 
 Cache reuse is bounded by the earliest future plan or pending challenge expiry,
 or restart reconciliation backoff/evidence deadline represented in the

@@ -12545,9 +12545,13 @@ class ChangeGovernanceService:
         storage = self.repository.health()
         try:
             tasks = self.task_repository.list()
+            # Bind to the captured task list before health/navigation can
+            # observe a newer writer generation. The final check rejects it.
+            task_generation = self.task_repository.generation
             task_storage = self.task_repository.health()
         except ExecutionTaskStorageError:
             tasks = []
+            task_generation = self.task_repository.generation
             task_storage = {
                 "configured": True,
                 "status": "error",
@@ -12565,7 +12569,6 @@ class ChangeGovernanceService:
                     self.task_repository.rehydration_attempts
                 ),
             }
-        task_generation = self.task_repository.generation
         # Bound reuse by the next clock-dependent transition. Only small
         # timestamp metadata is retained, never cached plan authority.
         deadline: datetime | None = None
