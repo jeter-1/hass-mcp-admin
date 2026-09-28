@@ -594,3 +594,45 @@ class ConfigurationReverificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.gateway.calls, calls)
         self.assertFalse(self.service.get_execution_task(self.binding['task_id'])['review_resolution']['review_resolved'])
         self.assert_unchanged()
+
+    async def test_one_free_receipt_slot_records_capacity_refusal(self):
+        from ha_mcp_engineering.governance import configuration_reverification as module
+        from ha_mcp_engineering.governance import reverification_storage as storage
+        self.assertTrue((await self.run_check())['review_resolved'])
+        calls = list(self.gateway.calls)
+        with patch.object(module, 'MAX_EVENTS', 3), patch.object(storage, 'MAX_EVENTS', 3):
+            result = await self.run_check(request_id=str(uuid.uuid4()))
+            self.assertEqual(result['status'], 'receipt_capacity_exceeded')
+            self.assertTrue(result['receipt_persisted'])
+            self.assertEqual(len(self.reverification.store.read()), 3)
+        self.runtime.configuration_reverification = ConfigurationReverification(self.runtime, str(self.root / 'plans'))
+        self.assertFalse(self.service.get_execution_task(self.binding['task_id'])['review_resolution']['review_resolved'])
+        self.assertTrue((await self.run_check())['replayed'])
+        self.assertEqual(self.gateway.calls, calls)
+        self.assert_unchanged()
+
+    async def test_full_receipt_capacity_reports_uncertainty_without_inventing_durability(self):
+        from ha_mcp_engineering.governance import configuration_reverification as module
+        from ha_mcp_engineering.governance import reverification_storage as storage
+        self.assertTrue((await self.run_check())['review_resolved'])
+        before = self.reverification.store.path.read_bytes()
+        calls = list(self.gateway.calls)
+        with patch.object(module, 'MAX_EVENTS', 2), patch.object(storage, 'MAX_EVENTS', 2):
+            # A mismatched input may not invalidate the known dated evidence.
+            invalid = await self.run_check(request_id=str(uuid.uuid4()), expected_plan_hash='b' * 64)
+            self.assertFalse(invalid['review_resolved'])
+            self.assertTrue(self.service.get_execution_task(self.binding['task_id'])['review_resolution']['review_resolved'])
+            result = await self.run_check(request_id=str(uuid.uuid4()))
+            self.assertEqual(result['status'], 'receipt_capacity_exceeded')
+            self.assertTrue(result['evidence_uncertain'])
+            self.assertFalse(result['receipt_persisted'])
+            self.assertFalse(self.service.get_execution_task(self.binding['task_id'])['review_resolution']['review_resolved'])
+            self.assertEqual(self.reverification.store.path.read_bytes(), before)
+        self.assertEqual(self.gateway.calls, calls)
+        # Restart cannot manufacture the unrecorded refusal: surviving evidence
+        # is still explicitly dated, never continuously verified configuration.
+        self.runtime.configuration_reverification = ConfigurationReverification(self.runtime, str(self.root / 'plans'))
+        surviving = self.service.get_execution_task(self.binding['task_id'])['review_resolution']
+        self.assertEqual(surviving['request_id'], self.binding['request_id'])
+        self.assertFalse(surviving['current_configuration_continuously_verified'])
+        self.assert_unchanged()

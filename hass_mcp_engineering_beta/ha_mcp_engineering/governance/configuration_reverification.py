@@ -224,9 +224,10 @@ class ConfigurationReverification:
                          and e["body"]["binding"]["expected_plan_hash"] == binding["expected_plan_hash"]), None)
         if previous is None:
             return result
-        if self.store.commit_unknown:
+        if self.store.commit_unknown or len(events) >= MAX_EVENTS:
             self.unrecorded_refusals.add(binding["task_id"])
-            return {**result, "evidence_uncertain": True, "receipt_commit_unknown": True}
+            return {**result, "evidence_uncertain": True,
+                    "receipt_commit_unknown": self.store.commit_unknown}
         body = _result(result["status"], binding=binding, plan_id=previous["body"]["plan_id"],
                        checked_at=self.service.now().isoformat(), audit_event_id=None)
         try:
@@ -290,7 +291,7 @@ class ConfigurationReverification:
                     return {**event["body"], "receipt_hash": event["hash"],
                             "receipt_persisted": True, "replayed": True}
                 if len(transaction.events) > MAX_EVENTS - 2:
-                    return _result("receipt_capacity_exceeded")
+                    return self._record_refusal(binding, _result("receipt_capacity_exceeded"), transaction)
                 return await self._attempt(binding, transaction, locks)
         except ReceiptBusy:
             return _result("reverification_in_progress")

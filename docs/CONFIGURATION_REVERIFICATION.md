@@ -110,7 +110,10 @@ events, plus terminal preflight-refusal events, in an atomically replaced,
 hash-chained ledger: maximum 512 events (up to 256 complete read requests;
 refusal events also consume that shared budget), 256 KiB per event, and 16 MiB
 overall. Capacity exhaustion
-refuses before a new read. There is no automatic pruning, migration, retention
+refuses before a new read. One remaining event slot may record that bound refusal;
+with no remaining slot, the response reports evidence uncertainty and the current
+process withholds resolution. It does not claim a durable refusal or delete older
+evidence to make room. There is no automatic pruning, migration, retention
 extension or silent deletion. A future reviewed retention decision is required
 before extending that bound. Hashes detect accidental damage, not a disk writer
 able to replace both evidence and hashes. The existing trusted persistence
