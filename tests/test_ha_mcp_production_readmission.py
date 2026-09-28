@@ -2694,7 +2694,7 @@ class SignedGatewayReadmissionTests(
             {generation},
         )
         registered = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 54)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 55)
         self.assertEqual(len(registered), 25)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 79)
         self.assertNotIn("ha_get_operation_status", registered)

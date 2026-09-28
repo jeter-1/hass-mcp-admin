@@ -1889,8 +1889,21 @@ class ChangeGovernanceService:
     def get_execution_task(self, task_id: str) -> dict[str, Any]:
         task = self._load_task(task_id)
         if self.f3_runtime is not None:
-            return self.f3_runtime.decorate_task(task)
+            result = self.f3_runtime.decorate_task(task)
+            resolution = self.f3_runtime.configuration_reverification.projection(task)
+            if resolution is not None:
+                result["review_resolution"] = resolution
+            return result
         return self._public_task(task)
+
+    async def reverify_configuration_task(
+        self, *, task_id: str, expected_plan_hash: str, request_id: str
+    ) -> dict[str, Any]:
+        if self.f3_runtime is None:
+            raise GovernanceError(ErrorCode.PROVIDER_UNAVAILABLE)
+        return await self.f3_runtime.configuration_reverification.run(
+            task_id=task_id, expected_plan_hash=expected_plan_hash, request_id=request_id,
+        )
 
     def list_execution_tasks(
         self,

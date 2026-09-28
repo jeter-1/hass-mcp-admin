@@ -802,6 +802,8 @@ class F3RuntimeIntegration:
             dashboard_adapter=self.dashboard_adapter,
         )
         self._configuration_adapters = configuration_adapters
+        from ..governance.configuration_reverification import ConfigurationReverification
+        self.configuration_reverification = ConfigurationReverification(self, storage_root)
         self._prepared_cache: dict[str, Any] = {}
         self._sequence_lock_cache: dict[str, tuple[Any, ...]] = {}
         self._ready = False

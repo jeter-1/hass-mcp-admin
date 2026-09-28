@@ -3,6 +3,10 @@
 from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 from pydantic import ConfigDict, Field
+from mcp.server.fastmcp.tools.base import Tool
+from mcp.types import ToolAnnotations
+
+from ..request_context import current_telemetry
 
 from ..governance import GOVERNANCE
 from ..tool_framework import run_structured
@@ -462,6 +466,73 @@ async def rollback_change(plan_id: str, expected_plan_hash: str = "") -> str:
     )
 
 
+async def reverify_configuration_task(
+    task_id: Annotated[str, Field(strict=True, pattern=r"^[0-9a-f]{32}$", min_length=32, max_length=32)],
+    expected_plan_hash: Annotated[str, Field(strict=True, pattern=r"^[0-9a-f]{64}$", min_length=64, max_length=64)],
+    request_id: Annotated[str, Field(strict=True, pattern=r"^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$", min_length=36, max_length=36)],
+) -> str:
+    """Record a dated readback of one retained configuration task and exact plan.
+
+    Reads all approved objects and checks configuration; never rewrites them,
+    consumes approval, or dispatches a device action. Original failed execution
+    remains unchanged. A separate durable receipt may resolve its review.
+    Reads are non-atomic. The same request ID replays retained evidence; a fresh
+    observation requires a new request ID. Interrupted checks remain unresolved.
+    """
+    metadata = {"provider": "engineering", "fallback": "none",
+                "home_assistant_mutation_allowed": False, "completeness": "failed"}
+
+    async def action():
+        data = await GOVERNANCE.require().reverify_configuration_task(
+            task_id=task_id, expected_plan_hash=expected_plan_hash, request_id=request_id,
+        )
+        completeness = ("complete" if data["review_resolved"] else
+                        "partial" if data.get("operations") else "failed")
+        metadata.update(completeness=completeness, observation_status=data["status"])
+        telemetry = current_telemetry()
+        if telemetry is not None:
+            telemetry.completeness = completeness
+            telemetry.result_status = "success" if data["review_resolved"] else "partial" if data.get("operations") else "failure"
+        return data
+
+    return await run_structured(
+        "reverify_configuration_task",
+        "Processed the supplementary configuration verification request.",
+        action, metadata=metadata, response_limit=SETTINGS.response_size_limit,
+    )
+
+
+class ConfigurationReverificationTool(Tool):
+    """Reject unknown/coerced/private input before SDK coercion or error rendering."""
+
+    async def run(self, arguments, context=None, convert_result=False):
+        from ..governance.configuration_reverification import validate_binding, ReverificationRefused
+        try:
+            if not isinstance(arguments, dict) or set(arguments) != {"task_id", "expected_plan_hash", "request_id"}:
+                raise ReverificationRefused("invalid_request")
+            validate_binding(**arguments)
+        except ReverificationRefused:
+            async def invalid():
+                raise ValueError("Invalid configuration re-verification arguments.")
+            rendered = await run_structured(
+                "reverify_configuration_task", "", invalid,
+                metadata={"provider": "none", "fallback_occurred": False},
+                response_limit=SETTINGS.response_size_limit,
+            )
+            return self.fn_metadata.convert_result(rendered) if convert_result else rendered
+        return await super().run(arguments, context, convert_result)
+
+
+def registered_reverification_tool():
+    tool = ConfigurationReverificationTool.from_function(
+        reverify_configuration_task,
+        annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
+                                    idempotentHint=True, openWorldHint=False),
+    )
+    tool.parameters["additionalProperties"] = False
+    return tool
+
+
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
@@ -476,6 +547,7 @@ GOVERNANCE_TOOLS = (
     get_execution_task,
     list_execution_tasks,
     cancel_execution_task,
+    reverify_configuration_task,
     approve_change_plan,
     apply_change_plan,
     rollback_change,

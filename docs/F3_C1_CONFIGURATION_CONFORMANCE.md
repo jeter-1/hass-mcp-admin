@@ -240,3 +240,11 @@ must provide the durable child-execution and execution-ownership namespace,
 coordinate the complete sequence lock set, retain duplicate-apply ownership,
 decide the legacy rollback bridge, and then switch the route. C1 deliberately
 does not implement that architecture or activate any route.
+
+### Supplementary re-verification candidate
+
+[Configuration-task re-verification](CONFIGURATION_REVERIFICATION.md) adds dated
+readback receipts for eligible terminal configuration mismatches. It preserves
+original plan/task/child records, dispatch counts and historical errors; it grants
+no configuration write or device authority. Its local candidate is distinct from
+release and installed acceptance.

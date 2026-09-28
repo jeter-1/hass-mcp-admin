@@ -16,6 +16,7 @@ from ..errors import (
 )
 from ..observability import METRICS
 from ..request_context import current_telemetry
+from .single_read import SINGLE_READ, MAX_READ_BYTES, session_options
 
 
 class HomeAssistantWebSocketClient:
@@ -75,10 +76,11 @@ class HomeAssistantWebSocketClient:
             ws_close=self.settings.ha_timeout_seconds,
         )
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, **session_options()) as session:
                 async with session.ws_connect(
                     self.settings.websocket_url,
                     timeout=websocket_timeout,
+                    **({"max_msg_size": MAX_READ_BYTES} if SINGLE_READ.get() else {}),
                 ) as websocket:
                     message = await websocket.receive_json()
                     if message.get("type") != "auth_required":

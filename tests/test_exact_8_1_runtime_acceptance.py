@@ -324,7 +324,7 @@ class ExactAddonProfileTests(unittest.TestCase):
 
     def test_addon_runtime_uses_authoritative_exact_local_accounting(self):
         self.assertEqual(
-            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 54
+            addon_acceptance.ENGINEERING_STATIC_TOOL_COUNT, 55
         )
         for version, delegated in (
             ("8.0.0", 24),

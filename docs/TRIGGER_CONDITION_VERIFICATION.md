@@ -81,3 +81,8 @@ verification, never resend configuration or operate a device, and distinguish
 current-state verification from proof of the state at the original execution.
 Do not use `apply_change_plan`, direct store edits, or automatic terminal-state
 rewriting to manufacture a successful historical result.
+
+The separate [configuration-task re-verification contract](CONFIGURATION_REVERIFICATION.md)
+defines an explicit supplementary receipt for eligible historical mismatches.
+The normalizer fix alone does not change any retained task outcome; the additive
+readback capability must be validated, reviewed and deployed before live use.

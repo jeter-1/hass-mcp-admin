@@ -62,7 +62,7 @@ for governance_tool in GOVERNANCE_TOOLS:
                 else _TASK_READ_ANNOTATIONS
                 if governance_tool.__name__ in _TASK_READ_TOOLS
                 else _TASK_CANCEL_ANNOTATIONS
-                if governance_tool.__name__ == "cancel_execution_task"
+                if governance_tool.__name__ in {"cancel_execution_task", "reverify_configuration_task"}
                 else None
             )
         )(governance_tool)
@@ -150,8 +150,10 @@ for capability in CAPABILITIES:
 
 
 from .core_logs import registered_tool as core_log_tool
+from .governance import registered_reverification_tool
 
-_SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_tool()})
+_SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_tool(),
+                    "reverify_configuration_task": registered_reverification_tool()})
 
 
 # Freeze the exact local catalog before any admitted upstream reads are added.

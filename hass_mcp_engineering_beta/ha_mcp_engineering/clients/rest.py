@@ -19,6 +19,7 @@ from ..errors import (
 )
 from ..observability import METRICS
 from ..request_context import current_telemetry
+from .single_read import session_options, response_text
 
 
 @dataclass(frozen=True)
@@ -80,11 +81,11 @@ class HomeAssistantRestClient:
             telemetry.begin_ha_attempt(started)
         timeout = aiohttp.ClientTimeout(total=self.settings.ha_timeout_seconds)
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, **session_options()) as session:
                 async with session.request(
                     method, f"{self.settings.api_url}{path}", headers=headers, json=body
                 ) as response:
-                    text = await response.text()
+                    text = await response_text(response)
                     self._record(started, category)
                     if response.status in expected_statuses:
                         return ExpectedHttpStatus(response.status)

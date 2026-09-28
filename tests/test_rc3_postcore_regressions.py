@@ -313,7 +313,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(registered_tools(server)), 54)
         await gateway.initialize(server)
         baseline = {tool.name: tool.model_dump(mode="json") for tool in await server.list_tools()}
-        self.assertEqual(len(baseline), 79)
+        self.assertEqual(len(baseline), 80)
 
         self.network.records[0]["name"] = False
         await self.core.reconcile_once("synthetic_malformed_display")

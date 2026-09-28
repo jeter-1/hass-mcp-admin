@@ -765,6 +765,7 @@ class AuthenticatedMcpGateway:
                         "destructive",
                         "infrastructure",
                         "infrastructure_write",
+                        "engineering_evidence_write",
                         "high_risk_infrastructure_action",
                     }
                     else "read"
