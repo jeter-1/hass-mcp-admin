@@ -18,8 +18,12 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.calls, self.commands = [], []
         self.mode = "ok"
+        self.entered, self.release = asyncio.Event(), asyncio.Event()
         async def handler(request):
             self.calls.append(request.path)
+            if self.mode == "hang":
+                self.entered.set()
+                await self.release.wait()
             if self.mode == "disconnect":
                 request.transport.close()
                 return web.Response()
@@ -59,6 +63,7 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
         self.token = SINGLE_READ.set(True)
 
     async def asyncTearDown(self):
+        self.release.set()
         SINGLE_READ.reset(self.token)
         await self.runner.cleanup()
 
@@ -109,3 +114,45 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.calls[-1], "/redirected")
         finally:
             SINGLE_READ.reset(token)
+
+    async def test_refused_reads_finish_timing_once(self):
+        from ha_mcp_engineering.request_context import begin_request, end_request
+        for mode in ("disconnect", "redirect", "oversize", "ok"):
+            for transport in ("rest", "ws"):
+                if mode == "oversize" and transport == "ws":
+                    self.mode = "ws_oversize"
+                else:
+                    self.mode = mode
+                telemetry, token = begin_request()
+                try:
+                    try:
+                        if transport == "rest":
+                            await self.rest.request("GET", "/config/automation/config/example")
+                        else:
+                            await self.ws.command({"type": "input_boolean/list"})
+                    except Exception:
+                        self.assertNotEqual(mode, "ok")
+                    else:
+                        self.assertEqual(mode, "ok")
+                    self.assertEqual(telemetry.ha_request_count, 1)
+                    self.assertEqual(telemetry.ha_active_requests, 0)
+                    self.assertEqual(telemetry.ha_max_concurrent_requests, 1)
+                finally:
+                    end_request(token)
+
+    async def test_cancelled_read_finishes_timing_without_retry(self):
+        from ha_mcp_engineering.request_context import begin_request, end_request
+        self.mode = "hang"
+        telemetry, token = begin_request()
+        try:
+            task = asyncio.create_task(self.rest.request("GET", "/config/automation/config/example"))
+            await self.entered.wait()
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertEqual(telemetry.ha_active_requests, 0)
+            self.assertEqual(telemetry.ha_request_count, 1)
+            self.assertEqual(len(self.calls), 1)
+        finally:
+            self.release.set()
+            end_request(token)

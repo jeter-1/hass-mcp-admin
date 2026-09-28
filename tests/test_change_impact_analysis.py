@@ -1786,6 +1786,7 @@ class ToolCompatibilityTests(unittest.TestCase):
             set(current) - set(BETA14_SCHEMA_HASHES),
             {
                 "get_core_log_history",
+                "reverify_configuration_task",
                 "change_impact_analysis",
                 "configuration_integrity_analysis",
                 "incident_correlation",
