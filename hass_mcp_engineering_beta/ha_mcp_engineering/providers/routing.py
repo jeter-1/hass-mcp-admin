@@ -165,6 +165,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_execution_task": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "list_execution_tasks": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "cancel_execution_task": ProviderCapability.GOVERNANCE_PERSISTENCE,
+    "reverify_configuration_task": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "approve_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "apply_change_plan": ProviderCapability.GOVERNED_APPLY,
     "rollback_change": ProviderCapability.GOVERNED_ROLLBACK,

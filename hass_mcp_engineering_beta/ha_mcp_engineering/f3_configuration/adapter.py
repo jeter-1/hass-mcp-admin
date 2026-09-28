@@ -327,6 +327,19 @@ class ConfigurationOperationAdapter:
                     else "configuration_validation_failed"
                 ),
             )
+        # Prove the candidate can be compared before any provider mutation.
+        # Structural validation alone does not establish that the stricter
+        # readback verifier supports every action in an automation. This also
+        # protects retained plans; it does not alter their binding hashes.
+        comparison = compare_resource_verification(
+            operation.resource_type, proposed, proposed
+        )
+        if not comparison.normalization_valid or not comparison.semantic_match:
+            self._increment("validation_failures")
+            return self._preflight_rejected(
+                operation, ("configuration_not_verifiable",)
+            )
+
         # This is the final authoritative mutable-state decision.  The shared
         # executor consumes approval only after this preflight returns and
         # before it commits durable intent through ``before_dispatch``.

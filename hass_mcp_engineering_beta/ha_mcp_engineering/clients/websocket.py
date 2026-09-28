@@ -16,6 +16,7 @@ from ..errors import (
 )
 from ..observability import METRICS
 from ..request_context import current_telemetry
+from .single_read import SINGLE_READ, MAX_READ_BYTES, session_options
 
 
 class HomeAssistantWebSocketClient:
@@ -74,15 +75,24 @@ class HomeAssistantWebSocketClient:
             ws_receive=self.settings.ha_timeout_seconds,
             ws_close=self.settings.ha_timeout_seconds,
         )
+        recorded = False
+
+        def record(*, timeout=False):
+            nonlocal recorded
+            if not recorded:
+                recorded = True
+                self._record(started, category, timeout=timeout)
+
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, **session_options()) as session:
                 async with session.ws_connect(
                     self.settings.websocket_url,
                     timeout=websocket_timeout,
+                    **({"max_msg_size": MAX_READ_BYTES} if SINGLE_READ.get() else {}),
                 ) as websocket:
                     message = await websocket.receive_json()
                     if message.get("type") != "auth_required":
-                        self._record(started, category)
+                        record()
                         self._set_error(ErrorCode.HA_API_ERROR)
                         raise HomeAssistantApiError(
                             details=self._error_details(category)
@@ -92,7 +102,7 @@ class HomeAssistantWebSocketClient:
                     )
                     message = await websocket.receive_json()
                     if message.get("type") != "auth_ok":
-                        self._record(started, category)
+                        record()
                         self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
                         raise AuthorizationError(
                             details=self._error_details(category)
@@ -102,7 +112,7 @@ class HomeAssistantWebSocketClient:
                         message = await websocket.receive_json()
                         if message.get("id") != 1 or message.get("type") != "result":
                             continue
-                        self._record(started, category)
+                        record()
                         if message.get("success"):
                             return message.get("result")
                         error = message.get("error") or {}
@@ -125,13 +135,13 @@ class HomeAssistantWebSocketClient:
                             )
                         )
         except (asyncio.TimeoutError, TimeoutError) as exc:
-            self._record(started, category, timeout=True)
+            record(timeout=True)
             self._set_error(ErrorCode.HA_TIMEOUT)
             raise HomeAssistantTimeoutError(
                 details=self._error_details(category)
             ) from exc
         except aiohttp.WSServerHandshakeError as exc:
-            self._record(started, category)
+            record()
             status = int(exc.status)
             if status in {401, 403}:
                 self._set_error(ErrorCode.AUTHORIZATION_FAILURE)
@@ -143,8 +153,13 @@ class HomeAssistantWebSocketClient:
                 details=self._error_details(category, status=status)
             ) from exc
         except (aiohttp.ClientConnectionError, OSError) as exc:
-            self._record(started, category)
+            record()
             self._set_error(ErrorCode.HA_UNAVAILABLE)
             raise HomeAssistantUnavailableError(
                 details=self._error_details(category)
             ) from exc
+        finally:
+            # Scoped transport refusals/cancellation may exit before a response.
+            # Complete attempt timing once without altering normal call behavior.
+            if SINGLE_READ.get():
+                record()

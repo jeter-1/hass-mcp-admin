@@ -61,8 +61,9 @@ class F3AdapterIsolationTests(unittest.TestCase):
                 )
             ):
                 continue
-            if path.relative_to(RUNTIME).as_posix() in {"fan/service.py", "fan/locks.py", "fan/audit.py"}:
-                # Explicit ordinary-action owner of the same F3 primitives.
+            if path.relative_to(RUNTIME).as_posix() in {"fan/service.py", "fan/locks.py", "fan/audit.py",
+                                                          "governance/configuration_reverification.py"}:
+                # Exact reviewed action/observation owners of the same F3 primitives.
                 continue
             tree = ast.parse(path.read_text(encoding="utf-8"))
             imported: set[str] = set()
@@ -83,8 +84,8 @@ class F3AdapterIsolationTests(unittest.TestCase):
     def test_source_tool_and_schema_contract_has_only_approved_dashboard_additions(self):
         local_tools = registered_tools(get_registered_server())
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 29)
-        self.assertEqual(len(local_tools), 54)
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 30)
+        self.assertEqual(len(local_tools), 55)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(

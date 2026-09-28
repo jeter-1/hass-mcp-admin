@@ -19,6 +19,7 @@ from ..errors import (
 )
 from ..observability import METRICS
 from ..request_context import current_telemetry
+from .single_read import SINGLE_READ, session_options, response_text
 
 
 @dataclass(frozen=True)
@@ -79,13 +80,21 @@ class HomeAssistantRestClient:
         if telemetry:
             telemetry.begin_ha_attempt(started)
         timeout = aiohttp.ClientTimeout(total=self.settings.ha_timeout_seconds)
+        recorded = False
+
+        def record(*, timeout=False):
+            nonlocal recorded
+            if not recorded:
+                recorded = True
+                self._record(started, category, timeout=timeout)
+
         try:
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with aiohttp.ClientSession(timeout=timeout, **session_options()) as session:
                 async with session.request(
                     method, f"{self.settings.api_url}{path}", headers=headers, json=body
                 ) as response:
-                    text = await response.text()
-                    self._record(started, category)
+                    text = await response_text(response)
+                    record()
                     if response.status in expected_statuses:
                         return ExpectedHttpStatus(response.status)
                     if response.status >= 400:
@@ -112,12 +121,17 @@ class HomeAssistantRestClient:
                     except json.JSONDecodeError:
                         return text
         except (asyncio.TimeoutError, TimeoutError) as exc:
-            self._record(started, category, timeout=True)
+            record(timeout=True)
             raise HomeAssistantTimeoutError(
                 details={"method": method, "endpoint_category": category}
             ) from exc
         except (aiohttp.ClientConnectionError, OSError) as exc:
-            self._record(started, category)
+            record()
             raise HomeAssistantUnavailableError(
                 details={"method": method, "endpoint_category": category}
             ) from exc
+        finally:
+            # Scoped transport refusals/cancellation may exit before a response.
+            # Complete attempt timing once without altering normal call behavior.
+            if SINGLE_READ.get():
+                record()

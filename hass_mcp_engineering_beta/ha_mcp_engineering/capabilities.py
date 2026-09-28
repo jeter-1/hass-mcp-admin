@@ -78,6 +78,16 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
+        "tool": "reverify_configuration_task", "category": "verification",
+        "status": "beta_native", "risk": "engineering_evidence_write", "additive": True,
+        "operation_class": "supplementary_configuration_verification",
+        "routing": "engineering_native", "provider": "engineering", "fallback": "none",
+        "home_assistant_provider": "direct_ha_api", "home_assistant_access": "read_and_validate",
+        "policy": "exact_retained_configuration_readback_v1",
+        "external_approval_required": False, "direct_write_allowed": False,
+        "dispatch_allowed": False, "durable_evidence_write": True, "non_atomic": True,
+    },
+    {
         "tool": "get_core_log_history", "category": "evidence",
         "status": "beta_native", "risk": "read", "additive": True,
         "operation_class": "read", "routing": "engineering_native",
@@ -370,6 +380,15 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "reverify_configuration_task", "capability": "configuration_reverification",
+        "required_semantics": "Exact retained task/plan binding and supplementary dated verification receipts without redispatch.",
+        "standard_ha_mcp_coverage": "unavailable", "direct_ha_coverage": "fixed_configuration_reads_and_validation",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "all_approved_objects_or_explicit_unresolved_result",
+        "security_justification": "No caller configuration or provider; original execution stays immutable; current signed Core read authority and exact locks required.",
+        "trust_mode": "reviewed_native_verification", "trust_profile": "exact_retained_configuration_readback_v1",
+    },
     {
         "tool": "get_core_log_history", "capability": "core_log_history",
         "required_semantics": "One bounded retained Core journal window with explicit source, sanitization and unknown retention coverage.",

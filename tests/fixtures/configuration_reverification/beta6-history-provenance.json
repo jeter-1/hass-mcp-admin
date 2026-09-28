@@ -1,0 +1,44 @@
+{
+  "source": "6e1c9f1412f97b1171bc38aafe6815ca8abe54eb",
+  "synthetic_only": true,
+  "no_record_postediting": true,
+  "plan_id": "cab180e76e2244b9b4daa59fc739749e",
+  "plan_hash": "231925b4f8eceb16a389d26d70217a4e91da0d216811d75f27a02a8b7d73262c",
+  "task_id": "96575ec56a5e4eb4a3fe958d5af9767c",
+  "task_state": "manual_review_required",
+  "child_outcomes": [
+    "succeeded_verified",
+    "verification_mismatch"
+  ],
+  "child_dispatch_counts": [
+    1,
+    1
+  ],
+  "record_files_sha256": {
+    "audit.jsonl": "3c00c6aa948c274c4dd8519bebfbfbe6b93b74523a77b9846289945382571762",
+    "audit.jsonl.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "plans/cab180e76e2244b9b4daa59fc739749e.json": "b4ef79cba1ef0619db6bd53126a17a0513c57f9e7678698b2e93ff4229e24791",
+    "plans/f3-operation-locks-v1/state.json": "97618aa82ca971edd8725ebc61be54899c14bcc2871b4ad78057412ef123f2ac",
+    "plans/f3-operation-locks-v1/.transaction.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "plans/execution-tasks-v1/cab180e76e2244b9b4daa59fc739749e.96575ec56a5e4eb4a3fe958d5af9767c.json": "f54d6ef36b8b4a3a91cd02709896bc410815c2faba7b8d5cf818e2fdf929ba83",
+    "plans/execution-tasks-v1/.transaction.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "plans/f3-child-execution-v1/96575ec56a5e4eb4a3fe958d5af9767c.manifest.json": "aea19b96660a54d77e35113cab4fa2372a5ab84b91fba2456e1ca0dca4bcc94a",
+    "plans/f3-child-execution-v1/5ba8df98e0ab6f95d9b34c22076a5cc1ed349d50ffbe45268a4a4fc4b974e431.child.json": "d42c646171fa68f0cf6edcd0e2beb9436e5258f24ec7efb69e35dd7cac776320",
+    "plans/f3-child-execution-v1/.projection-transaction.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "plans/f3-child-execution-v1/3d8755c6a653b1738da65c640d68afae6be842cc9764be8e4361bd6115f1b6f0.child.json": "9791ef7967ec85500b5a35395a6b3581cd708919bee745a9589b33dd1a25f705",
+    "plans/f3-child-execution-v1/.transaction.lock": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "writer_source_sha256": {
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py": "ecfb77768aea14bcf8753d524e839069a353122788f97e8e58290425682ae66c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py": "7c9fb6088aba3079264d0494e9d0f68ef6f9b2be99a9e133937dc1cbd69577ec",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_models.py": "695de4c972772d9a841509eb9087847c2ccc6a5933c3b9bd9d25987228c230b4",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py": "ceca4c01d0b1028ff759dda06096a81aaa5be34ca60e900aa2f3be91bddf7151",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py": "258818e1eab6edba3c8e83aaf9fa5bed507cfb5e8e38867a05c635e620a190e4",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py": "de333f13dc9ae4cf1811f614abd5a4ef4806e2345a2e1674ff0b59753a16b79c",
+    "tests/test_f3_runtime_integration.py": "a2f44198fd95b5e86e8af099707373d10591f5a220bed9c90d087553775c3930",
+    "tests/test_dev14_configuration_plans.py": "167e96dbcdb5b4d2bedc3ab96810e244236404b42051dd1b5acd3a62eec505f5"
+  },
+  "limitations": "Exact writer with repository synthetic gateway and approval fixtures; not production or real human approval evidence",
+  "generator_sha256": "7a1591badf81e5afc618a5043f4a41a69a6e5335347144bb70044c408dc21ce6",
+  "generator": "generate-beta6-history.py"
+}
