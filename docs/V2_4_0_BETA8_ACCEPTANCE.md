@@ -52,9 +52,13 @@ Require exact-head CI aggregate `validate` and every required family, including
 the existing pinned Core 2026.9.3 / ha-mcp 8.5.0 disposable lane, both architecture
 build/input checks, exact-image gateway and add-on runtime lanes. Bind actual
 checkout/merge-tree identities to the final PR head and base. Those lanes prove
-their declared scenarios, not a household benchmark. No fresh Core semantic
-campaign is added for unchanged HA behavior. Leave delivery draft for Josh's
-Ready decision; deployment remains separately authorized.
+their declared scenarios, not a household benchmark or an installed-Core version
+requirement. Retain the separately reviewed exact-release applicability evidence
+for the Core version observed during installed acceptance; a CI fixture version
+does not grant compatibility to another release. No fresh Core semantic campaign
+is added for unchanged HA behavior with already reviewed applicability.
+Leave delivery draft for Josh's Ready decision; deployment remains separately
+authorized.
 
 ## 2. Publication, installation and recovery identity
 
@@ -84,9 +88,17 @@ After authorized deployment and read-only acceptance authorization:
    alone is not a runtime defect; refresh schemas only if their actual content is
    stale. Existing public inputs/descriptors must remain unchanged.
 2. Use at most one ordinary bounded connectivity probe if current evidence needs
-   it. Require REST/WebSocket agreement on Core 2026.9.3, exactly admitted ha-mcp
-   8.5.0, accepted/current/cache-valid signed authority and all 19 compatible Core
-   profiles, with no unexplained withholding, fallback or authority drift.
+   it. Require REST/WebSocket agreement on the actual installed Core version,
+   exactly admitted ha-mcp 8.5.0, and accepted/current/cache-valid signed Core
+   authority selecting the existing reviewed contracts for that exact version.
+   Require all 19 Core profiles compatible, with no unexplained withholding,
+   fallback or authority drift. Record the observed Core version, registry
+   sequence and authority state in the receipt. Beta.8 adds no separate
+   installed-Core version pin: an absent, expired, revoked or inapplicable entry
+   cannot pass this gate, and a version-family match cannot substitute for exact
+   admission. A later compatible Core update can use separately reviewed signed
+   registry data without an Engineering release; changed contracts still require
+   the applicable implementation and compatibility review.
 3. Record storage/audit/receipt/F3 health, plan/task/event/approval/dispatch counts,
    active work, leases, locks and holds. Identify separately approved concurrent
    activity; a final settled sample does not prove an idle interval.

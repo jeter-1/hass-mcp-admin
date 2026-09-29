@@ -114,11 +114,15 @@ dynamic references and script blueprint bodies remain opaque. An analysis with
 no detected references does not prove none exist. See
 [dependency coverage](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
-The candidate acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0** under the
-reviewed signed Core registry covering all 19 profiles. Core 2026.9.2 retains its
-immutable 17-reference entry and historical typed fan/power route; its two new
-signed typed references remain unavailable as intended. Installing 2.4.0-beta.8 neither
-configures trust nor updates Core. Admission still requires exact current
+Installed acceptance requires the actual installed Core version to be admitted
+by a valid signed registry, with all 19 required profiles compatible, and exactly
+admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
+version, registry sequence and authority state in each acceptance receipt;
+beta.8 imposes no separate installed-Core version pin. Reproducible CI lanes keep
+their explicit version pins and prove only their declared scenarios.
+Core 2026.9.2 retains its immutable 17-reference entry and historical typed
+fan/power route; its two new signed typed references remain unavailable as
+intended. Installing 2.4.0-beta.8 neither configures trust nor updates Core. Admission still requires exact current
 Core/provider identity and valid authority.
 
 The [8.5.0 compatibility contract](docs/HA_MCP_8_5_0_COMPATIBILITY.md)
@@ -141,8 +145,9 @@ generates and reuses the operation ID; no configuration plan or panel approval
 is added for this typed action. Generic service forwarding stays closed.
 
 Fan operations require admitted ha-mcp 8.4.3 or 8.5.0 and exact Core authority.
-Core 2026.9.3 uses the reviewed signed typed applicability; Core 2026.9.2 retains
-its historical route. Other Core versions need separately reviewed applicability.
+The signed registry selects reviewed typed applicability for each exact Core
+version; Core 2026.9.2 retains its historical route. A version without reviewed
+applicability remains unavailable.
 Inspect authoritative task state and exact state/percentage readback. An uncertain
 action is reconciled read-only, never blindly retried; unresolved outcomes retain
 protection for the affected fan. Verification reflects HA state, not independent
@@ -154,8 +159,8 @@ a separate exact owner request. See [typed fan control](docs/TYPED_FAN_CONTROL.m
 `control_power` supports one exact light or switch ON/OFF request under ordinary
 authenticated connector authority. The assistant manages its operation ID; no
 configuration plan or panel approval is created. The contracts require exact
-Core authority and admitted ha-mcp 8.4.3 or 8.5.0, with the same signed Core .3
-and historical .2 routes described above. Generic services, toggle, brightness,
+Core authority and admitted ha-mcp 8.4.3 or 8.5.0, with the same registry-selected
+and historical routes described above. Generic services, toggle, brightness,
 color, bulk targets and other domains remain outside this tool.
 
 Power may affect critical loads, integration-defined groups and consumers.

@@ -26,8 +26,14 @@ introduced. See [the performance contract](HEALTH_PERFORMANCE.md).
 The healthy catalog remains **80 = 55 static + 25 delegated reads**. Public
 descriptors, provider/Core admission, approval and dispatch behavior, persisted
 formats, dependencies, workflows, installation options and frozen stable-v1 are
-unchanged. Core 2026.9.3 / ha-mcp 8.5.0 remains the installed acceptance target.
-Alarmo and household configuration changes are excluded.
+unchanged. Installed acceptance uses the actual Core version admitted by valid
+signed applicability for all 19 required profiles, with ha-mcp 8.5.0. Each receipt
+records REST/WebSocket identity agreement, the observed Core version, registry
+sequence and authority state. Beta.8 adds no separate installed-Core version pin;
+unknown or unreviewed versions remain unavailable. Existing CI lane pins remain
+reproducible fixtures. Compatible Core updates can use reviewed signed registry
+data without a new Engineering release. Alarmo and household configuration changes
+are excluded.
 
 No new persistent namespace or migration is added. Preserve current durable
 state and the existing supplementary re-verification receipts through rollback;

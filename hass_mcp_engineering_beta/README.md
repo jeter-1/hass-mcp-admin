@@ -84,10 +84,15 @@ required catalog evidence; a cached inventory or count alone is insufficient.
 Provider unavailability grants no fallback, arbitrary forwarding or alternate
 provider retry.
 
-The candidate installed-acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0**, with
-reviewed signed applicability for all 19 profiles. Core 2026.9.2 retains its
-immutable 17-reference entry and historical typed fan/power route; the two signed
-typed references are intentionally unavailable on that entry. Installation does
+Installed acceptance requires the actual installed Core version to be admitted
+by a valid signed registry, with all 19 required profiles compatible, and exactly
+admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
+version, registry sequence and authority state in each acceptance receipt;
+beta.8 imposes no separate installed-Core version pin. CI lane pins remain
+reproducible test fixtures, not blanket compatibility evidence.
+Core 2026.9.2 retains its immutable 17-reference entry and historical typed
+fan/power route; the two signed typed references are intentionally unavailable
+on that entry. Installation does
 not activate trust or update Core. Existing compiled pairings retain their behavior.
 
 The [8.5.0 compatibility contract](../docs/HA_MCP_8_5_0_COMPATIBILITY.md)
@@ -109,9 +114,10 @@ for one exact `turn_on`, `turn_off` or `set_percentage` request. The assistant
 manages the operation ID automatically and reuses it for reconciliation. No
 configuration plan or panel approval is created. Generic services and fallback
 remain unavailable. Operations require exact Core authority and admitted ha-mcp
-8.4.3 or 8.5.0. Core 2026.9.3 uses the reviewed signed typed applicability;
-Core 2026.9.2 retains its historical route. A generic read grant cannot authorize
-typed actions, and other Core versions need separately reviewed applicability.
+8.4.3 or 8.5.0. The signed registry selects reviewed typed applicability for each
+exact Core version; Core 2026.9.2 retains its historical route. A generic read
+grant cannot authorize typed actions, and a version without reviewed
+applicability remains unavailable.
 
 At most one mutation may dispatch per operation. Verify authoritative task state
 and exact HA state/percentage, retaining uncertainty and incomplete consumer
@@ -126,7 +132,7 @@ See [typed fan control](../docs/TYPED_FAN_CONTROL.md) for the full contract.
 `control_power` adds exact light/switch ON/OFF with assistant-managed operation IDs
 and ordinary authenticated connector authority. It creates no configuration plan,
 notification or panel approval. Exact Core authority and admitted ha-mcp 8.4.3
-or 8.5.0 are required, including the signed Core .3 and historical .2 routes above.
+or 8.5.0 are required, with the registry-selected and historical routes above.
 Generic services, toggle, brightness/color, bulk selectors
 and other domains remain closed.
 
