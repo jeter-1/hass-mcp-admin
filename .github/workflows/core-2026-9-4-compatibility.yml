@@ -34,8 +34,6 @@ jobs:
       HA_WRITER_CONTAINER: beta25-real-ha-writer-ha-2026-9-4
       HA_CONTRACT_CONTAINER: beta25-real-ha-ha-2026-9-4
       HA_CONTRACT_NETWORK: beta-rc2-contract-ha-2026-9-4
-      REAL_HA_CONTRACT_DIR: ${{ runner.temp }}/beta25-real-ha-ha-2026-9-4
-      REAL_HA_TOKEN_FILE: ${{ runner.temp }}/beta25-real-ha-ha-2026-9-4.token
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -172,6 +170,9 @@ jobs:
       - name: Verify disposable Home Assistant cleanup
         if: always()
         shell: bash
+        env:
+          REAL_HA_CONTRACT_DIR: ${{ runner.temp }}/beta25-real-ha-ha-2026-9-4
+          REAL_HA_TOKEN_FILE: ${{ runner.temp }}/beta25-real-ha-ha-2026-9-4.token
         run: |
           set -euo pipefail
           docker info --format '{{.OSType}}' >/dev/null

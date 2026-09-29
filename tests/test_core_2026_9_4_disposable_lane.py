@@ -116,6 +116,29 @@ class Core4PreparationTests(unittest.TestCase):
                     result = subprocess.run(["bash", "-n"], input=step["run"], text=True, capture_output=True, timeout=5)
                     self.assertEqual(result.returncode, 0, step.get("name"))
 
+    def test_runner_paths_are_resolved_only_after_job_dispatch(self):
+        import re
+
+        data = yaml.safe_load((ROOT / ".github/workflows/core-2026-9-4-compatibility.yml").read_text())
+        # GitHub validates job env before assigning a runner. Valid YAML alone
+        # does not establish that an expression's context exists at that scope.
+        allowed = {"github", "needs", "strategy", "matrix", "vars", "secrets", "inputs"}
+        for name, job in data["jobs"].items():
+            for key, value in job.get("env", {}).items():
+                roots = re.findall(r"\$\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\.", str(value))
+                with self.subTest(job=name, variable=key):
+                    self.assertLessEqual(set(roots), allowed)
+        general = data["jobs"]["real-ha-contract-tests"]
+        cleanup = next(step for step in general["steps"]
+                       if step.get("name") == "Verify disposable Home Assistant cleanup")
+        # always() cleanup must have its exact paths even if preparation never
+        # reached the GITHUB_ENV writes (for example, an earlier pull failed).
+        self.assertEqual(cleanup["if"], "always()")
+        self.assertEqual(cleanup["env"], {
+            "REAL_HA_CONTRACT_DIR": "${{ runner.temp }}/beta25-real-ha-ha-2026-9-4",
+            "REAL_HA_TOKEN_FILE": "${{ runner.temp }}/beta25-real-ha-ha-2026-9-4.token",
+        })
+
 
 class Core4SyntheticAuthorityTests(unittest.IsolatedAsyncioTestCase):
     async def test_same_runtime_requires_signature_then_admits_exact_nineteen(self):
