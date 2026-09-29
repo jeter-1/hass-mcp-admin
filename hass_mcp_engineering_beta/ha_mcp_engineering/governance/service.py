@@ -533,6 +533,8 @@ class ChangeGovernanceService:
         self._health_cache_has_lifecycle_provider = False
         self._health_cache_rebuild_count = 0
         self._health_cache_hit_count = 0
+        self._health_read_lock = asyncio.Lock()
+        self._health_validation_job: asyncio.Task[None] | None = None
         self._health_cache = self._build_health_summary(
             include_provider_health=False
         )
@@ -2012,23 +2014,7 @@ class ChangeGovernanceService:
         Contract-v1 behavior is intentionally unchanged.
         """
 
-        if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
-            return
-        try:
-            unsafe = bool(
-                persistence_safety_errors(
-                    plan.to_dict(), self.sensitive_values
-                )
-            )
-        except Exception:
-            unsafe = True
-        if unsafe:
-            raise GovernanceError(
-                ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
-                details={
-                    "reason": "unsafe_persisted_configuration_plan",
-                },
-            )
+        _require_safe_persisted_plan(plan, self.sensitive_values)
 
     def _project_plan_event_to_task(
         self,
@@ -12179,8 +12165,25 @@ class ChangeGovernanceService:
             self.task_repository.generation,
         )
         cache_rebuilt = False
+        if self._health_cache_needs_rebuild(key):
+            self._health_cache = self._build_health_summary(
+                include_provider_health=False
+            )
+            self._health_cache_rebuild_count += 1
+            cache_rebuilt = True
+        else:
+            self._health_cache_hit_count += 1
+        return self._health_summary_overlay(
+            started=started,
+            plan_metrics=plan_metrics, task_metrics=task_metrics,
+            cache_rebuilt=cache_rebuilt,
+            home_assistant_status=home_assistant_status,
+            home_assistant_websocket_status=home_assistant_websocket_status,
+        )
+
+    def _health_cache_needs_rebuild(self, key: tuple[int, int]) -> bool:
         now = self.now()
-        if (
+        return (
             self._health_cache is None
             or self._health_cache_key != key
             or self._health_cache_built_at is None
@@ -12191,14 +12194,117 @@ class ChangeGovernanceService:
             )
             or self._health_cache_has_lifecycle_provider
             != (self.lifecycle_gateway is not None)
-        ):
-            self._health_cache = self._build_health_summary(
-                include_provider_health=False
+        )
+
+    async def async_health_summary(
+        self,
+        *,
+        home_assistant_status: str | None = None,
+        home_assistant_websocket_status: str | None = None,
+    ) -> dict[str, Any]:
+        """Build public health without monopolizing the loop on safety scans.
+
+        Only the pure detector sees detached records in the worker. Lifecycle
+        resolution, repository writes and cache publication stay on the owner
+        loop. Cancellation abandons publication, never the single-worker bound.
+        """
+        async with self._health_read_lock:
+            previous = self._health_validation_job
+            if previous is not None:
+                try:
+                    await asyncio.shield(previous)
+                except GovernanceError:
+                    # An abandoned snapshot is not the next request's data.
+                    pass
+                finally:
+                    if previous.done():
+                        self._health_validation_job = None
+            started = time.monotonic()
+            plan_metrics = self.repository.navigation_metrics()
+            task_metrics = self.task_repository.navigation_metrics()
+            key = (self.repository.generation, self.task_repository.generation)
+            rebuilt = self._health_cache_needs_rebuild(key)
+            if rebuilt:
+                self._health_cache_key = None
+                built_at = self.now()
+                try:
+                    plans = self.repository.list()
+                except ChangePlanStorageError as exc:
+                    raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
+                plan_generation = self.repository.generation
+                task_generation = self.task_repository.generation
+                job = asyncio.create_task(asyncio.to_thread(
+                    _validate_health_records, plans, self.sensitive_values
+                ))
+                self._health_validation_job = job
+                # Retrieve a canceled caller's eventual failure without logging
+                # record contents. The next caller drains this same job first.
+                job.add_done_callback(lambda completed: (
+                    completed.exception() if not completed.cancelled() else None
+                ))
+                try:
+                    await asyncio.shield(job)
+                finally:
+                    if job.done():
+                        self._health_validation_job = None
+                resolved: list[ChangePlan] = []
+                failures: list[tuple[ChangePlan, ErrorCode]] = []
+                for plan in plans:
+                    await asyncio.sleep(0)
+                    self._require_health_generations(plan_generation, task_generation)
+                    try:
+                        if plan.policy_decision is not None:
+                            self._require_projection_policy_snapshot(plan)
+                        self._resolve_lifecycle(plan)
+                    except GovernanceError as exc:
+                        if exc.code not in PLAN_PROJECTION_FAILURE_CODES:
+                            raise
+                        failures.append((plan, exc.code))
+                    else:
+                        resolved.append(plan)
+                    # The synchronous lifecycle resolver may persist expiry.
+                    # No other owner-loop task runs in that commit section.
+                    plan_generation = self.repository.generation
+                    task_generation = self.task_repository.generation
+                self._require_health_generations(plan_generation, task_generation)
+                self._health_cache = self._build_health_summary(
+                    include_provider_health=False,
+                    resolved_history=(
+                        resolved, sorted(failures, key=lambda item: item[0].plan_id)
+                    ),
+                    captured_plan_generation=plan_generation,
+                    captured_built_at=built_at,
+                )
+                self._health_cache_rebuild_count += 1
+            else:
+                self._health_cache_hit_count += 1
+            return self._health_summary_overlay(
+                started=started, plan_metrics=plan_metrics, task_metrics=task_metrics,
+                cache_rebuilt=rebuilt,
+                home_assistant_status=home_assistant_status,
+                home_assistant_websocket_status=home_assistant_websocket_status,
             )
-            self._health_cache_rebuild_count += 1
-            cache_rebuilt = True
-        else:
-            self._health_cache_hit_count += 1
+
+    def _require_health_generations(self, plans: int, tasks: int) -> None:
+        self.repository.navigation_metrics()
+        self.task_repository.navigation_metrics()
+        if self.repository.generation != plans:
+            self._health_cache_key = None
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        if self.task_repository.generation != tasks:
+            self._health_cache_key = None
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+
+    def _health_summary_overlay(
+        self,
+        *,
+        started: float,
+        plan_metrics: dict[str, int],
+        task_metrics: dict[str, int],
+        cache_rebuilt: bool,
+        home_assistant_status: str | None,
+        home_assistant_websocket_status: str | None,
+    ) -> dict[str, Any]:
         summary = deepcopy(self._health_cache)
 
         storage = self.repository.health()
@@ -12508,19 +12614,28 @@ class ChangeGovernanceService:
         return result
 
     def _build_health_summary(
-        self, *, include_provider_health: bool = True
+        self, *, include_provider_health: bool = True,
+        resolved_history: tuple[
+            list[ChangePlan], list[tuple[ChangePlan, ErrorCode]]
+        ] | None = None,
+        captured_plan_generation: int | None = None,
+        captured_built_at: datetime | None = None,
     ) -> dict[str, Any]:
         # Invalidate before rebuilding: an exception must never leave an old
         # ready aggregate reusable. There is no await/provider read in this
         # persisted snapshot assembly; source generations are checked below.
         self._health_cache_key = None
-        built_at = self.now()
+        built_at = captured_built_at or self.now()
         # Record-level governance projection failures remain visible and
         # non-actionable without hiding otherwise healthy plan accounting.
         plans, projection_failures = (
             self._resolved_plans_with_projection_failures()
+            if resolved_history is None else resolved_history
         )
-        plan_generation = self.repository.generation
+        plan_generation = (
+            self.repository.generation if captured_plan_generation is None
+            else captured_plan_generation
+        )
         self._projection_failure_index = {
             plan.plan_id: error_code
             for plan, error_code in projection_failures
@@ -13432,3 +13547,28 @@ def _automation_id_mismatch(
         and config.get("id") is not None
         and str(config["id"]) != expected_automation_id
     )
+
+
+def _require_safe_persisted_plan(
+    plan: ChangePlan, sensitive_values: tuple[str, ...]
+) -> None:
+    """Pure fail-closed detector shared by authoritative reads and health."""
+    if plan.contract_version < CONFIGURATION_PLAN_CONTRACT_VERSION:
+        return
+    try:
+        unsafe = bool(persistence_safety_errors(plan.to_dict(), sensitive_values))
+    except Exception:
+        unsafe = True
+    if unsafe:
+        raise GovernanceError(
+            ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+            details={"reason": "unsafe_persisted_configuration_plan"},
+        )
+
+
+def _validate_health_records(
+    plans: list[ChangePlan], sensitive_values: tuple[str, ...]
+) -> None:
+    """No repository, provider, audit, lifecycle or cache access in this worker."""
+    for plan in plans:
+        _require_safe_persisted_plan(plan, sensitive_values)

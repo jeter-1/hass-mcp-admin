@@ -1,4 +1,4 @@
-# Governance health cache correctness
+# Governance health cache correctness and responsiveness
 
 This increment fixes repeated rebuilding of the governance health aggregate.
 It does not change public tool schemas, execution authority, provider routing,
@@ -67,12 +67,12 @@ corrected reads approximately 0.045 seconds. These are small synthetic fixture
 measurements, not deployment benchmarks or a performance guarantee. Work counts
 are the primary regression criterion; no timing threshold determines correctness.
 
-## Limits and next measurement
+## Beta.8 limits and the cold-rebuild follow-up
 
-Cold rebuilds still validate plan/task history synchronously. Existing F3 health
+Beta.8 cold rebuilds validate plan/task history synchronously. Existing F3 health
 still traverses task and child history on warm calls; the table deliberately
 shows its remaining reads. Deadline-triggered rebuilds can also traverse history.
-This increment does not introduce a worker, background cache, timeout, retry,
+That warm-cache increment did not introduce a worker, background cache, timeout, retry,
 fallback, or incremental durable projection.
 
 Navigation detects changes supported by the current repositories, including
@@ -84,3 +84,58 @@ Source tests do not prove that event-loop starvation caused a specific Core
 connection loss, or that household plans F030/F035 are now executable. Measure
 cold and warm installed behavior only under a separately approved deployment
 and acceptance contract before deciding the next performance increment.
+
+## Cold-rebuild correction
+
+The asynchronous public `get_server_health` path now validates detached persisted
+plan records in one pure worker job per governance service. It runs the same
+fail-closed persistence-safety detector used by authoritative reads and saves;
+no validation is skipped or cached as execution authority. The worker cannot
+read/write repositories, resolve expiry, dispatch a provider, publish a cache,
+or write an audit event. Policy projection and lifecycle resolution remain on
+the owner event loop, yielding between records. Persisted expiry remains an
+existing health-read side effect, with its original once-only semantics.
+
+The health readers serialize preparation. Concurrent requests reuse the completed
+aggregate when still valid. Cancellation prevents that request from publishing
+or resolving further lifecycle state; its already-running pure validation job
+may finish. A subsequent request drains that job before submitting another,
+then reads a fresh snapshot. No background task publishes health or grants
+authority, and cancellation cannot create an unbounded worker queue.
+
+Plan and task generations are checked after awaits and before publication.
+An observed concurrent approval, save, external replacement or task change
+refuses the mixed snapshot using the existing storage error categories, without
+retrying or overwriting the newer record. A later ordinary request can rebuild.
+The aggregate's time origin precedes asynchronous work so an expiry crossed
+during projection cannot disappear from cache invalidation. The existing final
+synchronous generation checks, live F3/provider overlays, and error behavior
+remain in use. The outer health envelope reads current Core/provider state
+**after** asynchronous preparation, not before its await.
+
+The tool signature, output fields, catalog, approval/dispatch rules, persistence
+formats, and fallback policy are unchanged. Startup and internal synchronous
+operational snapshots retain the synchronous API. Repository enumeration,
+policy/lifecycle work for one record, summary assembly, and the existing F3
+health traversal still have synchronous portions; this change is not a hard
+latency bound, a worker for all health processing, or an atomic multi-process
+snapshot. Total cold-read latency may remain substantial. Its measured target
+is allowing event-loop progress during the dominant historical safety scan.
+
+[`test_governance_async_health.py`](../tests/test_governance_async_health.py)
+adds deterministic owner-loop progress and cancellation/overlap checks, actual
+concurrent owner approval, local/external record races, task invalidation,
+owner-thread expiry, crossed deadlines, storage and unsafe-record refusal,
+current authority/F3 state after an await, public no-probe routing, and useful
+current-writer synthetic apply/readback with duplicate suppression. These tests
+use disposable records and providers. They do not replay F032 or establish
+that its production connection loss was caused by event-loop starvation.
+
+After a separately approved release/deployment, installed acceptance must
+exercise a legitimate governance-change cache invalidation and its cold read,
+not only unchanged warm hits. Capture exact installed identity, cold/warm work
+counts and latency, Core authority generations/retirements, connection errors,
+provider admission, useful reads and final execution settlement across the
+interval. Use a fresh approved plan only under the separate bounded live-test
+contract; never replay F032's failed pre-dispatch plan. Stop on authority drift,
+uncertain dispatch or provider loss. Source tests do not close that live gate.
