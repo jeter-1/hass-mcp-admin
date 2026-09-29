@@ -1,14 +1,20 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.0-beta.7** is the materialized candidate for
-[configuration verification and supplementary re-verification](docs/V2_4_0_BETA7_RELEASE_NOTES.md).
-Standalone trigger-condition IDs now verify correctly, and preflight rejects
-unverifiable candidates before that operation dispatches. The new
+Engineering **2.4.0-beta.8** is the materialized candidate for
+[governance health-cache correctness](docs/V2_4_0_BETA8_RELEASE_NOTES.md).
+Unchanged health reads reuse captured history while lifecycle deadlines, storage
+changes and live health remain visible. F3 health is evaluated once per call.
+Cold rebuilds and remaining F3 scans are still synchronous; this does not prove
+or resolve a household authority failure. See [performance scope](docs/HEALTH_PERFORMANCE.md).
+
+Beta.7's [configuration verification and supplementary re-verification](docs/V2_4_0_BETA7_RELEASE_NOTES.md)
+remain available. Standalone trigger-condition IDs verify correctly, and preflight
+rejects unverifiable candidates before that operation dispatches. The existing
 [`reverify_configuration_task`](docs/CONFIGURATION_REVERIFICATION.md) checks all
 approved saved objects of an eligible historical mismatch and writes a dated
-supplementary receipt. It does not resend configuration, operate a device,
-consume approval or replace the original failed outcome. Deployment alone does
-not resolve a historical review; one exact observation needs separate approval.
+supplementary receipt without resending configuration, operating a device,
+consuming approval or replacing the original failed outcome. Beta.8 acceptance
+does not repeat a completed supplementary observation.
 The inherited [beta.6 lock recovery](docs/V2_4_0_BETA6_RELEASE_NOTES.md) preserves
 complete unions up to 256 tokens and can settle qualifying retained locks.
 **Beta.5 cannot read expanded token records above sixteen; preserve compatible
@@ -39,14 +45,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.0-beta.7 release notes](docs/V2_4_0_BETA7_RELEASE_NOTES.md) and
-[2.4.0-beta.7 acceptance contract](docs/V2_4_0_BETA7_ACCEPTANCE.md). A source version does
+Read the [2.4.0-beta.8 release notes](docs/V2_4_0_BETA8_RELEASE_NOTES.md) and
+[2.4.0-beta.8 acceptance contract](docs/V2_4_0_BETA8_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.0-beta.7 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.0-beta.8 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -63,11 +69,11 @@ options refuse startup; historical acceptance does not establish this boundary.
    `8100`; authenticated, admin-only **HA MCP Approval** ingress uses internal
    port `8110`. The approval panel is not a second MCP endpoint.
 5. Verify the final installed artifact, reconnect the client and complete the
-   bounded [acceptance checks](docs/V2_4_0_BETA7_ACCEPTANCE.md).
+   bounded [acceptance checks](docs/V2_4_0_BETA8_ACCEPTANCE.md).
 
 The image repository remains
 `ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
-`linux/arm64` for 2.4.0-beta.7. Published 2.2.0 retains its historical
+`linux/arm64` for 2.4.0-beta.8. Published 2.2.0 retains its historical
 `linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; Engineering
 requires a supported 64-bit installation. This source change does not migrate or
 uninstall an existing system. Existing options, persistent paths, ports, ingress
@@ -111,7 +117,7 @@ no detected references does not prove none exist. See
 The candidate acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0** under the
 reviewed signed Core registry covering all 19 profiles. Core 2026.9.2 retains its
 immutable 17-reference entry and historical typed fan/power route; its two new
-signed typed references remain unavailable as intended. Installing 2.4.0-beta.7 neither
+signed typed references remain unavailable as intended. Installing 2.4.0-beta.8 neither
 configures trust nor updates Core. Admission still requires exact current
 Core/provider identity and valid authority.
 
@@ -218,4 +224,4 @@ runtime is preserved by 2.2.0; its observations retain their RC9 pairing/time.
 - [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases)
 
 Historical counts, pairings, installation and rollback guidance describe their
-original release and do not replace the current 2.4.0-beta.7 contract.
+original release and do not replace the current 2.4.0-beta.8 contract.
