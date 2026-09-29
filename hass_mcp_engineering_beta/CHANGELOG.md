@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.0-beta.9 - Cold governance-health responsiveness
+
+- Validate detached persisted-plan records in one pure worker per service during
+  public cold health reads; yield owner-loop policy/lifecycle work between records.
+- Preserve fail-closed validation, generation checks, concurrent owner approvals,
+  expiry and current provider/authority observations. Serialize readers and drain
+  canceled validation before new work; no background cache or lifecycle publisher.
+- Retain beta.8 warm reuse and report remaining synchronous costs honestly.
+  Source tests prove responsiveness, not production heartbeat causality or
+  installed approval-to-dispatch continuity; test that cold interval separately.
+- Keep 80 tools, schemas, authority, persisted formats, dependencies, workflows,
+  installation settings and frozen stable-v1 unchanged. No new namespace,
+  retry or fallback; preserve inherited recovery limitations and completed F028.
+  Alarmo is excluded. Publication, deployment and installed acceptance are separate.
+
 ## 2.4.0-beta.8 - Governance health-cache correctness
 
 - Reuse history aggregates under their captured plan/task generations; reject
