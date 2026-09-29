@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from tests import test_governance as fixtures
 from tests import test_f3_runtime_integration as f3_fixtures
+from tests import test_beta34_historical_policy_projection as historical_fixtures
 from tests.test_dev14_configuration_plans import PROPOSED_AUTOMATION
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.governance import service as service_module
@@ -288,6 +289,22 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AsyncF3HealthTests(unittest.IsolatedAsyncioTestCase):
+    async def test_historical_read_projection_preserves_bytes_and_no_authority(self):
+        fixture = historical_fixtures.HistoricalPolicyProjectionTests()
+        await fixture.asyncSetUp()
+        try:
+            fixture.repository.rebuild_navigation_index()
+            health = await fixture.service.async_health_summary()
+            self.assertEqual(health["total_plans"], 2)
+            self.assertEqual(health["projection_failure_count"], 0)
+            self.assertEqual(health["historical_policy_snapshot_compatibility"]["compatible_count"], 2)
+            for plan in fixture._plans():
+                with self.assertRaises(GovernanceError):
+                    await fixture.service.apply(plan.plan_id, fixture.service.plan_hash(plan))
+            fixture._assert_persisted_bytes_unchanged()
+        finally:
+            await fixture.asyncTearDown()
+
     async def test_current_writer_history_then_fresh_approved_apply_and_duplicate(self):
         fixture = f3_fixtures.F3ConfigurationActivationTests()
         await fixture.asyncSetUp()
