@@ -269,6 +269,9 @@ class Beta26PlanStoreScaleTests(unittest.IsolatedAsyncioTestCase):
                     0,
                 )
 
+                # Explicit history/index rebuilds invalidate the aggregate.
+                # Measure unchanged warm reads, not a retagged old snapshot.
+                service.health_summary()
                 before = repository.navigation_metrics()
                 health = service.health_summary()
                 after = repository.navigation_metrics()

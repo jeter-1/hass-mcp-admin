@@ -528,14 +528,13 @@ class ChangeGovernanceService:
         self._hot_path_metrics: dict[str, dict[str, Any]] = {}
         self._health_cache_key: tuple[int, int] | None = None
         self._health_cache: dict[str, Any] | None = None
+        self._health_cache_built_at: datetime | None = None
+        self._health_cache_deadline: datetime | None = None
+        self._health_cache_has_lifecycle_provider = False
         self._health_cache_rebuild_count = 0
         self._health_cache_hit_count = 0
         self._health_cache = self._build_health_summary(
             include_provider_health=False
-        )
-        self._health_cache_key = (
-            self.repository.generation,
-            self.task_repository.generation,
         )
         self._health_cache_rebuild_count += 1
 
@@ -621,11 +620,8 @@ class ChangeGovernanceService:
         if invalidate_health:
             self._health_cache_key = None
             self._health_cache = None
-        elif self._health_cache is not None:
-            self._health_cache_key = (
-                self.repository.generation,
-                self.task_repository.generation,
-            )
+        # A projection-only rebuild cannot certify the health aggregate:
+        # it may have discovered changed records. Never retag old health data.
 
     def _ensure_projection_index_current(self) -> None:
         if (
@@ -12183,9 +12179,22 @@ class ChangeGovernanceService:
             self.task_repository.generation,
         )
         cache_rebuilt = False
-        if self._health_cache is None or self._health_cache_key != key:
-            self._health_cache = self._build_health_summary()
-            self._health_cache_key = key
+        now = self.now()
+        if (
+            self._health_cache is None
+            or self._health_cache_key != key
+            or self._health_cache_built_at is None
+            or now < self._health_cache_built_at
+            or (
+                self._health_cache_deadline is not None
+                and now >= self._health_cache_deadline
+            )
+            or self._health_cache_has_lifecycle_provider
+            != (self.lifecycle_gateway is not None)
+        ):
+            self._health_cache = self._build_health_summary(
+                include_provider_health=False
+            )
             self._health_cache_rebuild_count += 1
             cache_rebuilt = True
         else:
@@ -12201,6 +12210,9 @@ class ChangeGovernanceService:
         ]
         summary["total_plans"] = storage["total_plans"]
         execution = summary["execution_tasks"]
+        if execution["storage_status"] == "error":
+            # A failed history read must not be hidden by healthy navigation.
+            task_storage = {**task_storage, "status": "error"}
         execution["storage"] = task_storage
         execution["storage_status"] = task_storage["status"]
         execution["rehydration_attempts"] = task_storage[
@@ -12210,6 +12222,11 @@ class ChangeGovernanceService:
         execution["event_count"] = task_storage["event_count"]
         execution["reconciliation_runs"] = (
             self._task_reconciliation_runs
+        )
+        for counter in ("event_write_failures", "materialization_failures"):
+            execution[counter] = task_storage[counter]
+        summary["active_apply_operations"] = sum(
+            lock.locked() for lock in self._target_locks.values()
         )
         if self.f3_runtime is not None:
             summary["f3"] = self.f3_runtime.health()
@@ -12226,6 +12243,15 @@ class ChangeGovernanceService:
         )
 
         operational = summary["operational_administration"]
+        operational["active_operational_applies"] = sum(
+            lock.locked()
+            for target, lock in self._target_locks.items()
+            if (
+                isinstance(target, tuple)
+                and isinstance(target[0], str)
+                and target[0].startswith("operational_")
+            )
+        )
         backup_provider = self._backup_provider_health_snapshot()
         lifecycle_provider = self._lifecycle_provider_health_snapshot()
         helper_state_provider = (
@@ -12240,6 +12266,15 @@ class ChangeGovernanceService:
         operational["lifecycle_provider"] = lifecycle_provider
         operational["helper_state_provider"] = helper_state_provider
         for operation, operation_health in operational["operations"].items():
+            operation_health["active_reconciliations"] = (
+                self._active_lifecycle_reconciliations
+                if operation in {
+                    ChangeOperation.CONTROLLED_RELOAD.value,
+                    ChangeOperation.RESTART_ADDON.value,
+                    ChangeOperation.RESTART_HOME_ASSISTANT.value,
+                }
+                else 0
+            )
             provider_health = (
                 backup_provider
                 if operation == ChangeOperation.CREATE_FULL_BACKUP.value
@@ -12475,11 +12510,17 @@ class ChangeGovernanceService:
     def _build_health_summary(
         self, *, include_provider_health: bool = True
     ) -> dict[str, Any]:
+        # Invalidate before rebuilding: an exception must never leave an old
+        # ready aggregate reusable. There is no await/provider read in this
+        # persisted snapshot assembly; source generations are checked below.
+        self._health_cache_key = None
+        built_at = self.now()
         # Record-level governance projection failures remain visible and
         # non-actionable without hiding otherwise healthy plan accounting.
         plans, projection_failures = (
             self._resolved_plans_with_projection_failures()
         )
+        plan_generation = self.repository.generation
         self._projection_failure_index = {
             plan.plan_id: error_code
             for plan, error_code in projection_failures
@@ -12504,9 +12545,13 @@ class ChangeGovernanceService:
         storage = self.repository.health()
         try:
             tasks = self.task_repository.list()
+            # Bind to the captured task list before health/navigation can
+            # observe a newer writer generation. The final check rejects it.
+            task_generation = self.task_repository.generation
             task_storage = self.task_repository.health()
         except ExecutionTaskStorageError:
             tasks = []
+            task_generation = self.task_repository.generation
             task_storage = {
                 "configured": True,
                 "status": "error",
@@ -12524,6 +12569,28 @@ class ChangeGovernanceService:
                     self.task_repository.rehydration_attempts
                 ),
             }
+        # Bound reuse by the next clock-dependent transition. Only small
+        # timestamp metadata is retained, never cached plan authority.
+        deadline: datetime | None = None
+
+        def consider_deadline(value: Any) -> None:
+            nonlocal deadline
+            parsed = _parse_governance_timestamp(value)
+            if parsed is not None and parsed > built_at:
+                deadline = parsed if deadline is None else min(deadline, parsed)
+
+        for plan in plans:
+            if not is_terminal_plan(plan):
+                consider_deadline(plan.expires_at)
+            acknowledgement = plan.approval.elevated_risk_acknowledgement
+            if (
+                plan.approval.state == ApprovalState.EXTERNAL_PENDING
+                or (
+                    acknowledgement is not None
+                    and acknowledgement.state == ApprovalState.EXTERNAL_PENDING
+                )
+            ):
+                consider_deadline(self._active_challenge_projection(plan)[3])
         events = [event.event for plan in plans for event in plan.events]
         task_events = [
             event.event_type for task in tasks for event in task.events
@@ -12867,6 +12934,8 @@ class ChangeGovernanceService:
             gate = self._restart_reconciliation_gate(
                 plan, tasks_by_plan.get(plan.plan_id)
             )
+            consider_deadline(gate.get("evidence_deadline"))
+            consider_deadline(gate.get("next_attempt_at"))
             if gate.get("eligible"):
                 pending_restart_eligible += 1
             elif gate.get("backoff"):
@@ -13231,7 +13300,7 @@ class ChangeGovernanceService:
         }
         summary["f3"] = (
             self.f3_runtime.health()
-            if self.f3_runtime is not None
+            if include_provider_health and self.f3_runtime is not None
             else {
                 "f3_model": "f3-runtime-integration-v1",
                 "status": "unavailable",
@@ -13241,6 +13310,21 @@ class ChangeGovernanceService:
                 "fallback_count": 0,
             }
         )
+        # Navigation detects supported external replacements/index damage.
+        # Do not attach a new generation to data captured before that change.
+        self.repository.navigation_metrics()
+        self.task_repository.navigation_metrics()
+        if self.repository.generation != plan_generation:
+            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        if self.task_repository.generation != task_generation:
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        self._health_cache_built_at = built_at
+        self._health_cache_deadline = deadline
+        self._health_cache_has_lifecycle_provider = (
+            self.lifecycle_gateway is not None
+        )
+        if task_storage["status"] != "error":
+            self._health_cache_key = (plan_generation, task_generation)
         return summary
 
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0-beta.8 - Governance health-cache correctness
+
+- Reuse history aggregates under their captured plan/task generations; reject
+  observed mixed-generation builds, including task saves during metadata refresh.
+- Preserve expiry/restart deadlines, clock rollback, live locks/provider health,
+  failure visibility and independent returned data. Evaluate F3 health once per
+  public call; retain existing approval, dispatch and recovery authority.
+- Reduce repeated synthetic history work without claiming installed latency,
+  a heartbeat/authority remedy, or elimination of synchronous cold/F3 scans.
+- Keep all 80 tools, schemas, stored formats, installation settings, dependencies,
+  workflows and frozen stable-v1 unchanged. No new namespace or migration. Retain
+  beta.6/beta.7 recovery limitations and completed acceptance; Alarmo is excluded.
+  Publication, deployment and installed acceptance remain separate.
+
 ## 2.4.0-beta.7 - Configuration verification and dated re-verification
 
 - Preserve literal standalone trigger-condition IDs in verification; refuse

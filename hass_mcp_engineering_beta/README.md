@@ -1,13 +1,18 @@
 # HA MCP Engineering Server Beta
 
-**Engineering 2.4.0-beta.7** is the materialized candidate for
-[configuration verification and supplementary re-verification](../docs/V2_4_0_BETA7_RELEASE_NOTES.md).
-Literal standalone trigger-condition IDs retain their verification semantics.
-The new [`reverify_configuration_task`](../docs/CONFIGURATION_REVERIFICATION.md)
-checks every approved object of an eligible historical mismatch and saves dated
-evidence without resending configuration, operating a device or consuming approval.
-The historical failure remains visible alongside the supplementary resolution.
-Deployment alone does not perform that observation or resolve the household task.
+**Engineering 2.4.0-beta.8** is the materialized candidate for
+[governance health-cache correctness](../docs/V2_4_0_BETA8_RELEASE_NOTES.md).
+Unchanged health reads reuse captured history, refresh live health and honor
+lifecycle deadlines. F3 health runs once per public call. Cold rebuilds and
+remaining F3 history work are still synchronous; no household authority fix is
+claimed. See [performance scope](../docs/HEALTH_PERFORMANCE.md).
+
+Beta.7's [configuration verification](../docs/V2_4_0_BETA7_RELEASE_NOTES.md)
+and [`reverify_configuration_task`](../docs/CONFIGURATION_REVERIFICATION.md)
+remain available with their original bounds. The latter saves dated supplementary
+evidence without resending configuration, operating a device, consuming approval
+or replacing historical failure. Beta.8 acceptance does not repeat completed
+supplementary observations.
 
 The candidate has 55 static tools plus 25 admitted delegated reads (80 total).
 **2.3.0** remains the last accepted stable release. Prior script dependencies,
@@ -15,11 +20,11 @@ lifecycle analysis, Core log history and lock recovery remain available; their
 partial-coverage and recovery limits remain. The Core-log reader retains the
 owner-approved `homeassistant` role, which grants broader Core administration to
 the process; the tool still exposes only its fixed read. Alarmo is not included.
-See [2.4.0-beta.7 acceptance](../docs/V2_4_0_BETA7_ACCEPTANCE.md) and
-[2.4.0-beta.7 release notes](../docs/V2_4_0_BETA7_RELEASE_NOTES.md).
+See [2.4.0-beta.8 acceptance](../docs/V2_4_0_BETA8_ACCEPTANCE.md) and
+[2.4.0-beta.8 release notes](../docs/V2_4_0_BETA8_RELEASE_NOTES.md).
 
 Read the [Host/Origin policy](../docs/INBOUND_SECURITY.md) before an authorized
-2.4.0-beta.7 update. Configure exact aliases for MCP paths beyond its loopback-authority
+2.4.0-beta.8 update. Configure exact aliases for MCP paths beyond its loopback-authority
 defaults; explicit host lists replace those defaults. Native clients may omit
 Origin; browser MCP clients require an explicit origin. Approval ingress retains
 its separate authentication. Invalid options refuse startup, so retain independent
@@ -33,7 +38,7 @@ installed acceptance.
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures for 2.4.0-beta.7 | `amd64`, `aarch64` |
+| Architectures for 2.4.0-beta.8 | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
 | Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
 | Server ID | `hass-mcp-engineering-beta` |
@@ -55,7 +60,7 @@ belongs to this milestone.
 
 Historical v1.1.2 in `hass_mcp_admin/` is frozen and operationally retired,
 outside the Engineering dependency audit and not an Engineering rollback.
-2.4.0-beta.7 preserves existing options, original task/plan records, ports, ingress and image
+2.4.0-beta.8 preserves existing options, original task/plan records, ports, ingress and image
 repository. Preserve the optional supplementary receipt namespace during rollback;
 older code cannot display its resolution. Inherited beta.6 expanded lock-token
 records remain incompatible with beta.5 above sixteen tokens; binary downgrade
@@ -79,10 +84,15 @@ required catalog evidence; a cached inventory or count alone is insufficient.
 Provider unavailability grants no fallback, arbitrary forwarding or alternate
 provider retry.
 
-The candidate installed-acceptance target is **Core 2026.9.3 / ha-mcp 8.5.0**, with
-reviewed signed applicability for all 19 profiles. Core 2026.9.2 retains its
-immutable 17-reference entry and historical typed fan/power route; the two signed
-typed references are intentionally unavailable on that entry. Installation does
+Installed acceptance requires the actual installed Core version to be admitted
+by a valid signed registry, with all 19 required profiles compatible, and exactly
+admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
+version, registry sequence and authority state in each acceptance receipt;
+beta.8 imposes no separate installed-Core version pin. CI lane pins remain
+reproducible test fixtures, not blanket compatibility evidence.
+Core 2026.9.2 retains its immutable 17-reference entry and historical typed
+fan/power route; the two signed typed references are intentionally unavailable
+on that entry. Installation does
 not activate trust or update Core. Existing compiled pairings retain their behavior.
 
 The [8.5.0 compatibility contract](../docs/HA_MCP_8_5_0_COMPATIBILITY.md)
@@ -104,9 +114,10 @@ for one exact `turn_on`, `turn_off` or `set_percentage` request. The assistant
 manages the operation ID automatically and reuses it for reconciliation. No
 configuration plan or panel approval is created. Generic services and fallback
 remain unavailable. Operations require exact Core authority and admitted ha-mcp
-8.4.3 or 8.5.0. Core 2026.9.3 uses the reviewed signed typed applicability;
-Core 2026.9.2 retains its historical route. A generic read grant cannot authorize
-typed actions, and other Core versions need separately reviewed applicability.
+8.4.3 or 8.5.0. The signed registry selects reviewed typed applicability for each
+exact Core version; Core 2026.9.2 retains its historical route. A generic read
+grant cannot authorize typed actions, and a version without reviewed
+applicability remains unavailable.
 
 At most one mutation may dispatch per operation. Verify authoritative task state
 and exact HA state/percentage, retaining uncertainty and incomplete consumer
@@ -121,7 +132,7 @@ See [typed fan control](../docs/TYPED_FAN_CONTROL.md) for the full contract.
 `control_power` adds exact light/switch ON/OFF with assistant-managed operation IDs
 and ordinary authenticated connector authority. It creates no configuration plan,
 notification or panel approval. Exact Core authority and admitted ha-mcp 8.4.3
-or 8.5.0 are required, including the signed Core .3 and historical .2 routes above.
+or 8.5.0 are required, with the registry-selected and historical routes above.
 Generic services, toggle, brightness/color, bulk selectors
 and other domains remain closed.
 
@@ -202,8 +213,8 @@ script dependency acceptance gates and subsequent feature priorities.
 Retained RC9, 2.2.0, beta.3/beta.4, RC2 and 2.3.0 source/build, installed-image, catalog and
 live receipts remain bound to their original source, pairing, time and attribution.
 The beta.3 raw-catalog runtime-bracket qualification remains unchanged. They do
-not establish 2.4.0-beta.7 installed acceptance. The
-[2.4.0-beta.7 contract](../docs/V2_4_0_BETA7_ACCEPTANCE.md) separately
+not establish 2.4.0-beta.8 installed acceptance. The
+[2.4.0-beta.8 contract](../docs/V2_4_0_BETA8_ACCEPTANCE.md) separately
 requires final publication/image identity, fresh catalog and bounded installed
 verification.
 
