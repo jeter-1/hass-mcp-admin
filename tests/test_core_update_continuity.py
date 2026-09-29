@@ -170,7 +170,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
             await configure_with_test_authority(runtime, settings(), cache_path=self.cache,
                                                 expected_image=image, core_version="2026.9.3")
         self.assert_admitted(runtime, 19)
-        for version in ("2026.9.4", "latest", "../core", None):
+        for version in ("2026.9.5", "latest", "../core", None):
             with self.subTest(version=version), self.assertRaises(ValueError):
                 lane_entry(version)
 

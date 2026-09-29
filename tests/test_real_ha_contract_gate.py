@@ -1497,8 +1497,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.1"))
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.2"))
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.3"))
+        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.4"))
         with self.assertRaises(ValueError):
-            expected_adapter(home_assistant_version="2026.9.4")
+            expected_adapter(home_assistant_version="2026.9.5")
 
     def test_composite_device_contract_evidence_is_bounded_and_structural(self):
         project = self.contract._bounded_device_lookup_shape
