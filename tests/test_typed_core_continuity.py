@@ -41,7 +41,7 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory(); self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
         self.signer = CoreSigner()
-        self.entries = [core_entry(v, typed_operations=True) for v in ('2026.9.2', '2026.9.3')]
+        self.entries = [core_entry(v, typed_operations=True) for v in ('2026.9.2', '2026.9.3', '2026.9.4')]
         for entry in self.entries:
             entry['image_index_digest'] = 'sha256:' + sha256(('synthetic-image-' + entry['version']).encode()).hexdigest()
         self.raw = self.signer.journal_raw(entries=self.entries)
@@ -98,7 +98,7 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(service.locks.records(), ())
 
     async def test_same_executable_two_signed_core_releases_both_providers_all_domains(self):
-        for version in ('2026.9.2', '2026.9.3'):
+        for version in ('2026.9.2', '2026.9.3', '2026.9.4'):
             self.source.version = version
             await self.runtime()
             self.assertEqual(self.core.health_snapshot()['compatible_count'], 19)
@@ -248,7 +248,7 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         for failure in ('unknown', 'expired', 'signature'):
             with self.subTest(failure=failure):
                 if failure == 'unknown':
-                    self.source.version = '2026.9.4'
+                    self.source.version = '2026.9.5'
                 elif failure == 'expired':
                     self.source.version = '2026.9.3'
                     self.now = NOW + timedelta(days=2)
