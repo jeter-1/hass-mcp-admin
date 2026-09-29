@@ -119,7 +119,7 @@ HA_CONTRACT_CONTAINER = os.environ.get(
 )
 UPSTREAM_PORT = int(os.environ.get("REAL_HA_UPSTREAM_PORT", "18086"))
 UPSTREAM_SECRET_PATH = "/beta23-real-ha-mcp"
-CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3"})
+CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3", "2026.9.4"})
 MIGRATION_AUTOMATION_ID = "beta23_composite_device_reference"
 FIXTURE_PLATFORM = "beta23_device_fixture"
 RESOURCE_ORDER = (
@@ -1390,7 +1390,7 @@ async def _run_governed_helper_state_contract(
     with tempfile.TemporaryDirectory(prefix="helper-core-authority-") as directory:
         try:
             configured = settings(token)
-            if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
+            if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3", "2026.9.4"}:
                 from core_registry_contract_lane import configure_with_test_authority
                 await configure_with_test_authority(
                     core_runtime, configured, cache_path=Path(directory) / "core.json",
@@ -1575,7 +1575,7 @@ async def _run_governed_helper_state_with_authority(
                 )
             assert helper_dependency.get("home_assistant_version_observed") == EXPECTED_HA_VERSION
             assert dependency_index.snapshot.semantic_evidence.matches(EXPECTED_HA_VERSION)
-            if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
+            if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3", "2026.9.4"}:
                 assert helper_dependency.get("reviewed_core_semantics", {}).get("core_version") == EXPECTED_HA_VERSION
             _assert_device_contract(
                 (await exact_gateway.read_state(entity_id))["state"] == "off",
@@ -3421,7 +3421,7 @@ async def _run_core_2026_9_child_contract(
         "child_device_registry",
     )
     _assert_device_contract(
-        UPSTREAM_VERSION == ("8.5.0" if EXPECTED_HA_VERSION == "2026.9.3" else "8.4.3"), "child_consumer_catalog"
+        UPSTREAM_VERSION == ("8.5.0" if EXPECTED_HA_VERSION in {"2026.9.3", "2026.9.4"} else "8.4.3"), "child_consumer_catalog"
     )
     devices = await websocket.command({"type": "config/device_registry/list"})
     entities = await websocket.command({"type": "config/entity_registry/list"})
@@ -3508,7 +3508,7 @@ async def _run_core_2026_9_child_contract(
         await _start_exact_upstream(token)
         configured = settings(token)
         core_runtime = CoreRuntime()
-        if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
+        if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3", "2026.9.4"}:
             # CI-only ephemeral authority exercises data admission without
             # adding test releases to the production compiled release table.
             sys.path.insert(0, str(ROOT / "scripts"))
@@ -3531,9 +3531,9 @@ async def _run_core_2026_9_child_contract(
         )
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.reconcile_until_initialized(server)
-        if EXPECTED_HA_VERSION == "2026.9.3":
+        if EXPECTED_HA_VERSION in {"2026.9.3", "2026.9.4"}:
             await _run_script_dependency_contract(configured, core_runtime, read_gateway)
-        if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3"}:
+        if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3", "2026.9.4"}:
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)
         device_assessment = assess_device_registry(devices)

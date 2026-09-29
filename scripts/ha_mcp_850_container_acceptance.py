@@ -76,9 +76,9 @@ def version_code(version):
 
 def core_code(core_version, version):
     require((core_version, version) in {
-        ("2026.9.2", "8.4.3"), ("2026.9.2", "8.5.0"), ("2026.9.3", "8.5.0"),
+        ("2026.9.2", "8.4.3"), ("2026.9.2", "8.5.0"), ("2026.9.3", "8.5.0"), ("2026.9.4", "8.5.0"),
     }, "core_pair_invalid")
-    return "c3" if core_version == "2026.9.3" else ""
+    return {"2026.9.2": "", "2026.9.3": "c3", "2026.9.4": "c4"}[core_version]
 
 
 def candidate_pins(version, core_version):
@@ -87,8 +87,10 @@ def candidate_pins(version, core_version):
     pins = json.loads(pin_path.read_bytes())
     require(pins["version"] == version, "pin_version_mismatch")
     pins["core_version"] = core_version
-    if core_version == "2026.9.3":
-        entry = json.loads((ROOT / "tests/fixtures/core_2026_9_3_lane_provenance.json").read_bytes())
+    if core_version in {"2026.9.3", "2026.9.4"}:
+        filename = {"2026.9.3": "core_2026_9_3_lane_provenance.json",
+                    "2026.9.4": "core_2026_9_4_lane_provenance.json"}[core_version]
+        entry = json.loads((ROOT / "tests/fixtures" / filename).read_bytes())
         require(entry["version"] == core_version, "core_pin_version_mismatch")
         pins["core_image"] = "ghcr.io/home-assistant/home-assistant:" + core_version + "@" + entry["image_index_digest"]
     return pins
@@ -100,8 +102,15 @@ def execution_guard(env, architecture, version="8.5.0", core_version="2026.9.2")
     require(env.get("GITHUB_ACTIONS") == "true", "github_runner_required")
     require(env.get("GITHUB_REPOSITORY") == "jeter-1/hass-mcp-admin", "repository_mismatch")
     event, ref = env.get("GITHUB_EVENT_NAME"), env.get("GITHUB_REF", "")
+    core4_ref = "refs/heads/codex/core-2026-9-4-contract-check"
+    if core_version == "2026.9.4":
+        require(event == "push" and ref == core4_ref
+                and env.get("GITHUB_WORKFLOW_REF") == (
+                    "jeter-1/hass-mcp-admin/.github/workflows/core-2026-9-4-compatibility.yml@" + core4_ref
+                ), "core4_workflow_required")
     require(
-        event == "pull_request" and re.fullmatch(r"refs/pull/[1-9][0-9]*/merge", ref)
+        core_version == "2026.9.4"
+        or event == "pull_request" and re.fullmatch(r"refs/pull/[1-9][0-9]*/merge", ref)
         or event in {"push", "workflow_dispatch"} and ref == BRANCH
         # Reusable CI inherits the publisher's event and workflow reference.
         # This admits disposable validation only; the publisher independently
@@ -175,7 +184,7 @@ def docker(*args, timeout=90, check=True):
 
 
 def resource_names(identity):
-    require(re.fullmatch(r"h(843|850|850c3)-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
+    require(re.fullmatch(r"h(843|850|850c3|850c4)-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
 
@@ -469,7 +478,7 @@ async def assess(architecture, output, private, identity, pins):
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as client:
             async with client.get("http://127.0.0.1:18080/_assessment/stats") as response:
                 stats = await response.json()
-        extra = 4 if core_version == "2026.9.3" else 0
+        extra = 4 if core_version in {"2026.9.3", "2026.9.4"} else 0
         require(stats.get("service_posts", 0) == (14 if version == "8.5.0" else 8) + 2 * extra, "unexpected_total_dispatch_count")
         require(stats.get("service_posts_fan", 0) == (6 if version == "8.5.0" else 0) + extra, "unexpected_fan_dispatch_count")
         require(stats.get("service_posts_light", 0) == 4, "unexpected_light_dispatch_count")
@@ -565,10 +574,10 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
                     and receipt["provider_attempt_count"] == 1
                     and receipt["dispatch_intent_recorded"] is True
                     and receipt["provider_contract"] == (FAN_SEMANTIC_CONTRACTS["8.5.0"]
-                        if core_version == "2026.9.3" else FAN_RELEASES["8.5.0"][2]),
+                        if core_version in {"2026.9.3", "2026.9.4"} else FAN_RELEASES["8.5.0"][2]),
                     "candidate_fan_not_verified")
             require((receipt.get("core_binding") or {}).get("version") ==
-                    (core_version if core_version == "2026.9.3" else None), "fan_core_binding_mismatch")
+                    (core_version if core_version in {"2026.9.3", "2026.9.4"} else None), "fan_core_binding_mismatch")
             require(await fan_service.control(request) == receipt, "candidate_duplicate_fan_changed")
             independent = await rest.request("GET", "/states/" + FAN)
             require(independent["state"] == ("off" if action == "turn_off" else "on")
@@ -582,10 +591,10 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
         power_service = PowerService(str(work / "fan"), PowerProvider.configured(configured, gateway),
                                      PowerCoreAuthority(core), audit=AuditLogger(configured.audit_path, "synthetic-850-access"))
         power_summary = await power_contract(power_service, rest, telemetry, kind, output, core_version=core_version)
-        if core_version == "2026.9.3":
+        if core_version in {"2026.9.3", "2026.9.4"}:
             from typed_core_container_contract import failure_contract
             await failure_contract(fan_service, power_service, rest, telemetry, kind, output,
-                                   check=require, save=save)
+                                   check=require, save=save, core_version=core_version)
 
         provider = UpstreamDashboardProvider()
         provider.configure(configured)
@@ -647,7 +656,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             "nonterminal_execution_count", "active_conflict_hold_count",
             "active_normal_lock_count", "fallback_count")), "candidate_dashboard_not_settled")
         core_health = core.health_snapshot()
-        require(core_health["compatible_count"] == (19 if core_version == "2026.9.3" else 17)
+        require(core_health["compatible_count"] == (19 if core_version in {"2026.9.3", "2026.9.4"} else 17)
                 and core_health["issued_lease_count"] == 0
                 and core_health["active_commit_count"] == 0
                 and core_health["fallback_count"] == 0, "candidate_core_not_settled")
@@ -655,7 +664,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             "status": "PASS", "engineering_source": os.environ["GITHUB_SHA"],
             "read_count": 25, "blueprint_completeness": "partial" if kind == "standalone" else "complete",
             "fan_operations": 3, "fan_restored": "off", "dashboard_operations": 2,
-            "typed_failure_contracts": core_version == "2026.9.3",
+            "typed_failure_contracts": core_version in {"2026.9.3", "2026.9.4"},
             "dashboard_restored": True, "component_configured": kind == "addon",
             "f3": settled, "fan": fan_service.health(), "power": power_summary,
             "core": {k: core_health[k] for k in (
@@ -747,9 +756,9 @@ async def power_contract(service, rest, telemetry, kind, output, version="8.5.0"
                     and receipt["dispatch_intent_recorded"] is True
                     and receipt["provider"] == "upstream_typed_power"
                     and receipt["provider_contract"] == (POWER_SEMANTIC_CONTRACTS[version]
-                        if core_version == "2026.9.3" else POWER_RELEASES[version][2]), "candidate_power_not_verified")
+                        if core_version in {"2026.9.3", "2026.9.4"} else POWER_RELEASES[version][2]), "candidate_power_not_verified")
             require((receipt.get("core_binding") or {}).get("version") ==
-                    (core_version if core_version == "2026.9.3" else None), "power_core_binding_mismatch")
+                    (core_version if core_version in {"2026.9.3", "2026.9.4"} else None), "power_core_binding_mismatch")
             require(await service.control(request) == receipt, "candidate_duplicate_power_changed")
             readback = await rest.request("GET", "/states/" + entity)
             calls += 1
@@ -770,7 +779,7 @@ def main():
     parser.add_argument("--relay", action="store_true")
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--upstream-version", choices=("8.4.3", "8.5.0"), default="8.5.0")
-    parser.add_argument("--core-version", choices=("2026.9.2", "2026.9.3"), default="2026.9.2")
+    parser.add_argument("--core-version", choices=("2026.9.2", "2026.9.3", "2026.9.4"), default="2026.9.2")
     parser.add_argument("--architecture", choices=("amd64", "arm64"))
     args = parser.parse_args()
     if args.relay:

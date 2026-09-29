@@ -1,0 +1,247 @@
+name: Core 2026.9.4 disposable compatibility
+
+# Test-only branch. No production registry, release or deployment authority.
+on:
+  push:
+    branches: [codex/core-2026-9-4-contract-check]
+permissions:
+  contents: read
+concurrency:
+  group: core-2026-9-4-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+  GIT_OPTIONAL_LOCKS: '0'
+
+jobs:
+  real-ha-contract-tests:
+    if: github.repository == 'jeter-1/hass-mcp-admin'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    env:
+      HA_CONTRACT_LANE: ha-2026-9-4
+      HA_CONTRACT_VERSION: 2026.9.4
+      HA_CONTRACT_IMAGE: ghcr.io/home-assistant/home-assistant:2026.9.4@sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76
+      HA_FIXTURE_WRITER_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+      REAL_HA_EXPECTED_VERSION: 2026.9.4
+      REAL_HA_UPSTREAM_IMAGE: ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c
+      REAL_HA_UPSTREAM_VERSION: 8.5.0
+      REAL_HA_UPSTREAM_SOURCE_COMMIT: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+      REAL_HA_UPSTREAM_SOURCE_SHA256: 02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e
+      REAL_HA_UPSTREAM_CONTAINER: beta25-real-ha-upstream-ha-2026-9-4
+      REAL_HA_UPSTREAM_PORT: "18086"
+      HA_WRITER_CONTAINER: beta25-real-ha-writer-ha-2026-9-4
+      HA_CONTRACT_CONTAINER: beta25-real-ha-ha-2026-9-4
+      HA_CONTRACT_NETWORK: beta-rc2-contract-ha-2026-9-4
+      REAL_HA_CONTRACT_DIR: ${{ runner.temp }}/beta25-real-ha-ha-2026-9-4
+      REAL_HA_TOKEN_FILE: ${{ runner.temp }}/beta25-real-ha-ha-2026-9-4.token
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
+      - name: Install Engineering client dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+      - name: Prepare exact source and disposable migration configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_archive="$RUNNER_TEMP/ha-mcp-source-$HA_CONTRACT_LANE.tar.gz"
+          source_parent="$RUNNER_TEMP/ha-mcp-source-$HA_CONTRACT_LANE"
+          contract_dir="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE"
+          device_fixture="$contract_dir/beta23-device-fixture.json"
+          token_file="$RUNNER_TEMP/beta25-real-ha-$HA_CONTRACT_LANE.token"
+          {
+            echo "REAL_HA_CONTRACT_DIR=$contract_dir"
+            echo "REAL_HA_DEVICE_FIXTURE=$device_fixture"
+            echo "REAL_HA_TOKEN_FILE=$token_file"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$source_parent" "$contract_dir/custom_components"
+          curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
+            "https://codeload.github.com/homeassistant-ai/ha-mcp/legacy.tar.gz/$REAL_HA_UPSTREAM_SOURCE_COMMIT" \
+            --output "$source_archive"
+          printf '%s  %s\n' \
+            "$REAL_HA_UPSTREAM_SOURCE_SHA256" \
+            "$source_archive" | sha256sum --check --strict
+          tar -xzf "$source_archive" -C "$source_parent"
+          source_root="$(find "$source_parent" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$source_root"
+          test "$(find "$source_parent" -mindepth 1 -maxdepth 1 -type d | wc -l)" = 1
+          printf 'HA_MCP_SOURCE_ROOT=%s\n' "$source_root" >> "$GITHUB_ENV"
+          if test "$REAL_HA_UPSTREAM_VERSION" = "8.2.0"; then
+            python scripts/verify_ha_mcp_8_2_0_packaging.py \
+              --source-root "$source_root" \
+              --output "$RUNNER_TEMP/ha-mcp-8.2.0-packaging-$HA_CONTRACT_LANE.json"
+          fi
+          cp -R \
+            tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture \
+            "$contract_dir/custom_components/"
+          cp -R "$source_root/custom_components/ha_mcp_tools" \
+            "$contract_dir/custom_components/"
+          printf '%s\n' \
+            'default_config:' \
+            'automation: !include automations.yaml' \
+            'http:' \
+            '  server_port: 8123' \
+            'input_boolean: {}' \
+            'input_number: {}' \
+            'script: !include scripts.yaml' \
+            > "$contract_dir/configuration.yaml"
+          : > "$contract_dir/automations.yaml"
+          : > "$contract_dir/scripts.yaml"
+          # A dedicated bridge isolates this disposable topology from every
+          # unrelated container while the explicit loopback-only published
+          # ports let the bounded host-side contract client reach Core and
+          # ha-mcp. Docker's --internal networks intentionally suppress those
+          # published-port routes and therefore cannot serve this acceptance
+          # topology.
+          docker network create --driver bridge "$HA_CONTRACT_NETWORK"
+          expected_network_internal="$(
+            python -c 'import json,pathlib; print(str(json.loads(pathlib.Path("tests/fixtures/ha_core_2026_9_disposable_lane.json").read_text(encoding="utf-8"))["docker_internal"]).lower())'
+          )"
+          actual_network_internal="$(
+            docker network inspect --format '{{.Internal}}' "$HA_CONTRACT_NETWORK"
+          )"
+          test "$actual_network_internal" = "$expected_network_internal"
+      - name: Persist migration fixture with exact Home Assistant 2026.7.2
+        shell: bash
+        env:
+          REAL_HA_URL: http://127.0.0.1:18123
+        run: |
+          set -euo pipefail
+          docker pull "$HA_FIXTURE_WRITER_IMAGE"
+          docker run -d --name "$HA_WRITER_CONTAINER" \
+            --network "$HA_CONTRACT_NETWORK" -p 127.0.0.1:18123:8123 \
+            -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_FIXTURE_WRITER_IMAGE"
+          python scripts/real_ha_contract_tests.py --prepare-migration-fixture
+          docker stop --time 30 "$HA_WRITER_CONTAINER"
+          docker rm "$HA_WRITER_CONTAINER"
+      - name: Start disposable exact target Home Assistant Core
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$HA_CONTRACT_VERSION" == 2026.9.* ]]; then
+            printf '%s\n' 'kitchen_sink:' >> "$REAL_HA_CONTRACT_DIR/configuration.yaml"
+          fi
+          docker pull "$HA_CONTRACT_IMAGE"
+          docker run -d --name "$HA_CONTRACT_CONTAINER" \
+            --network "$HA_CONTRACT_NETWORK" -p 127.0.0.1:8123:8123 \
+            -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_CONTRACT_IMAGE"
+          echo "HA contract version: $HA_CONTRACT_VERSION"
+          docker image inspect "$HA_CONTRACT_IMAGE" \
+            --format='HA contract image digest: {{index .RepoDigests 0}}'
+      - name: Verify exact ha-mcp component inside disposable Home Assistant
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_root="$HA_MCP_SOURCE_ROOT"
+          docker pull "$REAL_HA_UPSTREAM_IMAGE"
+          docker cp "$source_root" \
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-source"
+          docker cp scripts/disposable_ha_websockets_probe.py \
+            "$HA_CONTRACT_CONTAINER:/tmp/disposable_ha_websockets_probe.py"
+          docker exec "$HA_CONTRACT_CONTAINER" python \
+            /tmp/disposable_ha_websockets_probe.py \
+            --source-root /tmp/ha-mcp-source \
+            --upstream-version "$REAL_HA_UPSTREAM_VERSION" \
+            --output /tmp/ha-mcp-disposable-ha.json
+          docker cp \
+            "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-disposable-ha.json" \
+            "$RUNNER_TEMP/ha-mcp-$REAL_HA_UPSTREAM_VERSION-disposable-$HA_CONTRACT_LANE.json"
+      - name: Run real Home Assistant contracts
+        env:
+          REAL_HA_URL: http://127.0.0.1:8123
+        run: python scripts/real_ha_contract_tests.py
+      - name: Upload bounded disposable Home Assistant packaging evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: ha-mcp-8.5.0-disposable-ha-2026-9-4
+          path: |
+            ${{ runner.temp }}/ha-mcp-8.2.0-packaging-ha-2026-9-4.json
+            ${{ runner.temp }}/ha-mcp-8.5.0-disposable-ha-2026-9-4.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Verify disposable Home Assistant cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker info --format '{{.OSType}}' >/dev/null
+          for name in "$REAL_HA_UPSTREAM_CONTAINER" "$HA_CONTRACT_CONTAINER" "$HA_WRITER_CONTAINER"; do
+            if docker inspect "$name" >/dev/null 2>&1; then
+              docker rm -f "$name" >/dev/null
+            fi
+            test -z "$(docker ps -aq --filter "name=^/$name$")"
+          done
+          test "$REAL_HA_CONTRACT_DIR" = "$RUNNER_TEMP/beta25-real-ha-ha-2026-9-4"
+          test "$REAL_HA_TOKEN_FILE" = "$RUNNER_TEMP/beta25-real-ha-ha-2026-9-4.token"
+          rm -f "$REAL_HA_TOKEN_FILE"
+          sudo rm -rf -- "$REAL_HA_CONTRACT_DIR"
+          if docker network inspect "$HA_CONTRACT_NETWORK" >/dev/null 2>&1; then
+            docker network rm "$HA_CONTRACT_NETWORK" >/dev/null
+          fi
+          test -z "$(docker network ls -q --filter "name=^$HA_CONTRACT_NETWORK$")"
+          docker info --format '{{.OSType}}' >/dev/null
+
+  exact-addon-runtime-acceptance:
+    if: github.repository == 'jeter-1/hass-mcp-admin'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-latest
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      ASSESSMENT_ARCH: ${{ matrix.architecture }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12.14'
+      - name: Install locked client dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          repository: homeassistant-ai/ha-mcp
+          ref: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+          path: .upstream-850
+          submodules: true
+          persist-credentials: false
+      - name: Exercise Core .4 with both exact ha-mcp providers
+        run: python scripts/ha_mcp_850_container_acceptance.py --architecture "$ASSESSMENT_ARCH" --upstream-version 8.5.0 --core-version 2026.9.4
+      - name: Always reconcile owned container cleanup
+        if: always()
+        run: python scripts/ha_mcp_850_container_acceptance.py --cleanup --architecture "$ASSESSMENT_ARCH" --upstream-version 8.5.0 --core-version 2026.9.4
+      - name: Remove only this run's private disposable stores
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_RUN_ID" =~ ^[0-9]+$ && "$GITHUB_RUN_ATTEMPT" =~ ^[0-9]+$ ]]
+          [[ "$ASSESSMENT_ARCH" == amd64 || "$ASSESSMENT_ARCH" == arm64 ]]
+          prefix="h850c4-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASSESSMENT_ARCH-private-"
+          find "$RUNNER_TEMP" -mindepth 1 -maxdepth 1 -type d -name "$prefix*" -exec sudo rm -rf -- {} +
+      - name: Retain bounded synthetic evidence only
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: core-2026-9-4-typed-${{ matrix.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/h850c4-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.architecture }}-evidence/*.json
+          if-no-files-found: error
+          retention-days: 14
