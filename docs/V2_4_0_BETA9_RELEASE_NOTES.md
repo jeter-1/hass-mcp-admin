@@ -14,8 +14,10 @@ Concurrent health readers serialize preparation. Cancellation cannot publish a
 background cache or resolve further lifecycle state for the canceled request;
 the next reader drains any unfinished pure validation before starting again.
 Observed plan/task changes reject a mixed snapshot without overwriting an owner
-approval, with `details.reason=health_snapshot_superseded` distinguishing that
-race from disk failure. A failed abandoned job does not poison the next reader;
+approval. The new async wait/projection generation checks attach
+`details.reason=health_snapshot_superseded`. Older final-assembly generation races
+may retain unmarked storage errors; absence of the marker does not prove disk
+failure. A failed abandoned job does not poison the next reader;
 fresh validation and caller cancellation still propagate their own failures.
 Crossed expiry deadlines and clock rollback still invalidate reuse.
 Live Core/provider state is sampled after asynchronous preparation, and warm

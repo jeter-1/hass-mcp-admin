@@ -106,11 +106,13 @@ authority, and cancellation cannot create an unbounded worker queue.
 Plan and task generations are checked after awaits and before publication.
 An observed concurrent approval, save, external replacement or task change
 refuses the mixed snapshot using the existing storage error categories, without
-retrying or overwriting the newer record. These race refusals carry the fixed
-`details.reason=health_snapshot_superseded`, distinguishing superseded evidence
-from a storage fault; they are not a valid health snapshot. Actual storage and
-unsafe-record errors retain their existing meanings. A later ordinary request
-can rebuild. A failed abandoned worker is drained without transferring its
+retrying or overwriting the newer record. The new asynchronous wait/projection
+generation checks attach `details.reason=health_snapshot_superseded`, positively
+identifying superseded evidence, not a valid health snapshot. The older final
+synchronous assembly checks can still return unmarked storage-category errors
+for generation races. Absence of this marker alone does not prove disk trouble.
+Actual storage and unsafe-record errors retain their existing meanings. A later
+ordinary request can rebuild. A failed abandoned worker is drained without transferring its
 exception to an unrelated reader; that reader still performs fresh validation,
 whose failures propagate. Cancellation continues to propagate.
 The aggregate's time origin precedes asynchronous work so an expiry crossed
