@@ -3,6 +3,7 @@ import argparse
 import asyncio
 from datetime import datetime, timedelta, timezone
 import hashlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -28,7 +29,7 @@ job_mismatch local_command_failed manifest_mismatch message_entity_mismatch
 missing_end_control_not_distinguishable negative_control_http_failure network_not_internal
 platform_mismatch registered_tool_failure repository_mismatch request_count_mismatch
 response_not_list retry_or_upstream_attempt run_identity_missing shipped_engineering_source_changed
-source_missing start_mismatch telemetry_attempt_mismatch unexpected_dispatch unexpected_entity'''.split())
+source_missing start_mismatch telemetry_attempt_mismatch unexpected_dispatch unexpected_entity fixture_route_mismatch'''.split())
 
 
 class RequirementFailure(ValueError):
@@ -49,6 +50,8 @@ def response_diagnostic(response):
                    'provider_error','internal_server_error','logbook_response_limit_exceeded',
                    'logbook_busy','invalid_request','validation_failure'}
     code=response.get('error_code')
+    details=response.get('details')
+    status=details.get('status') if isinstance(details,dict) else None
     records=response.get('data')
     known={f'synthetic_{entity}_{age}' for entity in ('alpha','beta') for age in (192,120,48,18,6,-1)}
     labels=[];unknown=0
@@ -60,6 +63,7 @@ def response_diagnostic(response):
             else:
                 unknown+=1
     return {'success':response.get('success') is True,
+            'http_status':status if type(status) is int and status in (400,401,403,404,409,429,500,502,503,504) else None,
             'error_code':code if isinstance(code,str) and code in known_codes else 'other_or_absent',
             'data_is_list':isinstance(records,list),'record_count':len(records) if isinstance(records,list) else None,
             'known_messages':labels,'unrecognized_records_in_first64':unknown}
@@ -169,9 +173,40 @@ def verify_image(pins, out):
     return image, observed
 
 
-async def reader_cases(folder, out, fixture, diagnostics=None):
+def owned_endpoint(identity):
+    """Select only this run's sole container on its owned internal bridge."""
+    network_format = ('{"internal":{{json .Internal}},"driver":{{json .Driver}},'
+                      '"owner":{{json (index .Labels "' + LABEL + '")}},'
+                      '"members":{{json .Containers}}}')
+    container_format = ('{"id":{{json .Id}},"owner":'
+                        '{{json (index .Config.Labels "' + LABEL + '")}}}')
+    network=json.loads(docker('network','inspect','--format',network_format,identity).stdout)
+    container=json.loads(docker('container','inspect','--format',container_format,identity).stdout)
+    require(isinstance(network,dict) and network.get('internal') is True
+            and network.get('driver')=='bridge' and network.get('owner')==identity,
+            'fixture_route_mismatch')
+    require(isinstance(container,dict) and container.get('owner')==identity
+            and isinstance(container.get('id'),str)
+            and re.fullmatch('[0-9a-f]{64}',container['id']), 'fixture_route_mismatch')
+    members=network.get('members')
+    require(isinstance(members,dict) and set(members)=={container['id']}, 'fixture_route_mismatch')
+    member=members[container['id']]
+    require(isinstance(member,dict) and member.get('Name')==identity
+            and isinstance(member.get('IPv4Address'),str), 'fixture_route_mismatch')
+    try:
+        address=ipaddress.IPv4Interface(member['IPv4Address'])
+    except ValueError:
+        raise RequirementFailure('fixture_route_mismatch') from None
+    require(any(address.ip in ipaddress.IPv4Network(net)
+                for net in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16'))
+            and address.ip not in (address.network.network_address,address.network.broadcast_address),
+            'fixture_route_mismatch')
+    return f'http://{address.ip}:8123'
+
+
+async def reader_cases(folder, out, fixture, diagnostics=None, *, endpoint="http://127.0.0.1:18123"):
     # Configure only this disposable process before importing the shipped tool.
-    os.environ['HA_URL'] = 'http://127.0.0.1:18123'
+    os.environ['HA_URL'] = endpoint
     os.environ['HA_TOKEN'] = (folder/'ephemeral-token').read_text()
     os.environ['AUDIT_ENABLED'] = 'false'
     os.environ['AUDIT_PATH'] = str(folder/'engineering-audit.jsonl')
@@ -191,7 +226,7 @@ async def reader_cases(folder, out, fixture, diagnostics=None):
             captured.append(path)
             return await super().request(method,path,*args,**kwargs)
 
-    settings = replace(compatibility.SETTINGS, ha_url='http://127.0.0.1:18123',
+    settings = replace(compatibility.SETTINGS, ha_url=endpoint,
                        ha_token=os.environ['HA_TOKEN'], audit_enabled=False,
                        ha_timeout_seconds=15, response_size_limit=60000)
     client = ObservedClient(settings)
@@ -269,10 +304,10 @@ def main():
     try:
         image,config_digest=verify_image(pins,out)
         phase='core_start'
-        docker('network','create','--internal','--label',LABEL+'='+identity,identity)
+        docker('network','create','--driver','bridge','--internal','--label',LABEL+'='+identity,identity)
         require(docker('network','inspect','--format','{{.Internal}}',identity).stdout.strip()==b'true','network_not_internal')
         docker('run','-d','--name',identity,'--label',LABEL+'='+identity,'--network',identity,
-               '--publish','127.0.0.1:18123:8123','--platform','linux/amd64','--cpus','2','--memory','2g',
+               '--platform','linux/amd64','--cpus','2','--memory','2g',
                '--pids-limit','256','--cap-drop','ALL','--security-opt','no-new-privileges',
                '--user',f'{os.getuid()}:{os.getgid()}', '--env','HOME=/config','--env','PYTHONDONTWRITEBYTECODE=1',
                '--mount',f'type=bind,src={folder},dst=/config',
@@ -280,9 +315,8 @@ def main():
                '--mount',f'type=bind,src={PINS},dst=/fixture/pins.json,readonly',
                '--entrypoint','python',image,'/fixture/core.py')
         require(docker('inspect','--format','{{.Image}}',identity).stdout.decode().strip()==config_digest,'container_image_mismatch')
-        ports=json.loads(docker('inspect','--format','{{json .NetworkSettings.Ports}}',identity).stdout)
-        diagnostics['network']={'internal':True,'loopback_mapping_observed':
-            isinstance(ports,dict) and ports.get('8123/tcp')==[{'HostIp':'127.0.0.1','HostPort':'18123'}]}
+        endpoint=owned_endpoint(identity)
+        diagnostics['network']={'internal':True,'route':'owned_internal_bridge','published_ports':False}
         deadline=time.monotonic()+200
         while not (folder/'ready.json').exists():
             require(time.monotonic()<deadline,'core_readiness_timeout')
@@ -292,7 +326,7 @@ def main():
         require(fixture['core_version']==pins['core_version'] and fixture['source_commit']==pins['core_source'],'core_identity_mismatch')
         save(out,'fixture.json',fixture)
         phase='registered_reader_intervals'
-        asyncio.run(asyncio.wait_for(reader_cases(folder,out,fixture,diagnostics),timeout=300))
+        asyncio.run(asyncio.wait_for(reader_cases(folder,out,fixture,diagnostics,endpoint=endpoint),timeout=300))
         status='PASS'
     finally:
         if status!='PASS':

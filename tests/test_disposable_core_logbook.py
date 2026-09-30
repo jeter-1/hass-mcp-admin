@@ -102,6 +102,49 @@ class DisposableLogbookTests(unittest.TestCase):
         with patch.object(lane.subprocess,'run',return_value=subprocess.CompletedProcess([],0,b'x'*(lane.MAX_BYTES+1),b'')):
             with self.assertRaises(ValueError):lane.command(['synthetic'])
 
+    def route_metadata(self):
+        identity='logbook-123-1'
+        container={'id':'a'*64,'owner':identity}
+        network={'internal':True,'driver':'bridge','owner':identity,
+                 'members':{'a'*64:{'Name':identity,'IPv4Address':'172.18.0.2/16'}}}
+        return identity,network,container
+
+    def route(self,identity,network,container):
+        replies=[subprocess.CompletedProcess([],0,json.dumps(item).encode(),b'')
+                 for item in (network,container)]
+        with patch.object(lane,'docker',side_effect=replies) as docker:
+            endpoint=lane.owned_endpoint(identity)
+            self.assertEqual(docker.call_count,2)
+        return endpoint
+
+    def test_owned_internal_bridge_route_without_published_port(self):
+        identity,network,container=self.route_metadata()
+        self.assertEqual(self.route(identity,network,container),'http://172.18.0.2:8123')
+
+    def test_route_rejects_foreign_or_ambiguous_network_and_container(self):
+        for change in ('external','driver','network_owner','container_owner','member_id',
+                       'extra_member','member_name','container_id'):
+            with self.subTest(change=change):
+                identity,network,container=self.route_metadata()
+                if change=='external':network['internal']=False
+                if change=='driver':network['driver']='host'
+                if change=='network_owner':network['owner']='other'
+                if change=='container_owner':container['owner']='other'
+                if change=='member_id':container['id']='b'*64
+                if change=='extra_member':network['members']['b'*64]=dict(network['members']['a'*64])
+                if change=='member_name':network['members']['a'*64]['Name']='other'
+                if change=='container_id':container['id']='invalid'
+                with self.assertRaises(lane.RequirementFailure):self.route(identity,network,container)
+
+    def test_route_rejects_nonprivate_special_or_malformed_addresses(self):
+        for address in ('8.8.8.8/24','127.0.0.1/8','169.254.169.254/16','0.0.0.0/0',
+                        '224.0.0.1/4','172.18.0.0/16','172.18.255.255/16',
+                        'http://private.invalid/','172.18.0.2@private.invalid','::1/128',None):
+            with self.subTest(address=address):
+                identity,network,container=self.route_metadata()
+                network['members']['a'*64]['IPv4Address']=address
+                with self.assertRaises(lane.RequirementFailure):self.route(identity,network,container)
+
     def test_failure_reasons_are_fixed_not_exception_text(self):
         for reason,expected in [('registered_tool_failure','registered_tool_failure'),
                                 ('synthetic-private-marker','unclassified')]:
@@ -125,10 +168,13 @@ class DisposableLogbookTests(unittest.TestCase):
         with patch.object(sys,'path',[str(ROOT/'hass_mcp_engineering_beta'),*sys.path]):
             from ha_mcp_engineering.models.responses import FailureResponse
         failed=FailureResponse(operation='get_logbook',error=secret,
-                               error_code='home_assistant_unavailable',message=secret).as_dict()
+                               error_code='home_assistant_unavailable',message=secret,details={'status':401,'secret':secret}).as_dict()
         projected=lane.response_diagnostic(failed)
         self.assertEqual(projected['error_code'],'home_assistant_unavailable')
         self.assertFalse(projected['success'])
+        self.assertEqual(projected['http_status'],401)
+        for value in (True,secret,999):
+            self.assertIsNone(lane.response_diagnostic({'details':{'status':value}})['http_status'])
         self.assertNotIn(secret,json.dumps(projected))
 
     def test_workflow_only_branch_read_permissions_and_safe_artifact_list(self):

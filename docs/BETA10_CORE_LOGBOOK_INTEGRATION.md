@@ -47,7 +47,7 @@ and cleanup receipts remain evidence, but it proves no interval behavior.
 ## Isolation, evidence and limits
 
 Only a GitHub-hosted run for the exact repository, branch, event and job passes
-the execution guard. Core has an internal Docker network, a loopback-only port,
+the execution guard. Core has an internal Docker bridge, no published host port,
 CPU/memory/process limits, no added capabilities and no-new-privileges. Its only
 writable fixture is unique to the run; no production paths are mounted. A token
 created by this disposable Core stays in private runner temporary state and is
@@ -58,9 +58,19 @@ Failure receipts retain a fixed assertion reason and the last synthetic case's
 counts/known labels. Arbitrary response strings and exception messages are
 excluded; an unknown value is classified without being copied. This diagnostic
 projection does not relax any acceptance assertion. It reads the shipped
-FailureResponse's top-level error_code and records only a boolean indicating
-whether Docker reports the requested loopback mapping; no Docker configuration
-or response body is exported.
+FailureResponse's top-level error_code and an allowlisted numeric HTTP failure
+status when present. The runner selects only the private IPv4
+address of this run's sole container after checking network/container ownership,
+internal bridge mode, exact container ID and member name. Public, loopback,
+link-local, malformed and ambiguous addresses are refused; there is no alternate
+route. Only a fixed route classification is retained, not Docker configuration.
+
+The preceding disposable run showed a missing requested loopback port mapping
+and a first-request home_assistant_unavailable refusal. Removing that mapping
+dependency is a fixture correction, not a shipped reader change. Docker's
+[port documentation](https://docs.docker.com/engine/network/port-publishing/)
+specifies that the daemon host can access container ports on its internal bridge.
+No host firewall, daemon configuration, permissions or external network is changed.
 
 Offline tests cover wrong execution identity, source tampering, wrong interval
 results, ownership refusal, cleanup, output bounds and workflow permissions.
