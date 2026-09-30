@@ -441,7 +441,21 @@ CORE_TYPED_OPERATION_PROFILES = tuple(
          "empty_service_data_integration_defaults_may_apply", "exact_on_off_state"),
     )
 )
-CORE_RUNTIME_CAPABILITY_PROFILES = CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES
+from ..integration_inspection.contracts import CORE_METADATA_CONTRACT
+
+CORE_INTEGRATION_INSPECTION_PROFILES = (
+    _contract(
+        "core.integration_inspection_metadata_read",
+        CoreCapabilityClass.INTEGRATION_INSPECTION_METADATA_READ,
+        "compiled-core-alarmo-metadata-read-v1",
+        ("websocket_auth_ok_version", "websocket_get_config_mapping", "websocket_result_envelope"),
+        provider_boundary="direct_ha_api", response_contract=CORE_METADATA_CONTRACT,
+        predispatch=("core_identity", "existing_origin_principal", "generation", "current_authority"),
+    ),
+)
+CORE_RUNTIME_CAPABILITY_PROFILES = (
+    CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
+)
 
 
 def compiled_exact_authority(version: str) -> tuple[CoreAuthoritySelection, ...]:

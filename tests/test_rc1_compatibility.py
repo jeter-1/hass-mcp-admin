@@ -174,6 +174,7 @@ class RC1PublicContractTests(unittest.TestCase):
                 sorted(
                     (
                         *BETA26_TOOL_NAMES,
+                        "get_integration_inspection",
                         "get_core_log_history",
                         "reverify_configuration_task",
                         *RC3A_ADDITIVE_TOOL_NAMES,
@@ -427,7 +428,7 @@ class RC1PublicContractTests(unittest.TestCase):
             BETA26_DIRECT_POLICY_SHA256,
         )
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(classifications), 55)
+        self.assertEqual(len(classifications), 56)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

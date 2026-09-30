@@ -125,6 +125,7 @@ def capability_evidence_for_probes(
     configuration_validation: Any = None,
     probe_profile: CoreProbeProfile | None = None,
     include_typed_operations: bool = False,
+    include_integration_inspection: bool = False,
 ) -> list[dict[str, Any]]:
     """Project transient raw probes into bounded binary-owned check evidence."""
 
@@ -231,6 +232,10 @@ def capability_evidence_for_probes(
     # profile. A successful response or an observed version cannot select it.
     # Admission still independently checks each exact capability contract.
     if probe_profile is not None:
+        if include_integration_inspection:
+            # Transport readiness only; the separate signed applicability must
+            # select this exact binary contract. No new probe is dispatched.
+            add("core.integration_inspection_metadata_read", websocket_ok, semantic=True)
         add("core.template_semantics", websocket_ok, semantic=True)
         add(
             "core.configuration_validation",
@@ -677,6 +682,7 @@ class AiohttpCoreSnapshotSource:
             raise RuntimeError("core_probe_version_invalid")
         evidence = capability_evidence_for_probes(
             include_typed_operations=True,
+            include_integration_inspection=True,
             version=version,
             probe_profile=self._profile_selector(version),
             rest_config=rest_config,

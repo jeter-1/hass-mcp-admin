@@ -1196,7 +1196,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         by_version = {item["ha_version"]: item for item in matrix}
         self.assertEqual(
             set(by_version),
-            {"2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3"},
+            {"2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3", "2026.9.4"},
         )
         self.assertEqual(
             by_version["2026.9.0"]["ha_image"],
@@ -1240,6 +1240,12 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                          "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
         self.assertEqual(core3["ha_mcp_source_sha256"],
                          "02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e")
+        core4 = by_version["2026.9.4"]
+        self.assertEqual(core4["ha_image"],
+                         "ghcr.io/home-assistant/home-assistant:2026.9.4@"
+                         "sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76")
+        for key in ("ha_mcp_version", "ha_mcp_image", "ha_mcp_source_commit", "ha_mcp_source_sha256"):
+            self.assertEqual(core4[key], core3[key])
         self.assertEqual(job["env"]["HA_CONTRACT_IMAGE"], "${{ matrix.ha_image }}")
         self.assertEqual(job["env"]["HA_FIXTURE_WRITER_IMAGE"], matrix[0]["ha_image"])
         self.assertEqual(
@@ -1497,8 +1503,9 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.1"))
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.2"))
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.3"))
+        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.4"))
         with self.assertRaises(ValueError):
-            expected_adapter(home_assistant_version="2026.9.4")
+            expected_adapter(home_assistant_version="2026.9.5")
 
     def test_composite_device_contract_evidence_is_bounded_and_structural(self):
         project = self.contract._bounded_device_lookup_shape

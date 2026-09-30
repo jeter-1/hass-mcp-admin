@@ -46,6 +46,7 @@ class CoreReadmissionError(ValueError):
 class CoreCapabilityClass(str, Enum):
     BASIC_REST_READ = "basic_rest_read"
     BASIC_WEBSOCKET_READ = "basic_websocket_read"
+    INTEGRATION_INSPECTION_METADATA_READ = "integration_inspection_metadata_read"
     STATE_SERVICE_DISCOVERY = "state_service_discovery"
     NON_DEVICE_REGISTRY_READ = "non_device_registry_read"
     DIRECT_DEVICE_REGISTRY_READ = "direct_device_registry_read"
@@ -77,6 +78,7 @@ class CoreCapabilityClass(str, Enum):
     @property
     def semantic(self) -> bool:
         return self in {
+            CoreCapabilityClass.INTEGRATION_INSPECTION_METADATA_READ,
             CoreCapabilityClass.DIRECT_DEVICE_REGISTRY_READ,
             CoreCapabilityClass.DELEGATED_DEVICE_EFFECTIVE_AREA,
             CoreCapabilityClass.AUTOMATION_TRACE_READ,

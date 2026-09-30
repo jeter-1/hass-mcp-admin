@@ -89,6 +89,9 @@ DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
 }
 
 STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "get_integration_inspection": (
+        "core.basic_websocket_read", "core.integration_inspection_metadata_read",
+    ),
     "render_template": ("core.template_semantics",),
     "list_automation_traces": ("core.automation_trace_read",),
     "get_automation_trace": ("core.automation_trace_read",),

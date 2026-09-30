@@ -519,9 +519,9 @@ class McpOutcomeClassificationTests(unittest.TestCase):
             tool.name: tool
             for tool in registered_tools(get_registered_server()).values()
         }
-        self.assertEqual(len(tools), 55)
+        self.assertEqual(len(tools), 56)
         catalog = build_capability_catalog()
-        self.assertEqual(catalog["registered_count"], 55)
+        self.assertEqual(catalog["registered_count"], 56)
         self.assertEqual(catalog["count"], 25)
         self.assertEqual(catalog["planned"], [])
         self.assertEqual(

@@ -1,5 +1,16 @@
 # v2 Beta Response, Error, Audit, and Observability Contracts
 
+## Source-only Alarmo inspection
+
+Fixed-cardinality inspection read, partial, refusal, timeout, response-byte and
+known-omission counters contain no resource-valued labels. Provider dispatch is
+recorded only for an attempted transport call. Tool audit retains safe source
+kinds/status/counts, durations, profile, limit and cursor-present indication;
+it excludes targets, entity IDs, raw cursors, payloads, unknown argument names
+and provider exception strings. Unknown omission totals are not presented as
+exact zeros. Snapshot continuation performs zero HA reads. See
+[the integration inspection contract](../docs/INTEGRATION_INSPECTION.md).
+
 ## 2.2.0-beta.15 lifecycle add-on response evidence
 
 Lifecycle health identifies the exact selected compatibility entry, observed

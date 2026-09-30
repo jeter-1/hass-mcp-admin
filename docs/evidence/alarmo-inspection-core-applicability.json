@@ -1,0 +1,31 @@
+{
+  "activation_blocker": "R3: prepare_core_release_registry.py refuses existing-release capability-list changes during renewal",
+  "compiled_exact_extension": false,
+  "core_source_commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+  "core_version": "2026.9.3",
+  "new_profile": {
+    "adapter_id": "compiled-core-alarmo-metadata-read-v1",
+    "auto_eligible": true,
+    "capability_class": "integration_inspection_metadata_read",
+    "capability_id": "core.integration_inspection_metadata_read",
+    "contract_fingerprint": "sha256:d10cb88811c65b4b45bed1941f1b8f920ac3eb217d05285f117d5ac23f09c36a",
+    "profile_id": "core_integration_inspection_metadata_read_v1",
+    "profile_version": 1,
+    "required_checks": [
+      "websocket_auth_ok_version",
+      "websocket_get_config_mapping",
+      "websocket_result_envelope"
+    ]
+  },
+  "preserve_existing_references": 19,
+  "production_registry_changed": false,
+  "required_before_signing": [
+    "separately_authorized_R3_correction_and_review",
+    "exact_disposable_integration_receipt",
+    "final_candidate_review",
+    "owner_activation_authorization"
+  ],
+  "resulting_known_profiles": 20,
+  "schema_version": 1,
+  "status": "UNSIGNED_PROPOSAL_NOT_DISPATCH_AUTHORITY"
+}

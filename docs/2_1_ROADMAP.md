@@ -2,6 +2,21 @@
 
 ## Current direction
 
+2026-09-30: Josh resumed the previously reviewed Alarmo inspector on the beta.10
+baseline. This is source reconciliation, not installed availability. Additional
+Core authority, exact disposable Core/Alarmo execution, release preparation and
+installed acceptance remain pending; the existing 19 admitted contracts are
+preserved. The broader audit roadmap below remains in place.
+
+2026-09-27: script-call and first bounded lifecycle analysis are delivered in
+beta.4/beta.5 source. Josh authorized the next [native Alarmo inspector](INTEGRATION_INSPECTION.md)
+as a source-only increment. It adds configured membership/mode evidence, not
+alarm operation or general integration administration. Disposable integration,
+independent review, R3 activation preparation, P0b, release and installed acceptance
+remain separate. The following September 26 ordering is retained as its decision
+record; baseline/diff, dashboard semantics, indexed search and optional execution
+summaries follow the inspector. No new milestone or household remediation is closed.
+
 2026-09-26: Josh approved the household-audit roadmap and bounded architecture
 adjustments. The immediate increment is [script-call dependency analysis](SCRIPT_CALL_DEPENDENCIES.md):
 automation → script → entity and script → script paths using the existing index,

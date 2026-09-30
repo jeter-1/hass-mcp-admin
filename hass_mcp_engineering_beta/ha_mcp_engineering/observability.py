@@ -29,6 +29,12 @@ class RuntimeMetrics:
     provider_successes: Counter = field(default_factory=Counter)
     provider_failures: Counter = field(default_factory=Counter)
     provider_partial_results: int = 0
+    inspection_read_count: int = 0
+    inspection_partial_count: int = 0
+    inspection_refusal_count: int = 0
+    inspection_timeout_count: int = 0
+    inspection_response_bytes: int = 0
+    inspection_omitted_count: int = 0
     fallback_attempts: int = 0
     fallback_successes: int = 0
     prohibited_fallback_attempts: int = 0
@@ -630,6 +636,12 @@ class RuntimeMetrics:
         self.provider_successes.clear()
         self.provider_failures.clear()
         self.provider_partial_results = 0
+        self.inspection_read_count = 0
+        self.inspection_partial_count = 0
+        self.inspection_refusal_count = 0
+        self.inspection_timeout_count = 0
+        self.inspection_response_bytes = 0
+        self.inspection_omitted_count = 0
         self.fallback_attempts = 0
         self.fallback_successes = 0
         self.prohibited_fallback_attempts = 0
@@ -770,6 +782,15 @@ class RuntimeMetrics:
                 "fallback_successes": self.fallback_successes,
                 "prohibited_fallback_attempts": self.prohibited_fallback_attempts,
                 "evidence_truncation_count": self.evidence_truncation_count,
+            },
+            "integration_inspection": {
+                "returned_pages": self.inspection_read_count,
+                "partial_pages": self.inspection_partial_count,
+                "refusals": self.inspection_refusal_count,
+                "transport_timeouts": self.inspection_timeout_count,
+                "consumed_frame_bytes": self.inspection_response_bytes,
+                "reported_omissions": self.inspection_omitted_count,
+                "background_collection": False,
             },
             "dependency_analysis": {
                 "request_count": self.dependency_analysis_requests,

@@ -336,6 +336,13 @@ jobs:
             ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c"
             ha_mcp_source_commit: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
             ha_mcp_source_sha256: 02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e
+          - lane: ha-2026-9-4
+            ha_version: "2026.9.4"
+            ha_image: "ghcr.io/home-assistant/home-assistant:2026.9.4@sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76"
+            ha_mcp_version: "8.5.0"
+            ha_mcp_image: "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c"
+            ha_mcp_source_commit: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+            ha_mcp_source_sha256: 02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e
     env:
       HA_CONTRACT_LANE: ${{ matrix.lane }}
       HA_CONTRACT_VERSION: ${{ matrix.ha_version }}
@@ -435,6 +442,34 @@ jobs:
           python scripts/real_ha_contract_tests.py --prepare-migration-fixture
           docker stop --time 30 "$HA_WRITER_CONTAINER"
           docker rm "$HA_WRITER_CONTAINER"
+      - name: Stage exact Alarmo and independent interval observer for Core 2026.9.4
+        if: matrix.ha_version == '2026.9.4'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/alarmo-169e134f.tar.gz"
+          overlay="$RUNNER_TEMP/alarmo-fixture-$HA_CONTRACT_LANE"
+          core_archive="$RUNNER_TEMP/alarmo-core-source-$HA_CONTRACT_LANE.tar.gz"
+          {
+            printf 'REAL_HA_ALARMO_RESULT=%s\n' "$RUNNER_TEMP/alarmo-integration-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_ALARMO_IMAGE_RESULT=%s\n' "$RUNNER_TEMP/alarmo-image-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_ALARMO_CLEANUP_RESULT=%s\n' "$RUNNER_TEMP/alarmo-cleanup-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_CORE_ARCHIVE=%s\n' "$core_archive"
+          } >> "$GITHUB_ENV"
+          curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
+            'https://codeload.github.com/nielsfaber/alarmo/tar.gz/169e134f4b70d87aae36ba54a72a398ecc960afd' --output "$archive"
+          python scripts/alarmo_inspection_contract_acceptance.py --prepare-archive "$archive" --destination "$overlay"
+          cp -R "$overlay/custom_components/alarmo" "$REAL_HA_CONTRACT_DIR/custom_components/"
+          # Only this owned synthetic store needs the migration writer directory permissions.
+          sudo install -m 600 "$overlay/.storage/alarmo.storage" "$REAL_HA_CONTRACT_DIR/.storage/alarmo.storage"
+          cp -R tests/fixtures/alarmo_interval_observer/custom_components/alarmo_interval_observer \
+            "$REAL_HA_CONTRACT_DIR/custom_components/"
+          printf '%s\n' 'alarmo_interval_observer:' >> "$REAL_HA_CONTRACT_DIR/configuration.yaml"
+          printf 'REAL_HA_ALARMO_FIXTURE_RECEIPT=%s\n' "$overlay/alarmo-inspection-fixture.json" >> "$GITHUB_ENV"
+          curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
+            'https://codeload.github.com/home-assistant/core/legacy.tar.gz/9212531f40a0b7b23229a90d688dd79d9dfccff4' --output "$core_archive"
+          printf '%s  %s\n' 'c8d814b63c0b7043ad54980044f9824c9582450af9cac38ba376fadc37fa4056' \
+            "$core_archive" | sha256sum --check --strict
       - name: Start disposable exact target Home Assistant Core
         shell: bash
         run: |
@@ -449,6 +484,9 @@ jobs:
           echo "HA contract version: $HA_CONTRACT_VERSION"
           docker image inspect "$HA_CONTRACT_IMAGE" \
             --format='HA contract image digest: {{index .RepoDigests 0}}'
+      - name: Bind Core 2026.9.4 disposable image and source
+        if: matrix.ha_version == '2026.9.4'
+        run: python scripts/alarmo_inspection_contract_acceptance.py --verify-publication
       - name: Verify exact ha-mcp component inside disposable Home Assistant
         shell: bash
         run: |
@@ -491,6 +529,21 @@ jobs:
           rm -f "$REAL_HA_TOKEN_FILE"
           sudo rm -rf "$REAL_HA_CONTRACT_DIR"
           docker network rm "$HA_CONTRACT_NETWORK" >/dev/null 2>&1 || true
+
+      - name: Verify owned cleanup and required Alarmo interval
+        if: always() && matrix.ha_version == '2026.9.4'
+        run: python scripts/alarmo_inspection_contract_acceptance.py --verify-cleanup
+      - name: Upload bounded Alarmo interval and image evidence
+        if: always() && matrix.ha_version == '2026.9.4'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: alarmo-inspection-core-2026.9.4-amd64
+          path: |
+            ${{ runner.temp }}/alarmo-integration-ha-2026-9-4.json
+            ${{ runner.temp }}/alarmo-image-ha-2026-9-4*.json
+            ${{ runner.temp }}/alarmo-cleanup-ha-2026-9-4.json
+          if-no-files-found: error
+          retention-days: 14
 
   prepare_exact_image_matrix:
     runs-on: ubuntu-latest

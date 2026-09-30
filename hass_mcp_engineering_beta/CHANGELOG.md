@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.0-beta.11 - Bounded Alarmo configuration inspection
+
+- Add one native read-only inspector with positively selected evidence, exact
+  panel scope, explicit partial/non-atomic coverage and bounded cached pagination.
+- Preserve all prior descriptors and 19 Core contracts; the healthy catalog is
+  81 = 56 static + 25 delegated, with one additional semantic Core read profile.
+- Add reviewed capability-extension preparation and required disposable
+  Core/Alarmo integration; production signing/activation remains separate.
+- Update PyJWT 2.14.0 to 2.15.0 for GHSA-42vr-xj54-vc7v, preserving all other
+  dependency pins, base image and architecture policy.
+- Preserve household operation, approval, recovery, storage and stable-v1
+  boundaries. No Alarmo actions or generic integration forwarding are exposed.
+- Require installed source assurance, signed admission and useful read acceptance
+  separately from source validation and release publication.
+
 ## 2.4.0-beta.10 - Bounded logbook reads and response processing
 
 - Honor explicit requested intervals through 168 hours with one bounded native

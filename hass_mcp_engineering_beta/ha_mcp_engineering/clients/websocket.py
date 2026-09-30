@@ -59,6 +59,148 @@ class HomeAssistantWebSocketClient:
         if telemetry:
             telemetry.error_code = code.value
 
+    async def read_alarmo_inspection(
+        self, kind, *, core_version: str, remaining_seconds: float,
+        remaining_bytes: int, entity_ids: tuple[str, ...] | None = None,
+    ) -> tuple[Any, int]:
+        """One closed, bounded read. No retry, redirects, subscription or fallback."""
+        import json
+        import math
+
+        from ..integration_inspection.contracts import (
+            AUTH_BYTES, COMMAND_SECONDS, FRAME_BYTES, MAX_FRAMES, command_payload,
+        )
+        from ..integration_inspection.models import InspectionError
+
+        payload = command_payload(kind, entity_ids)
+        if (not math.isfinite(remaining_seconds) or remaining_seconds <= 0
+                or type(remaining_bytes) is not int or remaining_bytes <= 0):
+            raise InspectionError("timeout" if remaining_seconds <= 0 else "response_bytes")
+        deadline = min(COMMAND_SECONDS, remaining_seconds)
+        # Reserve both bounded auth frames before choosing the result limit.
+        # Exactly three frames are accepted; unsolicited events are rejected.
+        if remaining_bytes <= 2 * AUTH_BYTES:
+            raise InspectionError("response_bytes")
+        frame_limit = min(FRAME_BYTES, remaining_bytes - 2 * AUTH_BYTES)
+        telemetry = current_telemetry()
+
+        def authorized():
+            if (telemetry is None or telemetry.core_dispatch_authorizer is None
+                    or not telemetry.authorize_core_dispatch()):
+                raise InspectionError("authority_unavailable")
+
+        def pairs(items):
+            result = {}
+            for key, value in items:
+                if key in result:
+                    raise InspectionError("malformed_response")
+                result[key] = value
+            return result
+
+        def finite(value):
+            raise InspectionError("malformed_response")
+
+        def float_value(value):
+            parsed = float(value)
+            if not math.isfinite(parsed):
+                raise InspectionError("malformed_response")
+            return parsed
+
+        async def no_retry(request, handler):
+            try:
+                return await handler(request)
+            except (aiohttp.ClientOSError, aiohttp.ServerDisconnectedError):
+                raise InspectionError("source_unavailable") from None
+
+        async def reject_redirect(*_args):
+            raise InspectionError("source_unavailable")
+
+        authorized()
+        started = time.perf_counter()
+        telemetry.begin_ha_attempt(started)
+        trace = aiohttp.TraceConfig()
+        trace.on_request_redirect.append(reject_redirect)
+        consumed = 0
+        frames = 0
+        timed_out = False
+        try:
+            async with asyncio.timeout(deadline):
+                async with aiohttp.ClientSession(
+                    timeout=aiohttp.ClientTimeout(total=deadline), trust_env=False,
+                    auto_decompress=False, middlewares=(no_retry,), trace_configs=[trace],
+                ) as session:
+                    async with session.ws_connect(
+                        # aiohttp rejects at >= max_msg_size; keep the public
+                        # byte ceiling inclusive and check it before decoding.
+                        self.settings.websocket_url, max_msg_size=frame_limit + 1,
+                        autoping=False, compress=0,
+                        timeout=aiohttp.ClientWSTimeout(ws_receive=deadline, ws_close=min(1, deadline)),
+                    ) as websocket:
+                        async def receive(*, auth=False):
+                            nonlocal frames, consumed
+                            frames += 1
+                            if frames > MAX_FRAMES:
+                                raise InspectionError("malformed_response")
+                            frame = await websocket.receive()
+                            if (frame.type == aiohttp.WSMsgType.ERROR
+                                    and isinstance(frame.data, aiohttp.WebSocketError)
+                                    and frame.data.code == aiohttp.WSCloseCode.MESSAGE_TOO_BIG):
+                                raise InspectionError("response_bytes")
+                            if frame.type != aiohttp.WSMsgType.TEXT:
+                                raise InspectionError("malformed_response")
+                            size = len(frame.data.encode("utf-8"))
+                            consumed += size
+                            if size > (min(AUTH_BYTES, frame_limit) if auth else frame_limit) or consumed > remaining_bytes:
+                                raise InspectionError("response_bytes")
+                            try:
+                                data = json.loads(frame.data, object_pairs_hook=pairs, parse_constant=finite, parse_float=float_value)
+                            except (ValueError, TypeError, RecursionError):
+                                raise InspectionError("malformed_response") from None
+                            if type(data) is not dict:
+                                raise InspectionError("malformed_response")
+                            return data
+
+                        greeting = await receive(auth=True)
+                        if greeting.get("type") != "auth_required":
+                            raise InspectionError("malformed_response")
+                        await websocket.send_json({"type": "auth", "access_token": self.settings.ha_token})
+                        auth = await receive(auth=True)
+                        if auth.get("type") != "auth_ok":
+                            raise InspectionError("access_denied", authority_lost=True)
+                        if auth.get("ha_version") != core_version:
+                            raise InspectionError("identity_drift")
+                        authorized()
+                        await websocket.send_json({"id": 1, **payload})
+                        message = await receive()
+                        if (message.get("type") != "result" or type(message.get("id")) is not int
+                                or message["id"] != 1 or type(message.get("success")) is not bool):
+                            raise InspectionError("malformed_response")
+                        if message["success"] is False:
+                            error = message.get("error")
+                            code = error.get("code") if type(error) is dict else None
+                            reason = ("access_denied" if code in ("unauthorized", "forbidden") else
+                                      "command_unsupported" if code == "unknown_command" else
+                                      "integration_not_installed" if code == "not_found" else "source_unavailable")
+                            raise InspectionError(reason)
+                        if "result" not in message or "error" in message:
+                            raise InspectionError("malformed_response")
+                        authorized()
+                        return message["result"], consumed
+        except InspectionError:
+            raise
+        except (asyncio.TimeoutError, TimeoutError):
+            timed_out = True
+            raise InspectionError("timeout") from None
+        except aiohttp.WSServerHandshakeError as exc:
+            raise InspectionError("access_denied" if exc.status in (401, 403) else "source_unavailable",
+                                  authority_lost=exc.status in (401, 403)) from None
+        except (aiohttp.ClientError, OSError, ValueError, TypeError, RecursionError):
+            raise InspectionError("source_unavailable") from None
+        finally:
+            METRICS.inspection_response_bytes += consumed
+            METRICS.inspection_timeout_count += int(timed_out)
+            self._record(started, "alarmo_inspection_" + kind.value, timeout=timed_out)
+
     async def command(self, payload: dict) -> Any:
         category = self._category(payload)
         telemetry = current_telemetry()

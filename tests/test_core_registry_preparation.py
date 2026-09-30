@@ -211,5 +211,184 @@ class CoreRegistryPreparationTests(unittest.TestCase):
             self.assertEqual(path.read_bytes(), b"preserve")
 
 
+class CoreCapabilityExtensionTests(unittest.TestCase):
+    """Actual preparer/signer/selector; all keys and evidence are synthetic."""
+
+    setUp = CoreRegistryPreparationTests.setUp
+    candidate = CoreRegistryPreparationTests.candidate
+    sign = CoreRegistryPreparationTests.sign
+
+    def extension(self, *, previous=None):
+        from ha_mcp_engineering.ha_core_readmission.profiles import CORE_INTEGRATION_INSPECTION_PROFILES
+        old = core_entry("2026.9.4", typed_operations=True)
+        old["evidence_sha256"] = hashlib.sha256(self.evidence).hexdigest()
+        old["image_index_digest"] = "sha256:" + "d" * 64
+        sibling = core_entry("2026.9.3", typed_operations=True)
+        sibling["image_index_digest"] = "sha256:" + "f" * 64
+        if previous is None:
+            previous = self.signer.journal_raw(envelopes=[self.signer.raw(entries=[sibling, old], generated_at=NOW)])
+        prepare.parse_journal(previous, self.signer.private_key.public_key())
+        profile = CORE_INTEGRATION_INSPECTION_PROFILES[0]
+        reference = {k: profile.to_mapping()[k] for k in old["capabilities"][0]}
+        evidence = {
+            "model": prepare.EXTENSION_EVIDENCE_MODEL,
+            "version": old["version"],
+            "previous_entry_sha256": hashlib.sha256(canonical_json(old)).hexdigest(),
+            "previous_capabilities": deepcopy(old["capabilities"]),
+            "added_capabilities": [reference],
+            "review_artifacts_sha256": [hashlib.sha256(b"synthetic integration and review").hexdigest()],
+        }
+        raw = canonical_json(evidence)
+        new = {**deepcopy(old), "evidence_sha256": hashlib.sha256(raw).hexdigest(),
+               "capabilities": [*deepcopy(old["capabilities"]), reference]}
+        return previous, old, sibling, new, raw
+
+    def prepare_extension(self, previous, new, evidence, **kwargs):
+        return canonical_json(prepare.prepare_candidate(
+            entry=new, evidence=evidence, previous=previous,
+            public_key=self.signer.private_key.public_key(),
+            operation="extend-capabilities", now=NOW, **kwargs))
+
+    def test_extension_preserves_history_sibling_refs_and_actual_cached_selection(self):
+        from unittest.mock import patch
+        from ha_mcp_engineering.ha_core_readmission.profiles import CORE_CAPABILITY_PROFILES, CORE_TYPED_OPERATION_PROFILES
+        previous, old, sibling, new, evidence = self.extension()
+        raw = self.sign(self.prepare_extension(previous, new, evidence), previous)
+        parsed = prepare.parse_journal(raw, self.signer.private_key.public_key())
+        prior = prepare.parse_journal(previous, self.signer.private_key.public_key())
+        self.assertEqual(parsed.envelopes[0].to_mapping(), prior.envelopes[0].to_mapping())
+        self.assertEqual([e.to_mapping() for e in parsed.accepted.entries], [sibling, new])
+        self.assertEqual(new["capabilities"][:-1], old["capabilities"])
+        async def fetch(_url, _maximum):
+            return raw
+        with tempfile.TemporaryDirectory() as directory:
+            kwargs = dict(enabled=True, public_key=self.signer.public_key_base64,
+                          cache_path=Path(directory)/"core.json", now=lambda: NOW)
+            registry = CoreReleaseRegistry(**kwargs, fetcher=fetch)
+            self.assertTrue(asyncio.run(registry.refresh()))
+            for current in (registry, CoreReleaseRegistry(**kwargs)):
+                self.assertEqual(len(current.selections("2026.9.4")), 20)
+                self.assertEqual(len(current.selections("2026.9.3")), 19)
+                # Same selector with the prior executable's compiled reference set.
+                with patch("ha_mcp_engineering.ha_core_readmission.registry.CORE_RUNTIME_CAPABILITY_PROFILES",
+                           CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES):
+                    self.assertEqual(len(current.selections("2026.9.4")), 19)
+                    self.assertNotIn("core.integration_inspection_metadata_read",
+                                     {x.capability_ids[0] for x in current.selections("2026.9.4")})
+
+    def test_extension_changes_selection_binding_and_requires_fresh_planning(self):
+        previous, old, sibling, new, evidence = self.extension()
+        extended = self.sign(self.prepare_extension(previous, new, evidence), previous)
+        payload = previous
+        async def fetch(_url, _maximum):
+            return payload
+        with tempfile.TemporaryDirectory() as directory:
+            registry = CoreReleaseRegistry(enabled=True, public_key=self.signer.public_key_base64,
+                cache_path=Path(directory)/"core.json", now=lambda: NOW, fetcher=fetch)
+            self.assertTrue(asyncio.run(registry.refresh()))
+            old_token = registry.selection_token("2026.9.4")
+            payload = extended
+            self.assertTrue(asyncio.run(registry.refresh()))
+            self.assertNotEqual(registry.selection_token("2026.9.4"), old_token)
+            self.assertEqual(len(registry.selections("2026.9.4")), 20)
+
+    def test_all_signing_labels_refuse_hand_edited_extension_and_recomputed_hash(self):
+        previous, old, sibling, new, evidence = self.extension()
+        candidate = prepare.strict_json(self.prepare_extension(previous, new, evidence))
+        mutations = {
+            "identity": lambda v: v["envelope"]["entries"][1].update(source_commit="a"*40),
+            "probe": lambda v: v["envelope"]["entries"][1].update(probe_profile_id="unknown"),
+            "sibling": lambda v: v["envelope"]["entries"][0].update(evidence_sha256="e"*64),
+            "remove_sibling": lambda v: v["envelope"]["entries"].pop(0),
+            "ref_order": lambda v: v["envelope"]["entries"][1]["capabilities"].reverse(),
+            "ref_removal": lambda v: v["envelope"]["entries"][1]["capabilities"].pop(0),
+            "ref_fingerprint": lambda v: v["envelope"]["entries"][1]["capabilities"][0].update(contract_fingerprint="sha256:"+"b"*64),
+            "evidence_digest": lambda v: v.update(review_evidence_sha256="a"*64),
+            "review_manifest": lambda v: v["extension_review"].update(version="2026.9.3"),
+            "review_artifact": lambda v: v["extension_review"].update(review_artifacts_sha256=["c"*64]),
+        }
+        for name, mutate in mutations.items():
+            value = deepcopy(candidate); mutate(value)
+            with self.subTest(case=name), self.assertRaises(ValueError):
+                self.sign(canonical_json(value), previous)
+        for label in ("add", "revoke"):
+            value = deepcopy(candidate)
+            value.update(model=prepare.MODEL, operation=label)
+            value.pop("extension_review")
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                self.sign(canonical_json(value), previous)
+
+    def test_extension_refuses_zero_additions_duplicates_unknown_and_wrong_release(self):
+        previous, old, sibling, new, evidence = self.extension()
+        cases = [deepcopy(new) for _ in range(6)]
+        cases[0]["capabilities"] = deepcopy(old["capabilities"])
+        cases[1]["capabilities"].append(deepcopy(new["capabilities"][-1]))
+        cases[2]["capabilities"][-1]["adapter_id"] = "unknown"
+        cases[3]["version"] = "2026.9.5"
+        cases[4]["image_index_digest"] = "sha256:"+"a"*64
+        cases[5]["architecture_manifests"]["linux/amd64"] = "sha256:"+"b"*64
+        for index, entry in enumerate(cases):
+            with self.subTest(case=index), self.assertRaises(ValueError):
+                self.prepare_extension(previous, entry, evidence)
+        with self.assertRaises(ValueError):
+            self.prepare_extension(None, new, evidence)
+
+    def test_extension_rejects_stale_or_revoked_predecessor_and_bad_review_binding(self):
+        previous, old, sibling, new, evidence = self.extension()
+        expired = self.signer.journal_raw(envelopes=[self.signer.raw(
+            entries=[sibling, old], generated_at=NOW-timedelta(days=91), expires_at=NOW-timedelta(days=1))])
+        revoked = self.signer.journal_raw(envelopes=[self.signer.raw(
+            entries=[sibling], revocations=[core_revocation("2026.9.4")], generated_at=NOW)])
+        for prior in (expired, revoked):
+            with self.subTest(kind=prior[-16:]), self.assertRaises(ValueError):
+                self.prepare_extension(prior, new, evidence)
+        for key, value in (("previous_entry_sha256", "b"*64), ("previous_capabilities", []),
+                           ("added_capabilities", []), ("review_artifacts_sha256", [])):
+            review = json.loads(evidence);review[key] = value;raw = canonical_json(review)
+            entry = {**new, "evidence_sha256": hashlib.sha256(raw).hexdigest()}
+            with self.subTest(field=key), self.assertRaises(ValueError):
+                self.prepare_extension(previous, entry, raw)
+
+    def test_extension_evidence_bounds_and_preserves_input_on_refusal(self):
+        previous, old, sibling, new, evidence = self.extension()
+        original = deepcopy(new)
+        for raw in (evidence+b"\n", b"x"*(prepare.MAX_EVIDENCE_BYTES+1)):
+            entry = {**new, "evidence_sha256": hashlib.sha256(raw).hexdigest()}
+            with self.assertRaises(ValueError):
+                self.prepare_extension(previous, entry, raw)
+        self.assertEqual(new, original)
+        candidate = self.prepare_extension(previous, new, evidence)
+        with self.assertRaises(ValueError):
+            prepare.sign_candidate(candidate, expected_sha256=hashlib.sha256(candidate).hexdigest(),
+                previous=previous, key=self.signer.private_key, now=NOW+timedelta(days=91))
+        with self.assertRaises(ValueError):
+            prepare.sign_candidate(candidate, expected_sha256=hashlib.sha256(candidate).hexdigest(),
+                previous=None, key=self.signer.private_key, now=NOW)
+
+    def test_add_signing_rejects_preparation_bypass_but_keeps_identical_renewal(self):
+        previous = self.sign(self.candidate())
+        good = self.candidate(previous)
+        self.assertTrue(self.sign(good, previous))
+        for change in ("source_commit", "evidence_sha256"):
+            value = prepare.strict_json(good)
+            value["envelope"]["entries"][0][change] = "b"*(40 if change=="source_commit" else 64)
+            with self.subTest(field=change), self.assertRaises(ValueError):
+                self.sign(canonical_json(value), previous)
+
+    def test_extension_preserves_prior_revocation_and_original_journal_bytes(self):
+        previous, old, sibling, new, evidence = self.extension()
+        previous = self.signer.journal_raw(envelopes=[self.signer.raw(
+            entries=[sibling, old], revocations=[core_revocation("2026.9.2")], generated_at=NOW)])
+        digest = hashlib.sha256(previous).hexdigest()
+        candidate = self.prepare_extension(previous, new, evidence)
+        raw = self.sign(candidate, previous)
+        parsed = prepare.parse_journal(raw, self.signer.private_key.public_key())
+        self.assertEqual(parsed.accepted.revocations[0].version, "2026.9.2")
+        self.assertEqual(hashlib.sha256(previous).hexdigest(), digest)
+        value = prepare.strict_json(candidate);value["envelope"]["revocations"] = []
+        with self.assertRaises(ValueError):
+            self.sign(canonical_json(value), previous)
+
+
 if __name__ == "__main__":
     unittest.main()

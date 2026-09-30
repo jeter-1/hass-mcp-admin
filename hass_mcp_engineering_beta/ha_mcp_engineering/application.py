@@ -181,6 +181,7 @@ def create_application(
     core_snapshot_source=None,
 ):
     settings = settings or load_settings()
+    from .integration_inspection.runtime import INTEGRATION_INSPECTION
     server = get_registered_server()
     audit = AuditLogger(
         settings.audit_path,
@@ -193,6 +194,7 @@ def create_application(
         source=core_snapshot_source,
         audit_sink=audit.write,
     )
+    INTEGRATION_INSPECTION.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
     gateway = AuthenticatedMcpGateway(
         server.streamable_http_app(),
         settings,

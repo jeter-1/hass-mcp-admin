@@ -241,6 +241,41 @@ is needed for a compatible profile selection. No new signing workflow or GitHub
 permission is introduced here. The signing owner remains a required independent
 trust boundary; automation must not turn probe success into self-approval.
 
+### Explicit capability extension
+
+`add` remains an identical-contract renewal or new-release operation. To append
+reviewed capabilities to an **existing current non-revoked release**, use
+`extend-capabilities` with the same CLI entry/evidence/previous/public-key/output
+arguments. This creates `core-registry-extension-candidate-v1` review material;
+the runtime envelope and signed journal schemas are unchanged. Old add/revoke
+candidate shapes remain supported. Production signing/publication are separate
+owner decisions; CI uses ephemeral test keys only.
+
+The evidence file is exact canonical JSON (sorted keys, compact separators, no
+trailing newline), with precisely:
+
+- `model`: `core-capability-extension-evidence-v1`;
+- `version`: the existing release;
+- `previous_entry_sha256`: SHA-256 of canonical complete predecessor entry;
+- `previous_capabilities`: the exact ordered original reference list;
+- `added_capabilities`: one or more new compiled, eligible references;
+- `review_artifacts_sha256`: 1–32 distinct SHA-256 hashes of reviewed evidence.
+
+The candidate entry's `evidence_sha256` hashes those exact bytes. The previous
+references remain an unchanged ordered prefix; duplicates, removals, unknown
+contracts, changed source/image/architecture/probe identity, siblings or denial
+history refuse. Both preparation and signing independently validate the full
+transition and embedded evidence. Relabeling an extension as add or revoke does
+not bypass these checks. Signing also binds the exact reviewed candidate, key,
+current journal bytes, sequence and predecessor; stale or expired predecessors
+refuse extension. Existing identical renewal remains the separate expiry-recovery
+operation. Do not roll a published journal backwards.
+
+Review must account for the changed entry fingerprint and any outstanding
+plans/leases before activation. This operation is additive; it introduces no
+capability-removal or production recovery authorization. Withdraw/recovery
+scope must be decided separately rather than inferred from a successful test.
+
 For withdrawal use `revoke` with the exact entry, hashed review evidence and
 `--reason`, then the same review/sign/publish process. This also permits a
 reviewed denial of a compiled pairing. Preserve tombstones across renewal and

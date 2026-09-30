@@ -1956,6 +1956,36 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("call_service", source)
         self.assertNotIn("ha_config_set", source)
 
+    def test_alarmo_core4_lane_requires_real_interval_and_verified_cleanup(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        job = workflow["jobs"]["real-ha-contract-tests"]
+        matrix = job["strategy"]["matrix"]["include"]
+        lane = next(row for row in matrix if row["ha_version"] == "2026.9.4")
+        provenance = _fixture(ROOT / "tests/fixtures/core_2026_9_4_lane_provenance.json")
+        self.assertEqual(lane["ha_image"], "ghcr.io/home-assistant/home-assistant:2026.9.4@" + provenance["image_index_digest"])
+        self.assertEqual(lane["ha_mcp_version"], "8.5.0")
+        self.assertEqual(len([r for r in matrix if r["ha_version"] == "2026.9.4"]), 1)
+        self.assertEqual(job["timeout-minutes"], 50)
+        steps = job["steps"]
+        names = [step.get("name") for step in steps]
+        stage = names.index("Stage exact Alarmo and independent interval observer for Core 2026.9.4")
+        self.assertLess(names.index("Persist migration fixture with exact Home Assistant 2026.7.2"), stage)
+        self.assertLess(stage, names.index("Start disposable exact target Home Assistant Core"))
+        self.assertIn("--prepare-archive", steps[stage]["run"])
+        self.assertIn("alarmo_interval_observer", steps[stage]["run"])
+        self.assertIn(provenance["source_archive_sha256"], steps[stage]["run"])
+        cleanup = names.index("Verify owned cleanup and required Alarmo interval")
+        self.assertLess(names.index("Sanitize and remove disposable Home Assistant"), cleanup)
+        self.assertEqual(steps[cleanup]["if"], "always() && matrix.ha_version == '2026.9.4'")
+        self.assertIn("--verify-cleanup", steps[cleanup]["run"])
+        self.assertIn("real-ha-contract-tests", workflow["jobs"]["validate"]["needs"])
+        self.assertNotIn("continue-on-error", job)
+        self.assertNotIn("permissions", job)
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from core_registry_contract_lane import lane_entry
+        self.assertEqual(lane_entry("2026.9.4"), provenance)
+
     def test_disposable_lane_is_immutable_bounded_and_nonproduction(self):
         lane = _fixture(LANE_FIXTURE)
         registry = load_reviewed_upstream_release_registry()
@@ -2554,7 +2584,9 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health["home_assistant_core_authority"], projection)
 
     async def test_material_reconciliation_audit_is_bounded_and_redacted(self):
-        from ha_mcp_engineering.ha_core_readmission.profiles import CORE_TYPED_OPERATION_PROFILES
+        from ha_mcp_engineering.ha_core_readmission.profiles import (
+            CORE_TYPED_OPERATION_PROFILES, CORE_INTEGRATION_INSPECTION_PROFILES,
+        )
         source = _MutableSource(_core_2026_9_snapshot())
         events: list[dict] = []
         runtime = CoreRuntime()
@@ -2575,11 +2607,11 @@ class Core20269RuntimeTests(unittest.IsolatedAsyncioTestCase):
         summary = event["analysis_summary"]
         self.assertEqual(summary["observed_core_version"], "2026.9.0")
         self.assertEqual(summary["admitted_count"], len(CORE_CAPABILITY_PROFILES))
-        self.assertEqual(summary["withheld_count"], len(CORE_TYPED_OPERATION_PROFILES))
+        self.assertEqual(summary["withheld_count"], len(CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES))
         self.assertEqual(
             {p["capability_id"] for p in runtime.health_snapshot()["authority_profiles"]
              if not p["disposition"].startswith("admitted_")},
-            {p.capability_id for p in CORE_TYPED_OPERATION_PROFILES},
+            {p.capability_id for p in CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES},
         )
         self.assertEqual(summary["fallback_count"], 0)
         encoded = json.dumps(event, sort_keys=True)
@@ -2850,7 +2882,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         registry = load_reviewed_upstream_release_registry()
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 55)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 56)
         self.assertEqual(counts["automatic_read"], 25)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
@@ -2861,7 +2893,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             {"ha_get_operation_status"},
         )
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 80)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 81)
         self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 27)
         self.assertEqual(
             {
@@ -2922,7 +2954,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(counts["reviewed_upstream_version"], "8.5.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         self.assertEqual(counts["expected_delegated_reads"], 25)
-        self.assertEqual(counts["expected_connector_total"], 80)
+        self.assertEqual(counts["expected_connector_total"], 81)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [
@@ -2996,7 +3028,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         health = gateway.health_snapshot()
         self.assertEqual(health["core_withheld_read_count"], 5)
         self.assertEqual(health["dynamically_exposed_count"], 20)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 75)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + 20, 76)
         self.assertEqual(
             {item["tool"] for item in health["core_withheld_tools"]},
             set(DEVICE_DEPENDENT_DELEGATED_TOOLS),

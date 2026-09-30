@@ -153,24 +153,25 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         await runtime.reconcile_once()
         self.assertEqual(len(self.fetches), fetches)
 
-    async def test_core3_disposable_lane_requires_exact_fixture_and_admits_typed_references(self):
+    async def test_core3_and4_disposable_lanes_require_exact_fixture_and_admit_typed_references(self):
         sys.path.insert(0, str(ROOT / "scripts"))
         from core_registry_contract_lane import configure_with_test_authority, lane_entry
         from tests.test_ha_core_2026_9_integration import settings
-        runtime = CoreRuntime()
-        configure = runtime.configure
-
-        def synthetic_transport(configured, *, release_registry):
-            configure(configured, release_registry=release_registry,
-                      source=ProjectedCoreSource(release_registry, "2026.9.3", typed_operations=True))
-
-        entry = lane_entry("2026.9.3")
-        image = "ghcr.io/home-assistant/home-assistant:2026.9.3@" + entry["image_index_digest"]
-        with patch.object(runtime, "configure", side_effect=synthetic_transport):
-            await configure_with_test_authority(runtime, settings(), cache_path=self.cache,
-                                                expected_image=image, core_version="2026.9.3")
-        self.assert_admitted(runtime, 19)
-        for version in ("2026.9.4", "latest", "../core", None):
+        for version in ("2026.9.3", "2026.9.4"):
+            with self.subTest(version=version):
+                runtime = CoreRuntime()
+                configure = runtime.configure
+                def synthetic_transport(configured, *, release_registry):
+                    configure(configured, release_registry=release_registry,
+                              source=ProjectedCoreSource(release_registry, version, typed_operations=True))
+                entry = lane_entry(version)
+                image = "ghcr.io/home-assistant/home-assistant:" + version + "@" + entry["image_index_digest"]
+                with patch.object(runtime, "configure", side_effect=synthetic_transport):
+                    await configure_with_test_authority(runtime, settings(), cache_path=self.cache.with_name(version + ".json"),
+                                                       expected_image=image, core_version=version)
+                self.assert_admitted(runtime, 19)
+                self.assertIsNone(runtime.acquire(("core.integration_inspection_metadata_read",)))
+        for version in ("2026.9.5", "latest", "../core", None):
             with self.subTest(version=version), self.assertRaises(ValueError):
                 lane_entry(version)
 
@@ -485,7 +486,7 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
         gateway, server, transport = await self.gateway(runtime)
         tools = registered_tools(server)
         self.assertEqual(len(tools), 25)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 80)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(tools), 81)
         self.assertNotIn("ha_get_operation_status", tools)
         result = json.loads(await tools["ha_get_state"].run({"entity_id": "sensor.synthetic"}))
         self.assertTrue(result["success"])
