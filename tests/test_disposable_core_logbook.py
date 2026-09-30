@@ -112,7 +112,7 @@ class DisposableLogbookTests(unittest.TestCase):
 
     def test_response_diagnostics_retain_only_known_synthetic_labels(self):
         secret='synthetic-private-marker'
-        response={'success':True,'error':{'code':secret,'message':secret},
+        response={'success':True,'error_code':secret,'error':secret,'message':secret,
                   'data':[{'message':'synthetic_alpha_6','name':secret},
                           {'message':secret,'entity_id':secret},secret]*30}
         projected=lane.response_diagnostic(response)
@@ -121,8 +121,15 @@ class DisposableLogbookTests(unittest.TestCase):
         self.assertEqual(projected['error_code'],'other_or_absent')
         self.assertEqual(set(projected['known_messages']),{'synthetic_alpha_6'})
         self.assertEqual(len(projected['known_messages'])+projected['unrecognized_records_in_first64'],64)
-        self.assertEqual(lane.response_diagnostic({'error':{'code':'home_assistant_unavailable'}})['error_code'],
-                         'home_assistant_unavailable')
+        import sys
+        with patch.object(sys,'path',[str(ROOT/'hass_mcp_engineering_beta'),*sys.path]):
+            from ha_mcp_engineering.models.responses import FailureResponse
+        failed=FailureResponse(operation='get_logbook',error=secret,
+                               error_code='home_assistant_unavailable',message=secret).as_dict()
+        projected=lane.response_diagnostic(failed)
+        self.assertEqual(projected['error_code'],'home_assistant_unavailable')
+        self.assertFalse(projected['success'])
+        self.assertNotIn(secret,json.dumps(projected))
 
     def test_workflow_only_branch_read_permissions_and_safe_artifact_list(self):
         import yaml

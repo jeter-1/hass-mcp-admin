@@ -48,8 +48,7 @@ def response_diagnostic(response):
                    'home_assistant_api_error','home_assistant_timeout','provider_unavailable',
                    'provider_error','internal_server_error','logbook_response_limit_exceeded',
                    'logbook_busy','invalid_request','validation_failure'}
-    error=response.get('error')
-    code=error.get('code') if isinstance(error,dict) else None
+    code=response.get('error_code')
     records=response.get('data')
     known={f'synthetic_{entity}_{age}' for entity in ('alpha','beta') for age in (192,120,48,18,6,-1)}
     labels=[];unknown=0
@@ -281,6 +280,9 @@ def main():
                '--mount',f'type=bind,src={PINS},dst=/fixture/pins.json,readonly',
                '--entrypoint','python',image,'/fixture/core.py')
         require(docker('inspect','--format','{{.Image}}',identity).stdout.decode().strip()==config_digest,'container_image_mismatch')
+        ports=json.loads(docker('inspect','--format','{{json .NetworkSettings.Ports}}',identity).stdout)
+        diagnostics['network']={'internal':True,'loopback_mapping_observed':
+            isinstance(ports,dict) and ports.get('8123/tcp')==[{'HostIp':'127.0.0.1','HostPort':'18123'}]}
         deadline=time.monotonic()+200
         while not (folder/'ready.json').exists():
             require(time.monotonic()<deadline,'core_readiness_timeout')

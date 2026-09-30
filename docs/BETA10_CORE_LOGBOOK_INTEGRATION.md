@@ -57,7 +57,10 @@ bytes, never raw Core logs, database, token, environment or arbitrary directorie
 Failure receipts retain a fixed assertion reason and the last synthetic case's
 counts/known labels. Arbitrary response strings and exception messages are
 excluded; an unknown value is classified without being copied. This diagnostic
-projection does not relax any acceptance assertion.
+projection does not relax any acceptance assertion. It reads the shipped
+FailureResponse's top-level error_code and records only a boolean indicating
+whether Docker reports the requested loopback mapping; no Docker configuration
+or response body is exported.
 
 Offline tests cover wrong execution identity, source tampering, wrong interval
 results, ownership refusal, cleanup, output bounds and workflow permissions.
