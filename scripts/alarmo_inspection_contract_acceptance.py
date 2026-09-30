@@ -205,6 +205,37 @@ def verify_interval(value, identity, expected_commands, *, kind="inspection"):
                            "Background auth/restore-state bookkeeping is reported separately."]}
 
 
+async def wait_disposable_setup(websocket, *, clock=None, sleep=None):
+    """Wait for Core's source-defined 180s startup saves, outside observation.
+
+    At most 41 readiness reads in 200 seconds. Never flush or retry a feature
+    command; interval/feature budgets remain 45/30 seconds respectively.
+    """
+    import asyncio
+    import time
+    clock = clock or time.monotonic
+    sleep = sleep or asyncio.sleep
+    deadline = clock() + 200
+    for attempt in range(41):
+        remaining = deadline - clock()
+        if remaining <= 0:
+            break
+        async with asyncio.timeout(remaining):
+            value = await websocket.command({"type": "alarmo_interval_observer/ready"})
+        if (type(value) is not dict or set(value) != {"core_running", "storage_pending", "hooks_intact"}
+                or any(type(item) is not bool for item in value.values()) or not value["hooks_intact"]):
+            raise ValueError("Disposable setup observation unavailable")
+        if clock() > deadline:
+            break
+        if value["core_running"] and not value["storage_pending"]:
+            return {"result": "PASS", "readiness_reads": attempt + 1}
+        remaining = deadline - clock()
+        if remaining <= 0 or attempt == 40:
+            break
+        await sleep(min(5, remaining))
+    raise ValueError("Disposable setup did not settle within its bound")
+
+
 async def run_disposable(configured, existing_core, *, fixture_receipt, expected_image):
     """Required Core .4 integration using a real signed 19-to-20 extension.
 
@@ -265,6 +296,7 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
     entities = await websocket.command({"type": "alarmo/entities"})
     targets = [r["entity_id"] for r in entities if type(r.get("area_id")) is int and r["area_id"] == 0]
     assert len(targets) == 1 and len(entities) == 3 and len({row["entity_id"] for row in entities}) == 3
+    setup_readiness = await wait_disposable_setup(websocket)
 
     async def start(kind):
         return (await websocket.command({"type": "alarmo_interval_observer/start", "kind": kind}))["interval_id"]
@@ -388,6 +420,7 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
             health = runtime.health_snapshot()
             assert all(health[k] == 0 for k in ("issued_lease_count", "active_commit_count", "fallback_count"))
             result = {"scenario": "alarmo_inspection", "result": "PASS", "core": "2026.9.4", "alarmo_commit": COMMIT,
+                "setup_readiness": setup_readiness,
                 "authority_transition": [19, 20], "same_registry_instance": True, "preserved_envelopes": 1,
                 "observer_negative_control": "PASS", "negative_control_observation": control,
                 "missing_authority": denial_proof, "missing_authority_observation": denied_observation,

@@ -69,7 +69,13 @@ manifest bytes/digests/size, then container/image/container configuration-digest
 continuity. It records architecture and never exports container environment.
 
 The required scenario creates its Alarmo singleton through a normal config flow
-outside the measured interval and waits for setup/storage settlement. It then:
+outside the measured interval and waits for setup/storage settlement. Exact Core
+2026.9.4 `helpers/registry.py:13-14,74-79` schedules registry writes after 180
+seconds during startup (10 seconds while running). A setup-only readiness read
+therefore allows at most 41 polls over 200 seconds, requiring Core running,
+no queued or active fixed-store writes, and intact observer hooks. It does not
+force saves or retry feature reads. The 45-second observation and 30-second
+feature collection bounds are unchanged; missing settlement still fails. It then:
 
 1. Captures an actual extra harmless `get_states` request as a negative observer
    control and proves that a zero-command expectation rejects it.

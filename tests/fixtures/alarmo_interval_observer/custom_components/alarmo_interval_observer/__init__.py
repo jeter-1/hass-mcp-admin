@@ -21,7 +21,7 @@ MAX_EVENTS = 128
 MAX_SECONDS = 45
 COMMANDS = frozenset({"manifest/get", "config_entries/get", "config/entity_registry/get_entries",
     "alarmo/config", "alarmo/areas", "alarmo/sensors", "alarmo/entities", "alarmo/sensor_groups"})
-CONTROL_COMMANDS = frozenset({DOMAIN + "/start", DOMAIN + "/finish"})
+CONTROL_COMMANDS = frozenset({DOMAIN + "/ready", DOMAIN + "/start", DOMAIN + "/finish"})
 STORE_KEYS = frozenset({"alarmo.storage", "core.config_entries", "core.entity_registry",
                         "core.device_registry", "auth", "core.restore_state"})
 HASH_KEYS = tuple(sorted(STORE_KEYS - {"auth", "core.restore_state"}))
@@ -131,7 +131,7 @@ def store_hashes(config_directory):
 async def async_setup(hass, _config):
     import voluptuous as vol
     from homeassistant.const import __version__, EVENT_HOMEASSISTANT_STOP
-    from homeassistant.core import ServiceRegistry, callback
+    from homeassistant.core import CoreState, ServiceRegistry, callback
     from homeassistant.config_entries import ConfigEntriesFlowManager
     from homeassistant.data_entry_flow import FlowManager
     from homeassistant.helpers.storage import Store
@@ -172,6 +172,17 @@ async def async_setup(hass, _config):
                 setattr(cls, name, original)
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, restore)
 
+    @websocket_api.websocket_command({vol.Required("type"): DOMAIN + "/ready"})
+    @websocket_api.require_admin
+    @callback
+    def ready(_hass, connection, message):
+        # Setup only: fixed booleans, no forced save and no stored values.
+        connection.send_result(message["id"], {
+            "core_running": hass.state is CoreState.running,
+            "storage_pending": ledger.pending_setup_storage(),
+            "hooks_intact": all(coverage().values()),
+        })
+
     @websocket_api.websocket_command({vol.Required("type"): DOMAIN + "/start",
                                      vol.Required("kind"): vol.In(["inspection", "control"])})
     @websocket_api.require_admin
@@ -183,7 +194,7 @@ async def async_setup(hass, _config):
                 if time.monotonic() >= deadline:
                     raise ValueError("disposable setup storage is not settled")
                 await asyncio.sleep(0.1)
-            if not all(coverage().values()):
+            if hass.state is not CoreState.running or not all(coverage().values()):
                 raise ValueError("observer hooks changed")
             hashes = await hass.async_add_executor_job(store_hashes, hass.config.config_dir)
             identity = ledger.start(message["kind"], hashes)
@@ -204,6 +215,7 @@ async def async_setup(hass, _config):
         except ValueError:
             connection.send_error(message["id"], "observer_refused", "Observer refused interval")
 
+    websocket_api.async_register_command(hass, ready)
     websocket_api.async_register_command(hass, start)
     websocket_api.async_register_command(hass, finish)
     return True

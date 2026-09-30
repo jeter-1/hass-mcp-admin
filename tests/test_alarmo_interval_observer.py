@@ -33,6 +33,45 @@ def receipt(commands=()):
 
 
 class ObserverTests(unittest.IsolatedAsyncioTestCase):
+    async def test_setup_wait_covers_source_defined_startup_delay_without_feature_calls(self):
+        now, calls = [0], []
+        async def command(payload):
+            calls.append(payload)
+            return {"core_running": now[0] >= 5, "storage_pending": now[0] < 180, "hooks_intact": True}
+        async def sleep(seconds):
+            now[0] += seconds
+        result = await acceptance.wait_disposable_setup(SimpleNamespace(command=command), clock=lambda: now[0], sleep=sleep)
+        self.assertEqual(result, {"result": "PASS", "readiness_reads": 37})
+        self.assertEqual(now[0], 180)
+        self.assertEqual(calls, [{"type": "alarmo_interval_observer/ready"}] * 37)
+        self.assertIn("alarmo_interval_observer/ready", observer.CONTROL_COMMANDS)
+
+    async def test_setup_wait_refuses_timeout_missing_hooks_bad_shape_and_request_failure(self):
+        for value in (
+            {"core_running": True, "storage_pending": True, "hooks_intact": True},
+            {"core_running": False, "storage_pending": False, "hooks_intact": True},
+            {"core_running": True, "storage_pending": False, "hooks_intact": False},
+            {"core_running": True, "storage_pending": 0, "hooks_intact": True},
+            {},
+        ):
+            now, calls = [0], []
+            async def command(payload):
+                calls.append(payload)
+                return value
+            async def sleep(seconds):
+                now[0] += seconds
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                await acceptance.wait_disposable_setup(SimpleNamespace(command=command), clock=lambda: now[0], sleep=sleep)
+            self.assertLessEqual(len(calls), 41)
+            self.assertLessEqual(now[0], 200)
+        calls = []
+        async def failure(payload):
+            calls.append(payload)
+            raise RuntimeError("synthetic transport unavailable")
+        with self.assertRaises(RuntimeError):
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=failure))
+        self.assertEqual(len(calls), 1)
+
     def test_empty_and_exact_command_intervals_are_useful_successes(self):
         for commands in ([], acceptance.EXPECTED_COMMANDS):
             value = receipt(commands)
