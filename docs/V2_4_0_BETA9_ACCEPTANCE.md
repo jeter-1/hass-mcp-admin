@@ -17,6 +17,11 @@ Obtain a focused independent review of the release-only delta. No Alarmo,
 authority-policy, provider, schema, stored-format or workflow expansion belongs
 in this release.
 
+Retain the original implementation/release reviews and separately review the
+post-review race-attribution, abandoned-job isolation and numeric phase-diagnostic
+delta. Its final-head validation supersedes earlier validation for readiness;
+earlier receipts remain historical evidence, not tests of the corrected head.
+
 Run clean final-head Full/Evidence with the existing locked interpreter and all
 exact protected-path declarations. Require every gate, including metadata, to
 pass. The implementation-only 14/15 receipt is not final release validation.
@@ -41,11 +46,11 @@ python -m unittest -v \
 | Case | Required source proof |
 | --- | --- |
 | Useful cold and warm behavior | Current-writer plan/approval/task changes invalidate the aggregate; the next build reflects them, then unchanged repeats reuse it with zero terminal-plan deserialization. Synthetic approved execution/readback succeeds, and duplicate apply does not redispatch. |
-| Event-loop progress | A controlled cold safety scan allows an independent owner-loop coroutine to progress. Same detector and bounded one-in-flight worker; no repository/provider/audit access from the worker. Do not substitute a wall-time threshold for this proof. |
-| Races and freshness | Concurrent external owner approval survives. Local/external record replacement and task-generation changes refuse mixed snapshots; later ordinary reads can rebuild. Crossed deadlines, rollback of the clock and owner-thread once-only expiry remain correct. |
-| Cancellation and overlap | Concurrent readers serialize. Cancellation during worker/projection cannot publish stale health, perform background lifecycle writes or queue unlimited jobs. A later reader drains unfinished validation, including its failure, before taking a fresh snapshot. |
+| Event-loop progress | Both a controlled cold safety scan and the actual CPU scanner on current-writer synthetic records allow an independent owner-loop coroutine to progress. Same detector and bounded one-in-flight worker; no repository/provider/audit access from the worker. Do not substitute a wall-time threshold for this proof. |
+| Races and freshness | Concurrent external owner approval survives. Local/external record replacement and task-generation changes refuse mixed snapshots with `health_snapshot_superseded`, distinct from true storage errors; later ordinary reads can rebuild. Crossed deadlines, rollback of the clock and owner-thread once-only expiry remain correct. |
+| Cancellation and overlap | Concurrent readers serialize. Cancellation during worker/projection/drain cannot publish stale health, perform background lifecycle writes or queue unlimited jobs. An abandoned unexpected exception cannot poison a fresh reader; fresh-validation failures still propagate. |
 | Failure and compatibility | Unsafe/corrupt records, failed history, provider/F3 unavailability and live locks remain visible. Current Core/provider state is sampled after the await. Historical projection compatibility has no authorization effect. No new fallback, retry, dispatch or weakened stale-plan check. |
-| Honest measurements | Separate cold/warm work counts, total time and owner-loop responsiveness. Repository enumeration, per-record projection, final assembly and F3 still have synchronous portions; a small synthetic fixture proves no household latency or heartbeat outcome. |
+| Honest measurements | Separate cold/warm work counts, total time, fixed numeric phase wall times and observed owner-loop ticker gaps. Warm skipped phases are zero; sync reads do not inherit async timings. Repository enumeration, per-record projection, final assembly and F3 still have synchronous portions; synthetic fixtures prove no household latency or heartbeat outcome. |
 
 Use disposable synthetic records and permitted local socket wakeups/peers only;
 no production stores or endpoints. Require exact-head CI `validate` and every
@@ -114,7 +119,8 @@ the F032 boundary. Prepare the exact live test and obtain its separate approval
 before any proposal/approval transition. Prefer an already intended, freshly
 inspected bounded operation; alternatively use an exact proposal-only fixture
 with explicit expiry/cleanup. Do not clear caches, edit stores, manufacture
-history, restart services or replay any failed/stale household plan.
+history, restart/reload services or replay any failed/stale household plan.
+Internal synchronous operational snapshots are outside this async-health gate.
 
 1. Read one warm no-probe health baseline. Record per-call history work plus
    cache hits/rebuilds, generations, authority/connection/provider and live F3
@@ -129,6 +135,11 @@ history, restart services or replay any failed/stale household plan.
    plan/task generations and zero terminal-plan deserialization, unless an
    explicitly explained concurrent lifecycle event intervened. Retain actual
    total cold timing; it need not be shorter to establish responsiveness.
+   Retain `hot_paths.governance_health.phase_elapsed_ms` for both reads. Compare
+   snapshot, worker/validation wait, projection, assembly and overlay durations;
+   worker elapsed is nested in validation wait, and projection includes yields.
+   These are wall times, not owner-loop CPU or a heartbeat-latency bound. Retain
+   the real-scanner synthetic ticker evidence separately from installed evidence.
 4. Across the baseline, approval, cold/warm reads and useful readback, require
    uninterrupted admission: no authority generation change/retirement, observed
    disconnect/provider_unavailable, unexplained catalog withdrawal or fallback.
@@ -147,6 +158,8 @@ health, unexpected generations or counters, uncertain dispatch or readback
 mismatch. Preserve timing/reason evidence; no automatic retry, new approval loop,
 authority relaxation or transport-cause inference. An expected concurrent change
 can make a comparison inconclusive; it cannot be silently discarded until green.
+`health_snapshot_superseded` identifies that race without asserting disk damage;
+it does not turn a refused mixed snapshot into a pass or authorize automatic retry.
 
 ## 5. Settlement and reporting
 

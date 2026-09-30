@@ -14,12 +14,21 @@ Concurrent health readers serialize preparation. Cancellation cannot publish a
 background cache or resolve further lifecycle state for the canceled request;
 the next reader drains any unfinished pure validation before starting again.
 Observed plan/task changes reject a mixed snapshot without overwriting an owner
-approval. Crossed expiry deadlines and clock rollback still invalidate reuse.
+approval, with `details.reason=health_snapshot_superseded` distinguishing that
+race from disk failure. A failed abandoned job does not poison the next reader;
+fresh validation and caller cancellation still propagate their own failures.
+Crossed expiry deadlines and clock rollback still invalidate reuse.
 Live Core/provider state is sampled after asynchronous preparation, and warm
 health reuse retains beta.8's checks. See [the performance contract](HEALTH_PERFORMANCE.md).
 
 Repository enumeration, individual projections, final assembly and F3 traversal
 still include synchronous work. Total cold latency may remain substantial.
+Internal operational planning/restart-verification snapshots and startup retain
+the synchronous health API. They are outside this public async correction;
+restart/reload is not the governance change for its acceptance gate. Successful
+async health adds bounded numeric phase wall times under
+`hot_paths.governance_health.phase_elapsed_ms`, separating worker validation
+from snapshot/projection/assembly/overlay work without claiming CPU attribution.
 Offline tests establish event-loop progress and race/failure preservation; they
 do not establish that health processing caused the reported production
 connection losses or that those losses are resolved. Installed acceptance must

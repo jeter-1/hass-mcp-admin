@@ -5,6 +5,7 @@ import asyncio
 import copy
 import json
 import threading
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
@@ -126,6 +127,7 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
                     with self.assertRaises(GovernanceError) as error:
                         await pending
                 self.assertEqual(error.exception.code, ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+                self.assertEqual(error.exception.details, {"reason": "health_snapshot_superseded"})
                 self.assertEqual(writer.get(created["plan_id"]).status, PlanStatus.REJECTED)
                 self.assertIsNone(self.service._health_cache_key)
         self.assertEqual((await self.service.async_health_summary())["rejected_plans"], 2)
@@ -140,6 +142,7 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(GovernanceError) as error:
                 await pending
         self.assertEqual(error.exception.code, ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        self.assertEqual(error.exception.details, {"reason": "health_snapshot_superseded"})
         self.assertIsNone(self.service._health_cache_key)
         self.assertEqual((await self.service.async_health_summary())["total_plans"], 1)
 
@@ -223,8 +226,9 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
     async def test_history_errors_are_not_cached_as_healthy(self):
         await self.fixture.update_plan()
         with patch.object(self.repository, "list", side_effect=ChangePlanStorageError("synthetic")):
-            with self.assertRaises(GovernanceError):
+            with self.assertRaises(GovernanceError) as error:
                 await self.service.async_health_summary()
+            self.assertNotEqual(error.exception.details.get("reason"), "health_snapshot_superseded")
         self.assertIsNone(self.service._health_cache_key)
         with patch.object(self.service.task_repository, "list", side_effect=ExecutionTaskStorageError("synthetic")) as listing:
             for _ in range(2):
@@ -241,6 +245,130 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
                     await self.service.async_health_summary()
                 self.assertIsNone(self.service._health_cache_key)
         self.assertEqual((await self.service.async_health_summary())["total_plans"], 1)
+
+    async def test_abandoned_unexpected_failure_does_not_poison_fresh_reader(self):
+        await self.fixture.update_plan()
+        original = service_module._validate_health_records
+        calls = []
+
+        def first_fails(plans, sensitive_values):
+            calls.append(threading.get_ident())
+            if len(calls) == 1:
+                self.entered.set()
+                if not self.release.wait(3):
+                    raise AssertionError("synthetic abandoned worker was not released")
+                raise RuntimeError("synthetic private failure must not reach fresh reader")
+            return original(plans, sensitive_values)
+
+        with patch.object(service_module, "_validate_health_records", side_effect=first_fails):
+            abandoned = asyncio.create_task(self.service.async_health_summary())
+            await self.wait_for_worker()
+            abandoned.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await abandoned
+            fresh = asyncio.create_task(self.service.async_health_summary())
+            await asyncio.sleep(0)
+            self.assertEqual(len(calls), 1)
+            self.assertFalse(fresh.done())
+            self.release.set()
+            health = await fresh
+        self.assertEqual(health["total_plans"], 1)
+        self.assertEqual(len(calls), 2)
+        self.assertIsNone(self.service._health_validation_job)
+        self.assertEqual(self.fixture.gateway.write_calls, 0)
+
+    async def test_current_unexpected_failure_still_propagates_without_cache(self):
+        await self.fixture.update_plan()
+        with patch.object(service_module, "_validate_health_records", side_effect=RuntimeError("synthetic")):
+            with self.assertRaises(RuntimeError):
+                await self.service.async_health_summary()
+        self.assertIsNone(self.service._health_cache_key)
+        self.assertEqual((await self.service.async_health_summary())["total_plans"], 1)
+
+    async def test_cancellation_while_draining_keeps_single_job(self):
+        await self.fixture.update_plan()
+        with patch.object(service_module, "_validate_health_records", side_effect=self.validation) as validation:
+            first = asyncio.create_task(self.service.async_health_summary())
+            await self.wait_for_worker()
+            first.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await first
+            original_job = self.service._health_validation_job
+            second = asyncio.create_task(self.service.async_health_summary())
+            await asyncio.sleep(0)
+            second.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await second
+            self.assertIs(self.service._health_validation_job, original_job)
+            self.assertFalse(original_job.done())
+            self.assertEqual(validation.call_count, 1)
+            self.release.set()
+            self.assertEqual((await self.service.async_health_summary())["total_plans"], 1)
+            self.assertEqual(validation.call_count, 2)
+
+    async def test_phase_measurements_are_per_call_and_do_not_survive_sync_read(self):
+        await self.fixture.update_plan()
+        cold = await self.service.async_health_summary()
+        phases = cold["plan_store_scaling"]["hot_paths"]["governance_health"]["phase_elapsed_ms"]
+        self.assertEqual(set(phases), {
+            "reader_wait_ms", "abandoned_worker_wait_ms", "snapshot_ms",
+            "validation_wait_ms", "worker_elapsed_ms", "projection_ms",
+            "assembly_ms", "overlay_ms",
+        })
+        self.assertTrue(all(isinstance(value, float) and value >= 0 for value in phases.values()))
+        self.assertGreater(phases["validation_wait_ms"], 0)
+        self.assertLessEqual(phases["worker_elapsed_ms"], phases["validation_wait_ms"] + 0.001)
+        warm = await self.service.async_health_summary()
+        warm_phases = warm["plan_store_scaling"]["hot_paths"]["governance_health"]["phase_elapsed_ms"]
+        for field in ("validation_wait_ms", "worker_elapsed_ms", "projection_ms", "assembly_ms"):
+            self.assertEqual(warm_phases[field], 0)
+        sync = self.service.health_summary()
+        self.assertNotIn("phase_elapsed_ms", sync["plan_store_scaling"]["hot_paths"]["governance_health"])
+
+    async def test_real_cpu_scanner_permits_owner_loop_progress(self):
+        fixture = f3_fixtures.F3ConfigurationActivationTests()
+        await fixture.asyncSetUp()
+        try:
+            for index in range(32):
+                await fixture.service.create_configuration_plan(
+                    title=f"Synthetic CPU history {index}", description="Offline scanner workload",
+                    operations=[{
+                        "operation_id": "update", "resource_type": "automation",
+                        "action": "update", "target_id": "apply_hvac_comfort",
+                        "depends_on": [], "proposed_config": copy.deepcopy(PROPOSED_AUTOMATION),
+                    }],
+                )
+            original = service_module._validate_health_records
+            interval = []
+            ticks = []
+            done = asyncio.Event()
+
+            def measured(plans, sensitive_values):
+                interval.append(time.monotonic())
+                try:
+                    return original(plans, sensitive_values)
+                finally:
+                    interval.append(time.monotonic())
+
+            async def heartbeat():
+                while not done.is_set():
+                    ticks.append(time.monotonic())
+                    await asyncio.sleep(0.001)
+
+            ticker = asyncio.create_task(heartbeat())
+            try:
+                await asyncio.sleep(0)
+                with patch.object(service_module, "_validate_health_records", side_effect=measured):
+                    result = await fixture.service.async_health_summary()
+            finally:
+                done.set()
+                await ticker
+            self.assertEqual(result["total_plans"], 32)
+            self.assertTrue(any(interval[0] < tick < interval[1] for tick in ticks))
+            self.assertGreater(result["plan_store_scaling"]["hot_paths"]["governance_health"]["phase_elapsed_ms"]["worker_elapsed_ms"], 0)
+            self.assertEqual(sum(call[0] == "write" for call in fixture.gateway.calls), 0)
+        finally:
+            await fixture.asyncTearDown()
 
     async def test_unconfigured_runtime_and_envelope_preserve_shape(self):
         runtime = GovernanceRuntime()
@@ -284,6 +412,30 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
             response = json.loads(await pending)
         self.assertTrue(response["success"])
         self.assertEqual(response["data"]["governance"]["total_plans"], 1)
+        rest.assert_not_awaited()
+        websocket.assert_not_awaited()
+
+    async def test_public_race_reason_survives_without_provider_probe_or_record_content(self):
+        from ha_mcp_engineering.tools import compatibility
+        runtime = GovernanceRuntime()
+        runtime.service = self.service
+        registry = HealthRegistry(governance=runtime)
+        created = await self.fixture.update_plan()
+        with (
+            patch.object(compatibility, "HEALTH", registry),
+            patch.object(compatibility, "rest", AsyncMock()) as rest,
+            patch.object(compatibility, "ws_command", AsyncMock()) as websocket,
+            patch.object(service_module, "_validate_health_records", side_effect=self.validation),
+        ):
+            pending = asyncio.create_task(compatibility.get_server_health(check_ha=False))
+            await self.wait_for_worker()
+            await self.fixture.externally_approve(created["plan_id"], created["plan_hash"])
+            self.release.set()
+            response = json.loads(await pending)
+        self.assertFalse(response["success"])
+        self.assertEqual(response["error_code"], ErrorCode.CHANGE_PLAN_STORAGE_ERROR.value)
+        self.assertEqual(response["details"], {"reason": "health_snapshot_superseded"})
+        self.assertNotIn(created["plan_id"], json.dumps(response))
         rest.assert_not_awaited()
         websocket.assert_not_awaited()
 

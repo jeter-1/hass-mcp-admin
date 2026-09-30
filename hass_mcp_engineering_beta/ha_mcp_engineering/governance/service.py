@@ -534,7 +534,7 @@ class ChangeGovernanceService:
         self._health_cache_rebuild_count = 0
         self._health_cache_hit_count = 0
         self._health_read_lock = asyncio.Lock()
-        self._health_validation_job: asyncio.Task[None] | None = None
+        self._health_validation_job: asyncio.Task[float] | None = None
         self._health_cache = self._build_health_summary(
             include_provider_health=False
         )
@@ -12208,18 +12208,33 @@ class ChangeGovernanceService:
         resolution, repository writes and cache publication stay on the owner
         loop. Cancellation abandons publication, never the single-worker bound.
         """
+        requested_at = time.monotonic()
+        phases = {
+            "reader_wait_ms": 0.0, "abandoned_worker_wait_ms": 0.0,
+            "snapshot_ms": 0.0, "validation_wait_ms": 0.0,
+            "worker_elapsed_ms": 0.0, "projection_ms": 0.0,
+            "assembly_ms": 0.0, "overlay_ms": 0.0,
+        }
         async with self._health_read_lock:
+            phases["reader_wait_ms"] = (time.monotonic() - requested_at) * 1000.0
+            phase_started = time.monotonic()
             previous = self._health_validation_job
             if previous is not None:
                 try:
                     await asyncio.shield(previous)
-                except GovernanceError:
-                    # An abandoned snapshot is not the next request's data.
+                except Exception:
+                    # Discard only the abandoned job's failure, without its text.
+                    # Fresh validation below still propagates its own failures;
+                    # caller cancellation (BaseException) must not be swallowed.
                     pass
                 finally:
                     if previous.done():
                         self._health_validation_job = None
+            phases["abandoned_worker_wait_ms"] = (
+                time.monotonic() - phase_started
+            ) * 1000.0
             started = time.monotonic()
+            phase_started = started
             plan_metrics = self.repository.navigation_metrics()
             task_metrics = self.task_repository.navigation_metrics()
             key = (self.repository.generation, self.task_repository.generation)
@@ -12233,6 +12248,8 @@ class ChangeGovernanceService:
                     raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
                 plan_generation = self.repository.generation
                 task_generation = self.task_repository.generation
+                phases["snapshot_ms"] = (time.monotonic() - phase_started) * 1000.0
+                phase_started = time.monotonic()
                 job = asyncio.create_task(asyncio.to_thread(
                     _validate_health_records, plans, self.sensitive_values
                 ))
@@ -12243,10 +12260,12 @@ class ChangeGovernanceService:
                     completed.exception() if not completed.cancelled() else None
                 ))
                 try:
-                    await asyncio.shield(job)
+                    phases["worker_elapsed_ms"] = await asyncio.shield(job)
                 finally:
                     if job.done():
                         self._health_validation_job = None
+                phases["validation_wait_ms"] = (time.monotonic() - phase_started) * 1000.0
+                phase_started = time.monotonic()
                 resolved: list[ChangePlan] = []
                 failures: list[tuple[ChangePlan, ErrorCode]] = []
                 for plan in plans:
@@ -12267,6 +12286,8 @@ class ChangeGovernanceService:
                     plan_generation = self.repository.generation
                     task_generation = self.task_repository.generation
                 self._require_health_generations(plan_generation, task_generation)
+                phases["projection_ms"] = (time.monotonic() - phase_started) * 1000.0
+                phase_started = time.monotonic()
                 self._health_cache = self._build_health_summary(
                     include_provider_health=False,
                     resolved_history=(
@@ -12275,14 +12296,17 @@ class ChangeGovernanceService:
                     captured_plan_generation=plan_generation,
                     captured_built_at=built_at,
                 )
+                phases["assembly_ms"] = (time.monotonic() - phase_started) * 1000.0
                 self._health_cache_rebuild_count += 1
             else:
                 self._health_cache_hit_count += 1
+                phases["snapshot_ms"] = (time.monotonic() - phase_started) * 1000.0
             return self._health_summary_overlay(
                 started=started, plan_metrics=plan_metrics, task_metrics=task_metrics,
                 cache_rebuilt=rebuilt,
                 home_assistant_status=home_assistant_status,
                 home_assistant_websocket_status=home_assistant_websocket_status,
+                phase_elapsed_ms=phases,
             )
 
     def _require_health_generations(self, plans: int, tasks: int) -> None:
@@ -12290,10 +12314,16 @@ class ChangeGovernanceService:
         self.task_repository.navigation_metrics()
         if self.repository.generation != plans:
             self._health_cache_key = None
-            raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+            raise GovernanceError(
+                ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
+                details={"reason": "health_snapshot_superseded"},
+            )
         if self.task_repository.generation != tasks:
             self._health_cache_key = None
-            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            raise GovernanceError(
+                ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
+                details={"reason": "health_snapshot_superseded"},
+            )
 
     def _health_summary_overlay(
         self,
@@ -12304,7 +12334,9 @@ class ChangeGovernanceService:
         cache_rebuilt: bool,
         home_assistant_status: str | None,
         home_assistant_websocket_status: str | None,
+        phase_elapsed_ms: dict[str, float] | None = None,
     ) -> dict[str, Any]:
+        overlay_started = time.monotonic()
         summary = deepcopy(self._health_cache)
 
         storage = self.repository.health()
@@ -12444,6 +12476,13 @@ class ChangeGovernanceService:
             plans_before=plan_metrics,
             tasks_before=task_metrics,
         )
+        if phase_elapsed_ms is not None:
+            # Bounded numeric diagnostics, never record content. Worker elapsed
+            # is nested within validation wait; these are wall times, not CPU.
+            phase_elapsed_ms["overlay_ms"] = (time.monotonic() - overlay_started) * 1000.0
+            self._hot_path_metrics["governance_health"]["phase_elapsed_ms"] = {
+                name: round(elapsed, 3) for name, elapsed in phase_elapsed_ms.items()
+            }
         summary["plan_store_scaling"] = {
             "authorization_source": "persisted_records",
             "derived_state_role": "navigation_and_status_only",
@@ -13568,7 +13607,9 @@ def _require_safe_persisted_plan(
 
 def _validate_health_records(
     plans: list[ChangePlan], sensitive_values: tuple[str, ...]
-) -> None:
+) -> float:
     """No repository, provider, audit, lifecycle or cache access in this worker."""
+    started = time.monotonic()
     for plan in plans:
         _require_safe_persisted_plan(plan, sensitive_values)
+    return (time.monotonic() - started) * 1000.0

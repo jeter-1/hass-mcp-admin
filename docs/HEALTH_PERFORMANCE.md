@@ -106,21 +106,50 @@ authority, and cancellation cannot create an unbounded worker queue.
 Plan and task generations are checked after awaits and before publication.
 An observed concurrent approval, save, external replacement or task change
 refuses the mixed snapshot using the existing storage error categories, without
-retrying or overwriting the newer record. A later ordinary request can rebuild.
+retrying or overwriting the newer record. These race refusals carry the fixed
+`details.reason=health_snapshot_superseded`, distinguishing superseded evidence
+from a storage fault; they are not a valid health snapshot. Actual storage and
+unsafe-record errors retain their existing meanings. A later ordinary request
+can rebuild. A failed abandoned worker is drained without transferring its
+exception to an unrelated reader; that reader still performs fresh validation,
+whose failures propagate. Cancellation continues to propagate.
 The aggregate's time origin precedes asynchronous work so an expiry crossed
 during projection cannot disappear from cache invalidation. The existing final
 synchronous generation checks, live F3/provider overlays, and error behavior
 remain in use. The outer health envelope reads current Core/provider state
 **after** asynchronous preparation, not before its await.
 
-The tool signature, output fields, catalog, approval/dispatch rules, persistence
+The tool signature, catalog, approval/dispatch rules, persistence
 formats, and fallback policy are unchanged. Startup and internal synchronous
 operational snapshots retain the synchronous API. Repository enumeration,
 policy/lifecycle work for one record, summary assembly, and the existing F3
 health traversal still have synchronous portions; this change is not a hard
 latency bound, a worker for all health processing, or an atomic multi-process
-snapshot. Total cold-read latency may remain substantial. Its measured target
-is allowing event-loop progress during the dominant historical safety scan.
+snapshot. Total cold-read latency may remain substantial. Its target is allowing
+event-loop progress during historical safety validation; its share of installed
+cold latency must be measured rather than assumed.
+
+Successful asynchronous reads add fixed numeric `phase_elapsed_ms` fields under
+`plan_store_scaling.hot_paths.governance_health`: `reader_wait_ms`,
+`abandoned_worker_wait_ms`, `snapshot_ms`, `validation_wait_ms`,
+`worker_elapsed_ms`, `projection_ms`, `assembly_ms` and `overlay_ms`.
+Snapshot includes navigation and enumeration; assembly includes task-history
+aggregation; overlay includes live F3/provider traversal. Worker elapsed is
+measured inside the detector and is **nested within** validation wait, which also
+includes thread scheduling. Projection includes cooperative yields. These are
+wall times, not CPU usage or maximum event-loop blockage; do not sum the nested
+worker duration or subtract it to infer owner-loop CPU time. Existing
+`last_duration_ms` excludes reader/drain waits and describes governance assembly,
+not the entire public request. Final metric copying and outer-envelope work are
+outside the phase breakdown. Unused cold phases are zero on warm reads; sync
+reads have no async phase object. Diagnostics retain no record content and grant
+no authority. Failed reads do not publish a successful phase receipt.
+
+The actual CPU scanner also runs against current-writer synthetic records while
+an independent event-loop ticker runs. This complements, rather than replaces,
+the controlled wait tests for cancellation/serialization. Retain maximum ticker
+gaps and phase measurements in performance evidence; neither a thread boundary
+nor a stable sampled authority generation proves a production heartbeat bound.
 
 [`test_governance_async_health.py`](../tests/test_governance_async_health.py)
 adds deterministic owner-loop progress and cancellation/overlap checks, actual
