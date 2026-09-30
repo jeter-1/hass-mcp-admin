@@ -68,7 +68,23 @@ class HealthRegistry:
         self.fan_operations = fan_operations
         self.power_operations = power_operations
 
-    def snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
+    async def async_snapshot(self, ha_connection: dict[str, Any]) -> dict[str, Any]:
+        governance = (
+            await self.governance.async_health_summary(
+                home_assistant_status=ha_connection.get(
+                    "rest_status", ha_connection.get("status")
+                ),
+                home_assistant_websocket_status=ha_connection.get("websocket_status"),
+            )
+            if self.governance else {"enabled": False, "storage": {"configured": False}}
+        )
+        # Assemble live authority/provider fields after yielding for history.
+        return self.snapshot(ha_connection, governance_summary=governance)
+
+    def snapshot(
+        self, ha_connection: dict[str, Any],
+        *, governance_summary: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         metrics = METRICS.snapshot()
         return {
             "server": {"id": SERVER_ID, "name": SERVER_NAME, "version": SERVER_VERSION},
@@ -209,6 +225,7 @@ class HealthRegistry:
             "retry_count": metrics["retry_count"],
             "timeout_count": metrics["timeout_count"],
             "governance": (
+                governance_summary if governance_summary is not None else
                 self.governance.health_summary(
                     home_assistant_status=ha_connection.get(
                         "rest_status", ha_connection.get("status")

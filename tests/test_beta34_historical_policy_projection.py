@@ -247,6 +247,7 @@ class ProjectionAuthorityBoundaryStructureTests(unittest.TestCase):
                 "_projection_failure_for_plan",
                 "_load_for_projection",
                 "_resolved_plans_with_projection_failures",
+                "async_health_summary",
             },
         )
 
