@@ -78,15 +78,21 @@ def verify_records(records, events, hours, entity='', end_shift=0):
 
 def cleanup(identity, folder):
     # Only resources bearing this run's unique ownership label may be removed.
+    def exists(kind, name):
+        args = ('container','ls','--all') if kind == 'container' else ('network','ls')
+        # A failed inventory is not evidence of absence.
+        names=docker(*args,'--format','{{.Names}}' if kind=='container' else '{{.Name}}').stdout.decode().splitlines()
+        return name in names
+
     for kind, name in (('container', identity), ('network', identity)):
-        fmt = '{{index .Config.Labels "' + LABEL + '"}}' if kind == 'container' else '{{index .Labels "' + LABEL + '"}}'
-        inspected = docker(kind, 'inspect', '--format', fmt, name, check=False)
-        if inspected.returncode:
+        if not exists(kind,name):
             continue
+        fmt = '{{index .Config.Labels "' + LABEL + '"}}' if kind == 'container' else '{{index .Labels "' + LABEL + '"}}'
+        inspected = docker(kind, 'inspect', '--format', fmt, name)
         require(inspected.stdout.decode().strip() == identity, 'cleanup_owner_mismatch')
         args = ('rm', '-f', name) if kind == 'container' else ('network','rm',name)
         docker(*args)
-        require(docker(kind, 'inspect', name, check=False).returncode != 0, 'cleanup_not_verified')
+        require(not exists(kind,name), 'cleanup_not_verified')
     if folder.exists():
         require(not folder.is_symlink() and folder.name == identity, 'cleanup_path_mismatch')
         shutil.rmtree(folder)

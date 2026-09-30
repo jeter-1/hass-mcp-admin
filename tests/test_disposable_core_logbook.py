@@ -65,21 +65,31 @@ class DisposableLogbookTests(unittest.TestCase):
 
     def test_cleanup_refuses_foreign_owner_without_delete(self):
         with tempfile.TemporaryDirectory() as path, patch.object(lane,'docker') as docker:
-            docker.return_value=subprocess.CompletedProcess([],0,b'other-owner\n',b'')
+            docker.side_effect=[subprocess.CompletedProcess([],0,b'logbook-123-1\n',b''),
+                                subprocess.CompletedProcess([],0,b'other-owner\n',b'')]
             with self.assertRaises(ValueError):
                 lane.cleanup('logbook-123-1',Path(path)/'logbook-123-1')
-            self.assertEqual(docker.call_count,1)
+            self.assertEqual(docker.call_count,2)
+
+    def test_cleanup_inventory_failure_is_not_absence(self):
+        with tempfile.TemporaryDirectory() as path, patch.object(lane,'docker',side_effect=ValueError('docker_unavailable')):
+            folder=Path(path)/'logbook-123-1';folder.mkdir()
+            with self.assertRaises(ValueError):lane.cleanup('logbook-123-1',folder)
+            self.assertTrue(folder.exists())
 
     def test_cleanup_owned_resources_and_private_fixture(self):
         identity='logbook-123-1'
         with tempfile.TemporaryDirectory() as path:
             folder=Path(path)/identity; folder.mkdir(); (folder/'ephemeral-token').write_text('synthetic')
-            calls=[]
+            calls=[];present={'container':True,'network':True}
             def docker(*args,**kw):
                 calls.append(args)
-                if '--format' in args:
+                if 'ls' in args:
+                    return subprocess.CompletedProcess([],0,(identity+'\n').encode() if present[args[0]] else b'',b'')
+                if 'inspect' in args:
                     return subprocess.CompletedProcess([],0,(identity+'\n').encode(),b'')
-                return subprocess.CompletedProcess([],1 if 'inspect' in args else 0,b'',b'')
+                present['container' if args[0]=='rm' else 'network']=False
+                return subprocess.CompletedProcess([],0,b'',b'')
             with patch.object(lane,'docker',docker):
                 lane.cleanup(identity,folder)
             self.assertFalse(folder.exists())
