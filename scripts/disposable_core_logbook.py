@@ -19,11 +19,51 @@ PINS = ROOT / 'tests/fixtures/core_logbook_beta10.json'
 BRANCH = 'refs/heads/codex/beta10-core-logbook-integration'
 LABEL = 'io.hass-mcp.logbook-acceptance'
 MAX_BYTES = 2 * 1024 * 1024
+FAILURE_REASONS = frozenset('''attribution_mismatch branch_event_mismatch checkout_mismatch
+cleanup_not_verified cleanup_owner_mismatch cleanup_path_mismatch command_output_limit
+container_image_mismatch core_fixture_exited core_identity_mismatch core_readiness_timeout
+end_or_filter_mismatch entity_filter_mismatch evidence_limit fixture_cleanup_failed
+github_runner_required image_config_mismatch index_digest_mismatch interval_or_entity_mismatch
+job_mismatch local_command_failed manifest_mismatch message_entity_mismatch
+missing_end_control_not_distinguishable negative_control_http_failure network_not_internal
+platform_mismatch registered_tool_failure repository_mismatch request_count_mismatch
+response_not_list retry_or_upstream_attempt run_identity_missing shipped_engineering_source_changed
+source_missing start_mismatch telemetry_attempt_mismatch unexpected_dispatch unexpected_entity'''.split())
+
+
+class RequirementFailure(ValueError):
+    def __init__(self, reason):
+        self.reason = reason if reason in FAILURE_REASONS else 'unclassified'
+        super().__init__(self.reason)
 
 
 def require(value, reason):
     if not value:
-        raise ValueError(reason)
+        raise RequirementFailure(reason)
+
+
+def response_diagnostic(response):
+    """Project fixed codes/counts and known synthetic labels; never raw text."""
+    known_codes = {'authentication_failure','authorization_failure','home_assistant_unavailable',
+                   'home_assistant_api_error','home_assistant_timeout','provider_unavailable',
+                   'provider_error','internal_server_error','logbook_response_limit_exceeded',
+                   'logbook_busy','invalid_request','validation_failure'}
+    error=response.get('error')
+    code=error.get('code') if isinstance(error,dict) else None
+    records=response.get('data')
+    known={f'synthetic_{entity}_{age}' for entity in ('alpha','beta') for age in (192,120,48,18,6,-1)}
+    labels=[];unknown=0
+    if isinstance(records,list):
+        for item in records[:64]:
+            message=item.get('message') if isinstance(item,dict) else None
+            if isinstance(message,str) and message in known:
+                labels.append(message)
+            else:
+                unknown+=1
+    return {'success':response.get('success') is True,
+            'error_code':code if isinstance(code,str) and code in known_codes else 'other_or_absent',
+            'data_is_list':isinstance(records,list),'record_count':len(records) if isinstance(records,list) else None,
+            'known_messages':labels,'unrecognized_records_in_first64':unknown}
 
 
 def digest(data):
@@ -130,7 +170,7 @@ def verify_image(pins, out):
     return image, observed
 
 
-async def reader_cases(folder, out, fixture):
+async def reader_cases(folder, out, fixture, diagnostics=None):
     # Configure only this disposable process before importing the shipped tool.
     os.environ['HA_URL'] = 'http://127.0.0.1:18123'
     os.environ['HA_TOKEN'] = (folder/'ephemeral-token').read_text()
@@ -158,6 +198,7 @@ async def reader_cases(folder, out, fixture):
     client = ObservedClient(settings)
     now = datetime.fromisoformat(fixture['now'])
     results=[]
+    diagnostics = diagnostics if diagnostics is not None else {}
     # The clock is the sole patched reader dependency. Transport, Core view,
     # recorder query, sanitizer and registered response envelope are unmodified.
     for hours in (12,24,72,168):
@@ -174,6 +215,8 @@ async def reader_cases(folder, out, fixture):
                         clock.now.assert_called_once_with(timezone.utc)
                 finally:
                     end_request(context_token)
+                diagnostics.update(case={'hours':hours,'entity_filter':entity,'end_shift_hours':end_shift,
+                                         'previous_passed_cases':len(results)},response=response_diagnostic(response))
                 require(response.get('success') is True, 'registered_tool_failure')
                 require(len(captured)==count+1, 'request_count_mismatch')
                 parsed=urlsplit(captured[-1])
@@ -223,6 +266,7 @@ def main():
     require(command(['git','rev-parse','HEAD']).stdout.decode().strip()==os.environ['GITHUB_SHA'], 'checkout_mismatch')
     phase='image_verification'
     status='FAIL'
+    diagnostics={}
     try:
         image,config_digest=verify_image(pins,out)
         phase='core_start'
@@ -246,7 +290,7 @@ def main():
         require(fixture['core_version']==pins['core_version'] and fixture['source_commit']==pins['core_source'],'core_identity_mismatch')
         save(out,'fixture.json',fixture)
         phase='registered_reader_intervals'
-        asyncio.run(asyncio.wait_for(reader_cases(folder,out,fixture),timeout=300))
+        asyncio.run(asyncio.wait_for(reader_cases(folder,out,fixture,diagnostics),timeout=300))
         status='PASS'
     finally:
         if status!='PASS':
@@ -259,7 +303,9 @@ def main():
                 except ValueError: continue
                 if entry.get('status')=='FAIL' and re.fullmatch('[A-Za-z]{1,60}',str(entry.get('category',''))):
                     categories.append(entry['category'])
-            save(out,'failure.json',{'phase':phase,'fixture_error_types':categories})
+            error=sys.exception()
+            reason=error.reason if isinstance(error,RequirementFailure) else 'unclassified'
+            save(out,'failure.json',{'phase':phase,'reason':reason,'reader':diagnostics,'fixture_error_types':categories})
         cleanup(identity,folder)
         save(out,'result.json',{'status':status,'phase':phase,'cleanup':'PASS','engineering_release_source':pins['engineering_source'],
                                 'candidate_sha':os.environ['GITHUB_SHA'],'core_source':pins['core_source'],

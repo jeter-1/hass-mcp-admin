@@ -54,6 +54,10 @@ created by this disposable Core stays in private runner temporary state and is
 never uploaded. Always-cleanup checks resource ownership before removal and
 verifies absence. Upload paths allow only synthetic receipts and public image
 bytes, never raw Core logs, database, token, environment or arbitrary directories.
+Failure receipts retain a fixed assertion reason and the last synthetic case's
+counts/known labels. Arbitrary response strings and exception messages are
+excluded; an unknown value is classified without being copied. This diagnostic
+projection does not relax any acceptance assertion.
 
 Offline tests cover wrong execution identity, source tampering, wrong interval
 results, ownership refusal, cleanup, output bounds and workflow permissions.

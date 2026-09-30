@@ -102,6 +102,28 @@ class DisposableLogbookTests(unittest.TestCase):
         with patch.object(lane.subprocess,'run',return_value=subprocess.CompletedProcess([],0,b'x'*(lane.MAX_BYTES+1),b'')):
             with self.assertRaises(ValueError):lane.command(['synthetic'])
 
+    def test_failure_reasons_are_fixed_not_exception_text(self):
+        for reason,expected in [('registered_tool_failure','registered_tool_failure'),
+                                ('synthetic-private-marker','unclassified')]:
+            with self.assertRaises(lane.RequirementFailure) as caught:
+                lane.require(False,reason)
+            self.assertEqual(caught.exception.reason,expected)
+            self.assertEqual(str(caught.exception),expected)
+
+    def test_response_diagnostics_retain_only_known_synthetic_labels(self):
+        secret='synthetic-private-marker'
+        response={'success':True,'error':{'code':secret,'message':secret},
+                  'data':[{'message':'synthetic_alpha_6','name':secret},
+                          {'message':secret,'entity_id':secret},secret]*30}
+        projected=lane.response_diagnostic(response)
+        self.assertNotIn(secret,json.dumps(projected))
+        self.assertEqual(projected['record_count'],90)
+        self.assertEqual(projected['error_code'],'other_or_absent')
+        self.assertEqual(set(projected['known_messages']),{'synthetic_alpha_6'})
+        self.assertEqual(len(projected['known_messages'])+projected['unrecognized_records_in_first64'],64)
+        self.assertEqual(lane.response_diagnostic({'error':{'code':'home_assistant_unavailable'}})['error_code'],
+                         'home_assistant_unavailable')
+
     def test_workflow_only_branch_read_permissions_and_safe_artifact_list(self):
         import yaml
         workflow=yaml.safe_load((ROOT/'.github/workflows/beta10-core-logbook.yml').read_text())
