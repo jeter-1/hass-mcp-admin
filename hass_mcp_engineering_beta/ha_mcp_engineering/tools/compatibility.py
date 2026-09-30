@@ -249,7 +249,7 @@ async def get_server_health(check_ha: bool = True) -> str:
                 # in its own secret-free health state. Core health remains
                 # available even when the optional provider is unavailable.
                 pass
-        return HEALTH.snapshot(connection)
+        return await HEALTH.async_snapshot(connection)
 
     return await run_structured(
         "get_server_health",

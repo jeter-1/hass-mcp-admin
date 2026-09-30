@@ -210,6 +210,22 @@ class GovernanceRuntime:
             )
         return self.service
 
+    async def async_health_summary(
+        self,
+        *,
+        home_assistant_status: str | None = None,
+        home_assistant_websocket_status: str | None = None,
+    ) -> dict[str, Any]:
+        if self.service is None:
+            return self.health_summary(
+                home_assistant_status=home_assistant_status,
+                home_assistant_websocket_status=home_assistant_websocket_status,
+            )
+        return await self.service.async_health_summary(
+            home_assistant_status=home_assistant_status,
+            home_assistant_websocket_status=home_assistant_websocket_status,
+        )
+
     def health_summary(
         self,
         *,
