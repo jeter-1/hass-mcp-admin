@@ -60,7 +60,7 @@ def fixture_from_source(source_root, *, persisted=False):
     sensor = namespace["SensorEntry"]
     group = namespace["SensorGroupEntry"]
     store.config = namespace["Config"](code_arm_required=True, code_disarm_required=True)
-    store.areas = OrderedDict((key, area(area_id=key, name="synthetic-excluded-area-name", modes={
+    store.areas = OrderedDict((key, area(area_id=key, name=("synthetic-excluded-area-" + key if persisted else "synthetic-excluded-area-name"), modes={
         name: mode(enabled=name != "armed_vacation", entry_time=None if name == "armed_night" else 0,
                    exit_time=20, trigger_time=120) for name in MODES})) for key in ("0", "upstairs"))
     store.sensors = OrderedDict((entity, sensor(entity_id=entity, area=where, type=kind,
@@ -264,7 +264,7 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
         raise ValueError("Disposable Alarmo setup did not settle")
     entities = await websocket.command({"type": "alarmo/entities"})
     targets = [r["entity_id"] for r in entities if type(r.get("area_id")) is int and r["area_id"] == 0]
-    assert len(targets) == 1
+    assert len(targets) == 1 and len(entities) == 3 and len({row["entity_id"] for row in entities}) == 3
 
     async def start(kind):
         return (await websocket.command({"type": "alarmo_interval_observer/start", "kind": kind}))["interval_id"]
