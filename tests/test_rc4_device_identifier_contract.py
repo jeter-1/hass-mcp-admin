@@ -254,7 +254,7 @@ class IdentifierAuthorityTests(unittest.IsolatedAsyncioTestCase):
         self.network.records[2]["identifiers"] = [["test", 1]]
         await self.core.reconcile_once("synthetic_later_rejection")
         await gateway.initialize(server)
-        self.assertEqual(len(postcore.registered_tools(server)), 75)
+        self.assertEqual(len(postcore.registered_tools(server)), 76)
         self.assertEqual(len(transport.calls), calls)
         result = json.loads(await postcore.registered_tools(server)["ha_get_state"].run(
             {"entity_id": "sensor.synthetic"}))
