@@ -16,6 +16,54 @@ from ha_mcp_engineering.request_context import end_request
 
 
 class PaginationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cooperative_pages_preserve_frozen_output_without_recollection(self):
+        service, client, _, _, token = setup_service()
+        self.addCleanup(end_request, token)
+        await service.inspect(alarm_entity_id=TARGET, limit=1)
+        snapshot = next(iter(service.snapshots.values()))
+        encoded = snapshot.encoded
+        count = len(json.loads(encoded)["records"])
+        from ha_mcp_engineering.integration_inspection import service as service_module
+
+        with patch.object(service_module, "utc_now", return_value="2026-09-30T00:00:00Z"):
+            for offset in range(count):
+                expected = service._page(snapshot, offset, 1, continuation=bool(offset))
+                actual = await service._page_async(snapshot, offset, 1, continuation=bool(offset))
+                self.assertEqual(actual, expected)
+                self.assertEqual(set(references(actual["records"])),
+                                 {(e["source_id"], e["pointer"]) for e in actual["evidence_entries"]})
+        self.assertEqual(snapshot.encoded, encoded)
+        self.assertEqual(len(client.calls), 9)
+
+    async def test_cooperative_packing_cancellation_and_invalidation_cannot_publish(self):
+        for reason in ("cancel", "invalidate"):
+            with self.subTest(reason=reason):
+                service, client, _, _, token = setup_service()
+                try:
+                    original = service._page_steps
+
+                    def interrupted(*args, **kwargs):
+                        steps = original(*args, **kwargs)
+                        next(steps)
+                        callback = asyncio.current_task().cancel if reason == "cancel" else service._invalidate
+                        asyncio.get_running_loop().call_soon(callback)
+                        yield
+                        return (yield from steps)
+
+                    with patch.object(service, "_page_steps", interrupted):
+                        task = asyncio.create_task(service.inspect(alarm_entity_id=TARGET, limit=1))
+                        expected = asyncio.CancelledError if reason == "cancel" else InspectionError
+                        with self.assertRaises(expected) as found:
+                            await task
+                    if reason == "invalidate":
+                        self.assertEqual(found.exception.reason, "authority_unavailable")
+                    self.assertEqual(service.snapshots, {})
+                    self.assertEqual(service.cursors, {})
+                    self.assertEqual(service.active, 0)
+                    self.assertEqual(len(client.calls), 9)
+                finally:
+                    end_request(token)
+
     async def test_cooperative_record_assembly_preserves_records_and_gaps(self):
         from ha_mcp_engineering.integration_inspection.provider import build_records, build_records_async
 
@@ -592,17 +640,17 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
 
         service, client, _, _, token = setup_service()
         self.addCleanup(end_request, token)
-        page = service._page
+        page = service._page_async
         overrun = [0]
-        def late_page(*args, **kwargs):
-            result = page(*args, **kwargs)
+        async def late_page(*args, **kwargs):
+            result = await page(*args, **kwargs)
             self.assertEqual(len(service.snapshots), 1)
             # Synchronous packing cannot return success after its deadline,
             # even before the event loop gets to deliver timeout cancellation.
             overrun[0] = c.COLLECTION_SECONDS + 1
             return result
         clock = SimpleNamespace(monotonic=lambda: time.monotonic() + overrun[0])
-        with patch.object(service_module, "time", clock), patch.object(service, "_page", late_page):
+        with patch.object(service_module, "time", clock), patch.object(service, "_page_async", late_page):
             with self.assertRaises(InspectionError) as found:
                 await service.inspect(alarm_entity_id=TARGET)
         self.assertEqual(found.exception.reason, "timeout")

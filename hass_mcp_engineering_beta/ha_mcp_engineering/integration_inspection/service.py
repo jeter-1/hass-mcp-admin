@@ -250,7 +250,7 @@ class IntegrationInspectionService:
                 key, snapshot = await self._retain(report, binding)
                 await asyncio.sleep(0)
                 self._require_current(binding)
-                report = self._page(snapshot, 0, limit, continuation=False)
+                report = await self._page_async(snapshot, 0, limit, continuation=False)
                 if time.monotonic() - started >= c.COLLECTION_SECONDS:
                     raise InspectionError("timeout")
                 if self._binding(target, integration, limit) != binding:
@@ -285,6 +285,8 @@ class IntegrationInspectionService:
             if binding != snapshot.binding:
                 raise InspectionError("invalid_cursor")
             self.snapshots.move_to_end(key)
+            # Keep cached-page decoding synchronous outside the fresh-collection
+            # capacity guard; do not admit unbounded suspended decoded snapshots.
             report = self._page(snapshot, offset, limit, continuation=True)
         else:
             if self.active >= c.MAX_COLLECTORS:
@@ -308,7 +310,26 @@ class IntegrationInspectionService:
         return report
 
     def _page(self, snapshot, offset, limit, *, continuation):
+        steps = self._page_steps(snapshot, offset, limit, continuation=continuation)
+        while True:
+            try:
+                next(steps)
+            except StopIteration as completed:
+                return completed.value
+
+    async def _page_async(self, snapshot, offset, limit, *, continuation):
+        steps = self._page_steps(snapshot, offset, limit, continuation=continuation)
+        while True:
+            self._require_current(snapshot.binding)
+            try:
+                next(steps)
+            except StopIteration as completed:
+                return completed.value
+            await asyncio.sleep(0)
+
+    def _page_steps(self, snapshot, offset, limit, *, continuation):
         frozen = json.loads(snapshot.encoded)
+        yield
         records = frozen["records"]
         report = {**frozen, "records": [], "evidence_entries": []}
         report["freshness"] = {**frozen["freshness"], "served_at": utc_now(),
@@ -327,6 +348,7 @@ class IntegrationInspectionService:
             return candidate
 
         while next_offset < len(records) and len(report["records"]) < limit:
+            yield
             proposed = [*report["records"], records[next_offset]]
             candidate = {**report, "records": proposed, "evidence_entries": page_evidence(frozen, proposed)}
             next_offset += 1
@@ -340,6 +362,8 @@ class IntegrationInspectionService:
                 raise InspectionError("output_budget_unavailable")
             report = candidate
         report = finish(report)
+        yield
         if len(c.canonical(report)) > page_budget:
             raise InspectionError("output_budget_unavailable")
+        yield
         return Inspection.model_validate(report).model_dump()

@@ -179,6 +179,12 @@ class AlarmoProvider:
         if not (membership_complete or retained or useful_facts):
             raise InspectionError("source_unavailable")
         finished_at = utc_now()
+        evidence_entries = []
+        for projection in projections.values():
+            for index, evidence in enumerate(projection.entries.values()):
+                if index % 16 == 0:
+                    await asyncio.sleep(0)
+                evidence_entries.append(evidence.model_dump())
         return {
             "model_version": "integration-inspection-v1", "integration": "alarmo",
             "target": {"alarm_entity_id": target, "config_entry_id": entry["entry_id"], "scope": scope, "area_ids": area_ids},
@@ -190,7 +196,7 @@ class AlarmoProvider:
             "assessment": "partial" if all_gap_count else "complete",
             "complete_for": "selected_allowlisted_configuration_fields_only", "membership": membership,
             "records": records, "sources": sources,
-            "evidence_entries": [e.model_dump() for p in projections.values() for e in p.entries.values()],
+            "evidence_entries": evidence_entries,
             "privacy": {"policy": "alarmo_allowlist_v1", "never_collected_categories": list(c.NEVER_COLLECTED), "removed_categories": list(c.EXCLUDED)},
             "freshness": {"capture_started_at": started_at, "capture_finished_at": finished_at, "served_at": finished_at,
                 "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=c.SNAPSHOT_TTL)).isoformat().replace("+00:00", "Z"),
