@@ -151,6 +151,32 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
     def mapping(item: Any) -> dict:
         return item if isinstance(item, dict) else {}
 
+    if value.get("operation") == "get_logbook" and value.get("success") is True:
+        # The native reader already bounds whole records. At small configured
+        # budgets omit envelope detail, never tear apart that selected prefix.
+        receipt = {key: value[key] for key in ("operation", "request_id", "success", "data")
+                   if key in value}
+        metadata = mapping(value.get("metadata"))
+        receipt["metadata"] = {key: metadata[key] for key in ("routing", "source_coverage")
+                               if key in metadata}
+        routing = mapping(receipt["metadata"].get("routing"))
+        receipt["metadata"]["routing"] = {key: routing[key] for key in ("provider", "fallback_occurred")
+                                          if key in routing}
+        coverage = receipt["metadata"].get("source_coverage")
+        if isinstance(coverage, list):
+            receipt["metadata"]["source_coverage"] = [
+                {key: entry[key] for key in ("provider", "completeness", "fallback_occurred") if key in entry}
+                for entry in coverage if isinstance(entry, dict)
+            ]
+        receipt["response_completeness"] = {
+            "truncated": True, "reason": "response_size_limit", "limit_chars": limit,
+            "notice": f"... [truncated at {limit} chars]",
+        }
+        rendered = _compact_json(receipt)
+        if len(rendered) > limit:
+            raise ValueError("response bound cannot preserve the logbook receipt")
+        return rendered
+
     body_key = "data" if value.get("success") else "details"
     body = mapping(value.get(body_key))
     plan = mapping(body.get("plan"))
@@ -237,6 +263,8 @@ def _bounded_json(output: str, limit: int) -> str:
     if not isinstance(value, dict):
         value = {"data": value}
     protected = _receipt_paths(value)
+    if value.get("operation") == "get_logbook" and value.get("success") is True:
+        protected.add(("data",))
     omission = {
         "truncated": True,
         "reason": "response_size_limit",
@@ -244,6 +272,8 @@ def _bounded_json(output: str, limit: int) -> str:
         "limit_chars": limit,
         "original_chars": len(output),
         "omitted_paths": [],
+        "omitted_path_count": 0,
+        "omitted_paths_complete": True,
         "retrieval": _retrieval(value),
         "approval_disclosures_complete": False,
     }
@@ -251,47 +281,56 @@ def _bounded_json(output: str, limit: int) -> str:
     # Keep original metadata separate, including provider attribution.
     value["response_completeness"] = omission
     protected.add(("response_completeness",))
-    omitted: list[str] = []
+    size = len(_compact_json(value))
 
-    def candidates(node: Any, path: tuple = ()):
+    def candidates(node: Any, prefixes: set[tuple], path: tuple = ()):
         if isinstance(node, dict):
             for key, item in node.items():
                 child = (*path, key)
                 if child in protected:
                     continue
-                if any(p[:len(child)] == child for p in protected):
-                    yield from candidates(item, child)
+                if child in prefixes:
+                    yield from candidates(item, prefixes, child)
                 else:
                     yield len(_compact_json(item)), node, key, child
         elif isinstance(node, list):
             # Never change list offsets while traversing it. Whole optional
             # lists are removed by their owning dictionary above.
             for index, item in enumerate(node):
-                yield from candidates(item, (*path, index))
+                yield from candidates(item, prefixes, (*path, index))
 
-    while len(rendered := _compact_json(value)) > limit:
-        options = list(candidates(value))
-        if not options:
-            # Domain-valid individual plan/task receipts fit the configured
-            # production bound. For smaller custom budgets, omit secondary
-            # receipt detail explicitly before sacrificing primary identities.
-            secondary = {
-                p for p in protected
-                if len(p) > 2 and p[-1] not in {"plan_id", "plan_hash", "task_id"}
-            }
-            if secondary:
-                protected.difference_update(secondary)
-                continue
-            return _minimal_receipt(json.loads(output), limit)
-        _, parent, key, path = max(options, key=lambda item: (item[0], str(item[3])))
-        del parent[key]
-        omitted.append("/" + "/".join(
-            str(part).replace("~", "~0").replace("/", "~1") for part in path
-        ))
-        omission["omitted_paths"] = omitted[:16]
-        omission["omitted_path_count"] = len(omitted)
-        omission["omitted_paths_complete"] = len(omitted) <= 16
-    return rendered
+    # Candidates are disjoint optional subtrees. Size each once per pass and
+    # account for JSON punctuation and bounded omission metadata incrementally.
+    # Rebuilding/serializing the remaining tree after every deletion can starve
+    # the event loop on ordinary logbook lists with protected entity/state keys.
+    for _ in range(2):
+        prefixes = {p[:i] for p in protected for i in range(1, len(p))}
+        options = sorted(candidates(value, prefixes),
+                         key=lambda item: (item[0], str(item[3])), reverse=True)
+        for item_size, parent, key, path in options:
+            if size <= limit:
+                return _compact_json(value)
+            size -= item_size + len(_compact_json(key)) + 1 + (len(parent) > 1)
+            del parent[key]
+            previous = omission["omitted_path_count"]
+            count = previous + 1
+            size += len(str(count)) - len(str(previous))
+            omission["omitted_path_count"] = count
+            if count <= 16:
+                pointer = "/" + "/".join(
+                    str(part).replace("~", "~0").replace("/", "~1") for part in path
+                )
+                size += len(_compact_json(pointer)) + (previous > 0)
+                omission["omitted_paths"].append(pointer)
+            elif count == 17:
+                size += 1  # JSON false is one character longer than true.
+                omission["omitted_paths_complete"] = False
+        if size <= limit:
+            return _compact_json(value)
+        # One further pass may remove secondary detail, never primary IDs.
+        protected = {p for p in protected
+                     if len(p) <= 2 or p[-1] in {"plan_id", "plan_hash", "task_id"}}
+    return _minimal_receipt(json.loads(output), limit)
 
 
 def dump_json(data: Any, limit: int = MAX_CHARS) -> str:

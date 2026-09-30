@@ -33,6 +33,7 @@ from ..audit import (
 )
 from ..capabilities import build_capability_catalog, build_server_metadata
 from ..clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
+from ..clients.logbook import LOGBOOK
 from ..configuration import load_settings
 from ..health import HEALTH
 from ..dependency import DEPENDENCY_ANALYSIS
@@ -359,12 +360,14 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
 @mcp.tool()
 async def get_logbook(hours: float = 12, entity_id: str = "") -> str:
     """Logbook entries (what happened, triggered by what) for the last N
-    hours, optionally filtered to one entity."""
-    start = _utc(hours)
-    path = f"/logbook/{start}"
-    if entity_id:
-        path += f"?entity={entity_id}"
-    return dump(await rest("GET", path))
+    hours (positive, maximum 168), optionally filtered to one entity. Reads
+    at most 1 MiB in 30 seconds without retry; large results return a partial
+    source-order prefix or a limit error. Narrow hours or select one entity."""
+    return await LOGBOOK.read(
+        REST_CLIENT, hours=hours, entity_id=entity_id,
+        response_limit=SETTINGS.response_size_limit,
+        secrets=(SETTINGS.ha_token, SETTINGS.access_secret),
+    )
 
 
 @mcp.tool()

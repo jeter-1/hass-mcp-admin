@@ -228,6 +228,7 @@ class ErrorTaxonomyTests(unittest.TestCase):
         expected = {
             "authentication_failure", "authorization_failure", "invalid_request",
             "validation_failure", "home_assistant_unavailable",
+            "logbook_response_limit_exceeded",
             "home_assistant_api_error", "home_assistant_timeout", "entity_not_found",
             "automation_not_found", "resource_not_found", "addon_not_found",
             "unsupported_operation", "configuration_conflict",

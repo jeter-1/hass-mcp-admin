@@ -20,6 +20,7 @@ from ..errors import (
 from ..observability import METRICS
 from ..request_context import current_telemetry
 from .single_read import SINGLE_READ, session_options, response_text
+from . import logbook
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,12 @@ class HomeAssistantRestClient:
         body: Any = None,
         raw: bool = False,
         expected_statuses: frozenset[int] = frozenset(),
+        *,
+        logbook_read: bool = False,
     ) -> Any:
+        if logbook_read and (method != "GET" or not path.startswith("/logbook/")
+                             or body is not None or not raw or expected_statuses):
+            raise ValueError("invalid_internal_logbook_request")
         headers = {
             "Authorization": f"Bearer {self.settings.ha_token}",
             "Content-Type": "application/json",
@@ -79,7 +85,10 @@ class HomeAssistantRestClient:
         started = time.perf_counter()
         if telemetry:
             telemetry.begin_ha_attempt(started)
-        timeout = aiohttp.ClientTimeout(total=self.settings.ha_timeout_seconds)
+        timeout = aiohttp.ClientTimeout(total=(
+            min(self.settings.ha_timeout_seconds, logbook.MAX_SECONDS)
+            if logbook_read else self.settings.ha_timeout_seconds
+        ))
         recorded = False
 
         def record(*, timeout=False):
@@ -89,11 +98,14 @@ class HomeAssistantRestClient:
                 self._record(started, category, timeout=timeout)
 
         try:
-            async with aiohttp.ClientSession(timeout=timeout, **session_options()) as session:
+            options = ({"middlewares": (logbook.no_retry,), "auto_decompress": False,
+                        "headers": {"Accept-Encoding": "identity"}}
+                       if logbook_read else session_options())
+            async with aiohttp.ClientSession(timeout=timeout, **options) as session:
                 async with session.request(
                     method, f"{self.settings.api_url}{path}", headers=headers, json=body
                 ) as response:
-                    text = await response_text(response)
+                    text = await logbook.read_body(response) if logbook_read else await response_text(response)
                     record()
                     if response.status in expected_statuses:
                         return ExpectedHttpStatus(response.status)
@@ -130,8 +142,12 @@ class HomeAssistantRestClient:
             raise HomeAssistantUnavailableError(
                 details={"method": method, "endpoint_category": category}
             ) from exc
+        except aiohttp.ClientPayloadError:
+            if not logbook_read:
+                raise
+            raise logbook.invalid_response() from None
         finally:
             # Scoped transport refusals/cancellation may exit before a response.
             # Complete attempt timing once without altering normal call behavior.
-            if SINGLE_READ.get():
+            if SINGLE_READ.get() or logbook_read:
                 record()
