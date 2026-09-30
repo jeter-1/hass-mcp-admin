@@ -1,5 +1,6 @@
 """Positive field selection before retention, hashing, evidence or pagination."""
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -68,6 +69,26 @@ class Projector:
         return value if sanitized.value == value and not sanitized.failed_closed else None
 
     def project(self, kind: c.ReadKind, raw, source_id: str) -> Projection:
+        steps = self._project_steps(kind, raw, source_id)
+        while True:
+            try:
+                next(steps)
+            except StopIteration as completed:
+                return completed.value
+
+    async def project_async(self, kind: c.ReadKind, raw, source_id: str) -> Projection:
+        # The same projection and structural accounting, with bounded batches.
+        # Cancellation unwinds this caller; no raw data or unfinished worker
+        # escapes into a background task or outlives the collection deadline.
+        steps = self._project_steps(kind, raw, source_id)
+        while True:
+            try:
+                next(steps)
+            except StopIteration as completed:
+                return completed.value
+            await asyncio.sleep(0)
+
+    def _project_steps(self, kind: c.ReadKind, raw, source_id: str):
         p = Projection(kind, source_id, None)
         if not self.budget.charge():
             p.gap("structural_budget")
@@ -126,7 +147,9 @@ class Projector:
             result = []
             valid = type(values) is list
             if valid:
-                for value in values:
+                for index, value in enumerate(values):
+                    if index % 16 == 0:
+                        yield
                     if not self.budget.charge(4):
                         p.gap("structural_budget")
                         valid = False
@@ -176,6 +199,8 @@ class Projector:
             p.value, p.observed = [], len(raw)
             bound = 2 if kind is c.ReadKind.CONFIG_ENTRIES else c.MAX_AREAS + 1
             for index, row in enumerate(raw):
+                if index % 8 == 0:
+                    yield
                 if not self.budget.charge(1):
                     p.gap("structural_budget")
                     break
@@ -209,6 +234,8 @@ class Projector:
         bound = {c.ReadKind.AREAS: c.MAX_AREAS, c.ReadKind.SENSORS: c.MAX_SENSORS,
                  c.ReadKind.SENSOR_GROUPS: c.MAX_GROUPS, c.ReadKind.ENTITY_REGISTRY: c.MAX_REGISTRY}[kind]
         for index, (key, row) in enumerate(raw.items()):
+            if index % 8 == 0:
+                yield
             if not self.budget.charge(1):
                 p.gap("structural_budget")
                 break
@@ -250,7 +277,7 @@ class Projector:
                 safe = fields(row, (("entity_id", "entity"), ("area", "id"), ("type", c.SENSOR_TYPES),
                                     *((key, "bool") for key in c.SENSOR_FLAGS)), prefix)
                 for field_name in ("modes", "auto_bypass_modes"):
-                    value = identifier_list(row, field_name, prefix, modes=True)
+                    value = yield from identifier_list(row, field_name, prefix, modes=True)
                     if field_name in row:
                         safe[field_name] = value
                 ok, group = scalar(row, "group", prefix + "/group", "id", nullable=True)
@@ -258,7 +285,7 @@ class Projector:
                     safe["group"] = group
             elif kind is c.ReadKind.SENSOR_GROUPS:
                 safe = fields(row, (("group_id", "id"), ("timeout", "integer"), ("event_count", "integer")), prefix)
-                value = identifier_list(row, "entities", prefix)
+                value = yield from identifier_list(row, "entities", prefix)
                 if "entities" in row:
                     safe["entities"] = value
             else:

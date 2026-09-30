@@ -69,7 +69,7 @@ class AlarmoProvider:
                 consumed += size
                 if self.authority() != authority:
                     raise InspectionError("identity_drift")
-                p = projector.project(kind, raw, source_id)
+                p = await projector.project_async(kind, raw, source_id)
                 del raw
                 if time.monotonic() - started >= c.COLLECTION_SECONDS:
                     raise InspectionError("timeout")
@@ -149,7 +149,7 @@ class AlarmoProvider:
         if self.authority() != authority:
             raise InspectionError("identity_drift")
 
-        records, extra_gaps = build_records(projections, area_ids, chosen, unresolved)
+        records, extra_gaps = await build_records_async(projections, area_ids, chosen, unresolved)
         scope_complete = all(area_id in (areas.value or {}) for area_id in area_ids)
         if not scope_complete:
             extra_gaps.append({"reason": "scope_incomplete", "source_id": "areas", "pointer": None})
@@ -209,6 +209,25 @@ class AlarmoProvider:
 
 
 def build_records(projections, area_ids, chosen, unresolved):
+    steps = _build_records_steps(projections, area_ids, chosen, unresolved)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as completed:
+            return completed.value
+
+
+async def build_records_async(projections, area_ids, chosen, unresolved):
+    steps = _build_records_steps(projections, area_ids, chosen, unresolved)
+    while True:
+        try:
+            next(steps)
+        except StopIteration as completed:
+            return completed.value
+        await asyncio.sleep(0)
+
+
+def _build_records_steps(projections, area_ids, chosen, unresolved):
     areas, sensors, groups, general, registry = (projections[k] for k in ("areas", "sensors", "sensor_groups", "general", "entity_registry"))
     records, gaps = [], []
 
@@ -222,6 +241,7 @@ def build_records(projections, area_ids, chosen, unresolved):
                     "master_enabled": fact(general, "/master/enabled")})
     mode_facts = {}
     for area in area_ids:
+        yield
         for mode in sorted(c.MODES):
             prefix = "/" + area + "/modes/" + mode
             enabled = fact(areas, prefix + "/enabled")
@@ -231,7 +251,9 @@ def build_records(projections, area_ids, chosen, unresolved):
     members = set(chosen + unresolved)
     group_matches = {entity: [] for entity in members}
     relevant_groups = []
-    for key, row in sorted((groups.value or {}).items()):
+    for index, (key, row) in enumerate(sorted((groups.value or {}).items())):
+        if index % 8 == 0:
+            yield
         listed = row.get("entities")
         if type(listed) is not list:
             gap("group_conflict", "sensor_groups", "/" + key)
@@ -241,7 +263,9 @@ def build_records(projections, area_ids, chosen, unresolved):
         if not members.intersection(listed):
             continue
         assignments = []
-        for entity in listed:
+        for index, entity in enumerate(listed):
+            if index % 16 == 0:
+                yield
             sensor = (sensors.value or {}).get(entity)
             area = sensor.get("area") if type(sensor) is dict else None
             assignments.append(None if area is None or area not in (areas.value or {}) else area not in area_ids)
@@ -254,7 +278,9 @@ def build_records(projections, area_ids, chosen, unresolved):
             "event_count": fact(groups, "/" + key + "/event_count"),
             "includes_members_outside_target_area": outside})
     sensor_records, unresolved_records = [], []
-    for entity in chosen + unresolved:
+    for index, entity in enumerate(chosen + unresolved):
+        if index % 4 == 0:
+            yield
         row, prefix = sensors.value[entity], "/" + entity
         flags = {key: fact(sensors, prefix + "/" + key) for key in c.SENSOR_FLAGS}
         area_fact = fact(sensors, prefix + "/area")
@@ -264,7 +290,9 @@ def build_records(projections, area_ids, chosen, unresolved):
         modes = fact(sensors, prefix + "/modes")
         eligibility = []
         for mode in c.MODES:
-            enabled = mode_facts.get((area, mode), fact(areas, "/" + area + "/modes/" + mode + "/enabled") if area else {"value": None, "evidence": []})
+            enabled = mode_facts.get((area, mode))
+            if enabled is None:
+                enabled = fact(areas, "/" + area + "/modes/" + mode + "/enabled") if area else {"value": None, "evidence": []}
             participating = (mode in modes["value"] if modes["value"] is not None else None)
             always = flags["always_on"]["value"]
             selected = True if always is True or participating is True else False if always is False and participating is False else None

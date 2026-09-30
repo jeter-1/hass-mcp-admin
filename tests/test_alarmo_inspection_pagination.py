@@ -10,11 +10,116 @@ from unittest.mock import patch
 from test_integration_inspection_contract import TARGET, fixture, setup_service
 from ha_mcp_engineering.integration_inspection import contracts as c
 from ha_mcp_engineering.integration_inspection.models import InspectionError
+from ha_mcp_engineering.integration_inspection.projection import Budget, Projector
 from ha_mcp_engineering.integration_inspection.service import references
 from ha_mcp_engineering.request_context import end_request
 
 
 class PaginationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_cooperative_record_assembly_preserves_records_and_gaps(self):
+        from ha_mcp_engineering.integration_inspection.provider import build_records, build_records_async
+
+        data = fixture()
+        projector = Projector()
+        projections = {kind.value: projector.project(kind, data[kind.value], kind.value) for kind in c.ReadKind}
+        areas = sorted(projections["areas"].value)
+        sensors = projections["sensors"].value
+        chosen = sorted(entity for entity, row in sensors.items() if row["area"] in areas)
+        unresolved = sorted(set(sensors) - set(chosen))
+        expected = build_records(projections, areas, chosen, unresolved)
+        actual = await build_records_async(projections, areas, chosen, unresolved)
+        self.assertEqual(actual, expected)
+        self.assertTrue(any(row["kind"] == "sensor" for row in actual[0]))
+
+    async def test_cancellation_during_projection_or_assembly_cannot_publish(self):
+        from ha_mcp_engineering.integration_inspection import provider
+
+        for stage in ("projection", "assembly"):
+            with self.subTest(stage=stage):
+                service, client, _, _, token = setup_service()
+                entered = asyncio.Event()
+                task = None
+                assemble = provider.build_records_async
+
+                async def read_hook(kind, kwargs):
+                    if stage == "projection" and kind is c.ReadKind.SENSORS:
+                        entered.set()
+
+                async def assemble_hook(*args):
+                    if stage == "assembly":
+                        entered.set()
+                    return await assemble(*args)
+
+                client.hook = read_hook
+                try:
+                    with patch.object(provider, "build_records_async", assemble_hook):
+                        task = asyncio.create_task(service.inspect(alarm_entity_id=TARGET))
+                        await asyncio.wait_for(entered.wait(), 2)
+                        self.assertFalse(task.done())
+                        task.cancel()
+                        with self.assertRaises(asyncio.CancelledError):
+                            await task
+                    self.assertEqual(len(client.calls), 5 if stage == "projection" else 9)
+                    self.assertEqual(service.active, 0)
+                    self.assertEqual(service.snapshots, {})
+                    self.assertEqual(service.cursors, {})
+                finally:
+                    if task is not None and not task.done():
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                    end_request(token)
+
+    async def test_cooperative_projection_preserves_fields_privacy_and_budgets(self):
+        from dataclasses import asdict
+
+        data = fixture()
+        data["sensors"]["binary_sensor.synthetic_door"]["group"] = "synthetic_secret"
+        data["sensors"]["binary_sensor.synthetic_invalid"] = []
+        for nodes in (0, 40, c.MAX_NODES):
+            synchronous = Projector(known_secrets=("synthetic_secret",), budget=Budget(nodes=nodes))
+            cooperative = Projector(known_secrets=("synthetic_secret",), budget=Budget(nodes=nodes))
+            for kind in c.ReadKind:
+                with self.subTest(nodes=nodes, kind=kind):
+                    raw = data[kind.value]
+                    expected = synchronous.project(kind, raw, kind.value)
+                    actual = await cooperative.project_async(kind, raw, kind.value)
+                    self.assertEqual(asdict(actual), asdict(expected))
+                    self.assertEqual(cooperative.budget, synchronous.budget)
+                    self.assertNotIn("synthetic_secret", repr(asdict(actual)))
+                    if nodes == 0 and kind is c.ReadKind.SENSORS:
+                        self.assertEqual(actual.entries["/binary_sensor.synthetic_door/group"].status, "redacted")
+
+    async def test_cooperative_encoding_matches_canonical_and_detects_invalidation(self):
+        service, _, _, _, token = setup_service()
+        self.addCleanup(end_request, token)
+        binding = service._binding(TARGET, "alarmo", 25)
+        report = await service.provider.collect(TARGET)
+        self.assertEqual(await service._encode(report, binding), c.canonical(report))
+        asyncio.get_running_loop().call_soon(service._invalidate)
+        with self.assertRaises(InspectionError) as found:
+            await service._encode(report, binding)
+        self.assertEqual(found.exception.reason, "authority_unavailable")
+        self.assertEqual(service.snapshots, {})
+        self.assertEqual(service.cursors, {})
+
+    async def test_batched_validation_rejects_late_invalid_rows_and_evidence(self):
+        from pydantic import ValidationError
+
+        service, _, _, _, token = setup_service()
+        self.addCleanup(end_request, token)
+        binding = service._binding(TARGET, "alarmo", 25)
+        original = await service.provider.collect(TARGET)
+        for field in ("records", "evidence_entries"):
+            with self.subTest(field=field):
+                report = copy.deepcopy(original)
+                report[field] = report[field] * 10
+                report[field][-1]["unreviewed_field"] = "synthetic_rejected_value"
+                with self.assertRaises(ValidationError):
+                    await service._validate(report, binding)
+                self.assertEqual(service.snapshots, {})
+                self.assertEqual(service.cursors, {})
+        self.assertEqual(await service._encode(original, binding), c.canonical(original))
+
     async def test_all_pages_and_replay_preserve_fingerprint_no_recollection(self):
         service, client, _, _, token = setup_service()
         self.addCleanup(end_request, token)
@@ -105,12 +210,16 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                         warm = await service.inspect(alarm_entity_id=TARGET, limit=1)
                         manifest = client.values["manifest"]
                         retain, sleep = service._retain, asyncio.sleep
+                        in_fitting = False
 
                         async def pause():
                             entered.set()
                             await release.wait()
 
                         async def held_retain(report, binding):
+                            nonlocal in_fitting
+                            if asyncio.current_task() is collector:
+                                in_fitting = True
                             if asyncio.current_task() is collector and stage == "before_fitting":
                                 await pause()
                             return await retain(report, binding)
@@ -119,7 +228,7 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                             # Suspend at actual cooperative boundaries: fitting
                             # before insertion, or the first yield after insertion.
                             if asyncio.current_task() is collector and not entered.is_set():
-                                if stage == "during_fitting" or (stage == "before_publication" and len(service.snapshots) == 2):
+                                if (stage == "during_fitting" and in_fitting) or (stage == "before_publication" and len(service.snapshots) == 2):
                                     await pause()
                             return await sleep(delay, *args, **kwargs)
 
@@ -183,19 +292,23 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                             warm = await service.inspect(alarm_entity_id=TARGET, limit=1) if warm_cache else None
                             initial_epoch = service.invalidation_generation
                             retain, sleep = service._retain, asyncio.sleep
+                            in_fitting = False
 
                             async def pause():
                                 entered.set()
                                 await release.wait()
 
                             async def held_retain(report, binding):
+                                nonlocal in_fitting
+                                if asyncio.current_task() is collector:
+                                    in_fitting = True
                                 if asyncio.current_task() is collector and stage == "before_fitting":
                                     await pause()
                                 return await retain(report, binding)
 
                             async def held_sleep(delay, *args, **kwargs):
                                 if asyncio.current_task() is collector and not entered.is_set():
-                                    if stage == "during_fitting" or (stage == "before_publication"
+                                    if (stage == "during_fitting" and in_fitting) or (stage == "before_publication"
                                             and len(service.snapshots) == int(warm_cache) + 1):
                                         await pause()
                                 return await sleep(delay, *args, **kwargs)
@@ -404,14 +517,18 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
             data["sensor_groups"][group] = {"group_id": group, "entities": identifiers[4 * index:4 * index + 4], "timeout": 0, "event_count": 2}
         service, client, _, _, token = setup_service(data)
         self.addCleanup(end_request, token)
-        gaps = []
+        gaps, cpu_gaps = [], []
         async def heartbeat():
             last = time.monotonic()
+            last_cpu = time.thread_time()
             while True:
                 await asyncio.sleep(.01)
                 now = time.monotonic()
+                now_cpu = time.thread_time()
                 gaps.append(now - last)
+                cpu_gaps.append(now_cpu - last_cpu)
                 last = now
+                last_cpu = now_cpu
         ticker = asyncio.create_task(heartbeat())
         await asyncio.sleep(0)
         try:
@@ -420,7 +537,17 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             ticker.cancel()
             await asyncio.gather(ticker, return_exceptions=True)
-        self.assertLess(max(gaps), 2, "Fitting must not monopolize the event loop.")
+        maximum_gap = max(gaps)
+        # Retain raw wall time as well as loop-thread CPU time: eight xdist
+        # workers can oversubscribe a two-CPU runner. Neither process scheduling
+        # nor GC is hidden or disabled. The old synchronous projection violates
+        # both bounds; the CPU bound also prevents a busy host masking a stall.
+        print(json.dumps({"fixture": "maximum_alarmo_inventory", "maximum_loop_gap_seconds": maximum_gap,
+                          "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
+                          "wall_bound_seconds": .3, "thread_cpu_bound_seconds": .1,
+                          "sensors": c.MAX_SENSORS, "groups": c.MAX_GROUPS}), flush=True)
+        self.assertLess(maximum_gap, .3, "Projection and fitting must keep the event loop responsive under contention.")
+        self.assertLess(max(cpu_gaps), .1, "Projection and fitting must yield within the loop-thread CPU budget.")
         self.assertEqual(report["membership"]["configured_members_retained"], 512)
         self.assertEqual(report["assessment"], "partial")
         self.assertIn("output_bytes", report["truncation"]["reasons"])
@@ -433,13 +560,24 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.active, 0)
 
     async def test_total_deadline_covers_retention(self):
+        from types import SimpleNamespace
+        from ha_mcp_engineering.integration_inspection import service as service_module
+
         service, client, _, _, token = setup_service()
         self.addCleanup(end_request, token)
         retain = service._retain
+        deadline = asyncio.timeout(None)
+        def controlled_timeout(seconds):
+            self.assertEqual(seconds, c.COLLECTION_SECONDS)
+            return deadline
         async def late_retention(*args):
-            await asyncio.sleep(.2)
+            # Expire the actual asyncio deadline at the intended phase, not
+            # during an earlier read when a parallel runner is descheduled.
+            deadline.reschedule(asyncio.get_running_loop().time())
+            await asyncio.sleep(.001)
             return await retain(*args)
-        with patch.object(c, "COLLECTION_SECONDS", .1), patch.object(service, "_retain", late_retention):
+        scheduling = SimpleNamespace(timeout=controlled_timeout, sleep=asyncio.sleep)
+        with patch.object(service_module, "asyncio", scheduling), patch.object(service, "_retain", late_retention):
             with self.assertRaises(InspectionError) as found:
                 await service.inspect(alarm_entity_id=TARGET)
         self.assertEqual(found.exception.reason, "timeout")
@@ -449,16 +587,22 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(client.calls), 9)
 
     async def test_deadline_after_packing_removes_unpublished_snapshot(self):
+        from types import SimpleNamespace
+        from ha_mcp_engineering.integration_inspection import service as service_module
+
         service, client, _, _, token = setup_service()
         self.addCleanup(end_request, token)
         page = service._page
+        overrun = [0]
         def late_page(*args, **kwargs):
             result = page(*args, **kwargs)
+            self.assertEqual(len(service.snapshots), 1)
             # Synchronous packing cannot return success after its deadline,
             # even before the event loop gets to deliver timeout cancellation.
-            time.sleep(.12)
+            overrun[0] = c.COLLECTION_SECONDS + 1
             return result
-        with patch.object(c, "COLLECTION_SECONDS", .1), patch.object(service, "_page", late_page):
+        clock = SimpleNamespace(monotonic=lambda: time.monotonic() + overrun[0])
+        with patch.object(service_module, "time", clock), patch.object(service, "_page", late_page):
             with self.assertRaises(InspectionError) as found:
                 await service.inspect(alarm_entity_id=TARGET)
         self.assertEqual(found.exception.reason, "timeout")

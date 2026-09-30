@@ -3,14 +3,20 @@
 import asyncio
 from collections import OrderedDict
 from dataclasses import dataclass
+import hashlib
 import json
 import secrets
 import time
 
+from pydantic import TypeAdapter
+
 from ..request_context import current_caller_id, current_telemetry
 from . import contracts as c
-from .models import Inspection, InspectionError
+from .models import Evidence, Inspection, InspectionError, Record
 from .provider import utc_now
+
+_RECORD_BATCH = TypeAdapter(list[Record])
+_EVIDENCE_BATCH = TypeAdapter(list[Evidence])
 
 
 def references(value):
@@ -117,6 +123,36 @@ class IntegrationInspectionService:
             sizes.append(len(c.canonical(header)))
         return max(sizes)
 
+    async def _encode(self, report, binding):
+        # Match canonical() byte for byte while yielding during large frozen
+        # report encoding. Only already-projected data enters this serializer.
+        encoder = json.JSONEncoder(ensure_ascii=False, sort_keys=True,
+                                   separators=(",", ":"), allow_nan=False)
+        encoded = bytearray()
+        for index, piece in enumerate(encoder.iterencode(report)):
+            if index % 256 == 0:
+                await asyncio.sleep(0)
+                self._require_current(binding)
+            encoded.extend(piece.encode("utf-8"))
+            if len(encoded) > c.SNAPSHOT_BYTES:
+                raise InspectionError("output_budget_unavailable")
+        return bytes(encoded)
+
+    async def _validate(self, report, binding):
+        # Inspection has independent typed records/evidence, not cross-row
+        # validators. Apply that same model to bounded batches and the original
+        # metadata without retaining any reconstructed or partially valid model.
+        header = {**report}
+        for field in ("records", "evidence_entries"):
+            if type(header.get(field)) is list:
+                header[field] = []
+        Inspection.model_validate(header)
+        for field, batch, adapter in (("records", 4, _RECORD_BATCH), ("evidence_entries", 32, _EVIDENCE_BATCH)):
+            for offset in range(0, len(report[field]), batch):
+                await asyncio.sleep(0)
+                self._require_current(binding)
+                adapter.validate_python(report[field][offset:offset + batch], strict=True)
+
     async def _retain(self, report, binding):
         self._require_current(binding)
         records = report["records"]
@@ -128,7 +164,7 @@ class IntegrationInspectionService:
         # Yield during bounded batches so deadlines and cancellation can run.
         entries, sizes = {}, {}
         for index, entry in enumerate(report["evidence_entries"]):
-            if index % 32 == 0:
+            if index % 16 == 0:
                 await asyncio.sleep(0)
                 self._require_current(binding)
             key = entry["source_id"], entry["pointer"]
@@ -137,7 +173,7 @@ class IntegrationInspectionService:
             entries[key], sizes[key] = entry, len(c.canonical(entry))
         rows = []
         for index, row in enumerate(records):
-            if index % 16 == 0:
+            if index % 4 == 0:
                 await asyncio.sleep(0)
                 self._require_current(binding)
             refs = set(references(row))
@@ -151,7 +187,7 @@ class IntegrationInspectionService:
             retained, wanted = [], set()
             row_bytes = evidence_bytes = omitted = 0
             for index, (row, refs, size) in enumerate(rows):
-                if index % 16 == 0:
+                if index % 4 == 0:
                     await asyncio.sleep(0)
                     self._require_current(binding)
                 single_bytes = header_bytes + size + sum(sizes[key] for key in refs) + max(0, len(refs) - 1)
@@ -183,8 +219,9 @@ class IntegrationInspectionService:
         report["pagination"].update(total_retained_records=len(retained), snapshot_fingerprint="")
         await asyncio.sleep(0)
         self._require_current(binding)
-        report["pagination"]["snapshot_fingerprint"] = c.digest(report)
-        encoded = c.canonical(report)
+        report["pagination"]["snapshot_fingerprint"] = hashlib.sha256(await self._encode(report, binding)).hexdigest()
+        encoded = await self._encode(report, binding)
+        self._require_current(binding)
         footprint = len(encoded) + (len(retained) + 1) * 256 + 64
         if footprint > c.SNAPSHOT_BYTES:
             raise InspectionError("output_budget_unavailable")
@@ -209,7 +246,7 @@ class IntegrationInspectionService:
                 self._require_current(binding)
                 if self._binding(target, integration, limit) != binding:
                     raise InspectionError("identity_drift")
-                Inspection.model_validate(report)
+                await self._validate(report, binding)
                 key, snapshot = await self._retain(report, binding)
                 await asyncio.sleep(0)
                 self._require_current(binding)
