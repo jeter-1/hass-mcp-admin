@@ -69,7 +69,7 @@ def resolve(value, pointer):
 
 
 class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
-    async def test_disposable_hook_invocation_and_explicit_missing_fixture_gate(self):
+    async def test_required_disposable_hook_rejects_missing_fixture_and_not_run(self):
         import ast
         import os
         from types import ModuleType
@@ -77,32 +77,23 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
         root = Path(__file__).resolve().parents[1]
         tree = ast.parse((root / "scripts/real_ha_contract_tests.py").read_text())
         owner = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_run_core_2026_9_child_contract")
-        calls = [n for n in ast.walk(owner) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "run_disposable"]
-        self.assertEqual(len(calls), 1)
-        self.assertEqual({k.arg for k in calls[0].keywords}, {"fixture_receipt", "expected_image"})
-        messages = [n.value for n in ast.walk(owner) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
-        marker = next(m for m in messages if m.startswith("Alarmo disposable inspection contract:"))
-        self.assertEqual(json.loads(marker.split(": ", 1)[1])["result"], "NOT_RUN")
         block = next(n for n in ast.walk(owner) if isinstance(n, ast.If)
-                     and isinstance(n.test, ast.Compare) and ast.unparse(n.test) == "EXPECTED_HA_VERSION == '2026.9.3'")
+                     and isinstance(n.test, ast.Compare) and ast.unparse(n.test) == "EXPECTED_HA_VERSION == '2026.9.4'")
         wrapper = ast.AsyncFunctionDef(name="invoke", args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
                                       body=[block], decorator_list=[])
-        for receipt in (None, Path("synthetic-receipt.json")):
+        for receipt, result in ((None, "PASS"), (Path("synthetic.json"), "NOT_RUN"), (Path("synthetic.json"), "PASS")):
             module = ModuleType("alarmo_inspection_contract_acceptance")
-            module.run_disposable = AsyncMock()
-            events = []
-            context = dict(EXPECTED_HA_VERSION="2026.9.3", _run_script_dependency_contract=AsyncMock(),
-                           configured=object(), core_runtime=object(), read_gateway=object(),
-                           _environment_path=lambda name: receipt, os=os, print=events.append)
+            module.run_disposable = AsyncMock(return_value={"result": result})
+            context = dict(EXPECTED_HA_VERSION="2026.9.4", configured=object(), core_runtime=object(),
+                           _environment_path=lambda name: receipt, os=os)
             exec(compile(ast.fix_missing_locations(ast.Module(body=[wrapper], type_ignores=[])), "bounded-ci-hook", "exec"), context)
             with patch.dict(sys.modules, {module.__name__: module}):
-                await context["invoke"]()
-            if receipt is None:
-                module.run_disposable.assert_not_awaited()
-                self.assertEqual(json.loads(events[0].split(": ", 1)[1])["result"], "NOT_RUN")
-            else:
-                module.run_disposable.assert_awaited_once_with(context["configured"], context["core_runtime"],
-                    fixture_receipt=receipt, expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
+                if receipt is None or result != "PASS":
+                    with self.assertRaises(RuntimeError):
+                        await context["invoke"]()
+                else:
+                    await context["invoke"]()
+            self.assertEqual(module.run_disposable.await_count, int(receipt is not None))
 
     def test_fixture_source_identity_and_archive_are_bound_without_installed_claim(self):
         profile = fixture("alarmo_profile.json")

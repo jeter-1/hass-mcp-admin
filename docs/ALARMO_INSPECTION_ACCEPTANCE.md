@@ -47,59 +47,70 @@ alone must not be reported as execution of those upstream tests.
 
 ## Disposable Core/Alarmo gate
 
-The retained harness below targets Core 2026.9.3. Deployment on Core 2026.9.4
-requires source comparison for the added metadata reads and a separately prepared,
-exact 2026.9.4 disposable execution. The existing 19-profile admission and the
-beta.10 logbook lane do not establish this new capability. No installed-Core pin
-or compatibility expansion is introduced by this reconciliation.
+Required pairing: Core **2026.9.4** source
+`9212531f40a0b7b23229a90d688dd79d9dfccff4`, pinned index and linux/amd64 descriptor
+from `tests/fixtures/core_2026_9_4_lane_provenance.json`, ha-mcp 8.5.0, and Alarmo
+commit `169e134f4b70d87aae36ba54a72a398ecc960afd`. The matrix's older lanes retain
+their contracts. This new lane has the same 50-minute job bound and unchanged
+permissions/action pins. No ARM execution, production endpoint or key is implied.
 
-Required pairing: existing digest-pinned Core 2026.9.3 and ha-mcp 8.5.0 lane,
-official Alarmo commit `169e134f4b70d87aae36ba54a72a398ecc960afd`. No production
-endpoints, credentials or installation are used. The owned container is destroyed
-by the existing outer harness; preserve its cleanup result on failure too.
-
-Stage an overlay in a new directory, before starting the disposable Core:
+The workflow stages the hash-verified Alarmo archive and synthetic source-written
+store **after** the historical migration writer stops and **before** target Core
+starts. The fixture has no users or actions. It also installs the test-only
+`alarmo_interval_observer`, never included in either shipped add-on. The helper
+refuses an existing overlay destination:
 
 ```text
 python scripts/alarmo_inspection_contract_acceptance.py --prepare-archive <verified archive> --destination <new disposable overlay>
 ```
 
-The helper verifies the archive and every component file against the committed
-profile, generates an inert store through the exact source writer with no users
-or actions, and writes an explicit fixture receipt. It refuses an existing
-destination. It does not install, start, restart or reconfigure Core itself.
+The publication check verifies the exact Core source archive, index and platform
+manifest bytes/digests/size, then container/image/container configuration-digest
+continuity. It records architecture and never exports container environment.
 
-The existing runner's Core 2026.9.3 branch invokes the new harness when
-`REAL_HA_ALARMO_FIXTURE_RECEIPT` identifies the prepared overlay receipt. The
-overlay's component/storage must have been incorporated into that disposable
-Core configuration before its startup. The harness creates the singleton entry
-through a normal config flow during separately identified fixture setup, then
-uses the real public Engineering tool/transport for the measured nine reads and
-a no-read continuation. It proves missing new authority, then uses an ephemeral
-test-signed 20-reference journal. This is never production signing/activation.
+The required scenario creates its Alarmo singleton through a normal config flow
+outside the measured interval and waits for setup/storage settlement. It then:
 
-The new result marker is `Alarmo disposable inspection contract:` in the existing
-runner log. Without preparation, its result is **NOT_RUN**, never PASS. Existing
-lanes keep their existing behavior. The workflow currently lacks this fixture
-preparation: enabling it requires a separately approved minimal workflow change
-that stages the verified archive/overlay before Core startup, passes the receipt
-environment variable, retains the marker, and requires its PASS result. No
-workflow permission expansion is needed or authorized here. A source-only hook
-does not establish execution or CI coverage.
+1. Captures an actual extra harmless `get_states` request as a negative observer
+   control and proves that a zero-command expectation rejects it.
+2. Uses a 19-reference ephemeral signed journal and proves the public inspector
+   refuses with no feature commands, independently observed inside Core.
+3. Extends that **same registry** to 20 through `extend-capabilities`, preserving
+   its authenticated predecessor. No production journal is used.
+4. Runs the real public tool/transport: nine fixed commands in order, two pages,
+   no continuation reads, useful configured membership/modes/delays, explicit
+   false/zero/null values and absent registry membership. Page-local evidence
+   resolves; partial coverage is preserved rather than called complete.
+5. Requires all observer hooks intact, no flow init/configure/abort, service call,
+   command-origin storage work, unexpected command or changed fixed store hashes.
+   Captures are bounded to 128 events/45 seconds; overflow/expiry fail.
+6. Reconciles Core leases/commits/fallback and validates owned container/network
+   removal after the outer always-cleanup step. Missing execution, NOT_RUN,
+   Docker enumeration failure, residue or invalid interval proof fails the job.
 
-Acceptance additionally needs command-ledger confirmation, no feature-side
-write/event/service/options-flow dispatch, exact useful settings comparison,
-and cleanup evidence. The current harness's closed command capture is feature
-boundary evidence; independently instrument Core to corroborate side effects
-before closing the real-integration gate. No mock or AST hook check substitutes
-for that run. Docker permission failures are an unavailable environment, not a
-feature failure or authority to elevate host access.
+The observer hooks exact Core `ActiveConnection.async_handle`, config-entry and
+generic flow managers, service calls and Store save/delayed-save/write/remove.
+Context propagation associates asynchronous callbacks with their command.
+Independent background auth/restore-state bookkeeping is explicitly retained;
+it is not a global zero-write claim. This finite interval cannot prove absence
+of future arbitrary tasks or writes bypassing Core Store. Hashes of the fixed
+Alarmo/config-entry/entity/device stores supplement the hooks without retaining
+store contents. The observer retains no arguments, config bodies or credentials.
+
+The required result marker is `Alarmo disposable inspection contract:`. Missing
+fixture receipt or a non-PASS result now fails the Core .4 runner. The final
+artifact includes independently verified interval observations, image identity
+and cleanup receipts. Unit/synthetic hook checks do not close this assembled gate.
+Run `tests.test_alarmo_interval_observer`, the seven inspector modules,
+`tests.test_core_registry_preparation` and relevant Core/workflow checks before
+complete Full/Evidence and independent review. Record actual CI at the final
+candidate, including failures or unavailable execution.
 
 ## Independent review and later installation
 
 Review the final source delta, transport, privacy, authority, fixtures and test
 results independently after Full/Evidence. Record outstanding gates by stage.
-Before activation: resolve R3 with separate authorization; review/sign/activate
+Before activation: verify the extension and disposable-lane review/CI; review/sign/activate
 applicability, reconcile P0b installed Alarmo files or the owner's explicit
 local-modification declaration at its actual assurance level, and approve release.
 

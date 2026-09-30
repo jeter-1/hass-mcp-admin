@@ -1956,6 +1956,36 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("call_service", source)
         self.assertNotIn("ha_config_set", source)
 
+    def test_alarmo_core4_lane_requires_real_interval_and_verified_cleanup(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+        job = workflow["jobs"]["real-ha-contract-tests"]
+        matrix = job["strategy"]["matrix"]["include"]
+        lane = next(row for row in matrix if row["ha_version"] == "2026.9.4")
+        provenance = _fixture(ROOT / "tests/fixtures/core_2026_9_4_lane_provenance.json")
+        self.assertEqual(lane["ha_image"], "ghcr.io/home-assistant/home-assistant:2026.9.4@" + provenance["image_index_digest"])
+        self.assertEqual(lane["ha_mcp_version"], "8.5.0")
+        self.assertEqual(len([r for r in matrix if r["ha_version"] == "2026.9.4"]), 1)
+        self.assertEqual(job["timeout-minutes"], 50)
+        steps = job["steps"]
+        names = [step.get("name") for step in steps]
+        stage = names.index("Stage exact Alarmo and independent interval observer for Core 2026.9.4")
+        self.assertLess(names.index("Persist migration fixture with exact Home Assistant 2026.7.2"), stage)
+        self.assertLess(stage, names.index("Start disposable exact target Home Assistant Core"))
+        self.assertIn("--prepare-archive", steps[stage]["run"])
+        self.assertIn("alarmo_interval_observer", steps[stage]["run"])
+        self.assertIn(provenance["source_archive_sha256"], steps[stage]["run"])
+        cleanup = names.index("Verify owned cleanup and required Alarmo interval")
+        self.assertLess(names.index("Sanitize and remove disposable Home Assistant"), cleanup)
+        self.assertEqual(steps[cleanup]["if"], "always() && matrix.ha_version == '2026.9.4'")
+        self.assertIn("--verify-cleanup", steps[cleanup]["run"])
+        self.assertIn("real-ha-contract-tests", workflow["jobs"]["validate"]["needs"])
+        self.assertNotIn("continue-on-error", job)
+        self.assertNotIn("permissions", job)
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from core_registry_contract_lane import lane_entry
+        self.assertEqual(lane_entry("2026.9.4"), provenance)
+
     def test_disposable_lane_is_immutable_bounded_and_nonproduction(self):
         lane = _fixture(LANE_FIXTURE)
         registry = load_reviewed_upstream_release_registry()

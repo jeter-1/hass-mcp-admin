@@ -35,11 +35,20 @@ those reads, not assembled Core/Alarmo execution or installed admission. The
 source comparison and hashes are retained in the source-review record.
 
 The [unsigned applicability record](evidence/alarmo-inspection-core-applicability.json)
-does not authorize dispatch. R3 remains open: the current registry preparer
-refuses replacement of an existing release's capability list during renewal.
-A separately scoped correction, review and owner-authorized signing/activation
-are required. No trust data, registry mechanism or preparation script changes
-are included here.
+does not authorize dispatch. The preparer now has an explicit
+`extend-capabilities` operation, separate from immutable `add` renewal. It binds
+one strict capability superset to the exact current predecessor and fresh review
+evidence, preserving source/image/probe identity, siblings and denial history.
+Preparation and signing both enforce the transition. See
+[Core registry procedure](CORE_RELEASE_REGISTRY.md). This implementation resolves
+the R3 tooling restriction; production review, signing and activation remain
+separate and have not occurred.
+
+A required disposable Core 2026.9.4/ha-mcp 8.5.0/Alarmo 1.10.19 CI case proves
+19-to-20 admission, public-tool reads and continuation against the actual
+components. Its independent test-only Core observer records commands, flows,
+services and Store activity. Source checks are not a substitute for its executed
+receipt. This is an exact test pairing, not a new runtime Core version pin.
 
 ## Collection and interpretation
 

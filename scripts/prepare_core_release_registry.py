@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -23,9 +24,10 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.ha_core_readmission.probe_profiles import known_probe_profile
 from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
+from ha_mcp_engineering.ha_core_readmission.models import CORE_IDENTITY
 from ha_mcp_engineering.ha_core_readmission.registry import CORE_REGISTRY_BINDING
 from ha_mcp_engineering.ha_core_readmission.registry_models import (
-    CORE_REGISTRY_ID, CORE_REGISTRY_KEY_ID, CoreReleaseEntry,
+    CORE_REGISTRY_ID, CORE_REGISTRY_KEY_ID, CoreReleaseEntry, CoreRegistryEnvelope,
 )
 from ha_mcp_engineering.ha_mcp_readmission.registry import (
     MAX_CACHE_BYTES, SignedReleaseRegistry, _parse_signed_journal,
@@ -36,6 +38,8 @@ from ha_mcp_engineering.signed_registry import (
 from ha_mcp_engineering.signed_registry.models import parse_utc_timestamp
 
 MODEL = "core-registry-review-candidate-v1"
+EXTENSION_MODEL = "core-registry-extension-candidate-v1"
+EXTENSION_EVIDENCE_MODEL = "core-capability-extension-evidence-v1"
 MAX_EVIDENCE_BYTES = 2 * 1024 * 1024
 MAX_CHAIN = 32
 
@@ -94,6 +98,105 @@ def require_known_contracts(entry: CoreReleaseEntry) -> None:
             raise ValueError("review requires existing exact capability contracts")
 
 
+def retained_denials(current):
+    result = {}
+    if current is not None:
+        for envelope in (*current.envelopes, *current.revocation_sources):
+            for revocation in envelope.revocations:
+                result[revocation.release_identity] = revocation.to_mapping()
+    return result
+
+
+def require_extension_evidence(evidence, old, new):
+    """Closed, hashable review manifest; no executable or free-text fields."""
+    fields = {"model", "version", "previous_entry_sha256", "previous_capabilities",
+              "added_capabilities", "review_artifacts_sha256"}
+    if not isinstance(evidence, dict) or set(evidence) != fields:
+        raise ValueError("extension review fields invalid")
+    artifacts = evidence["review_artifacts_sha256"]
+    if (not isinstance(artifacts, list) or not 1 <= len(artifacts) <= 32
+            or any(not isinstance(v, str) or not re.fullmatch(r"[0-9a-f]{64}", v)
+                   for v in artifacts) or len(set(artifacts)) != len(artifacts)):
+        raise ValueError("extension review artifact bindings invalid")
+    old_refs, new_refs = old["capabilities"], new["capabilities"]
+    if (evidence["model"] != EXTENSION_EVIDENCE_MODEL
+            or evidence["version"] != old["version"]
+            or evidence["previous_entry_sha256"] != hashlib.sha256(canonical_json(old)).hexdigest()
+            or evidence["previous_capabilities"] != old_refs
+            or evidence["added_capabilities"] != new_refs[len(old_refs):]):
+        raise ValueError("extension review does not bind the exact transition")
+
+
+def validate_transition(value, current, timestamp):
+    """Recheck preparation invariants at signing, including operation labels.
+
+    The placeholder signature is used only for the existing closed structural
+    parser. It is never verified, retained or emitted as signed authority.
+    """
+    unsigned = value["envelope"]
+    if not isinstance(unsigned, dict) or "signature" in unsigned:
+        raise ValueError("unsigned envelope fields invalid")
+    parsed = CoreRegistryEnvelope.from_mapping({
+        **unsigned, "signature": base64.b64encode(bytes(64)).decode("ascii")})
+    tip = None if current is None else current.accepted
+    before = {} if tip is None else {e.version: e.to_mapping() for e in tip.entries}
+    after = {e.version: e.to_mapping() for e in parsed.entries}
+    old_denials = retained_denials(current)
+    new_denials = {r.release_identity: r.to_mapping() for r in parsed.revocations}
+    review_hash = value["review_evidence_sha256"]
+    if not isinstance(review_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", review_hash):
+        raise ValueError("review evidence digest invalid")
+    changed = [v for v in after if before.get(v) != after[v]]
+    removed = set(before) - set(after)
+    operation = value["operation"]
+    if operation == "revoke":
+        # Older writers can withdraw unknown profiles, never replace positives.
+        if changed or len(removed) > 1 or not set(old_denials) <= set(new_denials):
+            raise ValueError("withdrawal cannot add or alter positive authority or lose denials")
+        denial_changes = {v for v in new_denials if old_denials.get(v) != new_denials[v]}
+        if len(denial_changes) > 1 or any(
+                (CORE_IDENTITY, v) not in new_denials for v in removed):
+            raise ValueError("withdrawal must bind one denied release")
+        if removed and denial_changes and {v[1] for v in denial_changes} != removed:
+            raise ValueError("withdrawal target mismatch")
+        return
+    if operation not in {"add", "extend-capabilities"} or new_denials != old_denials:
+        raise ValueError("positive transition cannot alter retained denials")
+    if removed or len(changed) > 1:
+        raise ValueError("positive transition must preserve all sibling entries")
+    for entry in parsed.entries:
+        require_known_contracts(entry)
+        if entry.release_identity in old_denials:
+            raise ValueError("revoked release cannot be re-added")
+    if not any(e["evidence_sha256"] == review_hash for e in after.values()):
+        raise ValueError("review evidence is not bound to an entry")
+    if changed and after[changed[0]]["evidence_sha256"] != review_hash:
+        raise ValueError("review evidence does not bind the changed entry")
+    if operation == "add":
+        if changed and changed[0] in before:
+            old, new = before[changed[0]], after[changed[0]]
+            if any(old[k] != new[k] for k in old if k != "evidence_sha256"):
+                raise ValueError("renewal cannot replace release identity or contracts")
+        return
+    if (tip is None or not parse_utc_timestamp(tip.generated_at) <= timestamp
+            < parse_utc_timestamp(tip.expires_at)):
+        raise ValueError("extension requires a current authenticated predecessor")
+    if set(before) != set(after) or len(changed) != 1:
+        raise ValueError("extension requires exactly one existing changed entry")
+    old, new = before[changed[0]], after[changed[0]]
+    if any(old[k] != new[k] for k in old if k not in {"capabilities", "evidence_sha256"}):
+        raise ValueError("extension cannot change release or probe identity")
+    old_refs, new_refs = old["capabilities"], new["capabilities"]
+    if len(new_refs) <= len(old_refs) or new_refs[:len(old_refs)] != old_refs:
+        raise ValueError("extension must append to the exact original references")
+    if review_hash == old["evidence_sha256"]:
+        raise ValueError("extension requires new review evidence")
+    evidence = value["extension_review"]
+    require_extension_evidence(evidence, old, new)
+    if hashlib.sha256(canonical_json(evidence)).hexdigest() != review_hash:
+        raise ValueError("extension review hash mismatch")
+
+
 def prepare_candidate(*, entry, evidence: bytes, previous: bytes | None,
                       public_key, operation="add", reason=None, now=None):
     """Produce unsigned review material; successful probes alone cannot sign it."""
@@ -107,17 +210,13 @@ def prepare_candidate(*, entry, evidence: bytes, previous: bytes | None,
     tip = None if current is None else current.accepted
     entries = [] if tip is None else [e.to_mapping() for e in tip.entries]
     # Preserve every verified tombstone, including compacted denial sources.
-    tombstones = {}
-    if current is not None:
-        for envelope in (*current.envelopes, *current.revocation_sources):
-            for revocation in envelope.revocations:
-                tombstones[revocation.release_identity] = revocation.to_mapping()
-    if operation == "add":
+    tombstones = retained_denials(current)
+    if operation in {"add", "extend-capabilities"}:
         require_known_contracts(parsed)
         if parsed.release_identity in tombstones:
             raise ValueError("revoked release cannot be re-added")
         old = next((e for e in entries if e["version"] == parsed.version), None)
-        if old is not None and any(
+        if operation == "add" and old is not None and any(
             old[key] != parsed.to_mapping()[key]
             for key in old if key != "evidence_sha256"
         ):
@@ -134,8 +233,8 @@ def prepare_candidate(*, entry, evidence: bytes, previous: bytes | None,
         entries = [e for e in entries if e["version"] != parsed.version]
     else:
         raise ValueError("unknown operation")
-    return {
-        "model": MODEL,
+    value = {
+        "model": EXTENSION_MODEL if operation == "extend-capabilities" else MODEL,
         "operation": operation,
         "public_key_sha256": hashlib.sha256(public_key.public_bytes_raw()).hexdigest(),
         "previous_journal_sha256": None if previous is None else hashlib.sha256(previous).hexdigest(),
@@ -151,6 +250,12 @@ def prepare_candidate(*, entry, evidence: bytes, previous: bytes | None,
             "revocations": sorted(tombstones.values(), key=lambda e: e["version"]),
         },
     }
+    if operation == "extend-capabilities":
+        value["extension_review"] = strict_json(evidence)
+        if canonical_json(value["extension_review"]) != evidence:
+            raise ValueError("extension evidence must use canonical JSON bytes")
+    validate_transition(value, current, timestamp)
+    return value
 
 
 def signed(unsigned, key):
@@ -161,13 +266,22 @@ def signed(unsigned, key):
 def sign_candidate(candidate: bytes, *, expected_sha256: str,
                    previous: bytes | None, key, now=None) -> bytes:
     """Sign exactly reviewed bytes, fenced to the current authenticated journal."""
+    if not 1 <= len(candidate) <= MAX_CACHE_BYTES:
+        raise ValueError("candidate exceeds bound")
     if hashlib.sha256(candidate).hexdigest() != expected_sha256:
         raise ValueError("reviewed candidate hash mismatch")
     value = strict_json(candidate)
-    if set(value) != {"model", "operation", "public_key_sha256",
-                      "previous_journal_sha256", "review_evidence_sha256", "envelope"}:
+    if not isinstance(value, dict):
         raise ValueError("candidate fields invalid")
-    if value["model"] != MODEL or value["operation"] not in {"add", "revoke"}:
+    extension = value.get("operation") == "extend-capabilities"
+    fields = {"model", "operation", "public_key_sha256",
+              "previous_journal_sha256", "review_evidence_sha256", "envelope"}
+    if extension:
+        fields.add("extension_review")
+    if set(value) != fields:
+        raise ValueError("candidate fields invalid")
+    if (value["model"] != (EXTENSION_MODEL if extension else MODEL)
+            or value["operation"] not in {"add", "revoke", "extend-capabilities"}):
         raise ValueError("candidate model invalid")
     if value["public_key_sha256"] != hashlib.sha256(key.public_key().public_bytes_raw()).hexdigest():
         raise ValueError("reviewed Core key mismatch")
@@ -179,6 +293,8 @@ def sign_candidate(candidate: bytes, *, expected_sha256: str,
             or value["envelope"]["previous_registry_sha256"] != (
                 None if tip is None else tip.content_digest)):
         raise ValueError("reviewed journal successor mismatch")
+    timestamp = now or datetime.now(timezone.utc)
+    validate_transition(value, current, timestamp)
     envelope = signed(value["envelope"], key)
     # Validate closed schemas, chain, timestamps and retained denials before output.
     previous_envelopes = () if current is None else current.envelopes
@@ -202,7 +318,6 @@ def sign_candidate(candidate: bytes, *, expected_sha256: str,
     if len(raw) > MAX_CACHE_BYTES:
         raise ValueError("journal exceeds runtime bound")
     result = parse_journal(raw, key.public_key())
-    timestamp = now or datetime.now(timezone.utc)
     generated = parse_utc_timestamp(result.accepted.generated_at)
     expires = parse_utc_timestamp(result.accepted.expires_at)
     if not generated <= timestamp < expires or expires - generated > timedelta(days=90):
@@ -231,7 +346,7 @@ def write_new(path: Path, raw: bytes) -> None:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=("add", "revoke", "sign"))
+    parser.add_argument("operation", choices=("add", "extend-capabilities", "revoke", "sign"))
     parser.add_argument("--entry", type=Path)
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--public-key", type=Path, help="Base64 public key only")
