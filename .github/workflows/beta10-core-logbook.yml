@@ -1,0 +1,53 @@
+name: Disposable beta10 Core logbook
+
+on:
+  push:
+    branches: [codex/beta10-core-logbook-integration]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta10-core-logbook-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  core-logbook:
+    if: github.repository == 'jeter-1/hass-mcp-admin'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      GIT_OPTIONAL_LOCKS: '0'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.12.14'
+      - name: Install reviewed locked client dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all:
+          --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+      - name: Exercise actual Core recorder and logbook endpoint
+        run: timeout --signal=TERM --kill-after=15s 660s python scripts/disposable_core_logbook.py
+      - name: Always remove only this run's disposable resources
+        if: always()
+        run: python scripts/disposable_core_logbook.py --cleanup
+      - name: Retain allowlisted synthetic receipts only
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: beta10-core-logbook-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/core-logbook-integration/core-index.json
+            .artifacts/core-logbook-integration/core-manifest.json
+            .artifacts/core-logbook-integration/image-binding.json
+            .artifacts/core-logbook-integration/fixture.json
+            .artifacts/core-logbook-integration/interval-results.json
+            .artifacts/core-logbook-integration/failure.json
+            .artifacts/core-logbook-integration/result.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
