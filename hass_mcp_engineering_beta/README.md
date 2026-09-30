@@ -1,19 +1,22 @@
 # HA MCP Engineering Server Beta
 
-**Engineering 2.4.0-beta.9** is the materialized candidate for
-[cold governance-health responsiveness](../docs/V2_4_0_BETA9_RELEASE_NOTES.md).
-A real plan/approval change still requires a cold rebuild. Its expensive
-persisted-plan safety scan now runs in one pure worker per service; policy and
-lifecycle projection yield between records on the owner loop. Warm reuse,
-concurrent-change refusal and current provider/authority checks remain. Other
-synchronous work remains, and installed approval-interval continuity is not yet
-established. See [performance scope](../docs/HEALTH_PERFORMANCE.md).
+Engineering **2.4.0-beta.10** is the materialized candidate for
+[bounded logbook reads and response processing](../docs/V2_4_0_BETA10_RELEASE_NOTES.md).
+Explicit intervals and finite acquisition/processing bounds preserve useful
+complete or partial evidence. Temporary logbook occupancy is retryable without
+queueing or automatic retries. Shared response projection avoids repeated
+whole-response work; installed performance remains a separate acceptance gate.
+See [logbook behavior](../docs/LOGBOOK_READS.md).
+
+Beta.9's cold-health correction remains unchanged, including its disclosed
+synchronous costs and separately required approval-interval continuity.
+See [performance scope](../docs/HEALTH_PERFORMANCE.md).
 
 Beta.7's [configuration verification](../docs/V2_4_0_BETA7_RELEASE_NOTES.md)
 and [`reverify_configuration_task`](../docs/CONFIGURATION_REVERIFICATION.md)
 remain available with their original bounds. The latter saves dated supplementary
 evidence without resending configuration, operating a device, consuming approval
-or replacing historical failure. Beta.9 acceptance does not repeat completed
+or replacing historical failure. Beta.10 acceptance does not repeat completed
 supplementary observations.
 
 The candidate has 55 static tools plus 25 admitted delegated reads (80 total).
@@ -22,11 +25,11 @@ lifecycle analysis, Core log history and lock recovery remain available; their
 partial-coverage and recovery limits remain. The Core-log reader retains the
 owner-approved `homeassistant` role, which grants broader Core administration to
 the process; the tool still exposes only its fixed read. Alarmo is not included.
-See [2.4.0-beta.9 acceptance](../docs/V2_4_0_BETA9_ACCEPTANCE.md) and
-[2.4.0-beta.9 release notes](../docs/V2_4_0_BETA9_RELEASE_NOTES.md).
+See [2.4.0-beta.10 acceptance](../docs/V2_4_0_BETA10_ACCEPTANCE.md) and
+[2.4.0-beta.10 release notes](../docs/V2_4_0_BETA10_RELEASE_NOTES.md).
 
 Read the [Host/Origin policy](../docs/INBOUND_SECURITY.md) before an authorized
-2.4.0-beta.9 update. Configure exact aliases for MCP paths beyond its loopback-authority
+2.4.0-beta.10 update. Configure exact aliases for MCP paths beyond its loopback-authority
 defaults; explicit host lists replace those defaults. Native clients may omit
 Origin; browser MCP clients require an explicit origin. Approval ingress retains
 its separate authentication. Invalid options refuse startup, so retain independent
@@ -40,7 +43,7 @@ installed acceptance.
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures for 2.4.0-beta.9 | `amd64`, `aarch64` |
+| Architectures for 2.4.0-beta.10 | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
 | Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
 | Server ID | `hass-mcp-engineering-beta` |
@@ -62,7 +65,7 @@ belongs to this milestone.
 
 Historical v1.1.2 in `hass_mcp_admin/` is frozen and operationally retired,
 outside the Engineering dependency audit and not an Engineering rollback.
-2.4.0-beta.9 preserves existing options, original task/plan records, ports, ingress and image
+2.4.0-beta.10 preserves existing options, original task/plan records, ports, ingress and image
 repository. Preserve the optional supplementary receipt namespace during rollback;
 older code cannot display its resolution. Inherited beta.6 expanded lock-token
 records remain incompatible with beta.5 above sixteen tokens; binary downgrade
@@ -90,7 +93,7 @@ Installed acceptance requires the actual installed Core version to be admitted
 by a valid signed registry, with all 19 required profiles compatible, and exactly
 admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
 version, registry sequence and authority state in each acceptance receipt;
-beta.9 imposes no separate installed-Core version pin. CI lane pins remain
+beta.10 imposes no separate installed-Core version pin. CI lane pins remain
 reproducible test fixtures, not blanket compatibility evidence.
 Core 2026.9.2 retains its immutable 17-reference entry and historical typed
 fan/power route; the two signed typed references are intentionally unavailable
@@ -215,8 +218,8 @@ script dependency acceptance gates and subsequent feature priorities.
 Retained RC9, 2.2.0, beta.3/beta.4, RC2 and 2.3.0 source/build, installed-image, catalog and
 live receipts remain bound to their original source, pairing, time and attribution.
 The beta.3 raw-catalog runtime-bracket qualification remains unchanged. They do
-not establish 2.4.0-beta.9 installed acceptance. The
-[2.4.0-beta.9 contract](../docs/V2_4_0_BETA9_ACCEPTANCE.md) separately
+not establish 2.4.0-beta.10 installed acceptance. The
+[2.4.0-beta.10 contract](../docs/V2_4_0_BETA10_ACCEPTANCE.md) separately
 requires final publication/image identity, fresh catalog and bounded installed
 verification. Warm-only reads cannot close the approval interval: observe a
 separately authorized fresh external approval, its cold health rebuild and warm

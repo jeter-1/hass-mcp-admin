@@ -1,5 +1,24 @@
 # Beta error taxonomy
 
+The native logbook reader returns non-retryable
+`logbook_response_limit_exceeded` when acquisition or useful projection exceeds
+its resource bounds. Safe details contain only `endpoint_category=logbook`, a
+numeric `limit`, and one of `response_bytes`, `record_count`, `structure_depth`
+or `structure_items`. The byte reason applies to the downloaded body or the
+configured public projection budget; its numeric limit identifies the bound.
+Reduce `hours` or select one entity; do not repeat the same oversized request or
+invent offset-based pagination. A useful whole-record prefix is instead a
+successful **partial** result, with explicit returned/omitted counts.
+
+Invalid logbook arguments use non-retryable `invalid_request`. A concurrent read
+uses retryable `logbook_busy` (HTTP classification 409), preserving the instruction
+to wait for the active read to finish. Neither refusal makes an HTTP request or
+counts as a provider attempt. Retryability permits a later client request; the
+server adds no queue or automatic retry. Invalid, unexpectedly
+encoded or malformed Core responses use `home_assistant_api_error` with fixed
+safe prose. Connection, HTTP and timeout failures retain their established
+categories. No raw upstream body or exception text is reflected.
+
 Beta 2 adds bounded operational lifecycle errors.
 `operational_validation_failed`, `operational_contract_mismatch`, and
 `operational_provider_unavailable` are pre-dispatch outcomes: no action
