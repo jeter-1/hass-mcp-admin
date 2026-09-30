@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.0-beta.10 - Bounded logbook reads and response processing
+
+- Honor explicit requested intervals through 168 hours with one bounded native
+  GET; cap acquisition and JSON processing, retain whole sanitized partial
+  evidence, and preserve HTTP failures without retry, redirect or fallback.
+- Classify concurrent reads as retryable logbook_busy (409) with zero additional
+  requests. Preserve the single worker, cancellation lifetime and no-backlog rule.
+- Avoid repeated whole-response serialization while preserving action receipt
+  facts. Truncation metadata adds omission count/completeness fields and can
+  remove an additional optional field near the limit.
+- Disclose the changed get_logbook description and partial data-object shape;
+  input signatures, annotations and 80-tool count remain unchanged. Preserve
+  beta.9 health, provider/authority/approval boundaries and frozen stable-v1.
+- Separate synthetic timings from installed behavior. Publication, assembled
+  Core integration, deployment and installed acceptance retain their own gates.
+
+
 ## 2.4.0-beta.9 - Cold governance-health responsiveness
 
 - Validate detached persisted-plan records in one pure worker per service during

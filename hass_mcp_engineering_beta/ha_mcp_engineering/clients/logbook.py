@@ -193,7 +193,7 @@ class LogbookReader:
                 or (entity_id and ENTITY_ID.fullmatch(entity_id) is None)):
             raise InvalidRequestError("entity_id must be empty or one valid entity ID of at most 255 characters.")
         if self._active:
-            raise InvalidRequestError("A logbook read is still running. Wait for it to finish before another request.")
+            raise GovernanceError(ErrorCode.LOGBOOK_BUSY)
         self._active = True
         worker = None
         try:

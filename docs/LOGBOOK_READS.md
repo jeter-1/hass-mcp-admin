@@ -24,6 +24,9 @@ includes malformed/rejected members. Processing runs off the event loop; one
 logbook operation per process may acquire or process at a time. There is no
 waiting backlog. Cancellation during processing retains that slot until the
 worker actually finishes; it does not claim to terminate a running thread.
+A concurrent read returns retryable `logbook_busy` (HTTP classification 409)
+without another HTTP attempt. Wait for the active read to finish before making
+a later request; this classification does not schedule an automatic retry.
 
 Small complete responses keep their existing `data` list. Large valid responses
 return a source-order prefix of whole sanitized records in `data.entries`, with

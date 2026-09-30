@@ -16,6 +16,7 @@ class ErrorCode(str, Enum):
     HA_API_ERROR = "home_assistant_api_error"
     HA_TIMEOUT = "home_assistant_timeout"
     LOGBOOK_RESPONSE_LIMIT_EXCEEDED = "logbook_response_limit_exceeded"
+    LOGBOOK_BUSY = "logbook_busy"
     ENTITY_NOT_FOUND = "entity_not_found"
     AUTOMATION_NOT_FOUND = "automation_not_found"
     RESOURCE_NOT_FOUND = "resource_not_found"
@@ -181,6 +182,10 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
         "The logbook response exceeds a processing limit. Reduce hours or select one entity.",
         False, 413, "invalid_request",
         safe_detail_fields=("reason", "limit", "endpoint_category"),
+    ),
+    ErrorCode.LOGBOOK_BUSY: ErrorDefinition(
+        "A logbook read is still running. Wait for it to finish before another request.",
+        True, 409, "server_error",
     ),
     ErrorCode.ENTITY_NOT_FOUND: ErrorDefinition("The entity was not found.", False, 404, "invalid_params"),
     ErrorCode.AUTOMATION_NOT_FOUND: ErrorDefinition("The automation was not found.", False, 404, "invalid_params"),

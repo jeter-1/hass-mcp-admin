@@ -10,8 +10,11 @@ Reduce `hours` or select one entity; do not repeat the same oversized request or
 invent offset-based pagination. A useful whole-record prefix is instead a
 successful **partial** result, with explicit returned/omitted counts.
 
-Invalid logbook arguments and concurrent logbook reads refused before HTTP use
-`invalid_request` and do not count as provider attempts. Invalid, unexpectedly
+Invalid logbook arguments use non-retryable `invalid_request`. A concurrent read
+uses retryable `logbook_busy` (HTTP classification 409), preserving the instruction
+to wait for the active read to finish. Neither refusal makes an HTTP request or
+counts as a provider attempt. Retryability permits a later client request; the
+server adds no queue or automatic retry. Invalid, unexpectedly
 encoded or malformed Core responses use `home_assistant_api_error` with fixed
 safe prose. Connection, HTTP and timeout failures retain their established
 categories. No raw upstream body or exception text is reflected.

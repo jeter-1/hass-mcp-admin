@@ -17,7 +17,7 @@ from aiohttp import web
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.clients import logbook
 from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
-from ha_mcp_engineering.errors import ErrorCode, GovernanceError, HomeAssistantApiError, InvalidRequestError
+from ha_mcp_engineering.errors import ErrorCode, GovernanceError, HomeAssistantApiError, InvalidRequestError, error_definition
 from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.tools import compatibility
 from tests.test_beta_observability import settings
@@ -158,8 +158,10 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(client, "request", blocked):
             task = asyncio.create_task(reader.read(client, hours=12, entity_id="", response_limit=60000))
             await waiting.wait()
-            with self.assertRaises(InvalidRequestError):
+            with self.assertRaises(GovernanceError) as busy:
                 await reader.read(client, hours=12, entity_id="", response_limit=60000)
+            self.assertEqual(busy.exception.code, ErrorCode.LOGBOOK_BUSY)
+            self.assertTrue(busy.exception.retryable)
             task.cancel()
             with self.assertRaises(asyncio.CancelledError):
                 await task
@@ -180,8 +182,10 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
                 task.cancel()
                 with self.assertRaises(asyncio.CancelledError):
                     await task
-                with self.assertRaises(InvalidRequestError):
+                with self.assertRaises(GovernanceError) as busy:
                     await reader.read(client, hours=12, entity_id="", response_limit=60000)
+                self.assertEqual(busy.exception.code, ErrorCode.LOGBOOK_BUSY)
+                self.assertTrue(busy.exception.retryable)
                 self.assertEqual(len(client.calls), 1)
                 release.set()
                 for _ in range(200):
@@ -192,6 +196,41 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
         finally:
             release.set()
         self.assertEqual(json.loads(await reader.read(client, hours=12, entity_id="", response_limit=60000)), [])
+
+    async def test_registered_concurrent_read_is_retryable_busy_without_another_request(self):
+        reader, client = logbook.LogbookReader(), FakeClient(entries())
+        entered, release = asyncio.Event(), asyncio.Event()
+
+        async def blocked(*args, **kwargs):
+            entered.set()
+            await release.wait()
+            return json.dumps(entries())
+
+        with patch.object(client, "request", AsyncMock(side_effect=blocked)) as request, \
+                patch.object(compatibility, "REST_CLIENT", client), \
+                patch.object(compatibility, "LOGBOOK", reader):
+            first = asyncio.create_task(compatibility.get_logbook(entity_id="sensor.synthetic_a"))
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                result = json.loads(await compatibility.get_logbook(entity_id="sensor.synthetic_b"))
+                self.assertFalse(result["success"])
+                self.assertEqual(result["error_code"], ErrorCode.LOGBOOK_BUSY.value)
+                self.assertTrue(result["retryable"])
+                self.assertEqual(result["message"], error_definition(ErrorCode.LOGBOOK_BUSY).message)
+                self.assertEqual(error_definition(ErrorCode.LOGBOOK_BUSY).http_status, 409)
+                self.assertEqual(result["timing"]["home_assistant_request_count"], 0)
+                self.assertEqual(request.await_count, 1)
+                self.assertFalse(first.done())
+            finally:
+                release.set()
+                completed = json.loads(await first)
+            self.assertTrue(completed["success"])
+            self.assertEqual(completed["data"], entries())
+            self.assertEqual(request.await_count, 1)  # No queued or automatic retry.
+            later = json.loads(await compatibility.get_logbook(entity_id="sensor.synthetic_b"))
+            self.assertTrue(later["success"])
+            self.assertEqual(later["data"], entries())
+            self.assertEqual(request.await_count, 2)
 
     async def test_registered_response_is_useful_and_truthfully_partial(self):
         for size in (0, 20, 2048):
