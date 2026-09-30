@@ -85,10 +85,10 @@ class HomeAssistantRestClient:
         started = time.perf_counter()
         if telemetry:
             telemetry.begin_ha_attempt(started)
-        timeout = aiohttp.ClientTimeout(total=(
-            min(self.settings.ha_timeout_seconds, logbook.MAX_SECONDS)
-            if logbook_read else self.settings.ha_timeout_seconds
-        ))
+        timeout = (aiohttp.ClientTimeout(
+            total=min(self.settings.ha_timeout_seconds, logbook.MAX_SECONDS),
+            ceil_threshold=float("inf"),
+        ) if logbook_read else aiohttp.ClientTimeout(total=self.settings.ha_timeout_seconds))
         recorded = False
 
         def record(*, timeout=False):

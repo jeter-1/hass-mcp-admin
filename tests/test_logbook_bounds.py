@@ -300,6 +300,15 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(error.exception.code, ErrorCode.LOGBOOK_RESPONSE_LIMIT_EXCEEDED)
         self.assertEqual(self.calls, 3)
 
+    async def test_acquisition_timeout_does_not_round_up(self):
+        from ha_mcp_engineering.clients import rest
+        session = rest.aiohttp.ClientSession
+        with patch.object(rest.aiohttp, "ClientSession", wraps=session) as factory:
+            self.assertEqual(await self.read(), "[]")
+        timeout = factory.call_args.kwargs["timeout"]
+        self.assertEqual(timeout.total, 30)
+        self.assertEqual(timeout.ceil_threshold, float("inf"))
+
     async def test_disconnect_redirect_encoded_utf8_and_http_have_one_attempt(self):
         for mode in ("disconnect", "redirect", "broken_length", "encoded", "utf8", "error"):
             with self.subTest(mode=mode):

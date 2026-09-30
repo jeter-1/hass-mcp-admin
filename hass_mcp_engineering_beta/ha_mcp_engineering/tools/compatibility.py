@@ -360,8 +360,8 @@ async def get_history(entity_id: str, hours: float = 24, minimal: bool = True) -
 @mcp.tool()
 async def get_logbook(hours: float = 12, entity_id: str = "") -> str:
     """Logbook entries (what happened, triggered by what) for the last N
-    hours (positive, maximum 168), optionally filtered to one entity. Reads
-    at most 1 MiB in 30 seconds without retry; large results return a partial
+    hours (positive, maximum 168), optionally filtered to one entity. Acquisition
+    is capped at 1 MiB and 30 seconds without retry; large results return a partial
     source-order prefix or a limit error. Narrow hours or select one entity."""
     return await LOGBOOK.read(
         REST_CLIENT, hours=hours, entity_id=entity_id,
