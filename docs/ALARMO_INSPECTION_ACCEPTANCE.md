@@ -90,9 +90,11 @@ feature collection bounds are unchanged; missing settlement still fails. It then
 5. Requires all observer hooks intact, no flow init/configure/abort, service call,
    command-origin storage work, unexpected command or changed fixed store hashes.
    Captures are bounded to 128 events/45 seconds; overflow/expiry fail.
-6. Reconciles Core leases/commits/fallback and validates owned container/network
-   removal after the outer always-cleanup step. Missing execution, NOT_RUN,
-   Docker enumeration failure, residue or invalid interval proof fails the job.
+6. Reconciles Core leases/commits/fallback and retires/joins the test-owned Core
+   connection monitor before writing a success receipt. It validates owned
+   container/network removal after the outer always-cleanup step. Missing
+   execution, NOT_RUN, failed monitor cleanup, Docker enumeration failure,
+   residue or invalid interval proof fails the job.
 
 The observer hooks exact Core `ActiveConnection.async_handle`, config-entry and
 generic flow managers, service calls and Store save/delayed-save/write/remove.

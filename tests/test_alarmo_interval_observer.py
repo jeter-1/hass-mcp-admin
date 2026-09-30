@@ -33,6 +33,26 @@ def receipt(commands=()):
 
 
 class ObserverTests(unittest.IsolatedAsyncioTestCase):
+    async def test_disposable_cleanup_retires_real_core_runtime_and_joins_its_monitor(self):
+        sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+        from ha_mcp_engineering.ha_core_readmission import CoreRuntime
+        runtime = CoreRuntime()
+        stopped = asyncio.Event()
+        async def monitor():
+            try:
+                await asyncio.Future()
+            finally:
+                stopped.set()
+        task = asyncio.create_task(monitor())
+        runtime._connection_monitor_task = task
+        await asyncio.sleep(0)
+        await acceptance.close_disposable_authority(runtime)
+        self.assertTrue(stopped.is_set())
+        self.assertTrue(task.done())
+        self.assertIsNone(runtime._connection_monitor_task)
+        self.assertFalse(runtime.initialized)
+        await acceptance.close_disposable_authority(runtime)
+
     async def test_setup_wait_covers_source_defined_startup_delay_without_feature_calls(self):
         now, calls = [0], []
         async def command(payload):
@@ -207,7 +227,7 @@ class PublicationCleanupTests(unittest.TestCase):
         observation = receipt(acceptance.EXPECTED_COMMANDS)
         control = receipt(["get_states"]); control["kind"] = "control"
         denial = receipt(); denial["kind"] = "control"
-        value = dict(result="PASS", scenario="alarmo_inspection", core="2026.9.4", interval_observation=observation,
+        value = dict(result="PASS", scenario="alarmo_inspection", core="2026.9.4", runtime_monitor_closed=True, interval_observation=observation,
                      missing_authority_observation=denial, negative_control_observation=control,
                      interval=acceptance.verify_interval(observation, observation["interval_id"], acceptance.EXPECTED_COMMANDS),
                      missing_authority=acceptance.verify_interval(denial, denial["interval_id"], [], kind="control"))
@@ -216,6 +236,12 @@ class PublicationCleanupTests(unittest.TestCase):
             source.write_text(json.dumps(value))
             with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")):
                 self.assertEqual(acceptance.verify_disposable_cleanup(source, output)["result"], "PASS")
+            value["runtime_monitor_closed"] = False
+            source.write_text(json.dumps(value))
+            with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")), self.assertRaises(ValueError):
+                acceptance.verify_disposable_cleanup(source, output)
+            value["runtime_monitor_closed"] = True
+            source.write_text(json.dumps(value))
             for response in (b"beta25-real-ha-ha-2026-9-4\n", b"beta-rc2-contract-ha-2026-9-4\n"):
                 with patch("subprocess.run", return_value=SimpleNamespace(stdout=response)), self.assertRaises(ValueError):
                     acceptance.verify_disposable_cleanup(source, output)

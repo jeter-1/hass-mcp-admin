@@ -236,6 +236,16 @@ async def wait_disposable_setup(websocket, *, clock=None, sleep=None):
     raise ValueError("Disposable setup did not settle within its bound")
 
 
+async def close_disposable_authority(runtime):
+    """Retire and join the test-owned Core monitor using its actual lifecycle."""
+    import asyncio
+    monitor = runtime._connection_monitor_task
+    runtime.request_reconciliation(connection_changed=True)
+    if monitor is not None:
+        await asyncio.gather(monitor, return_exceptions=True)
+    assert runtime._connection_monitor_task is None
+
+
 async def run_disposable(configured, existing_core, *, fixture_receipt, expected_image):
     """Required Core .4 integration using a real signed 19-to-20 extension.
 
@@ -429,14 +439,15 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
                 "records": len(records), "assessment": first["data"]["assessment"],
                 "ephemeral_test_authority": True, "production_authority": False,
                 "setup_flow_outside_feature_interval": True, "container_cleanup": "pending_outer_harness"}
-            output = os.environ.get("REAL_HA_ALARMO_RESULT")
-            if not output:
-                raise ValueError("Missing disposable receipt destination")
-            Path(output).write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
-            print("Alarmo disposable inspection contract: " + json.dumps(result, sort_keys=True))
-            return result
         finally:
-            await runtime.shutdown()
+            await close_disposable_authority(runtime)
+        result["runtime_monitor_closed"] = True
+        output = os.environ.get("REAL_HA_ALARMO_RESULT")
+        if not output:
+            raise ValueError("Missing disposable receipt destination")
+        Path(output).write_text(json.dumps(result, sort_keys=True, indent=2) + "\n")
+        print("Alarmo disposable inspection contract: " + json.dumps(result, sort_keys=True))
+        return result
 
 
 def generate(source_root):
@@ -529,7 +540,8 @@ def verify_disposable_cleanup(result_path, output):
     if "beta-rc2-contract-ha-2026-9-4" in names(["network", "ls", "--format", "{{.Name}}"]):
         raise ValueError("Disposable network remains")
     value = json.loads(Path(result_path).read_text())
-    if value.get("result") != "PASS" or value.get("scenario") != "alarmo_inspection" or value.get("core") != "2026.9.4":
+    if (value.get("result") != "PASS" or value.get("scenario") != "alarmo_inspection"
+            or value.get("core") != "2026.9.4" or value.get("runtime_monitor_closed") is not True):
         raise ValueError("Required Alarmo integration did not pass")
     for key, proof, expected, kind in (("interval_observation", "interval", EXPECTED_COMMANDS, "inspection"),
                 ("missing_authority_observation", "missing_authority", [], "control")):
