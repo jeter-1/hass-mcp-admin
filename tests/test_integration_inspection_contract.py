@@ -158,6 +158,21 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(found.exception.reason, "authority_unavailable")
         self.assertEqual(client.calls, [])
 
+    async def test_missing_authority_public_response_has_bounded_reason_and_zero_reads(self):
+        from unittest.mock import patch
+        from ha_mcp_engineering.integration_inspection.runtime import INTEGRATION_INSPECTION
+        from ha_mcp_engineering.tools.integration_inspection import registered_tool
+        service, client, core, telemetry, token = setup_service()
+        self.addCleanup(end_request, token)
+        core.available = False
+        with patch.object(INTEGRATION_INSPECTION, "service", service):
+            denied = json.loads(await registered_tool().run({"alarm_entity_id": TARGET}))
+        self.assertFalse(denied["success"])
+        self.assertEqual(denied["details"]["reason"], "authority_unavailable")
+        self.assertEqual(denied["error_code"], "provider_unavailable")
+        self.assertEqual(client.calls, [])
+        self.assertEqual(telemetry.ha_request_count, 0)
+
     async def test_target_failure_stops_dependent_commands(self):
         service, client, _, _, token = setup_service()
         self.addCleanup(end_request, token)

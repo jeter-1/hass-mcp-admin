@@ -315,7 +315,7 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
             try:
                 with patch.object(INTEGRATION_INSPECTION, "service", service):
                     denied = json.loads(await registered_tool().run({"alarm_entity_id": targets[0]}))
-                assert not denied["success"] and denied["error"]["details"]["reason"] == "authority_unavailable"
+                assert not denied["success"] and denied["details"]["reason"] == "authority_unavailable"
                 assert telemetry.ha_request_count == 0
             finally:
                 end_request(token)
