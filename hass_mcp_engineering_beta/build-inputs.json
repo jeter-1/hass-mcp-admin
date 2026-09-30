@@ -41,7 +41,7 @@
     "pydantic": "2.13.5",
     "pydantic-core": "2.46.5",
     "pydantic-settings": "2.15.0",
-    "pyjwt": "2.14.0",
+    "pyjwt": "2.15.0",
     "python-dotenv": "1.2.3",
     "python-multipart": "0.0.32",
     "pyyaml": "6.0.2",
@@ -54,6 +54,6 @@
     "uvicorn": "0.51.0",
     "yarl": "1.24.5"
   },
-  "runtime_lock_sha256": "36cc5b987aa3c2c02458c93e71fab564b58a23e75b081eac6673e3f468362aae",
+  "runtime_lock_sha256": "2e649fbdbcf013f61336f174b65f374a0f1b0f1614594b1ca3989b0a3e0c60ca",
   "schema_version": 1
 }

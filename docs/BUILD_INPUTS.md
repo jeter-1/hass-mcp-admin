@@ -19,8 +19,9 @@ additional apt resolution. Future vulnerability fixes require deliberate updates
 
 [`requirements.txt`](../hass_mcp_engineering_beta/requirements.txt) retains eight
 direct requirements. [`requirements.lock`](../hass_mcp_engineering_beta/requirements.lock)
-pins the complete 39-package runtime closure to the versions recorded for 2.2.0,
-including transitive httpx. Only reviewed wheel hashes for the two architectures
+pins the complete 39-package runtime closure, originally recorded for 2.2.0,
+including transitive httpx. Beta.11 updates only PyJWT from 2.14.0 to 2.15.0 for
+GHSA-42vr-xj54-vc7v; both runtime/test locks and the declared inventory agree. Only reviewed wheel hashes for the two architectures
 are admitted. Binary-only download refuses source distributions; hash-enforced,
 index-free installation uses those downloaded wheels. No source build, apt
 compiler toolchain or floating setuptools/Cython/wheel build environment remains.

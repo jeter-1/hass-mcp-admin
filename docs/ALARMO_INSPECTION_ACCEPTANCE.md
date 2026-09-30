@@ -1,6 +1,6 @@
 # Alarmo inspector acceptance
 
-This is an acceptance definition for the source-only increment, not a record of
+This is an acceptance definition for the bounded inspector increment, not a record of
 executed or installed acceptance. Use exact candidate revision and saved results.
 Do not restart completed beta.5, dashboard or household device campaigns.
 

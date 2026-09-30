@@ -1,12 +1,17 @@
 # HA MCP Engineering Server Beta
 
-Engineering **2.4.0-beta.10** is the materialized candidate for
-[bounded logbook reads and response processing](../docs/V2_4_0_BETA10_RELEASE_NOTES.md).
-Explicit intervals and finite acquisition/processing bounds preserve useful
-complete or partial evidence. Temporary logbook occupancy is retryable without
-queueing or automatic retries. Shared response projection avoids repeated
-whole-response work; installed performance remains a separate acceptance gate.
-See [logbook behavior](../docs/LOGBOOK_READS.md).
+Engineering **2.4.0-beta.11** is the materialized candidate for the
+[bounded Alarmo configuration inspector](../docs/V2_4_0_BETA11_RELEASE_NOTES.md).
+It reports selected configured membership, modes and delays with explicit partial
+coverage. The healthy catalog has **56 static tools plus 25 delegated reads (81 total)**.
+The additional Core read profile is withheld by existing signed 19-reference
+entries until a separately reviewed extension is signed and activated. Installing
+this release does not grant that authority or prove Alarmo protection.
+
+PyJWT is updated to 2.15.0 with hash-locked inputs and security regressions.
+Beta.10's [bounded logbook and response processing](../docs/LOGBOOK_READS.md)
+remain unchanged; no prior acceptance campaign is repeated. Publication,
+deployment and useful installed Alarmo acceptance remain separate gates.
 
 Beta.9's cold-health correction remains unchanged, including its disclosed
 synchronous costs and separately required approval-interval continuity.
@@ -16,20 +21,21 @@ Beta.7's [configuration verification](../docs/V2_4_0_BETA7_RELEASE_NOTES.md)
 and [`reverify_configuration_task`](../docs/CONFIGURATION_REVERIFICATION.md)
 remain available with their original bounds. The latter saves dated supplementary
 evidence without resending configuration, operating a device, consuming approval
-or replacing historical failure. Beta.10 acceptance does not repeat completed
+or replacing historical failure. Beta.11 acceptance does not repeat completed
 supplementary observations.
 
-The candidate has 55 static tools plus 25 admitted delegated reads (80 total).
+The candidate has 56 static tools plus 25 admitted delegated reads (81 total).
 **2.3.0** remains the last accepted stable release. Prior script dependencies,
 lifecycle analysis, Core log history and lock recovery remain available; their
 partial-coverage and recovery limits remain. The Core-log reader retains the
 owner-approved `homeassistant` role, which grants broader Core administration to
-the process; the tool still exposes only its fixed read. Alarmo is not included.
-See [2.4.0-beta.10 acceptance](../docs/V2_4_0_BETA10_ACCEPTANCE.md) and
-[2.4.0-beta.10 release notes](../docs/V2_4_0_BETA10_RELEASE_NOTES.md).
+the process; the tool still exposes only its fixed read. The Alarmo inspector
+adds only its separately admitted bounded configuration reads.
+See [2.4.0-beta.11 acceptance](../docs/V2_4_0_BETA11_ACCEPTANCE.md) and
+[2.4.0-beta.11 release notes](../docs/V2_4_0_BETA11_RELEASE_NOTES.md).
 
 Read the [Host/Origin policy](../docs/INBOUND_SECURITY.md) before an authorized
-2.4.0-beta.10 update. Configure exact aliases for MCP paths beyond its loopback-authority
+2.4.0-beta.11 update. Configure exact aliases for MCP paths beyond its loopback-authority
 defaults; explicit host lists replace those defaults. Native clients may omit
 Origin; browser MCP clients require an explicit origin. Approval ingress retains
 its separate authentication. Invalid options refuse startup, so retain independent
@@ -43,7 +49,7 @@ installed acceptance.
 | Add-on name | HA MCP Engineering Server Beta |
 | Directory and slug | `hass_mcp_engineering_beta` |
 | Image repository | `ghcr.io/jeter-1/hass-mcp-engineering-beta` |
-| Architectures for 2.4.0-beta.10 | `amd64`, `aarch64` |
+| Architectures for 2.4.0-beta.11 | `amd64`, `aarch64` |
 | MCP port | `8100/tcp` |
 | Admin-only approval ingress | Internal port `8110`, panel HA MCP Approval |
 | Server ID | `hass-mcp-engineering-beta` |
@@ -65,7 +71,7 @@ belongs to this milestone.
 
 Historical v1.1.2 in `hass_mcp_admin/` is frozen and operationally retired,
 outside the Engineering dependency audit and not an Engineering rollback.
-2.4.0-beta.10 preserves existing options, original task/plan records, ports, ingress and image
+2.4.0-beta.11 preserves existing options, original task/plan records, ports, ingress and image
 repository. Preserve the optional supplementary receipt namespace during rollback;
 older code cannot display its resolution. Inherited beta.6 expanded lock-token
 records remain incompatible with beta.5 above sixteen tokens; binary downgrade
@@ -81,8 +87,8 @@ Clients use the existing Engineering Nabu Casa connector. Engineering selects
 suitable admitted ha-mcp or native providers, enforcing provider admission,
 target binding, authority, dispatch, attribution and verification internally.
 
-The healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing exposes **55 static plus
-25 delegated tools, 80 total**. The Core inventory represents **19 profiles**,
+The healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing exposes **56 static plus
+25 delegated tools, 81 total**. The Core inventory represents **20 profiles**,
 whose admission depends on exact current Core authority.
 `ha_get_operation_status` stays held. Fresh raw descriptor comparison is
 required catalog evidence; a cached inventory or count alone is insufficient.
@@ -90,10 +96,11 @@ Provider unavailability grants no fallback, arbitrary forwarding or alternate
 provider retry.
 
 Installed acceptance requires the actual installed Core version to be admitted
-by a valid signed registry, with all 19 required profiles compatible, and exactly
+by a valid signed registry, with all 20 applicable profiles compatible after the
+separately authorized extension, and exactly
 admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
 version, registry sequence and authority state in each acceptance receipt;
-beta.10 imposes no separate installed-Core version pin. CI lane pins remain
+beta.11 imposes no separate installed-Core version pin. CI lane pins remain
 reproducible test fixtures, not blanket compatibility evidence.
 Core 2026.9.2 retains its immutable 17-reference entry and historical typed
 fan/power route; the two signed typed references are intentionally unavailable
@@ -218,13 +225,13 @@ script dependency acceptance gates and subsequent feature priorities.
 Retained RC9, 2.2.0, beta.3/beta.4, RC2 and 2.3.0 source/build, installed-image, catalog and
 live receipts remain bound to their original source, pairing, time and attribution.
 The beta.3 raw-catalog runtime-bracket qualification remains unchanged. They do
-not establish 2.4.0-beta.10 installed acceptance. The
-[2.4.0-beta.10 contract](../docs/V2_4_0_BETA10_ACCEPTANCE.md) separately
+not establish 2.4.0-beta.11 installed acceptance. The
+[2.4.0-beta.11 contract](../docs/V2_4_0_BETA11_ACCEPTANCE.md) separately
 requires final publication/image identity, fresh catalog and bounded installed
-verification. Warm-only reads cannot close the approval interval: observe a
-separately authorized fresh external approval, its cold health rebuild and warm
-reuse with uninterrupted authority/provider evidence. Any dispatch/readback still
-requires its exact household authorization; do not replay failed or stale plans.
+verification. Any unclosed historical beta.9 approval-interval gate remains
+separate and requires its own authorization; warm-only reads cannot close it.
+Beta.11 Alarmo acceptance creates no plan or approval and repeats no completed
+household cycle. Do not replay failed or stale plans.
 
 Complete Android navigation, cache-only startup during an outage and independent
 backup-content verification were not established. Notification clearing is an

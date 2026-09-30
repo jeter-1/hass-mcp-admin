@@ -1,10 +1,10 @@
 # Bounded Alarmo configuration inspection
 
-This source-only increment implements `get_integration_inspection` behind the
-existing Engineering endpoint. It has not been released, deployed or accepted
-against the household installation. This branch reconciles the reviewed inspector with beta.10, preserving its
-verification, health, logbook and lock-recovery changes. Version metadata remains
-beta.10; no inspector release is prepared.
+The beta.11 release candidate implements `get_integration_inspection` behind the
+existing Engineering endpoint on the beta.10 baseline. Source preparation and
+disposable integration do not establish publication, deployment, installed
+Alarmo identity or production authority activation. See the
+[beta.11 acceptance contract](V2_4_0_BETA11_ACCEPTANCE.md).
 
 The tool takes an exact `alarm_control_panel` entity, `integration="alarmo"`,
 `limit=25` (strict integer, 1–50), and an optional opaque cursor. Extra arguments
@@ -140,7 +140,7 @@ stable manifest/fingerprint does not establish unchanged configuration.
 See [acceptance](ALARMO_INSPECTION_ACCEPTANCE.md),
 [source references](evidence/alarmo-inspection-source-review.json), and
 [ADR-024](architecture/ADR-024-SANITIZED-INTEGRATION-INSPECTION.md).
-The source-only authorization does not include delivery, release, activation,
-deployment or live tests. Completed beta.10 acceptance and existing operational holds remain
+Release preparation and draft delivery are authorized; publication, activation,
+deployment and installed tests retain their separate decisions. Completed beta.10 acceptance and existing operational holds remain
 separate. Removing this unactivated increment requires a source revert; no
 production record format or installed configuration has changed.

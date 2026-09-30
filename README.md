@@ -1,17 +1,17 @@
 # HA MCP Engineering Server
 
-Source-only development adds a [bounded Alarmo configuration inspector](docs/INTEGRATION_INSPECTION.md)
-to the beta.10 baseline. This checkout defines 56 static tools plus 25 delegated
-reads (81 total). Its additional Core read authority remains withheld by existing
-signed data; integration validation, release and activation are still pending.
+Engineering **2.4.0-beta.11** is the materialized candidate for the
+[bounded Alarmo configuration inspector](docs/V2_4_0_BETA11_RELEASE_NOTES.md).
+It reports selected configured membership, modes and delays with explicit partial
+coverage. The healthy catalog has **56 static tools plus 25 delegated reads (81 total)**.
+The additional Core read profile is withheld by existing signed 19-reference
+entries until a separately reviewed extension is signed and activated. Installing
+this release does not grant that authority or prove Alarmo protection.
 
-Engineering **2.4.0-beta.10** is the materialized candidate for
-[bounded logbook reads and response processing](docs/V2_4_0_BETA10_RELEASE_NOTES.md).
-Explicit intervals and finite acquisition/processing bounds preserve useful
-complete or partial evidence. Temporary logbook occupancy is retryable without
-queueing or automatic retries. Shared response projection avoids repeated
-whole-response work; installed performance remains a separate acceptance gate.
-See [logbook behavior](docs/LOGBOOK_READS.md).
+PyJWT is updated to 2.15.0 with hash-locked inputs and security regressions.
+Beta.10's [bounded logbook and response processing](docs/LOGBOOK_READS.md)
+remain unchanged; no prior acceptance campaign is repeated. Publication,
+deployment and useful installed Alarmo acceptance remain separate gates.
 
 Beta.9's cold-health correction remains unchanged, including its disclosed
 synchronous costs and separately required approval-interval continuity.
@@ -23,7 +23,7 @@ rejects unverifiable candidates before that operation dispatches. The existing
 [`reverify_configuration_task`](docs/CONFIGURATION_REVERIFICATION.md) checks all
 approved saved objects of an eligible historical mismatch and writes a dated
 supplementary receipt without resending configuration, operating a device,
-consuming approval or replacing the original failed outcome. Beta.10 acceptance
+consuming approval or replacing the original failed outcome. Beta.11 acceptance
 does not repeat a completed supplementary observation.
 The inherited [beta.6 lock recovery](docs/V2_4_0_BETA6_RELEASE_NOTES.md) preserves
 complete unions up to 256 tokens and can settle qualifying retained locks.
@@ -55,14 +55,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.0-beta.10 release notes](docs/V2_4_0_BETA10_RELEASE_NOTES.md) and
-[2.4.0-beta.10 acceptance contract](docs/V2_4_0_BETA10_ACCEPTANCE.md). A source version does
+Read the [2.4.0-beta.11 release notes](docs/V2_4_0_BETA11_RELEASE_NOTES.md) and
+[2.4.0-beta.11 acceptance contract](docs/V2_4_0_BETA11_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.0-beta.10 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.0-beta.11 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -79,11 +79,11 @@ options refuse startup; historical acceptance does not establish this boundary.
    `8100`; authenticated, admin-only **HA MCP Approval** ingress uses internal
    port `8110`. The approval panel is not a second MCP endpoint.
 5. Verify the final installed artifact, reconnect the client and complete the
-   bounded [acceptance checks](docs/V2_4_0_BETA10_ACCEPTANCE.md).
+   bounded [acceptance checks](docs/V2_4_0_BETA11_ACCEPTANCE.md).
 
 The image repository remains
 `ghcr.io/jeter-1/hass-mcp-engineering-beta`, supporting `linux/amd64`,
-`linux/arm64` for 2.4.0-beta.10. Published 2.2.0 retains its historical
+`linux/arm64` for 2.4.0-beta.11. Published 2.2.0 retains its historical
 `linux/arm/v7` image. Home Assistant has retired 32-bit armv7 support; Engineering
 requires a supported 64-bit installation. This source change does not migrate or
 uninstall an existing system. Existing options, persistent paths, ports, ingress
@@ -125,15 +125,16 @@ dynamic references and script blueprint bodies remain opaque. An analysis with
 no detected references does not prove none exist. See
 [dependency coverage](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
-Beta.10 installed acceptance requires the actual installed Core version to be admitted
-by a valid signed registry, with all 19 required profiles compatible, and exactly
+Beta.11 installed inspector acceptance requires the actual installed Core version
+to be admitted by a valid signed registry, with all 20 applicable profiles
+compatible after the separately authorized extension, and exactly
 admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
 version, registry sequence and authority state in each acceptance receipt;
-beta.10 imposes no separate installed-Core version pin. Reproducible CI lanes keep
+beta.11 imposes no separate installed-Core version pin. Reproducible CI lanes keep
 their explicit version pins and prove only their declared scenarios.
 Core 2026.9.2 retains its immutable 17-reference entry and historical typed
 fan/power route; its two new signed typed references remain unavailable as
-intended. Installing 2.4.0-beta.10 neither configures trust nor updates Core. Admission still requires exact current
+intended. Installing 2.4.0-beta.11 neither configures trust nor updates Core. Admission still requires exact current
 Core/provider identity and valid authority.
 
 The [8.5.0 compatibility contract](docs/HA_MCP_8_5_0_COMPATIBILITY.md)
@@ -240,4 +241,4 @@ runtime is preserved by 2.2.0; its observations retain their RC9 pairing/time.
 - [Published releases](https://github.com/jeter-1/hass-mcp-admin/releases)
 
 Historical counts, pairings, installation and rollback guidance describe their
-original release and do not replace the current 2.4.0-beta.10 contract.
+original release and do not replace the current 2.4.0-beta.11 contract.
