@@ -1,11 +1,13 @@
 """Offline success/refusal controls for the isolated logbook acceptance lane."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from datetime import datetime, timedelta, timezone
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('disposable_core_logbook', ROOT/'scripts/disposable_core_logbook.py')
@@ -104,6 +106,41 @@ class DisposableLogbookTests(unittest.TestCase):
         self.assertNotIn('config/',artifact)
         for step in steps:
             if 'uses' in step:self.assertRegex(step['uses'],r'@[0-9a-f]{40}$')
+
+
+class RegisteredDriverTests(unittest.IsolatedAsyncioTestCase):
+    async def test_driver_context_and_response_contract_with_synthetic_peer(self):
+        # This proves the driver, not Core. Actual Core execution remains CI-only.
+        from aiohttp import web
+        now=datetime(2026,9,30,12,tzinfo=timezone.utc)
+        events=[{'entity_id':entity,'message':f'{entity}-{age}','age_hours':age,
+                 'time':(now-timedelta(hours=age)).isoformat()}
+                for age in (192,120,48,18,6,-1)
+                for entity in ('switch.synthetic_alpha','switch.synthetic_beta')]
+        calls=[]
+        async def serve(request):
+            calls.append(request.path_qs)
+            start=datetime.fromisoformat(request.match_info['start'])
+            end=datetime.fromisoformat(request.query['end_time']) if 'end_time' in request.query else start+timedelta(days=1)
+            entity=request.query.get('entity')
+            return web.json_response([{'entity_id':e['entity_id'],'message':e['message']}
+                                      for e in events if start<datetime.fromisoformat(e['time'])<end
+                                      and (not entity or entity==e['entity_id'])])
+        app=web.Application();app.router.add_get('/api/logbook/{start}',serve)
+        runner=web.AppRunner(app);await runner.setup()
+        try:
+            await web.TCPSite(runner,'127.0.0.1',18123).start()
+            with tempfile.TemporaryDirectory() as path, patch.dict(os.environ):
+                folder=Path(path);(folder/'ephemeral-token').write_text('synthetic-test-token')
+                out=folder/'out';out.mkdir()
+                await lane.reader_cases(folder,out,{'now':now.isoformat(),'events':events})
+                result=json.loads((out/'interval-results.json').read_text())
+                self.assertEqual(result['registered_case_count'],16)
+                self.assertEqual(len(calls),17)
+                self.assertEqual(result['status'],'PASS')
+                self.assertEqual(result['missing_end_time_control'],'PASS')
+        finally:
+            await runner.cleanup()
 
 
 if __name__=='__main__':

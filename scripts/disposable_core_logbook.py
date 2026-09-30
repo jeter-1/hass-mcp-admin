@@ -135,6 +135,7 @@ async def reader_cases(folder, out, fixture):
     from ha_mcp_engineering.clients import logbook
     from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
     from ha_mcp_engineering.tools import compatibility
+    from ha_mcp_engineering.request_context import begin_request, end_request
     from dataclasses import replace
     import aiohttp
 
@@ -159,10 +160,14 @@ async def reader_cases(folder, out, fixture):
                 end = now - timedelta(hours=end_shift)
                 start = end - timedelta(hours=hours)
                 count = len(captured)
-                with patch.object(logbook,'datetime') as clock, patch.object(compatibility,'REST_CLIENT',client), patch.object(compatibility,'SETTINGS',settings):
-                    clock.now.return_value = end
-                    response = json.loads(await compatibility.get_logbook(hours=hours,entity_id=entity))
-                    clock.now.assert_called_once_with(timezone.utc)
+                telemetry, context_token = begin_request(f'synthetic-interval-{len(results)}')
+                try:
+                    with patch.object(logbook,'datetime') as clock, patch.object(compatibility,'REST_CLIENT',client), patch.object(compatibility,'SETTINGS',settings):
+                        clock.now.return_value = end
+                        response = json.loads(await compatibility.get_logbook(hours=hours,entity_id=entity))
+                        clock.now.assert_called_once_with(timezone.utc)
+                finally:
+                    end_request(context_token)
                 require(response.get('success') is True, 'registered_tool_failure')
                 require(len(captured)==count+1, 'request_count_mismatch')
                 parsed=urlsplit(captured[-1])
@@ -173,6 +178,7 @@ async def reader_cases(folder, out, fixture):
                 require(len(coverage)==1 and coverage[0]['provider']=='direct_ha_api'
                         and coverage[0]['completeness']=='complete' and coverage[0]['fallback_occurred'] is False, 'attribution_mismatch')
                 require(response['timing']['home_assistant_request_count']==1, 'telemetry_attempt_mismatch')
+                require(telemetry.retry_count==0 and telemetry.upstream_request_count==0, 'retry_or_upstream_attempt')
                 results.append({'hours':hours,'entity_filter':entity,'end_shift_hours':end_shift,
                                 'interval':{'start':start.isoformat(),'end':end.isoformat()},
                                 'expected_and_observed_messages':selected,'provider':coverage[0],
