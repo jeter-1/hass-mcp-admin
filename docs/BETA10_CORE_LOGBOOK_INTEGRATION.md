@@ -39,6 +39,10 @@ Source authority: Core `core.py:1567-1585` defines the timestamped event API;
 one-day default; `components/recorder/core.py:1298-1312` waits for committed work.
 Upstream `tests/components/logbook/test_init.py` contains period/entity and
 explicit-end tests. File hashes are in `tests/fixtures/core_logbook_beta10.json`.
+Startup follows Core `bootstrap.py:317-318`: initialize the loader immediately
+after constructing HomeAssistant, before configuration bootstrap. The first CI
+attempt omitted this prerequisite and failed during startup; its image-binding
+and cleanup receipts remain evidence, but it proves no interval behavior.
 
 ## Isolation, evidence and limits
 

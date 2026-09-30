@@ -6,7 +6,8 @@
     "homeassistant/components/logbook/rest_api.py": "1345d2af2be8ce2ae868583f38d1cf27958f31f6a72e1415fd74e42ddfb6cb37",
     "homeassistant/components/recorder/core.py": "9ef798d0d07ef276f3e6a58e381a8f0d9c722af667570b0bdbbfe2eec3e171a8",
     "homeassistant/components/recorder/tasks.py": "e2840df9e3b82a009597cdd625dec815cf70e9093657927b6549f5def3797716",
-    "homeassistant/core.py": "2d92d136433488735db82b7fea044908c9689e7f3b87f5f43aac6fce319473bc"
+    "homeassistant/core.py": "2d92d136433488735db82b7fea044908c9689e7f3b87f5f43aac6fce319473bc",
+    "homeassistant/loader.py": "e54ea10fe718347da38559fd911246e541ce2fe9cbd926d7a4cb2ff1ae436c18"
   },
   "core_source": "9212531f40a0b7b23229a90d688dd79d9dfccff4",
   "core_version": "2026.9.4",

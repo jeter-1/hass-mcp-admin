@@ -153,5 +153,46 @@ class RegisteredDriverTests(unittest.IsolatedAsyncioTestCase):
             await runner.cleanup()
 
 
+class CoreFixtureStartupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_loader_state_exists_before_configuration_bootstrap(self):
+        # Startup orchestration only; these synthetic modules are not Core.
+        import asyncio
+        from types import ModuleType, SimpleNamespace
+        from unittest.mock import AsyncMock
+
+        spec=importlib.util.spec_from_file_location('core_fixture',ROOT/'scripts/core_logbook_fixture.py')
+        fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
+        modules={name:ModuleType(name) for name in (
+            'homeassistant','homeassistant.loader','homeassistant.bootstrap',
+            'homeassistant.core','homeassistant.const','homeassistant.components',
+            'homeassistant.components.recorder','homeassistant.components.recorder.tasks')}
+        modules['homeassistant'].__file__='/synthetic/homeassistant/__init__.py'
+        modules['homeassistant'].loader=modules['homeassistant.loader']
+        modules['homeassistant.const'].__version__='synthetic'
+        hass=SimpleNamespace(config=SimpleNamespace(),data={},async_stop=AsyncMock())
+        modules['homeassistant.core'].HomeAssistant=lambda path:hass
+        modules['homeassistant.loader'].async_setup=lambda target:target.data.update(components={},integrations={})
+        class ConfigurationReached(Exception):
+            pass
+        async def configure(config,target):
+            # Exact Core loader.py initializes these caches before bootstrap.
+            self.assertEqual(target.data['components'],{})
+            self.assertEqual(target.data['integrations'],{})
+            raise ConfigurationReached
+        modules['homeassistant.bootstrap'].async_from_config_dict=configure
+        modules['homeassistant.components.recorder'].get_instance=lambda target:None
+        modules['homeassistant.components.recorder.tasks'].CommitTask=object
+        pins=SimpleNamespace(read_text=lambda:json.dumps({'core_version':'synthetic','core_files':{}}))
+        def source_path(value):
+            return pins if value=='/fixture/pins.json' else Path(value)
+        loop=asyncio.get_running_loop()
+        with patch.dict('sys.modules',modules), patch.object(fixture,'Path',source_path), \
+             patch.object(fixture.logging,'disable'), patch.object(fixture.os,'umask'), \
+             patch.object(loop,'add_signal_handler'):
+            with self.assertRaises(ConfigurationReached):
+                await fixture.main()
+        hass.async_stop.assert_awaited_once()
+
+
 if __name__=='__main__':
     unittest.main()

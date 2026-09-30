@@ -16,6 +16,7 @@ import signal
 
 async def main():
     import homeassistant
+    from homeassistant import loader
     from homeassistant.bootstrap import async_from_config_dict
     from homeassistant.core import HomeAssistant
     from homeassistant.const import __version__
@@ -30,6 +31,7 @@ async def main():
     for name, digest in pins['core_files'].items():
         assert hashlib.sha256((source_root / name).read_bytes()).hexdigest() == digest
     hass = HomeAssistant('/config')
+    loader.async_setup(hass)
     hass.config.skip_pip = True
     config = {
         'homeassistant': {'name': 'Synthetic logbook acceptance', 'latitude': 0,
