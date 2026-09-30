@@ -358,10 +358,6 @@ jobs:
       HA_WRITER_CONTAINER: beta25-real-ha-writer-${{ matrix.lane }}
       HA_CONTRACT_CONTAINER: beta25-real-ha-${{ matrix.lane }}
       HA_CONTRACT_NETWORK: beta-rc2-contract-${{ matrix.lane }}
-      REAL_HA_ALARMO_RESULT: ${{ runner.temp }}/alarmo-integration-${{ matrix.lane }}.json
-      REAL_HA_ALARMO_IMAGE_RESULT: ${{ runner.temp }}/alarmo-image-${{ matrix.lane }}.json
-      REAL_HA_ALARMO_CLEANUP_RESULT: ${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json
-      REAL_HA_CORE_ARCHIVE: ${{ runner.temp }}/alarmo-core-source-${{ matrix.lane }}.tar.gz
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -453,6 +449,13 @@ jobs:
           set -euo pipefail
           archive="$RUNNER_TEMP/alarmo-169e134f.tar.gz"
           overlay="$RUNNER_TEMP/alarmo-fixture-$HA_CONTRACT_LANE"
+          core_archive="$RUNNER_TEMP/alarmo-core-source-$HA_CONTRACT_LANE.tar.gz"
+          {
+            printf 'REAL_HA_ALARMO_RESULT=%s\n' "$RUNNER_TEMP/alarmo-integration-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_ALARMO_IMAGE_RESULT=%s\n' "$RUNNER_TEMP/alarmo-image-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_ALARMO_CLEANUP_RESULT=%s\n' "$RUNNER_TEMP/alarmo-cleanup-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_CORE_ARCHIVE=%s\n' "$core_archive"
+          } >> "$GITHUB_ENV"
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
             'https://codeload.github.com/nielsfaber/alarmo/tar.gz/169e134f4b70d87aae36ba54a72a398ecc960afd' --output "$archive"
           python scripts/alarmo_inspection_contract_acceptance.py --prepare-archive "$archive" --destination "$overlay"
@@ -464,9 +467,9 @@ jobs:
           printf '%s\n' 'alarmo_interval_observer:' >> "$REAL_HA_CONTRACT_DIR/configuration.yaml"
           printf 'REAL_HA_ALARMO_FIXTURE_RECEIPT=%s\n' "$overlay/alarmo-inspection-fixture.json" >> "$GITHUB_ENV"
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
-            'https://codeload.github.com/home-assistant/core/legacy.tar.gz/9212531f40a0b7b23229a90d688dd79d9dfccff4' --output "$REAL_HA_CORE_ARCHIVE"
+            'https://codeload.github.com/home-assistant/core/legacy.tar.gz/9212531f40a0b7b23229a90d688dd79d9dfccff4' --output "$core_archive"
           printf '%s  %s\n' 'c8d814b63c0b7043ad54980044f9824c9582450af9cac38ba376fadc37fa4056' \
-            "$REAL_HA_CORE_ARCHIVE" | sha256sum --check --strict
+            "$core_archive" | sha256sum --check --strict
       - name: Start disposable exact target Home Assistant Core
         shell: bash
         run: |
