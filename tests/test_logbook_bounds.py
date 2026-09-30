@@ -67,11 +67,11 @@ class ProjectionTests(unittest.TestCase):
         self.assertEqual(result["omitted"]+result["returned"], 300)
         self.assertEqual(result["requested_interval"], INTERVAL)
         self.assertEqual(result["ordering"], "source_order")
-        self.assertLessEqual(len(json.dumps(result, separators=(",", ":"))), 60000-4096)
+        self.assertLessEqual(len(json.dumps(result, separators=(",", ":"))), logbook.logbook_data_limit(60000))
 
     def test_no_useful_entry_is_limit_failure_not_empty_success(self):
         self.assert_limit(lambda: self.project(entries(1, 100000)), "response_bytes")
-        self.assert_limit(lambda: self.project(entries(20, 100), 1024), "response_bytes")
+        self.assert_limit(lambda: self.project(entries(20, 1000), 1024), "response_bytes")
 
     def test_record_limit_boundary(self):
         self.assertEqual(len(logbook._decode(json.dumps([{}]*10000))), 10000)
@@ -139,7 +139,7 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
     async def test_invalid_inputs_never_acquire_or_dispatch(self):
         client = FakeClient()
         reader = logbook.LogbookReader()
-        for hours in (0, -1, 169, float("inf"), float("nan"), True, None, "12"):
+        for hours in (0, -1, 169, float("inf"), float("nan"), 10**1000, -(10**1000), True, None, "12"):
             with self.subTest(hours=hours), self.assertRaises(InvalidRequestError):
                 await reader.read(client, hours=hours, entity_id="", response_limit=60000)
         for entity in (None, "light.x&end_time=secret", "a.b,c.d", "a.b?x=1", "light.雪", "a."+"x"*254):
@@ -210,7 +210,7 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result["data"], records)
 
     async def test_minimum_registered_response_and_local_refusal(self):
-        for records in ([], entries(), entries(20, 100)):
+        for records in ([], entries(), entries(20, 1000)):
             with patch.object(compatibility, "REST_CLIENT", FakeClient(records)), patch.object(compatibility, "LOGBOOK", logbook.LogbookReader()), patch.object(compatibility, "SETTINGS", replace(compatibility.SETTINGS, response_size_limit=1024)):
                 raw = await compatibility.get_logbook()
             self.assertLessEqual(len(raw.encode()), 1024)
@@ -222,6 +222,37 @@ class ReaderTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(result["success"])
                 self.assertEqual(result["error_code"], "logbook_response_limit_exceeded")
                 self.assertFalse(result["retryable"])
+
+    async def test_small_budgets_retain_useful_whole_partial_and_coverage(self):
+        records = entries(40, 20)
+        for limit in (1024, 2048, 60000):
+            for request_id in ("synthetic-budget", "r"*128):
+                telemetry, token = begin_request(request_id)
+                try:
+                    with patch.object(compatibility, "REST_CLIENT", FakeClient(records)), patch.object(compatibility, "LOGBOOK", logbook.LogbookReader()), patch.object(compatibility, "SETTINGS", replace(compatibility.SETTINGS, response_size_limit=limit)):
+                        raw = await compatibility.get_logbook()
+                    result = json.loads(raw)
+                    with self.subTest(limit=limit, request_id_length=len(request_id)):
+                        self.assertLessEqual(len(raw.encode()), limit)
+                        self.assertTrue(result["success"])
+                        self.assertEqual(result["request_id"], request_id)
+                        coverage = result["metadata"]["source_coverage"][0]
+                        self.assertEqual(coverage["provider"], "direct_ha_api")
+                        self.assertFalse(coverage["fallback_occurred"])
+                        if limit < 60000:
+                            data = result["data"]
+                            self.assertTrue(data["truncated"])
+                            self.assertGreater(data["returned"], 0)
+                            self.assertEqual(data["entries"], records[:data["returned"]])
+                            self.assertEqual(data["returned"] + data["omitted"], len(records))
+                            self.assertEqual(coverage["completeness"], "partial")
+                            self.assertIn("start", data["requested_interval"])
+                            self.assertIn("end", data["requested_interval"])
+                        else:
+                            self.assertEqual(result["data"], records)
+                            self.assertEqual(coverage["completeness"], "complete")
+                finally:
+                    end_request(token)
 
     async def test_minimum_keeps_unkeyed_records_with_long_request_id(self):
         records = [{"message": "x"*180}]
@@ -264,6 +295,12 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 return web.Response(body=b"\xff")
             if self.mode == "error":
                 return web.Response(status=401, text="synthetic-secret-body")
+            if self.mode == "oversized_error":
+                return web.Response(status=401, body=b"x"*(logbook.MAX_BYTES+1))
+            if self.mode == "encoded_error":
+                return web.Response(status=500, body=b"synthetic-secret-body", headers={"Content-Encoding": "gzip"})
+            if request.match_info["start"] == "synthetic":
+                return web.json_response(entries())
             if self.mode in {"large", "exact"}:
                 response = web.StreamResponse()
                 await response.prepare(request)
@@ -319,6 +356,24 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.calls, before+1)
                 self.assertNotIn("synthetic-secret-body", str(error.exception))
 
+    async def test_received_http_error_precedes_body_processing(self):
+        for mode, status in (("oversized_error", 401), ("encoded_error", 500)):
+            self.mode = mode
+            before = self.calls
+            telemetry, token = begin_request("synthetic-http-status")
+            try:
+                with patch.object(logbook, "read_body", side_effect=AssertionError("error body must not be read")):
+                    with self.assertRaises(HomeAssistantApiError) as caught:
+                        await self.read()
+                self.assertEqual(caught.exception.code, ErrorCode.HA_API_ERROR)
+                self.assertEqual(caught.exception.details["status"], status)
+                self.assertTrue(caught.exception.details["provider_response_received"])
+                self.assertEqual(telemetry.ha_request_count, 1)
+                self.assertNotIn("synthetic-secret-body", str(caught.exception))
+            finally:
+                end_request(token)
+            self.assertEqual(self.calls, before+1)
+
     async def test_timeout_and_cancel_finish_request_accounting(self):
         self.mode = "slow"
         self.client.settings = replace(self.client.settings, ha_timeout_seconds=.03)
@@ -336,6 +391,13 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_concurrent_heartbeat_and_useful_read(self):
         self.mode = "dense"
         gaps, finished = [], asyncio.Event()
+        entered, release = threading.Event(), threading.Event()
+        original = logbook.project
+        def processing(*args):
+            entered.set()
+            if not release.wait(3):
+                raise AssertionError("synthetic processing barrier timed out")
+            return original(*args)
         async def heartbeat():
             previous = time.perf_counter()
             while not finished.is_set():
@@ -344,14 +406,24 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
                 gaps.append(now-previous)
                 previous = now
         pulse = asyncio.create_task(heartbeat())
+        task = None
         try:
-            result = json.loads(await self.read())
-            useful = await self.client.request("GET", "/logbook/synthetic")
-            self.assertGreater(len(useful), 0)
-            self.assertTrue(result["truncated"])
+            with patch.object(logbook, "project", processing):
+                task = asyncio.create_task(self.read())
+                while not entered.is_set():
+                    await asyncio.sleep(.001)
+                useful = await self.client.request("GET", "/logbook/synthetic")
+                self.assertEqual(useful, entries())
+                self.assertFalse(task.done())
+                release.set()
+                result = json.loads(await task)
+                self.assertTrue(result["truncated"])
         finally:
+            release.set()
             finished.set()
             await pulse
+            if task is not None and not task.done():
+                await task
         self.assertTrue(gaps)
         self.assertLess(max(gaps), .1)
 

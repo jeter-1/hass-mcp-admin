@@ -105,7 +105,11 @@ class HomeAssistantRestClient:
                 async with session.request(
                     method, f"{self.settings.api_url}{path}", headers=headers, json=body
                 ) as response:
-                    text = await logbook.read_body(response) if logbook_read else await response_text(response)
+                    # Received HTTP failure is authoritative even if its body
+                    # is oversized, encoded or malformed. Do not consume it.
+                    text = ("" if logbook_read and response.status >= 400 else
+                            await logbook.read_body(response) if logbook_read else
+                            await response_text(response))
                     record()
                     if response.status in expected_statuses:
                         return ExpectedHttpStatus(response.status)

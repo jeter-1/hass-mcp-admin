@@ -14,6 +14,7 @@ from ..errors import (
     HomeAssistantUnavailableError, InvalidRequestError,
 )
 from ..sanitization import sanitize_untrusted_data
+from ..models.responses import logbook_data_limit
 
 MAX_BYTES = 1024 * 1024
 MAX_RECORDS = 10_000
@@ -135,10 +136,10 @@ def _json(value):
 
 def project(text, interval, response_limit, secrets):
     records = _decode(text)
-    # Keep room for canonical routing, timing and request identity. The shared
-    # formatter may further omit envelope metadata at its minimum 1024 budget,
-    # but must never tear apart the retained logbook records.
-    budget = max(256, response_limit - 4096)
+    # Size the actual minimal public receipt instead of reserving a fixed
+    # envelope larger than small response limits. Final projection preserves
+    # these records, provider completeness and the current request identity.
+    budget = logbook_data_limit(response_limit)
     selected, sizes, size = [], [], 2
     for record in records:
         # Only sanitize records that could be retained. Oversized raw scalars
@@ -185,8 +186,8 @@ class LogbookReader:
         self._active = False
 
     async def read(self, client, *, hours, entity_id, response_limit, secrets=()):
-        if (type(hours) not in (int, float) or not math.isfinite(hours)
-                or not 0 < hours <= MAX_HOURS):
+        if (type(hours) not in (int, float) or not 0 < hours <= MAX_HOURS
+                or not math.isfinite(hours)):
             raise InvalidRequestError("hours must be finite, positive, and no greater than 168.")
         if (not isinstance(entity_id, str) or len(entity_id) > 255
                 or (entity_id and ENTITY_ID.fullmatch(entity_id) is None)):

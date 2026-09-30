@@ -13,7 +13,8 @@ or unfiltered, remain supported. Invalid input makes no Home Assistant request.
 Each operation performs one GET, with no automatic retry, redirect, split query
 or fallback. Acquisition uses the smaller of the configured HA timeout and
 30 seconds. The body is streamed with a 1 MiB cap independent of Content-Length;
-only identity content encoding is accepted. A client timeout or cancellation
+only identity content encoding is accepted for successful responses. Received
+HTTP errors retain their status without reading the error body. A client timeout or cancellation
 does not prove that Core has stopped its database query.
 
 JSON processing permits at most 10,000 records, 50,000 examined values and
@@ -32,8 +33,10 @@ partial. Source order is not a promise of chronological order. Counts describe
 the received API response, not all historical events; absence cannot establish
 that an event never happened.
 
-The reader reserves space for routing and timing in the configured public
-response limit. If even one useful record cannot fit, it returns the
+The reader sizes its payload allowance from the same minimal envelope used by
+final formatting, including the current request ID and provider completeness.
+This permits useful whole-record partial results even at small response limits;
+optional timing/envelope detail may be omitted with explicit truncation. If even one useful record cannot fit, it returns the
 non-retryable `logbook_response_limit_exceeded` error instead of an empty success.
 The same error covers byte, record and structural budgets with safe fixed
 reasons. Narrow the request by reducing `hours` or selecting one entity. The

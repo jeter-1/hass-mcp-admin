@@ -146,33 +146,58 @@ def _retrieval(value: Any) -> list[dict[str, Any]]:
     return reads
 
 
+def _logbook_receipt(value: dict[str, Any], limit: int) -> dict[str, Any]:
+    """Minimum logbook envelope shared by admission sizing and final projection."""
+    def mapping(item: Any) -> dict:
+        return item if isinstance(item, dict) else {}
+
+    receipt = {key: value[key] for key in ("operation", "request_id", "success", "data")
+               if key in value}
+    metadata = mapping(value.get("metadata"))
+    receipt["metadata"] = {key: metadata[key] for key in ("routing", "source_coverage")
+                           if key in metadata}
+    routing = mapping(receipt["metadata"].get("routing"))
+    receipt["metadata"]["routing"] = {key: routing[key] for key in ("provider", "fallback_occurred")
+                                      if key in routing}
+    coverage = receipt["metadata"].get("source_coverage")
+    if isinstance(coverage, list):
+        receipt["metadata"]["source_coverage"] = [
+            {key: entry[key] for key in ("provider", "completeness", "fallback_occurred") if key in entry}
+            for entry in coverage if isinstance(entry, dict)
+        ]
+    receipt["response_completeness"] = {
+        "truncated": True, "reason": "response_size_limit", "limit_chars": limit,
+        "notice": f"... [truncated at {limit} chars]",
+    }
+    return receipt
+
+
+def logbook_data_limit(limit: int) -> int:
+    """Available data bytes for the fixed native route's minimal public receipt.
+
+    This sizes the existing provider envelope; it does not select or admit a
+    provider. Complete is the longer possible completeness label. Context is
+    propagated into the worker, so custom request-ID lengths are accounted for.
+    """
+    value = {
+        "operation": "get_logbook", "request_id": current_request_id(),
+        "success": True, "data": [],
+        "metadata": {
+            "routing": {"provider": "direct_ha_api", "fallback_occurred": False},
+            "source_coverage": [{"provider": "direct_ha_api",
+                                 "completeness": "complete", "fallback_occurred": False}],
+        },
+    }
+    return limit - len(_compact_json(_logbook_receipt(value, limit))) + 2
+
+
 def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
     """Project one action's primary receipt for the smallest configured budget."""
     def mapping(item: Any) -> dict:
         return item if isinstance(item, dict) else {}
 
     if value.get("operation") == "get_logbook" and value.get("success") is True:
-        # The native reader already bounds whole records. At small configured
-        # budgets omit envelope detail, never tear apart that selected prefix.
-        receipt = {key: value[key] for key in ("operation", "request_id", "success", "data")
-                   if key in value}
-        metadata = mapping(value.get("metadata"))
-        receipt["metadata"] = {key: metadata[key] for key in ("routing", "source_coverage")
-                               if key in metadata}
-        routing = mapping(receipt["metadata"].get("routing"))
-        receipt["metadata"]["routing"] = {key: routing[key] for key in ("provider", "fallback_occurred")
-                                          if key in routing}
-        coverage = receipt["metadata"].get("source_coverage")
-        if isinstance(coverage, list):
-            receipt["metadata"]["source_coverage"] = [
-                {key: entry[key] for key in ("provider", "completeness", "fallback_occurred") if key in entry}
-                for entry in coverage if isinstance(entry, dict)
-            ]
-        receipt["response_completeness"] = {
-            "truncated": True, "reason": "response_size_limit", "limit_chars": limit,
-            "notice": f"... [truncated at {limit} chars]",
-        }
-        rendered = _compact_json(receipt)
+        rendered = _compact_json(_logbook_receipt(value, limit))
         if len(rendered) > limit:
             raise ValueError("response bound cannot preserve the logbook receipt")
         return rendered
@@ -265,6 +290,7 @@ def _bounded_json(output: str, limit: int) -> str:
     protected = _receipt_paths(value)
     if value.get("operation") == "get_logbook" and value.get("success") is True:
         protected.add(("data",))
+        protected.add(("metadata", "source_coverage"))
     omission = {
         "truncated": True,
         "reason": "response_size_limit",
