@@ -85,7 +85,7 @@ class F3AdapterIsolationTests(unittest.TestCase):
         local_tools = registered_tools(get_registered_server())
         self.assertEqual(len(CAPABILITIES), 25)
         self.assertEqual(len(local_tools) - len(CAPABILITIES), 30)
-        self.assertEqual(len(local_tools), 55)
+        self.assertEqual(len(local_tools), 56)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(

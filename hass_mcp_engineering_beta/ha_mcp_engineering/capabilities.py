@@ -88,6 +88,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "dispatch_allowed": False, "durable_evidence_write": True, "non_atomic": True,
     },
     {
+        "tool": "get_integration_inspection", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["direct_ha_api"],
+        "fallback": "none", "policy": "alarmo_allowlist_v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "get_core_log_history", "category": "evidence",
         "status": "beta_native", "risk": "read", "additive": True,
         "operation_class": "read", "routing": "engineering_native",
@@ -388,6 +395,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "all_approved_objects_or_explicit_unresolved_result",
         "security_justification": "No caller configuration or provider; original execution stays immutable; current signed Core read authority and exact locks required.",
         "trust_mode": "reviewed_native_verification", "trust_profile": "exact_retained_configuration_readback_v1",
+    },
+    {
+        "tool": "get_integration_inspection", "capability": "integration_inspection",
+        "required_semantics": "Configured Alarmo membership and modes; allowlisted non-atomic evidence, no observed protection claim.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable", "direct_ha_coverage": "reviewed_fixed_reads",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "bounded_allowlisted_configuration_only",
+        "security_justification": "Fixed native commands; separate Core applicability and Alarmo profile; no flows, writes or fallback.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "alarmo-configuration-read-v1",
     },
     {
         "tool": "get_core_log_history", "capability": "core_log_history",

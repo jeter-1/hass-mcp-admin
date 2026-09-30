@@ -1,5 +1,10 @@
 # HA MCP Engineering Server
 
+Source-only development adds a [bounded Alarmo configuration inspector](docs/INTEGRATION_INSPECTION.md)
+to the beta.10 baseline. This checkout defines 56 static tools plus 25 delegated
+reads (81 total). Its additional Core read authority remains withheld by existing
+signed data; integration validation, release and activation are still pending.
+
 Engineering **2.4.0-beta.10** is the materialized candidate for
 [bounded logbook reads and response processing](docs/V2_4_0_BETA10_RELEASE_NOTES.md).
 Explicit intervals and finite acquisition/processing bounds preserve useful
@@ -34,7 +39,7 @@ remain, with unchanged approval binding, one-dispatch execution and exact readba
 [Bounded Core log history](docs/CORE_LOG_HISTORY.md) remains available through the
 existing native Supervisor reader. Its owner-approved `homeassistant` role grants
 broader Core administration to the process; the MCP tool exposes only the fixed log read.
-The candidate has 55 static tools plus 25 admitted delegated reads (80 total);
+The beta.10 baseline has 55 static tools plus 25 admitted delegated reads (80 total);
 published beta.1 retains its original 53/78 inventory. Existing bounded script
 dependency evidence is preserved. **2.3.0** remains the last accepted stable release.
 Historical plan readability, exact fan/light/switch operations, signed Core
@@ -99,9 +104,10 @@ implement Host/Origin enforcement.
 
 ## Capabilities and compatibility
 
-The fully healthy reviewed **ha-mcp 8.4.3 or 8.5.0** pairing exposes **55 static tools
-plus 25 delegated reads, 80 total**. The Core inventory represents **19
-capability profiles**; exact signed applicability determines their admission.
+This development source paired with reviewed **ha-mcp 8.4.3 or 8.5.0** defines
+**56 static tools plus 25 delegated reads, 81 total**. The Core inventory represents
+**20 capability profiles**. Current signed authority covers the original 19;
+the new inspection metadata profile remains withheld until separately activated.
 Actual authority and provider admission determine availability. Fresh protocol
 enumeration and descriptor comparison establish the catalog; a health count or
 cached client inventory alone does not.
@@ -119,7 +125,7 @@ dynamic references and script blueprint bodies remain opaque. An analysis with
 no detected references does not prove none exist. See
 [dependency coverage](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
-Installed acceptance requires the actual installed Core version to be admitted
+Beta.10 installed acceptance requires the actual installed Core version to be admitted
 by a valid signed registry, with all 19 required profiles compatible, and exactly
 admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
 version, registry sequence and authority state in each acceptance receipt;

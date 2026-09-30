@@ -1906,7 +1906,7 @@ class PolicyInventoryTests(unittest.TestCase):
         self.assertTrue(all(not item.destructive for item in automatic_annotations.values()))
 
     def test_engineering_catalog_is_52_without_upstream_discovery(self):
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 55)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 56)
         self.assertEqual(
             len(registered_tools(get_registered_server()).values()),
             ENGINEERING_STATIC_TOOL_COUNT,
@@ -2840,7 +2840,7 @@ class RegistrationTests(unittest.IsolatedAsyncioTestCase):
         )
         catalog = build_capability_catalog()
         self.assertEqual(catalog["dynamic_upstream_count"], 1)
-        self.assertEqual(catalog["engineering_registered_count"], 55)
+        self.assertEqual(catalog["engineering_registered_count"], 56)
         route = capability_for_tool("ha_get_state")
         self.assertEqual(route["provider"], "upstream_read_gateway")
         self.assertEqual(route["operation_class"], "automatic_read")

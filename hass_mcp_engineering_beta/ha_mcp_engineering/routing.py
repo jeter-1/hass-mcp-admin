@@ -648,6 +648,21 @@ class AuthenticatedMcpGateway:
                     request_id=request_id,
                 )
                 return
+            if tool_name == "get_integration_inspection":
+                from .integration_inspection.contracts import validate_arguments
+                try:
+                    validate_arguments(raw_parameters)
+                except ValueError:
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    failure = FailureResponse(
+                        operation="get_integration_inspection", error="InvalidInspectionRequest",
+                        error_code=telemetry.error_code, message="Invalid integration inspection arguments.",
+                        retryable=False, request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
+                    )
+                    return
             core_requirements = (
                 static_tool_requirements(tool_name, parameters)
                 if isinstance(tool_name, str)
@@ -776,7 +791,7 @@ class AuthenticatedMcpGateway:
                     if key.endswith("_id") and isinstance(value, (str, int))
                 }
                 audit_parameters = parameters
-                if telemetry.error_code in {
+                if tool_name != "get_integration_inspection" and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -936,6 +951,16 @@ class AuthenticatedMcpGateway:
                         "force_reload": bool(parameters.get("force_reload", True)),
                         "provider": "upstream_dashboard",
                     }
+                elif tool_name == "get_integration_inspection":
+                    # All argument/resource values and cursor material are
+                    # excluded, including malformed input and rejected keys.
+                    audit_parameters = {
+                        "integration": "alarmo", "profile": "alarmo-configuration-read-v1",
+                        "limit": parameters.get("limit", 25) if type(parameters.get("limit", 25)) is int and 1 <= parameters.get("limit", 25) <= 50 else None,
+                        "cursor_present": bool(parameters.get("cursor")),
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
                 elif tool_name == "run_held_read_canary":
                     # Canary arguments and upstream result content are
                     # untrusted and may contain sensitive Home Assistant data.
@@ -1020,6 +1045,7 @@ class AuthenticatedMcpGateway:
                             "handoff_generation",
                             "run_held_read_canary",
                             "get_core_log_history",
+                            "get_integration_inspection",
                         }
                         else {
                             "operation_class": (

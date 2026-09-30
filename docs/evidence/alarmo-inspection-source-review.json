@@ -1,0 +1,177 @@
+{
+  "alarmo": {
+    "adapter_contract_sha256": "37d5b2970a756619ffca612027fd56345375191f94bf907b70c5129494b79eba",
+    "archive_sha256": "ab980cb4710024d1a46a9b9e8a254627aeb63096f74cb3b0a612f16f8a231a9d",
+    "callback_lines": {
+      "store.py": [
+        451,
+        466
+      ],
+      "websockets.py": [
+        393,
+        454
+      ]
+    },
+    "commit": "169e134f4b70d87aae36ba54a72a398ecc960afd",
+    "files_sha256": {
+      "__init__.py": "2eb3143d00002fd1ba570633a0e6b557af46ba38c9e619465bd7e9dff0043037",
+      "store.py": "a0dce9acbc6984532541fae5906f43195cba227100dc915a52d28f96569f7b92",
+      "websockets.py": "3ce1dab89b11283934545905fc14be73afccd27d366c73ac9fe43b5eb57ed1d4"
+    },
+    "license": "Apache-2.0",
+    "named_getters_and_callbacks": "executed_with_synthetic_inputs",
+    "version": "1.10.19"
+  },
+  "core": {
+    "commit": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+    "files": [
+      {
+        "evidence": "source_inspected_not_upstream_test_execution",
+        "lines": [
+          125,
+          149
+        ],
+        "path": "homeassistant/components/config/entity_registry.py",
+        "sha256": "746786b869f40bd45b9091f8baf6f3dc600f4ae0aca77b3ca626952c102f03ef"
+      },
+      {
+        "evidence": "source_inspected_not_upstream_test_execution",
+        "lines": [
+          640,
+          659
+        ],
+        "path": "homeassistant/components/config/config_entries.py",
+        "sha256": "f2386716562f308fa00060706935396540cf4eb79a2c4258b9a5f0b0ea1cb13a"
+      },
+      {
+        "evidence": "source_inspected_not_upstream_test_execution",
+        "lines": [
+          691,
+          707
+        ],
+        "path": "homeassistant/components/websocket_api/commands.py",
+        "sha256": "77208b87ab671b7254d52306a016f2719f4ce3d9f3798f20d05adb2f7db42c26"
+      },
+      {
+        "evidence": "source_inspected_not_upstream_test_execution",
+        "lines": [
+          516,
+          620
+        ],
+        "path": "tests/components/config/test_entity_registry.py",
+        "sha256": "9864de06e5883316f5949144b91bd0a2977c7272170a353494990a5ed5c814b1"
+      },
+      {
+        "evidence": "source_inspected_not_upstream_test_execution",
+        "lines": [
+          2462,
+          2628
+        ],
+        "path": "tests/components/config/test_config_entries.py",
+        "sha256": "862f7309c432cbab11d60bcff04ab12584a5c48930e42eed97de4f3e2b297fee"
+      },
+      {
+        "evidence": "source_inspected_not_upstream_test_execution",
+        "lines": [
+          2657,
+          2684
+        ],
+        "path": "tests/components/websocket_api/test_commands.py",
+        "sha256": "a7e8e7a4a8e31e1a054022249b0daf5d19bbd229faaa879e47bdf8218b802f06"
+      }
+    ],
+    "version": "2026.9.3"
+  },
+  "core_2026_9_4_reconciliation": {
+    "commit": "9212531f40a0b7b23229a90d688dd79d9dfccff4",
+    "compared_against": "6de5eb18cd4502f94af44cfff3a02250d88716ed",
+    "files": [
+      {
+        "core_2026_9_3_sha256": "746786b869f40bd45b9091f8baf6f3dc600f4ae0aca77b3ca626952c102f03ef",
+        "core_2026_9_4_sha256": "746786b869f40bd45b9091f8baf6f3dc600f4ae0aca77b3ca626952c102f03ef",
+        "identical": true,
+        "path": "homeassistant/components/config/entity_registry.py",
+        "reviewed_lines": [
+          125,
+          149
+        ],
+        "url": "https://raw.githubusercontent.com/home-assistant/core/9212531f40a0b7b23229a90d688dd79d9dfccff4/homeassistant/components/config/entity_registry.py"
+      },
+      {
+        "core_2026_9_3_sha256": "f2386716562f308fa00060706935396540cf4eb79a2c4258b9a5f0b0ea1cb13a",
+        "core_2026_9_4_sha256": "f2386716562f308fa00060706935396540cf4eb79a2c4258b9a5f0b0ea1cb13a",
+        "identical": true,
+        "path": "homeassistant/components/config/config_entries.py",
+        "reviewed_lines": [
+          640,
+          659
+        ],
+        "url": "https://raw.githubusercontent.com/home-assistant/core/9212531f40a0b7b23229a90d688dd79d9dfccff4/homeassistant/components/config/config_entries.py"
+      },
+      {
+        "core_2026_9_3_sha256": "77208b87ab671b7254d52306a016f2719f4ce3d9f3798f20d05adb2f7db42c26",
+        "core_2026_9_4_sha256": "77208b87ab671b7254d52306a016f2719f4ce3d9f3798f20d05adb2f7db42c26",
+        "identical": true,
+        "path": "homeassistant/components/websocket_api/commands.py",
+        "reviewed_lines": [
+          691,
+          707
+        ],
+        "url": "https://raw.githubusercontent.com/home-assistant/core/9212531f40a0b7b23229a90d688dd79d9dfccff4/homeassistant/components/websocket_api/commands.py"
+      },
+      {
+        "core_2026_9_3_sha256": "9864de06e5883316f5949144b91bd0a2977c7272170a353494990a5ed5c814b1",
+        "core_2026_9_4_sha256": "9864de06e5883316f5949144b91bd0a2977c7272170a353494990a5ed5c814b1",
+        "identical": true,
+        "path": "tests/components/config/test_entity_registry.py",
+        "reviewed_lines": [
+          516,
+          620
+        ],
+        "url": "https://raw.githubusercontent.com/home-assistant/core/9212531f40a0b7b23229a90d688dd79d9dfccff4/tests/components/config/test_entity_registry.py"
+      },
+      {
+        "core_2026_9_3_sha256": "862f7309c432cbab11d60bcff04ab12584a5c48930e42eed97de4f3e2b297fee",
+        "core_2026_9_4_sha256": "862f7309c432cbab11d60bcff04ab12584a5c48930e42eed97de4f3e2b297fee",
+        "identical": true,
+        "path": "tests/components/config/test_config_entries.py",
+        "reviewed_lines": [
+          2462,
+          2628
+        ],
+        "url": "https://raw.githubusercontent.com/home-assistant/core/9212531f40a0b7b23229a90d688dd79d9dfccff4/tests/components/config/test_config_entries.py"
+      },
+      {
+        "core_2026_9_3_sha256": "a7e8e7a4a8e31e1a054022249b0daf5d19bbd229faaa879e47bdf8218b802f06",
+        "core_2026_9_4_sha256": "a7e8e7a4a8e31e1a054022249b0daf5d19bbd229faaa879e47bdf8218b802f06",
+        "identical": true,
+        "path": "tests/components/websocket_api/test_commands.py",
+        "reviewed_lines": [
+          2657,
+          2684
+        ],
+        "url": "https://raw.githubusercontent.com/home-assistant/core/9212531f40a0b7b23229a90d688dd79d9dfccff4/tests/components/websocket_api/test_commands.py"
+      }
+    ],
+    "integration_execution": "not_run",
+    "result": "all_six_source_and_test_files_byte_identical",
+    "review_scope": "the three additional Core metadata reads only",
+    "signed_applicability": "not_prepared_or_activated",
+    "version": "2026.9.4"
+  },
+  "engineering_base": "34f96a90548f72d36f6f5a9a428920a3a7d14de9",
+  "installed_assurance": {
+    "P0b": "open",
+    "file_integrity": "unverified",
+    "local_modifications": "unverified",
+    "reported_version": "1.10.19",
+    "source": "owner_supplied_identity_receipt_not_reprobed"
+  },
+  "runtime_integration_execution": "unavailable_Docker_permission_and_fixture_lane_not_prepared",
+  "schema_version": 1,
+  "upstream_provider": {
+    "feature_calls": 0,
+    "ha_get_integration": "mixed_or_requires_wrapper_unchanged",
+    "version": "8.5.0"
+  }
+}
