@@ -135,11 +135,15 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
 
     def test_setup_readiness_hashes_symlinks_and_active_interval_refusal(self):
         ledger = observer.Ledger()
-        store = SimpleNamespace(key="alarmo.storage", _data={"not-read": "private"})
+        write_lock = SimpleNamespace(locked=lambda: False)
+        store = SimpleNamespace(key="alarmo.storage", _data={"not-read": "private"}, _write_lock=write_lock)
         ledger.record("storage_save", store=store)
         self.assertTrue(ledger.pending_setup_storage())
         store._data = None
         self.assertFalse(ledger.pending_setup_storage())
+        write_lock.locked = lambda: True
+        self.assertTrue(ledger.pending_setup_storage())
+        write_lock.locked = lambda: False
         identity = ledger.start("inspection", {})
         with self.assertRaises(ValueError):
             ledger.start("control", {})

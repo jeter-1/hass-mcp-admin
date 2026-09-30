@@ -57,7 +57,8 @@ class Ledger:
     def pending_setup_storage(self):
         # Only readiness bits; never inspect the pending data or callbacks.
         with self.lock:
-            return any(store._data is not None for store in self.stores.values())
+            return any(store._data is not None or store._write_lock.locked()
+                       for store in self.stores.values())
 
     def start(self, kind, hashes):
         with self.lock:
