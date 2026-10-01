@@ -184,9 +184,26 @@ class ComparisonRecord:
 
 
 @dataclass(frozen=True)
+class CaptureInterval:
+    started_at: str
+    ended_at: str
+    non_atomic: bool
+
+    def public(self) -> dict[str, Any]:
+        return {
+            "started_at": self.started_at,
+            "ended_at": self.ended_at,
+            "non_atomic": self.non_atomic,
+        }
+
+
+@dataclass(frozen=True)
 class ComparisonReport:
     earlier_baseline_id: str
     later_baseline_id: str
+    earlier_capture: CaptureInterval
+    later_capture: CaptureInterval
+    comparison_reasons: tuple[str, ...]
     installation_comparable: bool
     installation_reason: str | None
     inventory_scope_comparable: bool
@@ -196,6 +213,10 @@ class ComparisonReport:
     fingerprint_contract_compatible: bool
     records: tuple[ComparisonRecord, ...]
     limitations: tuple[str, ...]
+
+    @property
+    def comparison_eligible(self) -> bool:
+        return not self.comparison_reasons
 
     @property
     def counts(self) -> dict[str, int]:

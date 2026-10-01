@@ -120,6 +120,30 @@ claimed raw configuration.
 The primary object identity is verified canonical `configuration_id` within the
 same established installation and inventory scope.
 
+Before making any definitive comparison, the pair must represent distinct,
+chronologically ordered captures. The later capture must start at or after the
+earlier capture ends, comparing timezone-aware instants rather than timestamp
+text. Exact adjacent boundaries are permitted. Reversed or overlapping intervals
+produce `capture_intervals_not_ordered`; equal baseline IDs produce
+`same_baseline_id`; equal non-null source-artifact digests produce
+`same_source_artifact_digest`. Absent source digests do not establish duplication.
+
+Any such reason makes every union record `UNKNOWN`, suppresses rename and
+enabled-state change claims, and remains in `global.comparison_reasons` with
+`global.comparison_eligible=false`. Existing record-specific uncertainty reasons
+are preserved. Empty inventories still report pair ineligibility. A true
+`comparison_eligible` only clears these pair-level checks; it does not establish
+the installation, coverage or other per-record prerequisites below.
+
+Reports include both original capture intervals (start, end and non-atomic flag)
+in `capture_intervals.earlier` and `.later`. These fields and global pair reasons
+survive record-detail truncation. The CLI emits the bounded `UNKNOWN` report
+with its existing success exit status for valid but incomparable inputs; it does
+not silently reorder files. This adds comparison evidence without changing the
+baseline schema, fingerprint model, legacy normalization or CLI arguments. A
+self-comparison is not independent change evidence, even for otherwise exact
+baselines; the retained legacy self-comparison remains 100 `UNKNOWN`.
+
 For an identity present in both baselines, capture-fence authority continuity
 must also be established for both baselines:
 

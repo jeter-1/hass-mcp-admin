@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timedelta
 import io
 import json
 from pathlib import Path
@@ -187,6 +188,23 @@ def baseline(
     }
 
 
+def shifted_capture(value: dict, *, days: int = 1) -> dict:
+    """Move synthetic observation times together; never alter production input."""
+    value = copy.deepcopy(value)
+    for field in ("started_at", "ended_at"):
+        value["capture"][field] = (
+            datetime.fromisoformat(value["capture"][field]) + timedelta(days=days)
+        ).isoformat()
+    for row in value["records"]:
+        for section in ("configuration", "enabled_state"):
+            stamp = row[section]["collected_at"]
+            if stamp is not None:
+                row[section]["collected_at"] = (
+                    datetime.fromisoformat(stamp) + timedelta(days=days)
+                ).isoformat()
+    return value
+
+
 def legacy_baseline(rows: list[dict]) -> dict:
     value = {
         "authority": {"continuity_result": "unchanged_across_baseline_capture"},
@@ -296,6 +314,13 @@ class BaselineTestCase(unittest.TestCase):
             path.write_text(json.dumps(value), encoding="utf-8")
         return path
 
+    def load_ordered_pair(self, earlier: dict, later: dict):
+        """Give positive semantic fixtures distinct IDs and disjoint captures."""
+        later = shifted_capture(later)
+        if earlier["baseline_id"] == later["baseline_id"]:
+            later["baseline_id"] += "-later"
+        return self.load_pair(earlier, later)
+
     def load_pair(self, earlier: dict, later: dict):
         a = load_baseline(self.write("a.json", earlier))
         b = load_baseline(self.write("b.json", later))
@@ -304,24 +329,31 @@ class BaselineTestCase(unittest.TestCase):
 
 class ComparisonSemanticsTests(BaselineTestCase):
     def test_complete_empty_inventory_proves_addition_and_removal(self):
-        empty, populated = self.load_pair(
+        empty, populated = self.load_ordered_pair(
             baseline([]), baseline([record("one", "automation.one")])
         )
         self.assertEqual(compare_baselines(empty, populated).counts["ADDED"], 1)
+        populated, empty = self.load_ordered_pair(
+            baseline([record("one", "automation.one")]), baseline([])
+        )
         self.assertEqual(compare_baselines(populated, empty).counts["REMOVED"], 1)
 
     def test_partial_omitted_inventory_never_proves_absence(self):
         partial = baseline([], inventory_completeness="partial")
         partial["inventory"].update(declared_count=1, omitted_count=1)
-        empty, populated = self.load_pair(
-            partial, baseline([record("one", "automation.one")])
-        )
-        for earlier, later in ((empty, populated), (populated, empty)):
+        populated = baseline([record("one", "automation.one")])
+        for old, new, reason in (
+            (partial, populated, "earlier_inventory_absence_not_authoritative"),
+            (populated, partial, "later_inventory_absence_not_authoritative"),
+        ):
+            earlier, later = self.load_ordered_pair(old, new)
             with self.subTest(earlier=earlier.inventory.completeness):
                 result = compare_baselines(earlier, later)
                 self.assertEqual(result.counts["UNKNOWN"], 1)
                 self.assertEqual(result.counts["ADDED"], 0)
                 self.assertEqual(result.counts["REMOVED"], 0)
+                self.assertTrue(result.comparison_eligible)
+                self.assertIn(reason, result.records[0].reasons)
 
     def test_separate_observations_require_verified_mappings_on_both_sides(self):
         for side in (0, 1):
@@ -330,14 +362,14 @@ class ComparisonSemanticsTests(BaselineTestCase):
                     rows = [record("one", "automation.before", enabled="on"),
                             record("one", "automation.after", enabled="off")]
                     rows[side]["mapping_status"] = mapping
-                    a, b = self.load_pair(baseline([rows[0]]), baseline([rows[1]]))
+                    a, b = self.load_ordered_pair(baseline([rows[0]]), baseline([rows[1]]))
                     result = compare_baselines(a, b)
                     self.assertEqual(result.counts["UNKNOWN"], 1)
                     self.assertFalse(result.records[0].enabled_state_changed)
                     self.assertFalse(result.records[0].entity_id_changed)
 
     def test_separate_observations_require_same_inventory_scope(self):
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline([record("one", "automation.before", enabled="on")]),
             baseline([record("one", "automation.after", enabled="off")],
                      inventory_scope="other_scope"),
@@ -349,7 +381,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
 
     def test_identical_baselines(self):
         rows = [record("one", "automation.one")]
-        a, b = self.load_pair(baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b"))
         report = compare_baselines(a, b)
         self.assertEqual(report.counts["UNCHANGED"], 1)
         self.assertEqual(report.counts["TOTAL"], 1)
@@ -357,14 +389,14 @@ class ComparisonSemanticsTests(BaselineTestCase):
     def test_one_changed_configuration(self):
         a_rows = [record("one", "automation.one", config={"id": "one", "mode": "single"})]
         b_rows = [record("one", "automation.one", config={"id": "one", "mode": "restart"})]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         result = compare_baselines(a, b).records[0]
         self.assertEqual(result.classification, Classification.CHANGED)
 
     def test_added_and_removed_with_complete_inventory(self):
         a_rows = [record("one", "automation.one"), record("removed", "automation.removed")]
         b_rows = [record("one", "automation.one"), record("added", "automation.added")]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         by_id = {item.configuration_id: item for item in compare_baselines(a, b).records}
         self.assertEqual(by_id["added"].classification, Classification.ADDED)
         self.assertEqual(by_id["removed"].classification, Classification.REMOVED)
@@ -372,7 +404,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
     def test_missing_objects_under_incomplete_inventory_are_unknown(self):
         a_rows = [record("one", "automation.one")]
         b_rows = [record("one", "automation.one"), record("later", "automation.later")]
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline(a_rows, inventory_completeness="partial"),
             baseline(b_rows, baseline_id="baseline-b"),
         )
@@ -386,7 +418,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
             "one", "automation.one", configuration_status="unreadable",
             completeness="failed", digest=None,
         )]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         result = compare_baselines(a, b).records[0]
         self.assertEqual(result.classification, Classification.UNKNOWN)
         self.assertNotEqual(result.classification, Classification.REMOVED)
@@ -395,7 +427,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
         digest = canonical_configuration_digest({"id": "one", "mode": "single"})
         a_rows = [record("one", "automation.old_name", digest=digest)]
         b_rows = [record("one", "automation.new_name", digest=digest)]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         result = compare_baselines(a, b).records[0]
         self.assertEqual(result.classification, Classification.UNCHANGED)
         self.assertTrue(result.entity_id_changed)
@@ -404,7 +436,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
         digest = canonical_configuration_digest({"id": "one"})
         a_rows = [record("one", "automation.one", digest=digest, enabled="on")]
         b_rows = [record("one", "automation.one", digest=digest, enabled="off")]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         result = compare_baselines(a, b).records[0]
         self.assertEqual(result.classification, Classification.UNCHANGED)
         self.assertTrue(result.enabled_state_changed)
@@ -413,14 +445,14 @@ class ComparisonSemanticsTests(BaselineTestCase):
         digest = canonical_configuration_digest({"id": "one"})
         a_rows = [record("one", "automation.one", digest=digest, enabled="unknown")]
         b_rows = [record("one", "automation.one", digest=digest, enabled="on")]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         result = compare_baselines(a, b).records[0]
         self.assertEqual(result.classification, Classification.UNCHANGED)
         self.assertFalse(result.enabled_state_changed)
 
     def test_shared_record_with_inventory_scope_mismatch_is_unknown(self):
         rows = [record("one", "automation.one")]
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline(rows, inventory_scope="home_assistant_runtime_automations"),
             baseline(
                 copy.deepcopy(rows),
@@ -435,14 +467,14 @@ class ComparisonSemanticsTests(BaselineTestCase):
     def test_mapping_contradiction_makes_record_unknown(self):
         a_rows = [record("one", "automation.one")]
         b_rows = [record("one", "automation.one", mapping_status="contradictory")]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         result = compare_baselines(a, b).records[0]
         self.assertEqual(result.classification, Classification.UNKNOWN)
         self.assertIn("later_mapping_unverified", result.reasons)
 
     def test_cross_installation_is_unknown(self):
         rows = [record("one", "automation.one")]
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline(rows, installation_id="installation-a"),
             baseline(copy.deepcopy(rows), baseline_id="baseline-b", installation_id="installation-b"),
         )
@@ -452,7 +484,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
 
     def test_unestablished_installation_is_unknown(self):
         rows = [record("one", "automation.one")]
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline(rows, installation_status="unestablished"),
             baseline(copy.deepcopy(rows), baseline_id="baseline-b"),
         )
@@ -461,7 +493,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
     def test_fingerprint_version_mismatch_is_unknown(self):
         a_rows = [record("one", "automation.one", model=FINGERPRINT_MODEL)]
         b_rows = [record("one", "automation.one", model="synthetic-fingerprint-v2")]
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline(a_rows, model=FINGERPRINT_MODEL),
             baseline(b_rows, baseline_id="baseline-b", model="synthetic-fingerprint-v2"),
         )
@@ -471,7 +503,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
 
     def test_authority_drift_blocks_definitive_shared_comparison(self):
         rows = [record("one", "automation.one")]
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline(rows, authority_drift="detected"),
             baseline(copy.deepcopy(rows), baseline_id="baseline-b"),
         )
@@ -482,7 +514,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
     def test_inventory_drift_blocks_absence_classification(self):
         a_rows = [record("one", "automation.one")]
         b_rows = [record("one", "automation.one"), record("later", "automation.later")]
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline(a_rows, inventory_drift="detected"),
             baseline(b_rows, baseline_id="baseline-b"),
         )
@@ -502,7 +534,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
             with self.subTest(index=index):
                 a_rows = [record("one", "automation.one")]
                 b_rows = [record("one", "automation.one", **kwargs)]
-                a, b = self.load_pair(
+                a, b = self.load_ordered_pair(
                     baseline(a_rows), baseline(b_rows, baseline_id=f"baseline-b{index}")
                 )
                 self.assertEqual(
@@ -516,7 +548,7 @@ class ComparisonSemanticsTests(BaselineTestCase):
             record("good", "automation.good"),
             record("bad", "automation.bad", completeness="partial"),
         ]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         by_id = {item.configuration_id: item for item in compare_baselines(a, b).records}
         self.assertEqual(by_id["good"].classification, Classification.UNCHANGED)
         self.assertEqual(by_id["bad"].classification, Classification.UNKNOWN)
@@ -524,10 +556,147 @@ class ComparisonSemanticsTests(BaselineTestCase):
     def test_deterministic_order_and_count_reconciliation(self):
         a_rows = [record("z", "automation.z"), record("a", "automation.a")]
         b_rows = [record("a", "automation.a"), record("m", "automation.m")]
-        a, b = self.load_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
         report = compare_baselines(a, b)
         self.assertEqual([item.configuration_id for item in report.records], ["a", "m", "z"])
         self.assertEqual(sum(report.counts[key] for key in ("UNCHANGED", "CHANGED", "ADDED", "REMOVED", "UNKNOWN")), report.counts["TOTAL"])
+
+
+class ComparisonOrderingTests(BaselineTestCase):
+    def assert_unknown_pair(self, earlier, later, reason):
+        report = compare_baselines(earlier, later)
+        self.assertEqual(report.counts["UNKNOWN"], report.counts["TOTAL"])
+        for name in ("ADDED", "REMOVED", "CHANGED", "UNCHANGED"):
+            self.assertEqual(report.counts[name], 0)
+        rendered = json.loads(render_bounded_report(report))
+        self.assertFalse(rendered["global"]["comparison_eligible"])
+        self.assertIn(reason, rendered["global"]["comparison_reasons"])
+        self.assertEqual(rendered["entity_id_change_count"], 0)
+        self.assertEqual(rendered["enabled_state_change_count"], 0)
+        for row in report.records:
+            self.assertIn(reason, row.reasons)
+        return report, rendered
+
+    def test_swapped_pair_never_turns_deletion_into_addition_or_reverse(self):
+        for old_rows, new_rows, expected in (
+            ([record("one", "automation.one")], [], "REMOVED"),
+            ([], [record("one", "automation.one")], "ADDED"),
+        ):
+            with self.subTest(expected=expected):
+                a, b = self.load_ordered_pair(baseline(old_rows), baseline(new_rows))
+                self.assertEqual(compare_baselines(a, b).counts[expected], 1)
+                self.assert_unknown_pair(b, a, "capture_intervals_not_ordered")
+
+    def test_overlapping_intervals_suppress_all_definitive_and_directional_results(self):
+        old = baseline([record("same", "automation.same"),
+                        record("changed", "automation.old"),
+                        record("gone", "automation.gone")])
+        new = baseline([record("same", "automation.same"),
+                        record("changed", "automation.new", config={"mode": "restart"}, enabled="off"),
+                        record("added", "automation.added")], baseline_id="baseline-b")
+        for start, end in (("14:05:00", "14:20:00"), ("13:55:00", "14:20:00"),
+                           ("14:00:00", "14:15:00")):
+            with self.subTest(start=start, end=end):
+                new["capture"].update(started_at=f"2026-10-01T{start}Z",
+                                      ended_at=f"2026-10-01T{end}Z")
+                a, b = self.load_pair(old, new)
+                report, _ = self.assert_unknown_pair(a, b, "capture_intervals_not_ordered")
+                self.assertEqual(report.counts["TOTAL"], 4)
+
+    def test_same_baseline_id_is_unknown_even_with_disjoint_intervals(self):
+        old = baseline([record("one", "automation.one")])
+        new = shifted_capture(baseline([record("one", "automation.renamed", enabled="off")]))
+        a, b = self.load_pair(old, new)
+        _, rendered = self.assert_unknown_pair(a, b, "same_baseline_id")
+        self.assertEqual(rendered["global"]["comparison_reasons"], ["same_baseline_id"])
+
+    def test_self_comparison_is_not_definitive(self):
+        value = load_baseline(self.write("self.json", baseline([record("one", "automation.one")])))
+        _, rendered = self.assert_unknown_pair(value, value, "same_baseline_id")
+        self.assertIn("capture_intervals_not_ordered", rendered["global"]["comparison_reasons"])
+
+    def test_invalid_pair_preserves_other_record_uncertainty(self):
+        old = baseline([record("one", "automation.one")])
+        new = baseline([record("one", "automation.one", completeness="partial")],
+                       baseline_id="baseline-b")
+        a, b = self.load_pair(old, new)
+        report, _ = self.assert_unknown_pair(a, b, "capture_intervals_not_ordered")
+        self.assertIn("later_configuration_coverage_incomplete", report.records[0].reasons)
+
+    def test_duplicate_source_digest_with_distinct_ids_and_times_is_unknown(self):
+        old = baseline([record("one", "automation.old")])
+        new = shifted_capture(baseline([record("one", "automation.new", enabled="off")], baseline_id="baseline-b"))
+        for number, value in enumerate((old, new)):
+            value["source_artifact"] = {
+                "schema": BASELINE_SCHEMA, "baseline_id": f"source-{number}",
+                "sha256": "sha256:" + "a" * 64, "internal_material_sha256": None,
+                "configuration_hashes_recomputable": False,
+            }
+        a, b = self.load_pair(old, new)
+        _, rendered = self.assert_unknown_pair(a, b, "same_source_artifact_digest")
+        self.assertEqual(rendered["global"]["comparison_reasons"], ["same_source_artifact_digest"])
+        new["source_artifact"]["sha256"] = "sha256:" + "b" * 64
+        a, b = self.load_pair(old, new)
+        result = compare_baselines(a, b)
+        self.assertEqual(result.counts["UNCHANGED"], 1)
+        self.assertTrue(result.records[0].entity_id_changed)
+        self.assertTrue(result.records[0].enabled_state_changed)
+        old["source_artifact"] = None
+        a, b = self.load_pair(old, new)
+        self.assertEqual(compare_baselines(a, b).counts["UNCHANGED"], 1)
+
+    def test_order_compares_instants_and_allows_exact_adjacent_boundary(self):
+        old = baseline([record("one", "automation.one")])
+        new = baseline([record("one", "automation.one")], baseline_id="baseline-b")
+        new["capture"].update(started_at="2026-10-01T09:15:00-05:00",
+                              ended_at="2026-10-01T15:00:00Z")
+        for section in ("configuration", "enabled_state"):
+            new["records"][0][section]["collected_at"] = "2026-10-01T14:20:00Z"
+        a, b = self.load_pair(old, new)
+        self.assertEqual(compare_baselines(a, b).counts["UNCHANGED"], 1)
+        new["capture"]["started_at"] = "2026-10-01T09:14:59.999999-05:00"
+        a, b = self.load_pair(old, new)
+        self.assert_unknown_pair(a, b, "capture_intervals_not_ordered")
+
+    def test_capture_intervals_and_reasons_survive_zero_detail_report(self):
+        old = baseline([record("one", "automation.one")])
+        new = shifted_capture(baseline([], baseline_id="baseline-b"))
+        a, b = self.load_pair(old, new)
+        for earlier, later, expected_eligible in ((a, b, True), (b, a, False)):
+            with self.subTest(eligible=expected_eligible):
+                report = compare_baselines(earlier, later)
+                rendered = json.loads(render_bounded_report(report, max_details=0))
+                self.assertEqual(rendered["capture_intervals"], {
+                    "earlier": {"started_at": earlier.capture_start, "ended_at": earlier.capture_end,
+                                "non_atomic": earlier.capture_non_atomic},
+                    "later": {"started_at": later.capture_start, "ended_at": later.capture_end,
+                              "non_atomic": later.capture_non_atomic},
+                })
+                self.assertEqual(rendered["global"]["comparison_eligible"], expected_eligible)
+                self.assertEqual(rendered["records"], [])
+                self.assertEqual(rendered["omitted_detail_count"], 1)
+                self.assertTrue(rendered["details_truncated"])
+
+    def test_empty_invalid_pair_keeps_global_reason(self):
+        a, b = self.load_pair(baseline([]), baseline([], baseline_id="baseline-b"))
+        report, _ = self.assert_unknown_pair(a, b, "capture_intervals_not_ordered")
+        self.assertEqual(report.counts["TOTAL"], 0)
+
+    def test_cli_swapped_and_self_pairs_report_unknown_without_argument_changes(self):
+        old = self.write("old.json", baseline([record("one", "automation.one")]))
+        new = self.write("new.json", shifted_capture(baseline([], baseline_id="baseline-b")))
+        for earlier, later in ((new, old), (old, old)):
+            with self.subTest(earlier=earlier.name, later=later.name):
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts/compare_automation_baselines.py"),
+                     str(earlier), str(later)], capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, "")
+                report = json.loads(result.stdout)
+                self.assertEqual(report["counts"]["UNKNOWN"], 1)
+                self.assertFalse(report["global"]["comparison_eligible"])
+                self.assertIn("capture_intervals", report)
 
 
 class FingerprintControlTests(unittest.TestCase):
@@ -614,7 +783,7 @@ class ValidationAndBoundsTests(BaselineTestCase):
         row = record("one", "automation.one")
         row["configuration"]["collected_at"] = "2026-10-01T09:00:00-05:00"
         row["enabled_state"]["collected_at"] = "2026-10-01T15:15:00+01:00"
-        a, b = self.load_pair(baseline([row]), baseline([copy.deepcopy(row)]))
+        a, b = self.load_ordered_pair(baseline([row]), baseline([copy.deepcopy(row)]))
         self.assertEqual(compare_baselines(a, b).counts["UNCHANGED"], 1)
 
     def test_collection_time_status_matches_retained_timestamp(self):
@@ -632,7 +801,7 @@ class ValidationAndBoundsTests(BaselineTestCase):
     def test_multirecord_report_fits_exact_bytes_across_count_digits(self):
         for count in (9, 10, 12, 100):
             with self.subTest(count=count):
-                a, b = self.load_pair(
+                a, b = self.load_ordered_pair(
                     baseline([record(f"id{i}", f"automation.id{i}") for i in range(count)]),
                     baseline([record(f"id{i}", f"automation.id{i}") for i in range(count)]),
                 )
@@ -644,7 +813,7 @@ class ValidationAndBoundsTests(BaselineTestCase):
                 self.assertEqual(json.loads(short)["omitted_detail_count"], 1)
 
     def test_truncated_report_fits_exact_bytes_without_extra_omission(self):
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline([record(f"id{i}", f"automation.id{i}") for i in range(110)]),
             baseline([record(f"id{i}", f"automation.id{i}") for i in range(110)]),
         )
@@ -734,7 +903,7 @@ class ValidationAndBoundsTests(BaselineTestCase):
         config = {"id": "one", "description": SENTINEL, "action": [{"service": "light.turn_on"}]}
         rows_a = [record("one", "automation.one", config=config)]
         rows_b = [record("one", "automation.one", config=copy.deepcopy(config))]
-        a, b = self.load_pair(baseline(rows_a), baseline(rows_b, baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(rows_a), baseline(rows_b, baseline_id="baseline-b"))
         rendered = render_bounded_report(compare_baselines(a, b))
         self.assertNotIn(SENTINEL.encode(), rendered)
 
@@ -818,7 +987,7 @@ class ValidationAndBoundsTests(BaselineTestCase):
 
     def test_output_bound_truncates_details_but_not_counts(self):
         rows = [record(f"id{i:03d}", f"automation.id{i:03d}") for i in range(40)]
-        a, b = self.load_pair(baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b"))
+        a, b = self.load_ordered_pair(baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b"))
         report = compare_baselines(a, b)
         rendered = render_bounded_report(report, max_bytes=3_000, max_details=1000)
         self.assertLessEqual(len(rendered), 3_000)
@@ -830,7 +999,7 @@ class ValidationAndBoundsTests(BaselineTestCase):
 
     def test_full_output_fits_at_its_exact_rendered_size(self):
         rows = [record("one", "automation.one")]
-        a, b = self.load_pair(
+        a, b = self.load_ordered_pair(
             baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b")
         )
         report = compare_baselines(a, b)
@@ -848,7 +1017,7 @@ class ValidationAndBoundsTests(BaselineTestCase):
     def test_no_network_or_subprocess_access(self):
         rows = [record("one", "automation.one")]
         a_path = self.write("a.json", baseline(rows))
-        b_path = self.write("b.json", baseline(copy.deepcopy(rows), baseline_id="baseline-b"))
+        b_path = self.write("b.json", shifted_capture(baseline(copy.deepcopy(rows), baseline_id="baseline-b")))
         with patch.object(socket, "socket", side_effect=AssertionError("network access")), patch.object(
             subprocess, "Popen", side_effect=AssertionError("subprocess access")
         ):

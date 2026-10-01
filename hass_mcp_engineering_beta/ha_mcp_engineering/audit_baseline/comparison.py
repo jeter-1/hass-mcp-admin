@@ -10,15 +10,32 @@ from .models import (
     FINGERPRINT_MODEL,
     AutomationRecord,
     Baseline,
+    CaptureInterval,
     Classification,
     ComparisonRecord,
     ComparisonReport,
 )
-from .validation import BaselineValidationError
+from .validation import BaselineValidationError, _parse_timestamp
 
 
 MAX_OUTPUT_BYTES = 1_000_000
 MAX_OUTPUT_DETAILS = 1_000
+
+
+def _comparison_reasons(earlier: Baseline, later: Baseline) -> tuple[str, ...]:
+    reasons: list[str] = []
+    if _parse_timestamp(later.capture_start, "capture_start_invalid") < _parse_timestamp(
+        earlier.capture_end, "capture_end_invalid"
+    ):
+        reasons.append("capture_intervals_not_ordered")
+    if earlier.baseline_id == later.baseline_id:
+        reasons.append("same_baseline_id")
+    if (
+        earlier.source_artifact_sha256 is not None
+        and earlier.source_artifact_sha256 == later.source_artifact_sha256
+    ):
+        reasons.append("same_source_artifact_digest")
+    return tuple(sorted(reasons))
 
 
 def _installation_relation(earlier: Baseline, later: Baseline) -> tuple[bool, str | None]:
@@ -106,6 +123,7 @@ def _separate_observations(
 def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
     """Compare two already validated baselines without provider access."""
 
+    comparison_reasons = _comparison_reasons(earlier, later)
     installation_comparable, installation_reason = _installation_relation(earlier, later)
     inventory_scope_comparable = earlier.inventory.scope == later.inventory.scope
     fingerprint_contract_compatible = bool(
@@ -184,10 +202,15 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
         else:  # pragma: no cover - union construction makes this unreachable
             raise AssertionError("comparison identity union is inconsistent")
 
-        entity_changed, enabled_changed = _separate_observations(
-            old, new, installation_comparable=installation_comparable,
-            inventory_scope_comparable=inventory_scope_comparable,
-        )
+        if comparison_reasons:
+            classification = Classification.UNKNOWN
+            reasons.extend(comparison_reasons)
+            entity_changed, enabled_changed = False, False
+        else:
+            entity_changed, enabled_changed = _separate_observations(
+                old, new, installation_comparable=installation_comparable,
+                inventory_scope_comparable=inventory_scope_comparable,
+            )
         results.append(
             ComparisonRecord(
                 configuration_id=configuration_id,
@@ -213,6 +236,13 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
     return ComparisonReport(
         earlier_baseline_id=earlier.baseline_id,
         later_baseline_id=later.baseline_id,
+        earlier_capture=CaptureInterval(
+            earlier.capture_start, earlier.capture_end, earlier.capture_non_atomic
+        ),
+        later_capture=CaptureInterval(
+            later.capture_start, later.capture_end, later.capture_non_atomic
+        ),
+        comparison_reasons=comparison_reasons,
         installation_comparable=installation_comparable,
         installation_reason=installation_reason,
         inventory_scope_comparable=inventory_scope_comparable,
@@ -230,7 +260,13 @@ def comparison_report_dict(report: ComparisonReport) -> dict[str, Any]:
         "schema": COMPARISON_SCHEMA,
         "earlier_baseline_id": report.earlier_baseline_id,
         "later_baseline_id": report.later_baseline_id,
+        "capture_intervals": {
+            "earlier": report.earlier_capture.public(),
+            "later": report.later_capture.public(),
+        },
         "global": {
+            "comparison_eligible": report.comparison_eligible,
+            "comparison_reasons": list(report.comparison_reasons),
             "installation_comparable": report.installation_comparable,
             "installation_reason": report.installation_reason,
             "inventory_scope_comparable": report.inventory_scope_comparable,
