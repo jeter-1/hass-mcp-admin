@@ -577,12 +577,32 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                 cpu_gaps.append(now_cpu - last_cpu)
                 last = now
                 last_cpu = now_cpu
+        # Diagnostic-only: attribute natural GC without changing its policy,
+        # subtracting its time, or relaxing either existing heartbeat bound.
+        import gc
+        gc_events, gc_started = [], {}
+        gc_state = {"enabled": gc.isenabled(), "thresholds": gc.get_threshold()}
+        def observe_gc(phase, info):
+            if info["generation"] != 2:
+                return
+            if phase == "start":
+                gc_started[2] = (time.monotonic(), time.thread_time())
+            elif 2 in gc_started:
+                wall, cpu = gc_started.pop(2)
+                if len(gc_events) < 64:
+                    gc_events.append({"generation": 2,
+                                      "wall_seconds": time.monotonic() - wall,
+                                      "thread_cpu_seconds": time.thread_time() - cpu,
+                                      "collected": info["collected"],
+                                      "uncollectable": info["uncollectable"]})
         ticker = asyncio.create_task(heartbeat())
         await asyncio.sleep(0)
+        gc.callbacks.append(observe_gc)
         try:
             report = await service.inspect(alarm_entity_id=TARGET, limit=50)
             await asyncio.sleep(.02)
         finally:
+            gc.callbacks.remove(observe_gc)
             ticker.cancel()
             await asyncio.gather(ticker, return_exceptions=True)
         maximum_gap = max(gaps)
@@ -593,7 +613,8 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         print(json.dumps({"fixture": "maximum_alarmo_inventory", "maximum_loop_gap_seconds": maximum_gap,
                           "maximum_thread_cpu_gap_seconds": max(cpu_gaps),
                           "wall_bound_seconds": .3, "thread_cpu_bound_seconds": .1,
-                          "sensors": c.MAX_SENSORS, "groups": c.MAX_GROUPS}), flush=True)
+                          "sensors": c.MAX_SENSORS, "groups": c.MAX_GROUPS,
+                          "gc_state": gc_state, "major_gc_events": gc_events}), flush=True)
         self.assertLess(maximum_gap, .3, "Projection and fitting must keep the event loop responsive under contention.")
         self.assertLess(max(cpu_gaps), .1, "Projection and fitting must yield within the loop-thread CPU budget.")
         self.assertEqual(report["membership"]["configured_members_retained"], 512)
