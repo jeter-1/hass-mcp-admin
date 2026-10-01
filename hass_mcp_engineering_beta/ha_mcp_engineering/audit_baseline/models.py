@@ -50,7 +50,11 @@ class InventoryScope:
 
     @property
     def absence_is_authoritative(self) -> bool:
-        return self.completeness == "complete" and not self.limit_reached
+        return (
+            self.completeness == "complete"
+            and not self.limit_reached
+            and self.omitted_count == 0
+        )
 
 
 @dataclass(frozen=True)

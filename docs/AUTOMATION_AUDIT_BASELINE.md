@@ -138,9 +138,16 @@ becomes `REMOVED`. An inventory limit is not proof of absence. Reaching exactly
 100 results from a 100-result inventory surface is therefore not complete
 inventory evidence without an independent completeness mechanism.
 
+A complete inventory must retain exactly its declared record count and report
+zero known omissions. Missing records, positive or unknown omissions, and a
+reached inventory limit contradict a complete declaration and are rejected.
+Partial inventories retain their uncertainty; an empty complete inventory with
+zero declared records can legitimately prove absence.
+
 Entity-ID renames and enabled-state changes are reported separately when the
-canonical identity and installation are established. They do not by themselves
-change the configuration classification.
+canonical mapping on both sides and the same installation and inventory scope
+are established. Unknown or contradictory mappings cannot establish these
+changes. They do not by themselves change the configuration classification.
 
 Partial baselines do not poison unrelated records: comparable shared records can
 still be `UNCHANGED` or `CHANGED` while other identities remain `UNKNOWN`.
@@ -194,6 +201,11 @@ Duplicate JSON keys, non-finite numbers, invalid digests, duplicate canonical
 configuration IDs, conflicting verified entity mappings, unsupported baseline
 schemas and malformed required fields fail closed with fixed error codes. Error
 text never includes rejected values or configuration content.
+
+Both loaders bound file acquisition itself to 2 MiB plus one overflow-detection
+byte before parsing. Escaped lone Unicode surrogates in keys or values are
+rejected with a fixed error code; valid Unicode retains the exact fingerprint
+serialization above.
 
 Output accounting is deterministic. The summary always covers all comparison
 records. Detail rows may be omitted only when bounded output/detail limits are

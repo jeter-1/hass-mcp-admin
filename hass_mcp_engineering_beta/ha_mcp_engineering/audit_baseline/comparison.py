@@ -77,8 +77,16 @@ def _separate_observations(
     later: AutomationRecord | None,
     *,
     installation_comparable: bool,
+    inventory_scope_comparable: bool,
 ) -> tuple[bool, bool]:
-    if not installation_comparable or earlier is None or later is None:
+    if (
+        not installation_comparable
+        or not inventory_scope_comparable
+        or earlier is None
+        or later is None
+        or not earlier.identity_verified
+        or not later.identity_verified
+    ):
         return False, False
     entity_changed = bool(
         earlier.identity_verified
@@ -177,7 +185,8 @@ def compare_baselines(earlier: Baseline, later: Baseline) -> ComparisonReport:
             raise AssertionError("comparison identity union is inconsistent")
 
         entity_changed, enabled_changed = _separate_observations(
-            old, new, installation_comparable=installation_comparable
+            old, new, installation_comparable=installation_comparable,
+            inventory_scope_comparable=inventory_scope_comparable,
         )
         results.append(
             ComparisonRecord(

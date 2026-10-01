@@ -23,6 +23,7 @@ from ha_mcp_engineering.audit_baseline import (  # noqa: E402
     canonical_configuration_digest,
     compare_baselines,
     load_baseline,
+    normalize_legacy_baseline,
     render_bounded_report,
 )
 from ha_mcp_engineering.audit_baseline.models import (  # noqa: E402
@@ -302,6 +303,50 @@ class BaselineTestCase(unittest.TestCase):
 
 
 class ComparisonSemanticsTests(BaselineTestCase):
+    def test_complete_empty_inventory_proves_addition_and_removal(self):
+        empty, populated = self.load_pair(
+            baseline([]), baseline([record("one", "automation.one")])
+        )
+        self.assertEqual(compare_baselines(empty, populated).counts["ADDED"], 1)
+        self.assertEqual(compare_baselines(populated, empty).counts["REMOVED"], 1)
+
+    def test_partial_omitted_inventory_never_proves_absence(self):
+        partial = baseline([], inventory_completeness="partial")
+        partial["inventory"].update(declared_count=1, omitted_count=1)
+        empty, populated = self.load_pair(
+            partial, baseline([record("one", "automation.one")])
+        )
+        for earlier, later in ((empty, populated), (populated, empty)):
+            with self.subTest(earlier=earlier.inventory.completeness):
+                result = compare_baselines(earlier, later)
+                self.assertEqual(result.counts["UNKNOWN"], 1)
+                self.assertEqual(result.counts["ADDED"], 0)
+                self.assertEqual(result.counts["REMOVED"], 0)
+
+    def test_separate_observations_require_verified_mappings_on_both_sides(self):
+        for side in (0, 1):
+            for mapping in ("missing", "contradictory"):
+                with self.subTest(side=side, mapping=mapping):
+                    rows = [record("one", "automation.before", enabled="on"),
+                            record("one", "automation.after", enabled="off")]
+                    rows[side]["mapping_status"] = mapping
+                    a, b = self.load_pair(baseline([rows[0]]), baseline([rows[1]]))
+                    result = compare_baselines(a, b)
+                    self.assertEqual(result.counts["UNKNOWN"], 1)
+                    self.assertFalse(result.records[0].enabled_state_changed)
+                    self.assertFalse(result.records[0].entity_id_changed)
+
+    def test_separate_observations_require_same_inventory_scope(self):
+        a, b = self.load_pair(
+            baseline([record("one", "automation.before", enabled="on")]),
+            baseline([record("one", "automation.after", enabled="off")],
+                     inventory_scope="other_scope"),
+        )
+        result = compare_baselines(a, b)
+        self.assertEqual(result.counts["UNKNOWN"], 1)
+        self.assertFalse(result.records[0].enabled_state_changed)
+        self.assertFalse(result.records[0].entity_id_changed)
+
     def test_identical_baselines(self):
         rows = [record("one", "automation.one")]
         a, b = self.load_pair(baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b"))
@@ -561,6 +606,14 @@ class ValidationAndBoundsTests(BaselineTestCase):
         with self.assertRaisesRegex(BaselineValidationError, "inventory_completeness_contradiction"):
             load_baseline(self.write("inventory-contradiction.json", value))
 
+    def test_complete_inventory_requires_all_records_and_zero_known_omissions(self):
+        for count, omitted in ((1, 0), (1, 1), (0, 1), (0, None)):
+            with self.subTest(count=count, omitted=omitted):
+                value = baseline([])
+                value["inventory"].update(declared_count=count, omitted_count=omitted)
+                with self.assertRaises(BaselineValidationError):
+                    load_baseline(self.write("incomplete-as-complete.json", value))
+
     def test_record_count_limit(self):
         rows = [record(f"id{i}", f"automation.id{i}") for i in range(1001)]
         value = baseline(rows)
@@ -603,6 +656,61 @@ class ValidationAndBoundsTests(BaselineTestCase):
         path = self.write("large.json", b"{" + b" " * MAX_INPUT_BYTES + b"}")
         with self.assertRaisesRegex(BaselineValidationError, "input_size_limit_exceeded"):
             load_baseline(path)
+
+    def test_both_loaders_bound_the_read_before_rejecting_overflow(self):
+        class ObservedInput(io.BytesIO):
+            def read(self, size=-1):
+                reads.append(size)
+                data = super().read(size)
+                consumed.append(len(data))
+                return data
+
+        for loader in (load_baseline, normalize_legacy_baseline):
+            with self.subTest(loader=loader.__name__):
+                reads, consumed = [], []
+                stream = ObservedInput(b" " * (MAX_INPUT_BYTES + 100))
+                with patch.object(Path, "open", return_value=stream):
+                    with self.assertRaisesRegex(BaselineValidationError, "input_size_limit_exceeded"):
+                        loader("synthetic.json")
+                self.assertEqual(reads, [MAX_INPUT_BYTES + 1])
+                self.assertEqual(consumed, [MAX_INPUT_BYTES + 1])
+
+    def test_both_loaders_accept_exact_input_byte_limit(self):
+        cases = (
+            (load_baseline, baseline([record("one", "automation.one")])),
+            (normalize_legacy_baseline, legacy_baseline([legacy_record("one", "automation.one")])),
+        )
+        for loader, value in cases:
+            with self.subTest(loader=loader.__name__):
+                raw = json.dumps(value).encode("utf-8")
+                path = self.write("exact-limit.json", raw + b" " * (MAX_INPUT_BYTES - len(raw)))
+                self.assertIsNotNone(loader(path))
+
+    def test_both_loaders_keep_io_errors_fixed(self):
+        for loader in (load_baseline, normalize_legacy_baseline):
+            with self.subTest(loader=loader.__name__):
+                with self.assertRaises(BaselineValidationError) as ctx:
+                    loader(self.root / SENTINEL)
+                self.assertEqual(str(ctx.exception), "input_unavailable")
+
+    def test_lone_surrogates_in_json_keys_and_values_have_fixed_errors(self):
+        for surrogate in ("\ud800", "\udfff"):
+            for value in ({surrogate: SENTINEL}, {SENTINEL: surrogate}):
+                for loader in (load_baseline, normalize_legacy_baseline):
+                    with self.subTest(loader=loader.__name__, key_bad=surrogate in value):
+                        with self.assertRaises(BaselineValidationError) as ctx:
+                            loader(self.write("bad-unicode.json", value))
+                        self.assertEqual(str(ctx.exception), "invalid_unicode")
+                        self.assertNotIn(SENTINEL, str(ctx.exception))
+
+    def test_configuration_unicode_validation_preserves_valid_unicode(self):
+        for value in ({"\ud800": "value"}, {"key": "\udfff"}):
+            with self.assertRaisesRegex(BaselineValidationError, "invalid_unicode"):
+                canonical_configuration_bytes(value)
+        self.assertEqual(
+            canonical_configuration_bytes({"é": "🙂"}),
+            b'{"\\u00e9":"\\ud83d\\ude42"}',
+        )
 
     def test_depth_limit(self):
         value = "0"

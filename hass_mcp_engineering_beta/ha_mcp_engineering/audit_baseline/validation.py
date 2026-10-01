@@ -101,6 +101,13 @@ def _strict_loads(raw: bytes) -> Any:
     return value
 
 
+def _utf8_size(value: str) -> int:
+    try:
+        return len(value.encode("utf-8"))
+    except UnicodeEncodeError:
+        raise BaselineValidationError("invalid_unicode") from None
+
+
 def _validate_json_limits(value: Any) -> None:
     nodes = 0
     stack: list[tuple[Any, int]] = [(value, 0)]
@@ -112,7 +119,7 @@ def _validate_json_limits(value: Any) -> None:
         if depth > MAX_JSON_DEPTH:
             raise BaselineValidationError("json_depth_limit_exceeded")
         if isinstance(item, str):
-            if len(item.encode("utf-8")) > MAX_STRING_BYTES:
+            if _utf8_size(item) > MAX_STRING_BYTES:
                 raise BaselineValidationError("json_string_limit_exceeded")
         elif item is None or isinstance(item, (bool, int)):
             continue
@@ -125,7 +132,7 @@ def _validate_json_limits(value: Any) -> None:
             for key, child in item.items():
                 if not isinstance(key, str):
                     raise BaselineValidationError("json_key_invalid")
-                if len(key.encode("utf-8")) > MAX_STRING_BYTES:
+                if _utf8_size(key) > MAX_STRING_BYTES:
                     raise BaselineValidationError("json_string_limit_exceeded")
                 stack.append((child, depth + 1))
         else:
@@ -174,7 +181,7 @@ def _require_list(value: Any, code: str) -> list[Any]:
 def _require_str(value: Any, code: str, *, safe_id: bool = False) -> str:
     if not isinstance(value, str) or not value:
         raise BaselineValidationError(code)
-    if len(value.encode("utf-8")) > MAX_STRING_BYTES:
+    if _utf8_size(value) > MAX_STRING_BYTES:
         raise BaselineValidationError("json_string_limit_exceeded")
     if safe_id and not _SAFE_ID.fullmatch(value):
         raise BaselineValidationError(code)
@@ -229,7 +236,7 @@ def _safe_limitations(value: Any, code: str) -> tuple[str, ...]:
     retained: list[str] = []
     for item in items:
         text = _require_str(item, code)
-        if len(text.encode("utf-8")) > MAX_LIMITATION_BYTES:
+        if _utf8_size(text) > MAX_LIMITATION_BYTES:
             raise BaselineValidationError("limitation_size_exceeded")
         retained.append(text)
     return tuple(retained)
@@ -545,7 +552,9 @@ def _new_baseline(value: dict[str, Any]) -> Baseline:
         omitted_count=_optional_int(inventory_raw["omitted_count"], "inventory_omitted_invalid"),
         limitations=_safe_limitations(inventory_raw["limitations"], "inventory_limitations_invalid"),
     )
-    if inventory.completeness == "complete" and inventory.limit_reached:
+    if inventory.completeness == "complete" and (
+        inventory.limit_reached or inventory.omitted_count != 0
+    ):
         raise BaselineValidationError("inventory_completeness_contradiction")
 
     contract = _validate_fingerprint_contract(value["fingerprint_contract"])
@@ -561,6 +570,8 @@ def _new_baseline(value: dict[str, Any]) -> Baseline:
     ):
         raise BaselineValidationError("record_fingerprint_contract_mismatch")
     if inventory.declared_count < len(records):
+        raise BaselineValidationError("inventory_record_count_contradiction")
+    if inventory.completeness == "complete" and inventory.declared_count != len(records):
         raise BaselineValidationError("inventory_record_count_contradiction")
 
     consistency_raw = _require_dict(value["consistency"], "consistency_invalid")
@@ -1023,12 +1034,19 @@ def _legacy_normalized_dict(value: dict[str, Any], artifact_sha256: str) -> dict
     }
 
 
-def normalize_legacy_baseline(path: str | Path) -> dict[str, Any]:
-    source = Path(path)
+def _read_input(path: str | Path) -> bytes:
     try:
-        raw = source.read_bytes()
+        with Path(path).open("rb") as source:
+            raw = source.read(MAX_INPUT_BYTES + 1)
     except OSError:
         raise BaselineValidationError("input_unavailable") from None
+    if len(raw) > MAX_INPUT_BYTES:
+        raise BaselineValidationError("input_size_limit_exceeded")
+    return raw
+
+
+def normalize_legacy_baseline(path: str | Path) -> dict[str, Any]:
+    raw = _read_input(path)
     value = _strict_loads(raw)
     value = _require_dict(value, "baseline_root_invalid")
     artifact_sha256 = hashlib.sha256(raw).hexdigest()
@@ -1039,11 +1057,7 @@ def normalize_legacy_baseline(path: str | Path) -> dict[str, Any]:
 
 
 def load_baseline(path: str | Path) -> Baseline:
-    source = Path(path)
-    try:
-        raw = source.read_bytes()
-    except OSError:
-        raise BaselineValidationError("input_unavailable") from None
+    raw = _read_input(path)
     value = _strict_loads(raw)
     value = _require_dict(value, "baseline_root_invalid")
     schema = value.get("schema")
