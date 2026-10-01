@@ -40,6 +40,10 @@ _DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _BARE_DIGEST = re.compile(r"[0-9a-f]{64}\Z")
 _SAFE_ID = re.compile(r"[A-Za-z0-9_.:-]{1,256}\Z")
 _ENTITY_ID = re.compile(r"automation\.[a-z0-9_]+\Z")
+_TIMESTAMP = re.compile(
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}"
+    r"(?:\.[0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2})\Z"
+)
 
 LEGACY_CANONICALIZATION = (
     "recursive object-key lexical sort; array order preserved; compact JSON; "
@@ -206,10 +210,9 @@ def _optional_int(value: Any, code: str, *, minimum: int = 0) -> int | None:
     return _require_int(value, code, minimum=minimum)
 
 
-def _timestamp(value: Any, code: str, *, nullable: bool = False) -> str | None:
-    if value is None and nullable:
-        return None
-    text = _require_str(value, code)
+def _parse_timestamp(text: str, code: str) -> datetime:
+    if not _TIMESTAMP.fullmatch(text):
+        raise BaselineValidationError(code)
     normalized = text[:-1] + "+00:00" if text.endswith("Z") else text
     try:
         parsed = datetime.fromisoformat(normalized)
@@ -217,6 +220,14 @@ def _timestamp(value: Any, code: str, *, nullable: bool = False) -> str | None:
         raise BaselineValidationError(code) from None
     if parsed.tzinfo is None:
         raise BaselineValidationError(code)
+    return parsed
+
+
+def _timestamp(value: Any, code: str, *, nullable: bool = False) -> str | None:
+    if value is None and nullable:
+        return None
+    text = _require_str(value, code)
+    _parse_timestamp(text, code)
     return text
 
 
@@ -403,6 +414,8 @@ def _record(value: Any) -> AutomationRecord:
     time_status = _require_str(config["collection_time_status"], "collection_time_status_invalid", safe_id=True)
     if time_status not in {"observed", "capture_interval_only", "unavailable"}:
         raise BaselineValidationError("collection_time_status_invalid")
+    if (time_status == "observed") != (collected_at is not None):
+        raise BaselineValidationError("collection_time_contradiction")
     provider = config["provider"]
     if provider is not None:
         provider = _require_str(provider, "provider_invalid", safe_id=True)
@@ -424,6 +437,8 @@ def _record(value: Any) -> AutomationRecord:
     )
     if enabled_time_status not in {"observed", "capture_interval_only", "unavailable"}:
         raise BaselineValidationError("enabled_time_status_invalid")
+    if (enabled_time_status == "observed") != (enabled_at is not None):
+        raise BaselineValidationError("collection_time_contradiction")
 
     return AutomationRecord(
         configuration_id=configuration_id,
@@ -497,9 +512,9 @@ def _new_baseline(value: dict[str, Any]) -> Baseline:
     capture_start = _timestamp(capture["started_at"], "capture_start_invalid")
     capture_end = _timestamp(capture["ended_at"], "capture_end_invalid")
     assert capture_start is not None and capture_end is not None
-    if datetime.fromisoformat(capture_start.replace("Z", "+00:00")) > datetime.fromisoformat(
-        capture_end.replace("Z", "+00:00")
-    ):
+    started_at = _parse_timestamp(capture_start, "capture_start_invalid")
+    ended_at = _parse_timestamp(capture_end, "capture_end_invalid")
+    if started_at > ended_at:
         raise BaselineValidationError("capture_interval_invalid")
     non_atomic = _require_bool(capture["non_atomic"], "capture_non_atomic_invalid")
 
@@ -563,6 +578,12 @@ def _new_baseline(value: dict[str, Any]) -> Baseline:
         raise BaselineValidationError("record_limit_exceeded")
     records = tuple(_record(item) for item in raw_records)
     _validate_record_identities(records)
+    for record in records:
+        for observed_at in (record.collected_at, record.enabled_collected_at):
+            if observed_at is not None and not (
+                started_at <= _parse_timestamp(observed_at, "record_time_invalid") <= ended_at
+            ):
+                raise BaselineValidationError("record_time_outside_capture")
     if any(
         record.configuration_digest is not None
         and record.fingerprint_model != contract.model
@@ -816,8 +837,10 @@ def _legacy_normalized_dict(value: dict[str, Any], artifact_sha256: str) -> dict
         warning_record_count += int(warning_count > 0)
         redaction_record_count += int(redaction_or_truncation)
         enabled_state = row.get("enabled_state")
-        if enabled_state not in {"on", "off", "unknown", "unavailable", None}:
-            raise BaselineValidationError("enabled_state_value_invalid")
+        if enabled_state is not None:
+            enabled_state = _require_str(enabled_state, "enabled_state_value_invalid", safe_id=True)
+            if enabled_state not in {"on", "off", "unknown", "unavailable"}:
+                raise BaselineValidationError("enabled_state_value_invalid")
         enabled_on_count += int(enabled_state == "on")
         enabled_off_count += int(enabled_state == "off")
         normalized_records.append(

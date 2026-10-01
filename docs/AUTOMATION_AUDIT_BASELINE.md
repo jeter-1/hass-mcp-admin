@@ -43,6 +43,15 @@ The format contains:
 - closed, bounded scalar authority/structural metadata and limitations; arbitrary
   provider responses are not accepted in these fields.
 
+Timestamps use `YYYY-MM-DDTHH:MM:SS[.fraction](Z|+HH:MM|-HH:MM)` with
+one to six optional fractional digits and an explicit timezone. Capture start
+must not follow capture end. Observed configuration and enabled-state timestamps
+must fall within those inclusive capture bounds, compared as instants across
+timezone offsets. `observed` requires a timestamp; `capture_interval_only` and
+`unavailable` retain null timestamps. Contradictory times are rejected rather
+than used to establish configuration or state changes. Legacy missing times
+remain unavailable.
+
 Installation identity is a comparison boundary. Core version, entity names,
 registry sequence or similar environment facts are not installation identity.
 Two baselines cannot produce definitive configuration classifications unless

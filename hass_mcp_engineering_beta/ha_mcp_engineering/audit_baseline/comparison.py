@@ -282,11 +282,9 @@ def render_bounded_report(
 
     value = comparison_report_dict(report)
     all_details = value.pop("records")
-    # ``false`` is one byte longer than ``true`` in JSON, so use the longer
-    # representation while sizing the fixed header.  This makes the estimate
-    # conservative even when every detail fits and the final flag becomes false.
-    value["details_truncated"] = False
-    value["omitted_detail_count"] = len(all_details)
+    total = len(all_details)
+    value["details_truncated"] = total > 0
+    value["omitted_detail_count"] = total
     value["records"] = []
     base_size = len(_encoded(value))
     if base_size > max_bytes:
@@ -297,8 +295,12 @@ def render_bounded_report(
     for detail in all_details[:max_details]:
         encoded_detail = _encoded(detail)
         candidate_detail_bytes = detail_bytes + len(encoded_detail) + (1 if selected else 0)
+        omitted = total - len(selected) - 1
+        # Adjust the exact header for count digits and true -> false (+1 byte)
+        # without repeatedly serializing the accumulated report.
+        header_delta = len(str(omitted)) - len(str(total)) + (1 if omitted == 0 else 0)
         # Replacing [] with [details] increases total by exact detail bytes and commas.
-        if base_size + candidate_detail_bytes > max_bytes:
+        if base_size + header_delta + candidate_detail_bytes > max_bytes:
             break
         selected.append(detail)
         detail_bytes = candidate_detail_bytes
@@ -309,7 +311,7 @@ def render_bounded_report(
     value["omitted_detail_count"] = omitted
     rendered = _encoded(value)
     if len(rendered) > max_bytes:
-        # The conservative header used the maximum omitted count, so this should
-        # only catch an implementation regression rather than trigger refitting.
+        # Exact incremental sizing should make this only an implementation
+        # regression guard, never a trigger for repeated whole-report fitting.
         raise BaselineValidationError("output_size_limit_exceeded")
     return rendered

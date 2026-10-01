@@ -140,7 +140,7 @@ def baseline(
         "source_artifact": None,
         "capture": {
             "started_at": "2026-10-01T14:00:00+00:00",
-            "ended_at": "2026-10-01T14:05:00+00:00",
+            "ended_at": "2026-10-01T14:15:00+00:00",
             "non_atomic": True,
         },
         "installation": {
@@ -557,6 +557,102 @@ class FingerprintControlTests(unittest.TestCase):
 
 
 class ValidationAndBoundsTests(BaselineTestCase):
+
+    def test_invalid_timestamp_syntax_has_fixed_cli_diagnostics(self):
+        for stamp in ("2026-10-01Z14:00:00+00:00", "2026-10-01T14:00:00",
+                      "2026-10-01T14:00:00.1234567Z", SENTINEL):
+            with self.subTest(stamp=stamp):
+                value = baseline([])
+                value["capture"]["started_at"] = stamp
+                path = self.write("invalid-time.json", value)
+                with self.assertRaisesRegex(BaselineValidationError, "capture_start_invalid"):
+                    load_baseline(path)
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts/compare_automation_baselines.py"),
+                     str(path), str(path)], capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stderr, "error:capture_start_invalid\n")
+                self.assertEqual(result.stdout, "")
+
+    def test_capture_timestamp_offsets_and_order(self):
+        value = baseline([])
+        value["capture"].update(started_at="2026-10-01T09:00:00-05:00",
+                                ended_at="2026-10-01T14:00:00.000001Z")
+        self.assertIsNotNone(load_baseline(self.write("offsets.json", value)))
+        value["capture"]["ended_at"] = "2026-10-01T13:59:59.999999Z"
+        with self.assertRaisesRegex(BaselineValidationError, "capture_interval_invalid"):
+            load_baseline(self.write("reversed.json", value))
+
+    def test_legacy_enabled_state_types_have_fixed_errors_in_both_loaders(self):
+        for state in ([], {}, 1, True, 1.2):
+            for loader in (load_baseline, normalize_legacy_baseline):
+                with self.subTest(state=state, loader=loader.__name__):
+                    row = legacy_record("one", "automation.one")
+                    row["enabled_state"] = state
+                    path = self.write("invalid-legacy-state.json", legacy_baseline([row]))
+                    with self.assertRaises(BaselineValidationError) as ctx:
+                        loader(path)
+                    self.assertEqual(str(ctx.exception), "enabled_state_value_invalid")
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/compare_automation_baselines.py"),
+             str(path), str(path)], capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stderr, "error:enabled_state_value_invalid\n")
+
+    def test_record_times_outside_capture_are_rejected(self):
+        for section in ("configuration", "enabled_state"):
+            for stamp in ("2026-10-01T13:59:59.999999Z", "2026-10-01T14:15:00.000001Z"):
+                with self.subTest(section=section, stamp=stamp):
+                    row = record("one", "automation.one")
+                    row[section]["collected_at"] = stamp
+                    with self.assertRaisesRegex(BaselineValidationError, "record_time_outside_capture"):
+                        load_baseline(self.write("outside-capture.json", baseline([row])))
+
+    def test_record_times_at_capture_boundaries_accept_equivalent_offsets(self):
+        row = record("one", "automation.one")
+        row["configuration"]["collected_at"] = "2026-10-01T09:00:00-05:00"
+        row["enabled_state"]["collected_at"] = "2026-10-01T15:15:00+01:00"
+        a, b = self.load_pair(baseline([row]), baseline([copy.deepcopy(row)]))
+        self.assertEqual(compare_baselines(a, b).counts["UNCHANGED"], 1)
+
+    def test_collection_time_status_matches_retained_timestamp(self):
+        for section in ("configuration", "enabled_state"):
+            for status in ("observed", "capture_interval_only", "unavailable"):
+                with self.subTest(section=section, status=status):
+                    row = record("one", "automation.one")
+                    row[section]["collection_time_status"] = status
+                    row[section]["collected_at"] = None if status != "observed" else "2026-10-01T14:10:00Z"
+                    self.assertIsNotNone(load_baseline(self.write("valid-time-status.json", baseline([row]))))
+                    row[section]["collected_at"] = "2026-10-01T14:10:00Z" if status != "observed" else None
+                    with self.assertRaisesRegex(BaselineValidationError, "collection_time_contradiction"):
+                        load_baseline(self.write("invalid-time-status.json", baseline([row])))
+
+    def test_multirecord_report_fits_exact_bytes_across_count_digits(self):
+        for count in (9, 10, 12, 100):
+            with self.subTest(count=count):
+                a, b = self.load_pair(
+                    baseline([record(f"id{i}", f"automation.id{i}") for i in range(count)]),
+                    baseline([record(f"id{i}", f"automation.id{i}") for i in range(count)]),
+                )
+                report = compare_baselines(a, b)
+                full = render_bounded_report(report)
+                self.assertEqual(render_bounded_report(report, max_bytes=len(full)), full)
+                short = render_bounded_report(report, max_bytes=len(full) - 1)
+                self.assertLessEqual(len(short), len(full) - 1)
+                self.assertEqual(json.loads(short)["omitted_detail_count"], 1)
+
+    def test_truncated_report_fits_exact_bytes_without_extra_omission(self):
+        a, b = self.load_pair(
+            baseline([record(f"id{i}", f"automation.id{i}") for i in range(110)]),
+            baseline([record(f"id{i}", f"automation.id{i}") for i in range(110)]),
+        )
+        report = compare_baselines(a, b)
+        for details in (10, 11, 100, 101, 109):
+            with self.subTest(details=details):
+                expected = render_bounded_report(report, max_details=details)
+                self.assertEqual(render_bounded_report(report, max_bytes=len(expected)), expected)
 
     def test_legacy_baseline_normalizes_without_upgrading_missing_assurance(self):
         value = legacy_baseline([legacy_record("one", "automation.one")])
