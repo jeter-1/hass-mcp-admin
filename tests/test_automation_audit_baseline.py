@@ -1,0 +1,1029 @@
+"""Offline automation audit-baseline validation and comparison tests."""
+
+from __future__ import annotations
+
+import copy
+from datetime import datetime, timedelta
+import io
+import json
+from pathlib import Path
+import socket
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+BETA = ROOT / "hass_mcp_engineering_beta"
+sys.path.insert(0, str(BETA))
+
+from ha_mcp_engineering.audit_baseline import (  # noqa: E402
+    BaselineValidationError,
+    Classification,
+    canonical_configuration_digest,
+    compare_baselines,
+    load_baseline,
+    normalize_legacy_baseline,
+    render_bounded_report,
+)
+from ha_mcp_engineering.audit_baseline.models import (  # noqa: E402
+    BASELINE_SCHEMA,
+    FINGERPRINT_MODEL,
+    FINGERPRINT_SERIALIZATION,
+    LEGACY_DECLARED_FINGERPRINT_MODEL,
+    LEGACY_UNRESOLVED_FINGERPRINT_MODEL,
+)
+from ha_mcp_engineering.audit_baseline.validation import (  # noqa: E402
+    MAX_INPUT_BYTES,
+    canonical_configuration_bytes,
+)
+
+
+SENTINEL = "SYNTHETIC_SECRET_SENTINEL_DO_NOT_ECHO"
+
+
+def fingerprint_contract(model: str = FINGERPRINT_MODEL) -> dict:
+    return {
+        "model": model,
+        "algorithm": "sha256",
+        "serialization": (
+            FINGERPRINT_SERIALIZATION
+            if model == FINGERPRINT_MODEL
+            else "synthetic-json-v2"
+        ),
+        "input_scope": "configuration_data_object_only",
+        "object_key_order": "lexicographic",
+        "array_order": "preserved",
+        "unicode_escaping": "ensure_ascii=true",
+        "number_serialization": (
+            "Python json.dumps finite-number encoding; integer and float JSON types are "
+            "preserved (for example 1 differs from 1.0)"
+        ),
+        "non_finite_numbers": "rejected",
+        "excluded_fields": [
+            "automation operational enabled/on-off state",
+            "last_triggered and other runtime entity-state metadata",
+            "entity-registry metadata",
+            "provider/timing/request envelope metadata",
+        ],
+        "raw_configuration_persisted": False,
+    }
+
+
+def record(
+    configuration_id: str,
+    entity_id: str,
+    *,
+    config=None,
+    digest: str | None = None,
+    model: str = FINGERPRINT_MODEL,
+    mapping_status: str = "verified",
+    configuration_status: str = "readable",
+    completeness: str = "complete",
+    fallback: bool = False,
+    warning_count: int = 0,
+    redacted: bool = False,
+    truncated: bool = False,
+    omitted: bool = False,
+    enabled: str = "on",
+) -> dict:
+    if digest is None and configuration_status == "readable":
+        digest = canonical_configuration_digest(
+            config if config is not None else {"id": configuration_id, "mode": "single"}
+        )
+    return {
+        "configuration_id": configuration_id,
+        "entity_id": entity_id,
+        "mapping_status": mapping_status,
+        "configuration": {
+            "status": configuration_status,
+            "digest": digest,
+            "fingerprint_model": model if digest is not None else None,
+            "collected_at": "2026-10-01T14:10:00+00:00",
+            "collection_time_status": "observed",
+            "provider": "direct_ha_api",
+            "coverage": {
+                "completeness": completeness,
+                "fallback_occurred": fallback,
+                "warning_count": warning_count,
+                "redacted": redacted,
+                "truncated": truncated,
+                "omitted": omitted,
+            },
+        },
+        "enabled_state": {
+            "state": enabled,
+            "collected_at": "2026-10-01T14:09:59+00:00",
+            "collection_time_status": "observed",
+        },
+    }
+
+
+def baseline(
+    records: list[dict],
+    *,
+    baseline_id: str = "baseline-a",
+    installation_id: str | None = "installation-test-1",
+    installation_status: str = "established",
+    inventory_completeness: str = "complete",
+    inventory_limit_reached: bool = False,
+    inventory_scope: str = "home_assistant_runtime_automations",
+    model: str = FINGERPRINT_MODEL,
+    inventory_drift: str = "none_observed_at_capture_fences",
+    authority_drift: str = "none_observed_at_capture_fences",
+) -> dict:
+    if installation_status == "unestablished":
+        installation_id = None
+    return {
+        "schema": BASELINE_SCHEMA,
+        "baseline_id": baseline_id,
+        "source_artifact": None,
+        "capture": {
+            "started_at": "2026-10-01T14:00:00+00:00",
+            "ended_at": "2026-10-01T14:15:00+00:00",
+            "non_atomic": True,
+        },
+        "installation": {
+            "status": installation_status,
+            "installation_id": installation_id,
+            "method": "synthetic_fixture",
+            "limitations": [],
+        },
+        "inventory": {
+            "scope": inventory_scope,
+            "discovery_method": "synthetic_fixture",
+            "completeness": inventory_completeness,
+            "declared_count": len(records),
+            "limit": 1000,
+            "limit_reached": inventory_limit_reached,
+            "omitted_count": 0 if inventory_completeness == "complete" else None,
+            "limitations": [],
+        },
+        "fingerprint_contract": fingerprint_contract(model),
+        "records": records,
+        "consistency": {
+            "inventory_drift": inventory_drift,
+            "authority_drift": authority_drift,
+            "limitations": ["synthetic_non_atomic_capture"],
+        },
+        "authority": {
+            "status": "synthetic_fixture",
+            "home_assistant_core": None,
+            "generation": None,
+            "registry_sequence": None,
+            "compatible_count": None,
+            "fallback_count": 0,
+            "verification_failure_count": 0,
+            "retirement_count": 0,
+            "limitations": [],
+        },
+        "limitations": [],
+        "structural_assertions": {
+            "source_internal_material_digest_verified": None,
+            "configuration_hashes_recomputed": True,
+            "record_count_verified": True,
+            "fingerprint_model_assignment": "synthetic_fixture",
+        },
+    }
+
+
+def shifted_capture(value: dict, *, days: int = 1) -> dict:
+    """Move synthetic observation times together; never alter production input."""
+    value = copy.deepcopy(value)
+    for field in ("started_at", "ended_at"):
+        value["capture"][field] = (
+            datetime.fromisoformat(value["capture"][field]) + timedelta(days=days)
+        ).isoformat()
+    for row in value["records"]:
+        for section in ("configuration", "enabled_state"):
+            stamp = row[section]["collected_at"]
+            if stamp is not None:
+                row[section]["collected_at"] = (
+                    datetime.fromisoformat(stamp) + timedelta(days=days)
+                ).isoformat()
+    return value
+
+
+def legacy_baseline(rows: list[dict]) -> dict:
+    value = {
+        "authority": {"continuity_result": "unchanged_across_baseline_capture"},
+        "baseline_id": "pending",
+        "baseline_sha256": "0" * 64,
+        "capture": {
+            "collection_start_inventory_at_utc": "2026-10-01T14:00:00+00:00",
+            "collection_end_inventory_at_utc": "2026-10-01T14:05:00+00:00",
+            "configuration_read_count": len(rows),
+            "configuration_read_success_count": len(rows),
+            "configuration_read_failure_count": 0,
+        },
+        "coverage": {
+            "established_live_inventory": len(rows),
+            "captured_complete": len(rows),
+            "unknown": 0,
+            "fallback_records": 0,
+            "warning_records": 0,
+            "redaction_or_truncation_records": 0,
+            "operational_state_on": len(rows),
+            "operational_state_off": 0,
+            "disclosed_discovery_gaps": [
+                "The public inventory tool is bounded at 100 and returned 100 with provider completeness=complete; this baseline relies on that provider completeness claim."
+            ] if len(rows) == 100 else [],
+        },
+        "fingerprint_contract": {
+            "algorithm": "sha256",
+            "canonicalization": "recursive object-key lexical sort; array order preserved; compact JSON; JSON scalar types preserved; UTF-8 bytes",
+            "coverage_rule": "synthetic",
+            "excluded": [
+                "automation operational enabled/on-off state",
+                "last_triggered and other runtime entity-state metadata",
+                "entity-registry metadata",
+                "provider/timing/request envelope metadata",
+            ],
+            "included": "synthetic",
+            "input": "entire data object returned by Engineering get_automation_config",
+            "model": LEGACY_DECLARED_FINGERPRINT_MODEL,
+            "raw_configuration_persisted": False,
+        },
+        "mapping": {
+            "automation_inventory_count": len(rows),
+            "entity_registry_inventory_count": len(rows),
+            "entity_to_configuration_id_matches": len(rows),
+            "missing_mappings": [],
+            "contradictory_mappings": [],
+        },
+        "consistency": {
+            "start_inventory_count": len(rows),
+            "end_inventory_count": len(rows),
+            "added_during_capture": [],
+            "removed_during_capture": [],
+            "enabled_state_changes_during_capture": [],
+            "mapping_drift_detected": False,
+            "authority_drift_detected": False,
+            "atomic_snapshot": False,
+        },
+        "records": rows,
+        "schema": "ha-automation-configuration-baseline-v1",
+    }
+    material = {
+        "fingerprint_contract": value["fingerprint_contract"],
+        "records": sorted(rows, key=lambda row: row["entity_id"]),
+        "capture_interval": {
+            "start": value["capture"]["collection_start_inventory_at_utc"],
+            "end": value["capture"]["collection_end_inventory_at_utc"],
+        },
+        "authority": value["authority"],
+    }
+    import hashlib
+    digest = hashlib.sha256(json.dumps(material, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()).hexdigest()
+    value["baseline_sha256"] = digest
+    value["baseline_id"] = "haab-20261001-" + digest[:16]
+    return value
+
+
+def legacy_record(configuration_id: str, entity_id: str) -> dict:
+    return {
+        "completeness": "complete",
+        "configuration_fingerprint": canonical_configuration_digest({"id": configuration_id}),
+        "configuration_id": configuration_id,
+        "enabled_state": "on",
+        "entity_id": entity_id,
+        "fallback_occurred": False,
+        "provider": "direct_ha_api",
+        "redaction_or_truncation_marker_present": False,
+        "status": "captured",
+        "warning_count": 0,
+    }
+
+
+class BaselineTestCase(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+
+    def tearDown(self):
+        self.temp.cleanup()
+
+    def write(self, name: str, value: dict | str | bytes) -> Path:
+        path = self.root / name
+        if isinstance(value, bytes):
+            path.write_bytes(value)
+        elif isinstance(value, str):
+            path.write_text(value, encoding="utf-8")
+        else:
+            path.write_text(json.dumps(value), encoding="utf-8")
+        return path
+
+    def load_ordered_pair(self, earlier: dict, later: dict):
+        """Give positive semantic fixtures distinct IDs and disjoint captures."""
+        later = shifted_capture(later)
+        if earlier["baseline_id"] == later["baseline_id"]:
+            later["baseline_id"] += "-later"
+        return self.load_pair(earlier, later)
+
+    def load_pair(self, earlier: dict, later: dict):
+        a = load_baseline(self.write("a.json", earlier))
+        b = load_baseline(self.write("b.json", later))
+        return a, b
+
+
+class ComparisonSemanticsTests(BaselineTestCase):
+    def test_complete_empty_inventory_proves_addition_and_removal(self):
+        empty, populated = self.load_ordered_pair(
+            baseline([]), baseline([record("one", "automation.one")])
+        )
+        self.assertEqual(compare_baselines(empty, populated).counts["ADDED"], 1)
+        populated, empty = self.load_ordered_pair(
+            baseline([record("one", "automation.one")]), baseline([])
+        )
+        self.assertEqual(compare_baselines(populated, empty).counts["REMOVED"], 1)
+
+    def test_partial_omitted_inventory_never_proves_absence(self):
+        partial = baseline([], inventory_completeness="partial")
+        partial["inventory"].update(declared_count=1, omitted_count=1)
+        populated = baseline([record("one", "automation.one")])
+        for old, new, reason in (
+            (partial, populated, "earlier_inventory_absence_not_authoritative"),
+            (populated, partial, "later_inventory_absence_not_authoritative"),
+        ):
+            earlier, later = self.load_ordered_pair(old, new)
+            with self.subTest(earlier=earlier.inventory.completeness):
+                result = compare_baselines(earlier, later)
+                self.assertEqual(result.counts["UNKNOWN"], 1)
+                self.assertEqual(result.counts["ADDED"], 0)
+                self.assertEqual(result.counts["REMOVED"], 0)
+                self.assertTrue(result.comparison_eligible)
+                self.assertIn(reason, result.records[0].reasons)
+
+    def test_separate_observations_require_verified_mappings_on_both_sides(self):
+        for side in (0, 1):
+            for mapping in ("missing", "contradictory"):
+                with self.subTest(side=side, mapping=mapping):
+                    rows = [record("one", "automation.before", enabled="on"),
+                            record("one", "automation.after", enabled="off")]
+                    rows[side]["mapping_status"] = mapping
+                    a, b = self.load_ordered_pair(baseline([rows[0]]), baseline([rows[1]]))
+                    result = compare_baselines(a, b)
+                    self.assertEqual(result.counts["UNKNOWN"], 1)
+                    self.assertFalse(result.records[0].enabled_state_changed)
+                    self.assertFalse(result.records[0].entity_id_changed)
+
+    def test_separate_observations_require_same_inventory_scope(self):
+        a, b = self.load_ordered_pair(
+            baseline([record("one", "automation.before", enabled="on")]),
+            baseline([record("one", "automation.after", enabled="off")],
+                     inventory_scope="other_scope"),
+        )
+        result = compare_baselines(a, b)
+        self.assertEqual(result.counts["UNKNOWN"], 1)
+        self.assertFalse(result.records[0].enabled_state_changed)
+        self.assertFalse(result.records[0].entity_id_changed)
+
+    def test_identical_baselines(self):
+        rows = [record("one", "automation.one")]
+        a, b = self.load_ordered_pair(baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b"))
+        report = compare_baselines(a, b)
+        self.assertEqual(report.counts["UNCHANGED"], 1)
+        self.assertEqual(report.counts["TOTAL"], 1)
+
+    def test_one_changed_configuration(self):
+        a_rows = [record("one", "automation.one", config={"id": "one", "mode": "single"})]
+        b_rows = [record("one", "automation.one", config={"id": "one", "mode": "restart"})]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.CHANGED)
+
+    def test_added_and_removed_with_complete_inventory(self):
+        a_rows = [record("one", "automation.one"), record("removed", "automation.removed")]
+        b_rows = [record("one", "automation.one"), record("added", "automation.added")]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        by_id = {item.configuration_id: item for item in compare_baselines(a, b).records}
+        self.assertEqual(by_id["added"].classification, Classification.ADDED)
+        self.assertEqual(by_id["removed"].classification, Classification.REMOVED)
+
+    def test_missing_objects_under_incomplete_inventory_are_unknown(self):
+        a_rows = [record("one", "automation.one")]
+        b_rows = [record("one", "automation.one"), record("later", "automation.later")]
+        a, b = self.load_ordered_pair(
+            baseline(a_rows, inventory_completeness="partial"),
+            baseline(b_rows, baseline_id="baseline-b"),
+        )
+        by_id = {item.configuration_id: item for item in compare_baselines(a, b).records}
+        self.assertEqual(by_id["later"].classification, Classification.UNKNOWN)
+        self.assertIn("earlier_inventory_absence_not_authoritative", by_id["later"].reasons)
+
+    def test_read_failure_is_unknown_not_removed(self):
+        a_rows = [record("one", "automation.one")]
+        b_rows = [record(
+            "one", "automation.one", configuration_status="unreadable",
+            completeness="failed", digest=None,
+        )]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNKNOWN)
+        self.assertNotEqual(result.classification, Classification.REMOVED)
+
+    def test_entity_rename_separate_from_configuration_change(self):
+        digest = canonical_configuration_digest({"id": "one", "mode": "single"})
+        a_rows = [record("one", "automation.old_name", digest=digest)]
+        b_rows = [record("one", "automation.new_name", digest=digest)]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNCHANGED)
+        self.assertTrue(result.entity_id_changed)
+
+    def test_enabled_state_change_is_separate(self):
+        digest = canonical_configuration_digest({"id": "one"})
+        a_rows = [record("one", "automation.one", digest=digest, enabled="on")]
+        b_rows = [record("one", "automation.one", digest=digest, enabled="off")]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNCHANGED)
+        self.assertTrue(result.enabled_state_changed)
+
+    def test_unknown_operational_state_is_not_reported_as_enabled_change(self):
+        digest = canonical_configuration_digest({"id": "one"})
+        a_rows = [record("one", "automation.one", digest=digest, enabled="unknown")]
+        b_rows = [record("one", "automation.one", digest=digest, enabled="on")]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNCHANGED)
+        self.assertFalse(result.enabled_state_changed)
+
+    def test_shared_record_with_inventory_scope_mismatch_is_unknown(self):
+        rows = [record("one", "automation.one")]
+        a, b = self.load_ordered_pair(
+            baseline(rows, inventory_scope="home_assistant_runtime_automations"),
+            baseline(
+                copy.deepcopy(rows),
+                baseline_id="baseline-b",
+                inventory_scope="synthetic_other_scope",
+            ),
+        )
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNKNOWN)
+        self.assertIn("inventory_scope_mismatch", result.reasons)
+
+    def test_mapping_contradiction_makes_record_unknown(self):
+        a_rows = [record("one", "automation.one")]
+        b_rows = [record("one", "automation.one", mapping_status="contradictory")]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNKNOWN)
+        self.assertIn("later_mapping_unverified", result.reasons)
+
+    def test_cross_installation_is_unknown(self):
+        rows = [record("one", "automation.one")]
+        a, b = self.load_ordered_pair(
+            baseline(rows, installation_id="installation-a"),
+            baseline(copy.deepcopy(rows), baseline_id="baseline-b", installation_id="installation-b"),
+        )
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNKNOWN)
+        self.assertIn("installation_identity_mismatch", result.reasons)
+
+    def test_unestablished_installation_is_unknown(self):
+        rows = [record("one", "automation.one")]
+        a, b = self.load_ordered_pair(
+            baseline(rows, installation_status="unestablished"),
+            baseline(copy.deepcopy(rows), baseline_id="baseline-b"),
+        )
+        self.assertEqual(compare_baselines(a, b).records[0].classification, Classification.UNKNOWN)
+
+    def test_fingerprint_version_mismatch_is_unknown(self):
+        a_rows = [record("one", "automation.one", model=FINGERPRINT_MODEL)]
+        b_rows = [record("one", "automation.one", model="synthetic-fingerprint-v2")]
+        a, b = self.load_ordered_pair(
+            baseline(a_rows, model=FINGERPRINT_MODEL),
+            baseline(b_rows, baseline_id="baseline-b", model="synthetic-fingerprint-v2"),
+        )
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNKNOWN)
+        self.assertIn("fingerprint_contract_incompatible", result.reasons)
+
+    def test_authority_drift_blocks_definitive_shared_comparison(self):
+        rows = [record("one", "automation.one")]
+        a, b = self.load_ordered_pair(
+            baseline(rows, authority_drift="detected"),
+            baseline(copy.deepcopy(rows), baseline_id="baseline-b"),
+        )
+        result = compare_baselines(a, b).records[0]
+        self.assertEqual(result.classification, Classification.UNKNOWN)
+        self.assertIn("earlier_authority_continuity_unestablished", result.reasons)
+
+    def test_inventory_drift_blocks_absence_classification(self):
+        a_rows = [record("one", "automation.one")]
+        b_rows = [record("one", "automation.one"), record("later", "automation.later")]
+        a, b = self.load_ordered_pair(
+            baseline(a_rows, inventory_drift="detected"),
+            baseline(b_rows, baseline_id="baseline-b"),
+        )
+        by_id = {item.configuration_id: item for item in compare_baselines(a, b).records}
+        self.assertEqual(by_id["later"].classification, Classification.UNKNOWN)
+        self.assertIn("earlier_inventory_absence_not_authoritative", by_id["later"].reasons)
+
+    def test_redacted_truncated_and_warning_records_are_unknown(self):
+        cases = [
+            {"redacted": True},
+            {"truncated": True},
+            {"warning_count": 1},
+            {"fallback": True},
+            {"completeness": "partial"},
+        ]
+        for index, kwargs in enumerate(cases):
+            with self.subTest(index=index):
+                a_rows = [record("one", "automation.one")]
+                b_rows = [record("one", "automation.one", **kwargs)]
+                a, b = self.load_ordered_pair(
+                    baseline(a_rows), baseline(b_rows, baseline_id=f"baseline-b{index}")
+                )
+                self.assertEqual(
+                    compare_baselines(a, b).records[0].classification,
+                    Classification.UNKNOWN,
+                )
+
+    def test_partial_results_preserve_other_positive_comparisons(self):
+        a_rows = [record("good", "automation.good"), record("bad", "automation.bad")]
+        b_rows = [
+            record("good", "automation.good"),
+            record("bad", "automation.bad", completeness="partial"),
+        ]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        by_id = {item.configuration_id: item for item in compare_baselines(a, b).records}
+        self.assertEqual(by_id["good"].classification, Classification.UNCHANGED)
+        self.assertEqual(by_id["bad"].classification, Classification.UNKNOWN)
+
+    def test_deterministic_order_and_count_reconciliation(self):
+        a_rows = [record("z", "automation.z"), record("a", "automation.a")]
+        b_rows = [record("a", "automation.a"), record("m", "automation.m")]
+        a, b = self.load_ordered_pair(baseline(a_rows), baseline(b_rows, baseline_id="baseline-b"))
+        report = compare_baselines(a, b)
+        self.assertEqual([item.configuration_id for item in report.records], ["a", "m", "z"])
+        self.assertEqual(sum(report.counts[key] for key in ("UNCHANGED", "CHANGED", "ADDED", "REMOVED", "UNKNOWN")), report.counts["TOTAL"])
+
+
+class ComparisonOrderingTests(BaselineTestCase):
+    def assert_unknown_pair(self, earlier, later, reason):
+        report = compare_baselines(earlier, later)
+        self.assertEqual(report.counts["UNKNOWN"], report.counts["TOTAL"])
+        for name in ("ADDED", "REMOVED", "CHANGED", "UNCHANGED"):
+            self.assertEqual(report.counts[name], 0)
+        rendered = json.loads(render_bounded_report(report))
+        self.assertFalse(rendered["global"]["comparison_eligible"])
+        self.assertIn(reason, rendered["global"]["comparison_reasons"])
+        self.assertEqual(rendered["entity_id_change_count"], 0)
+        self.assertEqual(rendered["enabled_state_change_count"], 0)
+        for row in report.records:
+            self.assertIn(reason, row.reasons)
+        return report, rendered
+
+    def test_swapped_pair_never_turns_deletion_into_addition_or_reverse(self):
+        for old_rows, new_rows, expected in (
+            ([record("one", "automation.one")], [], "REMOVED"),
+            ([], [record("one", "automation.one")], "ADDED"),
+        ):
+            with self.subTest(expected=expected):
+                a, b = self.load_ordered_pair(baseline(old_rows), baseline(new_rows))
+                self.assertEqual(compare_baselines(a, b).counts[expected], 1)
+                self.assert_unknown_pair(b, a, "capture_intervals_not_ordered")
+
+    def test_overlapping_intervals_suppress_all_definitive_and_directional_results(self):
+        old = baseline([record("same", "automation.same"),
+                        record("changed", "automation.old"),
+                        record("gone", "automation.gone")])
+        new = baseline([record("same", "automation.same"),
+                        record("changed", "automation.new", config={"mode": "restart"}, enabled="off"),
+                        record("added", "automation.added")], baseline_id="baseline-b")
+        for start, end in (("14:05:00", "14:20:00"), ("13:55:00", "14:20:00"),
+                           ("14:00:00", "14:15:00")):
+            with self.subTest(start=start, end=end):
+                new["capture"].update(started_at=f"2026-10-01T{start}Z",
+                                      ended_at=f"2026-10-01T{end}Z")
+                a, b = self.load_pair(old, new)
+                report, _ = self.assert_unknown_pair(a, b, "capture_intervals_not_ordered")
+                self.assertEqual(report.counts["TOTAL"], 4)
+
+    def test_same_baseline_id_is_unknown_even_with_disjoint_intervals(self):
+        old = baseline([record("one", "automation.one")])
+        new = shifted_capture(baseline([record("one", "automation.renamed", enabled="off")]))
+        a, b = self.load_pair(old, new)
+        _, rendered = self.assert_unknown_pair(a, b, "same_baseline_id")
+        self.assertEqual(rendered["global"]["comparison_reasons"], ["same_baseline_id"])
+
+    def test_self_comparison_is_not_definitive(self):
+        value = load_baseline(self.write("self.json", baseline([record("one", "automation.one")])))
+        _, rendered = self.assert_unknown_pair(value, value, "same_baseline_id")
+        self.assertIn("capture_intervals_not_ordered", rendered["global"]["comparison_reasons"])
+
+    def test_invalid_pair_preserves_other_record_uncertainty(self):
+        old = baseline([record("one", "automation.one")])
+        new = baseline([record("one", "automation.one", completeness="partial")],
+                       baseline_id="baseline-b")
+        a, b = self.load_pair(old, new)
+        report, _ = self.assert_unknown_pair(a, b, "capture_intervals_not_ordered")
+        self.assertIn("later_configuration_coverage_incomplete", report.records[0].reasons)
+
+    def test_duplicate_source_digest_with_distinct_ids_and_times_is_unknown(self):
+        old = baseline([record("one", "automation.old")])
+        new = shifted_capture(baseline([record("one", "automation.new", enabled="off")], baseline_id="baseline-b"))
+        for number, value in enumerate((old, new)):
+            value["source_artifact"] = {
+                "schema": BASELINE_SCHEMA, "baseline_id": f"source-{number}",
+                "sha256": "sha256:" + "a" * 64, "internal_material_sha256": None,
+                "configuration_hashes_recomputable": False,
+            }
+        a, b = self.load_pair(old, new)
+        _, rendered = self.assert_unknown_pair(a, b, "same_source_artifact_digest")
+        self.assertEqual(rendered["global"]["comparison_reasons"], ["same_source_artifact_digest"])
+        new["source_artifact"]["sha256"] = "sha256:" + "b" * 64
+        a, b = self.load_pair(old, new)
+        result = compare_baselines(a, b)
+        self.assertEqual(result.counts["UNCHANGED"], 1)
+        self.assertTrue(result.records[0].entity_id_changed)
+        self.assertTrue(result.records[0].enabled_state_changed)
+        old["source_artifact"] = None
+        a, b = self.load_pair(old, new)
+        self.assertEqual(compare_baselines(a, b).counts["UNCHANGED"], 1)
+
+    def test_order_compares_instants_and_allows_exact_adjacent_boundary(self):
+        old = baseline([record("one", "automation.one")])
+        new = baseline([record("one", "automation.one")], baseline_id="baseline-b")
+        new["capture"].update(started_at="2026-10-01T09:15:00-05:00",
+                              ended_at="2026-10-01T15:00:00Z")
+        for section in ("configuration", "enabled_state"):
+            new["records"][0][section]["collected_at"] = "2026-10-01T14:20:00Z"
+        a, b = self.load_pair(old, new)
+        self.assertEqual(compare_baselines(a, b).counts["UNCHANGED"], 1)
+        new["capture"]["started_at"] = "2026-10-01T09:14:59.999999-05:00"
+        a, b = self.load_pair(old, new)
+        self.assert_unknown_pair(a, b, "capture_intervals_not_ordered")
+
+    def test_capture_intervals_and_reasons_survive_zero_detail_report(self):
+        old = baseline([record("one", "automation.one")])
+        new = shifted_capture(baseline([], baseline_id="baseline-b"))
+        a, b = self.load_pair(old, new)
+        for earlier, later, expected_eligible in ((a, b, True), (b, a, False)):
+            with self.subTest(eligible=expected_eligible):
+                report = compare_baselines(earlier, later)
+                rendered = json.loads(render_bounded_report(report, max_details=0))
+                self.assertEqual(rendered["capture_intervals"], {
+                    "earlier": {"started_at": earlier.capture_start, "ended_at": earlier.capture_end,
+                                "non_atomic": earlier.capture_non_atomic},
+                    "later": {"started_at": later.capture_start, "ended_at": later.capture_end,
+                              "non_atomic": later.capture_non_atomic},
+                })
+                self.assertEqual(rendered["global"]["comparison_eligible"], expected_eligible)
+                self.assertEqual(rendered["records"], [])
+                self.assertEqual(rendered["omitted_detail_count"], 1)
+                self.assertTrue(rendered["details_truncated"])
+
+    def test_empty_invalid_pair_keeps_global_reason(self):
+        a, b = self.load_pair(baseline([]), baseline([], baseline_id="baseline-b"))
+        report, _ = self.assert_unknown_pair(a, b, "capture_intervals_not_ordered")
+        self.assertEqual(report.counts["TOTAL"], 0)
+
+    def test_cli_swapped_and_self_pairs_report_unknown_without_argument_changes(self):
+        old = self.write("old.json", baseline([record("one", "automation.one")]))
+        new = self.write("new.json", shifted_capture(baseline([], baseline_id="baseline-b")))
+        for earlier, later in ((new, old), (old, old)):
+            with self.subTest(earlier=earlier.name, later=later.name):
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts/compare_automation_baselines.py"),
+                     str(earlier), str(later)], capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.stderr, "")
+                report = json.loads(result.stdout)
+                self.assertEqual(report["counts"]["UNKNOWN"], 1)
+                self.assertFalse(report["global"]["comparison_eligible"])
+                self.assertIn("capture_intervals", report)
+
+
+class FingerprintControlTests(unittest.TestCase):
+    def test_object_key_order_is_insensitive_but_array_order_is_not(self):
+        self.assertEqual(
+            canonical_configuration_digest({"b": 2, "a": 1}),
+            canonical_configuration_digest({"a": 1, "b": 2}),
+        )
+        self.assertNotEqual(
+            canonical_configuration_digest({"a": [1, 2]}),
+            canonical_configuration_digest({"a": [2, 1]}),
+        )
+
+    def test_unicode_uses_python_ensure_ascii_true(self):
+        self.assertEqual(canonical_configuration_bytes({"x": "é"}), b'{"x":"\\u00e9"}')
+
+    def test_numeric_serialization_preserves_int_float_distinction(self):
+        self.assertEqual(canonical_configuration_bytes({"a": 1, "b": 1.0}), b'{"a":1,"b":1.0}')
+        self.assertNotEqual(
+            canonical_configuration_digest({"a": 1}),
+            canonical_configuration_digest({"a": 1.0}),
+        )
+
+    def test_non_finite_configuration_number_is_rejected(self):
+        with self.assertRaisesRegex(BaselineValidationError, "non_finite_number"):
+            canonical_configuration_digest({"x": float("nan")})
+
+
+class ValidationAndBoundsTests(BaselineTestCase):
+
+    def test_invalid_timestamp_syntax_has_fixed_cli_diagnostics(self):
+        for stamp in ("2026-10-01Z14:00:00+00:00", "2026-10-01T14:00:00",
+                      "2026-10-01T14:00:00.1234567Z", SENTINEL):
+            with self.subTest(stamp=stamp):
+                value = baseline([])
+                value["capture"]["started_at"] = stamp
+                path = self.write("invalid-time.json", value)
+                with self.assertRaisesRegex(BaselineValidationError, "capture_start_invalid"):
+                    load_baseline(path)
+                result = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts/compare_automation_baselines.py"),
+                     str(path), str(path)], capture_output=True, text=True, timeout=10,
+                )
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stderr, "error:capture_start_invalid\n")
+                self.assertEqual(result.stdout, "")
+
+    def test_capture_timestamp_offsets_and_order(self):
+        value = baseline([])
+        value["capture"].update(started_at="2026-10-01T09:00:00-05:00",
+                                ended_at="2026-10-01T14:00:00.000001Z")
+        self.assertIsNotNone(load_baseline(self.write("offsets.json", value)))
+        value["capture"]["ended_at"] = "2026-10-01T13:59:59.999999Z"
+        with self.assertRaisesRegex(BaselineValidationError, "capture_interval_invalid"):
+            load_baseline(self.write("reversed.json", value))
+
+    def test_legacy_enabled_state_types_have_fixed_errors_in_both_loaders(self):
+        for state in ([], {}, 1, True, 1.2):
+            for loader in (load_baseline, normalize_legacy_baseline):
+                with self.subTest(state=state, loader=loader.__name__):
+                    row = legacy_record("one", "automation.one")
+                    row["enabled_state"] = state
+                    path = self.write("invalid-legacy-state.json", legacy_baseline([row]))
+                    with self.assertRaises(BaselineValidationError) as ctx:
+                        loader(path)
+                    self.assertEqual(str(ctx.exception), "enabled_state_value_invalid")
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/compare_automation_baselines.py"),
+             str(path), str(path)], capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stderr, "error:enabled_state_value_invalid\n")
+
+    def test_record_times_outside_capture_are_rejected(self):
+        for section in ("configuration", "enabled_state"):
+            for stamp in ("2026-10-01T13:59:59.999999Z", "2026-10-01T14:15:00.000001Z"):
+                with self.subTest(section=section, stamp=stamp):
+                    row = record("one", "automation.one")
+                    row[section]["collected_at"] = stamp
+                    with self.assertRaisesRegex(BaselineValidationError, "record_time_outside_capture"):
+                        load_baseline(self.write("outside-capture.json", baseline([row])))
+
+    def test_record_times_at_capture_boundaries_accept_equivalent_offsets(self):
+        row = record("one", "automation.one")
+        row["configuration"]["collected_at"] = "2026-10-01T09:00:00-05:00"
+        row["enabled_state"]["collected_at"] = "2026-10-01T15:15:00+01:00"
+        a, b = self.load_ordered_pair(baseline([row]), baseline([copy.deepcopy(row)]))
+        self.assertEqual(compare_baselines(a, b).counts["UNCHANGED"], 1)
+
+    def test_collection_time_status_matches_retained_timestamp(self):
+        for section in ("configuration", "enabled_state"):
+            for status in ("observed", "capture_interval_only", "unavailable"):
+                with self.subTest(section=section, status=status):
+                    row = record("one", "automation.one")
+                    row[section]["collection_time_status"] = status
+                    row[section]["collected_at"] = None if status != "observed" else "2026-10-01T14:10:00Z"
+                    self.assertIsNotNone(load_baseline(self.write("valid-time-status.json", baseline([row]))))
+                    row[section]["collected_at"] = "2026-10-01T14:10:00Z" if status != "observed" else None
+                    with self.assertRaisesRegex(BaselineValidationError, "collection_time_contradiction"):
+                        load_baseline(self.write("invalid-time-status.json", baseline([row])))
+
+    def test_multirecord_report_fits_exact_bytes_across_count_digits(self):
+        for count in (9, 10, 12, 100):
+            with self.subTest(count=count):
+                a, b = self.load_ordered_pair(
+                    baseline([record(f"id{i}", f"automation.id{i}") for i in range(count)]),
+                    baseline([record(f"id{i}", f"automation.id{i}") for i in range(count)]),
+                )
+                report = compare_baselines(a, b)
+                full = render_bounded_report(report)
+                self.assertEqual(render_bounded_report(report, max_bytes=len(full)), full)
+                short = render_bounded_report(report, max_bytes=len(full) - 1)
+                self.assertLessEqual(len(short), len(full) - 1)
+                self.assertEqual(json.loads(short)["omitted_detail_count"], 1)
+
+    def test_truncated_report_fits_exact_bytes_without_extra_omission(self):
+        a, b = self.load_ordered_pair(
+            baseline([record(f"id{i}", f"automation.id{i}") for i in range(110)]),
+            baseline([record(f"id{i}", f"automation.id{i}") for i in range(110)]),
+        )
+        report = compare_baselines(a, b)
+        for details in (10, 11, 100, 101, 109):
+            with self.subTest(details=details):
+                expected = render_bounded_report(report, max_details=details)
+                self.assertEqual(render_bounded_report(report, max_bytes=len(expected)), expected)
+
+    def test_legacy_baseline_normalizes_without_upgrading_missing_assurance(self):
+        value = legacy_baseline([legacy_record("one", "automation.one")])
+        loaded = load_baseline(self.write("legacy.json", value))
+        self.assertEqual(loaded.installation.status, "unestablished")
+        self.assertEqual(loaded.inventory.completeness, "unknown")
+        self.assertFalse(loaded.structural_assertions["configuration_hashes_recomputed"])
+        self.assertTrue(loaded.structural_assertions["source_internal_material_digest_verified"])
+        self.assertEqual(
+            loaded.fingerprint_contract.model, LEGACY_UNRESOLVED_FINGERPRINT_MODEL
+        )
+        self.assertNotEqual(loaded.fingerprint_contract.model, FINGERPRINT_MODEL)
+
+    def test_legacy_internal_material_digest_mismatch_rejected(self):
+        value = legacy_baseline([legacy_record("one", "automation.one")])
+        value["baseline_sha256"] = "0" * 64
+        with self.assertRaisesRegex(BaselineValidationError, "legacy_material_digest_mismatch"):
+            load_baseline(self.write("legacy-bad.json", value))
+
+    def test_duplicate_json_keys_rejected(self):
+        path = self.write("dup.json", '{"schema":"x","schema":"y"}')
+        with self.assertRaisesRegex(BaselineValidationError, "duplicate_json_key"):
+            load_baseline(path)
+
+    def test_duplicate_canonical_identity_rejected(self):
+        rows = [record("one", "automation.one"), record("one", "automation.two")]
+        path = self.write("dup-id.json", baseline(rows))
+        with self.assertRaisesRegex(BaselineValidationError, "duplicate_canonical_identity"):
+            load_baseline(path)
+
+    def test_contradictory_verified_entity_mapping_rejected(self):
+        rows = [record("one", "automation.same"), record("two", "automation.same")]
+        path = self.write("entity-conflict.json", baseline(rows))
+        with self.assertRaisesRegex(BaselineValidationError, "contradictory_entity_mapping"):
+            load_baseline(path)
+
+    def test_invalid_digest_rejected_without_echo(self):
+        row = record("one", "automation.one")
+        row["configuration"]["digest"] = "sha256:" + SENTINEL
+        path = self.write("bad-digest.json", baseline([row]))
+        with self.assertRaises(BaselineValidationError) as ctx:
+            load_baseline(path)
+        self.assertNotIn(SENTINEL, str(ctx.exception))
+
+    def test_complete_inventory_cannot_claim_reached_limit(self):
+        value = baseline([record("one", "automation.one")], inventory_limit_reached=True)
+        with self.assertRaisesRegex(BaselineValidationError, "inventory_completeness_contradiction"):
+            load_baseline(self.write("inventory-contradiction.json", value))
+
+    def test_complete_inventory_requires_all_records_and_zero_known_omissions(self):
+        for count, omitted in ((1, 0), (1, 1), (0, 1), (0, None)):
+            with self.subTest(count=count, omitted=omitted):
+                value = baseline([])
+                value["inventory"].update(declared_count=count, omitted_count=omitted)
+                with self.assertRaises(BaselineValidationError):
+                    load_baseline(self.write("incomplete-as-complete.json", value))
+
+    def test_record_count_limit(self):
+        rows = [record(f"id{i}", f"automation.id{i}") for i in range(1001)]
+        value = baseline(rows)
+        with self.assertRaisesRegex(BaselineValidationError, "record_limit_exceeded"):
+            load_baseline(self.write("too-many-records.json", value))
+
+    def test_string_limit(self):
+        value = baseline([record("one", "automation.one")])
+        value["installation"]["method"] = "x" * 17000
+        with self.assertRaisesRegex(BaselineValidationError, "json_string_limit_exceeded"):
+            load_baseline(self.write("long-string.json", value))
+
+    def test_authority_fields_are_closed_and_diagnostic_is_bounded(self):
+        value = baseline([record("one", "automation.one")])
+        value["authority"][SENTINEL] = SENTINEL
+        with self.assertRaises(BaselineValidationError) as ctx:
+            load_baseline(self.write("authority-extra.json", value))
+        self.assertEqual(str(ctx.exception), "authority_fields_invalid")
+        self.assertNotIn(SENTINEL, str(ctx.exception))
+
+    def test_raw_synthetic_configuration_content_is_not_in_comparison_output(self):
+        config = {"id": "one", "description": SENTINEL, "action": [{"service": "light.turn_on"}]}
+        rows_a = [record("one", "automation.one", config=config)]
+        rows_b = [record("one", "automation.one", config=copy.deepcopy(config))]
+        a, b = self.load_ordered_pair(baseline(rows_a), baseline(rows_b, baseline_id="baseline-b"))
+        rendered = render_bounded_report(compare_baselines(a, b))
+        self.assertNotIn(SENTINEL.encode(), rendered)
+
+    def test_unsupported_schema_rejected(self):
+        path = self.write("bad-schema.json", {"schema": "automation-audit-baseline-v999"})
+        with self.assertRaisesRegex(BaselineValidationError, "baseline_schema_unsupported"):
+            load_baseline(path)
+
+    def test_malformed_json_rejected(self):
+        path = self.write("bad-json.json", "{not json")
+        with self.assertRaisesRegex(BaselineValidationError, "invalid_json"):
+            load_baseline(path)
+
+    def test_input_byte_limit(self):
+        path = self.write("large.json", b"{" + b" " * MAX_INPUT_BYTES + b"}")
+        with self.assertRaisesRegex(BaselineValidationError, "input_size_limit_exceeded"):
+            load_baseline(path)
+
+    def test_both_loaders_bound_the_read_before_rejecting_overflow(self):
+        class ObservedInput(io.BytesIO):
+            def read(self, size=-1):
+                reads.append(size)
+                data = super().read(size)
+                consumed.append(len(data))
+                return data
+
+        for loader in (load_baseline, normalize_legacy_baseline):
+            with self.subTest(loader=loader.__name__):
+                reads, consumed = [], []
+                stream = ObservedInput(b" " * (MAX_INPUT_BYTES + 100))
+                with patch.object(Path, "open", return_value=stream):
+                    with self.assertRaisesRegex(BaselineValidationError, "input_size_limit_exceeded"):
+                        loader("synthetic.json")
+                self.assertEqual(reads, [MAX_INPUT_BYTES + 1])
+                self.assertEqual(consumed, [MAX_INPUT_BYTES + 1])
+
+    def test_both_loaders_accept_exact_input_byte_limit(self):
+        cases = (
+            (load_baseline, baseline([record("one", "automation.one")])),
+            (normalize_legacy_baseline, legacy_baseline([legacy_record("one", "automation.one")])),
+        )
+        for loader, value in cases:
+            with self.subTest(loader=loader.__name__):
+                raw = json.dumps(value).encode("utf-8")
+                path = self.write("exact-limit.json", raw + b" " * (MAX_INPUT_BYTES - len(raw)))
+                self.assertIsNotNone(loader(path))
+
+    def test_both_loaders_keep_io_errors_fixed(self):
+        for loader in (load_baseline, normalize_legacy_baseline):
+            with self.subTest(loader=loader.__name__):
+                with self.assertRaises(BaselineValidationError) as ctx:
+                    loader(self.root / SENTINEL)
+                self.assertEqual(str(ctx.exception), "input_unavailable")
+
+    def test_lone_surrogates_in_json_keys_and_values_have_fixed_errors(self):
+        for surrogate in ("\ud800", "\udfff"):
+            for value in ({surrogate: SENTINEL}, {SENTINEL: surrogate}):
+                for loader in (load_baseline, normalize_legacy_baseline):
+                    with self.subTest(loader=loader.__name__, key_bad=surrogate in value):
+                        with self.assertRaises(BaselineValidationError) as ctx:
+                            loader(self.write("bad-unicode.json", value))
+                        self.assertEqual(str(ctx.exception), "invalid_unicode")
+                        self.assertNotIn(SENTINEL, str(ctx.exception))
+
+    def test_configuration_unicode_validation_preserves_valid_unicode(self):
+        for value in ({"\ud800": "value"}, {"key": "\udfff"}):
+            with self.assertRaisesRegex(BaselineValidationError, "invalid_unicode"):
+                canonical_configuration_bytes(value)
+        self.assertEqual(
+            canonical_configuration_bytes({"é": "🙂"}),
+            b'{"\\u00e9":"\\ud83d\\ude42"}',
+        )
+
+    def test_depth_limit(self):
+        value = "0"
+        for _ in range(70):
+            value = "[" + value + "]"
+        path = self.write("deep.json", value)
+        with self.assertRaisesRegex(BaselineValidationError, "json_depth_limit_exceeded"):
+            load_baseline(path)
+
+    def test_output_bound_truncates_details_but_not_counts(self):
+        rows = [record(f"id{i:03d}", f"automation.id{i:03d}") for i in range(40)]
+        a, b = self.load_ordered_pair(baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b"))
+        report = compare_baselines(a, b)
+        rendered = render_bounded_report(report, max_bytes=3_000, max_details=1000)
+        self.assertLessEqual(len(rendered), 3_000)
+        parsed = json.loads(rendered)
+        self.assertTrue(parsed["details_truncated"])
+        self.assertGreater(parsed["omitted_detail_count"], 0)
+        self.assertEqual(parsed["counts"]["TOTAL"], 40)
+        self.assertEqual(parsed["counts"]["UNCHANGED"], 40)
+
+    def test_full_output_fits_at_its_exact_rendered_size(self):
+        rows = [record("one", "automation.one")]
+        a, b = self.load_ordered_pair(
+            baseline(rows), baseline(copy.deepcopy(rows), baseline_id="baseline-b")
+        )
+        report = compare_baselines(a, b)
+        full = render_bounded_report(report, max_bytes=1_000_000, max_details=1000)
+        exact = render_bounded_report(report, max_bytes=len(full), max_details=1000)
+        self.assertEqual(exact, full)
+        self.assertFalse(json.loads(exact)["details_truncated"])
+
+    def test_invalid_input_diagnostic_never_echoes_sensitive_sentinel(self):
+        path = self.write("sensitive.json", '{"schema":"' + SENTINEL + '"}')
+        with self.assertRaises(BaselineValidationError) as ctx:
+            load_baseline(path)
+        self.assertNotIn(SENTINEL, str(ctx.exception))
+
+    def test_no_network_or_subprocess_access(self):
+        rows = [record("one", "automation.one")]
+        a_path = self.write("a.json", baseline(rows))
+        b_path = self.write("b.json", shifted_capture(baseline(copy.deepcopy(rows), baseline_id="baseline-b")))
+        with patch.object(socket, "socket", side_effect=AssertionError("network access")), patch.object(
+            subprocess, "Popen", side_effect=AssertionError("subprocess access")
+        ):
+            report = compare_baselines(load_baseline(a_path), load_baseline(b_path))
+            self.assertEqual(report.counts["UNCHANGED"], 1)
+
+
+if __name__ == "__main__":
+    unittest.main()
