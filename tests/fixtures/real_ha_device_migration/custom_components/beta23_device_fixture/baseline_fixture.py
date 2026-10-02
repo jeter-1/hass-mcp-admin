@@ -92,6 +92,12 @@ def register(hass):
                 raise ValueError("fixture not seeded")
             if action == "change":
                 await hass.async_add_executor_job(write, True)
+                # Match the exact Core automation DELETE hook: removing YAML
+                # alone can leave a restored/unavailable registry placeholder.
+                registry = er.async_get(hass)
+                removed = registry.async_get_entity_id("automation", "automation", PREFIX + "001")
+                if removed is not None:
+                    registry.async_remove(removed)
                 await hass.services.async_call("automation", "reload", {}, blocking=True)
                 hass.states.async_set(state["unknown"], "off", {"id": PREFIX + "unknown"})
             elif action == "restore":

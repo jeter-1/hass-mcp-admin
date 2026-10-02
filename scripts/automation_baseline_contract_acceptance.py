@@ -22,6 +22,14 @@ PREFIX = "native_baseline_"
 CONTROL = "beta23_device_fixture/baseline"
 
 
+class ComparisonProofError(AssertionError):
+    def __init__(self, suffix, expected, record):
+        super().__init__("Synthetic baseline comparison proof failed")
+        self.diagnostic = {"fixture_suffix": suffix, "expected": expected,
+                           "observed": record.classification.value if record else None,
+                           "reason_codes": list(record.reasons) if record else []}
+
+
 def verify_result(result):
     """Offline receipt reconstruction; does not substitute for execution."""
     from ha_mcp_engineering.audit_baseline import load_baseline, compare_baselines
@@ -39,9 +47,11 @@ def verify_result(result):
         paths = [Path(directory)/str(i) for i in range(2)]
         for path, value in zip(paths, values): path.write_bytes(canonical(value))
         report = compare_baselines(*(load_baseline(p) for p in paths))
-    actual = {r.configuration_id: r.classification.value for r in report.records}
+    actual = {r.configuration_id: r for r in report.records}
     for key, status in {'000':'CHANGED','001':'REMOVED','002':'UNCHANGED','121':'ADDED','unknown':'UNKNOWN'}.items():
-        assert actual[PREFIX + key] == status
+        record = actual.get(PREFIX + key)
+        if record is None or record.classification.value != status:
+            raise ComparisonProofError(key, status, record)
     assert report.counts == result['comparison_counts']
     assert len(result['observations']) == 2
     for observation in result['observations']:
@@ -65,6 +75,8 @@ async def run_disposable(configured, *, expected_image):
             cursor = cursor.tb_next
         exc.contract_missing_key = "automation_baseline"
         exc.contract_diagnostic = {"baseline_source_lines": lines[:12]}
+        if isinstance(exc, ComparisonProofError):
+            exc.contract_diagnostic["comparison_failure"] = exc.diagnostic
         raise
 
 
@@ -208,6 +220,15 @@ async def _run_disposable(configured, *, expected_image):
             finally:
                 for runtime in runtimes: await close_disposable_authority(runtime)
         result['fixture_cleanup']=True
-        summary=verify_result(result)
+        try:
+            summary=verify_result(result)
+        except Exception:
+            # Retain sanitized synthetic exports even when their final proof
+            # fails; outer CI cleanup must continue to reject this receipt.
+            receipt_path = Path(os.environ['REAL_HA_ALARMO_RESULT'])
+            retained = json.loads(receipt_path.read_text())
+            retained['automation_baseline'] = {**result, 'result': 'FAIL'}
+            receipt_path.write_text(json.dumps(retained, sort_keys=True, indent=2) + '\n')
+            raise
         print('Native automation baseline disposable contract: '+json.dumps(summary,sort_keys=True))
         return result
