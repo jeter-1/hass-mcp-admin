@@ -2,6 +2,13 @@
 
 ## Current direction
 
+2026-10-02: Josh approved the bounded [native loaded-automation baseline capture](AUTOMATION_BASELINE_CAPTURE.md)
+following the beta.12/beta.13 offline validator/comparator. Source implementation
+adds one on-demand read tool and frozen export, with explicit registry-lineage
+identity and loaded-scope limitations. Full stored inventory, signed activation,
+release preparation and installed acceptance remain open. Do not mark the whole
+baseline roadmap complete or upgrade the retained October 1 evidence.
+
 2026-09-30: Josh resumed the previously reviewed Alarmo inspector on the beta.10
 baseline. This is source reconciliation, not installed availability. Additional
 Core authority, exact disposable Core/Alarmo execution, release preparation and

@@ -181,6 +181,7 @@ def create_application(
     core_snapshot_source=None,
 ):
     settings = settings or load_settings()
+    from .audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
     from .integration_inspection.runtime import INTEGRATION_INSPECTION
     server = get_registered_server()
     audit = AuditLogger(
@@ -195,6 +196,7 @@ def create_application(
         audit_sink=audit.write,
     )
     INTEGRATION_INSPECTION.configure(HomeAssistantWebSocketClient(settings), CORE_READMISSION, settings)
+    AUTOMATION_BASELINE_CAPTURE.configure(settings, CORE_READMISSION)
     gateway = AuthenticatedMcpGateway(
         server.streamable_http_app(),
         settings,

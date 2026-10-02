@@ -89,6 +89,10 @@ DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
 }
 
 STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
+    "capture_automation_baseline": (
+        "core.automation_baseline_metadata_read", "core.basic_rest_read", "core.basic_websocket_read",
+        "core.non_device_registry_read", "core.direct_device_registry_read", "core.automation_configuration_read",
+    ),
     "get_integration_inspection": (
         "core.basic_websocket_read", "core.integration_inspection_metadata_read",
     ),
