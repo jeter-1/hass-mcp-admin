@@ -52,6 +52,22 @@ def verify_result(result):
 
 
 async def run_disposable(configured, *, expected_image):
+    """Preserve a bounded source location on failure, never exception values."""
+    try:
+        return await _run_disposable(configured, expected_image=expected_image)
+    except Exception as exc:
+        cursor = exc.__traceback__
+        lines = []
+        while cursor is not None:
+            if cursor.tb_frame.f_code.co_filename == __file__:
+                lines.append(cursor.tb_lineno)
+            cursor = cursor.tb_next
+        exc.contract_missing_key = "automation_baseline"
+        exc.contract_diagnostic = {"baseline_source_lines": lines[:12]}
+        raise
+
+
+async def _run_disposable(configured, *, expected_image):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from core_registry_contract_lane import lane_entry
     from prepare_core_release_registry import prepare_candidate, sign_candidate

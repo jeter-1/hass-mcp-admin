@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'hass_mcp_engineering_beta')]
@@ -92,6 +93,19 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
             value=copy.deepcopy(self.value);mutate(value)
             with self.assertRaises((AssertionError, ValueError)):
                 lane.verify_result(value)
+
+
+class FailureDiagnosticTests(unittest.IsolatedAsyncioTestCase):
+    async def test_failure_retains_locations_without_exception_or_argument_content(self):
+        private = "synthetic-do-not-retain"
+        with patch.object(lane, "_run_disposable", side_effect=AssertionError(private)):
+            with self.assertRaises(AssertionError) as found:
+                await lane.run_disposable(private, expected_image=private)
+        self.assertEqual(found.exception.contract_missing_key, "automation_baseline")
+        diagnostic = found.exception.contract_diagnostic
+        self.assertTrue(diagnostic["baseline_source_lines"])
+        self.assertTrue(all(type(line) is int for line in diagnostic["baseline_source_lines"]))
+        self.assertNotIn(private, json.dumps(diagnostic))
 
 
 class FixtureTests(unittest.TestCase):
