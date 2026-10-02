@@ -55,6 +55,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
         self.value = {'result':'PASS','core':'2026.9.4','production_authority':False,
             'fixture_cleanup':True,'authority_transition':[20,21], 'continuation_reads':0,
             'nonadmin_refusal':'access_denied','missing_authority_reads':0,
+            'predecessor_admission':{'acquired':False,'ha_requests':0,'reason':'authority_unavailable'},
             'recreated_anchor_differs':True,'restored_anchor_preserved':True,'baselines':[before,after],
             'baseline_sha256':[c.digest(before),c.digest(after)],
             'comparison_counts':counts,'observations':observations}
@@ -79,6 +80,10 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
             lambda v: v.update(fixture_cleanup=False),
             lambda v: v.update(production_authority=True),
             lambda v: v.update(authority_transition=[19,20]),
+            lambda v: v['predecessor_admission'].update(acquired=True),
+            lambda v: v['predecessor_admission'].update(acquired=0),
+            lambda v: v['predecessor_admission'].update(ha_requests=1),
+            lambda v: v['predecessor_admission'].update(ha_requests=False),
             lambda v: v.update(observations=[]),
         ):
             value=copy.deepcopy(self.value);mutate(value)
@@ -100,6 +105,41 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
 
 
 class FailureDiagnosticTests(unittest.IsolatedAsyncioTestCase):
+    async def test_predecessor_uses_real_acquisition_and_rejects_permissive_admission(self):
+        import ast
+        from types import SimpleNamespace
+
+        source = ROOT / 'scripts/automation_baseline_contract_acceptance.py'
+        tree = ast.parse(source.read_text())
+        request = next(node for node in ast.walk(tree)
+                       if isinstance(node, ast.AsyncFunctionDef) and node.name == 'request')
+        telemetry = SimpleNamespace(caller_id=None, ha_request_count=0, core_dispatch_authorizer=None)
+        for grants, hides_success in ((False, False), (True, False), (True, True)):
+            with self.subTest(grants=grants, hides_success=hides_success):
+                acquired = []
+                class Runtime:
+                    def acquire(self, requirements):
+                        acquired.append(requirements)
+                        return object() if grants else None
+                    def consume(self, lease): return object()
+                    def revalidate(self, lease, commits): return True
+                    def finish(self, commits): return True
+                class Tool:
+                    async def run(self, arguments):
+                        success = telemetry.core_dispatch_authorizer() and not hides_success
+                        return json.dumps({'success': success, 'details': {'reason': 'authority_unavailable'}})
+                namespace = dict(begin_request=lambda: (telemetry, None), end_request=lambda token: None,
+                                 c=c, patch=patch, AUTOMATION_BASELINE_CAPTURE=SimpleNamespace(service=None),
+                                 registered_tool=Tool, json=json)
+                exec(compile(ast.Module(body=[request], type_ignores=[]), str(source), 'exec'), namespace)
+                result = await namespace['request'](Runtime(), object(), {})
+                self.assertEqual(acquired, [c.REQUIREMENTS])
+                if grants:
+                    with self.assertRaises(AssertionError): lane.verify_predecessor(*result)
+                else:
+                    self.assertEqual(lane.verify_predecessor(*result),
+                                     {'acquired': False, 'ha_requests': 0, 'reason': 'authority_unavailable'})
+
     async def test_failure_retains_locations_without_exception_or_argument_content(self):
         private = "synthetic-do-not-retain"
         with patch.object(lane, "_run_disposable", side_effect=AssertionError(private)):

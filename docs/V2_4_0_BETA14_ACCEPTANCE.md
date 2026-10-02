@@ -28,7 +28,11 @@ applicability. No production signing occurs as part of source tests.
 ## 2. Functional source and disposable evidence
 
 Use the [feature acceptance contract](AUTOMATION_BASELINE_CAPTURE_ACCEPTANCE.md)
-and [capture definition](AUTOMATION_BASELINE_CAPTURE.md). Exact-head full discovery
+and [capture definition](AUTOMATION_BASELINE_CAPTURE.md). The feature contract's
+case-to-evidence matrix governs which cases require assembled Core, isolated
+source functions, synthetic providers or owned loopback transport. All evidence
+classes are required; do not promote an offline result into a Core execution claim.
+Exact-head full discovery
 may satisfy these focused commands when module execution is retained:
 
 ```sh
@@ -49,7 +53,8 @@ comparisons remain non-definitive. Keep the retained legacy baseline incomparabl
 The required assembled Core lane must retain two reconstructable synthetic
 exports through the actual public tool, over 100 loaded configurations including
 an off object and an unreadable record, real admin/non-admin and missing-anchor
-refusals, restored-device identity preservation, a new-config-entry identity change, and all five classifications through
+refusals, normal predecessor acquisition refusal with zero provider reads,
+restored-device identity preservation, a new-config-entry identity change, and all five classifications through
 the unchanged CLI. Independent Core interval hooks must find the expected fixed
 read commands, unchanged selected persisted stores, no options/config flows,
 services or command-origin storage writes during capture. Disclose background

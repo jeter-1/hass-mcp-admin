@@ -32,6 +32,13 @@ class ComparisonProofError(AssertionError):
                            "reason_codes": list(record.reasons) if record else []}
 
 
+def verify_predecessor(response, requests, acquired):
+    """A real acquisition refusal, not a manually disabled dispatch context."""
+    assert acquired is False and type(requests) is int and requests == 0
+    assert response['success'] is False and response['details']['reason'] == 'authority_unavailable'
+    return {'acquired': acquired, 'ha_requests': requests, 'reason': 'authority_unavailable'}
+
+
 def verify_result(result):
     """Offline receipt reconstruction; does not substitute for execution."""
     from ha_mcp_engineering.audit_baseline import load_baseline, compare_baselines
@@ -42,6 +49,10 @@ def verify_result(result):
     assert result['authority_transition'] == [20, 21]
     assert result['continuation_reads'] == 0 and result['nonadmin_refusal'] == 'access_denied'
     assert result['missing_authority_reads'] == 0 and result['recreated_anchor_differs'] is True
+    assert result['predecessor_admission'] == {
+        'acquired': False, 'ha_requests': 0, 'reason': 'authority_unavailable'}
+    assert result['predecessor_admission']['acquired'] is False
+    assert type(result['predecessor_admission']['ha_requests']) is int
     assert result['restored_anchor_preserved'] is True
     values = result['baselines']
     assert len(values) == 2 and [digest(b) for b in values] == result['baseline_sha256']
@@ -139,26 +150,26 @@ async def _run_disposable(configured, *, expected_image):
         def service(runtime, options=configured):
             return BaselineCaptureService(BaselineCaptureProvider(BaselineReadClient(options),runtime,
                 known_secrets=(options.ha_token,options.access_secret)))
-        async def request(runtime, capture, arguments, *, allowed=True):
+        async def request(runtime, capture, arguments):
             telemetry, token=begin_request();telemetry.caller_id='synthetic-native-baseline-owner'
-            lease=runtime.acquire(c.REQUIREMENTS) if allowed else None
+            lease=runtime.acquire(c.REQUIREMENTS)
             commits=runtime.consume(lease) if lease else None
             telemetry.core_dispatch_authorizer=lambda: bool(lease and runtime.revalidate(lease,commits))
             try:
                 with patch.object(AUTOMATION_BASELINE_CAPTURE,'service',capture):
                     answer=json.loads(await registered_tool().run(arguments))
-                return answer,telemetry.ha_request_count
+                return answer,telemetry.ha_request_count,lease is not None
             finally:
                 end_request(token)
                 if commits: assert runtime.finish(commits)
         async def export(runtime,capture):
             start=await websocket.command({'type':'alarmo_interval_observer/start','kind':'control'})
-            first, reads=await request(runtime,capture,{'limit':17})
+            first, reads,_=await request(runtime,capture,{'limit':17})
             assert first['success'], 'Baseline public call refused'
             page=first['data'];baseline={**page['baseline_header'],'records':list(page['records'])}
             artifact=page['artifact_sha256'];continuation_reads=0
             while page['pagination']['next_cursor']:
-                result, count=await request(runtime,capture,{'limit':17,'cursor':page['pagination']['next_cursor']})
+                result, count,_=await request(runtime,capture,{'limit':17,'cursor':page['pagination']['next_cursor']})
                 assert result['success']; page=result['data'];continuation_reads+=count
                 assert page['artifact_sha256']==artifact and page['pagination']['offset']==len(baseline['records'])
                 assert page['baseline_header']=={k:v for k,v in baseline.items() if k!='records'}
@@ -171,16 +182,16 @@ async def _run_disposable(configured, *, expected_image):
         seeded=False
         try:
             predecessor=await authority(old,'old')
-            denied, count=await request(predecessor,service(predecessor),{},allowed=False)
-            assert not denied['success'] and count==0
+            predecessor_admission=verify_predecessor(
+                *await request(predecessor,service(predecessor),{}))
             runtime=await authority(refs,'new')
             # A plain container has no supervised registry anchor: no fallback.
-            missing,_=await request(runtime,service(runtime),{})
+            missing,_,_=await request(runtime,service(runtime),{})
             assert not missing['success'] and missing['details']['reason']=='identity_unverified'
             seeded=True
             seed=await fixture('seed'); assert seed['fixture']=='native-baseline-v1'
             nonadmin=replace(configured, ha_token=seed.pop('nonadmin_token'))
-            refused,_=await request(runtime,service(runtime,nonadmin),{})
+            refused,_,_=await request(runtime,service(runtime,nonadmin),{})
             assert not refused['success'] and refused['details']['reason']=='access_denied'
             await wait_disposable_setup(websocket)
             capture=service(runtime)
@@ -200,11 +211,11 @@ async def _run_disposable(configured, *, expected_image):
                 capture_output=True,timeout=30,check=True)
             compared=json.loads(process.stdout)
             await fixture('restore');await wait_disposable_setup(websocket)
-            restored,_=await request(runtime,service(runtime),{'limit':1})
+            restored,_,_=await request(runtime,service(runtime),{'limit':1})
             assert restored['success']
             assert restored['data']['baseline_header']['installation']['installation_id'] == before['installation']['installation_id']
             await fixture('recreate');await wait_disposable_setup(websocket)
-            recreated,_=await request(runtime,service(runtime),{'limit':1})
+            recreated,_,_=await request(runtime,service(runtime),{'limit':1})
             assert recreated['success']
             assert recreated['data']['baseline_header']['installation']['installation_id'] != before['installation']['installation_id']
             result={'result':'PASS','core':'2026.9.4','authority_transition':[20,21],
@@ -212,7 +223,9 @@ async def _run_disposable(configured, *, expected_image):
                 'image_receipt_sha256':hashlib.sha256(Path(os.environ['REAL_HA_ALARMO_IMAGE_RESULT']).read_bytes()).hexdigest(),
                 'synthetic_hassio_metadata':True,'supervisor_setup_proven':False,
                 'missing_anchor_refusal':'identity_unverified','nonadmin_refusal':'access_denied',
-                'missing_authority_reads':0,'recreated_anchor_differs':True,'restored_anchor_preserved':True,'continuation_reads':0,
+                'missing_authority_reads':predecessor_admission['ha_requests'],
+                'predecessor_admission':predecessor_admission,
+                'recreated_anchor_differs':True,'restored_anchor_preserved':True,'continuation_reads':0,
                 'baselines':[before,after],'baseline_sha256':[before_hash,after_hash],
                 'comparison_counts':compared['counts'],'observations':[obs1,obs2],'fixture_cleanup':False}
         finally:
