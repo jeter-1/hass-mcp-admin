@@ -3505,7 +3505,6 @@ async def _run_core_2026_9_child_contract(
                 },
             }
         )
-        await _start_exact_upstream(token)
         configured = settings(token)
         core_runtime = CoreRuntime()
         if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3", "2026.9.4"}:
@@ -3523,16 +3522,6 @@ async def _run_core_2026_9_child_contract(
         else:
             core_runtime.configure(configured)
             await core_runtime.reconcile_once("startup")
-        read_gateway = UpstreamReadGateway()
-        read_gateway.configure(
-            configured,
-            release_registry=load_reviewed_upstream_release_registry(),
-            core_runtime=core_runtime,
-        )
-        server = FastMCP("rc2-core-2026-9-disposable")
-        await read_gateway.reconcile_until_initialized(server)
-        if EXPECTED_HA_VERSION in {"2026.9.3", "2026.9.4"}:
-            await _run_script_dependency_contract(configured, core_runtime, read_gateway)
         if EXPECTED_HA_VERSION == "2026.9.4":
             alarmo_receipt = _environment_path("REAL_HA_ALARMO_FIXTURE_RECEIPT")
             if alarmo_receipt is None:
@@ -3552,6 +3541,20 @@ async def _run_core_2026_9_child_contract(
             retained = json.loads(receipt.read_text())
             retained["automation_baseline"] = baseline_result
             receipt.write_text(json.dumps(retained, sort_keys=True, indent=2) + "\n")
+        # Native interval observations must finish before the independent
+        # upstream client starts its background traffic. Unexpected commands
+        # still fail the observer; they are not silently attributed away.
+        await _start_exact_upstream(token)
+        read_gateway = UpstreamReadGateway()
+        read_gateway.configure(
+            configured,
+            release_registry=load_reviewed_upstream_release_registry(),
+            core_runtime=core_runtime,
+        )
+        server = FastMCP("rc2-core-2026-9-disposable")
+        await read_gateway.reconcile_until_initialized(server)
+        if EXPECTED_HA_VERSION in {"2026.9.3", "2026.9.4"}:
+            await _run_script_dependency_contract(configured, core_runtime, read_gateway)
         if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3", "2026.9.4"}:
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)

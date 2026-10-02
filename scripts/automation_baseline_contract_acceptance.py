@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 PREFIX = "native_baseline_"
 CONTROL = "beta23_device_fixture/baseline"
+EXPECTED_COMMANDS = ["auth/current_user", "config_entries/get",
+                     "config/device_registry/list", "config/entity_registry/list"] * 2
 
 
 class ComparisonProofError(AssertionError):
@@ -56,7 +58,7 @@ def verify_result(result):
     assert len(result['observations']) == 2
     for observation in result['observations']:
         verify_interval(observation, observation['interval_id'],
-            ['other', 'config_entries/get', 'other', 'other'] * 2, kind='control')
+            EXPECTED_COMMANDS, kind='control')
     return {'result': 'PASS', 'records_before': len(values[0]['records']),
             'records_after': len(values[1]['records']), 'comparison_counts': report.counts,
             'continuation_reads': 0, 'fixture_cleanup': True}

@@ -50,7 +50,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
             for path, baseline in zip(paths, (before, after)):
                 path.write_bytes(c.canonical(baseline))
             counts = compare_baselines(*(load_baseline(p) for p in paths)).counts
-        observations = [receipt(['other','config_entries/get','other','other'] * 2) for _ in range(2)]
+        observations = [receipt(lane.EXPECTED_COMMANDS) for _ in range(2)]
         for item in observations: item['kind'] = 'control'
         self.value = {'result':'PASS','core':'2026.9.4','production_authority':False,
             'fixture_cleanup':True,'authority_transition':[20,21], 'continuation_reads':0,
@@ -88,6 +88,8 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
     async def test_command_service_storage_and_coverage_fail_closed(self):
         for mutate in (
             lambda v: v['observations'][0]['events'].append({'kind':'service','origin':'command'}),
+            lambda v: v['observations'][0]['events'].append({'kind':'command','origin':'background','command':'ping'}),
+            lambda v: v['observations'][0]['events'][0].update(command='other'),
             lambda v: v['observations'][0]['events'].pop(),
             lambda v: v['observations'][0]['coverage'].update({'Store.async_save':False}),
             lambda v: v['observations'][0]['final_store_hashes'].update({'core.device_registry':'1'*64}),
