@@ -590,6 +590,7 @@ class ToolParityTests(unittest.TestCase):
             set(self.beta_tools)
             - {
                 "reverify_configuration_task",
+                "capture_automation_baseline",
                 "get_integration_inspection",
                 "get_core_log_history",
                 "get_server_health",
@@ -691,6 +692,7 @@ class ToolParityTests(unittest.TestCase):
             [item["tool"] for item in catalog["beta_native"]],
             [
                 "reverify_configuration_task",
+                "capture_automation_baseline",
                 "get_integration_inspection",
                 "get_core_log_history",
                 "control_power",
@@ -727,7 +729,7 @@ class ToolParityTests(unittest.TestCase):
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 16)
+        self.assertEqual(len(catalog["provider_matrix"]), 17)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
             {"direct_ha_api", "supervisor_core_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power"},

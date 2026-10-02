@@ -341,7 +341,7 @@ class ExactAddonProfileTests(unittest.TestCase):
                 )
                 self.assertEqual(snapshot["engineering_tool_count"], 57)
                 self.assertEqual(
-                    snapshot["registered_tool_count"], 56 + delegated
+                    snapshot["registered_tool_count"], 57 + delegated
                 )
 
     def test_packaging_probe_has_no_third_party_requirement_parser(self):
@@ -945,7 +945,7 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["probe"]["engineering_tool_count"], 82)
         self.assertEqual(
-            result["probe"]["engineering_local_tool_count"], 56
+            result["probe"]["engineering_local_tool_count"], 57
         )
         self.assertEqual(
             result["probe"]["gateway_health"][
