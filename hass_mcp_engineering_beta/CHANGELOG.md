@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0-beta.13 - Offline audit comparison and validation isolation
+
+- Carry forward the reviewed offline automation-baseline validator/comparator,
+  including chronological/non-duplicate capture checks and explicit unknowns.
+  It adds no MCP tool, live collector or automatic inventory capture.
+- Supersede the unpublished beta.12 candidate with a new release source that
+  includes the Alarmo responsiveness-test isolation correction. Preserve its
+  fixture, default natural GC and timing limits; no production latency fix is
+  claimed. Earlier failed publication evidence remains unchanged.
+- Preserve all 81 descriptors, 20 Core profiles, signed applicability, providers,
+  approval/execution behavior, dependencies, workflows and stable v1.1.2.
+- Separate offline utility validation, publication and installed acceptance;
+  no new signing/activation or repeat household write canary is required.
+
 ## 2.4.0-beta.11 - Bounded Alarmo configuration inspection
 
 - Add one native read-only inspector with positively selected evidence, exact
