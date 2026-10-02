@@ -3545,6 +3545,8 @@ async def _run_core_2026_9_child_contract(
             from automation_baseline_contract_acceptance import run_disposable as run_baseline
             baseline_result = await run_baseline(configured,
                 expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
+            if baseline_result.get("result") != "PASS":
+                raise RuntimeError("Required baseline disposable scenario did not pass")
             # The existing required artifact carries both clearly named proofs.
             receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
             retained = json.loads(receipt.read_text())

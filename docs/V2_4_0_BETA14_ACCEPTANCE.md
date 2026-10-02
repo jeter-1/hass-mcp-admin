@@ -49,7 +49,7 @@ comparisons remain non-definitive. Keep the retained legacy baseline incomparabl
 The required assembled Core lane must retain two reconstructable synthetic
 exports through the actual public tool, over 100 loaded configurations including
 an off object and an unreadable record, real admin/non-admin and missing-anchor
-refusals, a recreated-anchor identity change, and all five classifications through
+refusals, restored-device identity preservation, a new-config-entry identity change, and all five classifications through
 the unchanged CLI. Independent Core interval hooks must find the expected fixed
 read commands, unchanged selected persisted stores, no options/config flows,
 services or command-origin storage writes during capture. Disclose background

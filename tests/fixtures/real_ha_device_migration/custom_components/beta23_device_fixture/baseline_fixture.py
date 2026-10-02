@@ -38,13 +38,21 @@ def register(hass):
     def write(changed):
         path.write_text(yaml.safe_dump(state["original_rows"] + rows(changed), sort_keys=False))
 
+    def new_entry():
+        entry = ConfigEntry(version=1, minor_version=1, domain="hassio",
+            title="Synthetic baseline lineage", data={}, options={}, source="user",
+            unique_id="synthetic-baseline-core", discovery_keys={}, subentries_data=None,
+            state=ConfigEntryState.LOADED)
+        hass.config_entries._entries[entry.entry_id] = entry
+        return entry
+
     def anchor():
         return dr.async_get(hass).async_get_or_create(
             config_entry_id=state["entry"].entry_id,
             identifiers={("hassio", "core")}, name="Synthetic baseline Core anchor")
 
     @websocket_api.websocket_command({vol.Required("type"): COMMAND,
-        vol.Required("action"): vol.In(["seed", "change", "recreate", "cleanup"])})
+        vol.Required("action"): vol.In(["seed", "change", "restore", "recreate", "cleanup"])})
     @websocket_api.require_admin
     @websocket_api.async_response
     async def command(_hass, connection, message):
@@ -61,12 +69,7 @@ def register(hass):
                 state.update(original=original, original_rows=parsed)
                 # Exact Core ConfigEntry/ConfigEntryItems writers, deliberately
                 # without Supervisor setup or any external connection.
-                entry = ConfigEntry(version=1, minor_version=1, domain="hassio",
-                    title="Synthetic baseline lineage", data={}, options={}, source="user",
-                    unique_id="synthetic-baseline-core", discovery_keys={}, subentries_data=None,
-                    state=ConfigEntryState.LOADED)
-                state["entry"] = entry
-                hass.config_entries._entries[entry.entry_id] = entry
+                state["entry"] = new_entry()
                 state["device"] = anchor()
                 registry = er.async_get(hass)
                 unknown = registry.async_get_or_create("automation", "automation", PREFIX + "unknown",
@@ -91,8 +94,22 @@ def register(hass):
                 await hass.async_add_executor_job(write, True)
                 await hass.services.async_call("automation", "reload", {}, blocking=True)
                 hass.states.async_set(state["unknown"], "off", {"id": PREFIX + "unknown"})
+            elif action == "restore":
+                # Core restores its tombstone's ID for the same entry/identifier.
+                previous = state["device"].id
+                dr.async_get(hass).async_remove_device(previous)
+                state["device"] = anchor()
+                if state["device"].id != previous:
+                    raise ValueError("fixture restoration changed identity")
             elif action == "recreate":
-                dr.async_get(hass).async_remove_device(state["device"].id)
+                # A genuinely new config-entry ID changes the hashed lineage,
+                # even when Core restores the device's orphaned persistent ID.
+                old = state["entry"].entry_id
+                dr.async_get(hass).async_clear_config_entry(old)
+                del hass.config_entries._entries[old]
+                state["entry"] = new_entry()
+                if state["entry"].entry_id == old:
+                    raise ValueError("fixture entry was not recreated")
                 state["device"] = anchor()
             elif action == "cleanup":
                 await hass.async_add_executor_job(path.write_bytes, state["original"])

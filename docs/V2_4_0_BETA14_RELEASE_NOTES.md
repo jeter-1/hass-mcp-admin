@@ -15,8 +15,8 @@ A removed record means absence from the comparable loaded scope, not deletion
 from disk. Captures are bounded intervals, not atomic snapshots.
 
 Installation assurance uses the uniquely loaded Hass.io entry and its persisted
-Core device identity. A recreated anchor changes the lineage; restored clones
-may share it. No owner label or fallback identity substitutes for that evidence.
+Core device identity. A changed persisted device/config-entry ID changes the lineage; restoring a
+tombstoned device with the same IDs preserves it. Restored clones may share it. No owner label or fallback identity substitutes for that evidence.
 Continuation pages come from a caller-bound in-memory snapshot and perform no
 additional Home Assistant reads. See [capture semantics and limits](AUTOMATION_BASELINE_CAPTURE.md).
 

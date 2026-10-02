@@ -26,8 +26,11 @@ not part of the returned configuration's fingerprint.
 persisted Hass.io Core device-registry ID and its uniquely loaded Hass.io
 config-entry ID. Only the fingerprint is exported. This is registry-lineage
 assurance, not a Core UUID, host identity or cross-clone discriminator. Ordinary
-restart/update preserves it while those records survive; removing/recreating the
-anchor changes it. Restored clones may share it. Cross-clone comparisons are outside
+restart/update preserves it while those records survive. It changes when either
+persisted device or config-entry ID changes. Core can restore a removed device
+from its tombstone with the same ID; that restoration alone does not change
+lineage. Recreating the config entry changes its ID even if Core restores the
+device ID. Restored clones may share the lineage. Cross-clone comparisons are outside
 this assurance. The owner approved that limitation for this first increment.
 
 ## Collection, authority and privacy

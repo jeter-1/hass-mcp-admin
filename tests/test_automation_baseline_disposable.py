@@ -55,7 +55,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
         self.value = {'result':'PASS','core':'2026.9.4','production_authority':False,
             'fixture_cleanup':True,'authority_transition':[20,21], 'continuation_reads':0,
             'nonadmin_refusal':'access_denied','missing_authority_reads':0,
-            'recreated_anchor_differs':True,'baselines':[before,after],
+            'recreated_anchor_differs':True,'restored_anchor_preserved':True,'baselines':[before,after],
             'baseline_sha256':[c.digest(before),c.digest(after)],
             'comparison_counts':counts,'observations':observations}
 
@@ -74,6 +74,8 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
             lambda v: v.update(baselines=list(reversed(v['baselines'])), baseline_sha256=list(reversed(v['baseline_sha256']))),
             lambda v: v.update(result='NOT_RUN'),
             lambda v: v.update(continuation_reads=1),
+            lambda v: v.update(restored_anchor_preserved=False),
+            lambda v: v.update(recreated_anchor_differs=False),
             lambda v: v.update(fixture_cleanup=False),
             lambda v: v.update(production_authority=True),
             lambda v: v.update(authority_transition=[19,20]),

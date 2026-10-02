@@ -81,19 +81,31 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
                      and isinstance(n.test, ast.Compare) and ast.unparse(n.test) == "EXPECTED_HA_VERSION == '2026.9.4'")
         wrapper = ast.AsyncFunctionDef(name="invoke", args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
                                       body=[block], decorator_list=[])
-        for receipt, result in ((None, "PASS"), (Path("synthetic.json"), "NOT_RUN"), (Path("synthetic.json"), "PASS")):
+        import tempfile
+        cases = ((None, "PASS", "PASS"), (Path("synthetic.json"), "NOT_RUN", "PASS"),
+                 (Path("synthetic.json"), "PASS", "NOT_RUN"), (Path("synthetic.json"), "PASS", "PASS"))
+        for receipt, result, baseline_result in cases:
             module = ModuleType("alarmo_inspection_contract_acceptance")
             module.run_disposable = AsyncMock(return_value={"result": result})
+            baseline = ModuleType("automation_baseline_contract_acceptance")
+            baseline.run_disposable = AsyncMock(return_value={"result": baseline_result})
             context = dict(EXPECTED_HA_VERSION="2026.9.4", configured=object(), core_runtime=object(),
-                           _environment_path=lambda name: receipt, os=os)
+                           _environment_path=lambda name: receipt, os=os, Path=Path, json=json)
             exec(compile(ast.fix_missing_locations(ast.Module(body=[wrapper], type_ignores=[])), "bounded-ci-hook", "exec"), context)
-            with patch.dict(sys.modules, {module.__name__: module}):
-                if receipt is None or result != "PASS":
-                    with self.assertRaises(RuntimeError):
+            with tempfile.TemporaryDirectory() as directory:
+                retained = Path(directory)/"combined.json"
+                retained.write_text(json.dumps({"result": result}))
+                with patch.dict(sys.modules, {module.__name__: module, baseline.__name__: baseline}), patch.dict(
+                        os.environ, {"REAL_HA_ALARMO_RESULT": str(retained)}):
+                    if receipt is None or result != "PASS" or baseline_result != "PASS":
+                        with self.assertRaises(RuntimeError):
+                            await context["invoke"]()
+                        self.assertNotIn("automation_baseline", json.loads(retained.read_text()))
+                    else:
                         await context["invoke"]()
-                else:
-                    await context["invoke"]()
+                        self.assertEqual(json.loads(retained.read_text())["automation_baseline"], {"result": "PASS"})
             self.assertEqual(module.run_disposable.await_count, int(receipt is not None))
+            self.assertEqual(baseline.run_disposable.await_count, int(receipt is not None and result == "PASS"))
 
     def test_fixture_source_identity_and_archive_are_bound_without_installed_claim(self):
         profile = fixture("alarmo_profile.json")

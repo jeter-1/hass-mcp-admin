@@ -32,6 +32,7 @@ def verify_result(result):
     assert result['authority_transition'] == [20, 21]
     assert result['continuation_reads'] == 0 and result['nonadmin_refusal'] == 'access_denied'
     assert result['missing_authority_reads'] == 0 and result['recreated_anchor_differs'] is True
+    assert result['restored_anchor_preserved'] is True
     values = result['baselines']
     assert len(values) == 2 and [digest(b) for b in values] == result['baseline_sha256']
     with tempfile.TemporaryDirectory(prefix='native-baseline-receipt-') as directory:
@@ -184,6 +185,10 @@ async def _run_disposable(configured, *, expected_image):
                 [sys.executable,'-B',str(ROOT/'scripts/compare_automation_baselines.py'),str(a),str(b)],
                 capture_output=True,timeout=30,check=True)
             compared=json.loads(process.stdout)
+            await fixture('restore');await wait_disposable_setup(websocket)
+            restored,_=await request(runtime,service(runtime),{'limit':1})
+            assert restored['success']
+            assert restored['data']['baseline_header']['installation']['installation_id'] == before['installation']['installation_id']
             await fixture('recreate');await wait_disposable_setup(websocket)
             recreated,_=await request(runtime,service(runtime),{'limit':1})
             assert recreated['success']
@@ -193,7 +198,7 @@ async def _run_disposable(configured, *, expected_image):
                 'image_receipt_sha256':hashlib.sha256(Path(os.environ['REAL_HA_ALARMO_IMAGE_RESULT']).read_bytes()).hexdigest(),
                 'synthetic_hassio_metadata':True,'supervisor_setup_proven':False,
                 'missing_anchor_refusal':'identity_unverified','nonadmin_refusal':'access_denied',
-                'missing_authority_reads':0,'recreated_anchor_differs':True,'continuation_reads':0,
+                'missing_authority_reads':0,'recreated_anchor_differs':True,'restored_anchor_preserved':True,'continuation_reads':0,
                 'baselines':[before,after],'baseline_sha256':[before_hash,after_hash],
                 'comparison_counts':compared['counts'],'observations':[obs1,obs2],'fixture_cleanup':False}
         finally:
