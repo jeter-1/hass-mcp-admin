@@ -21,9 +21,10 @@ local report. It does not contact Home Assistant or expose a new MCP tool.
 - Definitive `UNCHANGED`/`CHANGED` requires established matching installation and
   scope, verified canonical identities, complete readable records, continuous
   capture authority and the same supported exact fingerprint model.
-- `ADDED`/`REMOVED` additionally requires authoritative inventory absence.
-  Failed reads and incomplete inventory remain `UNKNOWN` where evidence is
-  insufficient.
+- `ADDED`/`REMOVED` uses established matching installation/scope, verified
+  mapping, valid capture pairing and authoritative absence in the opposite
+  inventory. Configuration readability and hash compatibility are not required
+  for presence/absence; incomplete inventory cannot establish absence.
 - Captures must be distinct and chronologically ordered: reversed or overlapping
   intervals, equal baseline IDs or equal non-null source-artifact digests produce
   `UNKNOWN` classifications with fixed reasons. Reports include both intervals.
