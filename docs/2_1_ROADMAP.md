@@ -2,6 +2,48 @@
 
 ## Current direction
 
+### 2026-10-02 — Next Engineering read-surface package
+
+The HAHE-F001/F002 audit now reaches genuine Engineering-server development,
+not stale audit reconciliation or a newly available governance path. Beta.13
+cannot close these findings. Reuse the existing task-register records rather
+than creating duplicate roadmap tasks:
+
+1. **HAMCP-130 — standalone sanitized backup inventory.** Expose the existing
+   bounded `BackupAdministrationGateway.read_inventory()` projection as its own
+   read-only Engineering tool. Preserve its sanitized backup ID, name, date,
+   size, operation-state and last-action fields. This adds no backup creation,
+   restore, archive access or new Home Assistant write authority.
+2. **HAMCP-132 — recorder-settings inspector.** Add a bounded read of configured
+   `purge_keep_days`, recorder engine/type and relevant non-secret settings.
+   Exclude or redact `db_url` credentials and unrelated secrets. This is new
+   provider work; no existing beta.13 provider is considered an equivalent.
+3. **HAMCP-129 — sanitized platform, App and integration inspection.** Follow
+   the first package with allowlisted projections for the supported parts of
+   `ha_get_system_health`, `ha_get_app` and `ha_get_integration`. The native
+   Alarmo inspector is the safety precedent, not proof that these broader reads
+   are already delivered.
+4. **HAMCP-132 — flow/template-helper visibility.** Diagnose and, when a bounded
+   safe contract exists, expose the missing `helper_type=all` and `template`
+   visibility. Keep this compatibility/read surface separate from helper runtime
+   actions and configuration writes.
+
+The smallest first release package is HAMCP-130 followed by the recorder slice
+of HAMCP-132. System-health/App/integration projections and helper visibility
+follow as separate bounded increments. Each increment requires its own source
+contract, negative/redaction tests, independent review, release preparation and
+installed acceptance; this roadmap entry authorizes none of those later gates.
+
+HAFA-F037 orphaned-statistics analysis follows this read-surface package because
+recorder/statistics visibility can reduce duplicate discovery work. HAFA-F037
+has no verified canonical Engineering task ID yet: do not invent or repurpose
+one, and do not treat this dependency note as implementation authority.
+
+The active Alarmo inspector retains its existing scope and gates. Complete or
+pause it at its independently reviewable boundary before starting this package;
+do not silently combine Alarmo, backup, recorder, platform or helper contracts
+into one release.
+
 2026-09-30: Josh resumed the previously reviewed Alarmo inspector on the beta.10
 baseline. This is source reconciliation, not installed availability. Additional
 Core authority, exact disposable Core/Alarmo execution, release preparation and
