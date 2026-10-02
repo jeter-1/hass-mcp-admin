@@ -3,6 +3,9 @@
 import asyncio
 import copy
 import json
+from pathlib import Path
+import subprocess
+import sys
 import time
 import unittest
 from unittest.mock import patch
@@ -550,7 +553,69 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(replay[key], original[key])
         self.assertEqual(len(client.calls), 9)
 
-    async def test_maximum_report_fitting_is_responsive_and_preserves_counts(self):
+    def test_maximum_report_fitting_is_responsive_and_preserves_counts(self):
+        # Full discovery retains thousands of unrelated test objects. A major
+        # collection walks that process-wide heap, making this focused timing
+        # check depend on unrelated tests. Run the unchanged fixture in a fresh
+        # interpreter with natural GC and both existing timing bounds intact.
+        # -I avoids inherited Python startup/path settings; no GC manipulation,
+        # retry, threshold adjustment or timing subtraction is performed.
+        result = subprocess.run(
+            [sys.executable, "-I", "-B", "-c",
+             "import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); "
+             "unittest.main(module=None)",
+             str(Path(__file__).resolve().parent),
+             "test_alarmo_inspection_pagination.PaginationTests."
+             "_maximum_report_fitting_is_responsive_and_preserves_counts", "-v"],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        print(result.stdout, end="", flush=True)
+        # Keep child diagnostics without impersonating the outer unittest
+        # summary consumed by Full/Evidence's test-count parser.
+        for line in result.stderr.splitlines():
+            if line.startswith("Ran "):
+                line = "Isolated child test summary: " + line.removeprefix("Ran ")
+            print(line, file=sys.stderr, flush=True)
+        self.assertEqual(result.returncode, 0, "Isolated Alarmo responsiveness check failed.")
+
+    def test_maximum_inventory_child_failure_is_not_accepted(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        failed = subprocess.CompletedProcess([], 1, "synthetic failure output\n", "synthetic failure detail\n")
+        case = PaginationTests("test_maximum_report_fitting_is_responsive_and_preserves_counts")
+        with patch("test_alarmo_inspection_pagination.subprocess.run", return_value=failed) as child:
+            with redirect_stdout(StringIO()) as out, redirect_stderr(StringIO()) as err:
+                with self.assertRaisesRegex(AssertionError, "Isolated Alarmo responsiveness check failed"):
+                    case.test_maximum_report_fitting_is_responsive_and_preserves_counts()
+            self.assertEqual(out.getvalue(), failed.stdout)
+            self.assertEqual(err.getvalue(), failed.stderr)
+            self.assertEqual(child.call_count, 1)
+
+    def test_maximum_inventory_child_summary_cannot_replace_discovery_count(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        passed = subprocess.CompletedProcess([], 0, '{"fixture": "synthetic"}\n',
+                                             "Ran 1 test in 0.001s\n\nOK\n")
+        case = PaginationTests("test_maximum_report_fitting_is_responsive_and_preserves_counts")
+        with patch("test_alarmo_inspection_pagination.subprocess.run", return_value=passed):
+            with redirect_stdout(StringIO()) as out, redirect_stderr(StringIO()) as err:
+                case.test_maximum_report_fitting_is_responsive_and_preserves_counts()
+            self.assertEqual(out.getvalue(), passed.stdout)
+            self.assertIn("Isolated child test summary: 1 test in 0.001s", err.getvalue())
+            self.assertNotRegex(out.getvalue() + err.getvalue(), r"Ran\s+(\d+)\s+tests?")
+
+    def test_maximum_inventory_child_timeout_is_not_retried(self):
+        case = PaginationTests("test_maximum_report_fitting_is_responsive_and_preserves_counts")
+        with patch("test_alarmo_inspection_pagination.subprocess.run",
+                   side_effect=subprocess.TimeoutExpired("synthetic child", 30)) as child:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                case.test_maximum_report_fitting_is_responsive_and_preserves_counts()
+            self.assertEqual(child.call_count, 1)
+
+    async def _maximum_report_fitting_is_responsive_and_preserves_counts(self):
         data = fixture()
         prototype = data["sensors"]["binary_sensor.synthetic_door"]
         identifiers = ["binary_sensor.synthetic_" + "a" * 96 + str(i).zfill(4) for i in range(c.MAX_SENSORS)]

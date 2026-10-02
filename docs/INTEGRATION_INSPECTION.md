@@ -135,6 +135,23 @@ following an oversized row remain eligible. Mandatory
 metadata that cannot fit produces a fixed failure. All captures are non-atomic;
 stable manifest/fingerprint does not establish unchanged configuration.
 
+## Responsiveness regression environment
+
+The maximum-inventory responsiveness fixture runs once in a fresh isolated Python
+process, invoked by ordinary unittest discovery. It still uses the current
+inspection implementation, 512 sensors and 128 groups, default enabled garbage
+collection, the 100 ms loop-thread CPU and 300 ms wall heartbeat limits, and all
+existing count, evidence, snapshot-size, provider-call and settlement assertions.
+Raw timing and GC diagnostics remain visible in the parent test log. A failed
+child fails discovery; a 30-second child timeout fails without retry.
+
+Isolation prevents full-suite discovery and unrelated tests from determining the
+heap traversed by this focused fixture's major GC. It does not disable, force or
+subtract GC, relax timing limits, or establish a production-wide 100 ms latency
+ceiling. Large shared application heaps and host scheduling remain runtime
+performance considerations. This is a test-environment correction; inspector
+runtime, tool descriptors and provider/approval authority are unchanged.
+
 ## Validation and stage
 
 See [acceptance](ALARMO_INSPECTION_ACCEPTANCE.md),
