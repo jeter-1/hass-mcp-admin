@@ -2,10 +2,15 @@
 
 ## Scope
 
-This increment provides a pure local validator/comparator for retained Home
+The validator/comparator provides pure local processing for retained Home
 Assistant automation baselines. It does **not** add an MCP tool, provider read,
 background collection job, server-side persistence, Home Assistant request,
 governance operation, release change, or deployment behavior.
+
+A separate [native loaded-automation capture](AUTOMATION_BASELINE_CAPTURE.md)
+produces this unchanged format using approved registry-lineage assurance. Its
+loaded inventory is not complete stored YAML; `REMOVED` means absence from that
+named loaded scope. The legacy artifact remains unestablished and incomparable.
 
 The comparator answers only what retained baseline evidence can support. It does
 not reconstruct automation bodies, execute templates, expand blueprints, infer

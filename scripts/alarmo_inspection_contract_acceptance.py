@@ -327,7 +327,8 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
 
     evidence = b"Synthetic disposable Core nineteen-capability predecessor"
     refs = [{k: p.to_mapping()[k] for k in ("capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint")}
-            for p in CORE_RUNTIME_CAPABILITY_PROFILES]
+            for p in CORE_RUNTIME_CAPABILITY_PROFILES
+            if p.capability_id != "core.automation_baseline_metadata_read"]
     added = [r for r in refs if r["capability_id"] == "core.integration_inspection_metadata_read"]
     old = [r for r in refs if r not in added]
     assert len(old) == 19 and len(added) == 1
@@ -550,8 +551,11 @@ def verify_disposable_cleanup(result_path, output):
             raise ValueError("Retained interval verification mismatch")
     control = value["negative_control_observation"]
     verify_interval(control, control["interval_id"], ["other"], kind="control")
+    from automation_baseline_contract_acceptance import verify_result as verify_baseline
+    baseline = verify_baseline(value["automation_baseline"])
     receipt = {"result": "PASS", "owned_containers_remaining": 0, "owned_network_remaining": False,
-               "required_alarmo_interval": "PASS", "integration_receipt_sha256": hashlib.sha256(Path(result_path).read_bytes()).hexdigest()}
+               "required_alarmo_interval": "PASS", "required_automation_baseline": baseline,
+               "integration_receipt_sha256": hashlib.sha256(Path(result_path).read_bytes()).hexdigest()}
     Path(output).write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
     return receipt
 
