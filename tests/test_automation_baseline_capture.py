@@ -268,27 +268,114 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(service.active); self.assertEqual(service.snapshots,{})
         self.assertTrue(client.closed)
 
-    async def test_maximum_capture_bounded_pages_responsive(self):
+    def test_maximum_capture_bounded_pages_responsive(self):
+        # As in the Alarmo responsiveness check, isolate natural GC from the
+        # unrelated heap retained by full discovery. Keep the wall bound and
+        # additionally measure loop-thread CPU; never subtract GC or retry.
+        result = subprocess.run(
+            [sys.executable, '-I', '-B', '-c',
+             'import sys, unittest; sys.path.insert(0, sys.argv.pop(1)); '
+             'unittest.main(module=None)',
+             str(Path(__file__).resolve().parent),
+             'test_automation_baseline_capture.CaptureTests.'
+             '_maximum_capture_bounded_pages_responsive', '-v'],
+            cwd=ROOT, capture_output=True, text=True, timeout=30, check=False,
+        )
+        print(result.stdout, end='', flush=True)
+        for line in result.stderr.splitlines():
+            if line.startswith('Ran '):
+                line = 'Isolated child test summary: ' + line.removeprefix('Ran ')
+            print(line, file=sys.stderr, flush=True)
+        self.assertEqual(result.returncode, 0, 'Isolated baseline responsiveness check failed.')
+
+    def test_maximum_capture_child_failure_is_not_accepted(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        failed = subprocess.CompletedProcess([], 1, 'synthetic failure output\n', 'synthetic failure detail\n')
+        with patch('test_automation_baseline_capture.subprocess.run', return_value=failed) as child:
+            with redirect_stdout(StringIO()) as out, redirect_stderr(StringIO()) as err:
+                with self.assertRaisesRegex(AssertionError, 'Isolated baseline responsiveness check failed'):
+                    self.test_maximum_capture_bounded_pages_responsive()
+            self.assertEqual(out.getvalue(), failed.stdout)
+            self.assertEqual(err.getvalue(), failed.stderr)
+            self.assertEqual(child.call_count, 1)
+
+    def test_maximum_capture_child_summary_preserves_discovery_count(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+
+        passed = subprocess.CompletedProcess([], 0, '{"fixture": "synthetic"}\n', 'Ran 1 test in 0.001s\n\nOK\n')
+        with patch('test_automation_baseline_capture.subprocess.run', return_value=passed):
+            with redirect_stdout(StringIO()) as out, redirect_stderr(StringIO()) as err:
+                self.test_maximum_capture_bounded_pages_responsive()
+            self.assertEqual(out.getvalue(), passed.stdout)
+            self.assertIn('Isolated child test summary: 1 test in 0.001s', err.getvalue())
+            self.assertNotRegex(out.getvalue() + err.getvalue(), r'Ran\s+(\d+)\s+tests?')
+
+    def test_maximum_capture_child_timeout_is_not_retried(self):
+        with patch('test_automation_baseline_capture.subprocess.run',
+                   side_effect=subprocess.TimeoutExpired('synthetic child', 30)) as child:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.test_maximum_capture_bounded_pages_responsive()
+            self.assertEqual(child.call_count, 1)
+
+    async def _maximum_capture_bounded_pages_responsive(self):
+        import gc
+        import threading
+
         service,client=self.setup_capture(fixture(1001))
-        gaps=[]; last=time.perf_counter(); running=True
+        gaps, cpu_gaps = [], []
         async def heartbeat():
-            nonlocal last
-            while running:
+            last, last_cpu = time.perf_counter(), time.thread_time()
+            while True:
                 await asyncio.sleep(.005)
-                current=time.perf_counter(); gaps.append(current-last); last=current
+                current, current_cpu = time.perf_counter(), time.thread_time()
+                gaps.append(current-last)
+                cpu_gaps.append(current_cpu-last_cpu)
+                last, last_cpu = current, current_cpu
+        # Diagnostic only. Collections may run on a worker: attribute their
+        # thread instead of presenting worker CPU as event-loop CPU.
+        loop_thread = threading.get_ident()
+        gc_events, gc_started = [], {}
+        gc_state = {'enabled': gc.isenabled(), 'thresholds': gc.get_threshold()}
+        def observe_gc(phase, info):
+            if info['generation'] != 2:
+                return
+            thread = threading.get_ident()
+            if phase == 'start':
+                gc_started[thread] = (time.perf_counter(), time.thread_time())
+            elif thread in gc_started:
+                wall, cpu = gc_started.pop(thread)
+                if len(gc_events) < 64:
+                    gc_events.append({'generation': 2, 'event_loop_thread': thread == loop_thread,
+                                      'wall_seconds': time.perf_counter()-wall,
+                                      'thread_cpu_seconds': time.thread_time()-cpu,
+                                      'collected': info['collected'], 'uncollectable': info['uncollectable']})
         pulse=asyncio.create_task(heartbeat())
+        await asyncio.sleep(0)
+        gc.callbacks.append(observe_gc)
         try:
             baseline,page=await export(service,100)
+            await asyncio.sleep(.01)
         finally:
-            running=False; await pulse
+            gc.callbacks.remove(observe_gc)
+            pulse.cancel()
+            await asyncio.gather(pulse, return_exceptions=True)
+        print(json.dumps({'fixture': 'maximum_automation_baseline_inventory',
+                          'maximum_loop_gap_seconds': max(gaps),
+                          'maximum_thread_cpu_gap_seconds': max(cpu_gaps),
+                          'wall_bound_seconds': .25, 'thread_cpu_bound_seconds': .1,
+                          'records': len(baseline['records']), 'gc_state': gc_state,
+                          'major_gc_events': gc_events}), flush=True)
+        self.assertLess(max(gaps), .25, 'Capture and export must keep the event loop responsive under contention.')
+        self.assertLess(max(cpu_gaps), .1, 'Capture and export must yield within the loop-thread CPU budget.')
         self.validate(baseline)
         self.assertEqual(len(baseline['records']),1000)
         self.assertEqual(baseline['inventory']['omitted_count'],1)
         self.assertTrue(baseline['inventory']['limit_reached'])
         self.assertEqual(client.requests,1010)
         self.assertLessEqual(len(c.canonical(page)),c.PAGE_BYTES)
-        self.assertLess(max(gaps),.25, f'maximum event-loop gap {max(gaps):.6f}s')
-        print(f'baseline maximum inventory event-loop gap: {max(gaps):.6f}s')
 
     async def test_deadline_partial_no_new_reads(self):
         service,client=self.setup_capture()
