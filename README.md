@@ -1,20 +1,24 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.0-beta.13** is the materialized candidate for the
-[offline automation-baseline validator/comparator](docs/V2_4_0_BETA13_RELEASE_NOTES.md).
-It compares retained local evidence with explicit identity, coverage and
-fingerprint requirements. Incomplete evidence remains `UNKNOWN`. It adds no MCP
-tool or live collector; the healthy catalog remains **56 static tools plus 25
-delegated reads (81 total)**. See the [offline command and format](docs/AUTOMATION_AUDIT_BASELINE.md).
+Engineering **2.4.0-beta.14** adds a [native automation-baseline capture](docs/V2_4_0_BETA14_RELEASE_NOTES.md)
+for the existing offline comparator. It captures loaded automations, including
+those switched off, with canonical IDs, exact configuration hashes, explicit
+coverage and a verified registry lineage. Raw configuration bodies are not
+retained; frozen continuation pages perform no additional Home Assistant reads.
+The source catalog is **57 static tools plus 25 delegated reads (82 total)**.
+The new read requires a separately reviewed signed Core capability; this release
+does not activate it automatically. See [capture scope](docs/AUTOMATION_BASELINE_CAPTURE.md)
+and the [offline command and format](docs/AUTOMATION_AUDIT_BASELINE.md).
 
-Beta.13 supersedes the unpublished beta.12 candidate and includes the merged
-Alarmo responsiveness-test isolation correction. That correction preserves the
-fixture and timing limits; it makes no production latency claim.
+Historically, beta.13 delivered the offline comparator and superseded unpublished
+beta.12, with the merged Alarmo responsiveness-test isolation correction. That
+correction preserves its fixture and timing limits; it makes no production
+latency claim. Legacy baseline identity/fingerprint gaps remain explicit.
 
 Beta.11's [bounded Alarmo configuration inspector](docs/V2_4_0_BETA11_RELEASE_NOTES.md)
 reports selected configured membership, modes and delays with explicit partial
 coverage. Its separately signed Core extension is retained unchanged. Installing
-beta.13 neither grants authority nor proves Alarmo protection.
+beta.14 neither grants authority nor proves Alarmo protection.
 
 PyJWT remains at 2.15.0 with hash-locked inputs and security regressions.
 Beta.10's [bounded logbook and response processing](docs/LOGBOOK_READS.md)
@@ -31,7 +35,7 @@ rejects unverifiable candidates before that operation dispatches. The existing
 [`reverify_configuration_task`](docs/CONFIGURATION_REVERIFICATION.md) checks all
 approved saved objects of an eligible historical mismatch and writes a dated
 supplementary receipt without resending configuration, operating a device,
-consuming approval or replacing the original failed outcome. Beta.13 acceptance
+consuming approval or replacing the original failed outcome. Beta.14 acceptance
 does not repeat a completed supplementary observation.
 The inherited [beta.6 lock recovery](docs/V2_4_0_BETA6_RELEASE_NOTES.md) preserves
 complete unions up to 256 tokens and can settle qualifying retained locks.

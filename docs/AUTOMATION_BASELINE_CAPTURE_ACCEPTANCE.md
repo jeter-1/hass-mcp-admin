@@ -1,8 +1,9 @@
 # Native automation-baseline capture acceptance
 
 This is a feature contract, not an advertised release or permission to access HA.
-Choose the release, obtain independent review, complete exact-head gates and prepare
-signed applicability separately. Preserve completed beta.13 acceptance.
+Beta.14 is the materialized candidate; obtain independent review, complete exact-
+head gates and prepare signed applicability separately. Preserve completed beta.13
+acceptance. See [release acceptance](V2_4_0_BETA14_ACCEPTANCE.md).
 
 ## Source and disposable prerequisites
 

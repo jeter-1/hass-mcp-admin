@@ -3542,6 +3542,14 @@ async def _run_core_2026_9_child_contract(
                 expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
             if alarmo_result.get("result") != "PASS":
                 raise RuntimeError("Required Alarmo disposable scenario did not pass")
+            from automation_baseline_contract_acceptance import run_disposable as run_baseline
+            baseline_result = await run_baseline(configured,
+                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
+            # The existing required artifact carries both clearly named proofs.
+            receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
+            retained = json.loads(receipt.read_text())
+            retained["automation_baseline"] = baseline_result
+            receipt.write_text(json.dumps(retained, sort_keys=True, indent=2) + "\n")
         if EXPECTED_HA_VERSION in {"2026.9.2", "2026.9.3", "2026.9.4"}:
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)
