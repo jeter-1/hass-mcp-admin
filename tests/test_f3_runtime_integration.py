@@ -1129,6 +1129,36 @@ class F3OperationalActivationTests(_OperationalActivationBase):
         self.assertEqual(record.dispatch_count, 1)
         self.assertEqual(record.normalized_outcome, "succeeded_verified")
 
+    async def test_prepare_refusal_does_not_disable_unrelated_operational_apply(self):
+        from ha_mcp_engineering.f3.operational_adapter import OperationalAdapterError
+
+        created = await self.service.create_reload_plan(reload_target="automation")
+        refused = await self._grant(created)
+        approval = asdict(self.service._load(refused["plan_id"]).approval)
+        error = OperationalAdapterError("provider_identity_mismatch")
+        before = self.runtime.readiness_state()
+        with patch.object(self.runtime.operational_adapter, "prepare", side_effect=error):
+            with self.assertRaises(OperationalAdapterError) as caught:
+                await self.service.apply(refused["plan_id"], refused["plan_hash"])
+        self.assertIs(caught.exception, error)
+        self.assertEqual(caught.exception.category, "provider_identity_mismatch")
+        self.assertEqual(self.runtime.readiness_state(), before)
+        self.assertEqual(asdict(self.service._load(refused["plan_id"]).approval), approval)
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+        self.assertIsNone(self.service.task_repository.get_for_plan(refused["plan_id"]))
+        await self.runtime.recover_once("test")
+        self.assertEqual(self.runtime.readiness_state(), before)
+
+        unrelated = await self._grant(
+            await self.service.create_reload_plan(reload_target="script")
+        )
+        result = await self.service.apply(unrelated["plan_id"], unrelated["plan_hash"])
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+        await self.service.apply(unrelated["plan_id"], unrelated["plan_hash"])
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+        self.assertEqual(asdict(self.service._load(refused["plan_id"]).approval), approval)
+
     async def test_operational_response_loss_uses_observation_without_redispatch(self):
         self.lifecycle.mode = "ambiguous"
         created = await self.service.create_reload_plan(reload_target="automation")
@@ -1530,6 +1560,49 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.runtime.readiness_state()['execution_ready'])
         await self.runtime.recover_once('test')
         self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+
+    async def _assert_prepare_failure_is_plan_local(self, error):
+        created = await self.fixture.create_automation_plan()
+        await self.fixture.approve(created)
+        approval = asdict(self.service._load(created["plan_id"]).approval)
+        before = self.runtime.readiness_state()
+        self.assertTrue(before["execution_ready"])
+        adapter = self.runtime.registry.adapter("update_automation_configuration")
+        with patch.object(adapter, "prepare", side_effect=error):
+            with self.assertRaises(type(error)) as caught:
+                await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertIs(caught.exception, error)
+        self.assertEqual(self.runtime.readiness_state(), before)
+        self.assertEqual(asdict(self.service._load(created["plan_id"]).approval), approval)
+        self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
+        self.assertFalse(any(call[0] == "write" for call in self.fixture.gateway.calls))
+        await self.runtime.recover_once("test")
+        self.assertEqual(self.runtime.readiness_state(), before)
+
+        unrelated = await self._independent_script_plan()
+        result = await self.service.apply(unrelated["plan_id"], unrelated["plan_hash"])
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        self.assertEqual(self._writes(), 1)
+        await self.service.apply(unrelated["plan_id"], unrelated["plan_hash"])
+        self.assertEqual(self._writes(), 1)
+        self.assertEqual(asdict(self.service._load(created["plan_id"]).approval), approval)
+
+    async def test_configuration_prepare_refusal_keeps_execution_ready(self):
+        await self._assert_prepare_failure_is_plan_local(
+            ValueError("current-state fingerprint is inconsistent")
+        )
+
+    async def test_provider_failure_keeps_execution_ready(self):
+        from ha_mcp_engineering.errors import HomeAssistantApiError
+        await self._assert_prepare_failure_is_plan_local(HomeAssistantApiError())
+
+    async def test_nonstorage_governance_refusal_keeps_execution_ready(self):
+        await self._assert_prepare_failure_is_plan_local(
+            GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
+        )
+
+    async def test_unknown_prepare_failure_does_not_require_restart(self):
+        await self._assert_prepare_failure_is_plan_local(RuntimeError("synthetic failure"))
 
     async def test_failed_durable_write_is_not_cleared_by_read_audit(self):
         from ha_mcp_engineering.f3.persistence import ExecutionStorageError

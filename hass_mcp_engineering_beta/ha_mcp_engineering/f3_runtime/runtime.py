@@ -2366,7 +2366,10 @@ class F3RuntimeIntegration:
             # shared F3 execution storage failed. Preserve its exact failure.
             raise
         except Exception:
-            self._readiness_fault("execution_storage")
+            # Adapter/provider refusals and unclassified failures are local to
+            # this apply. Only the storage failures handled above establish a
+            # persistent execution-storage fault. Preserve the original error;
+            # do not turn a rejected plan into a restart-required global outage.
             raise
 
     async def _apply(self, plan: Any, expected_plan_hash: str) -> dict[str, Any]:
