@@ -20,6 +20,7 @@ MODEL = "alarmo-core-interval-v1"
 MAX_EVENTS = 128
 MAX_SECONDS = 45
 COMMANDS = frozenset({"manifest/get", "config_entries/get", "config/entity_registry/get_entries",
+    "auth/current_user", "config/device_registry/list", "config/entity_registry/list", "ping",
     "alarmo/config", "alarmo/areas", "alarmo/sensors", "alarmo/entities", "alarmo/sensor_groups"})
 CONTROL_COMMANDS = frozenset({DOMAIN + "/ready", DOMAIN + "/start", DOMAIN + "/finish"})
 STORE_KEYS = frozenset({"alarmo.storage", "core.config_entries", "core.entity_registry",

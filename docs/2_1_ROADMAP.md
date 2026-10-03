@@ -2,47 +2,109 @@
 
 ## Current direction
 
-### 2026-10-02 — Next Engineering read-surface package
+### 2026-10-02 — Accepted baseline and parallel preparation
 
-The HAHE-F001/F002 audit now reaches genuine Engineering-server development,
-not stale audit reconciliation or a newly available governance path. Beta.13
-cannot close these findings. Reuse the existing task-register records rather
-than creating duplicate roadmap tasks:
+Engineering **2.4.0-beta.14** is implemented, published, installed and accepted
+within its bounded read-only contract. The installed source is
+`ab200974f40a265b93affffc7de7ffb42eafd6fa`; registry-only PR [#230](https://github.com/jeter-1/hass-mcp-admin/pull/230)
+adds signed sequence 5 applicability. Accepted inventory is **82 tools**
+(57 native plus 25 delegated), with **21 compatible Core capabilities** on the
+accepted Core 2026.9.4 pairing. Source versions, signed applicability and
+installed evidence are separate facts; this roadmap changes none of them.
 
-1. **HAMCP-130 — standalone sanitized backup inventory.** Expose the existing
-   bounded `BackupAdministrationGateway.read_inventory()` projection as its own
-   read-only Engineering tool. Preserve its sanitized backup ID, name, date,
-   size, operation-state and last-action fields. This adds no backup creation,
-   restore, archive access or new Home Assistant write authority.
-2. **HAMCP-132 — recorder-settings inspector.** Add a bounded read of configured
-   `purge_keep_days`, recorder engine/type and relevant non-secret settings.
-   Exclude or redact `db_url` credentials and unrelated secrets. This is new
-   provider work; no existing beta.13 provider is considered an equivalent.
-3. **HAMCP-129 — sanitized platform, App and integration inspection.** Follow
-   the first package with allowlisted projections for the supported parts of
-   `ha_get_system_health`, `ha_get_app` and `ha_get_integration`. The native
-   Alarmo inspector is the safety precedent, not proof that these broader reads
-   are already delivered.
-4. **HAMCP-132 — flow/template-helper visibility.** Diagnose and, when a bounded
-   safe contract exists, expose the missing `helper_type=all` and `template`
-   visibility. Keep this compatibility/read surface separate from helper runtime
-   actions and configuration writes.
+The [native automation baseline capture](AUTOMATION_BASELINE_CAPTURE.md) now
+provides a usable loaded-automation export for the
+[offline validator/comparator](AUTOMATION_AUDIT_BASELINE.md). Installed acceptance
+proved one useful capture, consistent frozen continuation pages with no new HA
+reads, and final settlement. The private October 2 closure manifest SHA-256 is
+`877ba867a58c9d6fefa4f1ac3f10efc1cf7afa3505d6c8b897fb7811ea49b0fa`.
+Its historical exceptions and observation limits remain attached to that evidence.
 
-The smallest first release package is HAMCP-130 followed by the recorder slice
-of HAMCP-132. System-health/App/integration projections and helper visibility
-follow as separate bounded increments. Each increment requires its own source
-contract, negative/redaction tests, independent review, release preparation and
-installed acceptance; this roadmap entry authorizes none of those later gates.
+This completes the **loaded-scope increment**, not the whole inventory roadmap.
+Full stored YAML/package and registry-disabled coverage is not established;
+capture remains non-atomic and bound to registry lineage. External blueprint
+bodies are outside individual configuration hashes. The retained October 1
+artifact is not upgraded, and its different count cannot prove additions or
+removals. Reuse the accepted export at the next independently useful authorized
+capture; do not manufacture a second scan just to demonstrate comparison.
 
-HAFA-F037 orphaned-statistics analysis follows this read-surface package because
-recorder/statistics visibility can reduce duplicate discovery work. HAFA-F037
-has no verified canonical Engineering task ID yet: do not invent or repurpose
-one, and do not treat this dependency note as implementation authority.
+Josh selected three existing conversations to work in parallel, coordinated by
+**HA MCP Architect Coordinator**. This supersedes the earlier draft's strictly
+sequential backup-first scheduling; it does not grant all proposed implementation
+or release authority. Stream onboarding and checkout isolation must be verified
+before treating a stream as an active writer.
 
-The active Alarmo inspector retains its existing scope and gates. Complete or
-pause it at its independently reviewable boundary before starting this package;
-do not silently combine Alarmo, backup, recorder, platform or helper contracts
-into one release.
+| Stream | First bounded scope | Subsequent dependency |
+| --- | --- | --- |
+| Dashboard analysis | Reconcile the prepared one-dashboard integrity/control contract: literal references, supported configured controls, explicit partial coverage and no automatic repair. Preparation is complete; implementation and actual dashboard analysis are not. | Proceed only under the explicit tool/provider implementation scope; shared interfaces are coordinated centrally. |
+| Maintenance | Reconcile the two deferred native-baseline error findings: permanent failures reported as retryable, and non-config source failures reported as configuration failures. Prepare a small correction with compatibility/refusal tests. | Then prepare the standalone sanitized backup-inventory contract (existing HAMCP-130 reference); implementation is a separately bounded increment. |
+| Discovery | Establish an authoritative, bounded recorder-settings inspection contract (existing HAMCP-132 recorder slice), including retention settings and non-secret engine/type evidence. | Broader platform/App/integration diagnostics follow as separately selected contracts; discovery completion is not runtime delivery. |
+
+The coordinator owns dependency and overlap resolution, final integration,
+review scheduling and evidence-backed PM handoffs. Use separate writable
+checkouts for concurrent authors. Reserve one writer for shared tool registration,
+routing, schemas, catalog counts, capability/trust material, workflows and release
+metadata; a stream name or branch name alone does not establish isolation.
+Small maintenance corrections may integrate first if ready while dashboard and
+recorder preparation continue. Final implementation order follows reviewed
+contracts and actual dependencies, not a mandatory combined release bundle.
+
+Each implementation requires useful success and negative/privacy tests,
+Full/Evidence, exact-head CI and a separately tasked review. Josh retains the
+Ready/merge and release/deployment decisions under the repository's existing
+rules. No stream may silently expand a provider, activate a signed capability,
+change household configuration, or reopen completed acceptance to test a new
+feature. A roadmap entry is not authorization for those actions.
+
+### Retained read-surface scope and task references
+
+The HAHE-F001/F002 audit's remaining read-surface gaps are not closed by baseline
+capture. Preserve the existing task references from PR #229 and verify canonical
+register mappings before changing their status; do not invent duplicate IDs.
+
+- **HAMCP-130 — standalone sanitized backup inventory:** expose only the reviewed
+  bounded `BackupAdministrationGateway.read_inventory()` projection through an
+  explicitly approved read-only surface. Preserve sanitized inventory and
+  operation-state evidence; do not expose creation, restore or archive access.
+- **HAMCP-132 — recorder settings:** establish the authoritative source for
+  configured `purge_keep_days`, recorder engine/type and narrowly useful non-secret
+  settings. Do not substitute defaults for observed effective settings or expose
+  `db_url` credentials. This needs provider/compatibility discovery, not a claim
+  that an existing generic diagnostic read already supplies it.
+- **HAMCP-129 — platform, App and integration diagnostics:** later allowlisted
+  projections for supported parts of `ha_get_system_health`, `ha_get_app` and
+  `ha_get_integration`. The shipped Alarmo inspector is a bounded precedent,
+  not blanket admission of these mixed upstream tools or their internal fallbacks.
+- **HAMCP-132 — flow/template-helper visibility:** retain as a separate later
+  compatibility/read slice for `helper_type=all` and `template`. Do not combine
+  it with helper actions or configuration writes.
+
+HAFA-F037 orphaned-statistics analysis can reuse the recorder/statistics discovery;
+it has no verified canonical Engineering task ID here. Dashboard work and the two
+maintenance findings also need confirmed existing-row mappings. Central PM owns
+canonical register updates; the streams provide evidence and proposals.
+
+The bounded script-call graph and first lifecycle analyzer are delivered
+increments, not complete dependency coverage. Snapshot-indexed search remains
+after dashboard semantics; configuration hashes alone are not a searchable
+configuration index. Optional retained execution summaries remain later.
+The native Alarmo inspector does not authorize Alarmo configuration mutation or
+resolve household F016. No dashboard repair, helper retirement, complete dependency
+index or household audit finding is closed by this roadmap reconciliation.
+
+### Historical source preparation decisions
+
+The dated records below preserve what was pending when each decision was made.
+They are not current installed-acceptance status or instructions to repeat those
+campaigns. The October 2 acceptance record above supersedes the earlier baseline
+entry's activation/release/acceptance status, while retaining its coverage limits.
+
+2026-10-02: Josh approved the bounded [native loaded-automation baseline capture](AUTOMATION_BASELINE_CAPTURE.md)
+following the beta.12/beta.13 offline validator/comparator. Source implementation
+adds one on-demand read tool and frozen export, with explicit registry-lineage
+identity and loaded-scope limitations. Full stored inventory, signed activation,
+release preparation and installed acceptance remain open. Do not mark the whole
+baseline roadmap complete or upgrade the retained October 1 evidence.
 
 2026-09-30: Josh resumed the previously reviewed Alarmo inspector on the beta.10
 baseline. This is source reconciliation, not installed availability. Additional

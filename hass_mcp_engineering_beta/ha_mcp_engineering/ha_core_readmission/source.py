@@ -126,6 +126,7 @@ def capability_evidence_for_probes(
     probe_profile: CoreProbeProfile | None = None,
     include_typed_operations: bool = False,
     include_integration_inspection: bool = False,
+    include_automation_baseline: bool = False,
 ) -> list[dict[str, Any]]:
     """Project transient raw probes into bounded binary-owned check evidence."""
 
@@ -232,6 +233,10 @@ def capability_evidence_for_probes(
     # profile. A successful response or an observed version cannot select it.
     # Admission still independently checks each exact capability contract.
     if probe_profile is not None:
+        if include_automation_baseline:
+            # Readiness of the existing transports, not self-admission. Exact
+            # signed applicability must independently select the new contract.
+            add("core.automation_baseline_metadata_read", rest_ok and websocket_ok, semantic=True)
         if include_integration_inspection:
             # Transport readiness only; the separate signed applicability must
             # select this exact binary contract. No new probe is dispatched.
@@ -683,6 +688,7 @@ class AiohttpCoreSnapshotSource:
         evidence = capability_evidence_for_probes(
             include_typed_operations=True,
             include_integration_inspection=True,
+            include_automation_baseline=True,
             version=version,
             probe_profile=self._profile_selector(version),
             rest_config=rest_config,

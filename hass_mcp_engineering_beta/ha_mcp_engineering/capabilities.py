@@ -88,6 +88,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
         "dispatch_allowed": False, "durable_evidence_write": True, "non_atomic": True,
     },
     {
+        "tool": "capture_automation_baseline", "category": "evidence",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native",
+        "provider": "engineering", "data_providers": ["direct_ha_api"],
+        "fallback": "none", "policy": "loaded_automation_entities-v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "get_integration_inspection", "category": "evidence",
         "status": "beta_native", "risk": "read", "additive": True,
         "operation_class": "read", "routing": "engineering_native",
@@ -395,6 +402,15 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "completeness": "all_approved_objects_or_explicit_unresolved_result",
         "security_justification": "No caller configuration or provider; original execution stays immutable; current signed Core read authority and exact locks required.",
         "trust_mode": "reviewed_native_verification", "trust_profile": "exact_retained_configuration_readback_v1",
+    },
+    {
+        "tool": "capture_automation_baseline", "capability": "automation_baseline_capture",
+        "required_semantics": "Full returned configuration hashes with canonical IDs and non-atomic loaded-scope coverage.",
+        "standard_ha_mcp_coverage": "semantically_unsuitable", "direct_ha_coverage": "reviewed_fixed_reads",
+        "selected_provider": "engineering", "fallback_policy": "none",
+        "completeness": "loaded_scope_only_with_explicit_omissions",
+        "security_justification": "Administrator visibility, verified registry-lineage identity, fixed reads and frozen sanitized exports.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "automation-baseline-read-v1",
     },
     {
         "tool": "get_integration_inspection", "capability": "integration_inspection",

@@ -40,6 +40,7 @@ class RoutingDecision:
 
 _ENGINEERING_NATIVE = {
     ProviderCapability.INTEGRATION_INSPECTION,
+    ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     ProviderCapability.TYPED_FAN_EXECUTION,
     ProviderCapability.TYPED_POWER_EXECUTION,
     ProviderCapability.GOVERNANCE_PERSISTENCE,
@@ -120,6 +121,7 @@ class RoutingPolicy:
 
 TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_integration_inspection": ProviderCapability.INTEGRATION_INSPECTION,
+    "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
     "control_power": ProviderCapability.TYPED_POWER_EXECUTION,
     "server_info": ProviderCapability.HANDOFF_GENERATION,
@@ -201,6 +203,11 @@ def requires_prevalidation_enforcement(tool_name: object) -> bool:
 
 
 ANALYTICAL_PROVIDER_POLICIES = {
+    "capture_automation_baseline": {
+        "policy_id": "loaded_automation_entities-v1", "access": "read", "orchestrator": "engineering",
+        "scope": "bounded loaded-automation inventory and exact configuration hashes; frozen export",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
     "get_integration_inspection": {
         "policy_id": "alarmo_allowlist_v1", "access": "read", "orchestrator": "engineering",
         "scope": "one verified Alarmo area/master using fixed native reads and sanitized frozen pagination",

@@ -1359,7 +1359,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 for path in DEVICE_FIXTURE_ROOT.iterdir()
                 if path.name != "__pycache__"
             },
-            {"__init__.py", "config_flow.py", "manifest.json", "switch.py", "fan.py"},
+            {"__init__.py", "config_flow.py", "manifest.json", "switch.py", "fan.py", "baseline_fixture.py"},
         )
         manifest = json.loads(
             (DEVICE_FIXTURE_ROOT / "manifest.json").read_text(encoding="utf-8")

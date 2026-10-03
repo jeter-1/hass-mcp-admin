@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0-beta.14 - Native automation-baseline capture
+
+- Add one bounded read-only capture tool for loaded automations, including off
+  objects, with canonical IDs, exact ephemeral configuration hashes and explicit
+  partial/non-atomic coverage. Continuations read a frozen in-memory snapshot.
+- Preserve the offline fingerprint/comparison contract and all legacy unknowns.
+  Registry lineage distinguishes recreated anchors but not restored clones.
+- Add one signed-gated Core profile; keep the journal unchanged. Source catalog
+  is 82 = 57 static + 25 delegated; the preceding descriptors/profiles remain.
+- Extend the existing exact-Core disposable lane with synthetic capture/export/
+  comparison and observed read intervals; preserve workflow permissions/pins.
+- No writes, automatic captures, fallback, approval changes or stable-v1 changes.
+  Publication, signed activation, deployment and installed acceptance stay separate.
+
 ## 2.4.0-beta.13 - Offline audit comparison and validation isolation
 
 - Carry forward the reviewed offline automation-baseline validator/comparator,

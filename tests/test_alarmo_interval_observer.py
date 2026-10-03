@@ -229,13 +229,19 @@ class PublicationCleanupTests(unittest.TestCase):
         denial = receipt(); denial["kind"] = "control"
         value = dict(result="PASS", scenario="alarmo_inspection", core="2026.9.4", runtime_monitor_closed=True, interval_observation=observation,
                      missing_authority_observation=denial, negative_control_observation=control,
+                     automation_baseline={"synthetic_receipt": True},
                      interval=acceptance.verify_interval(observation, observation["interval_id"], acceptance.EXPECTED_COMMANDS),
                      missing_authority=acceptance.verify_interval(denial, denial["interval_id"], [], kind="control"))
         with tempfile.TemporaryDirectory() as directory:
             source, output = Path(directory) / "result.json", Path(directory) / "cleanup.json"
             source.write_text(json.dumps(value))
-            with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")):
+            with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")), patch(
+                    "automation_baseline_contract_acceptance.verify_result", return_value={"result": "PASS"}) as baseline:
                 self.assertEqual(acceptance.verify_disposable_cleanup(source, output)["result"], "PASS")
+                baseline.assert_called_once_with(value["automation_baseline"])
+            with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")), patch(
+                    "automation_baseline_contract_acceptance.verify_result", side_effect=ValueError("missing baseline proof")), self.assertRaises(ValueError):
+                acceptance.verify_disposable_cleanup(source, output)
             value["runtime_monitor_closed"] = False
             source.write_text(json.dumps(value))
             with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")), self.assertRaises(ValueError):

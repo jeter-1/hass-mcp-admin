@@ -155,9 +155,11 @@ from .governance import registered_reverification_tool
 _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_tool(),
                     "reverify_configuration_task": registered_reverification_tool()})
 
+from .audit_baseline import registered_tool as baseline_capture_tool
 from .integration_inspection import registered_tool as integration_inspection_tool
 
-_SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integration_inspection_tool()})
+_SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integration_inspection_tool(),
+                    "capture_automation_baseline": baseline_capture_tool()})
 
 
 # Freeze the exact local catalog before any admitted upstream reads are added.

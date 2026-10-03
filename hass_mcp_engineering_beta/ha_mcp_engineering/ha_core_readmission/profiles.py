@@ -453,8 +453,21 @@ CORE_INTEGRATION_INSPECTION_PROFILES = (
         predispatch=("core_identity", "existing_origin_principal", "generation", "current_authority"),
     ),
 )
+from ..audit_baseline.capture_contracts import CORE_METADATA_CONTRACT as BASELINE_METADATA_CONTRACT
+
+CORE_AUTOMATION_BASELINE_PROFILES = (
+    _contract(
+        "core.automation_baseline_metadata_read",
+        CoreCapabilityClass.AUTOMATION_BASELINE_METADATA_READ,
+        "compiled-core-automation-baseline-read-v1",
+        ("websocket_auth_ok_version", "websocket_get_config_mapping", "websocket_result_envelope"),
+        provider_boundary="direct_ha_api", response_contract=BASELINE_METADATA_CONTRACT,
+        predispatch=("core_identity", "existing_origin_principal", "generation", "current_authority"),
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
+    + CORE_AUTOMATION_BASELINE_PROFILES
 )
 
 
