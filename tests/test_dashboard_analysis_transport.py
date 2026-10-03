@@ -25,6 +25,7 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
         self.status = 200
         self.encoding = "identity"
         self.delay = 0
+        self.websocket_status = 200
         self.registry = [{"entity_id": "sensor.test", "disabled_by": None}]
         self.registry_error = False
         self.registry_error_code = "unauthorized"
@@ -35,6 +36,7 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
         app = web.Application()
         app.router.add_get('/api/states', self.states)
         app.router.add_get('/api/websocket', self.websocket)
+        app.router.add_get('/forbidden', self.forbidden)
         self.runner = web.AppRunner(app, access_log=None)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, '127.0.0.1', 0)
@@ -56,6 +58,9 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def websocket(self, request):
         self.calls.append("websocket")
+        if self.websocket_status != 200:
+            return web.Response(status=self.websocket_status,
+                                headers={"Location": "/forbidden"})
         ws = web.WebSocketResponse(compress=False)
         await ws.prepare(request)
         await ws.send_json(self.greeting)
@@ -75,6 +80,10 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
                     await ws.send_json({"id": incoming["id"], "type": "result", "success": True,
                                         "result": self.registry})
         return ws
+
+    async def forbidden(self, request):
+        self.calls.append("forbidden_redirect")
+        return web.Response(status=403)
 
     def authorize(self):
         self.authority_checks += 1
@@ -139,6 +148,29 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(c.AnalysisError) as error:
                     await peer.read("states")
             self.assertEqual(error.exception.reason, "access_denied")
+
+    async def test_websocket_upgrade_access_denial_aborts(self):
+        for status in (401, 403):
+            self.websocket_status = status
+            before = len(self.calls)
+            async with self.client.collection("2026.9.4", self.authorize, CollectionBudget()) as peer:
+                with self.assertRaises(c.AnalysisError) as error:
+                    await peer.read("registry")
+            self.assertEqual(error.exception.reason, "access_denied")
+            self.assertFalse(error.exception.retryable)
+            self.assertEqual(self.calls[before:], ["websocket"])
+            self.assertTrue(peer.session.closed)
+
+    async def test_websocket_redirect_is_never_followed(self):
+        for status in (301, 302, 303, 307, 308):
+            self.websocket_status = status
+            before = len(self.calls)
+            async with self.client.collection("2026.9.4", self.authorize, CollectionBudget()) as peer:
+                with self.assertRaises(c.AnalysisError) as error:
+                    await peer.read("registry")
+            self.assertEqual(error.exception.reason, "source_unavailable")
+            self.assertEqual(self.calls[before:], ["websocket"])
+            self.assertTrue(peer.session.closed)
 
     async def test_unclassified_rejection_is_not_claimed_access_denial(self):
         self.registry_error = True

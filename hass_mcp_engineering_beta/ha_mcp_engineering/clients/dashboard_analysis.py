@@ -49,7 +49,16 @@ async def no_retry(request, handler):
     # Converting the specific exceptions also prevents aiohttp's idempotent
     # persistent-connection retry. Redirect following is disabled per request.
     try:
-        return await handler(request)
+        response = await handler(request)
+        # ws_connect does not expose allow_redirects. Refuse the response in
+        # middleware before aiohttp can follow it, including during upgrade.
+        if response.status in (401, 403):
+            response.close()
+            raise c.AnalysisError("access_denied")
+        if 300 <= response.status < 400:
+            response.close()
+            raise c.AnalysisError("source_unavailable")
+        return response
     except (aiohttp.ClientOSError, aiohttp.ServerDisconnectedError):
         raise c.AnalysisError("source_unavailable") from None
 

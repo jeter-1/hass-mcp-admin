@@ -66,6 +66,14 @@ provider may refresh/retry. Those existing paths remain unchanged, and this
 checkpoint must not be mistaken for a proof of the required upstream byte
 bounds or single-attempt behavior.
 
+The installed SDK 1.28.1 public client factory configures HTTP but does not
+disable its background GET listener or SSE reconnection. A proposed adapter
+would override private SDK methods. The repository keeps reviewed private SDK
+integration in `mcp_sdk_compatibility.py`, which is outside this assignment's
+authorized paths. That design needs a coordinator scope decision before such
+an adapter is added; this is not proof that every public-API-only alternative
+is impossible. No second private SDK boundary is introduced here.
+
 The final collector must compose exactly the admitted upstream dashboard read,
 states and entity-registry reads, hold all three Core profiles plus upstream
 authority, preserve source/projection hash distinctions, and bind authority
