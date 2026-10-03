@@ -1,5 +1,5 @@
 import asyncio
-from contextlib import redirect_stderr
+from contextlib import ExitStack, redirect_stderr
 import importlib.util
 import io
 import json
@@ -38,6 +38,10 @@ from tests.test_2_1a_beta2_operational_lifecycle import (  # noqa: E402
 )
 
 
+from ha_mcp_engineering import application
+from tests import test_beta24_pre_rc_hardening as gateway_fixtures
+
+
 ACCEPTANCE_PATH = ROOT / "scripts" / "exact_image_read_gateway_acceptance.py"
 acceptance_spec = importlib.util.spec_from_file_location(
     "exact_image_read_gateway_acceptance_test_module",
@@ -46,6 +50,36 @@ acceptance_spec = importlib.util.spec_from_file_location(
 acceptance = importlib.util.module_from_spec(acceptance_spec)
 assert acceptance_spec.loader is not None
 acceptance_spec.loader.exec_module(acceptance)
+
+
+def application_gateway(runtime, *, reconciled=True):
+    """Exercise the real composition callback without configuring live clients."""
+    app = gateway_fixtures.RecordingApp()
+    with ExitStack() as stack:
+        for name in (
+            'CORE_READMISSION', 'UPSTREAM_OPERATIONAL_BACKUP',
+            'UPSTREAM_OPERATIONAL_LIFECYCLE', 'UPSTREAM_DASHBOARD', 'GOVERNANCE',
+            'DEPENDENCY_ANALYSIS', 'RELIABILITY_ANALYSIS', 'CHANGE_IMPACT_ANALYSIS',
+            'CONFIGURATION_INTEGRITY_ANALYSIS', 'INCIDENT_CORRELATION',
+            'HANDOFF_GENERATION', 'UPSTREAM_READ_GATEWAY', 'FAN_OPERATIONS',
+            'POWER_OPERATIONS', 'HEALTH',
+        ):
+            stack.enter_context(patch.object(application, name))
+        stack.enter_context(patch('ha_mcp_engineering.audit_baseline.capture_runtime.AUTOMATION_BASELINE_CAPTURE'))
+        stack.enter_context(patch('ha_mcp_engineering.integration_inspection.runtime.INTEGRATION_INSPECTION'))
+        server = stack.enter_context(patch.object(application, 'get_registered_server'))
+        server.return_value.streamable_http_app.return_value = app
+        governance = application.GOVERNANCE
+        governance.require.return_value.f3_runtime = runtime
+        gateway = application.create_application(gateway_fixtures.settings(
+            'unused', audit_enabled=False, rate_limit_burst=10000,
+            upstream_dashboard_mcp_url='http://127.0.0.1:18086/synthetic-only/mcp',
+        ))
+    # The composition's late-bound facade remains replaced only for each call.
+    gateway._test_governance = governance
+    if reconciled:
+        gateway.mark_initial_catalog_reconciled()
+    return gateway, app
 
 
 class ApplicationCatalogReadinessTests(unittest.IsolatedAsyncioTestCase):

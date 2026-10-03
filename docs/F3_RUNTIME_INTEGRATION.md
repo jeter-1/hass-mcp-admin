@@ -457,10 +457,12 @@ reported as unavailable, without exposing exception text.
 
 Deep health preserves its storage-dependent failures. On a successful health
 assembly, `execution_ready` and the additive `readiness` object use the same
-lifecycle; `status` and `recovery_coordinator_status` indicate unavailability
-when faulted. Existing store/lock/ownership detail fields retain their respective
-read/structural meanings and do not promise write capacity. Fault categories are
-fixed strings; child IDs, exception text and configuration are not included in
+lifecycle; `status` indicates unavailability when faulted, preserving the more
+actionable `manual_intervention_required` status for retained holds or unresolved
+lock authority. `recovery_coordinator_status` also indicates unavailability. Existing store/lock/ownership detail fields retain their respective
+read/structural meanings and do not promise write capacity. Deterministic per-plan/provider validation refusals retain their original
+failure and scope; they do not by themselves latch a shared execution-store
+fault. Fault categories are fixed strings; child IDs, exception text and configuration are not included in
 the readiness snapshot.
 
 Existing pre-intent recovery may continue only within its own validated pass,

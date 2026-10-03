@@ -76,6 +76,7 @@ from ..f3_dashboard.adapter import (
     DashboardUpdateAdapter,
 )
 from ..f3_dashboard.identity import operational_identity_from_mapping
+from ..f3_dashboard.errors import DashboardFoundationError
 from ..governance.models import (
     ApprovalState,
     ChangeOperation,
@@ -2326,6 +2327,10 @@ class F3RuntimeIntegration:
                     and self.readiness_state()["execution_ready"]):
                 self._readiness_fault("execution_storage")
             raise
+        except DashboardFoundationError:
+            # A deterministic per-plan/provider refusal is not evidence that
+            # shared F3 execution storage failed. Preserve its exact failure.
+            raise
         except Exception:
             self._readiness_fault("execution_storage")
             raise
@@ -3128,7 +3133,10 @@ class F3RuntimeIntegration:
         )
         readiness = self.readiness_state()
         if not readiness["execution_ready"]:
-            status = "unavailable" if readiness["status"] == "faulted" else "recovering"
+            if readiness["status"] != "faulted":
+                status = "recovering"
+            elif not (holds or manual_recovery):
+                status = "unavailable"
         return {
             "f3_model": F3_RUNTIME_MODEL,
             "status": status,
