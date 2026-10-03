@@ -486,6 +486,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             if tool.name
             not in {
                 "get_integration_inspection",
+                "dashboard_integrity_analysis",
                 "capture_automation_baseline",
                 "get_core_log_history",
                 "reverify_configuration_task",
@@ -508,9 +509,9 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
         }
         encoded = json.dumps(schemas, sort_keys=True, separators=(",", ":")).encode()
         self.assertEqual(hashlib.sha256(encoded).hexdigest(), F2_PUBLIC_SCHEMA_SHA256)
-        self.assertEqual(len(tools), 57)
+        self.assertEqual(len(tools), 58)
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 57)
+        self.assertEqual(len(CAPABILITIES) + len(BETA_NATIVE_CAPABILITIES), 58)
         self.assertEqual(PLANNED_CAPABILITIES, ())
         self.assertEqual(SCHEMA_VERSION, "1")
 

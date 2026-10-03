@@ -11,7 +11,7 @@ import tempfile
 import time
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'hass_mcp_engineering_beta'))
@@ -22,6 +22,28 @@ from ha_mcp_engineering.audit_baseline import load_baseline, compare_baselines, 
 from ha_mcp_engineering.request_context import begin_request, end_request
 
 SECRET = 'synthetic-never-export-credential'
+
+# Independent public contract expectations: adding a reason requires a decision.
+ERROR_EXPECTATIONS = {
+    'invalid_arguments': ('invalid_request', False),
+    'invalid_cursor': ('invalid_cursor', False),
+    'snapshot_expired': ('invalid_cursor', False),
+    'capacity_busy': ('analysis_unavailable', True),
+    'authority_unavailable': ('provider_unavailable', False),
+    'authority_drift': ('provider_unavailable', False),
+    'identity_unverified': ('analysis_unavailable', False),
+    'identity_drift': ('analysis_unavailable', False),
+    'access_denied': ('analysis_unavailable', False),
+    'source_unavailable': ('analysis_unavailable', True),
+    'malformed_response': ('analysis_unavailable', False),
+    'response_limit': ('analysis_unavailable', False),
+    'structural_limit': ('analysis_unavailable', False),
+    'timeout': ('analysis_unavailable', True),
+    'output_limit': ('analysis_unavailable', False),
+    'configuration_unavailable': ('analysis_unavailable', False),
+    'configuration_identity_mismatch': ('analysis_unavailable', False),
+    'redacted_identity': ('analysis_unavailable', False),
+}
 
 def fixture(count=3):
     return {
@@ -200,6 +222,123 @@ class CaptureTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('restored_clones_may_share_identity',after['installation']['limitations'])
         result=compare_baselines(self.validate(before),self.validate(after))
         self.assertEqual(result.counts['UNKNOWN'],3)
+
+    async def test_initial_states_failure_refuses_without_configuration_reads(self):
+        from ha_mcp_engineering.audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
+        from ha_mcp_engineering.tools.audit_baseline import registered_tool
+        service, client = self.setup_capture()
+        async def fail_states(kind):
+            if kind == 'states':
+                raise c.CaptureError('source_unavailable')
+        client.hook = fail_states
+        with patch.object(AUTOMATION_BASELINE_CAPTURE, 'service', service):
+            response = json.loads(await registered_tool().run({}))
+        self.assertFalse(response['success'])
+        self.assertEqual(response['details'], {'reason': 'source_unavailable'})
+        self.assertIs(response['retryable'], True)
+        self.assertFalse(response['metadata']['fallback_occurred'])
+        self.assertEqual(client.calls, ['principal', 'entries', 'devices', 'states'])
+        self.assertEqual(service.snapshots, {})
+        self.assertFalse(service.active)
+        self.assertEqual(client.active, 0)
+        self.assertTrue(client.closed)
+
+    async def test_final_states_failure_and_missing_configuration_preserve_partial_evidence(self):
+        from ha_mcp_engineering.audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
+        from ha_mcp_engineering.tools.audit_baseline import registered_tool
+        for scenario in ('final_states', 'missing_configuration'):
+            with self.subTest(scenario=scenario):
+                service, client = self.setup_capture()
+                if scenario == 'missing_configuration':
+                    client.data['configs'].pop('0')
+                async def fail_final_states(kind):
+                    if (scenario == 'final_states' and kind == 'states'
+                            and client.calls.count('states') == 2):
+                        raise c.CaptureError('source_unavailable')
+                client.hook = fail_final_states
+                with patch.object(AUTOMATION_BASELINE_CAPTURE, 'service', service):
+                    raw = await registered_tool().run({})
+                response = json.loads(raw)
+                self.assertTrue(response['success'], response)
+                self.assertEqual(response['metadata']['completeness'], 'partial')
+                self.assertFalse(response['metadata']['fallback_occurred'])
+                page = response['data']
+                baseline = dict(page['baseline_header'], records=page['records'])
+                self.validate(baseline)
+                self.assertEqual(c.digest(baseline), page['artifact_sha256'])
+                self.assertEqual([r['configuration_id'] for r in page['records']], ['0', '1', '2'])
+                if scenario == 'final_states':
+                    self.assertEqual(baseline['installation']['status'], 'unestablished')
+                    self.assertIsNone(baseline['installation']['installation_id'])
+                    self.assertEqual(baseline['consistency']['inventory_drift'], 'unknown')
+                    self.assertEqual(baseline['consistency']['authority_drift'], 'unknown')
+                    self.assertEqual(page['record_outcomes'], {})
+                    readable = page['records']
+                else:
+                    self.assertEqual(baseline['installation']['status'], 'established')
+                    self.assertEqual(page['record_outcomes'], {'0': 'configuration_unavailable'})
+                    self.assertEqual(page['diagnostics']['configuration_incomplete_count'], 1)
+                    self.assertEqual(page['records'][0]['configuration']['status'], 'unreadable')
+                    self.assertIsNone(page['records'][0]['configuration']['digest'])
+                    readable = page['records'][1:]
+                for row in readable:
+                    self.assertEqual(row['configuration']['status'], 'readable')
+                    self.assertEqual(row['configuration']['digest'],
+                                     canonical_configuration_digest(client.data['configs'][row['configuration_id']]))
+                self.assertNotIn(SECRET, raw)
+                self.assertTrue(client.closed)
+                self.assertFalse(service.active)
+                self.assertEqual(len(service.snapshots), 1)
+                self.assertEqual(self.telemetry.retry_count, 0)
+
+    async def test_access_denial_at_each_stage_aborts_and_drains_owned_work(self):
+        for stage in ('initial_states', 'configuration', 'final_states'):
+            with self.subTest(stage=stage):
+                service, client = self.setup_capture(fixture(8))
+                all_started = asyncio.Event()
+                blocked = asyncio.Event()
+                started, cancelled = [], []
+                async def deny(kind):
+                    if kind == 'states':
+                        fence = client.calls.count('states')
+                        if ((stage == 'initial_states' and fence == 1)
+                                or (stage == 'final_states' and fence == 2)):
+                            raise c.CaptureError('access_denied')
+                    if stage == 'configuration' and kind == 'config':
+                        index = len(started)
+                        started.append(index)
+                        if len(started) == c.CONCURRENCY:
+                            all_started.set()
+                        await all_started.wait()
+                        if index == 0:
+                            raise c.CaptureError('access_denied')
+                        try:
+                            await blocked.wait()
+                        except asyncio.CancelledError:
+                            cancelled.append(index)
+                            raise
+                client.hook = deny
+                with self.assertRaises(c.CaptureError) as found:
+                    await asyncio.wait_for(service.capture(), 3)
+                self.assertEqual(found.exception.reason, 'access_denied')
+                self.assertIs(found.exception.retryable, False)
+                self.assertEqual(service.snapshots, {})
+                self.assertFalse(service.active)
+                self.assertEqual(client.active, 0)
+                self.assertTrue(client.closed)
+                calls = list(client.calls)
+                await asyncio.sleep(0)
+                self.assertEqual(client.calls, calls)
+                if stage == 'initial_states':
+                    self.assertEqual(calls, ['principal', 'entries', 'devices', 'states'])
+                elif stage == 'configuration':
+                    self.assertEqual(len(started), c.CONCURRENCY)
+                    self.assertEqual(sorted(cancelled), list(range(1, c.CONCURRENCY)))
+                    self.assertEqual(client.calls.count('states'), 1)
+                else:
+                    self.assertEqual(client.calls.count('states'), 2)
+                    self.assertEqual(len([call for call in calls if isinstance(call, tuple)]), 8)
+                self.assertEqual(self.telemetry.retry_count, 0)
 
     async def test_authority_principal_anchor_and_mapping_fence_changes(self):
         for scenario in ('authority','principal','anchor','mapping','inventory','missing_final'):
@@ -411,12 +550,71 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(projector.identifier('valid-id'),'valid-id')
 
 class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_all_capture_error_reasons_preserve_public_envelope_and_retry_guidance(self):
+        from ha_mcp_engineering.audit_baseline.capture_runtime import AUTOMATION_BASELINE_CAPTURE
+        from ha_mcp_engineering.errors import map_exception
+        from ha_mcp_engineering.tools.audit_baseline import registered_tool
+        messages = {
+            'invalid_request': 'The request is invalid.',
+            'invalid_cursor': 'The pagination cursor is invalid.',
+            'provider_unavailable': 'The required capability provider is unavailable.',
+            'analysis_unavailable': 'Analysis evidence is unavailable.',
+        }
+        self.assertEqual(set(ERROR_EXPECTATIONS), c.REASONS)
+        cases = [(reason, reason, *expected) for reason, expected in ERROR_EXPECTATIONS.items()]
+        cases.append((SECRET, 'source_unavailable', 'analysis_unavailable', True))
+        for supplied, normalized, code, retryable in cases:
+            with self.subTest(reason=normalized, unrecognized=supplied == SECRET):
+                error = c.CaptureError(supplied)
+                mapped_code, message, mapped_retryable, details = map_exception(error)
+                self.assertEqual(mapped_code.value, code)
+                self.assertEqual(message, messages[code])
+                self.assertIs(mapped_retryable, retryable)
+                self.assertEqual(details, {'reason': normalized})
+                service = SimpleNamespace(capture=AsyncMock(side_effect=error))
+                with patch.object(AUTOMATION_BASELINE_CAPTURE, 'service', service):
+                    raw = await registered_tool().run({})
+                response = json.loads(raw)
+                service.capture.assert_awaited_once_with(limit=25, cursor='')
+                self.assertEqual(set(response), {
+                    'operation', 'error', 'error_code', 'message', 'details', 'retryable',
+                    'warnings', 'metadata', 'timing', 'request_id', 'success',
+                })
+                self.assertEqual({key: response[key] for key in (
+                    'operation', 'error', 'error_code', 'message', 'details', 'warnings', 'success',
+                )}, {
+                    'operation': 'capture_automation_baseline', 'error': 'CaptureError',
+                    'error_code': code, 'message': messages[code], 'details': {'reason': normalized},
+                    'warnings': [], 'success': False,
+                })
+                self.assertIs(response['retryable'], retryable)
+                self.assertEqual(response['metadata'], {
+                    'provider': 'engineering', 'data_providers': ['direct_ha_api'],
+                    'fallback_occurred': False, 'upstream_calls': 0,
+                })
+                self.assertEqual(response['timing']['retry_count'], 0)
+                self.assertEqual(response['timing']['home_assistant_request_count'], 0)
+                self.assertNotIn(SECRET, raw)
+
+    async def test_other_analysis_errors_keep_existing_retryable_default(self):
+        from ha_mcp_engineering.errors import ErrorCode, GovernanceError, map_exception
+        from ha_mcp_engineering.tool_framework import run_structured
+        error = GovernanceError(ErrorCode.ANALYSIS_UNAVAILABLE)
+        self.assertIs(error.retryable, True)
+        self.assertIs(map_exception(error)[2], True)
+        raw = await run_structured('synthetic_analysis', '', AsyncMock(side_effect=error))
+        response = json.loads(raw)
+        self.assertEqual(response['error_code'], 'analysis_unavailable')
+        self.assertEqual(response['message'], 'Analysis evidence is unavailable.')
+        self.assertIs(response['retryable'], True)
+        self.assertFalse(response['success'])
+
     async def test_public_invalid_arguments_never_echo_and_catalog_route_is_read_only(self):
         from ha_mcp_engineering.tools import get_registered_server,registered_tools
         from ha_mcp_engineering.providers.routing import routing_for_tool
         from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requirements
         tools=registered_tools(get_registered_server()); tool=tools['capture_automation_baseline']
-        self.assertEqual(len(tools),57)
+        self.assertEqual(len(tools),58)
         self.assertTrue(tool.annotations.readOnlyHint)
         self.assertFalse(tool.annotations.destructiveHint)
         self.assertFalse(tool.parameters['additionalProperties'])

@@ -426,3 +426,85 @@ between append, audit cursor, and final reconciliation marker. Existing stable
 audit event IDs deduplicate replay. Health retains a recovering backlog until
 both audit export and reconciliation complete; zero retained locks alone cannot
 close that work. No outcome, approval or dispatch authority is revived.
+
+## Request and execution readiness (source candidate)
+
+F3 now publishes a bounded process-local lifecycle through `readiness_state()`.
+It is observation, not a storage cache or execution authority. A lifecycle read
+performs no persistence/provider work, consumes no approval, schedules no task,
+and cannot repair or redispatch an execution. A short lock synchronizes worker
+health observations with event-loop recovery; revision-bound clearing prevents
+an older recovery from erasing a newer fault.
+
+| Transition / observation | Request admission after catalog reconciliation | New F3 apply | Clearing evidence |
+| --- | --- | --- | --- |
+| Constructed; startup validation/recovery pending | Unavailable | Refused | Successful authoritative initial validation/recovery |
+| Initial validation/recovery fails or is cancelled | Unavailable | Refused | Successful full validation and a completed recovery pass |
+| Initial validation/recovery succeeds | Available | Eligible for existing exact execution checks | No outstanding detected fault |
+| Deep health, task projection or reconciliation detects a read fault | Available after prior successful startup | Refused | Recovery revalidates the complete relevant stores, including history beyond its scheduling page |
+| Recovery pass throws or is cancelled | Available after prior successful startup | Refused | Full validation and a successful pass that does not exhaust its time budget |
+| A specific child recovery fails | Available after prior successful startup | Refused | That child's existing authoritative recovery action succeeds; backoff or an unrelated pass cannot clear it |
+| Durable-write/admission storage failure or unexpected apply failure | Available after prior successful startup | Refused | Repair and runtime reconstruction; a read audit cannot prove that a failed write is now durable |
+| Observed recovery supervisor exits or is cancelled | Available after prior successful startup | Refused | A live replacement supervisor and the applicable recovery checks |
+
+`/ready.ready` describes request admission, while `f3_execution_ready` describes
+F3's lifecycle eligibility for new applies. `f3_readiness_status` is
+`initializing`, `ready`, `faulted`, or `unavailable` when the lifecycle cannot be
+observed. An HTTP 200 response with `ready_f3_execution_unavailable` expressly
+preserves diagnostic access without claiming F3 execution availability. Catalog
+initialization remains an independent barrier. Exceptions at composition are
+reported as unavailable, without exposing exception text.
+
+Deep health preserves its storage-dependent failures. On a successful health
+assembly, `execution_ready` and the additive `readiness` object use the same
+lifecycle; `status` indicates unavailability when faulted, preserving the more
+actionable `manual_intervention_required` status for retained holds or unresolved
+lock authority. `recovery_coordinator_status` also indicates unavailability. Existing store/lock/ownership detail fields retain their respective
+read/structural meanings and do not promise write capacity. Deterministic per-plan/provider validation refusals retain their original
+failure and scope; they do not by themselves latch a shared execution-store
+fault. Fault categories are fixed strings; child IDs, exception text and configuration are not included in
+the readiness snapshot.
+
+Existing pre-intent recovery may continue only within its own validated pass,
+using the same current plan, approval, target/provider, lock and dispatch
+ownership checks. Its internal context does not admit a new public apply or
+clear the lifecycle fault by itself. A newly detected general fault, or a new
+fault for the child being recovered, retires that pass's admission at the
+approval/provider boundaries. An unrelated child's retry does not starve other
+already-authorized recovery. Post-intent recovery remains readback-only and
+terminal recovery remains projection-only. No fault or cancellation grants a
+second dispatch. Admission is checked again before approval consumption and
+at the existing provider invocation boundary for a concurrent fault detected
+after apply began.
+
+Recovery supervision is observed from the runtime supervisor, or from the
+application's existing periodic recovery task when it enters the runtime. The
+application still owns startup and shuts down if its supervised task exits;
+this correction adds no replacement supervisor or retry loop. Detection is
+operation-driven, not a continuous integrity scan of every dormant file.
+
+Persistence, the 1,024-manifest limit, locks, approval policy, historical format
+support, retention and all unresolved work are unchanged. Runtime reconstruction
+is not automatic repair or permission to restart a deployed system. Capacity
+exhaustion can still refuse new execution; it does not revoke established
+request admission. Archive/retention/deduplication and safe rollback remain a
+separate owner decision.
+
+A known child recovery fault remains eligible after its parent becomes terminal.
+The existing bounded historical recovery page retries that exact child's
+terminal bookkeeping after its retry deadline, within the same scan, transition
+and time limits. It reloads declaration/child/parent identity and sequence state,
+requires the persisted terminal projection to agree, finishes child-event audit
+and plan projection, and durably completes recovery metadata before clearing the
+matching fault revision. Failed validation, audit or metadata writes retain the
+fault; a newer revision cannot be cleared by that pass. This path neither
+prepares nor executes an operation and never releases selective target holds.
+Private read-only reconciliation may terminalize a parent; it does not by itself
+clear a previously latched recovery fault. A later exact bounded pass does so.
+
+Terminal fault reconciliation includes the existing verified-no-dispatch and
+terminal-pre-dispatch execution classes as well as terminal post-intent records.
+A durable dispatch intent is not required to retry exact bookkeeping. Existing
+orphan cleanup keeps priority when it still has pending work; otherwise every
+selected terminal class passes the same identity, sequence, projection, audit
+and fault-revision checks. This does not grant execution or hold-release authority.

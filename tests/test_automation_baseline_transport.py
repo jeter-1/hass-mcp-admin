@@ -61,19 +61,75 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.telemetry.ha_active_requests,0)
 
     async def test_redirect_disconnect_and_timeout_never_retry(self):
-        for case in ('redirect','disconnect','timeout'):
-            with self.subTest(case=case):
-                self.status=200;self.headers={};self.drop=self.hold=False
-                async with self.client.capture('2026.9.4',self.authorize) as peer:
-                    before=len(self.requests)
-                    if case=='redirect': self.status=302;self.headers={'Location':'/forbidden'}
-                    if case=='disconnect': self.drop=True
-                    if case=='timeout': self.hold=True
-                    with patch.object(c,'READ_SECONDS',.04):
-                        with self.assertRaises(c.CaptureError): await peer.configuration('1')
-                    self.assertEqual(len(self.requests)-before,1)
-                self.drop=self.hold=False
+        for kind, path in (('states', '/api/states'), ('configuration', '/api/config/automation/config/1')):
+            for case, reason in (('redirect', 'source_unavailable'),
+                                 ('disconnect', 'source_unavailable'), ('timeout', 'timeout')):
+                with self.subTest(kind=kind, case=case):
+                    self.status=200;self.headers={};self.drop=self.hold=False
+                    async with self.client.capture('2026.9.4',self.authorize) as peer:
+                        before=len(self.requests)
+                        if case=='redirect': self.status=302;self.headers={'Location':'/forbidden'}
+                        if case=='disconnect': self.drop=True
+                        if case=='timeout': self.hold=True
+                        with patch.object(c,'READ_SECONDS',.04):
+                            with self.assertRaises(c.CaptureError) as found:
+                                if kind == 'states':
+                                    await peer.read('states')
+                                else:
+                                    await peer.configuration('1')
+                        self.assertEqual(found.exception.reason, reason)
+                        self.assertIs(found.exception.retryable, True)
+                        self.assertEqual(self.requests[before:], [('GET', path)])
+                        self.assertEqual(peer.requests, 2)
+                        self.assertEqual(self.commands, [])
+                        self.assertEqual(self.telemetry.retry_count, 0)
+                        self.assertEqual(self.telemetry.ha_active_requests, 0)
+                    self.assertTrue(peer.session.closed)
+                    self.assertTrue(peer.websocket.closed)
+                    self.drop=self.hold=False
         self.assertNotIn(('GET','/forbidden'),self.requests)
+
+    async def test_rest_status_attribution_access_refusal_and_public_privacy(self):
+        from ha_mcp_engineering.tool_framework import run_structured
+        for kind, path, unavailable, retryable in (
+            ('states', '/api/states', 'source_unavailable', True),
+            ('configuration', '/api/config/automation/config/1', 'configuration_unavailable', False),
+        ):
+            for status in (404, 429, 500, 503, 401, 403):
+                with self.subTest(kind=kind, status=status):
+                    self.status = status
+                    self.body = b'SYNTHETIC_PRIVATE_RESPONSE'
+                    self.headers = {'X-Synthetic-Private': 'SYNTHETIC_PRIVATE_HEADER'}
+                    before = len(self.requests)
+                    async with self.client.capture('2026.9.4', self.authorize) as peer:
+                        async def action():
+                            if kind == 'states':
+                                return await peer.read('states')
+                            return await peer.configuration('1')
+                        raw = await run_structured('synthetic_baseline_read', '', action)
+                        response = json.loads(raw)
+                        denied = status in (401, 403)
+                        self.assertFalse(response['success'])
+                        self.assertEqual(response['error'], 'CaptureError')
+                        self.assertEqual(response['error_code'], 'analysis_unavailable')
+                        self.assertEqual(response['message'], 'Analysis evidence is unavailable.')
+                        self.assertEqual(response['details'], {
+                            'reason': 'access_denied' if denied else unavailable,
+                        })
+                        self.assertIs(response['retryable'], False if denied else retryable)
+                        self.assertEqual(response['timing']['retry_count'], 0)
+                        self.assertEqual(response['timing']['upstream_request_count'], 0)
+                        self.assertEqual(peer.requests, 2)
+                        self.assertEqual(self.requests[before:], [
+                            ('GET', '/api/websocket'), ('GET', path),
+                        ])
+                        self.assertEqual(self.commands, [])
+                        self.assertEqual(self.telemetry.ha_active_requests, 0)
+                        for private in ('SYNTHETIC_PRIVATE_RESPONSE', 'SYNTHETIC_PRIVATE_HEADER',
+                                        'SYNTHETIC_BASELINE_TOKEN', path):
+                            self.assertNotIn(private, raw)
+                    self.assertTrue(peer.session.closed)
+                    self.assertTrue(peer.websocket.closed)
 
     async def test_unsupported_selector_and_unsafe_path_zero_dispatch(self):
         async with self.client.capture('2026.9.4',self.authorize) as peer:
@@ -105,13 +161,26 @@ class TransportTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(c.CaptureError): await peer.configuration('1')
             self.assertEqual(len(self.requests),before)
 
-    async def test_config_limit_compression_nonfinite_and_authentication_refusal(self):
-        for body,status,headers in ((b'x'*300,200,{}),(b'{"id":"1","a":NaN}',200,{}),(b'{}',401,{}),(b'{}',200,{'Content-Encoding':'gzip'})):
-            self.body,self.status,self.headers=body,status,headers
-            async with self.client.capture('2026.9.4',self.authorize) as peer:
-                with patch.object(c,'CONFIG_BYTES',256):
-                    with self.assertRaises(c.CaptureError): await peer.configuration('1')
-                self.assertEqual(peer.requests,2)
+    async def test_rest_limit_compression_and_nonfinite_are_not_retryable(self):
+        for kind in ('states', 'configuration'):
+            for body, headers, reason in (
+                (b'x'*300, {}, 'response_limit'),
+                (b'{"id":"1","a":NaN}', {}, 'malformed_response'),
+                (b'{}', {'Content-Encoding': 'gzip'}, 'malformed_response'),
+            ):
+                with self.subTest(kind=kind, reason=reason, headers=headers):
+                    self.body,self.headers=body,headers
+                    async with self.client.capture('2026.9.4',self.authorize) as peer:
+                        with patch.object(c,'CONFIG_BYTES',256), patch.object(c,'FRAME_BYTES',256):
+                            with self.assertRaises(c.CaptureError) as found:
+                                if kind == 'states':
+                                    await peer.read('states')
+                                else:
+                                    await peer.configuration('1')
+                        self.assertEqual(found.exception.reason, reason)
+                        self.assertIs(found.exception.retryable, False)
+                        self.assertEqual(peer.requests,2)
+                        self.assertEqual(self.telemetry.retry_count, 0)
 
     async def test_exhausted_budget_prevents_later_application_dispatch(self):
         async with self.client.capture('2026.9.4',self.authorize) as peer:

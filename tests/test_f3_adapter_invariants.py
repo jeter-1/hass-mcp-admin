@@ -84,8 +84,8 @@ class F3AdapterIsolationTests(unittest.TestCase):
     def test_source_tool_and_schema_contract_has_only_approved_dashboard_additions(self):
         local_tools = registered_tools(get_registered_server())
         self.assertEqual(len(CAPABILITIES), 25)
-        self.assertEqual(len(local_tools) - len(CAPABILITIES), 32)
-        self.assertEqual(len(local_tools), 57)
+        self.assertEqual(len(local_tools) - len(CAPABILITIES), 33)
+        self.assertEqual(len(local_tools), 58)
         self.assertEqual(len(PLANNED_CAPABILITIES), 0)
         self.assertEqual(TASK_SCHEMA_VERSION, 1)
         self.assertEqual(

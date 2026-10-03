@@ -1,0 +1,12 @@
+{
+  "domain": "dashboard_interval_observer",
+  "name": "Disposable dashboard interval observer",
+  "version": "1.0.0",
+  "documentation": "https://github.com/jeter-1/hass-mcp-admin",
+  "dependencies": [
+    "websocket_api"
+  ],
+  "codeowners": [],
+  "requirements": [],
+  "iot_class": "local_push"
+}
