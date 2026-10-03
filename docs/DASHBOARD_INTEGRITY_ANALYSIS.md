@@ -5,16 +5,17 @@ inspects one exact dashboard's literal entity references and potential configure
 controls. It never calls those controls, evaluates templates, renders a browser,
 repairs a dashboard, or certifies that an entity can be deleted.
 
-This local checkpoint implements the analyzer and registers its public tool.
-It is **not a completed release candidate**: the central provider capability enum
-and routing/policy entries need two protected paths omitted from the approved
-file boundary (`providers/models.py` and `providers/routing.py`). Their exact
-additive patch is prepared for owner approval. Current routing-policy tests
-correctly fail until that scope is resolved. Five legacy name-list tests also
-need approval for the prepared additive-name reconciliation; their existing
-descriptor/hash assertions remain intact. No release/version/deployment is
-included. Exact frontend execution, disposable exact Core/ha-mcp acceptance,
-exact-head CI and independent dashboard review remain pending.
+This local implementation registers the public tool and its central provider
+capability, Engineering-native route and read-only analytical policy. The approved
+seven-file scope extension completes those policy entries and reconciles five
+legacy catalog-name tests while preserving their historical descriptor/hash and
+safety assertions. The policy permits no writes or fallback.
+
+This is **not a completed release candidate**. Exact frontend execution,
+disposable exact Core/ha-mcp acceptance, exact-head CI and independent dashboard
+review remain pending. No release/version/deployment is included; the unchanged
+version metadata gate remains a separate release decision. Executed local results
+and their exact revisions are recorded in the assigned RESULT.
 
 ## Evidence collection and authority
 
@@ -143,7 +144,8 @@ Its four exclusively owned files are unchanged; the transferred shared baseline
 test changes only the registered native count from 57 to 58. Its retry/failure
 attribution and refusal assertions are preserved. Earlier checkpoint evidence is
 immutable; current command/results and limitations are saved in the assigned
-RESULT and a separate `completion-002` artifact directory.
+RESULT and a separate `completion-003` artifact directory. The earlier
+`completion-002` report and evidence remain preserved at their original revision.
 
 Recovery is a reviewed reversal of dashboard changes while preserving maintenance.
 There is no live rollback because this task changed no live system. Stable v1,

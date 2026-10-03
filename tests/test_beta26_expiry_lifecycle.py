@@ -486,6 +486,7 @@ class Beta26PublicCompatibilityTests(unittest.TestCase):
             if tool.name
             not in {
                 "get_integration_inspection",
+                "dashboard_integrity_analysis",
                 "capture_automation_baseline",
                 "get_core_log_history",
                 "reverify_configuration_task",

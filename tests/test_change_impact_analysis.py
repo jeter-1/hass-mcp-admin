@@ -1785,6 +1785,7 @@ class ToolCompatibilityTests(unittest.TestCase):
         self.assertEqual(
             set(current) - set(BETA14_SCHEMA_HASHES),
             {
+                "dashboard_integrity_analysis",
                 "capture_automation_baseline",
                 "get_integration_inspection",
                 "get_core_log_history",

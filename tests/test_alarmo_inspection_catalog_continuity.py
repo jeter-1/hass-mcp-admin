@@ -14,7 +14,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_55_existing_descriptors_identical_exactly_one_added(self):
         expected = json.loads((FIXTURES / "beta10_catalog_baseline.json").read_text())["baseline_descriptors_sha256"]
         actual = {tool.name: tool.model_dump(mode="json", exclude_none=True) for tool in await get_registered_server().list_tools()}
-        self.assertEqual(set(actual) - set(expected), {"get_integration_inspection", "capture_automation_baseline"})
+        self.assertEqual(set(actual) - set(expected), {"get_integration_inspection", "capture_automation_baseline", "dashboard_integrity_analysis"})
         self.assertEqual(set(expected) - set(actual), set())
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)

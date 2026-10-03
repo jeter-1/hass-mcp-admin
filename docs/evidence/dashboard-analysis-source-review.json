@@ -1,5 +1,5 @@
 {
-  "stage": "implemented_checkpoint_central_routing_scope_pending",
+  "stage": "implemented_local_candidate_external_validation_pending",
   "engineering_base": "5e9651ce7623433e47194488531eb029a15636a6",
   "source_binding_results": [
     {
@@ -457,12 +457,12 @@
   ],
   "license_review": "Frontend Apache-2.0; no upstream code or upstream fixtures copied into runtime/tests. Engineering synthetic configuration cases are original, with exact source provenance recorded here. Upstream TypeScript execution unavailable (no local frontend dependencies); source inspection is not execution.",
   "implementation_status": {
-    "central_provider_routing": "pending explicit authorization for two omitted protected files",
+    "central_provider_routing": "implemented under approved seven-file scope extension: Engineering-native read policy, no writes or fallback",
     "exact_frontend_execution": "unavailable: node/npm not in PATH and no TypeScript/Vitest packages in searched offline locations; no installation attempted",
     "disposable_exact_lane": "pending separately supplied/authorized exact Core/frontend/ha-mcp environment",
     "ci": "not run; no push authorized",
     "independent_dashboard_review": "pending coordinator",
-    "legacy_catalog_assertions": "pending name-only reconciliation in five tests outside count-only scope; old descriptor hashes remain unchanged",
+    "legacy_catalog_assertions": "approved name-only reconciliation applied in five tests; historical descriptor hashes and safety assertions unchanged",
     "owned_serialization": "service permit retained through final page envelope worker; failed first export discarded",
     "strict_payload_types": "canonical structured/inner payload comparison; pre-SDK nonboolean isError refusal; malformed Unicode source hash classified permanently",
     "authentication_accounting": "native auth requests and received text frames counted separately and bounded; authority checked before auth send",
@@ -472,5 +472,13 @@
   "fixture_provenance": {
     "frontend_cases": "Original synthetic Python cases derived from exact source review; no copied upstream frontend fixtures",
     "descriptor_fixtures": "Exact c82b56d writer execution with SDK 1.28.1 and existing synthetic reviewed 8.4.3 provider capture; 57 native plus 25 delegated descriptors"
+  },
+  "scope_extension": {
+    "proposal": "COORD reconciliation-003/SCOPE_PROPOSAL.md",
+    "approval": "Josh explicitly approved the seven-file local correction and validation extension in the existing dashboard conversation",
+    "prior_checkpoint": "6dfd63623509c06b07631b104f4830f1d0d20656",
+    "provider_patch_sha256": "fa78c4a5718c486ecb7cbb5dc4532b1f451d13d69655a9c44b98ddcd6dff8fb1",
+    "test_patch_sha256": "03888efb5204958a403125d26c84e87d7a4979440302c8e8e4c93233c65adce4",
+    "external_gates": "unchanged; see implementation_status"
   }
 }

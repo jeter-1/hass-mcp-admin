@@ -24,6 +24,7 @@ class ProviderCapability(str, Enum):
     CORE_LOG_HISTORY = "core_log_history"
     INTEGRATION_INSPECTION = "integration_inspection"
     AUTOMATION_BASELINE_CAPTURE = "automation_baseline_capture"
+    DASHBOARD_INTEGRITY_ANALYSIS = "dashboard_integrity_analysis"
     AUTOMATION_LIST = "automation_list"
     DEVICE_REGISTRY_READ = "device_registry_read"
     ENTITY_REGISTRY_READ = "entity_registry_read"

@@ -41,6 +41,7 @@ class RoutingDecision:
 _ENGINEERING_NATIVE = {
     ProviderCapability.INTEGRATION_INSPECTION,
     ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
+    ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     ProviderCapability.TYPED_FAN_EXECUTION,
     ProviderCapability.TYPED_POWER_EXECUTION,
     ProviderCapability.GOVERNANCE_PERSISTENCE,
@@ -122,6 +123,7 @@ class RoutingPolicy:
 TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
     "get_integration_inspection": ProviderCapability.INTEGRATION_INSPECTION,
     "capture_automation_baseline": ProviderCapability.AUTOMATION_BASELINE_CAPTURE,
+    "dashboard_integrity_analysis": ProviderCapability.DASHBOARD_INTEGRITY_ANALYSIS,
     "control_fan": ProviderCapability.TYPED_FAN_EXECUTION,
     "control_power": ProviderCapability.TYPED_POWER_EXECUTION,
     "server_info": ProviderCapability.HANDOFF_GENERATION,
@@ -203,6 +205,11 @@ def requires_prevalidation_enforcement(tool_name: object) -> bool:
 
 
 ANALYTICAL_PROVIDER_POLICIES = {
+    "dashboard_integrity_analysis": {
+        "policy_id": "dashboard-integrity-v1", "access": "read", "orchestrator": "engineering",
+        "scope": "one exact dashboard plus native states and entity registry; bounded frozen projection",
+        "writes_allowed": "none", "fallback_policy": "none",
+    },
     "capture_automation_baseline": {
         "policy_id": "loaded_automation_entities-v1", "access": "read", "orchestrator": "engineering",
         "scope": "bounded loaded-automation inventory and exact configuration hashes; frozen export",

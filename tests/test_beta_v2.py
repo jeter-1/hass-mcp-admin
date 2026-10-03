@@ -589,6 +589,7 @@ class ToolParityTests(unittest.TestCase):
             set(self.production_tools),
             set(self.beta_tools)
             - {
+                "dashboard_integrity_analysis",
                 "reverify_configuration_task",
                 "capture_automation_baseline",
                 "get_integration_inspection",
@@ -691,6 +692,7 @@ class ToolParityTests(unittest.TestCase):
         self.assertEqual(
             [item["tool"] for item in catalog["beta_native"]],
             [
+                "dashboard_integrity_analysis",
                 "reverify_configuration_task",
                 "capture_automation_baseline",
                 "get_integration_inspection",
