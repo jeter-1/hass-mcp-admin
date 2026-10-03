@@ -80,6 +80,22 @@ rejected keys, exception text, payloads or cursor values. Audit records contain 
 scope, bounded limit, continuation presence and bounded capture summaries; no raw
 configuration, auth identity or cursor is recorded.
 
+Capture failures preserve the existing error codes and response envelope.
+Only `capacity_busy`, `timeout` and `source_unavailable` advertise
+`retryable=true`; all other declared capture reasons are nonretryable.
+Retryability guides a later caller decision. It never triggers an internal
+retry, fallback or automatic refresh, and repeating unchanged access, identity,
+configuration or limit failures is not a recovery strategy.
+
+HTTP 401/403 remains `access_denied` for both fixed REST readers. Other non-200
+responses reaching REST status handling report `source_unavailable` for states
+and `configuration_unavailable` for an individual configuration. Redirects are
+refused before that handling and remain `source_unavailable` for both readers.
+Initial states failure still refuses capture; final states failure may preserve
+partial evidence with unestablished identity and unknown continuity. An unavailable
+individual configuration remains unreadable with no digest. Access denial aborts
+capture at every stage; it is never reduced to an unreadable record.
+
 ## Bounds and frozen export
 
 | Boundary | Limit |

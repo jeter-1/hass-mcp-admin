@@ -161,7 +161,8 @@ class BaselinePeer:
                 if response.status in (401, 403):
                     raise c.CaptureError("access_denied")
                 if response.status != 200:
-                    raise c.CaptureError("configuration_unavailable")
+                    raise c.CaptureError("configuration_unavailable" if category == "configuration"
+                                         else "source_unavailable")
                 if response.headers.get("Content-Encoding", "identity").lower() != "identity":
                     raise c.CaptureError("malformed_response")
                 body, size = [], 0
