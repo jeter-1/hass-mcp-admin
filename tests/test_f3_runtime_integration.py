@@ -1862,5 +1862,109 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.runtime.readiness_state()['execution_ready'])
         self.assertEqual(self._writes(), 1)
 
+    async def _no_dispatch_fault_case(self, outcome):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        task, declaration = await self.fixture._preintent_active_child('no_dispatch_fault_target')
+        child_id = declaration['child_id']
+        if outcome == 'succeeded_verified':
+            self.fixture._succeed_no_dispatch_child(declaration)
+        else:
+            self.fixture._fail_no_dispatch_child(declaration)
+        original = self.runtime.children.update_runtime
+        injected = []
+        def fail_completion(current_child, *, changes):
+            if changes.get('reconciliation_result') == 'transition_processed' and not injected:
+                injected.append(True)
+                raise ExecutionStorageError('synthetic transient no-dispatch completion failure')
+            return original(current_child, changes=changes)
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=fail_completion):
+            await self.runtime.recover_once('test')
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        parent_before = asdict(self.service._load_task(task.task_id))
+        original_approval = asdict(self.service._load(task.plan_id).approval)
+        self.assertEqual(parent_before['state'].value, outcome)
+        self.assertEqual(self._writes(), 0)
+        created = await self._independent_script_plan()
+        approval = asdict(self.service._load(created['plan_id']).approval)
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(asdict(self.service._load(created['plan_id']).approval), approval)
+        self.runtime._validate_readiness_storage()
+        await self.runtime.recover_once('test')  # Exact child is still in backoff.
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        with patch.object(self.runtime, '_audit_record_events', return_value=False):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        def newer_fault(current_child, *, changes):
+            result = original(current_child, changes=changes)
+            if changes.get('reconciliation_result') == 'transition_processed':
+                self.runtime._readiness_fault('recovery_child:' + current_child)
+            return result
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=newer_fault):
+            await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        with patch.object(self.runtime, '_execute_child', side_effect=AssertionError('terminal execution forbidden')), \
+             patch.object(self.runtime, '_load_prepared', side_effect=AssertionError('terminal preparation forbidden')), \
+             patch.object(self.runtime, '_consume_approval', side_effect=AssertionError('terminal approval consumption forbidden')):
+            for _ in range(3):
+                await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(asdict(self.service._load_task(task.task_id)), parent_before)
+        self.assertEqual(asdict(self.service._load(task.plan_id).approval), original_approval)
+        child = self.runtime.children.get(child_id)
+        self.assertEqual(child.normalized_outcome, outcome)
+        self.assertEqual(child.dispatch_count, 0)
+        self.assertIsNone(child.dispatch_intent)
+        self.assertEqual(self._writes(), 0)
+        self.assertEqual(self.runtime.children.runtime(child_id)['reconciliation_result'], 'transition_processed')
+        result = await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(result['task_state'], 'succeeded_verified')
+        self.assertEqual(self._writes(), 1)
+        self.assertEqual(self.runtime.children.get(child_id).dispatch_count, 0)
+
+    async def test_verified_no_dispatch_fault_recovers_exactly(self):
+        await self._no_dispatch_fault_case('succeeded_verified')
+
+    async def test_failed_pre_dispatch_fault_recovers_exactly(self):
+        await self._no_dispatch_fault_case('failed_pre_dispatch')
+
+    async def test_verified_no_dispatch_without_fault_stays_ready(self):
+        task, declaration = await self.fixture._preintent_active_child('no_dispatch_control')
+        self.fixture._succeed_no_dispatch_child(declaration)
+        with patch.object(self.runtime, '_execute_child', side_effect=AssertionError('terminal execution forbidden')):
+            await self.runtime.recover_once('test')
+            await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.service._load_task(task.task_id).state.value, 'succeeded_verified')
+        self.assertEqual(self.runtime.children.get(declaration['child_id']).dispatch_count, 0)
+        self.assertEqual(self._writes(), 0)
+
+    async def test_no_dispatch_fault_preserves_pending_orphan_cleanup(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        _, declarations = await self.fixture._build_live_orphan()
+        declaration = declarations[0]
+        original = self.runtime._release_orphaned_child_locks
+        injected = []
+        def fail_once(current, record):
+            if current['child_id'] == declaration['child_id'] and not injected:
+                injected.append(True)
+                raise ExecutionStorageError('synthetic orphan cleanup failure')
+            return original(current, record)
+        with patch.object(self.runtime, '_release_orphaned_child_locks', side_effect=fail_once):
+            await self.runtime.recover_once('test')
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        self.assertTrue(self.runtime.children.get(declaration['child_id']).terminal)
+        self._advance_child_retry(declaration)
+        with patch.object(self.runtime, '_reconcile_terminal_child_fault', side_effect=AssertionError('pending orphan cleanup bypassed')):
+            await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.runtime.children.get(declaration['child_id']).normalized_outcome, 'cancelled_pre_dispatch')
+        self.assertFalse(self.runtime.reconciliation_items())
+        self.assertEqual(self._writes(), 0)
+
 if __name__ == "__main__":
     unittest.main()

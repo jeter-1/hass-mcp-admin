@@ -4004,11 +4004,14 @@ class F3RuntimeIntegration:
             with self._readiness_lock:
                 fault_revision = self._readiness_faults.get(fault_key)
             parent = parents[public_task_id]
+            # Preserve existing orphan cleanup when it still has work. All
+            # other known terminal faults use exact projection reconciliation,
+            # including verified no-ops and pre-dispatch terminal outcomes.
             terminal_fault = bool(
                 fault_revision is not None
                 and parent is not None and parent.state in TERMINAL_TASK_STATES
                 and record is not None and record.terminal
-                and record.dispatch_intent is not None
+                and not pending
             )
             if not pending and not terminal_fault:
                 next_cursor = cursor

@@ -501,3 +501,10 @@ fault; a newer revision cannot be cleared by that pass. This path neither
 prepares nor executes an operation and never releases selective target holds.
 Private read-only reconciliation may terminalize a parent; it does not by itself
 clear a previously latched recovery fault. A later exact bounded pass does so.
+
+Terminal fault reconciliation includes the existing verified-no-dispatch and
+terminal-pre-dispatch execution classes as well as terminal post-intent records.
+A durable dispatch intent is not required to retry exact bookkeeping. Existing
+orphan cleanup keeps priority when it still has pending work; otherwise every
+selected terminal class passes the same identity, sequence, projection, audit
+and fault-revision checks. This does not grant execution or hold-release authority.
