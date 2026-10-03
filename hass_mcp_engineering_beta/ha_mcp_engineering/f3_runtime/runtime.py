@@ -2153,12 +2153,45 @@ class F3RuntimeIntegration:
                 current = self.service._load_task(task.task_id)
             return current
 
-    def _project_locked(self, plan: Any, task: Any) -> None:
+    def _project_locked(
+        self, plan: Any, task: Any, *, require_audit_complete: bool = False
+    ) -> None:
+        terminal_recovery = task.state in TERMINAL_TASK_STATES
+
+        def terminal_event(
+            event_type: str, *, new_state: ExecutionTaskState,
+            changes: dict[str, Any], result_status: str = "success",
+        ) -> None:
+            if task.state in TERMINAL_TASK_STATES:
+                # Reconcile a known child fault without rewriting terminal
+                # task history. Exact persisted projection must already agree;
+                # only unfinished plan projection/audit may be retried.
+                if task.state != new_state or any(
+                    getattr(task, key) != value
+                    for key, value in changes.items() if key != "completed_at"
+                ):
+                    raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                return
+            self.service._record_task_event(
+                task, event_type, new_state=new_state, changes=changes,
+                result_status=result_status,
+            )
+
         declarations, records = self._validate_sequence_state(task)
+        if terminal_recovery and not (
+            all(record is not None and record.normalized_outcome == "succeeded_verified"
+                for record in records)
+            or any(record is not None and record.terminal
+                   and record.normalized_outcome != "succeeded_verified"
+                   for record in records)
+        ):
+            raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
         task = self.service._load_task(task.task_id)
         for declaration, record in zip(declarations, records, strict=True):
             if record is not None:
-                self._audit_record_events(declaration, record)
+                audited = self._audit_record_events(declaration, record)
+                if require_audit_complete and not audited:
+                    raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
                 self._project_dispatch(task, record, declaration)
                 task = self.service._load_task(task.task_id)
         outcomes = [None if item is None else item.normalized_outcome for item in records]
@@ -2199,8 +2232,7 @@ class F3RuntimeIntegration:
                     changes={"verification_summary": summary},
                 )
                 task = self.service._load_task(task.task_id)
-            self.service._record_task_event(
-                task,
+            terminal_event(
                 "task_completed",
                 new_state=ExecutionTaskState.SUCCEEDED_VERIFIED,
                 changes={
@@ -2210,7 +2242,9 @@ class F3RuntimeIntegration:
                 },
             )
             plan.status = PlanStatus.APPLIED
-            plan.applied_at = self.service._timestamp()
+            plan.applied_at = (
+                task.completed_at if terminal_recovery else self.service._timestamp()
+            )
             plan.execution_outcome = "succeeded_verified"
         else:
             active = next(
@@ -2241,8 +2275,8 @@ class F3RuntimeIntegration:
                 failed = records[failed_index]
                 assert failed is not None
                 if not completed and failed.dispatch_intent is None:
-                    self.service._record_task_event(
-                        task, "preflight_failed", new_state=ExecutionTaskState.FAILED_PRE_DISPATCH,
+                    terminal_event(
+                        "preflight_failed", new_state=ExecutionTaskState.FAILED_PRE_DISPATCH,
                         changes={
                             "completed_at": self.service._timestamp(),
                             "terminal_outcome": "failed_pre_dispatch",
@@ -2260,8 +2294,8 @@ class F3RuntimeIntegration:
                             changes={},
                         )
                         task = self.service._load_task(task.task_id)
-                    self.service._record_task_event(
-                        task, "task_failed_post_dispatch",
+                    terminal_event(
+                        "task_failed_post_dispatch",
                         new_state=ExecutionTaskState.FAILED_POST_DISPATCH,
                         changes={
                             "completed_at": self.service._timestamp(),
@@ -2281,8 +2315,8 @@ class F3RuntimeIntegration:
                             changes={},
                         )
                         task = self.service._load_task(task.task_id)
-                    self.service._record_task_event(
-                        task, "manual_review_required",
+                    terminal_event(
+                        "manual_review_required",
                         new_state=ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
                         changes={
                             "completed_at": self.service._timestamp(),
@@ -3473,6 +3507,7 @@ class F3RuntimeIntegration:
         *,
         now: datetime,
         recovery_mode: str,
+        allow_terminal_parent: bool = False,
     ) -> tuple[str, dict[str, Any] | None, Any | None]:
         """Reload authority and classify non-authoritative scheduling evidence.
 
@@ -3487,7 +3522,7 @@ class F3RuntimeIntegration:
         )
         if (
             public_task is None
-            or public_task.state in TERMINAL_TASK_STATES
+            or (public_task.state in TERMINAL_TASK_STATES and not allow_terminal_parent)
             or public_task.legacy_projection.get("execution_authority")
             != F3_EXECUTION_AUTHORITY
         ):
@@ -3887,6 +3922,35 @@ class F3RuntimeIntegration:
             )
         return True, terminalized
 
+    def _reconcile_terminal_child_fault(
+        self, declaration: dict[str, Any], *, now: datetime
+    ) -> None:
+        """Finish exact terminal bookkeeping; never prepare, execute or release holds."""
+        with self.children.public_projection_transaction():
+            disposition, current, record = self._reload_active_candidate(
+                declaration, now=now,
+                recovery_mode=_RECOVERY_MODE_TERMINAL_PROJECTION,
+                allow_terminal_parent=True,
+            )
+            if disposition != "eligible" or current is None or record is None:
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            task = self.service._load_task(current["public_task_id"])
+            plan = self.service._load_for_projection(current["plan_id"])
+            if (task.state not in TERMINAL_TASK_STATES
+                    or task.plan_id != plan.plan_id
+                    or task.plan_hash != self.service.plan_hash(plan)):
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            self._project_locked(plan, task, require_audit_complete=True)
+            self.children.update_runtime(
+                current["child_id"],
+                changes={
+                    "last_reconciliation_at": now.isoformat(),
+                    "reconciliation_result": "transition_processed",
+                    "backoff_seconds": 0,
+                    "next_eligible_at": None,
+                },
+            )
+
     def _reconcile_orphaned_children(
         self,
         *,
@@ -3936,7 +4000,17 @@ class F3RuntimeIntegration:
                 runtime=runtime,
                 lock_records=lock_records,
             )
-            if not pending:
+            fault_key = "recovery_child:" + declaration["child_id"]
+            with self._readiness_lock:
+                fault_revision = self._readiness_faults.get(fault_key)
+            parent = parents[public_task_id]
+            terminal_fault = bool(
+                fault_revision is not None
+                and parent is not None and parent.state in TERMINAL_TASK_STATES
+                and record is not None and record.terminal
+                and record.dispatch_intent is not None
+            )
+            if not pending and not terminal_fault:
                 next_cursor = cursor
                 continue
             # Do not advance past work that could not receive this sweep's
@@ -3947,14 +4021,14 @@ class F3RuntimeIntegration:
             ):
                 break
             processed += 1
-            fault_key = "recovery_child:" + declaration["child_id"]
-            with self._readiness_lock:
-                fault_revision = self._readiness_faults.get(fault_key)
             try:
-                _changed, child_terminalized = self._reconcile_orphaned_child(
-                    declaration, now=now
-                )
-                terminalized += int(child_terminalized)
+                if terminal_fault:
+                    self._reconcile_terminal_child_fault(declaration, now=now)
+                else:
+                    _changed, child_terminalized = self._reconcile_orphaned_child(
+                        declaration, now=now
+                    )
+                    terminalized += int(child_terminalized)
                 self._clear_readiness_fault(fault_key, fault_revision)
             except Exception as exc:
                 self._readiness_fault(fault_key)

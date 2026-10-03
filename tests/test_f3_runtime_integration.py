@@ -1666,5 +1666,201 @@ class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.runtime.children.get(child['child_id']).dispatch_count, 1)
         self.assertFalse(any(call[0] == 'write' for call in self.fixture.gateway.calls))
 
+    def _writes(self):
+        return sum(call[0] == 'write' for call in self.fixture.gateway.calls)
+
+    def _advance_child_retry(self, declaration):
+        retry = self.runtime.children.runtime(declaration['child_id'])['next_eligible_at']
+        if retry is not None:
+            self.service.now = lambda: datetime.fromisoformat(retry) + timedelta(seconds=301)
+
+    async def _terminal_child_metadata_fault(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        task, declaration = await self.fixture._preintent_active_child('terminal_fault_target')
+        original = self.runtime.children.update_runtime
+        injected = []
+        def fail_completion(child_id, *, changes):
+            if changes.get('reconciliation_result') == 'transition_processed' and not injected:
+                injected.append(True)
+                raise ExecutionStorageError('synthetic transient metadata failure')
+            return original(child_id, changes=changes)
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=fail_completion):
+            await self.runtime.recover_once('test')
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        self.assertEqual(self.service._load_task(task.task_id).state.value, 'succeeded_verified')
+        self.assertEqual(self._writes(), 1)
+        return task, declaration
+
+    async def _independent_script_plan(self):
+        from tests.test_dev14_configuration_plans import PROPOSED_SCRIPT
+        created = await self.service.create_configuration_plan(
+            title='Synthetic independent script update', description='Terminal fault recovery',
+            operations=[{'operation_id': 'script_update', 'resource_type': 'script',
+                         'action': 'update', 'target_id': 'set_hvac_comfort',
+                         'depends_on': [], 'proposed_config': PROPOSED_SCRIPT}],
+        )
+        await self.fixture.approve(created)
+        return created
+
+    async def test_terminal_child_fault_retries_metadata_without_redispatch(self):
+        task, declaration = await self._terminal_child_metadata_fault()
+        parent_before = asdict(self.service._load_task(task.task_id))
+        created = await self._independent_script_plan()
+        approval = asdict(self.service._load(created['plan_id']).approval)
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(asdict(self.service._load(created['plan_id']).approval), approval)
+        self.runtime.health()
+        await self.runtime.recover_once('test')  # Backoff still applies.
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        with patch.object(self.runtime, '_execute_child', side_effect=AssertionError('terminal redispatch')):
+            await self.runtime.recover_once('test')
+            await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(asdict(self.service._load_task(task.task_id)), parent_before)
+        self.assertEqual(self.runtime.children.runtime(declaration['child_id'])['reconciliation_result'], 'transition_processed')
+        self.assertEqual(self.runtime.children.get(declaration['child_id']).dispatch_count, 1)
+        self.assertEqual(self._writes(), 1)
+        result = await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(result['task_state'], 'succeeded_verified')
+        self.assertEqual(self._writes(), 2)
+
+    async def test_private_reconciliation_terminal_child_restores_readiness_with_hold(self):
+        from tests.test_dev14_configuration_plans import PROPOSED_AUTOMATION
+        task, declaration = await self.fixture._post_intent_active_child('manual_fault_target')
+        child_id = declaration['child_id']
+        with patch.object(self.runtime, '_execute_child', side_effect=RuntimeError('synthetic transient recovery failure')):
+            await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        expected = copy.deepcopy(PROPOSED_AUTOMATION)
+        expected['id'] = declaration['target_id']
+        self.fixture.gateway.configs[('automation', declaration['target_id'])] = expected
+        runtime = self.runtime.children.runtime(child_id)
+        self._advance_child_retry(declaration)
+        await self.runtime.reconcile_child(
+            child_id=child_id, action='rerun_observation',
+            record_generation=runtime['record_generation'],
+            prepared_hash=declaration['prepared_operation_hash'],
+            hold_generation_binding=','.join(f"{item['key']}:{item['generation']}" for item in runtime['selective_hold_tokens']),
+            authorized_principal='home_assistant_admin_ingress:synthetic_reviewer',
+        )
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.service._load_task(task.task_id).state.value, 'manual_review_required')
+        holds = copy.deepcopy(self.runtime.children.runtime(child_id)['selective_hold_tokens'])
+        self.assertTrue(holds)
+        locks = self.runtime.locks.records()
+        created = await self._independent_script_plan()
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created['plan_id'], created['plan_hash'])
+        with patch.object(self.runtime, '_execute_child', side_effect=AssertionError('terminal redispatch')):
+            for _ in range(3):
+                await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.runtime.children.runtime(child_id)['selective_hold_tokens'], holds)
+        self.assertEqual(self.runtime.locks.records(), locks)
+        self.assertEqual(self.runtime.health()['status'], 'manual_intervention_required')
+        self.assertEqual(self.runtime.children.get(child_id).dispatch_count, 1)
+        self.assertEqual(self._writes(), 0)
+        result = await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(result['task_state'], 'succeeded_verified')
+        self.assertEqual(self._writes(), 1)
+        self.assertEqual(self.runtime.children.runtime(child_id)['selective_hold_tokens'], holds)
+
+    async def test_terminal_fault_waits_for_exact_audit_and_metadata_repair(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        task, declaration = await self._terminal_child_metadata_fault()
+        self._advance_child_retry(declaration)
+        with patch.object(self.runtime, '_audit_record_events', return_value=False):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        original = self.runtime.children.update_runtime
+        def fail_completion(child_id, *, changes):
+            if changes.get('reconciliation_result') == 'transition_processed':
+                raise ExecutionStorageError('synthetic unrepaired metadata')
+            return original(child_id, changes=changes)
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=fail_completion):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self._writes(), 1)
+
+    async def test_terminal_fault_keeps_newer_revision_and_corrupt_child_refusal(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        _, declaration = await self._terminal_child_metadata_fault()
+        child_id = declaration['child_id']
+        self._advance_child_retry(declaration)
+        path = self.runtime.children._path(child_id)
+        original_bytes = path.read_bytes()
+        path.write_bytes(b'{synthetic corrupt terminal child')
+        with self.assertRaises(ExecutionStorageError):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        path.write_bytes(original_bytes)
+        original = self.runtime.children.update_runtime
+        def newer_fault(child_id, *, changes):
+            result = original(child_id, changes=changes)
+            if changes.get('reconciliation_result') == 'transition_processed':
+                self.runtime._readiness_fault('recovery_child:' + child_id)
+            return result
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=newer_fault):
+            await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self._writes(), 1)
+
+    async def test_terminal_fault_retries_plan_projection_after_parent_was_saved(self):
+        task, declaration = await self.fixture._preintent_active_child('plan_projection_fault_target')
+        original = self.service._save
+        injected = []
+        def fail_plan_projection(plan):
+            if plan.status.value == 'applied' and not injected:
+                injected.append(True)
+                raise RuntimeError('synthetic plan projection failure')
+            return original(plan)
+        with patch.object(self.service, '_save', side_effect=fail_plan_projection):
+            await self.runtime.recover_once('test')
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.service._load_task(task.task_id).state.value, 'succeeded_verified')
+        self.assertNotEqual(self.service._load(task.plan_id).status.value, 'applied')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.service._load(task.plan_id).status.value, 'applied')
+        self.assertEqual(self._writes(), 1)
+
+    async def test_terminal_fault_requires_matching_parent_projection_and_budget(self):
+        task, declaration = await self._terminal_child_metadata_fault()
+        self._advance_child_retry(declaration)
+        # A pass that cannot reach the exact child cannot clear its fault.
+        ticks = iter(range(1000))
+        with patch.object(self.runtime, '_recovery_monotonic', side_effect=lambda: next(ticks) * 10):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        original = self.service._load_task
+        def mismatched_projection(task_id):
+            result = original(task_id)
+            if task_id == task.task_id:
+                result.verification_summary['children'][0]['dispatch_count'] = 0
+            return result
+        with patch.object(self.service, '_load_task', side_effect=mismatched_projection):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        declarations = self.runtime.children.declarations_for_task(task.task_id)
+        with patch.object(self.runtime, '_validate_sequence_state', return_value=(declarations, (None,))):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self._writes(), 1)
+
 if __name__ == "__main__":
     unittest.main()

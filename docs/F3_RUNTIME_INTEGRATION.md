@@ -489,3 +489,15 @@ is not automatic repair or permission to restart a deployed system. Capacity
 exhaustion can still refuse new execution; it does not revoke established
 request admission. Archive/retention/deduplication and safe rollback remain a
 separate owner decision.
+
+A known child recovery fault remains eligible after its parent becomes terminal.
+The existing bounded historical recovery page retries that exact child's
+terminal bookkeeping after its retry deadline, within the same scan, transition
+and time limits. It reloads declaration/child/parent identity and sequence state,
+requires the persisted terminal projection to agree, finishes child-event audit
+and plan projection, and durably completes recovery metadata before clearing the
+matching fault revision. Failed validation, audit or metadata writes retain the
+fault; a newer revision cannot be cleared by that pass. This path neither
+prepares nor executes an operation and never releases selective target holds.
+Private read-only reconciliation may terminalize a parent; it does not by itself
+clear a previously latched recovery fault. A later exact bounded pass does so.
