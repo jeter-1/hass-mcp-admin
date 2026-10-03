@@ -620,6 +620,36 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(.1)
         self.assertEqual(self.calls, before)
 
+    async def test_dns_cancellation_does_not_wait_for_worker_loop_shutdown(self):
+        import socket
+        import threading
+        from ha_mcp_engineering.clients.mcp import McpDashboardTransport
+        self.transport = McpDashboardTransport('http://synthetic.invalid/mcp',
+                                               timeout_seconds=2, client_version='synthetic')
+        entered = asyncio.Event()
+        release = threading.Event()
+        loop = asyncio.get_running_loop()
+        def blocked_resolver(*args, **kwargs):
+            self.assertIn(args[0], ('synthetic.invalid', b'synthetic.invalid'))
+            loop.call_soon_threadsafe(entered.set)
+            release.wait(2)
+            raise socket.gaierror('synthetic resolver refusal')
+        with patch.object(socket, 'getaddrinfo', blocked_resolver):
+            task = asyncio.create_task(self.call())
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                task.cancel()
+                done, _ = await asyncio.wait([task], timeout=.5)
+                # Functional ownership check: cancellation must finish while
+                # DNS is still withheld, not wait for a per-call loop shutdown.
+                self.assertIn(task, done)
+                self.assertTrue(task.cancelled())
+                self.assertFalse(release.is_set())
+                self.assertEqual(self.calls, [])
+            finally:
+                release.set()
+                await asyncio.gather(task, return_exceptions=True)
+
     async def test_maximum_upstream_transport_responsiveness(self):
         root = Path(__file__).resolve().parents[1]
         command = [sys.executable, '-I', '-B', '-c',

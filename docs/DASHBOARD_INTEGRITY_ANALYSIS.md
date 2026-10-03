@@ -18,8 +18,10 @@ feature and must not be released as its completion.
   public HTTP-client factory. It bounds raw JSON/SSE bytes before decoding,
   refuses redirects/compression and extra application calls, blocks all SDK GETs
   locally, and retains one exact dashboard read plus bounded discovery and
-  session cleanup. SDK parsing/serialization runs on an owned worker; admission
-  callbacks remain on the owning event loop. Existing transport entry points
+  session cleanup. Strict JSON decoding, SSE normalization and result/catalog
+  serialization run in owned workers. Network/session tasks and admission
+  callbacks remain on the owning event loop, avoiding per-call worker-loop DNS
+  shutdown delays. Existing transport entry points
   keep their original behavior. The provider's no-refresh integration is pending.
 - Projection to validated entity identifiers and closed availability/disabled
   categories. Raw values, attributes, registry names and options are omitted.

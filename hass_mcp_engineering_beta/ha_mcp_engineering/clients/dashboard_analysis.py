@@ -9,7 +9,6 @@ import asyncio
 from contextlib import asynccontextmanager
 import json
 import time
-import threading
 
 import aiohttp
 import httpx
@@ -238,9 +237,9 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
     so incomplete streams cannot enter its resumption/reconnection path.
     """
 
-    def __init__(self, url, arguments, budget, stopped, owner_call, authorize, deadline):
+    def __init__(self, url, arguments, budget, owner_task, authorize, deadline):
         self.url, self.arguments, self.budget = httpx.URL(url), arguments, budget
-        self.stopped, self.owner_call, self.authorize = stopped, owner_call, authorize
+        self.owner_task, self.authorize = owner_task, authorize
         self.deadline = deadline
         self.delegate = httpx.AsyncHTTPTransport(retries=0)
         self.counts = {}
@@ -266,12 +265,12 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
             return httpx.Response(405, request=request)
         if time.monotonic() >= self.deadline:
             raise DashboardTransportError("timeout")
-        if self.stopped.is_set() and request.method != "DELETE":
+        if self.owner_task.cancelling() and request.method != "DELETE":
             raise asyncio.CancelledError()
         if request.method == "DELETE":
             operation, maximum, message = "session_cleanup", c.AUTH_BYTES, None
         elif request.method == "POST":
-            message = c.parse(request.content, maximum=c.AUTH_BYTES, depth=8)
+            message = await c.worker(c.parse, request.content, maximum=c.AUTH_BYTES, depth=8)
             if type(message) is not dict:
                 raise DashboardTransportError("prohibited_argument", retryable=False)
             operation = message.get("method")
@@ -288,8 +287,8 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
         if self.counts[operation] > (MAX_TOOL_CATALOG_PAGES if operation == "tools/list" else 1):
             raise DashboardTransportError("prohibited_argument", retryable=False)
         if operation != "session_cleanup":
-            await self.owner_call(self.authorize)
-            if self.stopped.is_set():
+            self.authorize()
+            if self.owner_task.cancelling():
                 raise asyncio.CancelledError()
         self.budget.remaining()
         self.budget.requests += 1
@@ -312,7 +311,7 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
                                       content=raw, request=request)
             if content_type == "application/json":
                 raw = await response.aread()
-                decoded = c.parse(raw, maximum=maximum, depth=64)
+                decoded = await c.worker(c.parse, raw, maximum=maximum, depth=64)
             elif content_type == "text/event-stream":
                 decoded = None
                 async for event in EventSource(response).aiter_sse():
@@ -320,11 +319,11 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
                         continue
                     if event.event != "message":
                         raise DashboardTransportError("protocol_error", retryable=False)
-                    decoded = c.parse(event.data.encode("utf-8"), maximum=maximum, depth=64)
+                    decoded = await c.worker(c.parse, event.data.encode("utf-8"), maximum=maximum, depth=64)
                     break
                 if decoded is None:
                     raise DashboardTransportError("protocol_error", retryable=False)
-                raw = c.canonical(decoded)
+                raw = await c.worker(c.canonical, decoded)
                 if len(raw) > maximum:
                     raise c.AnalysisError("response_limit")
             else:
@@ -344,16 +343,20 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
 
 
 async def bounded_mcp_read(transport, arguments, capability_validator, *, authorize, budget):
-    """Run bounded SDK decoding on an owned worker; authority stays on its loop."""
+    """Keep network/session ownership on the caller's loop; offload pure work.
+
+    A per-call asyncio.run worker would wait for a blocked default-executor DNS
+    resolver at shutdown, beyond the read deadline. The existing owning loop
+    instead cancels SDK I/O normally; finite decoding workers are still drained.
+    """
     from datetime import timedelta
     from mcp.client.streamable_http import streamablehttp_client
     from ..mcp_sdk_compatibility import ReviewedProtocolClientSession
     from .mcp import (DashboardTransportError, McpDashboardHandshake, McpDashboardRead,
                       REQUIRED_DASHBOARD_TOOL, MAX_UPSTREAM_CONTENT_CHARS,
+                      MAX_TOOL_CATALOG_PAGES, MAX_TOOL_CATALOG_SIZE,
                       _classified_transport_error, _iter_exceptions)
 
-    owner = asyncio.get_running_loop()
-    stopped = threading.Event()
     authorize()
     seconds = min(budget.remaining(), transport._timeout.total_seconds())
     deadline = time.monotonic() + seconds
@@ -364,78 +367,73 @@ async def bounded_mcp_read(transport, arguments, capability_validator, *, author
         if telemetry is not None and not telemetry.authorize_core_dispatch():
             raise DashboardTransportError("connection_failed", retryable=False)
 
-    async def on_owner(function, *args):
-        async def invoke():
-            if stopped.is_set():
-                raise asyncio.CancelledError()
-            return function(*args)
-        return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(invoke(), owner))
+    def dump_tools(page):
+        return [tool.model_dump(mode="json", by_alias=True, exclude_none=True)
+                for tool in page.tools]
 
-    def run():
-        async def exchange():
-            started = time.perf_counter()
-            fence = _AnalysisMcpHttp(transport._url, arguments, budget, stopped, on_owner, authorize, deadline)
-            def factory(headers=None, timeout=None, auth=None):
-                if auth is not None:
-                    raise DashboardTransportError("prohibited_argument", retryable=False)
-                return httpx.AsyncClient(transport=fence, headers=headers, timeout=timeout,
-                                        trust_env=False, follow_redirects=False)
-            async with asyncio.timeout_at(deadline):
-                async with streamablehttp_client(transport._url, timeout=seconds,
-                        sse_read_timeout=seconds, httpx_client_factory=factory,
-                        terminate_on_close=True) as (read, write, _):
-                    async with ReviewedProtocolClientSession(read, write,
-                            read_timeout_seconds=timedelta(seconds=seconds),
-                            client_info=transport._client_info) as session:
-                        initialized = await session.initialize()
-                        tools = await transport._list_all_tools(session)
-                        handshake = McpDashboardHandshake(str(initialized.protocolVersion),
-                            str(initialized.serverInfo.name), str(initialized.serverInfo.version),
-                            tuple(tools), round((time.perf_counter() - started) * 1000, 3))
-                        await on_owner(capability_validator, handshake)
-                        await on_owner(admit_call)
-                        call_started = time.perf_counter()
-                        result = await session.call_tool(REQUIRED_DASHBOARD_TOOL, arguments,
-                            read_timeout_seconds=timedelta(seconds=seconds))
-                        encoded = result.model_dump(mode="json", by_alias=True, exclude_none=True)
-                        # Preserve the pre-existing stricter content-character bound.
-                        if len(json.dumps(encoded, default=str)) > MAX_UPSTREAM_CONTENT_CHARS:
-                            raise DashboardTransportError("response_too_large", retryable=False)
-                        result = McpDashboardRead(handshake, encoded,
-                            round((time.perf_counter() - call_started) * 1000, 3))
-                if fence.failure is not None:
-                    raise fence.failure
-                if time.monotonic() >= deadline:
-                    raise DashboardTransportError("timeout")
-                return result
-        try:
-            return asyncio.run(exchange())
-        except BaseException as error:
-            # SDK task groups must not demote an authority/limit failure into a
-            # transient provider error. All exposed reasons remain fixed.
-            for leaf in _iter_exceptions(error):
-                if isinstance(leaf, c.AnalysisError):
-                    raise leaf from None
-            if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
-                raise
-            raise _classified_transport_error(error) from None
+    async def catalog(session):
+        tools, cursor, seen = [], None, set()
+        for _ in range(MAX_TOOL_CATALOG_PAGES):
+            page = await session.list_tools(cursor)
+            if len(tools) + len(page.tools) > MAX_TOOL_CATALOG_SIZE:
+                raise DashboardTransportError("invalid_response", retryable=False)
+            tools.extend(await c.worker(dump_tools, page))
+            cursor = page.nextCursor
+            if not cursor:
+                return tuple(tools)
+            if len(cursor) > 2048 or cursor in seen:
+                raise DashboardTransportError("protocol_error", retryable=False)
+            seen.add(cursor)
+        raise DashboardTransportError("invalid_response", retryable=False)
 
-    task = asyncio.create_task(asyncio.to_thread(run))
+    def dump_result(result):
+        encoded = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+        # Preserve the pre-existing stricter content-character bound.
+        if len(json.dumps(encoded, default=str)) > MAX_UPSTREAM_CONTENT_CHARS:
+            raise DashboardTransportError("response_too_large", retryable=False)
+        return encoded
+
+    started = time.perf_counter()
+    fence = _AnalysisMcpHttp(transport._url, arguments, budget,
+                            asyncio.current_task(), authorize, deadline)
+    def factory(headers=None, timeout=None, auth=None):
+        if auth is not None:
+            raise DashboardTransportError("prohibited_argument", retryable=False)
+        return httpx.AsyncClient(transport=fence, headers=headers, timeout=timeout,
+                                trust_env=False, follow_redirects=False)
     try:
-        result = await asyncio.shield(task)
-    except asyncio.CancelledError:
-        stopped.set()
-        # The worker's finite timeout owns all SDK I/O and closes it before a
-        # collector can release its single in-flight capacity slot.
-        while not task.done():
-            try:
-                await asyncio.shield(task)
-            except asyncio.CancelledError:
-                continue
-            except Exception:
-                break
-        if task.done() and not task.cancelled():
-            task.exception()
-        raise
+        async with asyncio.timeout_at(deadline):
+            async with streamablehttp_client(transport._url, timeout=seconds,
+                    sse_read_timeout=seconds, httpx_client_factory=factory,
+                    terminate_on_close=True) as (read, write, _):
+                async with ReviewedProtocolClientSession(read, write,
+                        read_timeout_seconds=timedelta(seconds=seconds),
+                        client_info=transport._client_info) as session:
+                    initialized = await session.initialize()
+                    tools = await catalog(session)
+                    handshake = McpDashboardHandshake(str(initialized.protocolVersion),
+                        str(initialized.serverInfo.name), str(initialized.serverInfo.version),
+                        tools, round((time.perf_counter() - started) * 1000, 3))
+                    capability_validator(handshake)
+                    admit_call()
+                    call_started = time.perf_counter()
+                    result = await session.call_tool(REQUIRED_DASHBOARD_TOOL, arguments,
+                        read_timeout_seconds=timedelta(seconds=seconds))
+                    encoded = await c.worker(dump_result, result)
+                    result = McpDashboardRead(handshake, encoded,
+                        round((time.perf_counter() - call_started) * 1000, 3))
+            if fence.failure is not None:
+                raise fence.failure
+            if time.monotonic() >= deadline:
+                raise DashboardTransportError("timeout")
+    except BaseException as error:
+        # SDK task groups must not demote an authority/limit failure into a
+        # transient provider error. All exposed reasons remain fixed.
+        for leaf in _iter_exceptions(error):
+            if isinstance(leaf, c.AnalysisError):
+                raise leaf from None
+        if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+            raise
+        raise _classified_transport_error(error) from None
     authorize()
     return result
