@@ -270,6 +270,56 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
             return json.loads(await dashboard_tools.dashboard_integrity_analysis(
                 url_path="synthetic", **arguments))
 
+    def assert_upstream_timing(self, response, count):
+        timing = response["timing"]
+        self.assertEqual(timing["upstream_request_count"], count)
+        self.assertEqual(self.telemetry.upstream_active_requests, 0)
+        for field in ("upstream_ms", "upstream_wall_clock_span_ms"):
+            if count:
+                self.assertGreater(timing[field], 0)
+            else:
+                self.assertEqual(timing[field], 0)
+
+    async def test_upstream_telemetry_in_success_response(self):
+        response = await self.invoke()
+        self.assertTrue(response["success"], response)
+        self.assertEqual(self.mcp_calls.count("tools/call"), 1)
+        self.assert_upstream_timing(response, 1)
+        self.assertTrue(response["timing"]["upstream_attempted"])
+        self.assertEqual(response["timing"]["home_assistant_request_count"], 2)
+
+    async def test_upstream_telemetry_in_dispatched_refusal_response(self):
+        self.dashboard_payload = {"success": False, "error": "synthetic refusal"}
+        response = await self.invoke()
+        self.assertFalse(response["success"])
+        self.assertEqual(response["details"]["reason"], "source_rejected")
+        self.assertEqual(self.mcp_calls.count("tools/call"), 1)
+        self.assertEqual(self.calls, [])
+        self.assert_upstream_timing(response, 1)
+        self.assertTrue(response["timing"]["upstream_attempted"])
+        self.assertEqual(response["timing"]["home_assistant_request_count"], 0)
+
+    async def test_continuation_telemetry_is_zero_with_fresh_request_context(self):
+        first = await self.invoke(limit=1)
+        self.assertTrue(first["success"], first)
+        before = list(self.calls), list(self.mcp_calls)
+        for admitted in (True, False):
+            telemetry, token = begin_request()
+            telemetry.caller_id = "synthetic-owner"
+            telemetry.core_dispatch_authorizer = lambda: self.authorized
+            self.telemetry = telemetry
+            try:
+                if not admitted:
+                    self.upstream._state.capability_status = "unavailable"
+                response = await self.invoke(cursor=first["data"]["pagination"]["next_cursor"])
+                self.assertEqual(response["success"], admitted, response)
+                self.assert_upstream_timing(response, 0)
+                self.assertFalse(response["timing"]["upstream_attempted"])
+                self.assertEqual(response["timing"]["home_assistant_request_count"], 0)
+                self.assertEqual(before, (self.calls, self.mcp_calls))
+            finally:
+                end_request(token)
+
     async def test_useful_mixed_report_and_frozen_export(self):
         with patch.object(self.upstream, "refresh_capabilities", side_effect=AssertionError("refresh forbidden")), \
              patch.object(self.upstream._registry, "refresh", side_effect=AssertionError("refresh forbidden")), \
@@ -336,6 +386,8 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.invoke())["success"])
         self.assertEqual(self.calls + self.mcp_calls, [])
         self.assertEqual(self.service.snapshots, {})
+        self.assert_upstream_timing(result, 0)
+        self.assertFalse(result["timing"]["upstream_attempted"])
 
     async def test_core_retirement_during_upstream_read_discards_snapshot(self):
         self.retire_at = "tools/call"

@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "hass_mcp_engineeri
 from ha_mcp_engineering.clients.dashboard_analysis import CollectionBudget, DashboardAnalysisClient
 from ha_mcp_engineering.dashboard_analysis import contracts as c
 from ha_mcp_engineering.dashboard_analysis.provider import project_inventory
+from ha_mcp_engineering.request_context import begin_request, end_request
 
 
 class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
@@ -461,6 +462,88 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         return await self.transport.execute_analysis_read(
             self.arguments if arguments is None else arguments,
             self.validate, authorize=self.authorize, budget=self.budget)
+
+    async def test_upstream_telemetry_balanced_after_exchange_failures(self):
+        from datetime import timedelta
+        from ha_mcp_engineering.clients.mcp import DashboardTransportError
+        for mode in ('refusal', 'disconnect', 'malformed', 'admission', 'timeout'):
+            with self.subTest(mode=mode):
+                telemetry, token = begin_request()
+                self.calls.clear()
+                self.budget = CollectionBudget()
+                self.failure_at = 'tools/call' if mode == 'refusal' else None
+                self.failure_status = 403
+                self.drop_at = 'tools/call' if mode == 'disconnect' else None
+                self.call_raw = b'{' if mode == 'malformed' else None
+                self.reject = 'input_schema_mismatch' if mode == 'admission' else None
+                self.delay_at, self.delay = ('initialize', .3) if mode == 'timeout' else (None, 0)
+                self.transport._timeout = timedelta(seconds=.2 if mode == 'timeout' else 2)
+                try:
+                    with self.assertRaises((DashboardTransportError, c.AnalysisError)):
+                        await self.call()
+                    self.assertIn('initialize', self.calls)
+                    self.assertEqual(telemetry.upstream_request_count, 1)
+                    self.assertEqual(telemetry.upstream_active_requests, 0)
+                    self.assertEqual(telemetry.upstream_max_concurrent_requests, 1)
+                    self.assertGreater(telemetry.upstream_duration_ms, 0)
+                    self.assertGreater(telemetry.upstream_wall_clock_span_ms, 0)
+                    self.assertEqual(self.calls.count('tools/call'),
+                                     0 if mode in ('admission', 'timeout') else 1)
+                    self.assertNotIn('GET', self.calls)
+                finally:
+                    end_request(token)
+
+    async def test_upstream_telemetry_balanced_after_cancellation(self):
+        telemetry, token = begin_request()
+        self.addCleanup(end_request, token)
+        self.delay_at, self.delay = 'tools/list', .1
+        task = asyncio.create_task(self.call())
+        try:
+            await asyncio.wait_for(self.entered.wait(), 2)
+            self.assertEqual(telemetry.upstream_request_count, 1)
+            self.assertEqual(telemetry.upstream_active_requests, 1)
+        finally:
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await asyncio.wait_for(task, 3)
+        self.assertEqual(telemetry.upstream_request_count, 1)
+        self.assertEqual(telemetry.upstream_active_requests, 0)
+        self.assertEqual(telemetry.upstream_max_concurrent_requests, 1)
+        self.assertGreater(telemetry.upstream_duration_ms, 0)
+        self.assertGreater(telemetry.upstream_wall_clock_span_ms, 0)
+        before = list(self.calls), telemetry.upstream_duration_ms
+        await asyncio.sleep(.1)
+        self.assertEqual(before, (self.calls, telemetry.upstream_duration_ms))
+        self.assertNotIn('tools/call', self.calls)
+
+    async def test_upstream_telemetry_zero_before_first_wire_dispatch(self):
+        from ha_mcp_engineering.clients.mcp import DashboardTransportError
+        telemetry, token = begin_request()
+        self.addCleanup(end_request, token)
+        await self.test_wrong_selector_or_unavailable_authority_zero_wire_requests()
+        self.available = True
+        self.budget.exhausted = True
+        with self.assertRaises(c.AnalysisError):
+            await self.call()
+        self.budget = CollectionBudget()
+        original = c.worker
+        async def retire(function, *args, **kwargs):
+            result = await original(function, *args, **kwargs)
+            self.available = False
+            return result
+        with patch.object(c, 'worker', retire):
+            with self.assertRaises((c.AnalysisError, DashboardTransportError)):
+                await self.call()
+        self.assertFalse(self.available)  # Reached the pre-dispatch SDK work.
+        self.assertEqual(self.calls, [])
+        self.assertEqual(self.budget.requests, 0)
+        self.assertEqual(telemetry.upstream_request_count, 0)
+        self.assertEqual(telemetry.upstream_active_requests, 0)
+        self.assertEqual(telemetry.upstream_max_concurrent_requests, 0)
+        self.assertEqual(telemetry.upstream_duration_ms, 0)
+        self.assertEqual(telemetry.upstream_wall_clock_span_ms, 0)
+        self.assertIsNone(telemetry.upstream_span_started)
+        self.assertIsNone(telemetry.upstream_span_finished)
 
     async def test_json_and_sse_success_one_call_no_get_and_owner_thread_admission(self):
         for mode in ('json', 'sse'):

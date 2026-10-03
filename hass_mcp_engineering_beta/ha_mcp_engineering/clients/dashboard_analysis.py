@@ -268,6 +268,8 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
         self.delegate = httpx.AsyncHTTPTransport(retries=0)
         self.counts = {}
         self.failure = None
+        self.telemetry = current_telemetry()
+        self.attempt_started = None
 
     async def aclose(self):
         await self.delegate.aclose()
@@ -317,6 +319,12 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
         self.budget.remaining()
         self.budget.requests += 1
         request.headers["Accept-Encoding"] = "identity"
+        # One logical exchange, including discovery and cleanup. Refusals
+        # before this first permitted dispatch remain zero-I/O telemetry.
+        if self.attempt_started is None:
+            self.attempt_started = time.perf_counter()
+            if self.telemetry is not None:
+                self.telemetry.begin_upstream_attempt(self.attempt_started)
         response = await self.delegate.handle_async_request(request)
         response.stream = _McpBytes(response.stream, self.budget, maximum)
         try:
@@ -477,5 +485,12 @@ async def _bounded_mcp_read(transport, arguments, capability_validator, *, autho
         if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
             raise
         raise _classified_transport_error(error) from None
+    finally:
+        # SDK task groups/session cleanup have exited, including on failure
+        # or cancellation. Balance only an attempt that actually began.
+        if fence.attempt_started is not None and fence.telemetry is not None:
+            finished = time.perf_counter()
+            fence.telemetry.finish_upstream_attempt(
+                finished, (finished - fence.attempt_started) * 1000)
     authorize()
     return result
