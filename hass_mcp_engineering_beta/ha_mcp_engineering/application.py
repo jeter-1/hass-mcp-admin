@@ -206,11 +206,9 @@ def create_application(
                 settings.upstream_dashboard_mcp_url
             )
         ),
-        execution_readiness=lambda: bool(
-            GOVERNANCE.require().f3_runtime
-            and GOVERNANCE.require().f3_runtime.health().get(
-                "execution_ready"
-            )
+        execution_readiness=lambda: (
+            GOVERNANCE.require().f3_runtime.readiness_state()
+            if GOVERNANCE.require().f3_runtime is not None else {}
         ),
         core_runtime=CORE_READMISSION,
     )

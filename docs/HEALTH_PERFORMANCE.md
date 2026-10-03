@@ -170,3 +170,50 @@ provider admission, useful reads and final execution settlement across the
 interval. Use a fresh approved plan only under the separate bounded live-test
 contract; never replay F032's failed pre-dispatch plan. Stop on authority drift,
 uncertain dispatch or provider loss. Source tests do not close that live gate.
+
+## F3 request readiness correction (source candidate)
+
+Routine `/ready`, catalog readiness and authenticated request admission now read
+an explicit F3 lifecycle snapshot. They do not call deep health, enumerate F3
+history, deserialize child/manifest records, or submit a worker scan. The
+snapshot uses a short process-local lock and a fixed set of fault categories;
+its cost does not grow with retained terminal history. Catalog reconciliation,
+inbound validation, authentication, rate limiting and per-tool provider/Core
+authority checks remain in their existing order.
+
+Request admission and F3 execution admission are distinct. Before the first
+successful storage validation/recovery, both remain unavailable. Afterwards,
+`ready` on `/ready` means the gateway can serve requests; it does not promise
+F3 dispatch or healthy storage for every tool. A detected F3 fault returns HTTP
+200 with `status=ready_f3_execution_unavailable`, `f3_execution_ready=false`
+and `f3_readiness_status=faulted`. Independent authenticated reads remain
+reachable; a read requiring corrupt storage still returns its original failure.
+Pending initial catalog reconciliation continues to return HTTP 503. The
+liveness endpoint is unchanged.
+
+Deep F3 health remains an expensive diagnostic operation. Startup and recovery
+of a detected read/pass fault perform full storage validation, including child
+envelopes outside the bounded scheduler page, before restoring execution
+admission. Child recovery failures remain recorded across backoff and unrelated
+passes until that child's authoritative recovery succeeds. A failed durable
+write is not cleared by successful reads; it requires repair and runtime
+reconstruction. See [the lifecycle contract](F3_RUNTIME_INTEGRATION.md#request-and-execution-readiness-source-candidate).
+These checks can still block the event loop and scale with history. This change
+removes the request-readiness scan; it does not redesign health or recovery.
+
+`tests/test_f3_readiness.py` uses current repository writers, real Linux file
+locks and fsync, and synthetic histories of 0, 12, 200 and 1,023 tasks. Fixture
+preparation is measured separately. Operation counts must remain zero for
+history scans, manifest reads, child-envelope reads and worker submissions on
+repeated serial/concurrent ready and not-ready gateway calls. Responsiveness
+receipts include wall time, heartbeat wall gaps, loop-thread CPU gaps and GC
+thread attribution, both serially and with a controlled contending thread.
+The 250 ms loop-thread CPU guard is a coarse starvation tripwire, not a wall
+latency SLA; zero storage work is the primary regression assertion. There is no
+new sub-100 ms wall-time requirement. Source evidence does not establish Linux
+installed latency, Windows behavior or the cause of F032/disconnects.
+
+The 1,024-manifest allocation limit and retained history are unchanged. This
+correction neither prevents exhaustion nor certifies free execution capacity.
+Capacity and the lifecycle of settled evidence require a separate persistence
+and rollback decision.

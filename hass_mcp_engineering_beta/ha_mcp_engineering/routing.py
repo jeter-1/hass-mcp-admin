@@ -174,7 +174,7 @@ class AuthenticatedMcpGateway:
         audit: AuditLogger,
         *,
         require_initial_catalog_reconciliation: bool = False,
-        execution_readiness: Callable[[], bool] | None = None,
+        execution_readiness: Callable[[], dict[str, object]] | None = None,
         core_runtime=None,
     ):
         self.app = app
@@ -218,14 +218,20 @@ class AuthenticatedMcpGateway:
     def catalog_readiness_state(self) -> dict[str, bool | str]:
         with self._catalog_readiness_lock:
             complete = self._initial_catalog_reconciliation_complete
-        try:
-            execution_ready = (
-                True if self._execution_readiness is None
-                else bool(self._execution_readiness())
-            )
-        except Exception:
-            execution_ready = False
-        ready = complete and execution_ready
+        request_ready = execution_ready = self._execution_readiness is None
+        f3_status = "unavailable"
+        if self._execution_readiness is not None:
+            try:
+                lifecycle = self._execution_readiness()
+                request_ready = lifecycle.get("request_ready") is True
+                execution_ready = lifecycle.get("execution_ready") is True
+                if lifecycle.get("status") in {"initializing", "ready", "faulted"}:
+                    f3_status = lifecycle["status"]
+            except Exception:
+                # Do not reveal exception text or turn an unavailable lifecycle
+                # observation into a successful request/execution signal.
+                request_ready = execution_ready = False
+        ready = complete and request_ready
         state: dict[str, bool | str] = {
             "ready": ready,
             "initial_reconciliation_required": (
@@ -233,17 +239,20 @@ class AuthenticatedMcpGateway:
             ),
             "initial_reconciliation_complete": complete,
             "status": (
-                "ready" if ready
+                "ready" if ready and execution_ready
+                else "ready_f3_execution_unavailable" if ready
                 else "initial_reconciliation_pending" if not complete
                 else "f3_execution_pending"
             ),
         }
         if self._execution_readiness is not None:
             state["f3_execution_ready"] = execution_ready
+            state["f3_readiness_status"] = f3_status
         return state
 
-    async def _respond_catalog_readiness(self, send, request_id: str) -> None:
-        state = self.catalog_readiness_state()
+    async def _respond_catalog_readiness(self, send, request_id: str, *, state=None) -> None:
+        if state is None:
+            state = self.catalog_readiness_state()
         await self._respond(
             send,
             200 if state["ready"] else 503,
@@ -452,12 +461,13 @@ class AuthenticatedMcpGateway:
                 body = b"not found" if status == 404 else b"too many requests"
                 return await self._respond(send, status, body, request_id)
 
-            if not self.catalog_readiness_state()["ready"]:
+            readiness = self.catalog_readiness_state()
+            if not readiness["ready"]:
                 telemetry.error_code = ErrorCode.PROVIDER_UNAVAILABLE.value
                 telemetry.result_status = "failure"
                 telemetry.completeness = "failed"
                 telemetry.response_status = 503
-                return await self._respond_catalog_readiness(send, request_id)
+                return await self._respond_catalog_readiness(send, request_id, state=readiness)
 
             client_bucket = self._bucket(
                 self.clients,

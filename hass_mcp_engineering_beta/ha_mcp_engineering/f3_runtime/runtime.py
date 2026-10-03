@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 import hashlib
 import json
+import threading
 import time
 import uuid
 from typing import Any, Awaitable, Callable
@@ -43,7 +44,11 @@ from ..f3.models import (
     validate_identifier,
     validate_sha256,
 )
-from ..f3.persistence import DuplicateExecutionActive, ExecutionStorageError
+from ..f3.persistence import (
+    DuplicateExecutionActive,
+    ExecutionRecordCorrupt,
+    ExecutionStorageError,
+)
 from ..f3.operational_adapter import (
     OperationalAdministrationAdapter,
     validate_operational_executor_timing,
@@ -114,6 +119,9 @@ _RECOVERY_MODE_CHECKPOINT = "checkpoint"
 _RECOVERY_MODE_POST_INTENT = "post_intent"
 _RECOVERY_MODE_PRE_INTENT = "pre_intent"
 _RECOVERY_MODE_TERMINAL_PROJECTION = "terminal_projection"
+_RECOVERY_READINESS: ContextVar[tuple[object, int] | None] = ContextVar(
+    "f3_recovery_readiness", default=None
+)
 _ACTIVE_F3_CHILD: ContextVar[str | None] = ContextVar(
     "f3_active_child", default=None
 )
@@ -806,7 +814,15 @@ class F3RuntimeIntegration:
         self.configuration_reverification = ConfigurationReverification(self, storage_root)
         self._prepared_cache: dict[str, Any] = {}
         self._sequence_lock_cache: dict[str, tuple[Any, ...]] = {}
-        self._ready = False
+        # This process-local lifecycle is admission evidence, not a storage cache.
+        # Deep health may run in a worker; publish transitions under one short lock.
+        self._readiness_lock = threading.RLock()
+        self._startup_complete = False
+        self._readiness_faults: dict[str, int] = {}
+        self._readiness_fault_categories: dict[str, int] = {}
+        self._readiness_revision = 0
+        self._recovery_running = False
+        self._supervisor_task: asyncio.Task | None = None
         self._coordinator_initialized = False
         self._last_sweep_at: str | None = None
         self._next_sweep_at: str | None = None
@@ -815,6 +831,92 @@ class F3RuntimeIntegration:
         self._approval_consumption_failures = 0
         self._fallback_count = 0
         self._recovery_monotonic = time.monotonic
+
+    def readiness_state(self) -> dict[str, Any]:
+        """Bounded lifecycle observation: no repositories, providers or scheduling."""
+        with self._readiness_lock:
+            supervisor_stopped = (
+                self._supervisor_task is not None and self._supervisor_task.done()
+            )
+            faulted = bool(self._readiness_faults) or supervisor_stopped
+            return {
+                "request_ready": self._startup_complete,
+                "execution_ready": self._startup_complete and not faulted,
+                "status": "faulted" if faulted else (
+                    "ready" if self._startup_complete else "initializing"
+                ),
+                "faults": sorted({
+                    *self._readiness_fault_categories
+                } | ({"supervisor_stopped"} if supervisor_stopped else set())),
+            }
+
+    def _readiness_fault(self, key: str) -> None:
+        with self._readiness_lock:
+            self._readiness_revision += 1
+            if key not in self._readiness_faults:
+                category = key.split(":", 1)[0]
+                self._readiness_fault_categories[category] = (
+                    self._readiness_fault_categories.get(category, 0) + 1
+                )
+            self._readiness_faults[key] = self._readiness_revision
+
+    def _clear_readiness_fault(self, key: str, revision: int | None) -> None:
+        with self._readiness_lock:
+            if revision is not None and self._readiness_faults.get(key) == revision:
+                del self._readiness_faults[key]
+                category = key.split(":", 1)[0]
+                self._readiness_fault_categories[category] -= 1
+                if not self._readiness_fault_categories[category]:
+                    del self._readiness_fault_categories[category]
+
+    def _require_execution_ready(self) -> None:
+        with self._readiness_lock:
+            if self.readiness_state()["execution_ready"]:
+                return
+            recovery = _RECOVERY_READINESS.get()
+            if (
+                recovery is not None and recovery[0] is self
+                and "execution_storage" not in self._readiness_faults
+                and (self._supervisor_task is None or not self._supervisor_task.done())
+                and all(
+                    revision <= recovery[1] or (
+                        key.startswith("recovery_child:")
+                        and key != "recovery_child:" + str(_ACTIVE_F3_CHILD.get())
+                    )
+                    for key, revision in self._readiness_faults.items()
+                )
+            ):
+                # Only an existing recovery operation in this validated pass.
+                # Its exact plan, current authority, locks and intent checks
+                # still decide dispatch. This never admits a new apply request.
+                return
+        raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+
+    def _validate_readiness_storage(self) -> None:
+        """Recovery-only audit, including history beyond the scheduler's page.
+
+        Never called by readiness. Read every declaration/envelope even when a
+        reconciliation response would truncate at 100 pending children. This
+        establishes read integrity, not spare capacity or future write success.
+        """
+        self.children.health()
+        self.children.active_recovery_checkpoint()
+        self.children.active_recovery_cursor()
+        self.children.recovery_cursor()
+        self.locks.snapshot()
+        self.service.task_repository.list()
+        for declaration in self.children.all_declarations():
+            self.children.get(declaration["child_id"])
+            self.children.runtime(declaration["child_id"])
+        self._health()
+        with self._readiness_lock:
+            task_ids = tuple(key.split(":", 1)[1] for key in self._readiness_faults
+                             if key.startswith("task_projection:"))
+        for task_id in task_ids:
+            task = self.service.task_repository.get(task_id)
+            if task is None:
+                raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            self._decorate_task(task)
 
     def _record_operation_evidence(self, **values: Any) -> None:
         child_id = _ACTIVE_F3_CHILD.get()
@@ -844,6 +946,8 @@ class F3RuntimeIntegration:
         )
 
     def _audit_provider_boundary(self, event_type: str) -> None:
+        if event_type == "provider_invocation_started":
+            self._require_execution_ready()
         child_id = _ACTIVE_F3_CHILD.get()
         if child_id is not None:
             self._emit_f3_audit_event(
@@ -1796,6 +1900,7 @@ class F3RuntimeIntegration:
     async def _consume_approval(
         self, plan: Any, task: Any, declaration: dict[str, Any]
     ) -> None:
+        self._require_execution_ready()
         authoritative = self.service._load(plan.plan_id)
         if self.service.plan_hash(authoritative) != declaration["plan_hash"]:
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
@@ -1865,6 +1970,10 @@ class F3RuntimeIntegration:
     ) -> None:
         try:
             await self._consume_approval(plan, task, declaration)
+        except (ExecutionStorageError, ExecutionTaskStorageError, LockStorageError):
+            self._readiness_fault("execution_storage")
+            self._approval_consumption_failures += 1
+            raise
         except Exception:
             self._approval_consumption_failures += 1
             raise
@@ -1958,7 +2067,7 @@ class F3RuntimeIntegration:
         )
         token = _ACTIVE_F3_CHILD.set(declaration["child_id"])
         try:
-            return await executor.execute(
+            result = await executor.execute(
                 adapter=adapter,
                 prepared=prepared,
                 identity=identity,
@@ -1973,6 +2082,9 @@ class F3RuntimeIntegration:
                     else None
                 ),
             )
+            if "lock_storage_failure" in result.diagnostic_codes:
+                self._readiness_fault("execution_storage")
+            return result
         finally:
             _ACTIVE_F3_CHILD.reset(token)
 
@@ -2197,15 +2309,35 @@ class F3RuntimeIntegration:
         self.service._save(plan)
 
     async def apply(self, plan: Any, expected_plan_hash: str) -> dict[str, Any]:
-        if not self._ready:
+        if not self.readiness_state()["execution_ready"]:
             raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        try:
+            return await self._apply(plan, expected_plan_hash)
+        except ExecutionRecordCorrupt:
+            self._readiness_fault("storage_read")
+            raise
+        except (ExecutionStorageError, ExecutionTaskStorageError, LockStorageError):
+            # A successful read audit cannot certify a failed durable write.
+            # Keep this fault until runtime reconstruction; do not replay apply.
+            self._readiness_fault("execution_storage")
+            raise
+        except GovernanceError as exc:
+            if (exc.code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                    and self.readiness_state()["execution_ready"]):
+                self._readiness_fault("execution_storage")
+            raise
+        except Exception:
+            self._readiness_fault("execution_storage")
+            raise
+
+    async def _apply(self, plan: Any, expected_plan_hash: str) -> dict[str, Any]:
         existing = self.service.task_repository.get_for_plan(plan.plan_id)
         if existing is None:
             try:
                 task, prepared, requests = await self._initialize(
                     plan, expected_plan_hash
                 )
-            except (ExecutionStorageError, ExecutionTaskStorageError):
+            except (ExecutionStorageError, ExecutionTaskStorageError) as exc:
                 winner = self.service.task_repository.get_for_plan(plan.plan_id)
                 if (
                     winner is None
@@ -2213,6 +2345,10 @@ class F3RuntimeIntegration:
                     or winner.legacy_projection.get("execution_authority")
                     != F3_EXECUTION_AUTHORITY
                 ):
+                    self._readiness_fault(
+                        "storage_read" if isinstance(exc, ExecutionRecordCorrupt)
+                        else "execution_storage"
+                    )
                     raise GovernanceError(
                         ErrorCode.EXECUTION_TASK_STORAGE_ERROR
                     ) from None
@@ -2257,6 +2393,7 @@ class F3RuntimeIntegration:
             if not joined_active_execution:
                 self._project(plan, task)
         except PreIntentRetryRequired as exc:
+            self._readiness_fault("recovery_child:" + declaration["child_id"])
             raise GovernanceError(
                 ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
                 details={"reason": exc.diagnostic_code},
@@ -2541,6 +2678,13 @@ class F3RuntimeIntegration:
         }
 
     def decorate_task(self, task: Any) -> dict[str, Any]:
+        try:
+            return self._decorate_task(task)
+        except Exception:
+            self._readiness_fault("task_projection:" + task.task_id)
+            raise
+
+    def _decorate_task(self, task: Any) -> dict[str, Any]:
         value = self.service._public_task(task)
         if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
             return value
@@ -2629,6 +2773,13 @@ class F3RuntimeIntegration:
         }
 
     def reconciliation_items(self) -> list[dict[str, Any]]:
+        try:
+            return self._reconciliation_items()
+        except Exception:
+            self._readiness_fault("reconciliation")
+            raise
+
+    def _reconciliation_items(self) -> list[dict[str, Any]]:
         items = []
         lock_records = self.locks.records()
         lock_task_ids = {item.task_id for item in lock_records}
@@ -2952,6 +3103,13 @@ class F3RuntimeIntegration:
         return {"status": outcome, "child_id": child_id}
 
     def health(self) -> dict[str, Any]:
+        try:
+            return self._health()
+        except Exception:
+            self._readiness_fault("health")
+            raise
+
+    def _health(self) -> dict[str, Any]:
         child = self.children.health()
         lock = self.locks.snapshot()
         registry = self.registry.health()
@@ -2968,12 +3126,14 @@ class F3RuntimeIntegration:
             if child["nonterminal_execution_count"] or pending_reconciliation
             else "ready"
         )
-        if not self._ready:
-            status = "recovering"
+        readiness = self.readiness_state()
+        if not readiness["execution_ready"]:
+            status = "unavailable" if readiness["status"] == "faulted" else "recovering"
         return {
             "f3_model": F3_RUNTIME_MODEL,
             "status": status,
-            "execution_ready": self._ready,
+            "execution_ready": readiness["execution_ready"],
+            "readiness": readiness,
             "adapter_registry_status": registry["status"],
             "registered_adapter_count": registry["registered_adapter_count"],
             "activated_capability_count": registry["activated_capability_count"],
@@ -2983,7 +3143,10 @@ class F3RuntimeIntegration:
             "public_child_projection_status": "ready",
             "lock_store_status": "ready",
             "execution_store_status": child["status"],
-            "recovery_coordinator_status": "ready" if self._coordinator_initialized else "recovering",
+            "recovery_coordinator_status": (
+                "unavailable" if readiness["status"] == "faulted"
+                else "ready" if self._coordinator_initialized else "recovering"
+            ),
             "last_recovery_sweep_at": self._last_sweep_at,
             "next_recovery_sweep_at": self._next_sweep_at,
             "nonterminal_execution_count": child["nonterminal_execution_count"],
@@ -3776,12 +3939,17 @@ class F3RuntimeIntegration:
             ):
                 break
             processed += 1
+            fault_key = "recovery_child:" + declaration["child_id"]
+            with self._readiness_lock:
+                fault_revision = self._readiness_faults.get(fault_key)
             try:
                 _changed, child_terminalized = self._reconcile_orphaned_child(
                     declaration, now=now
                 )
                 terminalized += int(child_terminalized)
+                self._clear_readiness_fault(fault_key, fault_revision)
             except Exception as exc:
+                self._readiness_fault(fault_key)
                 self._sweep_failures += 1
                 runtime = self.children.runtime(declaration["child_id"])
                 backoff = min(
@@ -3853,6 +4021,9 @@ class F3RuntimeIntegration:
             runtime = self.children.runtime(declaration["child_id"])
             transitions += 1
             selected.append(declaration["child_id"])
+            fault_key = "recovery_child:" + declaration["child_id"]
+            with self._readiness_lock:
+                fault_revision = self._readiness_faults.get(fault_key)
             try:
                 joined_active_execution = False
                 plan = self.service._load_for_projection(
@@ -3960,7 +4131,9 @@ class F3RuntimeIntegration:
                     },
                 )
                 settled.append(declaration["child_id"])
+                self._clear_readiness_fault(fault_key, fault_revision)
             except Exception:
+                self._readiness_fault(fault_key)
                 self._sweep_failures += 1
                 backoff = min(
                     max(5, int(runtime["backoff_seconds"]) * 2), 300
@@ -3987,6 +4160,49 @@ class F3RuntimeIntegration:
         }
 
     async def recover_once(self, trigger: str) -> dict[str, int]:
+        with self._readiness_lock:
+            if self._recovery_running:
+                self._sweep_collisions += 1
+                return {"processed": 0, "eligible_limit": RECOVERY_BATCH_SIZE}
+            if trigger == "periodic":
+                self._supervisor_task = asyncio.current_task()
+            self._recovery_running = True
+            faults = dict(self._readiness_faults)
+            initial = not self._startup_complete
+        try:
+            # A scheduler page cannot clear corruption outside that page.
+            with self._readiness_lock:
+                revision = self._readiness_revision
+            if initial or faults:
+                self._validate_readiness_storage()
+            token = _RECOVERY_READINESS.set((self, revision))
+            try:
+                result = await self._recover_once(trigger)
+            finally:
+                _RECOVERY_READINESS.reset(token)
+            diagnostic_faults = {
+                key: value for key, value in faults.items()
+                if key in {"storage_read", "health", "reconciliation", "recovery_pass"}
+                or key.startswith("task_projection:")
+            }
+            if initial or diagnostic_faults:
+                self._validate_readiness_storage()
+                for key, revision in diagnostic_faults.items():
+                    if key != "recovery_pass" or self._last_sweep_complete:
+                        self._clear_readiness_fault(key, revision)
+            with self._readiness_lock:
+                if not self._readiness_faults and self._last_sweep_complete:
+                    self._startup_complete = True
+            return result
+        except BaseException:
+            # Cancellation must be visible too; preserve the original exception.
+            self._readiness_fault("recovery_pass")
+            raise
+        finally:
+            with self._readiness_lock:
+                self._recovery_running = False
+
+    async def _recover_once(self, trigger: str) -> dict[str, int]:
         del trigger
         self._coordinator_initialized = True
         now = self.service.now()
@@ -4314,6 +4530,7 @@ class F3RuntimeIntegration:
             try:
                 declaration = self.children.declaration(lock_record.task_id)
             except Exception:
+                self._readiness_fault("storage_read")
                 continue
             execution = self.children.get(lock_record.task_id)
             execution_class = (
@@ -4385,7 +4602,7 @@ class F3RuntimeIntegration:
         active_transitions = (
             priority_recovery["transitions"] + pre_intent["transitions"]
         )
-        self._ready = True
+        self._last_sweep_complete = not deadline_reached()
         return {
             "processed": processed,
             "eligible_limit": RECOVERY_BATCH_SIZE,
@@ -4405,6 +4622,7 @@ class F3RuntimeIntegration:
         }
 
     async def supervise(self) -> None:
+        self._supervisor_task = asyncio.current_task()
         await self.recover_once("startup")
         while True:
             await asyncio.sleep(RECOVERY_CADENCE_SECONDS)
