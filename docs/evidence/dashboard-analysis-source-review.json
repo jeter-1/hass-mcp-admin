@@ -1,0 +1,127 @@
+{
+  "stage": "partial_internal_primitives_not_registered",
+  "engineering_base": "5e9651ce7623433e47194488531eb029a15636a6",
+  "source_binding_results": [
+    {
+      "path": "src/panels/lovelace/common/handle-action.ts",
+      "sha256": "cd9302fc32ec23a3d02460e366f89b0997baf11561937e2022e6fea4df3182f4",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-entities-card.ts",
+      "sha256": "de28ba23509d49ef39e33e2655b7dbfa8485eb2e18e74cb619385cb52853867b",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-tile-card.ts",
+      "sha256": "91a502e647890773b73fccd58d9e23ab9adc38520f22e78d17eab0eb38a92985",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-button-card.ts",
+      "sha256": "8fa9a04810166a85bbbf3b077f6f28cd031c16123c5a31871779a9bcd94b094b",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/data/lovelace/config/types.ts",
+      "sha256": "70a975c21218de671e0f5fa5810b81272905626f114ddac2374b6ee95f5b2069",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/create-element/create-row-element.ts",
+      "sha256": "9029d7b88e9438ae453b868435c25c26e69081982e23b4c7a6c952b358111752",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/common/const.ts",
+      "sha256": "b91f81193f816a4e7b599a160ce767d72df25fa028653c4a8eaaa915fec1eeb7",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/entity-rows/hui-input-number-entity-row.ts",
+      "sha256": "d1e202f14fee7634a2bffa2aea24ac2ef36db9eba0813dfb9bc9c6e36eff9207",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/entity-rows/hui-input-text-entity-row.ts",
+      "sha256": "afaa3e16a2c15f58c67b7549a450961c5cf45769f671cccc6f3f5189ca5b60ae",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/special-rows/hui-call-service-row.ts",
+      "sha256": "513beb18b82b38edbe490925d02928a4636682f7fd469207d16c0ee212e3f098",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/entity-rows/hui-toggle-entity-row.ts",
+      "sha256": "fee54eccaa59adaa3c0388e0914f6e7cf0e392dd5b3f1e8f6177ecf107ba1372",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-conditional-card.ts",
+      "sha256": "a489876cff081c863f5848bd78d712e1b5ccd4bfa4c0c729a803f20a93a6433c",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/data/lovelace/config/view.ts",
+      "sha256": "e778bca74c16b36cd10abe6846262692e369222a9bbbbc71e422d84b92cf6c5e",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/common/find-entities.ts",
+      "sha256": "761cddc3c7e198fb942484b222092ab82a1b21bde3021f5da40ebdd4b939d818",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-stack-card.ts",
+      "sha256": "09f9c24a979bfa5127b7e60c8f2cafeed9d6b608f9a3005cabd3197b08aeb831",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/common/validate-condition.ts",
+      "sha256": "10b1b63bbdf3de176805d9c6922ebe17dd02da86dd2439ac6c4a8aa52488e6f3",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-grid-card.ts",
+      "sha256": "0a52a59bbb507c8f71f6bea557449d2ff8818b4662f445740be42129192b0ed3",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    }
+  ],
+  "authority": {
+    "core_commit": "9212531f40a0b7b23229a90d688dd79d9dfccff4",
+    "frontend_commit": "380e9b5a81ada29a1d187b4123c54fb3d6fbcc89",
+    "frontend_version": "20260826.7",
+    "sdk_version": "1.28.1"
+  },
+  "missing_inputs": [
+    "src/panels/lovelace/entity-rows/hui-input-select-entity-row.ts",
+    "src/panels/lovelace/entity-rows/hui-input-datetime-entity-row.ts",
+    "src/panels/lovelace/entity-rows/hui-input-button-entity-row.ts",
+    "relevant exact-revision upstream frontend tests"
+  ],
+  "rules_encoded": false,
+  "source_derived_fixtures_committed": false,
+  "frontend_execution": false,
+  "disposable_core_execution": false,
+  "full_analyzer_responsiveness": "pending",
+  "upstream_analysis_transport": "not_implemented",
+  "scope_preserved": "full approved contract remains required"
+}
