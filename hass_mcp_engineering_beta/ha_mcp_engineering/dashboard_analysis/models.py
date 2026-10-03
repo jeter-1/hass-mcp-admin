@@ -23,21 +23,24 @@ _ENUMS = {
     "confirmation": {"absent", "present", "unresolved"},
     "rule_id": {"literal_entity", "literal_target", "condition_entity", "button_default", "tile_default",
                 "tile_icon_default", "entities_helper", "entities_header", "entities_service",
-                "explicit_action", "coverage"},
+                "explicit_action", "row_default", "coverage"},
+    "slot": {"tap_action", "hold_action", "double_tap_action", "icon_tap_action",
+             "icon_hold_action", "icon_double_tap_action", "inline", "header"},
     "reason": {"unsupported_component", "dynamic_value", "malformed_selector", "source_partial",
                "structural_limit", "item_limit", "reference_limit", "source_gate_pending"},
     "provider": {"direct_ha_api", "upstream_dashboard"},
 }
 _COUNTS = {"examined", "retained", "omitted", "invalid", "duplicate"}
-_FLAGS = {"complete", "sanitized", "processing_truncated", "non_atomic", "conditional", "source_projection_exact"}
+_FLAGS = {"complete", "sanitized", "processing_truncated", "non_atomic", "conditional", "source_projection_exact", "default_rules_applicable"}
 _SOURCE_KEYS = {"kind", "provider", "complete", "failure", "started_at", "finished_at", "sanitized",
                 "processing_truncated", *_COUNTS}
 _ITEM_KEYS = {"kind", "id", "pointer", "entity_id", "availability", "provenance", "interaction",
               "service", "target_expansion", "confirmation", "rule_id", "reason", "conditional",
-              "source_projection_exact", "target_references"}
+              "source_projection_exact", "target_references", "slot"}
 _HEADER_KEYS = {"model", "requested_path", "canonical_path", "core_version", "frontend_commit",
+                "default_rules_applicable",
                 "config_hash", "engineering_config_hash", "projection_hash", "coverage", "sources",
-                "collection_started_at", "collection_finished_at", "non_atomic"}
+                "collection_started_at", "collection_finished_at", "non_atomic", "counts", "transport", "authority"}
 
 
 def _scalar(key, value, known_secrets):
@@ -75,7 +78,38 @@ def validate_projection(header, items, *, known_secrets=()):
     if type(header) is not dict or set(header) - _HEADER_KEYS or not {"model", "requested_path", "canonical_path"} <= set(header):
         raise c.AnalysisError("malformed_response")
     for key, value in header.items():
-        if key == "coverage":
+        if key == "counts":
+            if type(value) is not dict or set(value) != {"examined", "retained", "reference_occurrences", "unique_references", "precision", "processing_truncated"}:
+                raise c.AnalysisError("malformed_response")
+            for k, v in value.items():
+                if k == "precision":
+                    if v not in ("exact", "lower_bound"):
+                        raise c.AnalysisError("malformed_response")
+                else:
+                    _scalar("processing_truncated" if k == "processing_truncated" else "examined", v, known_secrets)
+        elif key == "transport":
+            if type(value) is not dict or set(value) != {"requests", "bytes", "logical_reads", "retries"}:
+                raise c.AnalysisError("malformed_response")
+            if (any(type(v) is not int or not 0 <= v <= c.TOTAL_BYTES + 65_536 for v in value.values())
+                    or value["retries"] != 0 or value["logical_reads"] != 3):
+                raise c.AnalysisError("malformed_response")
+        elif key == "authority":
+            patterns = {"core_authority_hash": _HASH, "upstream_authority_hash": _HASH,
+                        "upstream_contract": _HASH, "upstream_image_digest": _HASH,
+                        "upstream_source_commit": re.compile(r"[0-9a-f]{40}\Z"),
+                        "upstream_version": re.compile(r"[0-9]+\.[0-9]+\.[0-9]+\Z"),
+                        "upstream_protocol": re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}\Z")}
+            if type(value) is not dict or set(value) != {*patterns, "core_generation"}:
+                raise c.AnalysisError("malformed_response")
+            for k, v in value.items():
+                if k == "core_generation":
+                    if type(v) is not int or v < 0:
+                        raise c.AnalysisError("malformed_response")
+                elif type(v) is not str or len(v) > 256 or not patterns[k].fullmatch(v):
+                    raise c.AnalysisError("malformed_response")
+                elif sanitize_untrusted_data(v, known_secrets=known_secrets, max_string=256).value != v:
+                    raise c.AnalysisError("malformed_response")
+        elif key == "coverage":
             if type(value) is not dict or set(value) != {"references", "availability", "controls"}:
                 raise c.AnalysisError("malformed_response")
             if any(type(v) is not str or v not in {"complete", "partial", "unassessed"} for v in value.values()):

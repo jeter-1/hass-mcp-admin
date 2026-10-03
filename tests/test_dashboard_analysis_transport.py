@@ -37,6 +37,8 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
         app.router.add_get('/api/states', self.states)
         app.router.add_get('/api/websocket', self.websocket)
         app.router.add_get('/forbidden', self.forbidden)
+        if hasattr(self, "add_routes"):
+            self.add_routes(app)
         self.runner = web.AppRunner(app, access_log=None)
         await self.runner.setup()
         self.site = web.TCPSite(self.runner, '127.0.0.1', 0)

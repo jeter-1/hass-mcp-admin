@@ -157,9 +157,11 @@ _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_core_log_history": core_log_to
 
 from .audit_baseline import registered_tool as baseline_capture_tool
 from .integration_inspection import registered_tool as integration_inspection_tool
+from .dashboard import registered_analysis_tool
 
 _SDK_TOOLS.replace({**_SDK_TOOLS.snapshot(), "get_integration_inspection": integration_inspection_tool(),
-                    "capture_automation_baseline": baseline_capture_tool()})
+                    "capture_automation_baseline": baseline_capture_tool(),
+                    "dashboard_integrity_analysis": registered_analysis_tool()})
 
 
 # Freeze the exact local catalog before any admitted upstream reads are added.

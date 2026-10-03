@@ -1,116 +1,139 @@
-# Dashboard integrity analysis — incomplete implementation checkpoint
+# Dashboard integrity analysis — implementation checkpoint
 
-This branch contains independently testable inventory and snapshot primitives
-for the approved exact-dashboard analyzer. **The analyzer is not registered or
-available.** This checkpoint does not reduce the approved contract to a smaller
-feature and must not be released as its completion.
+`dashboard_integrity_analysis(url_path: str, limit: int = 25, cursor: str = "")`
+inspects one exact dashboard's literal entity references and potential configured
+controls. It never calls those controls, evaluates templates, renders a browser,
+repairs a dashboard, or certifies that an entity can be deleted.
 
-## Implemented internal components
+This local checkpoint implements the analyzer and registers its public tool.
+It is **not a completed release candidate**: the central provider capability enum
+and routing/policy entries need two protected paths omitted from the approved
+file boundary (`providers/models.py` and `providers/routing.py`). Their exact
+additive patch is prepared for owner approval. Current routing-policy tests
+correctly fail until that scope is resolved. No release/version/deployment is
+included. Exact frontend execution, disposable exact Core/ha-mcp acceptance,
+exact-head CI and independent dashboard review remain pending.
 
-- Closed exact-path/limit/cursor argument validation, fixed errors, bounded JSON
-  bytes and nesting, rejection of duplicate keys/nonfinite values, and owned
-  worker cancellation.
-- Separate native states and entity-registry transport using existing configured
-  settings, one attempt per fixed read, no redirects or compression, bounded
-  authentication, fixed command shapes and authority callbacks at dispatch and
-  return. It is not composed into a runtime or reachable from an MCP tool.
-- Internal `McpDashboardTransport.execute_analysis_read` uses the locked SDK's
-  public HTTP-client factory. It bounds raw JSON/SSE bytes before decoding,
-  refuses redirects/compression and extra application calls, blocks all SDK GETs
-  locally, and retains one exact dashboard read plus bounded discovery and
-  session cleanup. Strict JSON decoding, SSE normalization and result/catalog
-  serialization run in owned workers. Network/session tasks and admission
-  callbacks remain on the owning event loop, avoiding per-call worker-loop DNS
-  shutdown delays. Existing transport entry points
-  keep their original behavior. The provider's no-refresh integration is pending.
-- Projection to validated entity identifiers and closed availability/disabled
-  categories. Raw values, attributes, registry names and options are omitted.
-  Partial, malformed, duplicate or failed inventories cannot prove absence.
-- Allowlisted snapshot projection and two retained immutable snapshots per
-  service instance, five-minute expiry, caller/path-bound ephemeral HMAC cursors,
-  authority revalidation, bounded pages and zero recollection on continuation.
-  Runtime singleton composition, which will establish the process-wide limit,
-  is still pending.
+## Evidence collection and authority
 
-These components have synthetic/unit and local-loopback tests. They have no
-source-derived dashboard semantics or household fixtures. Maximum-size native
-inventory transport/decoding/projection and the maximum-size upstream transport
-are measured with wall-gap, loop-thread CPU and natural-GC attribution, serially
-and under controlled contention. The upstream test uses a synthetic admission
-callback, not the final provider/collector. These measurements do not establish
-responsiveness of the unfinished full analyzer.
+The first request performs three logical evidence reads: one admitted upstream
+`ha_config_get_dashboard` call with the exact path, `force_reload=true`,
+`list_only=false` and `include_screenshot=false`; native `GET /api/states`; and
+native WebSocket `config/entity_registry/list`. Initialization, bounded catalog
+discovery, authentication and MCP session cleanup are additional wire exchanges.
+No other Home Assistant command, retry, redirect, provider refresh or fallback
+is reachable from this path. Existing provider entry points retain their behavior.
 
-## Required source gate
+The new path requires the conjunction of `core.dashboard_configuration_read`,
+`core.basic_rest_read`, `core.non_device_registry_read`, and existing upstream
+admission. Current Core leases and upstream identity are checked at dispatch,
+return, projection, snapshot commit and page export. A missing, retired or
+changed authority refuses the request. A hash, path, identity or access
+contradiction never becomes a successful partial report.
 
-The approved rule profile is Core 2026.9.4 at
-`9212531f40a0b7b23229a90d688dd79d9dfccff4`, with frontend 20260826.7 at
-`380e9b5a81ada29a1d187b4123c54fb3d6fbcc89`. Seventeen retained frontend files
-match their recorded SHA-256 and Git blob identities. The retained source is
-not a complete frontend checkout.
+Native inventory failure can retain useful static findings and valid positive
+evidence from the other inventory. Absence requires complete, successful states
+and registry inventories without contradictory identities. Categories are
+`present`, `unavailable`, `state_unknown`, `registry_only`, `registry_disabled`,
+`absent_from_observed_inventories`, and `unassessed`. Absence means absent from
+those observations, not globally deleted. Duplicate/malformed/sanitized identities
+prevent authoritative absence; state values and registry names are discarded.
 
-The following exact-version inputs were not found in the searched local
-evidence locations:
+## Rule profile and output
 
-- `src/panels/lovelace/entity-rows/hui-input-select-entity-row.ts`
-- `src/panels/lovelace/entity-rows/hui-input-datetime-entity-row.ts`
-- `src/panels/lovelace/entity-rows/hui-input-button-entity-row.ts`
-- Relevant upstream frontend tests, including discovery of their actual paths.
+Rules were traced through exact Core 2026.9.4 source
+`9212531f40a0b7b23229a90d688dd79d9dfccff4`, which pins frontend 20260826.7 at
+`380e9b5a81ada29a1d187b4123c54fb3d6fbcc89`. The supplied complete reference's
+3,614 regular files were verified against SHA-256 and Git blob identities.
+`docs/evidence/dashboard-analysis-source-review.json` records file/line bindings,
+relevant upstream tests inspected, and explicit execution limitations. Source
+inspection and original synthetic tests are not upstream TypeScript execution.
 
-`create-row-element.ts` explicitly imports the missing helper implementations.
-Further relevant dependencies include `create-element-base.ts`,
-`process-config-entities.ts`, `migrate-card-config.ts`, `hui-entities-toggle.ts`,
-and the generic row/action implementations needed to establish overrides and
-reachable interactions. Their relevance must be traced from the pinned source;
-failed filename guesses are not proof that an upstream test does not exist.
+The closed walker follows views, sections, supported stack/grid/conditional
+containers, button/tile cards, supported Entities rows, literal action targets,
+and supported condition entity selectors. It preserves original array indices
+and never recursively searches arbitrary strings, payloads or custom components.
+Conditional visibility does not suppress configured descendants. Unsupported
+components, strategies, badges, features, dynamic selectors and unreviewed
+semantics produce gaps while supported siblings remain visible.
 
-The approved offline batch prohibits fetching these inputs. No rule semantics
-are encoded while that gate is unresolved. No unsupported helper is silently
-treated as supported and no required helper has been removed from scope.
+Button/tile defaults, distinct tile icon slots, six helper widgets, display row
+overrides, header-toggle membership and call-service rows follow the pinned
+source. Explicit `none` overrides its action slot; it does not disable a separate
+inline helper widget. `perform-action` is an action name, not a supported row-type
+alias in this frontend. Both `data.entity_id` and `target.entity_id` can be literal
+references, but their downstream merge is not certified. Header group membership
+is conditional. Potential controls are not current service eligibility, physical
+scope or authorization. Confirmation is only absent/present/unresolved;
+`more-info` may expose controls, and Assist/custom events have unresolved scope.
+Unmapped Core versions retain literal observations and mark defaults unsupported;
+`default_rules_applicable` states the rule profile's applicability.
 
-## Remaining implementation and proving work
+The deterministic item stream contains entity references, controls and coverage
+gaps. IDs bind the model, source configuration fingerprint, safe original pointer,
+kind and rule/slot. Inferred defaults use their real card/row pointer. Reference
+occurrences and unique identifiers are counted separately. Processing truncation
+marks counts as lower bounds; pagination alone does not. Independent reference,
+availability and control coverage cannot be globally complete while a branch or
+source remains unassessed.
 
-The rule walker, explicit/inferred controls, six helper domains, exact source
-pointers, coverage accounting and rule evidence remain unimplemented. The
-isolated upstream transport now has byte-bound and one-call tests, but the
-upstream provider still needs its no-refresh integration, strict inner-payload
-validation, hash/projection provenance and authority binding. Its existing
-reader may refresh/retry and still uses the original transport. The new method
-must not be composed through that old refreshing path.
+Each page repeats compact source identities, collection interval, counters,
+failures, sanitized projection hash, and the original dashboard reader's two
+verified hashes. A source hash does not certify a sanitized field. Collection
+is non-atomic and makes no assertion that the dashboard stayed unchanged later.
 
-The earlier proposed private-SDK scope expansion is superseded by the tested
-public-factory design. The installed SDK may schedule local GET attempts; none
-are forwarded. The HTTP adapter reduces a bounded POST SSE response to one
-strict matching JSON-RPC response before the SDK sees it, so incomplete SSE
-cannot trigger wire resumption. It accepts only a response event, refusing
-other data events. No private SDK override, compatibility-module change or
-dependency change was needed. Full provider and exact upstream acceptance
-remain required; synthetic protocol peers do not establish deployed support.
+## Limits, privacy and lifecycle
 
-The final collector must compose exactly the admitted upstream dashboard read,
-states and entity-registry reads, hold all three Core profiles plus upstream
-authority, preserve source/projection hash distinctions, and bind authority
-through return and snapshot commit. Public router/tool validation, registration,
-composition, metadata and value-free audit handling remain pending. No raw path,
-cursor, helper value or provider message may enter the new audit path.
+The process-owned service admits one analysis or continuation at a time with
+immediate `capacity_busy`, keeps at most two live snapshots without evicting them,
+and expires snapshots after five minutes. Only allowlisted projected bytes are
+frozen, up to 512 KiB each. Private ephemeral HMAC cursors bind caller, path,
+snapshot and offset. Continuations revalidate in-memory authority and perform
+zero provider reads. Pages reconstruct the same frozen report despite changing
+the requested limit. The final envelope is at most the configured response limit
+or 32 KiB, whichever is smaller; successful pages never use lossy response fitting.
 
-The future public tool remains
-`dashboard_integrity_analysis(url_path: str, limit: int = 25, cursor: str = "")`.
-The eventual catalog delta is one native tool with all old descriptors
-preserved. This checkpoint adds no tool and makes no installed catalog claim.
+Collection is bounded to 30 seconds and each evidence read to 10 seconds or the
+remaining collection budget. Dashboard payloads are at most 2 MiB, each native
+inventory 4 MiB, aggregate wire evidence 10 MiB, and auth messages 64 KiB. Stricter
+existing limits still apply. Catalog discovery is capped at 20 pages and 500
+descriptors. JSON bytes and lexical depth are checked before decoding, duplicate
+keys and nonfinite values refuse, and inventories have 10,000-entry / depth-16 /
+100,000-node ceilings. Scanning stops at 10,000 examined nodes, depth 32, 512 unique
+references or 1,024 retained items; pointers/IDs are bounded to 256 characters.
 
-The complete synthetic integration suite, exact-source semantic verification,
-full-analyzer responsiveness, disposable exact Core/frontend/ha-mcp execution,
-CI, independent review and release decisions remain separate requirements.
-The coordinator's reconciliation-001 handoff transferred the shared test after
-accepting maintenance commit `7bfea9f66d6b949d192c86ebba814bf802bb99c3`. That
-complete commit is integrated with all five reviewed files unchanged. Its public
-retry guidance and states/configuration failure attribution corrections are
-preserved. No dashboard catalog-count edit is needed until registration occurs.
+Pure admission, decoding, hashes, projections, scanning, fitting and serialization
+run in finite owned workers. Network/session tasks and authority callbacks remain
+on the owning event loop. Cancellation drains detached work before capacity is
+released, including continuation pages. Tests measure the assembled admission/
+read/hash/scan/export path with natural GC, loop-thread CPU, wall gaps and a
+controlled contention run. The tests use a fresh child to isolate suite heap
+history, without disabling GC or raising performance bounds.
 
-## Recovery
+No raw configuration, helper value, action payload, URL, confirmation text,
+user/registry names, template body or provider message is exported. Audit retains
+only rule/tool identity, validated numeric limit, cursor presence, fixed outcome,
+counts, provider attribution and an opaque report fingerprint. It omits raw path,
+cursor, argument values and unknown keys, including on invalid requests. Errors
+use fixed codes; only capacity/timeout/source-unavailable failures may be retryable.
+The server itself never retries.
 
-The checkpoint has no live-system effect. Recovery is a reviewed reversal of
-the relevant local commits; preserve the accepted maintenance correction when
-reversing dashboard work. No live rollback, restart, deployment, source-profile
-change, credential access, dependency change or external communication is part
-of this work.
+## Preservation, validation and recovery
+
+The 57 existing native descriptors and 25 admitted delegated descriptors are
+captured by executing exact checkpoint `c82b56d9e78db16aa7020b81e5a0d103567524d1`
+with the locked SDK and existing synthetic provider fixtures. The two fixtures in
+`tests/fixtures/dashboard_analysis/` record provenance. Tests compare complete
+descriptors, not just counts. The only intended catalog addition is this analyzer.
+
+Reviewed maintenance `7bfea9f66d6b949d192c86ebba814bf802bb99c3` remains integrated.
+Its four exclusively owned files are unchanged; the transferred shared baseline
+test changes only the registered native count from 57 to 58. Its retry/failure
+attribution and refusal assertions are preserved. Earlier checkpoint evidence is
+immutable; current command/results and limitations are saved in the assigned
+RESULT and a separate `completion-002` artifact directory.
+
+Recovery is a reviewed reversal of dashboard changes while preserving maintenance.
+There is no live rollback because this task changed no live system. Stable v1,
+versions, dependencies, workflows, signed profiles/journals, generic clients and
+other analyses are outside scope and remain unchanged.

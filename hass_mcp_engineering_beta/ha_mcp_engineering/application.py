@@ -272,6 +272,8 @@ def create_application(
         }
 
     UPSTREAM_DASHBOARD.configure(settings)
+    from .dashboard_analysis.runtime import DASHBOARD_ANALYSIS
+    DASHBOARD_ANALYSIS.configure(settings, CORE_READMISSION, UPSTREAM_DASHBOARD)
     GOVERNANCE.configure(
         settings,
         audit,

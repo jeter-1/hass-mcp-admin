@@ -160,6 +160,37 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await task
 
+    async def test_continuation_shares_capacity_and_cancellation_drains_before_release(self):
+        first = await self.service.analyze(url_path="home", limit=1)
+        token = first["pagination"]["next_cursor"]
+        entered, release = threading.Event(), threading.Event()
+        original = self.service._page
+        def hold(*args):
+            entered.set()
+            release.wait(2)
+            return original(*args)
+        with patch.object(self.service, "_page", hold):
+            task = asyncio.create_task(self.service.analyze(url_path="home", cursor=token))
+            try:
+                async with asyncio.timeout(3):
+                    while not entered.is_set():
+                        await asyncio.sleep(.001)
+                for arguments in ({"url_path": "other"}, {"url_path": "home", "cursor": token}):
+                    with self.assertRaises(c.AnalysisError) as error:
+                        await self.service.analyze(**arguments)
+                    self.assertEqual(error.exception.reason, "capacity_busy")
+                task.cancel()
+                await asyncio.sleep(.01)
+                self.assertTrue(self.service.active)
+                self.assertFalse(task.done())
+            finally:
+                release.set()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+        self.assertFalse(self.service.active)
+        self.assertEqual(self.collector.calls, 1)
+        await self.service.analyze(url_path="home", cursor=token)
+
     async def test_page_cap_cannot_drop_items_or_create_empty_continuation(self):
         self.service.page_bytes = 1100
         page = await self.service.analyze(url_path="home", limit=100)

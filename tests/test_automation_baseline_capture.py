@@ -614,7 +614,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         from ha_mcp_engineering.providers.routing import routing_for_tool
         from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requirements
         tools=registered_tools(get_registered_server()); tool=tools['capture_automation_baseline']
-        self.assertEqual(len(tools),57)
+        self.assertEqual(len(tools),58)
         self.assertTrue(tool.annotations.readOnlyHint)
         self.assertFalse(tool.annotations.destructiveHint)
         self.assertFalse(tool.parameters['additionalProperties'])

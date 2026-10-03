@@ -678,6 +678,22 @@ class AuthenticatedMcpGateway:
                         send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit), request_id=request_id,
                     )
                     return
+            if tool_name == "dashboard_integrity_analysis":
+                from .dashboard_analysis.contracts import validate_arguments, AnalysisError
+                try:
+                    validate_arguments(raw_parameters)
+                except AnalysisError:
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    failure = FailureResponse(
+                        operation=tool_name, error="InvalidDashboardAnalysisRequest",
+                        error_code=telemetry.error_code, message="Invalid dashboard analysis arguments.",
+                        retryable=False, request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send, rpc_id=rpc.get("id"), rendered=failure.to_json(self.settings.response_size_limit),
+                        request_id=request_id,
+                    )
+                    return
             core_requirements = (
                 static_tool_requirements(tool_name, parameters)
                 if isinstance(tool_name, str)
@@ -806,7 +822,7 @@ class AuthenticatedMcpGateway:
                     if key.endswith("_id") and isinstance(value, (str, int))
                 }
                 audit_parameters = parameters
-                if tool_name not in {"get_integration_inspection", "capture_automation_baseline"} and telemetry.error_code in {
+                if tool_name not in {"get_integration_inspection", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:
@@ -966,6 +982,14 @@ class AuthenticatedMcpGateway:
                         "force_reload": bool(parameters.get("force_reload", True)),
                         "provider": "upstream_dashboard",
                     }
+                elif tool_name == "dashboard_integrity_analysis":
+                    audit_parameters = {
+                        "model": "dashboard-integrity-v1",
+                        "limit": parameters.get("limit", 25) if type(parameters.get("limit", 25)) is int and 1 <= parameters.get("limit", 25) <= 100 else None,
+                        "cursor_present": bool(parameters.get("cursor")),
+                        "provider": "engineering", "fallback": "none",
+                    }
+                    resource_ids = {}
                 elif tool_name == "capture_automation_baseline":
                     audit_parameters = {
                         "scope": "loaded_automation_entities-v1",
@@ -1070,6 +1094,7 @@ class AuthenticatedMcpGateway:
                             "get_core_log_history",
                             "get_integration_inspection",
                             "capture_automation_baseline",
+                            "dashboard_integrity_analysis",
                         }
                         else {
                             "operation_class": (

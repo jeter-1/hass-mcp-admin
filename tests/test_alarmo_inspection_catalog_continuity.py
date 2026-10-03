@@ -18,7 +18,7 @@ class CatalogTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(expected) - set(actual), set())
         for name, digest in expected.items():
             self.assertEqual(hashlib.sha256(c.canonical(actual[name])).hexdigest(), digest, name)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 57)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 58)
         tool = actual["get_integration_inspection"]
         self.assertFalse(tool["inputSchema"]["additionalProperties"])
         self.assertEqual(set(tool["inputSchema"]["properties"]), {"alarm_entity_id", "integration", "limit", "cursor"})

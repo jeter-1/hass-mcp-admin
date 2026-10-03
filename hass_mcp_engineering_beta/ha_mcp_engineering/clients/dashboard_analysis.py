@@ -8,6 +8,7 @@ each dispatch/return. Only states and entity-registry inventory can be read.
 import asyncio
 from contextlib import asynccontextmanager
 import json
+import inspect
 import time
 
 import aiohttp
@@ -414,7 +415,9 @@ async def bounded_mcp_read(transport, arguments, capability_validator, *, author
                     handshake = McpDashboardHandshake(str(initialized.protocolVersion),
                         str(initialized.serverInfo.name), str(initialized.serverInfo.version),
                         tools, round((time.perf_counter() - started) * 1000, 3))
-                    capability_validator(handshake)
+                    admission = capability_validator(handshake)
+                    if inspect.isawaitable(admission):
+                        await admission
                     admit_call()
                     call_started = time.perf_counter()
                     result = await session.call_tool(REQUIRED_DASHBOARD_TOOL, arguments,

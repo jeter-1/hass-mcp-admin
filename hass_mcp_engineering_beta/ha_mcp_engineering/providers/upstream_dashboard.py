@@ -634,6 +634,68 @@ class UpstreamDashboardProvider:
             normalizer=normalize,
         )
 
+    def analysis_authority(self) -> tuple:
+        """Current admitted read identity; no discovery, refresh or retry."""
+        from ..dashboard_analysis import contracts as c
+
+        attestations = self._registry.effective_attestations()
+        with self._lock:
+            state = self._state
+            if (self._transport is None or state.capability_status != "available"
+                    or not state.reviewed_contract_match or not state.normalized_runtime_contract_fingerprint):
+                raise c.AnalysisError("authority_unavailable")
+            identity = (state.upstream_server_name, state.upstream_server_version,
+                        state.mcp_protocol_version, state.contract_family,
+                        state.attestation_entry_id, state.normalized_runtime_contract_fingerprint)
+        matching = [(entry, source) for entry, source in attestations
+                    if (entry.server_name, entry.upstream_version) == identity[:2]]
+        if (len(matching) != 1 or matching[0][0].revoked
+                or matching[0][1] == "remote_expired" or matching[0][0].entry_id != identity[4]):
+            raise c.AnalysisError("authority_unavailable")
+        return (id(self._transport), identity, attestations,
+                self._registry.compatible_contract_fallback_rejection())
+
+    async def get_analysis_configuration(self, *, url_path, authorize, budget):
+        """One closed read, with pure admission/hash work in finite owned workers.
+
+        Existing get_dashboard_config/_execute semantics are deliberately
+        untouched. Analysis refuses missing admission instead of refreshing it.
+        """
+        from ..dashboard_analysis import contracts as c
+
+        c.validate_arguments({"url_path": url_path})
+        expected = self.analysis_authority()
+        metadata = None
+
+        def check():
+            authorize()
+            if self.analysis_authority() != expected:
+                raise c.AnalysisError("authority_drift")
+
+        async def admit(handshake):
+            nonlocal metadata
+            check()
+            metadata = await c.worker(_analysis_handshake, handshake, expected)
+            check()
+
+        check()
+        try:
+            exchange = await self._transport.execute_analysis_read(
+                {"url_path": url_path, "force_reload": True, "list_only": False,
+                 "include_screenshot": False}, admit, authorize=check, budget=budget)
+            check()
+            data = await c.worker(_analysis_configuration, exchange.call_result, url_path)
+            check()
+            if metadata is None:
+                raise c.AnalysisError("authority_unavailable")
+            return data, metadata
+        except DashboardTransportError as error:
+            reason = {"authentication_failed": "access_denied", "response_too_large": "response_limit",
+                      "timeout": "timeout", "invalid_response": "malformed_response",
+                      "connection_failed": "source_unavailable", "upstream_error": "source_rejected"}.get(
+                          error.category, "authority_unavailable")
+            raise c.AnalysisError(reason) from None
+
     def _validate_write_handshake(
         self,
         handshake: McpDashboardHandshake,
@@ -2084,6 +2146,74 @@ def _schema_types(schema: dict[str, Any]) -> set[str]:
                 if isinstance(branch, dict):
                     values.update(_schema_types(branch))
     return values
+
+
+def _analysis_handshake(handshake, expected):
+    """Detached, pure use of the existing binary-owned admission functions."""
+    from ..dashboard_analysis import contracts as c
+
+    _transport, identity, attestations, fallback_rejection = expected
+    if (handshake.server_name, handshake.server_version, handshake.protocol_version) != identity[:3]:
+        raise c.AnalysisError("identity_mismatch")
+    selected = [tool for tool in handshake.tools if type(tool) is dict
+                and tool.get("name") == REQUIRED_DASHBOARD_TOOL]
+    if len(selected) != 1:
+        raise c.AnalysisError("authority_unavailable")
+    tool = selected[0]
+    release = load_reviewed_upstream_release_registry().by_version.get(handshake.server_version)
+    if release is not None:
+        reviewed = release.tool_contracts_by_name.get(REQUIRED_DASHBOARD_TOOL)
+        if (release.provider_disposition("dashboard") != "admitted" or reviewed is None
+                or runtime_contract_fingerprint(tool, model=release.runtime_contract_fingerprint_model)
+                    != reviewed.runtime_contract_fingerprint):
+            raise c.AnalysisError("authority_drift")
+    decision = decide_admission(server_name=handshake.server_name,
+        server_version=handshake.server_version, protocol_version=handshake.protocol_version,
+        tool=tool, attestations=attestations, compatible_fallback_rejection=fallback_rejection)
+    if (not decision.accepted or decision.attestation is None or decision.contract is None
+            or (decision.contract_family, decision.attestation.entry_id, decision.contract.runtime_fingerprint)
+                != identity[3:]):
+        raise c.AnalysisError("authority_drift")
+    return {"upstream_version": handshake.server_version, "upstream_protocol": handshake.protocol_version,
+            "upstream_contract": decision.contract.runtime_fingerprint,
+            "upstream_source_commit": decision.attestation.source_commit,
+            "upstream_image_digest": decision.attestation.image_index_digest,
+            "upstream_authority_hash": c.digest([identity, asdict(decision.attestation), decision.source])}
+
+
+def _analysis_configuration(result, url_path):
+    """Decode strict inner JSON and verify raw source hashes before projection."""
+    from ..dashboard_analysis import contracts as c
+
+    if type(result) is not dict or ("isError" in result and result["isError"] is not False):
+        raise c.AnalysisError("source_rejected")
+    content = result.get("content")
+    if (type(content) is not list or len(content) != 1 or type(content[0]) is not dict
+            or content[0].get("type") != "text" or type(content[0].get("text")) is not str):
+        raise c.AnalysisError("malformed_response")
+    text = content[0]["text"]
+    if len(text) > c.DASHBOARD_BYTES:
+        raise c.AnalysisError("response_limit")
+    try:
+        raw = text.encode("utf-8")
+    except UnicodeError:
+        raise c.AnalysisError("malformed_response") from None
+    payload = c.parse(raw, maximum=c.DASHBOARD_BYTES, depth=128, nodes=200_000)
+    if type(payload) is not dict or payload.get("success") is not True:
+        raise c.AnalysisError("source_rejected")
+    if payload.get("url_path") != url_path:
+        raise c.AnalysisError("identity_mismatch")
+    configuration = payload.get("config")
+    if type(configuration) is not dict or not any(k in configuration for k in ("views", "strategy")):
+        raise c.AnalysisError("malformed_response")
+    if "structuredContent" in result and result["structuredContent"] != payload:
+        raise c.AnalysisError("identity_mismatch")
+    supplied = payload.get("config_hash")
+    if (type(supplied) is not str or not re.fullmatch(r"[0-9a-f]{16}", supplied)
+            or not hmac.compare_digest(supplied, _upstream_config_hash(configuration))):
+        raise c.AnalysisError("hash_mismatch")
+    return {"configuration": configuration, "config_hash": supplied,
+            "engineering_config_hash": _engineering_config_hash(configuration)}
 
 
 def _canonical_json(value: Any, *, ensure_ascii: bool) -> str:

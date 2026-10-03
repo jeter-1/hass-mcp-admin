@@ -1,4 +1,4 @@
-"""Frozen bounded continuation primitive, not yet composed into a public tool.
+"""Frozen bounded continuation for the dashboard analysis tool.
 
 The collector contract is internal: collect(path) returns only a FrozenReport;
 authority() checks current in-memory authority without dispatch or refresh.
@@ -119,18 +119,24 @@ class DashboardAnalysisService:
         caller = current_caller_id()
         if not caller or caller == "anonymous":
             raise c.AnalysisError("access_denied")
+        if self.active:
+            raise c.AnalysisError("capacity_busy")
+        self.active = True
+        try:
+            return await self._analyze(url_path, limit, cursor, caller)
+        finally:
+            self.active = False
+
+    async def _analyze(self, url_path, limit, cursor, caller):
         if cursor:
             key, offset, snapshot = self._resolve(cursor, caller, url_path)
             self._check_authority(snapshot)
             page = await c.worker(self._page, key, offset, snapshot, limit)
             self._check_authority(snapshot)
             return page
-        if self.active:
-            raise c.AnalysisError("capacity_busy")
         self.snapshots = {k: v for k, v in self.snapshots.items() if v.expires > self.clock()}
         if len(self.snapshots) >= c.SNAPSHOTS:
             raise c.AnalysisError("capacity_busy")
-        self.active = True
         try:
             async with asyncio.timeout(c.COLLECTION_SECONDS):
                 expected = self.provider.authority()
@@ -149,5 +155,3 @@ class DashboardAnalysisService:
                 return page
         except TimeoutError:
             raise c.AnalysisError("timeout") from None
-        finally:
-            self.active = False
