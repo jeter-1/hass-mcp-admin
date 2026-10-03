@@ -11,11 +11,19 @@ seven-file scope extension completes those policy entries and reconciles five
 legacy catalog-name tests while preserving their historical descriptor/hash and
 safety assertions. The policy permits no writes or fallback.
 
-This is **not a completed release candidate**. Exact frontend execution,
-disposable exact Core/ha-mcp acceptance, exact-head CI and independent dashboard
-review remain pending. No release/version/deployment is included; the unchanged
-version metadata gate remains a separate release decision. Executed local results
-and their exact revisions are recorded in the assigned RESULT.
+The reviewed implementation at `2791151b27424f686bc16c59f521ce5301517727`
+has an owner-reported independent delta-review PASS. Exact frontend execution
+passed six suites / 51 tests. Its retained Full/Evidence passed 14/15 steps, with
+only unchanged beta.14 metadata failing. Local Docker socket permission denied
+actual disposable execution; preparation alone did not close that gate. Those
+historical receipts remain in `.artifacts/dashboard-analysis/external-gates-006/`
+in the Dashboard worktree.
+
+The owner subsequently approved integration with the reviewed F3 corrections,
+beta.15 metadata and the required disposable CI lane. The current release contract
+is [beta.15 acceptance](V2_4_0_BETA15_ACCEPTANCE.md). Bind combined validation and
+assembled acceptance to its final candidate/CI receipts; the older source review
+and frontend result do not assert container execution or installed acceptance.
 
 ## Evidence collection and authority
 

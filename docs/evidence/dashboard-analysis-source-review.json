@@ -1,5 +1,5 @@
 {
-  "stage": "implemented_local_candidate_external_validation_pending",
+  "stage": "beta15_combined_candidate_prior_source_evidence_retained",
   "engineering_base": "5e9651ce7623433e47194488531eb029a15636a6",
   "source_binding_results": [
     {
@@ -114,7 +114,7 @@
   "missing_inputs": [],
   "rules_encoded": true,
   "source_derived_fixtures_committed": false,
-  "frontend_execution": false,
+  "frontend_execution": true,
   "disposable_core_execution": false,
   "full_analyzer_responsiveness": "synthetic assembled path executed with real admission/hashing, serial and controlled contention; exact environment lane pending",
   "upstream_analysis_transport": "composed no-refresh provider and collector; old entry points preserved",
@@ -421,47 +421,47 @@
     {
       "path": "test/panels/lovelace/handle-action.test.ts",
       "sha256": "5ef5948685f39d0fd59e9c31d7f94b09290755a5b4607444738a42694445ee98",
-      "executed": false,
+      "executed": true,
       "coverage": "URL sanitization only; no generic service precedence or helper default coverage"
     },
     {
       "path": "test/panels/lovelace/cards/hui-tile-card.test.ts",
       "sha256": "8ccb8779ca7c411d0063b4908fa98a49dd959fc88a49fbb9a7f4118ab7736177",
-      "executed": false,
+      "executed": true,
       "coverage": "Layout size only; no action default coverage"
     },
     {
       "path": "test/panels/lovelace/common/directives/action-handler-directive.test.ts",
       "sha256": "409cecbe635c1b30744a896a1aa788e7af1bac7660195b6434ca433b026f7e51",
-      "executed": false,
+      "executed": true,
       "coverage": "Selected lines 96-148: tap/hold/double, null resolver, mismatched target"
     },
     {
       "path": "test/panels/lovelace/common/validate-condition.test.ts",
       "sha256": "afd31813e3e521c378efa8fc181d9e22b1cab3d26dc8a68e4f5fe0b4232f03bc",
-      "executed": false,
+      "executed": true,
       "coverage": "State/numeric/legacy validity and evaluation; analyzer does not evaluate"
     },
     {
       "path": "test/common/entity/can_toggle_domain.test.ts",
       "sha256": "9822a0932e168ec06e2d588dcbf0bcf6703d7c4859f3493f19701c367105b9ca",
-      "executed": false,
+      "executed": true,
       "coverage": "Service-dependent toggling, not DOMAINS_TOGGLE default selection"
     },
     {
       "path": "test/common/entity/can_toggle_state.test.ts",
       "sha256": "e9ac8613705adb1f5885df30f468150c1807bc2fd3ddee07f8ddc5565edc5923",
-      "executed": false,
+      "executed": true,
       "coverage": "State-dependent/group eligibility; not inferred by analyzer"
     }
   ],
-  "license_review": "Frontend Apache-2.0; no upstream code or upstream fixtures copied into runtime/tests. Engineering synthetic configuration cases are original, with exact source provenance recorded here. Upstream TypeScript execution unavailable (no local frontend dependencies); source inspection is not execution.",
+  "license_review": "Frontend Apache-2.0; no upstream code or upstream fixtures copied into runtime/tests. Engineering synthetic configuration cases are original, with exact source provenance recorded here. Exact upstream TypeScript execution: six suites / 51 passed. Source inspection and original synthetic controls remain separate from disposable acceptance.",
   "implementation_status": {
     "central_provider_routing": "implemented under approved seven-file scope extension: Engineering-native read policy, no writes or fallback",
-    "exact_frontend_execution": "unavailable: node/npm not in PATH and no TypeScript/Vitest packages in searched offline locations; no installation attempted",
-    "disposable_exact_lane": "pending separately supplied/authorized exact Core/frontend/ha-mcp environment",
-    "ci": "not run; no push authorized",
-    "independent_dashboard_review": "pending coordinator",
+    "exact_frontend_execution": "PASS: Node 24.19.0 / Yarn 4.18.0 / TypeScript 6.0.3 / Vitest 4.1.11; 51 passed, zero failed/skipped",
+    "disposable_exact_lane": "BLOCKED: local Docker API permission denied, including host preflight; no runtime execution",
+    "ci": "Required exact-head dashboard-disposable lane; consult candidate CI receipts, not earlier preparation",
+    "independent_dashboard_review": "Josh reported independent delta-review PASS for 2791151b27424f686bc16c59f521ce5301517727; no new report inferred",
     "legacy_catalog_assertions": "approved name-only reconciliation applied in five tests; historical descriptor hashes and safety assertions unchanged",
     "owned_serialization": "service permit retained through final page envelope worker; failed first export discarded",
     "strict_payload_types": "canonical structured/inner payload comparison; pre-SDK nonboolean isError refusal; malformed Unicode source hash classified permanently",
@@ -480,5 +480,21 @@
     "provider_patch_sha256": "fa78c4a5718c486ecb7cbb5dc4532b1f451d13d69655a9c44b98ddcd6dff8fb1",
     "test_patch_sha256": "03888efb5204958a403125d26c84e87d7a4979440302c8e8e4c93233c65adce4",
     "external_gates": "unchanged; see implementation_status"
+  },
+  "external_gate_receipts": {
+    "candidate_sha": "2791151b27424f686bc16c59f521ce5301517727",
+    "package": ".artifacts/dashboard-analysis/external-gates-006",
+    "frontend_result": "frontend-execution-result.json",
+    "image_provenance": "image-provenance.json",
+    "disposable_preflight": "disposable-preflight.json",
+    "release_ci": "conditional artifacts, not applied or validated by actual CI"
+  },
+  "release_integration": {
+    "owner_approved": true,
+    "version": "2.4.0-beta.15",
+    "f3_reviewed_head": "28a65f2ce3776ef6efd9f8af458245ce28aa27a3",
+    "dashboard_reviewed_head": "2791151b27424f686bc16c59f521ce5301517727",
+    "contract": "docs/V2_4_0_BETA15_ACCEPTANCE.md",
+    "installed_acceptance": "separate, not established by this source evidence"
   }
 }

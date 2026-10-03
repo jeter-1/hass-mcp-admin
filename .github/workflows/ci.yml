@@ -40,6 +40,7 @@ jobs:
       - prepare_exact_image_matrix
       - exact-image-read-gateway
       - exact-addon-runtime-acceptance
+      - dashboard-disposable
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -61,6 +62,7 @@ jobs:
               "prepare_exact_image_matrix",
               "exact-image-read-gateway",
               "exact-addon-runtime-acceptance",
+              "dashboard-disposable",
           )
           try:
               results = json.loads(os.environ["REQUIRED_JOB_RESULTS"])
@@ -1291,3 +1293,61 @@ jobs:
           path: ${{ runner.temp }}/h${{ matrix.candidate_resource_code }}-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.architecture }}-evidence/*.json
           if-no-files-found: error
           retention-days: 14
+
+  dashboard-disposable:
+    name: dashboard-disposable
+    needs: validate_prerequisites
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      GIT_OPTIONAL_LOCKS: "0"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+      - name: Install exact Engineering dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+      - name: Verify the exact public ha-mcp source archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
+            https://codeload.github.com/homeassistant-ai/ha-mcp/legacy.tar.gz/311d6dc273fb4e9a5b8cde0de15f69472a64fe44 \
+            --output "$RUNNER_TEMP/dashboard-ha-mcp-source.tar.gz"
+          python - <<'VERIFY'
+          import hashlib, os
+          from pathlib import Path
+          value = Path(os.environ["RUNNER_TEMP"], "dashboard-ha-mcp-source.tar.gz").read_bytes()
+          assert hashlib.sha256(value).hexdigest() == "02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e"
+          VERIFY
+      - name: Run the bounded assembled dashboard gate
+        run: >-
+          python -B scripts/dashboard_analysis_disposable_acceptance.py
+          --repo .
+          --fixture tests/fixtures/dashboard_interval_observer/custom_components/dashboard_interval_observer
+          --output "${{ runner.temp }}/dashboard-acceptance-${{ github.run_id }}-${{ github.run_attempt }}"
+          --execute
+      - name: Verify owned-resource cleanup even after cancellation
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="${{ runner.temp }}/dashboard-acceptance-${{ github.run_id }}-${{ github.run_attempt }}"
+          if test -f "$evidence_dir/plan.json"; then
+            python -B scripts/dashboard_analysis_disposable_acceptance.py \
+              --repo . \
+              --fixture tests/fixtures/dashboard_interval_observer/custom_components/dashboard_interval_observer \
+              --output "$evidence_dir" --cleanup
+          fi
+      - name: Retain only sanitized dashboard receipts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: dashboard-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/dashboard-acceptance-${{ github.run_id }}-${{ github.run_attempt }}/*.json
+          if-no-files-found: warn
