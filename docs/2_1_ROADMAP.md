@@ -2,7 +2,48 @@
 
 ## Current direction
 
-### 2026-10-02 — Accepted baseline and parallel preparation
+### 2026-10-03 — Accepted reliability-first priority refinement
+
+Josh accepted a revised ordering after source-backed triage of the current
+Engineering findings. This is prioritization and status reconciliation, not a
+claim that the corrections are implemented, reviewed, released or installed.
+
+1. **Correct F3 request-readiness history scanning first.** The source mechanism
+   is confirmed on current main and a bounded maintenance assignment is prepared.
+   Implementation, Linux synthetic regression evidence, Full/Evidence and
+   independent review remain pending.
+2. **Design safe F3 execution-history retention and capacity handling next.**
+   Maintenance should define retention/archive, replay-protection and recovery
+   options. Persistence changes await Josh's separate policy decision. Do not
+   raise limits or delete production records as a capacity workaround.
+3. **Continue the dashboard integrity analyzer in parallel.** Local candidate
+   `ffbcae428c4f7b9efcb9ed3cadca118f83036f92` reports 4,639 passed, 24 skipped
+   and zero failed tests. It is still a local candidate: unchanged-version
+   metadata, external execution gates, exact-head CI and bounded independent
+   review remain pending. No release or installed acceptance is claimed.
+4. **Defer HAMCP-130 backup-inventory implementation** until the immediate F3
+   reliability work above is addressed. Preserve its existing sanitized,
+   read-only scope and canonical task identity.
+5. **Keep HAMCP-132 recorder settings at the provider-decision boundary.**
+   Discovery found no eligible existing loaded-settings provider. A separate
+   HA-side provider decision is required before implementation; helper/template
+   visibility remains a later distinct slice.
+
+Group Windows prerequisites, explicit UTF-8 behavior and canonical byte-pinned
+checkout inputs into one later portability package. Approval-policy alignment,
+retired stable-v1 disposition and compatible-catalog guidance remain three
+separate owner decisions; this ordering authorizes none of their runtime or
+distribution changes. Reuse revision-bound evidence and prerequisite checks
+where valid, but retain meaningful tests, required CI/publication gates and
+bounded independent review.
+
+The canonical register currently maps the read-surface changes to HAMCP-130 and
+HAMCP-132. No exact existing Engineering row is verified for the two F3 findings,
+the dashboard integrity analyzer or the portability package. Do not invent task
+IDs, repurpose historical release rows or mark any of these corrections
+implemented merely to record this direction.
+
+### 2026-10-02 — Accepted beta.14 baseline and prior preparation record
 
 Engineering **2.4.0-beta.14** is implemented, published, installed and accepted
 within its bounded read-only contract. The installed source is
@@ -28,17 +69,16 @@ artifact is not upgraded, and its different count cannot prove additions or
 removals. Reuse the accepted export at the next independently useful authorized
 capture; do not manufacture a second scan just to demonstrate comparison.
 
-Josh selected three existing conversations to work in parallel, coordinated by
-**HA MCP Architect Coordinator**. This supersedes the earlier draft's strictly
-sequential backup-first scheduling; it does not grant all proposed implementation
-or release authority. Stream onboarding and checkout isolation must be verified
-before treating a stream as an active writer.
+On October 2 Josh selected three existing conversations to work in parallel,
+coordinated by **HA MCP Architect Coordinator**. The October 3 direction above
+supersedes this record's maintenance and backup ordering while preserving the
+accepted beta.14 baseline and separate-stream boundaries.
 
 | Stream | First bounded scope | Subsequent dependency |
 | --- | --- | --- |
-| Dashboard analysis | Reconcile the prepared one-dashboard integrity/control contract: literal references, supported configured controls, explicit partial coverage and no automatic repair. Preparation is complete; implementation and actual dashboard analysis are not. | Proceed only under the explicit tool/provider implementation scope; shared interfaces are coordinated centrally. |
-| Maintenance | Reconcile the two deferred native-baseline error findings: permanent failures reported as retryable, and non-config source failures reported as configuration failures. Prepare a small correction with compatibility/refusal tests. | Then prepare the standalone sanitized backup-inventory contract (existing HAMCP-130 reference); implementation is a separately bounded increment. |
-| Discovery | Establish an authoritative, bounded recorder-settings inspection contract (existing HAMCP-132 recorder slice), including retention settings and non-secret engine/type evidence. | Broader platform/App/integration diagnostics follow as separately selected contracts; discovery completion is not runtime delivery. |
+| Dashboard analysis | The prepared integrity/control contract advanced to local candidate `ffbcae428c4f7b9efcb9ed3cadca118f83036f92`; retained tests report 4,639 passed, 24 skipped and zero failed. | Complete unchanged-version metadata, external execution gates, exact-head CI and bounded independent review. Local validation is not release or installed acceptance. |
+| Maintenance | Correct F3 request-readiness history scanning first, then design safe execution-history retention/capacity handling. | Persistence changes require the separate owner policy decision. HAMCP-130 follows the immediate F3 reliability work. |
+| Discovery | Recorder-settings discovery found no eligible existing loaded-settings provider for the HAMCP-132 slice. | Obtain the separate HA-side provider decision before implementation. Broader platform/App/integration diagnostics remain separately selected contracts. |
 
 The coordinator owns dependency and overlap resolution, final integration,
 review scheduling and evidence-backed PM handoffs. Use separate writable
@@ -62,15 +102,18 @@ The HAHE-F001/F002 audit's remaining read-surface gaps are not closed by baselin
 capture. Preserve the existing task references from PR #229 and verify canonical
 register mappings before changing their status; do not invent duplicate IDs.
 
-- **HAMCP-130 — standalone sanitized backup inventory:** expose only the reviewed
+- **HAMCP-130 — standalone sanitized backup inventory:** defer implementation
+  behind the immediate F3 reliability work. When resumed, expose only the reviewed
   bounded `BackupAdministrationGateway.read_inventory()` projection through an
   explicitly approved read-only surface. Preserve sanitized inventory and
   operation-state evidence; do not expose creation, restore or archive access.
-- **HAMCP-132 — recorder settings:** establish the authoritative source for
+- **HAMCP-132 — recorder settings:** discovery did not establish an eligible
+  existing loaded-settings provider. Obtain the separate HA-side provider
+  decision, then establish the authoritative source for
   configured `purge_keep_days`, recorder engine/type and narrowly useful non-secret
   settings. Do not substitute defaults for observed effective settings or expose
-  `db_url` credentials. This needs provider/compatibility discovery, not a claim
-  that an existing generic diagnostic read already supplies it.
+  `db_url` credentials. Discovery completion is not implementation and does not
+  prove that an existing generic diagnostic read supplies the data.
 - **HAMCP-129 — platform, App and integration diagnostics:** later allowlisted
   projections for supported parts of `ha_get_system_health`, `ha_get_app` and
   `ha_get_integration`. The shipped Alarmo inspector is a bounded precedent,
