@@ -13,6 +13,7 @@ from collections import Counter
 from contextlib import contextmanager
 import hashlib
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -110,7 +111,7 @@ class Lane:
                 "platform": "linux/amd64", "images": IMAGE_IDS, "engine": "unix:///var/run/docker.sock",
                 "label": self.label, "containers": [self.seed, self.core, self.upstream],
                 "network": self.network, "volume": self.volume, "bind_mounts": [],
-                "ports": "127.0.0.1:<daemon-assigned>::8123/8086 only", "privileged": False,
+                "ports": "unpublished; host reads exact owned internal-bridge addresses on 8123/8086", "privileged": False,
                 "resource_limits": {"core": "3 GiB / 2 CPU / 512 pids", "mcp": "1 GiB / 1 CPU / 256 pids"},
                 "timeouts_seconds": {"overall": 1200, "pull_each": 300, "onboarding": 150,
                     "setup_settle": 210, "each_analysis": 40, "observer_interval": 45, "stop_each": 20},
@@ -130,7 +131,9 @@ class Lane:
 
     def start_core(self):
         self.attempted = True
-        require(self.docker("version", "--format", "{{.Server.Version}}", timeout=15).stdout.strip(), "daemon unavailable")
+        engine_version = self.docker("version", "--format", "{{.Server.Version}}", timeout=15).stdout.decode().strip()
+        require(re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+[A-Za-z0-9.+_-]{0,40}", engine_version), "daemon identity unavailable")
+        save(self.out / "engine-identity.json", {"version": engine_version, "platform": "linux/amd64"})
         for image, config in IMAGE_IDS.items():
             self.docker("pull", "--platform", "linux/amd64", image, timeout=300)
             actual = self.docker("image", "inspect", "--format", "{{.Id}} {{.Os}}/{{.Architecture}}", image).stdout.decode().strip()
@@ -155,33 +158,59 @@ class Lane:
         self.docker("run", "-d", "--name", self.core, "--label", self.label,
                     "--network", self.network, "--network-alias", "dashboard-core",
                     "--memory", "3g", "--cpus", "2", "--pids-limit", "512",
-                    "-p", "127.0.0.1::8123", "--mount", "type=volume,src=" + self.volume + ",dst=/config", CORE)
+                    "--mount", "type=volume,src=" + self.volume + ",dst=/config", CORE)
         installed = json.loads(self.docker("exec", self.core, "python", "-c",
             "from importlib.metadata import version; import json; "
             "print(json.dumps({'core': version('homeassistant'), 'frontend': version('home-assistant-frontend')}))").stdout)
         require(installed == {"core": "2026.9.4", "frontend": "20260826.7"}, "installed component identity mismatch")
         save(self.out / "component-identities.json", {"installed_core_packages": installed,
              "verified_image_configuration_digests": IMAGE_IDS})
-        return "http://127.0.0.1:" + self.port(self.core, "8123/tcp")
+        return self.owned_url(self.core, 8123)
 
-    def port(self, name, exposed):
-        raw = self.docker("inspect", "--format", '{{json (index .NetworkSettings.Ports "' + exposed + '")}}', name).stdout
-        ports = json.loads(raw)
-        require(len(ports) == 1 and ports[0]["HostIp"] == "127.0.0.1", "non-loopback publication")
-        require(ports[0]["HostPort"].isdigit(), "invalid allocated port")
-        return ports[0]["HostPort"]
+    def owned_url(self, name, port):
+        # Internal bridges deliberately have no published host-port mapping.
+        # Use the Linux host's route only after checking the exact owned network
+        # and container; never fall back to another interface or caller URL.
+        require((name, port) in {(self.core, 8123), (self.upstream, 8086)}, "unknown endpoint")
+        network_format = ('{"internal":{{json .Internal}},"driver":{{json .Driver}},'
+            '"id":{{json .Id}},"label":{{json (index .Labels "' + LABEL_KEY + '")}},'
+            '"ipam":{{json .IPAM.Config}}}')
+        container_format = ('{"running":{{json .State.Running}},'
+            '"label":{{json (index .Config.Labels "' + LABEL_KEY + '")}},'
+            '"network":{{json (index .NetworkSettings.Networks "' + self.network + '")}},'
+            '"network_count":{{len .NetworkSettings.Networks}},"ports":{{json .HostConfig.PortBindings}}}')
+        network = json.loads(self.docker("network", "inspect", "--format", network_format, self.network).stdout)
+        container = json.loads(self.docker("container", "inspect", "--format", container_format, name).stdout)
+        require(network["internal"] is True and network["driver"] == "bridge"
+                and network["label"] == self.name, "unowned or external network")
+        require(container["running"] is True and container["label"] == self.name
+                and container["network_count"] == 1 and container["ports"] in (None, {}),
+                "container topology mismatch")
+        endpoint = container["network"]
+        require(type(endpoint) is dict and endpoint.get("NetworkID") == network["id"], "network identity mismatch")
+        address = ipaddress.ip_address(endpoint["IPAddress"])
+        require(address.version == 4 and address.is_private and not address.is_loopback
+                and not address.is_link_local and not address.is_unspecified and not address.is_multicast,
+                "non-private container address")
+        require(type(network["ipam"]) is list and 0 < len(network["ipam"]) <= 4, "invalid network allocation")
+        require(any(address in ipaddress.ip_network(row["Subnet"])
+                    and str(address) != row.get("Gateway") for row in network["ipam"]), "address outside owned network")
+        save(self.out / ("endpoint-" + str(port) + ".json"), {
+            "network": self.network, "container": name, "address": str(address), "port": port,
+            "internal": True, "ownership_verified": True, "published_ports": False})
+        return "http://" + str(address) + ":" + str(port)
 
     def start_upstream(self, token):
         self.docker("run", "-d", "--name", self.upstream, "--label", self.label,
                     "--network", self.network, "--memory", "1g", "--cpus", "1", "--pids-limit", "256",
                     "--read-only", "--tmpfs", "/tmp", "--tmpfs", "/home/mcpuser/.ha-mcp",
-                    "-p", "127.0.0.1::8086", "-e", "HOMEASSISTANT_TOKEN",
+                    "-e", "HOMEASSISTANT_TOKEN",
                     "-e", "HOMEASSISTANT_URL=http://dashboard-core:8123", "-e", "MCP_HOST=0.0.0.0",
                     "-e", "MCP_PORT=8086", "-e", "MCP_SECRET_PATH=/disposable-dashboard-mcp",
                     "-e", "HA_MCP_DISABLE_UPDATE_CHECK=1", "-e", "HA_MCP_DISABLE_SETTINGS_UI=1",
                     "-e", "ENABLE_AUTO_BACKUP=false", "-e", "ENABLE_TOOL_SEARCH=false",
                     "-e", "PYTHONDONTWRITEBYTECODE=1", "-e", "MCP_HEALTHZ=true", MCP, "ha-mcp-web", token=token)
-        return "http://127.0.0.1:" + self.port(self.upstream, "8086/tcp") + "/disposable-dashboard-mcp"
+        return self.owned_url(self.upstream, 8086) + "/disposable-dashboard-mcp"
 
     def cleanup(self):
         result = {"status": "NOT_NEEDED" if not self.attempted else "PASS", "resources": []}
@@ -302,10 +331,10 @@ async def scenario(lane, core_url):
         upstream = UpstreamDashboardProvider(); upstream.configure(configured)
         # Readiness is setup only, not repeated admission or an analysis retry.
         from urllib.parse import urlsplit
-        port = urlsplit(mcp_url).port
+        endpoint = urlsplit(mcp_url)
         for _ in range(60):
             try:
-                reader, writer = await asyncio.wait_for(asyncio.open_connection("127.0.0.1", port), 1)
+                reader, writer = await asyncio.wait_for(asyncio.open_connection(endpoint.hostname, endpoint.port), 1)
                 writer.close(); await writer.wait_closed(); break
             except (OSError, TimeoutError): await asyncio.sleep(1)
         else: raise RuntimeError("upstream startup timeout")
@@ -427,6 +456,16 @@ async def scenario(lane, core_url):
         if monitor: await asyncio.wait_for(asyncio.gather(monitor, return_exceptions=True), 10)
 
 
+def failure_locations(error, root):
+    result, current = [], error.__traceback__
+    while current is not None and len(result) < 16:
+        path = Path(current.tb_frame.f_code.co_filename).resolve()
+        result.append({"file": str(path.relative_to(root)) if path.is_relative_to(root) else "dependency",
+                       "line": current.tb_lineno})
+        current = current.tb_next
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True, type=Path)
@@ -464,7 +503,8 @@ def main():
         url = lane.start_core(); asyncio.run(scenario(lane, url)); code = 0
     except BaseException as exc:
         save(lane.out / "failure.json", {"status": "FAIL", "error_type": type(exc).__name__,
-            "detail": "Sensitive exception text intentionally omitted; inspect last completed sanitized receipt"})
+            "locations": failure_locations(exc, lane.root),
+            "detail": "Exception values and locals omitted; source locations and completed receipts retained"})
     finally:
         signal.alarm(0)
         if lane.cleanup()["status"] == "FAIL": code = 1

@@ -104,3 +104,67 @@ class DisposableWireTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaisesRegex(RuntimeError, "selector drift"):
                 await httpx.AsyncHTTPTransport.handle_async_request(None, request)
         self.assertFalse(events["mcp"])
+
+
+class DisposableNetworkTests(unittest.TestCase):
+    def fixtures(self, lane):
+        network = {"internal": True, "driver": "bridge", "id": "a" * 64,
+                   "label": lane.name, "ipam": [{"Subnet": "172.28.0.0/16", "Gateway": "172.28.0.1"}]}
+        container = {"running": True, "label": lane.name, "network_count": 1, "ports": None,
+                     "network": {"NetworkID": "a" * 64, "IPAddress": "172.28.0.2"}}
+        return network, container
+
+    def docker(self, network, container):
+        return Mock(side_effect=lambda *args, **kwargs: subprocess.CompletedProcess(
+            args, 0, json.dumps(network if args[0] == "network" else container).encode(), b""))
+
+    def test_internal_owned_endpoint_needs_no_published_host_port(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lane = DisposableOwnershipTests().lane(directory)
+            network, container = self.fixtures(lane)
+            lane.docker = self.docker(network, container)
+            self.assertEqual(lane.owned_url(lane.core, 8123), "http://172.28.0.2:8123")
+            receipt = json.loads((lane.out / "endpoint-8123.json").read_text())
+            self.assertTrue(receipt["internal"])
+            self.assertFalse(receipt["published_ports"])
+            self.assertEqual(lane.docker.call_count, 2)
+
+    def test_wrong_ownership_topology_or_address_never_yields_an_endpoint(self):
+        import copy
+        cases = [("network", "internal", False), ("network", "driver", "host"),
+                 ("network", "label", "foreign"), ("container", "running", False),
+                 ("container", "label", "foreign"), ("container", "network_count", 2),
+                 ("container", "ports", {"8123/tcp": [{"HostIp": "0.0.0.0"}]}),
+                 ("endpoint", "NetworkID", "b" * 64),
+                 *( ("endpoint", "IPAddress", ip) for ip in
+                    ["8.8.8.8", "127.0.0.1", "169.254.1.2", "0.0.0.0", "172.29.0.2", "172.28.0.1"])]
+        with tempfile.TemporaryDirectory() as directory:
+            lane = DisposableOwnershipTests().lane(directory)
+            original = self.fixtures(lane)
+            for target, key, value in cases:
+                with self.subTest(target=target, key=key, value=value):
+                    network, container = copy.deepcopy(original)
+                    {"network": network, "container": container, "endpoint": container["network"]}[target][key] = value
+                    lane.docker = self.docker(network, container)
+                    with self.assertRaises(RuntimeError):
+                        lane.owned_url(lane.core, 8123)
+                    self.assertFalse((lane.out / "endpoint-8123.json").exists())
+
+    def test_unknown_container_or_port_refuses_before_docker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            lane = DisposableOwnershipTests().lane(directory)
+            lane.docker = Mock(side_effect=AssertionError("unexpected Docker"))
+            for name, port in [("unrelated", 8123), (lane.core, 80), (lane.upstream, 8123)]:
+                with self.subTest(name=name, port=port), self.assertRaises(RuntimeError):
+                    lane.owned_url(name, port)
+            lane.docker.assert_not_called()
+
+    def test_failure_locations_retain_no_exception_values_or_locals(self):
+        try:
+            raise TypeError("SYNTHETIC_PRIVATE_DETAIL")
+        except TypeError as error:
+            locations = driver.failure_locations(error, ROOT)
+        self.assertTrue(locations)
+        self.assertNotIn("SYNTHETIC_PRIVATE_DETAIL", json.dumps(locations))
+        self.assertTrue(all(set(x) == {"file", "line"} for x in locations))
+        self.assertTrue(all(not Path(x["file"]).is_absolute() for x in locations))
