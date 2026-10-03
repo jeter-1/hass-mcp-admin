@@ -376,6 +376,7 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         self.failure_at, self.failure_status = None, 200
         self.drop_at = None
         self.delay_at, self.delay = None, 0
+        self.release_delay = None
         self.entered = asyncio.Event()
         self.retire_after_call = False
         app = web.Application()
@@ -409,7 +410,10 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
             return web.Response()
         if self.delay_at == method:
             self.entered.set()
-            await asyncio.sleep(self.delay)
+            if self.release_delay is None:
+                await asyncio.sleep(self.delay)
+            else:
+                await self.release_delay.wait()
         if method == self.failure_at:
             return web.Response(status=self.failure_status, text='synthetic-private-error',
                                 headers={'Location': '/forbidden'})
@@ -763,11 +767,37 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         self.catalog_pages = 0
         self.calls.clear()
         self.budget = CollectionBudget()
-        self.transport._timeout = timedelta(seconds=.08)
-        self.delay_at, self.delay = 'tools/call', .2
-        with self.assertRaises(DashboardTransportError) as error:
-            await self.call()
-        self.assertEqual(error.exception.category, 'timeout')
+        # The whole-exchange deadline also includes initialization/discovery.
+        # Expire its real timeout only after the peer confirms dispatch, so
+        # scheduler contention cannot turn this into a pre-dispatch timeout.
+        self.transport._timeout = timedelta(seconds=5)
+        self.delay_at = 'tools/call'
+        self.release_delay = asyncio.Event()
+        deadline = None
+        original_timeout_at = asyncio.timeout_at
+
+        def capture_deadline(when):
+            nonlocal deadline
+            context = original_timeout_at(when)
+            if asyncio.current_task() is task and deadline is None:
+                deadline = context
+            return context
+
+        with patch.object(asyncio, 'timeout_at', side_effect=capture_deadline):
+            task = asyncio.create_task(self.call())
+            try:
+                await asyncio.wait_for(self.entered.wait(), 3)
+                self.assertEqual(self.calls.count('tools/call'), 1)
+                self.assertIsNotNone(deadline)
+                deadline.reschedule(asyncio.get_running_loop().time())
+                with self.assertRaises(DashboardTransportError) as error:
+                    await asyncio.wait_for(task, 3)
+                self.assertEqual(error.exception.category, 'timeout')
+            finally:
+                self.release_delay.set()
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
         self.assertEqual(self.calls.count('tools/call'), 1)
         self.assertNotIn('GET', self.calls)
 
