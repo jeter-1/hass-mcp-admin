@@ -122,6 +122,23 @@
   "frontend_execution": false,
   "disposable_core_execution": false,
   "full_analyzer_responsiveness": "pending",
-  "upstream_analysis_transport": "not_implemented",
-  "scope_preserved": "full approved contract remains required"
+  "upstream_analysis_transport": "implemented_internal_public_factory_mode; provider composition pending",
+  "scope_preserved": "full approved contract remains required",
+  "sdk_private_scope_expansion": "not needed for implemented transport; prior proposal superseded",
+  "sdk_transport_evidence": {
+    "version": "1.28.1",
+    "installed_streamable_http_sha256": "8eb01c3d4da89c6e73d494a96029dbcf2fe05d0bfffe76071b1e409afdb62f5b",
+    "public_extension": "streamablehttp_client httpx_client_factory",
+    "private_sdk_override": false,
+    "synthetic_json_sse_execution": true,
+    "full_provider_execution": false,
+    "bounded_wire_get_requests": 0,
+    "source_commit": "not independently resolved in the offline batch"
+  },
+  "maintenance_integration": {
+    "reviewed_commit": "7bfea9f66d6b949d192c86ebba814bf802bb99c3",
+    "merge_commit": "7bf4d23d25be2da2e54123ba8047acd55aeb0970",
+    "reviewed_files_unchanged": true,
+    "catalog_count_edit": "pending actual dashboard registration"
+  }
 }

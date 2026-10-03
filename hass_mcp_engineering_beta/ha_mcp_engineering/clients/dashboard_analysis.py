@@ -7,9 +7,13 @@ each dispatch/return. Only states and entity-registry inventory can be read.
 
 import asyncio
 from contextlib import asynccontextmanager
+import json
 import time
+import threading
 
 import aiohttp
+import httpx
+from httpx_sse import EventSource
 
 from ..dashboard_analysis import contracts as c
 from ..observability import METRICS
@@ -205,3 +209,233 @@ class InventoryPeer:
         finally:
             if self.session is not None:
                 await self.session.close()
+
+
+class _McpBytes(httpx.AsyncByteStream):
+    """Charge raw bytes before HTTP/SSE text or JSON decoding."""
+
+    def __init__(self, stream, budget, maximum):
+        self.stream, self.budget, self.maximum = stream, budget, maximum
+        self.used = 0
+
+    async def __aiter__(self):
+        async for chunk in self.stream:
+            self.budget.charge(len(chunk))
+            self.used += len(chunk)
+            if self.used > self.maximum:
+                raise c.AnalysisError("response_limit")
+            yield chunk
+
+    async def aclose(self):
+        await self.stream.aclose()
+
+
+class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
+    """Private application class using only public HTTPX/SDK extension APIs.
+
+    The SDK may schedule background GETs; none reach the delegate. POST SSE is
+    bounded and reduced to one strict JSON-RPC response before the SDK sees it,
+    so incomplete streams cannot enter its resumption/reconnection path.
+    """
+
+    def __init__(self, url, arguments, budget, stopped, owner_call, authorize, deadline):
+        self.url, self.arguments, self.budget = httpx.URL(url), arguments, budget
+        self.stopped, self.owner_call, self.authorize = stopped, owner_call, authorize
+        self.deadline = deadline
+        self.delegate = httpx.AsyncHTTPTransport(retries=0)
+        self.counts = {}
+        self.failure = None
+
+    async def aclose(self):
+        await self.delegate.aclose()
+
+    async def handle_async_request(self, request):
+        try:
+            return await self._request(request)
+        except Exception as error:
+            self.failure = error
+            raise
+
+    async def _request(self, request):
+        from .mcp import DashboardTransportError, REQUIRED_DASHBOARD_TOOL, MAX_TOOL_CATALOG_PAGES
+
+        if request.url != self.url:
+            raise DashboardTransportError("endpoint_rejected", retryable=False)
+        if request.method == "GET":
+            # Synthetic local refusal: no background subscription or resume I/O.
+            return httpx.Response(405, request=request)
+        if time.monotonic() >= self.deadline:
+            raise DashboardTransportError("timeout")
+        if self.stopped.is_set() and request.method != "DELETE":
+            raise asyncio.CancelledError()
+        if request.method == "DELETE":
+            operation, maximum, message = "session_cleanup", c.AUTH_BYTES, None
+        elif request.method == "POST":
+            message = c.parse(request.content, maximum=c.AUTH_BYTES, depth=8)
+            if type(message) is not dict:
+                raise DashboardTransportError("prohibited_argument", retryable=False)
+            operation = message.get("method")
+            if operation not in {"initialize", "notifications/initialized", "tools/list", "tools/call"}:
+                raise DashboardTransportError("prohibited_argument", retryable=False)
+            if operation == "tools/call" and message.get("params") != {
+                "name": REQUIRED_DASHBOARD_TOOL, "arguments": self.arguments,
+            }:
+                raise DashboardTransportError("prohibited_argument", retryable=False)
+            maximum = c.DASHBOARD_BYTES if operation in {"tools/list", "tools/call"} else c.AUTH_BYTES
+        else:
+            raise DashboardTransportError("prohibited_argument", retryable=False)
+        self.counts[operation] = self.counts.get(operation, 0) + 1
+        if self.counts[operation] > (MAX_TOOL_CATALOG_PAGES if operation == "tools/list" else 1):
+            raise DashboardTransportError("prohibited_argument", retryable=False)
+        if operation != "session_cleanup":
+            await self.owner_call(self.authorize)
+            if self.stopped.is_set():
+                raise asyncio.CancelledError()
+        self.budget.remaining()
+        self.budget.requests += 1
+        request.headers["Accept-Encoding"] = "identity"
+        response = await self.delegate.handle_async_request(request)
+        response.stream = _McpBytes(response.stream, self.budget, maximum)
+        try:
+            if response.status_code in (401, 403):
+                raise DashboardTransportError("authentication_failed", retryable=False)
+            if 300 <= response.status_code < 400:
+                raise DashboardTransportError("endpoint_rejected", retryable=False)
+            if response.status_code >= 400:
+                raise DashboardTransportError("upstream_error")
+            if response.headers.get("Content-Encoding", "identity").lower() != "identity":
+                raise DashboardTransportError("invalid_response", retryable=False)
+            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+            if operation in {"notifications/initialized", "session_cleanup"}:
+                raw = await response.aread()
+                return httpx.Response(response.status_code, headers=response.headers,
+                                      content=raw, request=request)
+            if content_type == "application/json":
+                raw = await response.aread()
+                decoded = c.parse(raw, maximum=maximum, depth=64)
+            elif content_type == "text/event-stream":
+                decoded = None
+                async for event in EventSource(response).aiter_sse():
+                    if not event.data:
+                        continue
+                    if event.event != "message":
+                        raise DashboardTransportError("protocol_error", retryable=False)
+                    decoded = c.parse(event.data.encode("utf-8"), maximum=maximum, depth=64)
+                    break
+                if decoded is None:
+                    raise DashboardTransportError("protocol_error", retryable=False)
+                raw = c.canonical(decoded)
+                if len(raw) > maximum:
+                    raise c.AnalysisError("response_limit")
+            else:
+                raise DashboardTransportError("protocol_error", retryable=False)
+            if (type(decoded) is not dict or decoded.get("jsonrpc") != "2.0"
+                    or type(decoded.get("id")) is not type(message.get("id"))
+                    or decoded.get("id") != message.get("id")
+                    or ("result" in decoded) == ("error" in decoded)
+                    or "method" in decoded):
+                raise DashboardTransportError("protocol_error", retryable=False)
+            headers = dict(response.headers)
+            headers["content-type"] = "application/json"
+            headers.pop("content-length", None)
+            return httpx.Response(200, headers=headers, content=raw, request=request)
+        finally:
+            await response.aclose()
+
+
+async def bounded_mcp_read(transport, arguments, capability_validator, *, authorize, budget):
+    """Run bounded SDK decoding on an owned worker; authority stays on its loop."""
+    from datetime import timedelta
+    from mcp.client.streamable_http import streamablehttp_client
+    from ..mcp_sdk_compatibility import ReviewedProtocolClientSession
+    from .mcp import (DashboardTransportError, McpDashboardHandshake, McpDashboardRead,
+                      REQUIRED_DASHBOARD_TOOL, MAX_UPSTREAM_CONTENT_CHARS,
+                      _classified_transport_error, _iter_exceptions)
+
+    owner = asyncio.get_running_loop()
+    stopped = threading.Event()
+    authorize()
+    seconds = min(budget.remaining(), transport._timeout.total_seconds())
+    deadline = time.monotonic() + seconds
+
+    def admit_call():
+        authorize()
+        telemetry = current_telemetry()
+        if telemetry is not None and not telemetry.authorize_core_dispatch():
+            raise DashboardTransportError("connection_failed", retryable=False)
+
+    async def on_owner(function, *args):
+        async def invoke():
+            if stopped.is_set():
+                raise asyncio.CancelledError()
+            return function(*args)
+        return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(invoke(), owner))
+
+    def run():
+        async def exchange():
+            started = time.perf_counter()
+            fence = _AnalysisMcpHttp(transport._url, arguments, budget, stopped, on_owner, authorize, deadline)
+            def factory(headers=None, timeout=None, auth=None):
+                if auth is not None:
+                    raise DashboardTransportError("prohibited_argument", retryable=False)
+                return httpx.AsyncClient(transport=fence, headers=headers, timeout=timeout,
+                                        trust_env=False, follow_redirects=False)
+            async with asyncio.timeout_at(deadline):
+                async with streamablehttp_client(transport._url, timeout=seconds,
+                        sse_read_timeout=seconds, httpx_client_factory=factory,
+                        terminate_on_close=True) as (read, write, _):
+                    async with ReviewedProtocolClientSession(read, write,
+                            read_timeout_seconds=timedelta(seconds=seconds),
+                            client_info=transport._client_info) as session:
+                        initialized = await session.initialize()
+                        tools = await transport._list_all_tools(session)
+                        handshake = McpDashboardHandshake(str(initialized.protocolVersion),
+                            str(initialized.serverInfo.name), str(initialized.serverInfo.version),
+                            tuple(tools), round((time.perf_counter() - started) * 1000, 3))
+                        await on_owner(capability_validator, handshake)
+                        await on_owner(admit_call)
+                        call_started = time.perf_counter()
+                        result = await session.call_tool(REQUIRED_DASHBOARD_TOOL, arguments,
+                            read_timeout_seconds=timedelta(seconds=seconds))
+                        encoded = result.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        # Preserve the pre-existing stricter content-character bound.
+                        if len(json.dumps(encoded, default=str)) > MAX_UPSTREAM_CONTENT_CHARS:
+                            raise DashboardTransportError("response_too_large", retryable=False)
+                        result = McpDashboardRead(handshake, encoded,
+                            round((time.perf_counter() - call_started) * 1000, 3))
+                if fence.failure is not None:
+                    raise fence.failure
+                if time.monotonic() >= deadline:
+                    raise DashboardTransportError("timeout")
+                return result
+        try:
+            return asyncio.run(exchange())
+        except BaseException as error:
+            # SDK task groups must not demote an authority/limit failure into a
+            # transient provider error. All exposed reasons remain fixed.
+            for leaf in _iter_exceptions(error):
+                if isinstance(leaf, c.AnalysisError):
+                    raise leaf from None
+            if isinstance(error, (asyncio.CancelledError, KeyboardInterrupt, SystemExit)):
+                raise
+            raise _classified_transport_error(error) from None
+
+    task = asyncio.create_task(asyncio.to_thread(run))
+    try:
+        result = await asyncio.shield(task)
+    except asyncio.CancelledError:
+        stopped.set()
+        # The worker's finite timeout owns all SDK I/O and closes it before a
+        # collector can release its single in-flight capacity slot.
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                continue
+            except Exception:
+                break
+        if task.done() and not task.cancelled():
+            task.exception()
+        raise
+    authorize()
+    return result

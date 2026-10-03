@@ -275,6 +275,27 @@ class McpDashboardTransport:
             raise DashboardTransportError("internal_error")
         return result
 
+    async def execute_analysis_read(
+        self, arguments, capability_validator, *, authorize, budget,
+    ) -> McpDashboardRead:
+        """Isolated exact read with bounded wire data and no wire retries.
+
+        Existing reads, writes and discovery retain their original transport.
+        This internal entry point does not admit a provider or refresh trust.
+        """
+        from .dashboard_analysis import bounded_mcp_read
+        from ..dashboard_analysis import contracts as analysis
+
+        validate_dashboard_read_arguments(arguments)
+        if (set(arguments) != ALLOWED_DASHBOARD_ARGUMENTS
+                or arguments.get("force_reload") is not True
+                or not analysis.PATH.fullmatch(arguments["url_path"])):
+            raise DashboardTransportError("prohibited_argument", retryable=False)
+        return await bounded_mcp_read(
+            self, dict(arguments), capability_validator,
+            authorize=authorize, budget=budget,
+        )
+
     async def execute_best_practices_read(
         self,
         capability_validator: CapabilityValidator,
