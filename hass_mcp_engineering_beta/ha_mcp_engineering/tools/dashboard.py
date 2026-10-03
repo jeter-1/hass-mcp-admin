@@ -131,4 +131,97 @@ def _failure_response(operation: str, exc: Exception, started: float) -> str:
     ).to_json(SETTINGS.response_size_limit)
 
 
+async def dashboard_integrity_analysis(
+    url_path: Annotated[str, Field(strict=True, min_length=1, max_length=256)],
+    limit: Annotated[int, Field(strict=True, ge=1, le=100)] = 25,
+    cursor: Annotated[str, Field(strict=True, max_length=2048)] = "",
+) -> str:
+    """Inspect one exact dashboard's literal references and configured controls.
+
+    Collects one admitted upstream dashboard plus native states and entity
+    registry, with no writes, retries, fallback, templates or rendered claims.
+    Unsupported/dynamic branches remain explicit gaps. Potential controls are
+    not proof of current eligibility or authorization; more-info may expose
+    controls. Exports frozen, caller/path-bound pages for five minutes, with
+    zero provider reads on continuation. Never returns helper values or action
+    payloads. Capture is bounded and non-atomic.
+    """
+    from ..dashboard_analysis import contracts as c
+    from ..dashboard_analysis.runtime import DASHBOARD_ANALYSIS
+
+    started = time.perf_counter()
+    telemetry = current_telemetry()
+    maximum = min(c.PAGE_BYTES, SETTINGS.response_size_limit)
+    metadata = {"provider": "engineering", "data_providers": ["upstream_dashboard", "direct_ha_api"],
+                "fallback_occurred": False, "rule_model": c.MODEL}
+    try:
+        c.validate_arguments({"url_path": url_path, "limit": limit, "cursor": cursor})
+        service = DASHBOARD_ANALYSIS.require()
+        def render_result(result):
+            partial = any(v != "complete" for v in result["header"]["coverage"].values())
+            response = SuccessResponse(operation="dashboard_integrity_analysis",
+                summary="Returned frozen configured dashboard evidence with explicit coverage.", data=result,
+                metadata={**metadata, "completeness": "partial" if partial else "complete"},
+                timing=timing_since(started), request_id=current_request_id())
+            return _analysis_json(response, maximum)
+
+        result, rendered = await service.analyze(url_path=url_path, limit=limit, cursor=cursor,
+                                                 renderer=render_result)
+        partial = any(v != "complete" for v in result["header"]["coverage"].values())
+        metadata["completeness"] = "partial" if partial else "complete"
+        if telemetry:
+            telemetry.completeness = metadata["completeness"]
+            telemetry.result_status = "partial" if partial else "success"
+            telemetry.audit_context.update(model=c.MODEL, snapshot_fingerprint=result["report_digest"],
+                returned_items=len(result["items"]), continuation=bool(cursor),
+                reference_occurrences=result["header"]["counts"]["reference_occurrences"],
+                unique_references=result["header"]["counts"]["unique_references"], fallback="none")
+        return rendered
+    except Exception as error:
+        failure = error if isinstance(error, c.AnalysisError) else c.AnalysisError("source_unavailable")
+        metadata["completeness"] = "unavailable"
+        code, message, retryable, details = map_exception(failure)
+        if telemetry:
+            telemetry.error_code = code.value
+            telemetry.result_status = "failure"
+            telemetry.completeness = "unavailable"
+            telemetry.audit_context.update(model=c.MODEL, failure=failure.reason, fallback="none")
+        response = FailureResponse(operation="dashboard_integrity_analysis", error="DashboardAnalysisError",
+            error_code=code.value, message=message, details=details, retryable=retryable,
+            metadata=metadata, timing=timing_since(started), request_id=current_request_id())
+        return await c.worker(response.to_json, maximum)
+
+
+def _analysis_json(response, maximum):
+    """A page is indivisible: never run generic lossy response fitting on it."""
+    from ..dashboard_analysis import contracts as c
+    encoded = c.canonical(response.as_dict())
+    if len(encoded) > maximum:
+        raise c.AnalysisError("output_limit")
+    return encoded.decode("ascii")
+
+
+def registered_analysis_tool():
+    from mcp.server.fastmcp.tools.base import Tool
+    from mcp.types import ToolAnnotations
+    from ..dashboard_analysis import contracts as c
+
+    class AnalysisTool(Tool):
+        async def run(self, arguments, context=None, convert_result=False):
+            try:
+                c.validate_arguments(arguments)
+            except c.AnalysisError:
+                # Use the same fixed failure envelope before SDK validation can
+                # reflect untrusted values or unknown dictionary keys.
+                result = await dashboard_integrity_analysis(url_path="")
+                return self.fn_metadata.convert_result(result) if convert_result else result
+            return await super().run(arguments, context, convert_result)
+
+    tool = AnalysisTool.from_function(dashboard_integrity_analysis,
+        annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
+                                    idempotentHint=False, openWorldHint=False))
+    tool.parameters["additionalProperties"] = False
+    return tool
+
+
 DASHBOARD_TOOLS = (list_dashboards, get_dashboard_config)

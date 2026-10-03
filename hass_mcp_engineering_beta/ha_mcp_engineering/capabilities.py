@@ -78,6 +78,13 @@ PLANNED_CAPABILITIES: tuple[dict[str, str], ...] = ()
 
 BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     {
+        "tool": "dashboard_integrity_analysis", "category": "analysis",
+        "status": "beta_native", "risk": "read", "additive": True,
+        "operation_class": "read", "routing": "engineering_native", "provider": "engineering",
+        "data_providers": ["upstream_dashboard", "direct_ha_api"], "fallback": "none",
+        "policy": "dashboard-integrity-v1", "direct_write_allowed": False,
+    },
+    {
         "tool": "reverify_configuration_task", "category": "verification",
         "status": "beta_native", "risk": "engineering_evidence_write", "additive": True,
         "operation_class": "supplementary_configuration_verification",
@@ -394,6 +401,14 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
 )
 
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
+    {
+        "tool": "dashboard_integrity_analysis", "capability": "dashboard_integrity_analysis",
+        "required_semantics": "One exact dashboard, bounded literal references, potential configured controls and frozen sanitized pages.",
+        "standard_ha_mcp_coverage": "exact_dashboard_read_only", "direct_ha_coverage": "states_and_entity_registry_only",
+        "selected_provider": "engineering", "fallback_policy": "none", "completeness": "explicit_per_dimension_gaps",
+        "security_justification": "Three existing Core profiles plus admitted upstream identity; no refresh, retry, writes or dashboard fallback.",
+        "trust_mode": "reviewed_native_read", "trust_profile": "dashboard-integrity-v1",
+    },
     {
         "tool": "reverify_configuration_task", "capability": "configuration_reverification",
         "required_semantics": "Exact retained task/plan binding and supplementary dated verification receipts without redispatch.",

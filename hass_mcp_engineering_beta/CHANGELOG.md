@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.0-beta.15 - Bounded readiness and dashboard integrity analysis
+
+- Remove retained-history scans from ordinary F3 request readiness; keep reads
+  available after startup while execution faults still refuse new F3 applies.
+- Reconcile exact terminal child completion faults, including no-dispatch cases,
+  without replay, consumed approvals or weakened audit/storage/hold checks.
+- Add one bounded dashboard analyzer with literal references, configured controls,
+  explicit partial coverage, private frozen continuations and accurate telemetry.
+- Preserve the previous 82 descriptors and all Core profiles; the catalog is
+  83 = 58 native + 25 delegated. No new signed capability is required.
+- Correct baseline capture retryability and source-versus-configuration errors.
+- Preserve durable formats, stable v1, approval policy and dependency pins. The
+  separate F3 namespace-capacity issue remains open; no retention cleanup is added.
+- Require combined source/CI, disposable dashboard and installed acceptance
+  evidence. This entry does not assert deployment or authorize household actions.
+
 ## 2.4.0-beta.14 - Native automation-baseline capture
 
 - Add one bounded read-only capture tool for loaded automations, including off

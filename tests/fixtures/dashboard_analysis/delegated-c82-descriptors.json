@@ -1,0 +1,1587 @@
+{
+  "descriptors": {
+    "ha_config_get_automation": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_config_get_automation"
+      },
+      "description": "Retrieve Home Assistant automation configuration.\n\nReturns the complete configuration including triggers, conditions, actions, and mode settings.\n\nThe returned `config_hash` is stable across consecutive reads of an unchanged config \u2014 `compute_config_hash` documents the underlying contract.\n\nThe returned `automation_id` is the resolved entity_id (canonical\nform, e.g. `automation.morning_routine`) when the registry lookup\nsucceeds, falling back to the input `identifier` otherwise.\n\nEXAMPLES:\n- Get",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "identifier": {
+            "description": "Automation entity_id (e.g., 'automation.morning_routine') or unique_id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "identifier"
+        ],
+        "type": "object"
+      },
+      "name": "ha_config_get_automation"
+    },
+    "ha_config_get_calendar_events": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_config_get_calendar_events"
+      },
+      "description": "Retrieve calendar events from a calendar entity.\n\nRetrieves calendar events within a specified time range.\n\n**Parameters:**\n- entity_id: Calendar entity ID (e.g., 'calendar.family')\n- start: Start datetime in ISO format (default: now)\n- end: End datetime in ISO format (default: 7 days from start)\n- max_results: Maximum number of events to return (default: 20)\n\n**Example Usage:**\n```python\n# Get events for the next week\nevents = ha_config_get_calendar_events(\"calendar.family\")\n\n# Get events for a",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "End datetime in ISO format (default: 7 days from start)"
+          },
+          "entity_id": {
+            "description": "Calendar entity ID (e.g., 'calendar.family')",
+            "type": "string"
+          },
+          "max_results": {
+            "default": 20,
+            "description": "Maximum number of events to return",
+            "type": "integer"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Start datetime in ISO format (default: now)"
+          }
+        },
+        "required": [
+          "entity_id"
+        ],
+        "type": "object"
+      },
+      "name": "ha_config_get_calendar_events"
+    },
+    "ha_config_get_category": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_config_get_category"
+      },
+      "description": "Get category info - list all categories for a scope or get a specific one by ID.\n\nWithout a category_id: Lists all Home Assistant categories for the given scope.\nWith a category_id: Returns configuration for that specific category.\n\nCategories are domain-scoped organizational groups for automations, scripts, scenes, and helpers.\n\nCATEGORY PROPERTIES:\n- ID (category_id), Name\n- Icon (optional)\n\nEXAMPLES:\n- List automation categories: ha_config_get_category(\"automation\")\n- List script categories: ",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ID of the category to retrieve. If omitted, lists all categories for the scope."
+          },
+          "scope": {
+            "description": "Domain scope for categories (e.g., 'automation', 'script', 'scene', 'helpers').",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "type": "object"
+      },
+      "name": "ha_config_get_category"
+    },
+    "ha_config_get_label": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_config_get_label"
+      },
+      "description": "Get label info - list all labels or get a specific one by ID.\n\nWithout a label_id: Lists all Home Assistant labels with their configurations.\nWith a label_id: Returns configuration for that specific label.\n\nLABEL PROPERTIES:\n- ID (label_id), Name\n- Color (optional), Icon (optional), Description (optional)\n\nEXAMPLES:\n- List all labels: ha_config_get_label()\n- Get specific label: ha_config_get_label(\"my_label_id\")\n\nUse ha_config_set_label() to create or update labels.\nUse ha_set_entity(labels=[\"la",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "label_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "ID of the label to retrieve. If omitted, lists all labels."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_config_get_label"
+    },
+    "ha_config_get_scene": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_config_get_scene"
+      },
+      "description": "Retrieve Home Assistant scene configuration.\n\nReturns the complete configuration for a scene, including the ``entities``\ndict and other settings (``name``, ``icon``, ``id``).\n\nEXAMPLES:\n- Get scene: ha_config_get_scene(\"movie_night\")\n- Get scene: ha_config_get_scene(\"bedroom_dim\")\n\nRELATED TOOLS:\n- ha_config_set_scene \u2014 pass the returned ``config_hash`` for\n  ``python_transform`` updates.\n\nFor detailed scene configuration help, use ha_get_skill_guide.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "scene_id": {
+            "description": "Scene identifier (e.g., 'movie_night')",
+            "type": "string"
+          }
+        },
+        "required": [
+          "scene_id"
+        ],
+        "type": "object"
+      },
+      "name": "ha_config_get_scene"
+    },
+    "ha_config_get_script": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_config_get_script"
+      },
+      "description": "Retrieve Home Assistant script configuration.\n\nReturns the complete configuration for a script, including sequence, mode, fields, and other settings.\n\nThe returned `config_hash` is stable across consecutive reads of an unchanged config \u2014 `compute_config_hash` documents the underlying contract.\n\nThe returned `script_id` is the canonical bare storage key resolved by the REST client (matching what `ha_config_set_script` / `ha_config_remove_script` expect), falling back to the input identifier on th",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "script_id": {
+            "description": "Script identifier \u2014 bare storage key ('morning_routine') or entity_id form ('script.morning_routine'); a leading 'script.' prefix is stripped before lookup.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "script_id"
+        ],
+        "type": "object"
+      },
+      "name": "ha_config_get_script"
+    },
+    "ha_config_list_dashboard_resources": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "ha_config_list_dashboard_resources"
+      },
+      "description": "List Lovelace dashboard resources (custom cards, themes, CSS/JS).\n\nReturns one page of registered resources; `total_count` and `has_more`\nreport the full set. For inline resources (created with\nha_config_set_dashboard_resource(content=...)), shows a preview of the content\ninstead of the full encoded URL to save tokens.\n\n`inline_count` and `by_type` summarise every resource, not just this page.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "include_content": {
+            "default": false,
+            "description": "Include full decoded content for inline resources. Default False to save tokens (shows 150-char preview instead).",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 100,
+            "description": "Max resources to return per page (default: 100)",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of resources to skip for pagination (default: 0)",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_config_list_dashboard_resources"
+    },
+    "ha_config_list_groups": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_config_list_groups"
+      },
+      "description": "List Home Assistant entity groups with their member entities.\n\nReturns one page of groups created via group.set service or YAML\nconfiguration; `total_count` and `has_more` report the full set. Each\ngroup includes:\n- Entity ID (group.xxx)\n- Friendly name\n- State (on/off based on member states)\n- Member entities\n- Icon (if set)\n- All mode (if all entities must be on)\n\nEXAMPLES:\n- First page of groups: ha_config_list_groups()\n- Next page: ha_config_list_groups(offset=100)\n\n**NOTE:** This returns ol",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 100,
+            "description": "Max groups to return per page (default: 100)",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of groups to skip for pagination (default: 0)",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_config_list_groups"
+    },
+    "ha_config_list_helpers": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_config_list_helpers"
+      },
+      "description": "List Home Assistant helpers of a specific type with their configurations.\n\nReturns one page of helpers; `total_count` and `has_more` report the full\nset. Each record carries the complete configuration for its helper,\nincluding:\n- id (immutable storage key), entity_id (current \u2014 address the helper by\n  this, where available), name (current display name), original_name\n  (creation-time name), icon\n- Type-specific settings (min/max for input_number, options for input_select, etc.)\n- Area and label ",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "helper_type": {
+            "anyOf": [
+              {
+                "enum": [
+                  "input_button",
+                  "input_boolean",
+                  "input_select",
+                  "input_number",
+                  "input_text",
+                  "input_datetime",
+                  "counter",
+                  "timer",
+                  "schedule",
+                  "zone",
+                  "person",
+                  "tag",
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "enum": [
+                  "template",
+                  "group",
+                  "utility_meter",
+                  "derivative",
+                  "min_max",
+                  "threshold",
+                  "integration",
+                  "statistics",
+                  "trend",
+                  "random",
+                  "filter",
+                  "tod",
+                  "generic_thermostat",
+                  "switch_as_x",
+                  "generic_hygrostat",
+                  "history_stats",
+                  "mold_indicator"
+                ],
+                "type": "string"
+              }
+            ],
+            "description": "Helper type to list. Storage types are listed on all installs; flow-based types require the ha_mcp_tools custom component. Pass 'all' to list every helper type in one call (also requires the ha_mcp_tools component)."
+          },
+          "limit": {
+            "default": 100,
+            "description": "Max helpers to return per page (default: 100)",
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of helpers to skip for pagination (default: 0)",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "helper_type"
+        ],
+        "type": "object"
+      },
+      "name": "ha_config_list_helpers"
+    },
+    "ha_eval_template": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_eval_template"
+      },
+      "description": "Evaluate Jinja2 templates using Home Assistant's template engine.\n\nThis tool allows testing and debugging of Jinja2 template expressions that are commonly used in\nHome Assistant automations, scripts, and configurations. It provides real-time evaluation with\naccess to all Home Assistant states, functions, and template variables.\n\n**When NOT to use this for automation/script logic:**\nTemplates have legitimate uses (notification bodies, dynamic `data.*` values,\ndebugging existing templates), but `c",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "report_errors": {
+            "default": true,
+            "type": "boolean"
+          },
+          "template": {
+            "type": "string"
+          },
+          "timeout": {
+            "default": 3,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "template"
+        ],
+        "type": "object"
+      },
+      "name": "ha_eval_template"
+    },
+    "ha_get_automation_traces": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_automation_traces"
+      },
+      "description": "Retrieve execution traces for automations and scripts to debug issues.\n\nTraces show what happened during automation/script runs:\n- What triggered the automation\n- Which conditions passed or failed\n- What actions were executed\n- Any errors that occurred\n- Variable values during execution\n\nUSAGE MODES:\n\n1. List recent traces (omit run_id):\n   ha_get_automation_traces(\"automation.motion_light\")\n   Returns a summary of recent execution runs with timestamps, triggers, and status.\n   Use `offset` to p",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "automation_id": {
+            "description": "Automation or script entity_id (e.g., 'automation.motion_light' or 'script.morning_routine')",
+            "type": "string"
+          },
+          "deduplicate": {
+            "default": true,
+            "description": "Deduplicate variables across action steps (default: True). Set to False to include full variables at every step.",
+            "type": "boolean"
+          },
+          "detailed": {
+            "default": false,
+            "description": "Include extra diagnostic data: logbook entries and context metadata (default: False). Use when standard trace lacks detail for debugging.",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum number of traces to return when listing (default: 10, max: 50).",
+            "maximum": 50,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of traces to skip from the start of the requested order. Use with `limit` to page through stored traces when `total_available > limit`.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "order": {
+            "default": "newest",
+            "description": "Order traces are returned in. 'newest' (default) returns most-recent first; 'oldest' returns chronological-first.",
+            "enum": [
+              "newest",
+              "oldest"
+            ],
+            "type": "string"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Specific trace run_id to retrieve detailed trace. Omit to list recent traces."
+          },
+          "sections": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Comma-separated list of trace sections to return. Valid values: trigger, conditions, actions, config, error, logbook, context. Omit to return all sections. Example: 'actions' or 'trigger,conditions'."
+          }
+        },
+        "required": [
+          "automation_id"
+        ],
+        "type": "object"
+      },
+      "name": "ha_get_automation_traces"
+    },
+    "ha_get_blueprint": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "ha_get_blueprint"
+      },
+      "description": "Get blueprint information - list all blueprints or get details for a specific one.\n\nWithout a path: Lists all installed blueprints for the specified domain.\nWith a path: Returns the blueprint's metadata and input definitions. The\nfull body (triggers/conditions/actions for automations, sequence for\nscripts) is included under `config` ONLY when the ha_mcp_tools custom\ncomponent is installed \u2014 core's blueprint API exposes metadata alone, so\nwithout the component the body cannot be read.\n\nEXAMPLES:\n",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "domain": {
+            "default": "automation",
+            "description": "Blueprint domain: 'automation' or 'script'",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Blueprint path to get details for (e.g., 'homeassistant/motion_light.yaml'). If omitted, lists all blueprints in the domain."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_get_blueprint"
+    },
+    "ha_get_device": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_device"
+      },
+      "description": "Get device information with pagination, including Zigbee (ZHA/Z2M) and Z-Wave JS devices.\n\nWithout device_id/entity_id: Lists devices with optional filters and pagination.\nWith device_id or entity_id: Returns full detail for that specific device.\n\n**List devices (paginated):**\n- First page: ha_get_device()\n- Next page: ha_get_device(offset=50)\n- By area: ha_get_device(area_id=\"living_room\")\n- By integration: ha_get_device(integration=\"zigbee2mqtt\")\n- Full details in list: ha_get_device(detail_le",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "area_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter devices by area ID (e.g., 'living_room')"
+          },
+          "detail_level": {
+            "default": "summary",
+            "description": "'summary': basic device info and protocol identifiers (default for list mode). 'full': include entities and all integration details. Single device lookups always return full detail.",
+            "enum": [
+              "summary",
+              "full"
+            ],
+            "type": "string"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Device ID to retrieve details for. If omitted, lists devices."
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Entity ID to find the associated device for (e.g., 'light.living_room')"
+          },
+          "integration": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter devices by integration: 'zha', 'zigbee2mqtt', 'zwave_js', 'mqtt', 'hue', etc."
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max devices to return per page in list mode (default: 50)",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "manufacturer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter devices by manufacturer name (e.g., 'Philips')"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of devices to skip for pagination (default: 0)",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_get_device"
+    },
+    "ha_get_entity": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_entity"
+      },
+      "description": "Get entity registry information for one or more entities.\n\nReturns detailed entity registry metadata including area assignment,\ncustom name/icon, enabled/hidden state, aliases, labels, and more.\n\nRESOLVER MODE:\nPass unique_id (instead of entity_id) to resolve a stable integration\nunique_id to its entity_id(s). Since the registry's unique key is\n(domain, platform, unique_id), the same unique_id can match multiple\nplatforms \u2014 all matches are returned in entity_entries with a `matches`\ncount. Narro",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolver filter (unique_id mode only): restrict matches to this entity domain, e.g. 'sensor'."
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Entity ID or list of entity IDs to retrieve (e.g., 'sensor.temperature' or ['light.living_room', 'switch.porch']). Mutually exclusive with unique_id."
+          },
+          "platform": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolver filter (unique_id mode only): restrict matches to this integration platform, e.g. 'hue'."
+          },
+          "unique_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Resolve a stable integration unique_id to its entity_id(s) (entity_id is mutable, unique_id is not). Mutually exclusive with entity_id. Optionally narrow with domain/platform."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_get_entity"
+    },
+    "ha_get_entity_exposure": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_entity_exposure"
+      },
+      "description": "Get entity exposure settings - list all or get settings for a specific entity.\n\nWithout an entity_id: Lists all entities and their exposure status to\nvoice assistants (Alexa, Google Assistant, Assist).\n\nWith an entity_id: Returns which voice assistants the specific entity\nis exposed to.\n\nEXAMPLES:\n- List all exposures: ha_get_entity_exposure()\n- Filter by assistant: ha_get_entity_exposure(assistant=\"cloud.alexa\")\n- Get specific entity: ha_get_entity_exposure(entity_id=\"light.living_room\")\n\nRETUR",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "assistant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter by assistant: 'conversation', 'cloud.alexa', or 'cloud.google_assistant'. If not specified, returns all."
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Entity ID to check exposure settings for. If omitted, lists all entities with exposure settings."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_get_entity_exposure"
+    },
+    "ha_get_hacs_info": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "ha_get_hacs_info"
+      },
+      "description": "Get HACS (Home Assistant Community Store) data \u2014 search the store or fetch repository details.\n\nUse ``action=\"search\"`` to search/browse/list store repositories, or\n``action=\"info\"`` for one repository's full details (README, versions, GitHub\nstats). This tool is read-only; to install or add repositories use\n``ha_manage_hacs``, and for non-HACS entities/config use the domain-specific tools.\n\n**DASHBOARD TIP:** ``action=\"search\", installed_only=True, category=\"lovelace\"``\ndiscovers installed cust",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "description": "'search' the store, or 'info' for one repository",
+            "enum": [
+              "search",
+              "info"
+            ],
+            "type": "string"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "enum": [
+                  "integration",
+                  "lovelace",
+                  "theme",
+                  "appdaemon",
+                  "python_script"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter by category (action='search')"
+          },
+          "installed_only": {
+            "default": false,
+            "description": "Only return installed repositories (action='search', default: False)",
+            "type": "boolean"
+          },
+          "max_results": {
+            "default": 10,
+            "description": "Maximum number of results (action='search', default: 10, max: 100)",
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Results to skip for pagination (action='search', default: 0)",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "default": "",
+            "description": "Search keyword (action='search')",
+            "type": "string"
+          },
+          "repository_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Numeric HACS ID or 'owner/repo' path (action='info')"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "type": "object"
+      },
+      "name": "ha_get_hacs_info"
+    },
+    "ha_get_history": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_history"
+      },
+      "description": "Retrieve historical data from Home Assistant's recorder.\n\n**Sources:**\n- \"history\" (default): Raw state changes, ~10 day retention, full resolution\n- \"statistics\": Pre-aggregated data, permanent retention, requires state_class\n\n**Shared params:** entity_ids, start_time, end_time, limit, offset\n**History params:** minimal_response, significant_changes_only\n**Statistics params:** period, statistic_types\n\n**Default time range:** 24h for history, 30 days for statistics\n\n**Use ha_get_history (default",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "end_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "End time: ISO datetime. Default: now"
+          },
+          "entity_ids": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Entity ID(s) to query. Can be a single ID, comma-separated string, or JSON array."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only the specified top-level response keys to reduce response size. None = full response (default). History keys: success, source, entities, period, query_params. Statistics keys: success, source, entities, period_type, time_range, statistic_types, query_params, warnings."
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "maximum": 1000,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Max entries per entity. Default: 100, Max: 1000. For source=\"history\": state changes. For source=\"statistics\": aggregated rows. With multiple entity_ids, offset must be 0 and total rows returned can reach limit \u00d7 len(entity_ids)."
+          },
+          "minimal_response": {
+            "default": true,
+            "description": "Return only states/timestamps without attributes. Default: true. Ignored when source=\"statistics\"",
+            "type": "boolean"
+          },
+          "offset": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Number of entries to skip per entity for pagination. Default: 0. Offset > 0 requires a single entity_id. Use with limit and has_more/next_offset in the response."
+          },
+          "order": {
+            "default": "desc",
+            "description": "Sort order for history entries. \"desc\" (default): newest first. \"asc\": oldest first (chronological, as returned by HA API). Ignored when source=\"statistics\".",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "type": "string"
+          },
+          "period": {
+            "default": "day",
+            "description": "Aggregation period: \"5minute\", \"hour\", \"day\", \"week\", \"month\", \"year\". Default: \"day\". Ignored when source=\"history\"",
+            "type": "string"
+          },
+          "significant_changes_only": {
+            "default": true,
+            "description": "Filter to significant state changes only. Default: true. Ignored when source=\"statistics\"",
+            "type": "boolean"
+          },
+          "source": {
+            "default": "history",
+            "description": "Data source: \"history\" (default) for raw state changes (~10 day retention), or \"statistics\" for pre-aggregated long-term data (permanent, requires state_class).",
+            "enum": [
+              "history",
+              "statistics"
+            ],
+            "type": "string"
+          },
+          "start_time": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Start time: ISO datetime or relative (e.g., '24h', '7d', '30d'). Default: 24h ago for history, 30d ago for statistics"
+          },
+          "statistic_types": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Statistics types: \"mean\", \"min\", \"max\", \"sum\", \"state\", \"change\". Default: all. Ignored when source=\"history\""
+          }
+        },
+        "required": [
+          "entity_ids"
+        ],
+        "type": "object"
+      },
+      "name": "ha_get_history"
+    },
+    "ha_get_overview": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+        "title": "ha_get_overview"
+      },
+      "description": "Get AI-friendly system overview with intelligent categorization.\n\nReturns comprehensive system information at the requested detail level,\nincluding Home Assistant base_url, version, location, timezone, entity overview,\nand active persistent notifications (if any).\nUse 'minimal' (default) for most queries. Domain counts and states_summary\nare always complete regardless of entity pagination.\nStandard/full modes paginate entities (default 200 per page) \u2014 use offset\nto fetch more. Use 'domains' filt",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "detail_level": {
+            "default": "minimal",
+            "description": "'minimal': 10 entities/domain, top-5 states (default); 'standard': 200 entities/page, top-10 states (use offset for more); 'full': 200 entities/page + entity_id + state + full states. Use 'domains', 'limit', or max_entities_per_domain to control size",
+            "enum": [
+              "minimal",
+              "standard",
+              "full"
+            ],
+            "type": "string"
+          },
+          "domains": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter to specific domains (e.g. 'light,sensor' or ['light','sensor']). None = all domains. Useful to avoid context window overload."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only the specified top-level response keys to reduce response size (e.g. [\"system_info\", \"domains\"]). None = full response (default). Available keys: success, system_summary, domain_stats, area_analysis, ai_insights, pagination, partial, warnings, device_types, service_availability, system_info, notification_count, notifications, repair_count, dismissed_repair_count, repairs, repairs_error, tool_discovery, settings_url, settings_url_hint, read_only_mode, read_only_mode_hint, ha_mcp_update. Note: ``settings_url`` (stdio mode), ``settings_url_hint`` (standalone HTTP/Docker mode), the ``read_only_mode`` / ``read_only_mode_hint`` pair (only while Read Only Mode is on), and ``ha_mcp_update`` (when an update check applies) are emitted regardless of ``fields=`` projection so the settings page, the active mode, and a newer ha-mcp release stay discoverable; see the tool description."
+          },
+          "include_dismissed_repairs": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": false,
+            "description": "Include user-dismissed/ignored repairs (default: False). Matches the HA Repairs UI which hides dismissed items by default. To dismiss/ignore a repair, call ha_call_service with ws_command=\"repairs/ignore_issue\" and data={\"domain\": ..., \"issue_id\": ..., \"ignore\": true}."
+          },
+          "include_entity_id": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Include entity_id field for entities (None = auto based on level). Full defaults to True."
+          },
+          "include_notifications": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": true,
+            "description": "Include active persistent notifications (default: True). Set False to skip."
+          },
+          "include_state": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Include state field for entities (None = auto based on level). Full defaults to True."
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Max total entities across all domains (default: unlimited for minimal, 200 for standard/full). Counts and states always complete. Use with offset for pagination."
+          },
+          "max_entities_per_domain": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Override default entity cap per domain (minimal=10, standard/full=unlimited). 0 = no limit on entities or states."
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of entities to skip for pagination (default: 0)",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_get_overview"
+    },
+    "ha_get_skill_guide": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_skill_guide"
+      },
+      "description": "Get bundled Home Assistant best-practice skill guides. CALL THIS FIRST before performing matching actions.\n\nThree modes (progressive disclosure):\n- No args: list bundled skills with their trigger conditions.\n- skill arg: list reference files for that skill.\n- skill + file args: read the file content.\n\nBundled skills:\n\n### home-assistant-best-practices (skill://home-assistant-best-practices/SKILL.md)\nBest practices for HA automations, helpers, scripts, and dashboards.\nTRIGGER THIS SKILL WHEN: - C",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Reference file path within the skill, relative to the skill directory (e.g., 'SKILL.md' or 'references/automation-patterns.md'). Requires skill to be set."
+          },
+          "skill": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Skill name from the no-args listing (e.g., 'home-assistant-best-practices')."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_get_skill_guide"
+    },
+    "ha_get_state": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_state"
+      },
+      "description": "Get current status, state, and attributes of one or more entities (lights, switches, sensors, climate, covers, locks, fans, etc.).\n\nSINGLE ENTITY:\nPass a string entity_id. Returns the entity's full state and attributes.\n\nMULTIPLE ENTITIES:\nPass a list of entity IDs (max 100). Efficiently retrieves states using\nparallel requests. Duplicates are automatically deduplicated.\nReturns success=True if at least one entity state was retrieved.\nCheck 'error_count' for any failed lookups in partial-success",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "attribute_keys": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only the specified keys from each entity's attributes dict (e.g. [\"brightness\", \"color_temp_kelvin\"] for lights). None = full attributes (default). Unknown keys are silently dropped. Requires \"attributes\" to be present in fields= (or fields=None)."
+          },
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ],
+            "description": "Entity ID or list of entity IDs to retrieve state for (e.g., 'light.kitchen' or ['light.kitchen', 'sensor.temperature'])"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only the specified top-level entity record keys to reduce response size (e.g. [\"state\", \"attributes\"]). None = full entity record (default). Available keys: entity_id, state, attributes, last_changed, last_reported, last_updated, context."
+          }
+        },
+        "required": [
+          "entity_id"
+        ],
+        "type": "object"
+      },
+      "name": "ha_get_state"
+    },
+    "ha_get_todo": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_todo"
+      },
+      "description": "Get todo lists or items - list all todo lists or get items from a specific list.\n\nWithout an entity_id: Lists all todo list entities in Home Assistant.\nWith an entity_id: Gets items from that specific todo list, optionally filtered by status.\n\n**LISTING TODO LISTS (entity_id omitted):**\nReturns all entities in the 'todo' domain, including shopping lists\nand any other todo-type integrations.\n\nEach todo list includes:\n- entity_id: The unique identifier (e.g., 'todo.shopping_list')\n- friendly_name:",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "entity_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Todo list entity ID (e.g., 'todo.shopping_list'). If omitted, lists all todo list entities."
+          },
+          "status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "needs_action",
+                  "completed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter items by status: 'needs_action' for incomplete, 'completed' for done. Only applies when entity_id is provided."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_get_todo"
+    },
+    "ha_get_zone": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_get_zone"
+      },
+      "description": "Get zone information - list all zones or get details for a specific one.\n\nWithout a zone_id: Lists all Home Assistant zones with their coordinates and radius.\nWith a zone_id: Returns detailed configuration for a specific zone.\n\nZONE PROPERTIES:\n- ID, name, icon\n- Latitude, longitude, radius\n- Passive mode setting\n\nEXAMPLES:\n- List all zones: ha_get_zone()\n- Get specific zone: ha_get_zone(zone_id=\"abc123\")\n\n**NOTE:** With the ha_mcp_tools custom component installed, YAML-defined\nzones \u2014 including",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "zone_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Zone ID to get details for (from ha_get_zone() list). If omitted, lists all zones."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_get_zone"
+    },
+    "ha_list_floors_areas": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_list_floors_areas"
+      },
+      "description": "List floors sorted by level ascending, each with their assigned areas nested, plus areas without a floor.\n\nUse for location-based reasoning where floor-to-area relationships matter, such as \"which rooms are on the ground floor\" or operations scoped to a level. Optionally project the response with fields= (top-level keys) or area_fields= (per-area-record keys, applied uniformly across nested, unassigned, and orphaned buckets).\n\nFloors with level=None sort alongside level 0 (ground floor). Areas w",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "area_fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project each area record (in floors[].areas, unassigned_areas, and orphaned_areas) to only the specified keys. E.g. [\"area_id\", \"name\"] returns slim area records. None = full records (default). Unknown keys yield empty records. Available keys: area_id, name, icon, floor_id, aliases, picture, labels."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only the specified top-level response keys to reduce response size (e.g. [\"floors\"]). None = full response (default). Available keys: success, floor_count, area_count, unassigned_count, orphaned_count, floors, unassigned_areas, orphaned_areas, message."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_list_floors_areas"
+    },
+    "ha_list_services": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_list_services"
+      },
+      "description": "List available Home Assistant services with optional pagination and detail control.\n\nDiscovers services/actions that can be called via ha_call_service.\nUse domain or query filters to narrow results. Defaults to summary mode\n(name + description only) to keep responses compact.",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "detail_level": {
+            "default": "summary",
+            "description": "'summary': service name + description only (default). 'full': include parameter field schemas.",
+            "enum": [
+              "summary",
+              "full"
+            ],
+            "type": "string"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter by domain (e.g., 'light', 'switch', 'climate')."
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Return only the specified top-level response keys to reduce response size (e.g. [\"services\"]). None = full response (default). Available keys: success, domains, services, total_count, count, offset, limit, has_more, next_offset, detail_level, filters_applied."
+          },
+          "limit": {
+            "default": 50,
+            "description": "Max services to return per page (default: 50)",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of services to skip for pagination (default: 0)",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Search in service names and descriptions."
+          },
+          "service_fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project each service record to only the specified keys. E.g. [\"name\", \"description\"] returns slim service records. None = full records (default). Unknown keys yield empty records. Available keys: name, description, domain, service, fields (full mode only), target (full mode only)."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_list_services"
+    },
+    "ha_search": {
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+        "title": "ha_search"
+      },
+      "description": "Search for entities (lights, sensors, switches, climate, etc.) by name, domain, or area \u2014 AND inside automation/script/scene/helper/dashboard configurations \u2014 in one call.\n\nTwo surfaces run in parallel and return tagged results:\n  - **entities**: entity-registry matches (entity_id, friendly name,\n    area). Filter with `domain_filter`/`area_filter`/`state_filter`;\n    omit `query` to enumerate a domain, area, or state.\n  - **automations / scripts / scenes / helpers / dashboards**: matches\n    *i",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "area_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Narrow entity-registry results to an area (id, name, or alias), an exact floor (id, name, or alias), or an unambiguous close-spelling floor match; a floor match expands to all areas on that floor. Does not affect configuration search."
+          },
+          "config_time_budget": {
+            "anyOf": [
+              {
+                "maximum": 300,
+                "minimum": 0.001,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Per-call override for the per-id config-fetch wall-clock budget (seconds). Replaces the per-type HAMCP_*_CONFIG_TIME_BUDGET defaults for the automation, script, AND scene branches. Use when a `partial: True` response names time-budget skipping. Stateless per-call: one caller raising the budget doesn't affect others. None = use the per-type env defaults."
+          },
+          "domain_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Narrow entity-registry results to a single domain (e.g. 'light', 'sensor'). Does not affect configuration search."
+          },
+          "exact_match": {
+            "default": true,
+            "description": "Exact substring matching (default). Set False for fuzzy matching when the query may have typos.",
+            "type": "boolean"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project the response to the named top-level keys (e.g. [\"entities\", \"automations\"]); None = full response. Diagnostic / pagination keys are always retained so projection cannot hide partial / error state. Distinct from `result_fields` (which projects each entity record's keys). Available keys: success, query, entities, automations, scripts, scenes, helpers, dashboards, search_types, search_type, entity_total_matches, config_total_matches, count, offset, limit, has_more, next_offset, entity_has_more, entity_next_offset, config_has_more, config_next_offset, by_domain, state_filter_note, area_names, domain_filter, area_filter, message, warnings, errors, partial, partial_reason."
+          },
+          "group_by_domain": {
+            "default": false,
+            "description": "Group entity-registry results by domain (entity-side only). Adds a `by_domain` map to the response.",
+            "type": "boolean"
+          },
+          "include_config": {
+            "default": false,
+            "description": "Include full configuration bodies in body-search results. Default: False (summary only).",
+            "type": "boolean"
+          },
+          "include_hidden": {
+            "default": true,
+            "description": "Include hidden entities in registry results (with a score penalty so they sort below visible matches). Set False to exclude entirely.",
+            "type": "boolean"
+          },
+          "limit": {
+            "default": 10,
+            "description": "Maximum results per surface (entities, configs). Default: 10.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "offset": {
+            "default": 0,
+            "description": "Number of results to skip for pagination.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "per_domain_limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "When `group_by_domain=True`, cap entity-registry results per domain to this number. Ignored otherwise."
+          },
+          "query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "What to search for (entity name fragment, free-text config term, entity_id). Searches BOTH the entity registry (entity_ids, friendly names, areas) AND configuration bodies (automation triggers/actions, script sequences, scene contents, helper bodies, dashboard cards) in one call. Use this for any find-something-in-HA question \u2014 entity OR config. Pass the exact entity_id, not a name fragment, when checking what a rename or delete would break: that form reports automations, scripts and scenes referencing it even when their configuration could not be read. Omit `query` to enumerate by `domain_filter`, `area_filter`, and/or `state_filter` alone (registry-listing mode); configuration-body search is skipped in that mode because there is no term to match against."
+          },
+          "result_fields": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Project each entity-registry record to only the specified keys (e.g. [\"entity_id\", \"state\"]). None = full records. Base keys: entity_id, friendly_name, domain, state, score, match_type. Opt-in enrichment/membership keys (computed on request): area, floor, labels, aliases, is_group, member_entity_ids. Membership is recognized only when HA explicitly exposes a valid group_entities or legacy entity_id collection; member IDs are sorted, direct (not recursively expanded), and omitted if visibility/include_hidden excludes a member. is_group remains true when member IDs are withheld; requesting member_entity_ids also retains is_group. An unknown key is rejected."
+          },
+          "search_types": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Configuration types to include in body search: 'automation', 'script', 'scene', 'helper', 'dashboard'. Default = automation+script+scene+helper. Pass as list or JSON-array string."
+          },
+          "state_filter": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Filter entity-registry results to a specific state (e.g. \"on\", \"off\", \"unavailable\"). Case-insensitive. Can be used standalone (no query/domain/area) to enumerate every entity in that state; entity_total_matches reflects the filtered count."
+          }
+        },
+        "type": "object"
+      },
+      "name": "ha_search"
+    }
+  },
+  "generation": "Exact git archive, locked SDK 1.28.1, reviewed 8.4.3 runtime capture in artifact order, existing synthetic _GatewayTransport, UpstreamReadGateway.initialize(FastMCP); await server.list_tools(). No network or HA.",
+  "source_commit": "c82b56d9e78db16aa7020b81e5a0d103567524d1"
+}

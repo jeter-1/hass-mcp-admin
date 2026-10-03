@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import asdict
+import json
+import time
+from unittest.mock import Mock, patch
 import copy
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
@@ -76,6 +80,11 @@ from tests.test_2_1a_beta2_operational_lifecycle import (  # noqa: E402
 from tests.test_2_1a_operational_backup import (  # noqa: E402
     FakeOperationalGateway,
 )
+
+
+from ha_mcp_engineering import application
+from tests import test_beta24_pre_rc_hardening as gateway_fixtures
+from tests.test_catalog_readiness import application_gateway
 
 
 async def _provider_identity():
@@ -1120,6 +1129,36 @@ class F3OperationalActivationTests(_OperationalActivationBase):
         self.assertEqual(record.dispatch_count, 1)
         self.assertEqual(record.normalized_outcome, "succeeded_verified")
 
+    async def test_prepare_refusal_does_not_disable_unrelated_operational_apply(self):
+        from ha_mcp_engineering.f3.operational_adapter import OperationalAdapterError
+
+        created = await self.service.create_reload_plan(reload_target="automation")
+        refused = await self._grant(created)
+        approval = asdict(self.service._load(refused["plan_id"]).approval)
+        error = OperationalAdapterError("provider_identity_mismatch")
+        before = self.runtime.readiness_state()
+        with patch.object(self.runtime.operational_adapter, "prepare", side_effect=error):
+            with self.assertRaises(OperationalAdapterError) as caught:
+                await self.service.apply(refused["plan_id"], refused["plan_hash"])
+        self.assertIs(caught.exception, error)
+        self.assertEqual(caught.exception.category, "provider_identity_mismatch")
+        self.assertEqual(self.runtime.readiness_state(), before)
+        self.assertEqual(asdict(self.service._load(refused["plan_id"]).approval), approval)
+        self.assertEqual(self.lifecycle.dispatch_count, 0)
+        self.assertIsNone(self.service.task_repository.get_for_plan(refused["plan_id"]))
+        await self.runtime.recover_once("test")
+        self.assertEqual(self.runtime.readiness_state(), before)
+
+        unrelated = await self._grant(
+            await self.service.create_reload_plan(reload_target="script")
+        )
+        result = await self.service.apply(unrelated["plan_id"], unrelated["plan_hash"])
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+        await self.service.apply(unrelated["plan_id"], unrelated["plan_hash"])
+        self.assertEqual(self.lifecycle.dispatch_count, 1)
+        self.assertEqual(asdict(self.service._load(refused["plan_id"]).approval), approval)
+
     async def test_operational_response_loss_uses_observation_without_redispatch(self):
         self.lifecycle.mode = "ambiguous"
         created = await self.service.create_reload_plan(reload_target="automation")
@@ -1385,6 +1424,620 @@ class F3BackupActivationTests(_OperationalActivationBase):
         self.assertEqual(self.gateway.dispatch_count, 1)
         self.assertEqual(record.dispatch_count, 1)
 
+
+class ReadinessLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from tests import test_f3_orphan_child_recovery as history_fixtures
+        self.fixture = history_fixtures.OrphanChildRecoveryTests()
+        await self.fixture.asyncSetUp()
+        self.runtime = self.fixture.runtime
+        self.service = self.fixture.service
+
+    async def asyncTearDown(self):
+        await self.fixture.asyncTearDown()
+
+    async def _request(self, path='/ready', *, reconciled=True):
+        gateway, app = application_gateway(self.runtime, reconciled=reconciled)
+        with patch.object(application, 'GOVERNANCE', gateway._test_governance):
+            status, body = await gateway_fixtures.CatalogReadinessBarrierTests.request(gateway, path)
+        return status, json.loads(body), app.calls
+
+    async def _settled_child(self):
+        created = await self.fixture.create_automation_plan()
+        await self.fixture.approve(created)
+        applied = await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(applied['task_state'], 'succeeded_verified')
+        declaration = self.runtime.children.declarations_for_task(applied['task_id'])[0]
+        return created, applied, self.runtime.children._path(declaration['child_id'])
+
+    async def test_pending_failed_initialization_then_success_is_truthful(self):
+        from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration
+        from tests.test_f3_runtime_integration import _ExactFakeConfigurationGateway, _provider_identity
+        self.runtime = F3RuntimeIntegration(
+            service=self.service, storage_root=str(self.fixture.root / 'plans'),
+            configuration_gateway=_ExactFakeConfigurationGateway(self.fixture.gateway),
+            backup_gateway=None, lifecycle_gateway=None,
+            provider_identity_reader=_provider_identity, retention_days=90,
+        )
+        self.service.f3_runtime = self.runtime
+        status, state, _ = await self._request()
+        self.assertEqual(status, 503)
+        self.assertFalse(state['f3_execution_ready'])
+        ticks = iter(range(1000))
+        with patch.object(self.runtime, '_recovery_monotonic', side_effect=lambda: next(ticks) * 10):
+            await self.runtime.recover_once('startup')
+        self.assertEqual((await self._request())[0], 503)
+        with patch.object(self.runtime.children, 'health', side_effect=RuntimeError('synthetic-private-configuration')):
+            with self.assertRaises(RuntimeError):
+                await self.runtime.recover_once('startup')
+        status, state, _ = await self._request()
+        self.assertEqual(status, 503)
+        self.assertEqual(state['f3_readiness_status'], 'faulted')
+        self.assertNotIn('synthetic-private-configuration', json.dumps(state))
+        await self.runtime.recover_once('startup')
+        self.assertEqual((await self._request())[0], 200)
+        await self._settled_child()
+
+    async def test_late_corruption_blocks_execution_but_keeps_authenticated_reads(self):
+        from ha_mcp_engineering.errors import GovernanceError
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        created, applied, path = await self._settled_child()
+        original = path.read_bytes()
+        path.write_bytes(b'{synthetic corrupted child')
+        with self.assertRaises(ExecutionStorageError):
+            self.runtime.health()
+        status, state, _ = await self._request()
+        self.assertEqual(status, 200)
+        self.assertTrue(state['ready'])
+        self.assertFalse(state['f3_execution_ready'])
+        self.assertEqual(state['status'], 'ready_f3_execution_unavailable')
+        status, _, calls = await self._request(f'/{gateway_fixtures.SECRET}/mcp')
+        self.assertEqual((status, calls), (200, 1))
+        with self.assertRaises(ExecutionStorageError):
+            self.runtime.decorate_task(self.service.task_repository.get(applied['task_id']))
+        # A different, exact approved plan cannot consume its approval or dispatch.
+        from tests.test_dev14_configuration_plans import PROPOSED_SCRIPT
+        candidate = await self.service.create_configuration_plan(
+            title='Synthetic independent script update', description='Readiness recovery',
+            operations=[{'operation_id': 'script_update', 'resource_type': 'script',
+                         'action': 'update', 'target_id': 'set_hvac_comfort',
+                         'depends_on': [], 'proposed_config': PROPOSED_SCRIPT}],
+        )
+        await self.fixture.approve(candidate)
+        before = asdict(self.service._load(candidate['plan_id']).approval)
+        writes = sum(call[0] == 'write' for call in self.fixture.gateway.calls)
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(candidate['plan_id'], candidate['plan_hash'])
+        self.assertEqual(asdict(self.service._load(candidate['plan_id']).approval), before)
+        self.assertEqual(sum(call[0] == 'write' for call in self.fixture.gateway.calls), writes)
+        # Even a pass too small to visit this history must check the known fault.
+        with patch.object(self.runtime, '_recovery_monotonic', side_effect=lambda: time.monotonic() * 1e8):
+            with self.assertRaises(ExecutionStorageError):
+                await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        path.write_bytes(original)
+        self.runtime.health()  # A successful diagnostic read cannot clear the fault.
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        result = await self.service.apply(candidate['plan_id'], candidate['plan_hash'])
+        self.assertEqual(result['task_state'], 'succeeded_verified')
+        await self.service.apply(candidate['plan_id'], candidate['plan_hash'])
+        self.assertEqual(sum(call[0] == 'write' for call in self.fixture.gateway.calls), writes + 1)
+
+    async def test_cancelled_recovery_and_dead_supervisor_are_visible(self):
+        entered = asyncio.Event()
+        async def blocked(_trigger):
+            entered.set()
+            await asyncio.Event().wait()
+        with patch.object(self.runtime, '_recover_once', side_effect=blocked):
+            supervisor = asyncio.create_task(self.runtime.supervise())
+            await entered.wait()
+            supervisor.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await supervisor
+        state = self.runtime.readiness_state()
+        self.assertTrue(state['request_ready'])
+        self.assertFalse(state['execution_ready'])
+        self.assertIn('supervisor_stopped', state['faults'])
+        await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        # Only a live replacement supervisor restores supervisor availability.
+        supervisor = asyncio.create_task(self.runtime.supervise())
+        await asyncio.sleep(0)
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        supervisor.cancel()
+        await asyncio.gather(supervisor, return_exceptions=True)
+
+    async def test_incomplete_pass_cannot_clear_failed_recovery(self):
+        with patch.object(self.runtime, '_recover_once', side_effect=RuntimeError('synthetic-private')):
+            with self.assertRaises(RuntimeError):
+                await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        ticks = iter(range(1000))
+        with patch.object(self.runtime, '_recovery_monotonic', side_effect=lambda: next(ticks) * 10):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+
+    async def _assert_prepare_failure_is_plan_local(self, error):
+        created = await self.fixture.create_automation_plan()
+        await self.fixture.approve(created)
+        approval = asdict(self.service._load(created["plan_id"]).approval)
+        before = self.runtime.readiness_state()
+        self.assertTrue(before["execution_ready"])
+        adapter = self.runtime.registry.adapter("update_automation_configuration")
+        with patch.object(adapter, "prepare", side_effect=error):
+            with self.assertRaises(type(error)) as caught:
+                await self.service.apply(created["plan_id"], created["plan_hash"])
+        self.assertIs(caught.exception, error)
+        self.assertEqual(self.runtime.readiness_state(), before)
+        self.assertEqual(asdict(self.service._load(created["plan_id"]).approval), approval)
+        self.assertIsNone(self.service.task_repository.get_for_plan(created["plan_id"]))
+        self.assertFalse(any(call[0] == "write" for call in self.fixture.gateway.calls))
+        await self.runtime.recover_once("test")
+        self.assertEqual(self.runtime.readiness_state(), before)
+
+        unrelated = await self._independent_script_plan()
+        result = await self.service.apply(unrelated["plan_id"], unrelated["plan_hash"])
+        self.assertEqual(result["task_state"], "succeeded_verified")
+        self.assertEqual(self._writes(), 1)
+        await self.service.apply(unrelated["plan_id"], unrelated["plan_hash"])
+        self.assertEqual(self._writes(), 1)
+        self.assertEqual(asdict(self.service._load(created["plan_id"]).approval), approval)
+
+    async def test_configuration_prepare_refusal_keeps_execution_ready(self):
+        await self._assert_prepare_failure_is_plan_local(
+            ValueError("current-state fingerprint is inconsistent")
+        )
+
+    async def test_provider_failure_keeps_execution_ready(self):
+        from ha_mcp_engineering.errors import HomeAssistantApiError
+        await self._assert_prepare_failure_is_plan_local(HomeAssistantApiError())
+
+    async def test_nonstorage_governance_refusal_keeps_execution_ready(self):
+        await self._assert_prepare_failure_is_plan_local(
+            GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
+        )
+
+    async def test_unknown_prepare_failure_does_not_require_restart(self):
+        await self._assert_prepare_failure_is_plan_local(RuntimeError("synthetic failure"))
+
+    async def test_failed_durable_write_is_not_cleared_by_read_audit(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        from ha_mcp_engineering.errors import GovernanceError
+        created = await self.fixture.create_automation_plan()
+        await self.fixture.approve(created)
+        with patch.object(self.runtime.children, '_atomic_write', side_effect=ExecutionStorageError('synthetic write failure')):
+            with self.assertRaises(GovernanceError):
+                await self.service.apply(created['plan_id'], created['plan_hash'])
+        await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['execution_storage'])
+        self.assertTrue(self.runtime.readiness_state()['request_ready'])
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self.assertFalse(any(call[0] == 'write' for call in self.fixture.gateway.calls))
+
+    async def test_child_retry_fault_survives_backoff_until_exact_recovery(self):
+        from datetime import datetime
+        _, declaration = await self.fixture._preintent_active_child('readiness_retry')
+        with patch.object(self.runtime, '_execute_child', side_effect=RuntimeError('synthetic-private')):
+            await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        retry_at = datetime.fromisoformat(self.runtime.children.runtime(declaration['child_id'])['next_eligible_at'])
+        self.service.now = lambda: retry_at
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.runtime.children.get(declaration['child_id']).dispatch_count, 1)
+        await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.children.get(declaration['child_id']).dispatch_count, 1)
+
+    async def test_concurrent_fault_is_not_cleared_by_older_recovery(self):
+        entered, finish = asyncio.Event(), asyncio.Event()
+        original = self.runtime._recover_once
+        async def suspended(trigger):
+            entered.set()
+            await finish.wait()
+            return await original(trigger)
+        with patch.object(self.runtime, '_recover_once', side_effect=suspended):
+            pass_task = asyncio.create_task(self.runtime.recover_once('test'))
+            await entered.wait()
+            supervisor = self.runtime._supervisor_task
+            collision = await self.runtime.recover_once('periodic')
+            self.assertEqual(collision['processed'], 0)
+            self.assertIs(self.runtime._supervisor_task, supervisor)
+            with patch.object(self.runtime.children, 'health', side_effect=RuntimeError('synthetic-private')):
+                with self.assertRaises(RuntimeError):
+                    self.runtime.health()
+            statuses = await asyncio.gather(*(self._request() for _ in range(8)))
+            self.assertTrue(all(status == 200 and not state['f3_execution_ready'] for status, state, _ in statuses))
+            finish.set()
+            await pass_task
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+
+    async def test_fault_during_preflight_prevents_approval_and_provider_write(self):
+        created = await self.fixture.create_automation_plan()
+        await self.fixture.approve(created)
+        approval = asdict(self.service._load(created['plan_id']).approval)
+        entered, finish = asyncio.Event(), asyncio.Event()
+        original = self.fixture.gateway.validate_all
+        async def suspended():
+            entered.set()
+            await finish.wait()
+            return await original()
+        with patch.object(self.fixture.gateway, 'validate_all', side_effect=suspended):
+            applying = asyncio.create_task(self.service.apply(created['plan_id'], created['plan_hash']))
+            await asyncio.wait_for(entered.wait(), 10)
+            with patch.object(self.runtime.children, 'health', side_effect=RuntimeError('synthetic-private')):
+                with self.assertRaises(RuntimeError):
+                    self.runtime.health()
+            self.assertFalse((await self._request())[1]['f3_execution_ready'])
+            finish.set()
+            result = await asyncio.gather(applying, return_exceptions=True)
+        self.assertEqual(asdict(self.service._load(created['plan_id']).approval), approval)
+        self.assertFalse(any(call[0] == 'write' for call in self.fixture.gateway.calls))
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(len(result), 1)
+
+    async def test_gateway_security_and_catalog_barriers_remain_in_force_under_fault(self):
+        with patch.object(self.runtime.children, 'health', side_effect=RuntimeError('synthetic-private')):
+            with self.assertRaises(RuntimeError):
+                self.runtime.health()
+        gateway, app = application_gateway(self.runtime)
+        with patch.object(application, 'GOVERNANCE', gateway._test_governance):
+            status, _ = await gateway_fixtures.CatalogReadinessBarrierTests.request(gateway, '/unauthenticated/mcp')
+            self.assertEqual(status, 404)
+            gateway.global_bucket.tokens = 0
+            status, _ = await gateway_fixtures.CatalogReadinessBarrierTests.request(gateway, f'/{gateway_fixtures.SECRET}/mcp')
+            self.assertEqual(status, 429)
+            messages = []
+            async def send(message):
+                messages.append(message)
+            await gateway({'type': 'http', 'method': 'GET', 'path': '/ready',
+                           'headers': [(b'host', b'attacker.invalid')], 'client': ('127.0.0.1', 1)},
+                          Mock(), send)
+            self.assertEqual(messages[0]['status'], 421)
+        self.assertEqual(app.calls, 0)
+        status, state, calls = await self._request(reconciled=False)
+        self.assertEqual((status, calls), (503, 0))
+        self.assertEqual(state['status'], 'initial_reconciliation_pending')
+
+
+    async def test_projection_failure_requires_that_projection_to_succeed(self):
+        _, applied, _ = await self._settled_child()
+        task = self.service.task_repository.get(applied['task_id'])
+        with patch.object(self.runtime, '_decorate_task', side_effect=RuntimeError('synthetic-private')):
+            with self.assertRaises(RuntimeError):
+                self.runtime.decorate_task(task)
+            with self.assertRaises(RuntimeError):
+                await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+
+    async def test_fault_after_intent_stops_provider_without_reissuing_dispatch(self):
+        from ha_mcp_engineering.f3.executor import SharedOperationExecutor
+        created = await self.fixture.create_automation_plan()
+        await self.fixture.approve(created)
+        original = SharedOperationExecutor._inject
+        def fault(executor, stage):
+            if stage == 'after_durable_intent_before_provider_invocation':
+                with patch.object(self.runtime.children, 'health', side_effect=RuntimeError('synthetic-private')):
+                    with self.assertRaises(RuntimeError):
+                        self.runtime.health()
+            return original(executor, stage)
+        with patch.object(SharedOperationExecutor, '_inject', fault):
+            result = await self.service.apply(created['plan_id'], created['plan_hash'])
+        child = self.runtime.children.declarations_for_task(result['task_id'])[0]
+        self.assertEqual(self.runtime.children.get(child['child_id']).dispatch_count, 1)
+        self.assertFalse(any(call[0] == 'write' for call in self.fixture.gateway.calls))
+        await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.children.get(child['child_id']).dispatch_count, 1)
+        self.assertFalse(any(call[0] == 'write' for call in self.fixture.gateway.calls))
+
+    def _writes(self):
+        return sum(call[0] == 'write' for call in self.fixture.gateway.calls)
+
+    def _advance_child_retry(self, declaration):
+        retry = self.runtime.children.runtime(declaration['child_id'])['next_eligible_at']
+        if retry is not None:
+            self.service.now = lambda: datetime.fromisoformat(retry) + timedelta(seconds=301)
+
+    async def _terminal_child_metadata_fault(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        task, declaration = await self.fixture._preintent_active_child('terminal_fault_target')
+        original = self.runtime.children.update_runtime
+        injected = []
+        def fail_completion(child_id, *, changes):
+            if changes.get('reconciliation_result') == 'transition_processed' and not injected:
+                injected.append(True)
+                raise ExecutionStorageError('synthetic transient metadata failure')
+            return original(child_id, changes=changes)
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=fail_completion):
+            await self.runtime.recover_once('test')
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        self.assertEqual(self.service._load_task(task.task_id).state.value, 'succeeded_verified')
+        self.assertEqual(self._writes(), 1)
+        return task, declaration
+
+    async def _independent_script_plan(self):
+        from tests.test_dev14_configuration_plans import PROPOSED_SCRIPT
+        created = await self.service.create_configuration_plan(
+            title='Synthetic independent script update', description='Terminal fault recovery',
+            operations=[{'operation_id': 'script_update', 'resource_type': 'script',
+                         'action': 'update', 'target_id': 'set_hvac_comfort',
+                         'depends_on': [], 'proposed_config': PROPOSED_SCRIPT}],
+        )
+        await self.fixture.approve(created)
+        return created
+
+    async def test_terminal_child_fault_retries_metadata_without_redispatch(self):
+        task, declaration = await self._terminal_child_metadata_fault()
+        parent_before = asdict(self.service._load_task(task.task_id))
+        created = await self._independent_script_plan()
+        approval = asdict(self.service._load(created['plan_id']).approval)
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(asdict(self.service._load(created['plan_id']).approval), approval)
+        self.runtime.health()
+        await self.runtime.recover_once('test')  # Backoff still applies.
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        with patch.object(self.runtime, '_execute_child', side_effect=AssertionError('terminal redispatch')):
+            await self.runtime.recover_once('test')
+            await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(asdict(self.service._load_task(task.task_id)), parent_before)
+        self.assertEqual(self.runtime.children.runtime(declaration['child_id'])['reconciliation_result'], 'transition_processed')
+        self.assertEqual(self.runtime.children.get(declaration['child_id']).dispatch_count, 1)
+        self.assertEqual(self._writes(), 1)
+        result = await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(result['task_state'], 'succeeded_verified')
+        self.assertEqual(self._writes(), 2)
+
+    async def test_private_reconciliation_terminal_child_restores_readiness_with_hold(self):
+        from tests.test_dev14_configuration_plans import PROPOSED_AUTOMATION
+        task, declaration = await self.fixture._post_intent_active_child('manual_fault_target')
+        child_id = declaration['child_id']
+        with patch.object(self.runtime, '_execute_child', side_effect=RuntimeError('synthetic transient recovery failure')):
+            await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        expected = copy.deepcopy(PROPOSED_AUTOMATION)
+        expected['id'] = declaration['target_id']
+        self.fixture.gateway.configs[('automation', declaration['target_id'])] = expected
+        runtime = self.runtime.children.runtime(child_id)
+        self._advance_child_retry(declaration)
+        await self.runtime.reconcile_child(
+            child_id=child_id, action='rerun_observation',
+            record_generation=runtime['record_generation'],
+            prepared_hash=declaration['prepared_operation_hash'],
+            hold_generation_binding=','.join(f"{item['key']}:{item['generation']}" for item in runtime['selective_hold_tokens']),
+            authorized_principal='home_assistant_admin_ingress:synthetic_reviewer',
+        )
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.service._load_task(task.task_id).state.value, 'manual_review_required')
+        holds = copy.deepcopy(self.runtime.children.runtime(child_id)['selective_hold_tokens'])
+        self.assertTrue(holds)
+        locks = self.runtime.locks.records()
+        created = await self._independent_script_plan()
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created['plan_id'], created['plan_hash'])
+        with patch.object(self.runtime, '_execute_child', side_effect=AssertionError('terminal redispatch')):
+            for _ in range(3):
+                await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.runtime.children.runtime(child_id)['selective_hold_tokens'], holds)
+        self.assertEqual(self.runtime.locks.records(), locks)
+        self.assertEqual(self.runtime.health()['status'], 'manual_intervention_required')
+        self.assertEqual(self.runtime.children.get(child_id).dispatch_count, 1)
+        self.assertEqual(self._writes(), 0)
+        result = await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(result['task_state'], 'succeeded_verified')
+        self.assertEqual(self._writes(), 1)
+        self.assertEqual(self.runtime.children.runtime(child_id)['selective_hold_tokens'], holds)
+
+    async def test_terminal_fault_waits_for_exact_audit_and_metadata_repair(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        task, declaration = await self._terminal_child_metadata_fault()
+        self._advance_child_retry(declaration)
+        with patch.object(self.runtime, '_audit_record_events', return_value=False):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        original = self.runtime.children.update_runtime
+        def fail_completion(child_id, *, changes):
+            if changes.get('reconciliation_result') == 'transition_processed':
+                raise ExecutionStorageError('synthetic unrepaired metadata')
+            return original(child_id, changes=changes)
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=fail_completion):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self._writes(), 1)
+
+    async def test_terminal_fault_keeps_newer_revision_and_corrupt_child_refusal(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        _, declaration = await self._terminal_child_metadata_fault()
+        child_id = declaration['child_id']
+        self._advance_child_retry(declaration)
+        path = self.runtime.children._path(child_id)
+        original_bytes = path.read_bytes()
+        path.write_bytes(b'{synthetic corrupt terminal child')
+        with self.assertRaises(ExecutionStorageError):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        path.write_bytes(original_bytes)
+        original = self.runtime.children.update_runtime
+        def newer_fault(child_id, *, changes):
+            result = original(child_id, changes=changes)
+            if changes.get('reconciliation_result') == 'transition_processed':
+                self.runtime._readiness_fault('recovery_child:' + child_id)
+            return result
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=newer_fault):
+            await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self._writes(), 1)
+
+    async def test_terminal_fault_retries_plan_projection_after_parent_was_saved(self):
+        task, declaration = await self.fixture._preintent_active_child('plan_projection_fault_target')
+        original = self.service._save
+        injected = []
+        def fail_plan_projection(plan):
+            if plan.status.value == 'applied' and not injected:
+                injected.append(True)
+                raise RuntimeError('synthetic plan projection failure')
+            return original(plan)
+        with patch.object(self.service, '_save', side_effect=fail_plan_projection):
+            await self.runtime.recover_once('test')
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.service._load_task(task.task_id).state.value, 'succeeded_verified')
+        self.assertNotEqual(self.service._load(task.plan_id).status.value, 'applied')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.service._load(task.plan_id).status.value, 'applied')
+        self.assertEqual(self._writes(), 1)
+
+    async def test_terminal_fault_requires_matching_parent_projection_and_budget(self):
+        task, declaration = await self._terminal_child_metadata_fault()
+        self._advance_child_retry(declaration)
+        # A pass that cannot reach the exact child cannot clear its fault.
+        ticks = iter(range(1000))
+        with patch.object(self.runtime, '_recovery_monotonic', side_effect=lambda: next(ticks) * 10):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        original = self.service._load_task
+        def mismatched_projection(task_id):
+            result = original(task_id)
+            if task_id == task.task_id:
+                result.verification_summary['children'][0]['dispatch_count'] = 0
+            return result
+        with patch.object(self.service, '_load_task', side_effect=mismatched_projection):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        declarations = self.runtime.children.declarations_for_task(task.task_id)
+        with patch.object(self.runtime, '_validate_sequence_state', return_value=(declarations, (None,))):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self._writes(), 1)
+
+    async def _no_dispatch_fault_case(self, outcome):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        task, declaration = await self.fixture._preintent_active_child('no_dispatch_fault_target')
+        child_id = declaration['child_id']
+        if outcome == 'succeeded_verified':
+            self.fixture._succeed_no_dispatch_child(declaration)
+        else:
+            self.fixture._fail_no_dispatch_child(declaration)
+        original = self.runtime.children.update_runtime
+        injected = []
+        def fail_completion(current_child, *, changes):
+            if changes.get('reconciliation_result') == 'transition_processed' and not injected:
+                injected.append(True)
+                raise ExecutionStorageError('synthetic transient no-dispatch completion failure')
+            return original(current_child, changes=changes)
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=fail_completion):
+            await self.runtime.recover_once('test')
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        parent_before = asdict(self.service._load_task(task.task_id))
+        original_approval = asdict(self.service._load(task.plan_id).approval)
+        self.assertEqual(parent_before['state'].value, outcome)
+        self.assertEqual(self._writes(), 0)
+        created = await self._independent_script_plan()
+        approval = asdict(self.service._load(created['plan_id']).approval)
+        with self.assertRaises(GovernanceError):
+            await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(asdict(self.service._load(created['plan_id']).approval), approval)
+        self.runtime._validate_readiness_storage()
+        await self.runtime.recover_once('test')  # Exact child is still in backoff.
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        with patch.object(self.runtime, '_audit_record_events', return_value=False):
+            await self.runtime.recover_once('test')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self._advance_child_retry(declaration)
+        def newer_fault(current_child, *, changes):
+            result = original(current_child, changes=changes)
+            if changes.get('reconciliation_result') == 'transition_processed':
+                self.runtime._readiness_fault('recovery_child:' + current_child)
+            return result
+        with patch.object(self.runtime.children, 'update_runtime', side_effect=newer_fault):
+            await self.runtime.recover_once('test')
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        with patch.object(self.runtime, '_execute_child', side_effect=AssertionError('terminal execution forbidden')), \
+             patch.object(self.runtime, '_load_prepared', side_effect=AssertionError('terminal preparation forbidden')), \
+             patch.object(self.runtime, '_consume_approval', side_effect=AssertionError('terminal approval consumption forbidden')):
+            for _ in range(3):
+                await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(asdict(self.service._load_task(task.task_id)), parent_before)
+        self.assertEqual(asdict(self.service._load(task.plan_id).approval), original_approval)
+        child = self.runtime.children.get(child_id)
+        self.assertEqual(child.normalized_outcome, outcome)
+        self.assertEqual(child.dispatch_count, 0)
+        self.assertIsNone(child.dispatch_intent)
+        self.assertEqual(self._writes(), 0)
+        self.assertEqual(self.runtime.children.runtime(child_id)['reconciliation_result'], 'transition_processed')
+        result = await self.service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(result['task_state'], 'succeeded_verified')
+        self.assertEqual(self._writes(), 1)
+        self.assertEqual(self.runtime.children.get(child_id).dispatch_count, 0)
+
+    async def test_verified_no_dispatch_fault_recovers_exactly(self):
+        await self._no_dispatch_fault_case('succeeded_verified')
+
+    async def test_failed_pre_dispatch_fault_recovers_exactly(self):
+        await self._no_dispatch_fault_case('failed_pre_dispatch')
+
+    async def test_verified_no_dispatch_without_fault_stays_ready(self):
+        task, declaration = await self.fixture._preintent_active_child('no_dispatch_control')
+        self.fixture._succeed_no_dispatch_child(declaration)
+        with patch.object(self.runtime, '_execute_child', side_effect=AssertionError('terminal execution forbidden')):
+            await self.runtime.recover_once('test')
+            await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.service._load_task(task.task_id).state.value, 'succeeded_verified')
+        self.assertEqual(self.runtime.children.get(declaration['child_id']).dispatch_count, 0)
+        self.assertEqual(self._writes(), 0)
+
+    async def test_no_dispatch_fault_preserves_pending_orphan_cleanup(self):
+        from ha_mcp_engineering.f3.persistence import ExecutionStorageError
+        _, declarations = await self.fixture._build_live_orphan()
+        declaration = declarations[0]
+        original = self.runtime._release_orphaned_child_locks
+        injected = []
+        def fail_once(current, record):
+            if current['child_id'] == declaration['child_id'] and not injected:
+                injected.append(True)
+                raise ExecutionStorageError('synthetic orphan cleanup failure')
+            return original(current, record)
+        with patch.object(self.runtime, '_release_orphaned_child_locks', side_effect=fail_once):
+            await self.runtime.recover_once('test')
+        self.assertEqual(injected, [True])
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['recovery_child'])
+        self.assertTrue(self.runtime.children.get(declaration['child_id']).terminal)
+        self._advance_child_retry(declaration)
+        with patch.object(self.runtime, '_reconcile_terminal_child_fault', side_effect=AssertionError('pending orphan cleanup bypassed')):
+            await self.runtime.recover_once('test')
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.runtime.children.get(declaration['child_id']).normalized_outcome, 'cancelled_pre_dispatch')
+        self.assertFalse(self.runtime.reconciliation_items())
+        self.assertEqual(self._writes(), 0)
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,500 @@
+{
+  "stage": "beta15_combined_candidate_prior_source_evidence_retained",
+  "engineering_base": "5e9651ce7623433e47194488531eb029a15636a6",
+  "source_binding_results": [
+    {
+      "path": "src/panels/lovelace/common/handle-action.ts",
+      "sha256": "cd9302fc32ec23a3d02460e366f89b0997baf11561937e2022e6fea4df3182f4",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-entities-card.ts",
+      "sha256": "de28ba23509d49ef39e33e2655b7dbfa8485eb2e18e74cb619385cb52853867b",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-tile-card.ts",
+      "sha256": "91a502e647890773b73fccd58d9e23ab9adc38520f22e78d17eab0eb38a92985",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-button-card.ts",
+      "sha256": "8fa9a04810166a85bbbf3b077f6f28cd031c16123c5a31871779a9bcd94b094b",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/data/lovelace/config/types.ts",
+      "sha256": "70a975c21218de671e0f5fa5810b81272905626f114ddac2374b6ee95f5b2069",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/create-element/create-row-element.ts",
+      "sha256": "9029d7b88e9438ae453b868435c25c26e69081982e23b4c7a6c952b358111752",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/common/const.ts",
+      "sha256": "b91f81193f816a4e7b599a160ce767d72df25fa028653c4a8eaaa915fec1eeb7",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/entity-rows/hui-input-number-entity-row.ts",
+      "sha256": "d1e202f14fee7634a2bffa2aea24ac2ef36db9eba0813dfb9bc9c6e36eff9207",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/entity-rows/hui-input-text-entity-row.ts",
+      "sha256": "afaa3e16a2c15f58c67b7549a450961c5cf45769f671cccc6f3f5189ca5b60ae",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/special-rows/hui-call-service-row.ts",
+      "sha256": "513beb18b82b38edbe490925d02928a4636682f7fd469207d16c0ee212e3f098",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/entity-rows/hui-toggle-entity-row.ts",
+      "sha256": "fee54eccaa59adaa3c0388e0914f6e7cf0e392dd5b3f1e8f6177ecf107ba1372",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-conditional-card.ts",
+      "sha256": "a489876cff081c863f5848bd78d712e1b5ccd4bfa4c0c729a803f20a93a6433c",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/data/lovelace/config/view.ts",
+      "sha256": "e778bca74c16b36cd10abe6846262692e369222a9bbbbc71e422d84b92cf6c5e",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/common/find-entities.ts",
+      "sha256": "761cddc3c7e198fb942484b222092ab82a1b21bde3021f5da40ebdd4b939d818",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-stack-card.ts",
+      "sha256": "09f9c24a979bfa5127b7e60c8f2cafeed9d6b608f9a3005cabd3197b08aeb831",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/common/validate-condition.ts",
+      "sha256": "10b1b63bbdf3de176805d9c6922ebe17dd02da86dd2439ac6c4a8aa52488e6f3",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    },
+    {
+      "path": "src/panels/lovelace/cards/hui-grid-card.ts",
+      "sha256": "0a52a59bbb507c8f71f6bea557449d2ff8818b4662f445740be42129192b0ed3",
+      "matches_sha256": true,
+      "matches_git_blob": true
+    }
+  ],
+  "authority": {
+    "core_commit": "9212531f40a0b7b23229a90d688dd79d9dfccff4",
+    "frontend_commit": "380e9b5a81ada29a1d187b4123c54fb3d6fbcc89",
+    "frontend_version": "20260826.7",
+    "sdk_version": "1.28.1"
+  },
+  "missing_inputs": [],
+  "rules_encoded": true,
+  "source_derived_fixtures_committed": false,
+  "frontend_execution": true,
+  "disposable_core_execution": false,
+  "full_analyzer_responsiveness": "synthetic assembled path executed with real admission/hashing, serial and controlled contention; exact environment lane pending",
+  "upstream_analysis_transport": "composed no-refresh provider and collector; old entry points preserved",
+  "scope_preserved": "full approved contract remains required",
+  "sdk_private_scope_expansion": "not needed for implemented transport; prior proposal superseded",
+  "sdk_transport_evidence": {
+    "version": "1.28.1",
+    "installed_streamable_http_sha256": "8eb01c3d4da89c6e73d494a96029dbcf2fe05d0bfffe76071b1e409afdb62f5b",
+    "public_extension": "streamablehttp_client httpx_client_factory",
+    "private_sdk_override": false,
+    "synthetic_json_sse_execution": true,
+    "full_provider_execution": true,
+    "bounded_wire_get_requests": 0,
+    "source_commit": "not independently resolved in the offline batch",
+    "analysis_logging": "Context-local filter for pinned SDK/HTTP logger names; default transport logger disabling retained; DEBUG-on synthetic sentinel and concurrent ordinary-log test passed"
+  },
+  "maintenance_integration": {
+    "reviewed_commit": "7bfea9f66d6b949d192c86ebba814bf802bb99c3",
+    "merge_commit": "7bf4d23d25be2da2e54123ba8047acd55aeb0970",
+    "reviewed_files_unchanged": "four files byte-identical; shared test catalog count only 57 to 58",
+    "catalog_count_edit": "registered tool count reconciled; behavior assertions unchanged"
+  },
+  "source_handoff": "COORD-DASHBOARD-FRONTEND-SOURCE-20261002-001",
+  "source_directory_verification": {
+    "regular_files": 3614,
+    "sha256_and_git_blobs": "all match",
+    "manifest_sha256": "935172d3046bb0fca174e168883627de3c43531ee467ceb00fdc4bba73467930"
+  },
+  "semantic_review": [
+    {
+      "rule": "button_defaults",
+      "path": "src/panels/lovelace/cards/hui-button-card.ts",
+      "sha256": "8fa9a04810166a85bbbf3b077f6f28cd031c16123c5a31871779a9bcd94b094b",
+      "git_blob": "d4a89f383d73de2e3c69708a4291babf7e50117a",
+      "lines": "60-63,137-157,175-181",
+      "behavior": "Tap toggles only DOMAINS_TOGGLE; otherwise more-info. Hold defaults more-info, double tap none. Explicit config spreads after defaults."
+    },
+    {
+      "rule": "tile_defaults",
+      "path": "src/panels/lovelace/cards/hui-tile-card.ts",
+      "sha256": "91a502e647890773b73fccd58d9e23ab9adc38520f22e78d17eab0eb38a92985",
+      "git_blob": "f6742b1fe935abe100dce78511aa90df8182b5a9",
+      "lines": "43-49,94-107,143-155,212-224,295-311",
+      "behavior": "Main tap more-info; icon tap toggle for DOMAINS_TOGGLE plus button/input_button/scene, else none. Icon slots are separate. Icon interactivity depends on icon tap; disabled icon hold/double remain unassessed."
+    },
+    {
+      "rule": "toggle_domains",
+      "path": "src/common/const.ts",
+      "sha256": "b91f81193f816a4e7b599a160ce767d72df25fa028653c4a8eaaa915fec1eeb7",
+      "git_blob": "3c00b776821108744fb1619531ae721c24db0e73",
+      "lines": "102-111",
+      "behavior": "Exact eight-domain constant, not canToggleDomain service availability or arbitrary dotted IDs."
+    },
+    {
+      "rule": "explicit_action",
+      "path": "src/panels/lovelace/common/handle-action.ts",
+      "sha256": "cd9302fc32ec23a3d02460e366f89b0997baf11561937e2022e6fea4df3182f4",
+      "git_blob": "71effde7f01a3da08d27feb9cba7d47593c1eddc",
+      "lines": "36-48,50-100,102-189",
+      "behavior": "perform_action OR service; data nullish-coalesces service_data; target is independent. Toggle uses parent entity; more-info can override entity. Never evaluate dialogs, URLs, confirmation exemptions, voice or custom event."
+    },
+    {
+      "rule": "row_dispatch",
+      "path": "src/panels/lovelace/create-element/create-element-base.ts",
+      "sha256": "9b4f30ba3135ee3298369b845f4c13904d92eb5c0d02a60126f59865af7d6fe8",
+      "git_blob": "3f6d96d486efc21b6d7c367ae8882d121cc1c7f5",
+      "lines": "268-315",
+      "behavior": "Explicit type overrides inferred domain, custom types opaque; unknown row types reject."
+    },
+    {
+      "rule": "row_domains",
+      "path": "src/panels/lovelace/create-element/create-row-element.ts",
+      "sha256": "9029d7b88e9438ae453b868435c25c26e69081982e23b4c7a6c952b358111752",
+      "git_blob": "0b36be57d6093b1f35e647f5de744c91852c16de",
+      "lines": "17-103",
+      "behavior": "Six helper mappings; call-service is supported row type, perform-action is NOT a row alias."
+    },
+    {
+      "rule": "row_normalization",
+      "path": "src/panels/lovelace/common/process-config-entities.ts",
+      "sha256": "9944ea2014a25ef1cccf3624f34047a03034ca1e6fd597e1edcea68694a766fc",
+      "git_blob": "f9ff1d85c8c3c56f2119161fbfe0826ddfb98170",
+      "lines": "15-50",
+      "behavior": "Strings become entity rows; typed rows preserved; original raw indices must be retained."
+    },
+    {
+      "rule": "row_migration",
+      "path": "src/panels/lovelace/cards/migrate-card-config.ts",
+      "sha256": "61ddfc95491d1eaff2b0c0e8846701488c795169796d2876d311aa74b50e0457",
+      "git_blob": "75c439cb6d63515e55ef76dc79fb9df2ef51c192",
+      "lines": "15-58",
+      "behavior": "Migration concerns display options; no permission to invent control semantics."
+    },
+    {
+      "rule": "row_actions",
+      "path": "src/panels/lovelace/components/hui-generic-entity-row.ts",
+      "sha256": "d35bc4d818e23d623cad263938e014196f45ebe9c4d5c5578f98c412a76d004d",
+      "git_blob": "21329118722393bd5943a78840f7085cad2c52db",
+      "lines": "41-79,116-145",
+      "behavior": "Generic tap defaults more-info, hold/double enabled only if configured; input child interaction is separated from row action."
+    },
+    {
+      "rule": "helper_boolean",
+      "path": "src/panels/lovelace/entity-rows/hui-toggle-entity-row.ts",
+      "sha256": "fee54eccaa59adaa3c0388e0914f6e7cf0e392dd5b3f1e8f6177ecf107ba1372",
+      "git_blob": "06b9ccd669931a2854fbabe51666823e51c5555a",
+      "lines": "34-67",
+      "behavior": "Potential inline toggle for on/off/unavailable/unknown; attributes/values are not observed, no runtime eligibility claim."
+    },
+    {
+      "rule": "helper_boolean_dispatch",
+      "path": "src/components/entity/ha-entity-toggle.ts",
+      "sha256": "f7b5da57457b787eadb3ae9576f0e49e699adfab882fe8c7bf0adba7cfbe31b4",
+      "git_blob": "c3b8c0d4bd681cef40c7f6e58fbd574164360b36",
+      "lines": "43-79,123-149",
+      "behavior": "Unavailable disables; turn on/off dispatch through owning entity domain; no service availability proof."
+    },
+    {
+      "rule": "helper_number",
+      "path": "src/panels/lovelace/entity-rows/hui-input-number-entity-row.ts",
+      "sha256": "d1e202f14fee7634a2bffa2aea24ac2ef36db9eba0813dfb9bc9c6e36eff9207",
+      "git_blob": "c15183897a6f89bcc90ef30dbae1cd8ba2e55e3b",
+      "lines": "59-114,178-186",
+      "behavior": "Slider/number editor independent of row tap; unavailable disables; setValue uses domain set_value."
+    },
+    {
+      "rule": "helper_text",
+      "path": "src/panels/lovelace/entity-rows/hui-input-text-entity-row.ts",
+      "sha256": "afaa3e16a2c15f58c67b7549a450961c5cf45769f671cccc6f3f5189ca5b60ae",
+      "git_blob": "f919f40fe99d4d4d0f7faa2746bbec83fd1ba6a0",
+      "lines": "31-86",
+      "behavior": "Text editor independent of tap; unavailable disables; no current values retained."
+    },
+    {
+      "rule": "helper_value_dispatch",
+      "path": "src/data/input_text.ts",
+      "sha256": "0941d281daf66aec4d4c29b0e6f434a100c9fb4ee11c7d8b1471761a90f545d0",
+      "git_blob": "66577645842a0c1764cd71b4e70e337f0bb4223a",
+      "lines": "24-28",
+      "behavior": "Selected entity domain set_value."
+    },
+    {
+      "rule": "helper_select",
+      "path": "src/panels/lovelace/entity-rows/hui-input-select-entity-row.ts",
+      "sha256": "5ca8e38afaa791a8b2181de73dd056666e282b75f9fb2bb3849bc74b855d95e7",
+      "git_blob": "ed446546f3affd875cae1c91a3fd221d93c7dbbc",
+      "lines": "35-69,84-98",
+      "behavior": "Selection widget; unavailable disables, unknown allowed; actual option eligibility not assessed."
+    },
+    {
+      "rule": "helper_select_dispatch",
+      "path": "src/data/input_select.ts",
+      "sha256": "20396870d71445c1ffe387feb71a722f903d115e7095840debab60ac0507d5c6",
+      "git_blob": "e8f1d22b70bdb2438d1d3e0c25fca551df317326",
+      "lines": "30-38",
+      "behavior": "input_select.select_option."
+    },
+    {
+      "rule": "helper_datetime",
+      "path": "src/panels/lovelace/entity-rows/hui-input-datetime-entity-row.ts",
+      "sha256": "4360ad50682b58c43be5b974bb5ef0651428c43b5fe8509f492b891b99f97d08",
+      "git_blob": "626c9cc3d26e64bb1ab3a8c7151ed3dcb7c77406",
+      "lines": "34-125",
+      "behavior": "Date/time widgets depend on attributes; potential control only; unavailable disables."
+    },
+    {
+      "rule": "helper_datetime_dispatch",
+      "path": "src/data/input_datetime.ts",
+      "sha256": "d56bdf109d92f087e5d59d5e2e59a7d801be1c6c2f9133fe471affc5610a6708",
+      "git_blob": "943b6c3c351aa1471d7dcb738ff3bc75cc9a71de",
+      "lines": "34-42",
+      "behavior": "input_datetime.set_datetime."
+    },
+    {
+      "rule": "helper_button",
+      "path": "src/panels/lovelace/entity-rows/hui-input-button-entity-row.ts",
+      "sha256": "4b676297eb50d3e6a780d56057001d18c91bef3bb14e1cc830bc6d0c3e0aaa13",
+      "git_blob": "0929bb82c8f404502529e29c043e209cee0fed34",
+      "lines": "30-55,67-80",
+      "behavior": "Inline press independent of row tap; row confirmation gates press, unavailable disables; input_button.press."
+    },
+    {
+      "rule": "display_override",
+      "path": "src/panels/lovelace/special-rows/hui-attribute-row.ts",
+      "sha256": "6dff162dcbae1cb6b96f849343ba1ab293f62242c7c402d0f4eb693338bd8b59",
+      "git_blob": "69a96b829358adc35813e5f5fad42ab960806ddc",
+      "lines": "20-83",
+      "behavior": "Attribute row uses generic actions but no inline helper editor."
+    },
+    {
+      "rule": "header_toggle",
+      "path": "src/panels/lovelace/cards/hui-entities-card.ts",
+      "sha256": "de28ba23509d49ef39e33e2655b7dbfa8485eb2e18e74cb619385cb52853867b",
+      "git_blob": "9aa1964e55cb6e939133e1ae7d3ed597bdfb7a54",
+      "lines": "33-51,242-253",
+      "behavior": "Title presence (even empty) and >=2 configured toggle-domain rows infer header; explicit show_header_toggle overrides. Membership from all configured entity rows including display overrides."
+    },
+    {
+      "rule": "header_membership",
+      "path": "src/panels/lovelace/components/hui-entities-toggle.ts",
+      "sha256": "6ee814d3eb5491ca3967c8c5f05619c528c01fd359593bafabed460003d49d7e",
+      "git_blob": "5fb13a8cc42ae542f481a9e7074abc463ab22fcd",
+      "lines": "19-45,61-64",
+      "behavior": "Runtime state existence and toggle-domain filter; configured membership is conditional, not physical scope."
+    },
+    {
+      "rule": "header_dispatch",
+      "path": "src/panels/lovelace/common/entity/turn-on-off-entities.ts",
+      "sha256": "a16d7c8805001fe7374c86a1bbe11005c579f410a4b2eadcd956fc251d4c6640",
+      "git_blob": "2ec57543c1b17a83d7fff4e13d358acafafab1dc",
+      "lines": "6-33",
+      "behavior": "State-dependent grouped services; no literal single fixed service inferred."
+    },
+    {
+      "rule": "service_row",
+      "path": "src/panels/lovelace/special-rows/hui-call-service-row.ts",
+      "sha256": "513beb18b82b38edbe490925d02928a4636682f7fd469207d16c0ee212e3f098",
+      "git_blob": "2894460e1c6ccb4daa6536bfed38e2e54af39a29",
+      "lines": "7-31",
+      "behavior": "Name and action-or-service required; generated tap perform-action uses action OR service, data OR service_data. Config spread overrides generated tap. Top-level target is not copied into generated tap."
+    },
+    {
+      "rule": "service_row_buttons",
+      "path": "src/panels/lovelace/special-rows/hui-button-row.ts",
+      "sha256": "177c3087c83c5bcc4a38c720d1acaeb0bc8b2b672090e40561e478a11f779e52",
+      "git_blob": "1ffe93a0e7f69ce26d6b25a00c604d0bca406035",
+      "lines": "36-54,77-84,121-123",
+      "behavior": "Hold defaults more-info; explicit slots use generic handler."
+    },
+    {
+      "rule": "condition_refs",
+      "path": "src/panels/lovelace/common/validate-condition.ts",
+      "sha256": "10b1b63bbdf3de176805d9c6922ebe17dd02da86dd2439ac6c4a8aa52488e6f3",
+      "git_blob": "aab261fb9669fe88847cccd1feedb813eee89a84",
+      "lines": "102-191,235-301",
+      "behavior": "Supported explicit entity references; nested and/or/not. Contextual omissions unknown; state/threshold values may themselves depend on entities but are outside this first literal-entity slice and get a gap."
+    },
+    {
+      "rule": "condition_container",
+      "path": "src/panels/lovelace/components/hui-conditional-base.ts",
+      "sha256": "cf73f912fbcbad5cd31083eed3c093e2a66869ce4b45068370357e637d277492",
+      "git_blob": "ecbb153ad490467f7a3f77e634bd1534cb3922d1",
+      "lines": "36-56,100-119",
+      "behavior": "Do not evaluate visibility; retain configured descendants and mark conditional context."
+    },
+    {
+      "rule": "conditional_card",
+      "path": "src/panels/lovelace/cards/hui-conditional-card.ts",
+      "sha256": "a489876cff081c863f5848bd78d712e1b5ccd4bfa4c0c729a803f20a93a6433c",
+      "git_blob": "ca53b589bca95d0937f24cc57e138dcafe288f99",
+      "lines": "25-44",
+      "behavior": "Single card child."
+    },
+    {
+      "rule": "stack",
+      "path": "src/panels/lovelace/cards/hui-stack-card.ts",
+      "sha256": "09f9c24a979bfa5127b7e60c8f2cafeed9d6b608f9a3005cabd3197b08aeb831",
+      "git_blob": "f8a3a426d9cb9130a3f331ebea2812e79385a6d0",
+      "lines": "45-52",
+      "behavior": "Raw cards array indices."
+    },
+    {
+      "rule": "grid",
+      "path": "src/panels/lovelace/cards/hui-grid-card.ts",
+      "sha256": "0a52a59bbb507c8f71f6bea557449d2ff8818b4662f445740be42129192b0ed3",
+      "git_blob": "fc11b6b89a3f01432f2e0c0b11062badb56f730a",
+      "lines": "19-21,73-75",
+      "behavior": "Uses stack card children."
+    },
+    {
+      "rule": "view",
+      "path": "src/data/lovelace/config/view.ts",
+      "sha256": "e778bca74c16b36cd10abe6846262692e369222a9bbbbc71e422d84b92cf6c5e",
+      "git_blob": "d7d75f7d16082b85d9bd1cf074c8ad4a794d0f7a",
+      "lines": "48-104",
+      "behavior": "Views/sections containers; visible is not ordinary conditions; headers/footer/sidebar unsupported with containing-pointer gap."
+    },
+    {
+      "rule": "section",
+      "path": "src/data/lovelace/config/section.ts",
+      "sha256": "d9a67aec82b3c787b46562e2253e72dab9d1dcacfae067fe0bd3ed7081bf9b85",
+      "git_blob": "df877e6c12ae6ebc518af53c3639998c7ea256ec",
+      "lines": "16-47",
+      "behavior": "Grid section cards, visibility; strategy is opaque."
+    },
+    {
+      "rule": "icon_reachability",
+      "path": "src/components/tile/ha-tile-icon.ts",
+      "sha256": "0b408d5a3ad357049371696254d6768f9e8b410d114ad35a598ea488801b08bf",
+      "git_blob": "c68c21a83444c60b09a1c1b7e06fcbad294f2719",
+      "lines": "63-77,106-114",
+      "behavior": "Interactive false disables normal pointer/focus interaction; configured icon hold-only is not asserted reachable."
+    },
+    {
+      "rule": "simple_display_override",
+      "path": "src/panels/lovelace/entity-rows/hui-simple-entity-row.ts",
+      "sha256": "9544418477ce9e614cbaf94d34f5b828e698ad0cfd9190b98f8d205acc501753",
+      "git_blob": "9ed9c6fb71a20ff16d488abe24b44dc42228399e",
+      "lines": "21-71",
+      "behavior": "Generic row actions around state/timestamp display; no inline helper editor, missing state renders warning."
+    }
+  ],
+  "upstream_tests_reviewed": [
+    {
+      "path": "test/panels/lovelace/handle-action.test.ts",
+      "sha256": "5ef5948685f39d0fd59e9c31d7f94b09290755a5b4607444738a42694445ee98",
+      "executed": true,
+      "coverage": "URL sanitization only; no generic service precedence or helper default coverage"
+    },
+    {
+      "path": "test/panels/lovelace/cards/hui-tile-card.test.ts",
+      "sha256": "8ccb8779ca7c411d0063b4908fa98a49dd959fc88a49fbb9a7f4118ab7736177",
+      "executed": true,
+      "coverage": "Layout size only; no action default coverage"
+    },
+    {
+      "path": "test/panels/lovelace/common/directives/action-handler-directive.test.ts",
+      "sha256": "409cecbe635c1b30744a896a1aa788e7af1bac7660195b6434ca433b026f7e51",
+      "executed": true,
+      "coverage": "Selected lines 96-148: tap/hold/double, null resolver, mismatched target"
+    },
+    {
+      "path": "test/panels/lovelace/common/validate-condition.test.ts",
+      "sha256": "afd31813e3e521c378efa8fc181d9e22b1cab3d26dc8a68e4f5fe0b4232f03bc",
+      "executed": true,
+      "coverage": "State/numeric/legacy validity and evaluation; analyzer does not evaluate"
+    },
+    {
+      "path": "test/common/entity/can_toggle_domain.test.ts",
+      "sha256": "9822a0932e168ec06e2d588dcbf0bcf6703d7c4859f3493f19701c367105b9ca",
+      "executed": true,
+      "coverage": "Service-dependent toggling, not DOMAINS_TOGGLE default selection"
+    },
+    {
+      "path": "test/common/entity/can_toggle_state.test.ts",
+      "sha256": "e9ac8613705adb1f5885df30f468150c1807bc2fd3ddee07f8ddc5565edc5923",
+      "executed": true,
+      "coverage": "State-dependent/group eligibility; not inferred by analyzer"
+    }
+  ],
+  "license_review": "Frontend Apache-2.0; no upstream code or upstream fixtures copied into runtime/tests. Engineering synthetic configuration cases are original, with exact source provenance recorded here. Exact upstream TypeScript execution: six suites / 51 passed. Source inspection and original synthetic controls remain separate from disposable acceptance.",
+  "implementation_status": {
+    "central_provider_routing": "implemented under approved seven-file scope extension: Engineering-native read policy, no writes or fallback",
+    "exact_frontend_execution": "PASS: Node 24.19.0 / Yarn 4.18.0 / TypeScript 6.0.3 / Vitest 4.1.11; 51 passed, zero failed/skipped",
+    "disposable_exact_lane": "BLOCKED: local Docker API permission denied, including host preflight; no runtime execution",
+    "ci": "Required exact-head dashboard-disposable lane; consult candidate CI receipts, not earlier preparation",
+    "independent_dashboard_review": "Josh reported independent delta-review PASS for 2791151b27424f686bc16c59f521ce5301517727; no new report inferred",
+    "legacy_catalog_assertions": "approved name-only reconciliation applied in five tests; historical descriptor hashes and safety assertions unchanged",
+    "owned_serialization": "service permit retained through final page envelope worker; failed first export discarded",
+    "strict_payload_types": "canonical structured/inner payload comparison; pre-SDK nonboolean isError refusal; malformed Unicode source hash classified permanently",
+    "authentication_accounting": "native auth requests and received text frames counted separately and bounded; authority checked before auth send",
+    "item_identity": "source-location/model/config/slot/reason binding independent of availability; exact-source flag only on unchanged entity literals",
+    "failed_source_accounting": "unusable inventory omitted count is null (unknown), examined and retained counts remain observed zeros"
+  },
+  "fixture_provenance": {
+    "frontend_cases": "Original synthetic Python cases derived from exact source review; no copied upstream frontend fixtures",
+    "descriptor_fixtures": "Exact c82b56d writer execution with SDK 1.28.1 and existing synthetic reviewed 8.4.3 provider capture; 57 native plus 25 delegated descriptors"
+  },
+  "scope_extension": {
+    "proposal": "COORD reconciliation-003/SCOPE_PROPOSAL.md",
+    "approval": "Josh explicitly approved the seven-file local correction and validation extension in the existing dashboard conversation",
+    "prior_checkpoint": "6dfd63623509c06b07631b104f4830f1d0d20656",
+    "provider_patch_sha256": "fa78c4a5718c486ecb7cbb5dc4532b1f451d13d69655a9c44b98ddcd6dff8fb1",
+    "test_patch_sha256": "03888efb5204958a403125d26c84e87d7a4979440302c8e8e4c93233c65adce4",
+    "external_gates": "unchanged; see implementation_status"
+  },
+  "external_gate_receipts": {
+    "candidate_sha": "2791151b27424f686bc16c59f521ce5301517727",
+    "package": ".artifacts/dashboard-analysis/external-gates-006",
+    "frontend_result": "frontend-execution-result.json",
+    "image_provenance": "image-provenance.json",
+    "disposable_preflight": "disposable-preflight.json",
+    "release_ci": "conditional artifacts, not applied or validated by actual CI"
+  },
+  "release_integration": {
+    "owner_approved": true,
+    "version": "2.4.0-beta.15",
+    "f3_reviewed_head": "28a65f2ce3776ef6efd9f8af458245ce28aa27a3",
+    "dashboard_reviewed_head": "2791151b27424f686bc16c59f521ce5301517727",
+    "contract": "docs/V2_4_0_BETA15_ACCEPTANCE.md",
+    "installed_acceptance": "separate, not established by this source evidence"
+  }
+}
