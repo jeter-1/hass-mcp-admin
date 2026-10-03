@@ -168,3 +168,60 @@ class DisposableNetworkTests(unittest.TestCase):
         self.assertNotIn("SYNTHETIC_PRIVATE_DETAIL", json.dumps(locations))
         self.assertTrue(all(set(x) == {"file", "line"} for x in locations))
         self.assertTrue(all(not Path(x["file"]).is_absolute() for x in locations))
+
+
+class DisposableProjectionTests(unittest.TestCase):
+    def projection(self):
+        import sys
+        sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+        from ha_mcp_engineering.dashboard_analysis.rules import scan
+        from ha_mcp_engineering.dashboard_analysis.provider import project_inventory
+        states = project_inventory("states", [
+            {"entity_id": "light.hamcp_contract_light", "state": "off"},
+            {"entity_id": "input_text.dashboard_private", "state": driver.SENTINEL}])
+        registry = project_inventory("registry", [])
+        result = scan(driver.DASHBOARD, "sha256:" + "a" * 64, states, registry, core_version="2026.9.4")
+        header = {"coverage": result["coverage"], "counts": result["counts"],
+                  "sources": [states.metadata(), registry.metadata()]}
+        return header, result["items"]
+
+    def test_complete_inventories_and_partial_custom_card_semantics_are_distinct(self):
+        header, items = self.projection()
+        driver.verify_mixed_projection(header, items)
+        self.assertNotIn(driver.SENTINEL, json.dumps(items))
+        self.assertTrue(all(row["complete"] for row in header["sources"]))
+        self.assertEqual(header["coverage"], {"references": "partial", "availability": "partial", "controls": "partial"})
+
+    def test_harness_refuses_incomplete_inventory_and_false_complete_coverage(self):
+        import copy
+        header, items = self.projection()
+        for kind in ("states", "registry"):
+            altered = copy.deepcopy(header)
+            next(row for row in altered["sources"] if row["kind"] == kind)["complete"] = False
+            with self.subTest(kind=kind), self.assertRaisesRegex(RuntimeError, "incomplete fixture inventories"):
+                driver.verify_mixed_projection(altered, items)
+        for category in header["coverage"]:
+            altered = copy.deepcopy(header)
+            altered["coverage"][category] = "complete"
+            with self.subTest(category=category), self.assertRaisesRegex(RuntimeError, "partial coverage"):
+                driver.verify_mixed_projection(altered, items)
+        for field in ("omitted", "invalid", "duplicate"):
+            altered = copy.deepcopy(header)
+            altered["sources"][0][field] = 1
+            with self.subTest(field=field), self.assertRaises(RuntimeError):
+                driver.verify_mixed_projection(altered, items)
+
+    def test_harness_still_requires_exact_pointers_and_useful_findings(self):
+        import copy
+        header, items = self.projection()
+        variants = [[row for row in items if row["kind"] != excluded]
+                    for excluded in ("control", "coverage_gap", "entity_reference")]
+        moved = copy.deepcopy(items)
+        next(row for row in moved if row["kind"] == "entity_reference")["pointer"] = "/invented"
+        variants.append(moved)
+        unassessed = copy.deepcopy(items)
+        next(row for row in unassessed if row.get("entity_id") == "sensor.dashboard_absent")["availability"] = "unassessed"
+        variants.append(unassessed)
+        for altered in variants:
+            with self.assertRaises(RuntimeError):
+                driver.verify_mixed_projection(header, altered)

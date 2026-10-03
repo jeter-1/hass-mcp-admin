@@ -63,6 +63,27 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
 
 
+def verify_mixed_projection(header, items):
+    require(header["counts"]["reference_occurrences"] == 4 and header["counts"]["unique_references"] == 3,
+            "occurrence accounting mismatch")
+    # Inventory completeness proves absence for known literal references. The
+    # unsupported custom card still makes overall semantic coverage partial.
+    inventories = [row for row in header["sources"] if row["kind"] in {"states", "registry"}]
+    require(len(inventories) == 2 and {row["kind"] for row in inventories} == {"states", "registry"}
+            and all(row["complete"] is True and row["failure"] is None
+                    and row["omitted"] == row["invalid"] == row["duplicate"] == 0 for row in inventories),
+            "incomplete fixture inventories")
+    require(header["coverage"] == {"references": "partial", "availability": "partial", "controls": "partial"},
+            "unsupported custom card must retain partial coverage")
+    references = [x for x in items if x["kind"] == "entity_reference"]
+    require({x["pointer"] for x in references} == {"/views/0/cards/0/entities/" + str(i) for i in range(4)},
+            "original pointer mismatch")
+    require(any(x["entity_id"] == "sensor.dashboard_absent" and x["availability"] == "absent_from_observed_inventories"
+                for x in references), "absence finding missing")
+    require(any(x["kind"] == "control" for x in items) and any(x["kind"] == "coverage_gap" for x in items),
+            "useful control/gap missing")
+
+
 class Lane:
     def __init__(self, args):
         self.root, self.out = args.repo.resolve(), args.output.resolve()
@@ -418,16 +439,8 @@ async def scenario(lane, core_url):
         for chunk in (c.canonical(header), *(c.canonical(item) for item in items)):
             reconstructed.update(len(chunk).to_bytes(8, "big")); reconstructed.update(chunk)
         require(frozen == "sha256:" + reconstructed.hexdigest(), "reconstructed report digest mismatch")
-        require(header["counts"]["reference_occurrences"] == 4 and header["counts"]["unique_references"] == 3,
-                "occurrence accounting mismatch")
-        require(header["coverage"]["availability"] == "complete" and header["coverage"]["controls"] == "partial",
-                "complete inventory versus partial semantics mismatch")
-        references = [x for x in items if x["kind"] == "entity_reference"]
-        require({x["pointer"] for x in references} == {"/views/0/cards/0/entities/" + str(i) for i in range(4)}, "original pointer mismatch")
-        require(any(x["entity_id"] == "sensor.dashboard_absent" and x["availability"] == "absent_from_observed_inventories"
-                    for x in references), "absence finding missing")
-        require(any(x["kind"] == "control" for x in items) and any(x["kind"] == "coverage_gap" for x in items), "useful control/gap missing")
         save(lane.out / "projection.json", {"header": header, "items": items, "report_digest": frozen})
+        verify_mixed_projection(header, items)
         size = len(service.snapshots)
         await call("invalid", {"url_path": PATH, "limit": 0}, False)
         await call("invalid-cursor", {"url_path": PATH, "cursor": "invalid"}, False)
