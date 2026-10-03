@@ -2204,7 +2204,8 @@ def _analysis_configuration(result, url_path):
     if payload.get("url_path") != url_path:
         raise c.AnalysisError("identity_mismatch")
     configuration = payload.get("config")
-    if type(configuration) is not dict or not any(k in configuration for k in ("views", "strategy")):
+    if (type(configuration) is not dict or not (
+            type(configuration.get("views")) is list or type(configuration.get("strategy")) is dict)):
         raise c.AnalysisError("malformed_response")
     if "structuredContent" in result and c.canonical(result["structuredContent"]) != c.canonical(payload):
         raise c.AnalysisError("identity_mismatch")

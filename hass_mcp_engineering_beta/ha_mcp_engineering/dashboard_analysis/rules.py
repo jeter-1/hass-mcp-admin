@@ -136,6 +136,8 @@ class Scanner:
         elif kind in {"and", "or", "not"}:
             if "conditions" in obj:
                 self.array(obj["conditions"], pointer + "/conditions", depth + 1, self.conditions, True)
+            else:
+                self.gap(pointer, "malformed_selector", conditional=True)
         elif kind in {"state", "numeric_state"}:
             if "entity" in obj:
                 self.entity(obj["entity"], pointer + "/entity", depth + 1,

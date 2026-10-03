@@ -263,6 +263,19 @@ class FrontendRuleTests(unittest.TestCase):
         self.assertEqual(self.controls(result), [])
         self.assertNotIn("light.private", json.dumps(result))
 
+    def test_boolean_condition_without_children_preserves_sibling_and_marks_gap(self):
+        for kind in ("and", "or", "not"):
+            with self.subTest(kind=kind):
+                result = self.run_scan([{"type": "conditional", "conditions": [{"condition": kind}],
+                    "card": {"type": "button", "entity": "light.a"}}])
+                self.assertEqual(result["coverage"]["references"], "partial")
+                self.assertEqual(result["coverage"]["controls"], "partial")
+                self.assertTrue(any(item["kind"] == "entity_reference" and item["entity_id"] == "light.a"
+                                    for item in result["items"]))
+                self.assertTrue(any(item["kind"] == "coverage_gap"
+                    and item["pointer"] == "/views/0/cards/0/conditions/0"
+                    and item["reason"] == "malformed_selector" for item in result["items"]))
+
     def test_conditions_do_not_invent_context_or_scan_threshold_strings(self):
         result = self.run_scan([{"type": "conditional", "conditions": [{"condition": "or", "conditions": [
             {"condition": "state", "state": "off"}, {"condition": "numeric_state", "entity": "sensor.a", "above": "sensor.bound"}]}],

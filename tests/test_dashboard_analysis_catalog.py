@@ -137,6 +137,20 @@ class InnerPayloadTests(unittest.TestCase):
         self.assertEqual(result["config_hash"], payload["config_hash"])
         self.assertEqual(result["configuration"], payload["config"])
 
+    def test_unusable_configuration_root_refuses_but_empty_views_are_usable(self):
+        for config in ({"views": None}, {"views": "synthetic-private-value"}, {"strategy": False}):
+            with self.subTest(shape=type(next(iter(config.values()))).__name__):
+                payload = self.payload()
+                payload.update(config=config, config_hash=_upstream_config_hash(config))
+                with self.assertRaises(c.AnalysisError) as error:
+                    _analysis_configuration(call_result(payload), "synthetic")
+                self.assertEqual(error.exception.reason, "malformed_response")
+                self.assertFalse(error.exception.retryable)
+                self.assertNotIn("synthetic-private-value", str(error.exception))
+        payload = self.payload()
+        payload.update(config={"views": []}, config_hash=_upstream_config_hash({"views": []}))
+        self.assertEqual(_analysis_configuration(call_result(payload), "synthetic")["configuration"], {"views": []})
+
     def test_unpaired_unicode_is_permanent_malformed_source(self):
         payload = self.payload()
         payload["config"]["name"] = chr(0xD800)
