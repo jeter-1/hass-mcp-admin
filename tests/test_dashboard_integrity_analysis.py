@@ -44,6 +44,8 @@ class InventoryTests(unittest.TestCase):
 
     def test_failed_inventory_cannot_prove_absence(self):
         states = failed_inventory("states", "source_unavailable")
+        self.assertIsNone(states.metadata()["omitted"])
+        self.assertIsNone(project_inventory("states", {}).metadata()["omitted"])
         registry = project_inventory("registry", [{"entity_id": "input_text.private", "disabled_by": None}])
         self.assertEqual(availability("input_text.private", states, registry), "registry_only")
         self.assertEqual(availability("sensor.missing", states, registry), "unassessed")
@@ -344,3 +346,12 @@ class FrontendRuleTests(unittest.TestCase):
         with self.assertRaises(c.AnalysisError):
             scan({'views': []}, 'sha256:' + 'a' * 64,
                  project_inventory('registry', []), project_inventory('states', []), core_version='2026.9.4')
+
+    def test_record_identity_binds_source_location_not_changing_availability(self):
+        cards = [{"type": "button", "entity": "light.a"}]
+        present = self.run_scan(cards, states=[{"entity_id": "light.a", "state": "on"}])
+        down = self.run_scan(cards, states=[{"entity_id": "light.a", "state": "unavailable"}])
+        self.assertEqual([x["id"] for x in present["items"]], [x["id"] for x in down["items"]])
+        self.assertNotEqual(present["projection_hash"], down["projection_hash"])
+        for item in present["items"]:
+            self.assertEqual(item["source_projection_exact"], item["kind"] == "entity_reference")

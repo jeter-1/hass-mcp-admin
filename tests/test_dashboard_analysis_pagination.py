@@ -191,6 +191,32 @@ class PaginationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.collector.calls, 1)
         await self.service.analyze(url_path="home", cursor=token)
 
+    async def test_final_render_owns_capacity_and_cancelled_first_export_leaves_no_snapshot(self):
+        entered, release = threading.Event(), threading.Event()
+        def render(_result):
+            entered.set()
+            release.wait(2)
+            return "synthetic-rendered-page"
+        task = asyncio.create_task(self.service.analyze(url_path="home", renderer=render))
+        try:
+            async with asyncio.timeout(3):
+                while not entered.is_set():
+                    await asyncio.sleep(.001)
+            with self.assertRaises(c.AnalysisError) as error:
+                await self.service.analyze(url_path="other")
+            self.assertEqual(error.exception.reason, "capacity_busy")
+            task.cancel()
+            await asyncio.sleep(.01)
+            self.assertTrue(self.service.active)
+            self.assertFalse(task.done())
+        finally:
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+        self.assertFalse(self.service.active)
+        self.assertEqual(self.service.snapshots, {})
+        await self.service.analyze(url_path="other")
+
     async def test_page_cap_cannot_drop_items_or_create_empty_continuation(self):
         self.service.page_bytes = 1100
         page = await self.service.analyze(url_path="home", limit=100)

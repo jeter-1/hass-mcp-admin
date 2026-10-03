@@ -17,7 +17,7 @@ def project_inventory(kind, value, *, known_secrets=()):
     if kind not in {"states", "registry"}:
         raise c.AnalysisError("invalid_arguments")
     if type(value) is not list:
-        return Inventory(kind, (), False, 0, 0, 0, 0, "malformed_response")
+        return Inventory(kind, (), False, 0, None, 0, 0, "malformed_response")
     records, seen = {}, set()
     invalid = duplicate = 0
     examined = min(len(value), c.INVENTORY_ENTRIES)
@@ -58,7 +58,7 @@ def failed_inventory(kind, reason):
     if failure.reason in {"access_denied", "authority_unavailable", "authority_drift",
                           "identity_mismatch", "hash_mismatch", "source_rejected"}:
         raise failure
-    return Inventory(kind, (), False, 0, 0, 0, 0, failure.reason)
+    return Inventory(kind, (), False, 0, None, 0, 0, failure.reason)
 
 
 def availability(entity, states, registry):
@@ -158,7 +158,9 @@ class DashboardAnalysisProvider:
         authorize()
         report = await c.worker(_freeze, path, dashboard, inventories, sources, authority,
             upstream_metadata, started, _now(), {"requests": budget.requests, "bytes": budget.bytes,
-                                               "logical_reads": 3, "retries": 0}, self.known_secrets)
+                                               "logical_reads": 3, "retries": 0,
+                                               "native_auth_requests": budget.auth_requests,
+                                               "native_auth_frames": budget.auth_frames}, self.known_secrets)
         del dashboard
         authorize()
         return report

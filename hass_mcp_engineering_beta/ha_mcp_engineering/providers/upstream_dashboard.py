@@ -2206,14 +2206,18 @@ def _analysis_configuration(result, url_path):
     configuration = payload.get("config")
     if type(configuration) is not dict or not any(k in configuration for k in ("views", "strategy")):
         raise c.AnalysisError("malformed_response")
-    if "structuredContent" in result and result["structuredContent"] != payload:
+    if "structuredContent" in result and c.canonical(result["structuredContent"]) != c.canonical(payload):
         raise c.AnalysisError("identity_mismatch")
     supplied = payload.get("config_hash")
     if (type(supplied) is not str or not re.fullmatch(r"[0-9a-f]{16}", supplied)
             or not hmac.compare_digest(supplied, _upstream_config_hash(configuration))):
         raise c.AnalysisError("hash_mismatch")
+    try:
+        engineering_hash = _engineering_config_hash(configuration)
+    except (UnicodeError, ValueError, RecursionError):
+        raise c.AnalysisError("malformed_response") from None
     return {"configuration": configuration, "config_hash": supplied,
-            "engineering_config_hash": _engineering_config_hash(configuration)}
+            "engineering_config_hash": engineering_hash}
 
 
 def _canonical_json(value: Any, *, ensure_ascii: bool) -> str:

@@ -157,16 +157,18 @@ async def dashboard_integrity_analysis(
     try:
         c.validate_arguments({"url_path": url_path, "limit": limit, "cursor": cursor})
         service = DASHBOARD_ANALYSIS.require()
-        result = await service.analyze(url_path=url_path, limit=limit, cursor=cursor)
-        expected = service.provider.authority()
+        def render_result(result):
+            partial = any(v != "complete" for v in result["header"]["coverage"].values())
+            response = SuccessResponse(operation="dashboard_integrity_analysis",
+                summary="Returned frozen configured dashboard evidence with explicit coverage.", data=result,
+                metadata={**metadata, "completeness": "partial" if partial else "complete"},
+                timing=timing_since(started), request_id=current_request_id())
+            return _analysis_json(response, maximum)
+
+        result, rendered = await service.analyze(url_path=url_path, limit=limit, cursor=cursor,
+                                                 renderer=render_result)
         partial = any(v != "complete" for v in result["header"]["coverage"].values())
         metadata["completeness"] = "partial" if partial else "complete"
-        response = SuccessResponse(operation="dashboard_integrity_analysis",
-            summary="Returned frozen configured dashboard evidence with explicit coverage.", data=result,
-            metadata=metadata, timing=timing_since(started), request_id=current_request_id())
-        rendered = await c.worker(_analysis_json, response, maximum)
-        if service.provider.authority() != expected:
-            raise c.AnalysisError("authority_drift")
         if telemetry:
             telemetry.completeness = metadata["completeness"]
             telemetry.result_status = "partial" if partial else "success"

@@ -51,8 +51,8 @@ class Scanner:
         if self.stopped:
             return
         item = dict(kind=kind, pointer=pointer, rule_id=rule_id,
-                    source_projection_exact=True, **values)
-        item["id"] = c.digest([c.MODEL, self.fingerprint, item])
+                    source_projection_exact=kind == "entity_reference", **values)
+        item["id"] = self.item_id(item)
         if item["id"] in self.ids:
             return
         encoded = c.canonical(item)
@@ -65,6 +65,13 @@ class Scanner:
         self.items.append(item)
         self.ids.add(item["id"])
         self.bytes += len(encoded)
+
+    def item_id(self, item):
+        # Location identity is stable across inventory availability changes.
+        # Slots distinguish multiple controls inferred at the same real node;
+        # gap reasons distinguish separate unassessed behaviors there.
+        return c.digest([c.MODEL, self.fingerprint, item["kind"], item["pointer"],
+                         item["rule_id"], item.get("slot"), item.get("reason")])
 
     def gap(self, pointer, reason="unsupported_component", *, conditional=False):
         self.partial = True
@@ -432,8 +439,8 @@ class Scanner:
     def finish(self):
         if self.truncated:
             item = dict(kind="coverage_gap", pointer="", rule_id="coverage", reason="structural_limit",
-                        conditional=False, source_projection_exact=True)
-            item["id"] = c.digest([c.MODEL, self.fingerprint, item])
+                        conditional=False, source_projection_exact=False)
+            item["id"] = self.item_id(item)
             if item["id"] not in self.ids:
                 self.items.append(item)
         partial = self.partial or self.truncated

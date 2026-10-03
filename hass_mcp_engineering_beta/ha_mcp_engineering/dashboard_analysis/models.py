@@ -48,7 +48,7 @@ def _scalar(key, value, known_secrets):
     if key in _ENUMS:
         valid = type(value) is str and value in _ENUMS[key]
     elif key in _COUNTS:
-        valid = type(value) is int and 0 <= value <= c.INVENTORY_NODES
+        valid = (key == "omitted" and value is None) or (type(value) is int and 0 <= value <= c.INVENTORY_NODES)
     elif key in _FLAGS:
         valid = type(value) is bool
     elif key == "failure":
@@ -88,10 +88,11 @@ def validate_projection(header, items, *, known_secrets=()):
                 else:
                     _scalar("processing_truncated" if k == "processing_truncated" else "examined", v, known_secrets)
         elif key == "transport":
-            if type(value) is not dict or set(value) != {"requests", "bytes", "logical_reads", "retries"}:
+            if type(value) is not dict or set(value) != {"requests", "bytes", "logical_reads", "retries", "native_auth_requests", "native_auth_frames"}:
                 raise c.AnalysisError("malformed_response")
             if (any(type(v) is not int or not 0 <= v <= c.TOTAL_BYTES + 65_536 for v in value.values())
-                    or value["retries"] != 0 or value["logical_reads"] != 3):
+                    or value["retries"] != 0 or value["logical_reads"] != 3
+                    or value["native_auth_requests"] > 1 or value["native_auth_frames"] > 2):
                 raise c.AnalysisError("malformed_response")
         elif key == "authority":
             patterns = {"core_authority_hash": _HASH, "upstream_authority_hash": _HASH,
@@ -146,7 +147,7 @@ class Inventory:
     records: tuple[tuple[str, str], ...]
     complete: bool
     examined: int
-    omitted: int
+    omitted: int | None
     invalid: int
     duplicate: int
     failure: str | None = None

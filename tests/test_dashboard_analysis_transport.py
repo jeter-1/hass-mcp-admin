@@ -79,8 +79,11 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
                     await ws.send_json({"id": incoming["id"], "type": "result", "success": False,
                                         "error": {"code": self.registry_error_code, "message": "synthetic-secret"}})
                 else:
-                    await ws.send_json({"id": incoming["id"], "type": "result", "success": True,
-                                        "result": self.registry})
+                    payload = {"id": incoming["id"], "type": "result", "success": True,
+                               "result": self.registry}
+                    raw = json.dumps(payload)
+                    size = getattr(self, "registry_wire_bytes", len(raw))
+                    await ws.send_str(raw + " " * max(0, size - len(raw)))
         return ws
 
     async def forbidden(self, request):
@@ -103,6 +106,20 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(peer.websocket.closed)
         self.assertEqual(self.budget.requests, 2)
         self.assertGreaterEqual(self.authority_checks, 5)
+
+    async def test_retired_authority_after_greeting_prevents_authentication_message(self):
+        async with self.client.collection("2026.9.4", self.authorize, self.budget) as peer:
+            original = peer.receive
+            async def retire(*args, **kwargs):
+                value = await original(*args, **kwargs)
+                self.authorized = False
+                return value
+            peer.receive = retire
+            with self.assertRaises(c.AnalysisError):
+                await peer.read("registry")
+        self.assertEqual(self.calls, ["websocket"])
+        self.assertEqual(self.budget.auth_requests, 0)
+        self.assertEqual(self.budget.auth_frames, 1)
 
     async def test_unknown_repeated_and_unavailable_authority_never_dispatch(self):
         async with self.client.collection("2026.9.4", self.authorize, self.budget) as peer:
@@ -134,6 +151,20 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
                     await peer.read("registry")
         parser.assert_not_called()
         self.assertEqual(self.calls, ["websocket"])
+
+    async def test_oversize_registry_frame_never_reaches_registry_json_decode(self):
+        self.registry_wire_bytes = 1026
+        original, decoded_sizes = c.parse, []
+        def parser(raw, **kwargs):
+            decoded_sizes.append(len(raw))
+            return original(raw, **kwargs)
+        with patch.object(c, "INVENTORY_BYTES", 1024), patch.object(c, "parse", parser):
+            async with self.client.collection("2026.9.4", self.authorize, self.budget) as peer:
+                with self.assertRaises(c.AnalysisError):
+                    await peer.read("registry")
+        self.assertEqual(len(decoded_sizes), 2)  # greeting and auth_ok only
+        self.assertTrue(all(size < 1024 for size in decoded_sizes))
+        self.assertEqual(self.calls[-1], {"id": 1, "type": "config/entity_registry/list"})
 
     async def test_access_denial_not_partial_or_reflected(self):
         self.registry_error = True
@@ -456,6 +487,60 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(c.AnalysisError):
             await self.call()
         self.assertEqual(self.calls, [])
+
+    async def test_nonboolean_wire_error_flag_refuses_before_sdk_coercion(self):
+        for value in (0, 1, "false", None):
+            self.budget = CollectionBudget()
+            self.call_raw = c.canonical({"jsonrpc": "2.0", "id": 2, "result": {
+                "content": [{"type": "text", "text": "{}"}], "isError": value}})
+            with self.assertRaises(c.AnalysisError) as error:
+                await self.call()
+            self.assertEqual(error.exception.reason, "malformed_response")
+            self.assertFalse(error.exception.retryable)
+
+    async def test_sdk_debug_logs_withhold_analysis_values_but_preserve_other_contexts(self):
+        import logging
+        from ha_mcp_engineering.clients.dashboard_analysis import _SDK_LOGGERS
+        records = []
+        class Capture(logging.Handler):
+            def emit(self, record):
+                records.append(self.format(record))
+        capture = Capture()
+        loggers = [logging.getLogger(name) for name in _SDK_LOGGERS]
+        levels = [logger.level for logger in loggers]
+        disabled = [logger.disabled for logger in loggers]
+        self.arguments["url_path"] = "synthetic-private-path"
+        self.transport._url += "?token=synthetic-endpoint-private"
+        self.call_raw = c.canonical({"jsonrpc": "2.0", "id": 2, "result": {
+            "content": [{"type": "text", "text": "synthetic-payload-private"}], "isError": False}})
+        self.delay_at, self.delay = "tools/list", .02
+        async def concurrent():
+            await self.entered.wait()
+            loggers[0].debug("synthetic-ordinary-concurrent-log")
+        other = asyncio.create_task(concurrent())
+        try:
+            for logger in loggers:
+                logger.addHandler(capture)
+                logger.setLevel(logging.DEBUG)
+                # The old transport disables several SDK loggers by default.
+                # Exercise the stronger privacy contract even if an embedding
+                # application explicitly re-enables DEBUG diagnostics.
+                logger.disabled = False
+            await self.call()
+            await other
+            loggers[0].debug("synthetic-ordinary-after-log")
+        finally:
+            other.cancel()
+            await asyncio.gather(other, return_exceptions=True)
+            for logger, level, was_disabled in zip(loggers, levels, disabled):
+                logger.removeHandler(capture)
+                logger.setLevel(level)
+                logger.disabled = was_disabled
+        joined = "\n".join(records)
+        self.assertIn("synthetic-ordinary-concurrent-log", joined)
+        self.assertIn("synthetic-ordinary-after-log", joined)
+        for private in ("synthetic-private-path", "synthetic-endpoint-private", "synthetic-payload-private"):
+            self.assertNotIn(private, joined)
 
     async def test_admission_refusal_no_repeat_or_dashboard_dispatch(self):
         from ha_mcp_engineering.clients.mcp import DashboardTransportError

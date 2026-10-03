@@ -137,6 +137,15 @@ class InnerPayloadTests(unittest.TestCase):
         self.assertEqual(result["config_hash"], payload["config_hash"])
         self.assertEqual(result["configuration"], payload["config"])
 
+    def test_unpaired_unicode_is_permanent_malformed_source(self):
+        payload = self.payload()
+        payload["config"]["name"] = chr(0xD800)
+        payload["config_hash"] = _upstream_config_hash(payload["config"])
+        with self.assertRaises(c.AnalysisError) as error:
+            _analysis_configuration(call_result(payload), "synthetic")
+        self.assertEqual(error.exception.reason, "malformed_response")
+        self.assertFalse(error.exception.retryable)
+
     def test_contradictions_are_permanent_and_never_reflected(self):
         cases = []
         for key, value in (("url_path", "synthetic-private-value"),
@@ -147,6 +156,7 @@ class InnerPayloadTests(unittest.TestCase):
         cases.extend([{"content": []}, {"content": [{"type": "image", "data": "synthetic-private-value"}]},
                       dict(call_result(self.payload()), isError=0),
                       dict(call_result(self.payload()), structuredContent={}),
+                      dict(call_result(self.payload()), structuredContent=dict(self.payload(), success=1)),
                       {"content": [{"type": "text", "text": '{"success":true,"success":false}'}]},
                       {"content": [{"type": "text", "text": '{"success":NaN}'}]}])
         for result in cases:
@@ -275,6 +285,8 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["header"]["transport"]["logical_reads"], 3)
         self.assertTrue(data["header"]["default_rules_applicable"])
         self.assertEqual(data["header"]["transport"]["retries"], 0)
+        self.assertEqual(data["header"]["transport"]["native_auth_requests"], 1)
+        self.assertEqual(data["header"]["transport"]["native_auth_frames"], 2)
 
     async def test_reviewed_8_4_3_dashboard_descriptor_uses_existing_admission(self):
         from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
@@ -368,7 +380,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_retirement_after_projection_and_after_page_serialization(self):
         original = c.worker
-        for point in ("_freeze", "_analysis_json"):
+        for point in ("_freeze", "render_result"):
             async def retire(function, *args, **kwargs):
                 result = await original(function, *args, **kwargs)
                 if function.__name__ == point:
@@ -377,14 +389,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
             with patch.object(c, "worker", retire):
                 result = await self.invoke()
             self.assertFalse(result["success"])
-            if point == "_freeze":
-                self.assertEqual(self.service.snapshots, {})
-            else:
-                # The immutable snapshot was committed before serialization;
-                # its stale authority prevents any subsequent export.
-                for snapshot in self.service.snapshots.values():
-                    with self.assertRaises(c.AnalysisError):
-                        self.service._check_authority(snapshot)
+            self.assertEqual(self.service.snapshots, {})
 
     async def test_full_assembled_responsiveness_with_cpu_and_gc_attribution(self):
         command = [sys.executable, "-I", "-B", "-c",
@@ -406,6 +411,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
         raw = c.canonical(values)
         self.states_raw = raw + b" " * (c.INVENTORY_BYTES - len(raw))
         self.registry = [{"entity_id": x["entity_id"], "disabled_by": None, "opaque": "x" * 340} for x in values]
+        self.registry_wire_bytes = c.INVENTORY_BYTES
         self.configuration = {"views": [{"cards": [{"type": "button", "entity": f"sensor.sample{i}"}
                                                    for i in range(300)]}],
                               "opaque": "x" * 1_950_000}
@@ -456,7 +462,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
                     await stress
             self.assertTrue(result["success"], result)
             for name in ("_analysis_handshake", "_analysis_configuration", "project_inventory",
-                         "_freeze", "_prepare", "_page", "_analysis_json"):
+                         "_freeze", "_prepare", "_page", "render_result"):
                 self.assertIn(name, stages)
                 self.assertNotIn(owner, stages[name])
             print(json.dumps({"fixture": "assembled_dashboard_admission_hash_scan_export",

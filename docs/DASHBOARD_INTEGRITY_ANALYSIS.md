@@ -10,7 +10,9 @@ It is **not a completed release candidate**: the central provider capability enu
 and routing/policy entries need two protected paths omitted from the approved
 file boundary (`providers/models.py` and `providers/routing.py`). Their exact
 additive patch is prepared for owner approval. Current routing-policy tests
-correctly fail until that scope is resolved. No release/version/deployment is
+correctly fail until that scope is resolved. Five legacy name-list tests also
+need approval for the prepared additive-name reconciliation; their existing
+descriptor/hash assertions remain intact. No release/version/deployment is
 included. Exact frontend execution, disposable exact Core/ha-mcp acceptance,
 exact-head CI and independent dashboard review remain pending.
 
@@ -21,6 +23,8 @@ The first request performs three logical evidence reads: one admitted upstream
 `list_only=false` and `include_screenshot=false`; native `GET /api/states`; and
 native WebSocket `config/entity_registry/list`. Initialization, bounded catalog
 discovery, authentication and MCP session cleanup are additional wire exchanges.
+Native authentication requests and received text frames have separate bounded
+counters; the request counter retains its HTTP/upgrade-attempt meaning.
 No other Home Assistant command, retry, redirect, provider refresh or fallback
 is reachable from this path. Existing provider entry points retain their behavior.
 
@@ -38,6 +42,7 @@ and registry inventories without contradictory identities. Categories are
 `absent_from_observed_inventories`, and `unassessed`. Absence means absent from
 those observations, not globally deleted. Duplicate/malformed/sanitized identities
 prevent authoritative absence; state values and registry names are discarded.
+An unusable inventory reports an unknown omitted count as null, not a fabricated zero.
 
 ## Rule profile and output
 
@@ -71,7 +76,10 @@ Unmapped Core versions retain literal observations and mark defaults unsupported
 
 The deterministic item stream contains entity references, controls and coverage
 gaps. IDs bind the model, source configuration fingerprint, safe original pointer,
-kind and rule/slot. Inferred defaults use their real card/row pointer. Reference
+kind and rule/slot (plus reason for gaps), independently of changing inventory
+availability. Inferred defaults use their real card/row pointer. Only unchanged
+literal entity references assert `source_projection_exact`; controls and gaps
+are derived projections. Reference
 occurrences and unique identifiers are counted separately. Processing truncation
 marks counts as lower bounds; pagination alone does not. Independent reference,
 availability and control coverage cannot be globally complete while a branch or
@@ -105,7 +113,8 @@ references or 1,024 retained items; pointers/IDs are bounded to 256 characters.
 Pure admission, decoding, hashes, projections, scanning, fitting and serialization
 run in finite owned workers. Network/session tasks and authority callbacks remain
 on the owning event loop. Cancellation drains detached work before capacity is
-released, including continuation pages. Tests measure the assembled admission/
+released, including continuation pages and final envelope serialization. A
+failed/cancelled first export discards its unpublished snapshot. Tests measure the assembled admission/
 read/hash/scan/export path with natural GC, loop-thread CPU, wall gaps and a
 controlled contention run. The tests use a fresh child to isolate suite heap
 history, without disabling GC or raising performance bounds.
@@ -116,6 +125,9 @@ only rule/tool identity, validated numeric limit, cursor presence, fixed outcome
 counts, provider attribution and an opaque report fingerprint. It omits raw path,
 cursor, argument values and unknown keys, including on invalid requests. Errors
 use fixed codes; only capacity/timeout/source-unavailable failures may be retryable.
+A context-local filter suppresses SDK/HTTP diagnostics for this analyzer even
+if DEBUG is explicitly enabled; concurrent ordinary logs and existing logger
+settings are preserved.
 The server itself never retries.
 
 ## Preservation, validation and recovery

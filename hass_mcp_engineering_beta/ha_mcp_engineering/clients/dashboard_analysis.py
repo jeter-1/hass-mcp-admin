@@ -1,14 +1,16 @@
 """Closed native inventory reads, isolated from all existing client defaults.
 
-No public route composes this client yet. Its caller must establish all three
+The dashboard analyzer composes this client. Its caller establishes all three
 Core profiles plus upstream authority, and revalidate the frozen authority at
 each dispatch/return. Only states and entity-registry inventory can be read.
 """
 
 import asyncio
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 import json
 import inspect
+import logging
 import time
 
 import aiohttp
@@ -20,6 +22,22 @@ from ..observability import METRICS
 from ..request_context import current_telemetry
 
 
+_PRIVATE_ANALYSIS_LOGS = ContextVar("dashboard_analysis_private_sdk_logs", default=False)
+_SDK_LOGGERS = ("mcp.client.streamable_http", "client", "httpx", "httpcore.connection",
+                "httpcore.http11", "httpcore.http2", "httpcore.proxy", "httpcore.socks")
+
+
+class _AnalysisLogFilter(logging.Filter):
+    def filter(self, _record):
+        # Locked SDK/HTTP client DEBUG records contain arguments, URL/session
+        # identity and provider text. Suppress them only in this request's
+        # copied context; preserve concurrent old callers and logger settings.
+        return not _PRIVATE_ANALYSIS_LOGS.get()
+
+
+_ANALYSIS_LOG_FILTER = _AnalysisLogFilter()
+
+
 class CollectionBudget:
     """One finite shared budget, including upstream discovery/authentication."""
 
@@ -28,6 +46,7 @@ class CollectionBudget:
         self.started = clock()
         self.bytes = 0
         self.requests = 0
+        self.auth_requests = self.auth_frames = 0
         self.exhausted = False
 
     def remaining(self):
@@ -129,6 +148,8 @@ class InventoryPeer:
         frame = await self.websocket.receive()
         if frame.type != aiohttp.WSMsgType.TEXT:
             raise c.AnalysisError("malformed_response")
+        if auth:
+            self.budget.auth_frames += 1
         # Bound characters before UTF-8 allocation, bytes before JSON decoding.
         if len(frame.data) > maximum:
             raise c.AnalysisError("response_limit")
@@ -154,6 +175,8 @@ class InventoryPeer:
                 raise c.AnalysisError("malformed_response")
             if greeting.get("ha_version") != self.version:
                 raise c.AnalysisError("authority_drift")
+            self.authorize()
+            self.budget.auth_requests += 1
             await self.websocket.send_json({"type": "auth", "access_token": self.client._token})
             authenticated = await self.receive(c.AUTH_BYTES, auth=True)
             if authenticated.get("type") != "auth_ok":
@@ -335,6 +358,11 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
                     or ("result" in decoded) == ("error" in decoded)
                     or "method" in decoded):
                 raise DashboardTransportError("protocol_error", retryable=False)
+            if operation == "tools/call" and "result" in decoded:
+                result = decoded["result"]
+                if (type(result) is not dict or ("isError" in result
+                        and type(result["isError"]) is not bool)):
+                    raise c.AnalysisError("malformed_response")
             headers = dict(response.headers)
             headers["content-type"] = "application/json"
             headers.pop("content-length", None)
@@ -344,6 +372,17 @@ class _AnalysisMcpHttp(httpx.AsyncBaseTransport):
 
 
 async def bounded_mcp_read(transport, arguments, capability_validator, *, authorize, budget):
+    for name in _SDK_LOGGERS:
+        logging.getLogger(name).addFilter(_ANALYSIS_LOG_FILTER)
+    token = _PRIVATE_ANALYSIS_LOGS.set(True)
+    try:
+        return await _bounded_mcp_read(transport, arguments, capability_validator,
+                                       authorize=authorize, budget=budget)
+    finally:
+        _PRIVATE_ANALYSIS_LOGS.reset(token)
+
+
+async def _bounded_mcp_read(transport, arguments, capability_validator, *, authorize, budget):
     """Keep network/session ownership on the caller's loop; offload pure work.
 
     A per-call asyncio.run worker would wait for a blocked default-executor DNS

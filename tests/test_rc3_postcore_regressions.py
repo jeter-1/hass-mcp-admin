@@ -318,7 +318,7 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         self.network.records[0]["name"] = False
         await self.core.reconcile_once("synthetic_malformed_display")
         await gateway.initialize(server)
-        self.assertEqual(len(registered_tools(server)), 77)
+        self.assertEqual(len(registered_tools(server)), 78)
         self.assertEqual({x["tool"] for x in gateway.health_snapshot()["core_withheld_tools"]},
                          set(core_tests.DEVICE_DEPENDENT_DELEGATED_TOOLS))
         result = json.loads(await registered_tools(server)["ha_get_state"].run(

@@ -114,7 +114,7 @@ class DashboardAnalysisService:
             hashed.update(chunk)
         return FrozenReport(encoded_header, encoded_items, report.authority, "sha256:" + hashed.hexdigest())
 
-    async def analyze(self, *, url_path, limit=25, cursor=""):
+    async def analyze(self, *, url_path, limit=25, cursor="", renderer=None):
         c.validate_arguments({"url_path": url_path, "limit": limit, "cursor": cursor})
         caller = current_caller_id()
         if not caller or caller == "anonymous":
@@ -123,7 +123,23 @@ class DashboardAnalysisService:
             raise c.AnalysisError("capacity_busy")
         self.active = True
         try:
-            return await self._analyze(url_path, limit, cursor, caller)
+            result = await self._analyze(url_path, limit, cursor, caller)
+            if renderer is None:
+                return result
+            key = result["snapshot_id"]
+            snapshot = self.snapshots[key]
+            try:
+                self._check_authority(snapshot)
+                rendered = await c.worker(renderer, result)
+                self._check_authority(snapshot)
+                return result, rendered
+            except BaseException:
+                # A failed first export must not consume a snapshot slot for
+                # a cursor the caller never received. Continuations retain the
+                # original immutable snapshot and its original expiry.
+                if not cursor:
+                    self.snapshots.pop(key, None)
+                raise
         finally:
             self.active = False
 
