@@ -20,6 +20,7 @@ REQUIRED_JOBS = (
     "prepare_exact_image_matrix",
     "exact-image-read-gateway",
     "exact-addon-runtime-acceptance",
+    "dashboard-disposable",
 )
 
 
