@@ -59,6 +59,10 @@ class CaptureError(GovernanceError):
         super().__init__(code, details={"reason": reason})
         self.reason = reason
 
+    @property
+    def retryable(self) -> bool:
+        return self.reason in {"capacity_busy", "timeout", "source_unavailable"}
+
 
 def validate_arguments(arguments):
     if (type(arguments) is not dict or set(arguments) - {"limit", "cursor"}
