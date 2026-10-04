@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.0-beta.16 - Bounded garage configuration eligibility
+
+- Admit only the proved minimal retry-removal or complete caller-owned retry
+  transformation through the existing externally approved configuration route.
+- Preserve all 11 positive guards in the full design, its response protocol,
+  policy rechecks, wait durations and accepted caller modes.
+- Require active F3, whole-baseline and prefix checks, final-bundle verification
+  and existing one-dispatch ownership; no legacy-writer fallback is available.
+- Keep prohibited script restoration unavailable and caller-only recovery
+  explicitly partial. D2 still gates household application; no live action is
+  authorized by installing this capability.
+- Preserve all 83 descriptors, 21 Core profiles, signed applicability, provider
+  admission, durable formats, dependencies, workflows and stable v1.1.2.
+- Govee package administration and HAMCP-151 restart work remain separate.
+  Source/disposable proof, release validation and installed read-only acceptance
+  are distinct from a future household configuration change.
+
 ## 2.4.0-beta.15 - Bounded readiness and dashboard integrity analysis
 
 - Remove retained-history scans from ordinary F3 request readiness; keep reads

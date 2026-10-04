@@ -441,3 +441,14 @@ must not access the deployed environment.
 
 Historical v1.1.2 source (`hass_mcp_admin`) is outside this procedure. The
 retired add-on must not be re-enabled as an Engineering rollback.
+
+## Proved retry configuration transformations
+
+HAMCP-135 adds the bounded [retry transformation proof](HAMCP135_CONFIGURATION_ELIGIBILITY.md)
+to the existing configuration-plan route. A complete server-derived proof admits
+one external owner `plan_approval`, while retaining high/safety-critical
+consequence disclosure. It binds the whole before/after bundle, all guarded
+sites, modes, timing and dependency order through existing policy and plan hashes.
+No client marker, old prohibited plan or prior approval supplies this authority.
+A script inverse that restores internal retry remains outside this forward class;
+an unavailable/partial inverse is not approval-ready recovery.

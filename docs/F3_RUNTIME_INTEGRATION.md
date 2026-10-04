@@ -508,3 +508,18 @@ A durable dispatch intent is not required to retry exact bookkeeping. Existing
 orphan cleanup keeps priority when it still has pending work; otherwise every
 selected terminal class passes the same identity, sequence, projection, audit
 and fault-revision checks. This does not grant execution or hold-release authority.
+
+## HAMCP-135 configuration bundle checks
+
+The [bounded retry transformation](HAMCP135_CONFIGURATION_ELIGIBILITY.md) retains
+the existing fixed script/automation adapters. For plans with a recomputed valid
+proof, a sequence wrapper checks every baseline before first dispatch, then the
+verified/new and unstarted/old prefix under the complete lock union before each
+later child. Existing current-child validation and stale checks still run last.
+The last child's normal or recovery observation checks the complete final bundle;
+historical earlier-child success alone does not establish that final state.
+Local drift/refusal does not latch an execution-storage fault. Post-intent
+recovery remains observation-only, and approval/intent/dispatch ownership stays
+with the shared executor. Configuration readback does not certify reload or
+physical behavior. The separately governed inverse remains unavailable when it
+is incomplete or would restore an unproved script retry.
