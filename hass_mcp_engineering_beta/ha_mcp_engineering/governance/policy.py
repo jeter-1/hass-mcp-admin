@@ -18,6 +18,7 @@ from .models import (
 )
 from .normalize import stable_hash
 from .risk import SAFETY_CRITICAL_SERVICES
+from .configuration_eligibility import bound_proof, local_member_marked, markers
 
 
 POLICY_VERSION = "f2-v2"
@@ -420,6 +421,15 @@ def configuration_operation_policy(
             for warning in operation.risk.warnings
         )
     )
+    if owner_authoritative and local_member_marked(operation):
+        # Whole-composition revalidation occurs in _single_plan_policy. This
+        # member classification also supplies the bound review projection.
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            max(risk_delta, RiskDelta.HIGH, key=lambda item: _RISK_RANK[item]),
+            consequence,
+            tuple(sorted({*reasons, "proved_configuration_retry_transfer", "owner_decision_required"})),
+        )
     if consequence_uncertain and exact_automation_update:
         return OperationPolicyClassification(
             ApprovalPolicyClass.ELEVATED_ADMIN,
@@ -705,6 +715,12 @@ def _single_plan_policy(
                     ("unknown_policy_classification",),
                 ),
             )
+        if any(markers(op) for op in plan.operations) and bound_proof(plan.operations) is None:
+            return (OperationPolicyClassification(
+                ApprovalPolicyClass.PROHIBITED, RiskDelta.HIGH,
+                PhysicalConsequence.SAFETY_CRITICAL,
+                ("configuration_retry_proof_invalid",),
+            ),)
         return tuple(
             configuration_operation_policy(
                 operation,
@@ -926,6 +942,8 @@ def _evaluate_change_policy_version(
                     for operation in plan.operations
                 )
             )
+            or (plan.operation == ChangeOperation.CONFIGURATION_PLAN
+                and bound_proof(plan.operations) is not None)
             or _exact_existing_dashboard_update(plan)
         )
     )

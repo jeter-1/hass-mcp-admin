@@ -1,0 +1,202 @@
+{
+  "provenance": "Separately sanitized configuration bodies derived from accepted R1. All household identities and reporting/metadata text replaced before hashing. Not persisted records or historical compatibility evidence.",
+  "members": {
+    "script": {
+      "resource_type": "script",
+      "target_id": "fixture_close",
+      "baseline": {
+        "alias": "Synthetic alias",
+        "description": "Synthetic description",
+        "mode": "single",
+        "icon": "mdi:garage-alert",
+        "sequence": [
+          {
+            "action": "cover.close_cover",
+            "target": {
+              "entity_id": "cover.garage_fixture"
+            }
+          },
+          {
+            "wait_for_trigger": [
+              {
+                "trigger": "state",
+                "entity_id": "cover.garage_fixture",
+                "to": "closed"
+              }
+            ],
+            "timeout": "00:00:30",
+            "continue_on_timeout": true
+          },
+          {
+            "choose": [
+              {
+                "conditions": [
+                  {
+                    "condition": "state",
+                    "entity_id": "cover.garage_fixture",
+                    "state": "closed"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "action": "notify.fixture_8",
+                    "data": {
+                      "title": "Synthetic title",
+                      "message": "Synthetic message"
+                    }
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "name": "Synthetic name",
+                      "message": "Synthetic message",
+                      "entity_id": "cover.garage_fixture"
+                    }
+                  }
+                ]
+              }
+            ],
+            "default": [
+              {
+                "action": "cover.close_cover",
+                "target": {
+                  "entity_id": "cover.garage_fixture"
+                }
+              },
+              {
+                "wait_for_trigger": [
+                  {
+                    "trigger": "state",
+                    "entity_id": "cover.garage_fixture",
+                    "to": "closed"
+                  }
+                ],
+                "timeout": "00:00:30",
+                "continue_on_timeout": true
+              },
+              {
+                "choose": [
+                  {
+                    "conditions": [
+                      {
+                        "condition": "state",
+                        "entity_id": "cover.garage_fixture",
+                        "state": "closed"
+                      }
+                    ],
+                    "sequence": [
+                      {
+                        "action": "notify.fixture_8",
+                        "data": {
+                          "title": "Synthetic title",
+                          "message": "Synthetic message"
+                        }
+                      },
+                      {
+                        "action": "logbook.log",
+                        "data": {
+                          "name": "Synthetic name",
+                          "message": "Synthetic message",
+                          "entity_id": "cover.garage_fixture"
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "default": [
+                  {
+                    "action": "notify.fixture_8",
+                    "data": {
+                      "title": "Synthetic title",
+                      "message": "Synthetic message"
+                    }
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "name": "Synthetic name",
+                      "message": "Synthetic message",
+                      "entity_id": "cover.garage_fixture"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "candidate": {
+        "alias": "Synthetic alias",
+        "description": "Synthetic description",
+        "mode": "single",
+        "icon": "mdi:garage-alert",
+        "sequence": [
+          {
+            "action": "cover.close_cover",
+            "target": {
+              "entity_id": "cover.garage_fixture"
+            }
+          },
+          {
+            "wait_for_trigger": [
+              {
+                "trigger": "state",
+                "entity_id": "cover.garage_fixture",
+                "to": "closed"
+              }
+            ],
+            "timeout": "00:00:30",
+            "continue_on_timeout": true
+          },
+          {
+            "choose": [
+              {
+                "conditions": [
+                  {
+                    "condition": "state",
+                    "entity_id": "cover.garage_fixture",
+                    "state": "closed"
+                  }
+                ],
+                "sequence": [
+                  {
+                    "action": "notify.fixture_8",
+                    "data": {
+                      "title": "Synthetic title",
+                      "message": "Synthetic message"
+                    }
+                  },
+                  {
+                    "action": "logbook.log",
+                    "data": {
+                      "name": "Synthetic name",
+                      "message": "Synthetic message",
+                      "entity_id": "cover.garage_fixture"
+                    }
+                  }
+                ]
+              }
+            ],
+            "default": [
+              {
+                "action": "notify.fixture_8",
+                "data": {
+                  "title": "Synthetic title",
+                  "message": "Synthetic message"
+                }
+              },
+              {
+                "action": "logbook.log",
+                "data": {
+                  "name": "Synthetic name",
+                  "message": "Synthetic message",
+                  "entity_id": "cover.garage_fixture"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

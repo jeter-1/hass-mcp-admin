@@ -281,6 +281,50 @@ class _SequenceLockAdapter:
         )
 
 
+class _RetryBundleAdapter(_SequenceLockAdapter):
+    """Whole-bundle checks inside the existing lock/authority envelope.
+
+    Recovery exposes observation only; historical child verification does not
+    establish current whole-bundle state. The last child's observation binds
+    a separate full-bundle readback without adding a durable success schema.
+    """
+
+    def __init__(self, adapter, complete_requests, check, final_member):
+        super().__init__(adapter, complete_requests)
+        self._check = check
+        self._final_member = final_member
+
+    async def preflight(self, prepared, *, acquired_locks):
+        from ..f3.locks import normalize_lock_requests
+
+        if normalize_lock_requests(acquired_locks) != normalize_lock_requests(self._complete):
+            raise ValueError("complete configuration sequence locks are not held")
+        reason = await self._check(False)
+        if reason:
+            return self._adapter._preflight_rejected(prepared, (reason,))
+        # Preserve the adapter's final current-child validation/stale decision.
+        return await super().preflight(prepared, acquired_locks=acquired_locks)
+
+    async def _bundle_observation(self, observation):
+        if not self._final_member or not observation.observation_complete:
+            return observation
+        reason = await self._check(True)
+        code = reason or "retry_bundle_current_verified"
+        return replace(
+            observation,
+            semantic_match=False if reason else observation.semantic_match,
+            intended_result_observed=False if reason else observation.intended_result_observed,
+            evidence_hash=stable_hash({"child": observation.evidence_hash, "bundle": code}),
+            diagnostic_codes=(*observation.diagnostic_codes, code),
+        )
+
+    async def observe(self, prepared, dispatch):
+        return await self._bundle_observation(await self._adapter.observe(prepared, dispatch))
+
+    async def recover(self, prepared, *, context):
+        return await self._bundle_observation(await self._adapter.recover(prepared, context=context))
+
+
 class _LegacyConflictAdapter:
     """Refuse new dispatch while a conflicting historical task is active."""
 
@@ -2006,6 +2050,32 @@ class F3RuntimeIntegration:
             now=self.service.now,
         )
 
+    async def _retry_bundle_check(self, plan, task, current_order, final):
+        from ..governance.configuration_eligibility import bound_proof
+        from ..governance.resources import resource_fingerprint, resource_identity_matches
+
+        proof = bound_proof(plan.operations)
+        if proof is None:
+            return "retry_bundle_proof_invalid"
+        declarations = self.children.declarations_for_task(task.task_id)
+        for index, operation in enumerate(plan.operations):
+            if index < current_order:
+                record = self.children.get(declarations[index]["child_id"])
+                if record is None or not record.terminal or record.normalized_outcome != "succeeded_verified":
+                    return "retry_bundle_prefix_unverified"
+            proposed = final or index < current_order
+            expected = operation.proposed_config_hash if proposed else operation.current_state_fingerprint
+            adapter = self.registry.adapter(f"update_{operation.resource_type}_configuration")
+            try:
+                current = await adapter.gateway.read(operation.resource_type, operation.target_id)
+                if current is None or not resource_identity_matches(operation.resource_type, operation.target_id, current):
+                    return "retry_bundle_identity_mismatch"
+                if resource_fingerprint(operation.resource_type, current) != expected:
+                    return "retry_bundle_state_mismatch"
+            except Exception:
+                return "retry_bundle_read_unavailable"
+        return None
+
     async def _execute_child(
         self,
         plan: Any,
@@ -2037,7 +2107,19 @@ class F3RuntimeIntegration:
         )
         executor = self._executor(evidence_seconds)
         if plan.contract_version in {1, 2}:
-            adapter = _SequenceLockAdapter(adapter, complete_requests)
+            from ..governance.configuration_eligibility import bound_proof, markers
+
+            if plan.contract_version == 2 and any(markers(op) for op in plan.operations):
+                if bound_proof(plan.operations) is None:
+                    raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
+                order = declaration["operation_ordinal"]
+                adapter = _RetryBundleAdapter(
+                    adapter, complete_requests,
+                    lambda final: self._retry_bundle_check(plan, task, order, final),
+                    order == len(plan.operations) - 1,
+                )
+            else:
+                adapter = _SequenceLockAdapter(adapter, complete_requests)
         else:
             if getattr(prepared, "capability_id", None) == DASHBOARD_CAPABILITY_ID:
                 if (
@@ -2585,6 +2667,9 @@ class F3RuntimeIntegration:
     ) -> dict[str, Any]:
         """Create a separately governed reverse update plan; never execute it."""
 
+        from ..governance.configuration_eligibility import bound_proof
+
+        retry_source = bound_proof(source_plan.operations) is not None
         calculated = self.service.plan_hash(source_plan)
         if expected_plan_hash and expected_plan_hash != calculated:
             raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
@@ -2593,11 +2678,14 @@ class F3RuntimeIntegration:
         if source_plan.rollback.request_id:
             existing = self.service.repository.get(source_plan.rollback.request_id)
             if existing is not None:
+                prohibited = retry_source and existing.policy_decision.policy_class.value == "prohibited"
+                partial = retry_source and not prohibited and not source_plan.rollback.available
                 return {
-                    "status": "rollback_plan_created",
+                    "status": ("rollback_unavailable" if prohibited else
+                               "rollback_partial_plan_created" if partial else "rollback_plan_created"),
                     "source_plan_id": source_plan.plan_id,
                     "rollback_plan_id": existing.plan_id,
-                    "approval_required": existing.status != PlanStatus.APPLIED,
+                    "approval_required": not prohibited and existing.status != PlanStatus.APPLIED,
                     "plan_hash": self.service.plan_hash(existing),
                 }
         task = self.service.task_repository.get_for_plan(source_plan.plan_id)
@@ -2703,16 +2791,22 @@ class F3RuntimeIntegration:
             },
         )
         rollback_plan = self.service._load(created["plan_id"])
-        source_plan.rollback.available = True
-        source_plan.rollback.status = "governed_plan_created"
+        prohibited = retry_source and rollback_plan.policy_decision.policy_class.value == "prohibited"
+        partial = bool(retry_source and excluded)
+        source_plan.rollback.available = not (prohibited or partial)
+        source_plan.rollback.status = (
+            "unavailable_policy_prohibited" if prohibited else
+            "partial_governed_plan_created" if partial else "governed_plan_created"
+        )
         source_plan.rollback.requested_at = self.service._timestamp()
         source_plan.rollback.request_id = rollback_plan.plan_id
         self.service._record(source_plan, "rollback_plan_created", "success")
         return {
-            "status": "rollback_plan_created",
+            "status": ("rollback_unavailable" if prohibited else
+                       "rollback_partial_plan_created" if partial else "rollback_plan_created"),
             "source_plan_id": source_plan.plan_id,
             "rollback_plan_id": rollback_plan.plan_id,
-            "approval_required": True,
+            "approval_required": not prohibited,
             "plan_hash": self.service.plan_hash(rollback_plan),
             "operations_to_restore": [item["operation_id"] for item in operations],
             "operations_excluded": excluded,

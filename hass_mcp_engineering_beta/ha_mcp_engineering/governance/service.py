@@ -81,6 +81,11 @@ from .normalize import (
     structured_diff,
 )
 from .risk import classify_risk
+from .configuration_eligibility import (
+    TRIGGER as RETRY_PROOF_TRIGGER,
+    derive_proof,
+    markers as retry_proof_markers,
+)
 from .policy import (
     POLICY_VERSION,
     configuration_operation_policy,
@@ -4569,6 +4574,31 @@ class ChangeGovernanceService:
                 validation_results={"valid": True, "errors": []},
                 dry_run_results=diff,
             )
+            prepared.append(prepared_operation)
+            seen_operation_ids.add(operation_id)
+            seen_targets.add(target_key)
+
+        # Prove the complete immutable composition before risk/policy projection.
+        # Existing unmarked records are never retrofitted by this creation path.
+        retry_proof = derive_proof(prepared)
+        if retry_proof is not None:
+            for operation in prepared:
+                operation.risk.apply_allowed = True
+                operation.risk.evidence.append(
+                    {"trigger": RETRY_PROOF_TRIGGER, "proof": retry_proof}
+                )
+                operation.risk.warnings.append(
+                    "Proved retry transformation; configuration writes are non-atomic, "
+                    "runtime activation is unverified, and script restoration is not eligible."
+                )
+        else:
+            for operation in prepared:
+                if operation.resource_type == "script" and not operation.risk.apply_allowed:
+                    operation.risk.warnings.append(
+                        "No complete retry-transformation proof: required structure "
+                        "is unsupported or its proof bounds were exhausted."
+                    )
+        for prepared_operation in prepared:
             operation_policy = configuration_operation_policy(
                 prepared_operation
             )
@@ -4596,14 +4626,11 @@ class ChangeGovernanceService:
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE,
                     details={
-                        "resource_id": target_id,
-                        "operation_id": operation_id,
+                        "resource_id": prepared_operation.target_id,
+                        "operation_id": prepared_operation.operation_id,
                         "projection_error": exc.reason,
                     },
                 ) from exc
-            prepared.append(prepared_operation)
-            seen_operation_ids.add(operation_id)
-            seen_targets.add(target_key)
 
         try:
             validate_projection_plan_size(prepared)
@@ -7257,6 +7284,15 @@ class ChangeGovernanceService:
             if self.f3_runtime is not None and self.f3_runtime.is_covered_plan(plan):
                 return self.f3_runtime.handle_legacy_apply(
                     plan, expected_plan_hash
+                )
+            if any(retry_proof_markers(op) for op in plan.operations):
+                # This eligibility class requires F3's whole-bundle checks.
+                # Never consume approval or create a legacy execution task
+                # when that execution authority is absent.
+                self._reject_apply(
+                    plan,
+                    ErrorCode.UNSUPPORTED_CHANGE_OPERATION,
+                    details={"required_action": "active_f3_execution_required"},
                 )
             task, reused = self._resolve_task_for_apply(
                 plan, expected_plan_hash
