@@ -25,8 +25,11 @@ from ..f3.contracts import (
 )
 from ..f3.locks import (
     DurableLockStore,
+    LockConflict,
+    LockLeaseExpired,
     LockOwnershipError,
     LockStorageError,
+    LockWaitCancelled,
     StaleRecoveryAction,
     StaleRecoveryDecision,
 )
@@ -110,6 +113,7 @@ from .repository import (
 
 F3_RUNTIME_MODEL = "f3-runtime-integration-v1"
 F3_EXECUTION_AUTHORITY = "f3_child_sequence"
+_INVERSE_LOCK_CAPABILITIES = {"update_automation_configuration", "update_script_configuration"}
 PRODUCTION_LOCK_TIMING = LockTiming(120, 20, 0, 0.05)
 RECOVERY_CADENCE_SECONDS = 30
 RECOVERY_BATCH_SIZE = ACTIVE_RECOVERY_CHECKPOINT_LIMIT
@@ -237,6 +241,40 @@ class RuntimeLockStore(DurableLockStore):
         super().__init__(root, event_sink=event_sink)
         self.children = children
         self.now = now
+        self.integration = None
+
+    def acquire_once(self, requests, *, owner, timing, now=None):
+        requests = tuple(requests)
+        if self.integration is not None and owner.operation_id in _INVERSE_LOCK_CAPABILITIES:
+            try:
+                transferred = self.integration._inverse_lock_acquire(
+                    tuple(requests), owner=owner, timing=timing, now=now or self.now())
+            except (LockOwnershipError, LockLeaseExpired) as exc:
+                # Exact inverse refusal is not a durable-storage outage. Actual
+                # LockStorageError still reaches the executor's fault handling.
+                raise LockConflict(tuple(item.key for item in requests)) from exc
+            if transferred is not None:
+                return transferred
+        return super().acquire_once(requests, owner=owner, timing=timing, now=now)
+
+    def release(self, handle, *, pre_dispatch_cleanup=False):
+        # Acquisition-failure cleanup already holds the child transaction and
+        # has terminal zero-dispatch authority; do not re-enter that transaction.
+        if (not pre_dispatch_cleanup and self.integration is not None
+                and handle.owner.operation_id in _INVERSE_LOCK_CAPABILITIES
+                and self.integration._retain_inverse_locks(handle.owner.task_id)):
+            return ()
+        return super().release(handle, pre_dispatch_cleanup=pre_dispatch_cleanup)
+
+    def recover_expired(self, decisions, **kwargs):
+        if self.integration is not None:
+            for record in self.records():
+                decision = decisions.get((record.key, record.generation))
+                if (decision is not None and decision.action == StaleRecoveryAction.RELEASE
+                        and record.operation_id in _INVERSE_LOCK_CAPABILITIES
+                        and self.integration._retain_inverse_locks(record.task_id)):
+                    raise LockOwnershipError("inverse sequence ownership cannot be released for reacquisition")
+        return super().recover_expired(decisions, **kwargs)
 
     def promote_to_conflict_hold(self, handle, *, reason_code: str) -> None:
         declaration = self.children.declaration(handle.owner.task_id)
@@ -793,6 +831,7 @@ class F3RuntimeIntegration:
             event_sink=self._emit_f3_audit_event,
             now=service.now,
         )
+        self.locks.integration = self
         self._reconstruct_selective_holds()
         self._finish_pending_hold_releases()
         self.provider_identity_reader = provider_identity_reader
@@ -1539,6 +1578,8 @@ class F3RuntimeIntegration:
             holds = getattr(operation, "selective_hold_keys", None) or (
                 resource_lock_key(operation.resource_type, operation.target.target_id),
             )
+            if any(inverse_eligibility.markers(op) for op in plan.operations):
+                holds = tuple(item.key for item in complete_requests)
             declarations.append(
                 child_declaration(
                     public_task_id=task.task_id,
@@ -2106,6 +2147,17 @@ class F3RuntimeIntegration:
     ):
         adapter = self.registry.adapter(declaration["capability_id"])
         record = self.children.get(declaration["child_id"])
+        if (record is not None and not record.terminal and record.dispatch_intent is None
+                and any(inverse_eligibility.markers(op) for op in plan.operations)
+                and datetime.fromisoformat(record.claim_expires_at) <= self.service.now()
+                and any(item.task_id == declaration["child_id"] for item in self.locks.records())):
+            # A crash during acquisition/transfer is still zero-dispatch. Stop
+            # this inverse without changing the old owner before tokenless
+            # reconciliation can prove it. Never release and start a fresh set.
+            self.children.cancel(declaration["child_id"], now=self.service.now(),
+                diagnostic_codes=("inverse_interrupted_acquisition",),
+                expected_claim_generation=record.claim_generation, require_expired_claim=True)
+            record = self.children.get(declaration["child_id"])
         if readback_only:
             if (
                 record is None
@@ -2242,9 +2294,10 @@ class F3RuntimeIntegration:
     def _project(self, plan: Any, task: Any) -> None:
         with self.children.public_projection_transaction():
             current = self.service._load_task(task.task_id)
-            if current.state in TERMINAL_TASK_STATES:
-                return
-            self._project_locked(plan, current)
+            if current.state not in TERMINAL_TASK_STATES:
+                self._project_locked(plan, current)
+        if any(inverse_eligibility.markers(op) for op in plan.operations):
+            self._settle_inverse_sequence_locks(task)
 
     def _enter_public_preflight(self, task: Any) -> Any:
         """Idempotently project pre-intent authority into schema-1 state."""
@@ -2687,6 +2740,165 @@ class F3RuntimeIntegration:
             "provider_dispatch_occurred": False,
             "task": self.service._public_task(task),
         }
+
+    def _inverse_lock_context(self, child_id):
+        """Bounded durable authority; no callback/cache is a retention receipt."""
+        declaration = self.children.declaration(child_id)
+        plan = self.service._load_for_projection(declaration["plan_id"])
+        if not any(inverse_eligibility.markers(op) for op in plan.operations):
+            return None
+        proof = inverse_eligibility.bound(plan)
+        task = self.service._load_task(declaration["public_task_id"])
+        if (proof is None or task.plan_hash != self.service.plan_hash(plan)
+                or task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY):
+            raise LockOwnershipError("inverse sequence binding unavailable")
+        declarations, records = self._validate_sequence_state(task)
+        manifest = self.children.manifest_for_task(task.task_id)
+        if (len(declarations) != len(plan.operations)
+                or manifest["sequence_hash"] != task.legacy_projection.get("sequence_hash")):
+            raise LockOwnershipError("inverse sequence manifest changed")
+        for op, d, record in zip(plan.operations, declarations, records, strict=True):
+            if (d["plan_hash"] != task.plan_hash or d["plan_id"] != plan.plan_id
+                    or d["public_task_id"] != task.task_id
+                    or d["request_id"] != task.execution_request_id
+                    or d["operation_id"] != op.operation_id
+                    or d["operation_dependency_ids"] != op.depends_on
+                    or d["target_type"] != op.resource_type or d["target_id"] != op.target_id
+                    or d["capability_id"] != f"update_{op.resource_type}_configuration"):
+                raise LockOwnershipError("inverse child declaration changed")
+            if record is not None and (
+                    record.identity["task_id"] != d["child_id"]
+                    or record.identity["plan_id"] != plan.plan_id
+                    or record.identity["attempt_id"] != d["attempt_id"]
+                    or record.identity["request_id"] != d["request_id"]
+                    or record.prepared_operation_hash != d["prepared_operation_hash"]
+                    or record.operation != d["capability_id"]
+                    or record.target != {"target_type": op.resource_type, "target_id": op.target_id}):
+                raise LockOwnershipError("inverse child receipt changed")
+        return plan, task, declarations, records
+
+    def _retain_inverse_locks(self, child_id):
+        context = self._inverse_lock_context(child_id)
+        if context is None:
+            return False
+        _plan, _task, declarations, records = context
+        index = next(i for i, d in enumerate(declarations) if d["child_id"] == child_id)
+        record = records[index]
+        if record is None:
+            raise LockOwnershipError("inverse lock owner receipt unavailable")
+        # Only durable terminal settlement allows release. An active successor
+        # (including its token-persistence crash window) must keep ownership.
+        if not record.terminal:
+            return True
+        if record.normalized_outcome != "succeeded_verified":
+            return record.normalized_outcome == "manual_review_required"
+        if index == len(records) - 1:
+            return False
+        successor = records[index + 1]
+        return not (successor is not None and successor.terminal
+                    and successor.dispatch_intent is None
+                    and successor.normalized_outcome != "succeeded_verified")
+
+    @staticmethod
+    def _observed_lock_handle(records, timing):
+        first = records[0]
+        return LockHandle(
+            LockOwner(first.owner_id, first.task_id, first.plan_id, first.operation_id, first.attempt_id),
+            tuple(LockToken(item.key, item.generation, item.mode) for item in records),
+            first.acquired_at, min(item.lease_expires_at for item in records), timing)
+
+    def _inverse_lock_acquire(self, requests, *, owner, timing, now):
+        candidate = self.service.repository.get(owner.plan_id)
+        if candidate is None or not any(inverse_eligibility.markers(op) for op in candidate.operations):
+            return None
+        context = self._inverse_lock_context(owner.task_id)
+        if context is None:
+            return None
+        plan, task, declarations, records = context
+        index = next(i for i, d in enumerate(declarations) if d["child_id"] == owner.task_id)
+        if index == 0:
+            return None
+        d, record = declarations[index], records[index]
+        if (record is not None and record.terminal and record.dispatch_intent is None
+                and record.normalized_outcome == "cancelled_pre_dispatch"):
+            raise LockWaitCancelled("inverse successor was cancelled before transfer")
+        if (record is None or record.terminal or record.dispatch_intent is not None
+                or record.identity["owner_id"] != owner.owner_id
+                or owner.plan_id != plan.plan_id or owner.operation_id != d["capability_id"]
+                or owner.attempt_id != d["attempt_id"]
+                or datetime.fromisoformat(record.claim_expires_at) <= now):
+            raise LockOwnershipError("inverse successor has no exact live claim")
+        previous = records[index - 1]
+        previous_d = declarations[index - 1]
+        if (previous is None or not previous.terminal
+                or previous.normalized_outcome != "succeeded_verified"
+                or previous.dispatch_intent is None or previous.dispatch_count != 1
+                or previous.evidence.get("resulting_state_fingerprint")
+                != plan.operations[index - 1].proposed_config_hash):
+            raise LockOwnershipError("inverse predecessor is not durably verified")
+        try:
+            self.require_rollback_source(plan)
+        except GovernanceError as exc:
+            raise LockOwnershipError("inverse source evidence unavailable at transfer") from exc
+        typed_requests = tuple(LockRequest(item.key, tuple(LockScope(s) for s in item.scopes),
+                                          LockMode(item.mode), item.reason_codes) for item in requests)
+        if (self._complete_lock_hash(plan, typed_requests) != d["complete_lock_request_hash"]
+                or d["complete_lock_request_hash"] != previous_d["complete_lock_request_hash"]):
+            raise LockOwnershipError("inverse complete lock contract changed")
+        observed = tuple(item for item in self.locks.records()
+                         if item.task_id == previous_d["child_id"])
+        if not observed or any(not self._lock_record_matches_execution_authority(previous_d, previous, item)
+                               for item in observed):
+            raise LockOwnershipError("inverse predecessor ownership unavailable")
+        handle = self._observed_lock_handle(observed, timing)
+        if len(previous.lock_tokens) != len(handle.tokens):
+            raise LockOwnershipError("inverse predecessor ownership incomplete")
+        return self.locks.transfer_complete(requests, predecessor=handle,
+            expected_records=observed, owner=owner, timing=timing, now=now)
+
+    def _settle_inverse_sequence_locks(self, task):
+        """Exact terminal cleanup, including a transferred but unrecorded set.
+
+        No live/uncertain owner is released. Expired pre-intent ownership may
+        terminate the partial inverse; it never becomes permission to reacquire.
+        """
+        declarations = self.children.declarations_for_task(task.task_id)
+        if not declarations or self._inverse_lock_context(declarations[0]["child_id"]) is None:
+            return
+        all_locks = self.locks.records()
+        for d in declarations:
+            observed = tuple(item for item in all_locks if item.task_id == d["child_id"])
+            if not observed or self._retain_inverse_locks(d["child_id"]):
+                continue
+            record = self.children.get(d["child_id"])
+            if any(item.conflict_hold for item in observed):
+                continue
+            if record.lock_tokens:
+                if (len(observed) != len(record.lock_tokens) or any(
+                        not self._lock_record_matches_execution_authority(d, record, item) for item in observed)):
+                    raise LockOwnershipError("inverse settlement ownership changed")
+            else:
+                # The existing unrecorded-set primitive binds exact acquisition
+                # tokens before releasing. It requires expired zero-dispatch
+                # authority and checks the immutable full lock hash itself.
+                if (record.dispatch_intent is not None or not record.terminal
+                        or any(datetime.fromisoformat(item.lease_expires_at) > self.service.now()
+                               for item in observed)):
+                    continue
+                def settle(current_declaration, current_record, persist):
+                    if current_declaration != d:
+                        raise LockOwnershipError("inverse settlement declaration changed")
+                    identity = current_record.execution_identity()
+                    return self.locks.settle_unrecorded(
+                        owner=LockOwner(identity.owner_id, identity.task_id, identity.plan_id,
+                                        current_record.operation, identity.attempt_id),
+                        expected_records=observed, complete_request_hash=d["complete_lock_request_hash"],
+                        execution_created_at=current_record.created_at,
+                        execution_updated_at=current_record.updated_at, persist_tokens=persist,
+                        timing=PRODUCTION_LOCK_TIMING, now=self.service.now())
+                self.children.settle_unrecorded_locks(d["child_id"], now=self.service.now(), settle=settle)
+                continue
+            self.locks.release(self._observed_lock_handle(observed, PRODUCTION_LOCK_TIMING))
 
     def _rollback_source_snapshot(self, source):
         try:
@@ -3152,6 +3364,8 @@ class F3RuntimeIntegration:
                 and record.terminal
                 and not runtime["selective_hold_tokens"]
                 and not cleanup_pending
+                and not (declaration["child_id"] in lock_task_ids
+                         and self._inverse_lock_context(declaration["child_id"]) is not None)
             ):
                 continue
             if record is None and parent is not None:
@@ -4908,6 +5122,7 @@ class F3RuntimeIntegration:
         }
 
         stale_release_decisions = {}
+        inverse_settled = set()
         for lock_record in (
             () if deadline_reached() else self.locks.expired_records(now=now)
         ):
@@ -4917,6 +5132,15 @@ class F3RuntimeIntegration:
                 declaration = self.children.declaration(lock_record.task_id)
             except Exception:
                 self._readiness_fault("storage_read")
+                continue
+            context = self._inverse_lock_context(lock_record.task_id)
+            if context is not None:
+                _plan, inverse_task, _declarations, _records = context
+                if inverse_task.task_id not in inverse_settled:
+                    self._settle_inverse_sequence_locks(inverse_task)
+                    inverse_settled.add(inverse_task.task_id)
+                # Expiration is not fresh inverse admission. Only exact
+                # sequence settlement above can release retained generations.
                 continue
             execution = self.children.get(lock_record.task_id)
             execution_class = (
