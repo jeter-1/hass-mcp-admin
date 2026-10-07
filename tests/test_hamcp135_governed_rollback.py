@@ -235,6 +235,35 @@ class RollbackTests(ConfigurationPlanTestCase):
         with patch.object(self.runtime,'_executor',side_effect=create):result=await self.apply_request(request)
         self.assertEqual(checked,[True]);self.assertEqual(result['task_state'],'succeeded_verified')
 
+    async def test_lease_expiring_during_source_proof_cannot_grant_fresh_ownership(self):
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        base=self.service.now();clock=[base];self.service.now=lambda:clock[0]
+        execute=self.runtime._execute_child;acquire=self.runtime._inverse_lock_acquire
+        proof=self.runtime.require_rollback_source;active=False;advanced=False
+        async def step(plan,task,d,*args,**kwargs):
+            if d['operation_ordinal']==1:clock[0]=base+timedelta(seconds=119)
+            return await execute(plan,task,d,*args,**kwargs)
+        def delayed_proof(plan):
+            nonlocal advanced
+            result=proof(plan)
+            if active and not advanced:
+                clock[0]+=timedelta(seconds=2);advanced=True
+            return result
+        def transfer(*args,**kwargs):
+            nonlocal active
+            active=True
+            try:return acquire(*args,**kwargs)
+            finally:active=False
+        with patch.object(self.runtime,'_execute_child',side_effect=step), patch.object(
+                self.runtime,'_inverse_lock_acquire',side_effect=transfer), patch.object(
+                self.runtime,'require_rollback_source',side_effect=delayed_proof):
+            result=await self.apply_request(request)
+        self.assertTrue(advanced)
+        self.assertNotEqual(result['task_state'],'succeeded_verified')
+        self.assertEqual(len(self.writes()),1)
+        self.assertEqual(self.runtime.locks.records(),())
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+
     async def test_transfer_process_loss_before_tokens_and_before_preflight_settles_without_redispatch(self):
         from ha_mcp_engineering.f3.executor import SimulatedProcessLoss
         for stage in ('after_transfer_commit','after_lock_acquisition_before_token_persistence','after_lock_acquisition_before_preflight'):

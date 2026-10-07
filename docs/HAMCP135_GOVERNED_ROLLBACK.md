@@ -73,6 +73,9 @@ receives it through one atomic compare-and-transfer, with new fencing generation
 before its full preflight. The transfer checks the complete observed owner set,
 keys, scopes, modes, evidence, leases and fences against the immutable declarations
 and durable verified predecessor. Other F3 sequences retain their existing rules.
+The live clock is sampled inside the transfer transaction; both predecessor
+leases and the bound successor claim must still be valid after proof processing
+and lock-store contention.
 
 Retention is derived from persisted plan, task, declarations and child receipts;
 an in-memory callback is not its authority. A restart with live predecessor leases

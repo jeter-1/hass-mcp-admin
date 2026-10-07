@@ -2854,7 +2854,8 @@ class F3RuntimeIntegration:
         if len(previous.lock_tokens) != len(handle.tokens):
             raise LockOwnershipError("inverse predecessor ownership incomplete")
         return self.locks.transfer_complete(requests, predecessor=handle,
-            expected_records=observed, owner=owner, timing=timing, now=now)
+            expected_records=observed, owner=owner, timing=timing, now=self.service.now,
+            valid_until=datetime.fromisoformat(record.claim_expires_at))
 
     def _settle_inverse_sequence_locks(self, task):
         """Exact terminal cleanup, including a transferred but unrecorded set.
