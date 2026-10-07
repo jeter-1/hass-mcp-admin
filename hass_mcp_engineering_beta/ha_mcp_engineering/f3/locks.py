@@ -469,7 +469,8 @@ class DurableLockStore:
         expected_records: tuple[LockRecord, ...],
         owner: LockOwner,
         timing: LockTiming,
-        now: datetime | None = None,
+        now: datetime | Callable[[], datetime] | None = None,
+        valid_until: datetime | None = None,
     ) -> LockHandle:
         """Atomically fence an exact complete owner set into its successor.
 
@@ -482,7 +483,7 @@ class DurableLockStore:
         owner.validate()
         timing.validate()
         normalized = normalize_lock_requests(requests)
-        instant = now or utc_now()
+        clock = now if callable(now) else (lambda: now) if now is not None else utc_now
         if (owner.task_id == predecessor.owner.task_id
                 or owner.attempt_id == predecessor.owner.attempt_id
                 or owner.plan_id != predecessor.owner.plan_id):
@@ -501,6 +502,12 @@ class DurableLockStore:
             raise LockOwnershipError("complete transfer contract changed")
 
         def mutate(state: dict[str, Any]) -> tuple[LockHandle, bool]:
+            # Sample after waiting for the transaction and reading storage.
+            # Proof work/lock contention must not refresh an already expired
+            # predecessor lease or successor claim using a stale timestamp.
+            instant = clock()
+            if valid_until is not None and instant >= valid_until:
+                raise LockLeaseExpired("sequence successor claim expired before transfer")
             records = state["records"]
             selected = tuple(item for item in records if self._same_owner(item, predecessor.owner))
             if (selected != expected or any(self._same_owner(item, owner) for item in records)

@@ -298,6 +298,31 @@ class DurableLockStoreTests(unittest.TestCase):
         self.assertEqual(before, self.store.state_path.read_bytes())
         with self.assertRaises(LockConflict): self.acquire(_owner("competitor"), _request("dashboard:a"))
 
+    def test_transfer_samples_clock_and_claim_deadline_inside_transaction(self):
+        first = self.acquire(_owner("a"), _request("dashboard:a"), _request("dashboard:b"))
+        observed = self.store.records()
+        before = self.store.state_path.read_bytes()
+        successor = replace(first.owner, owner_id="next", task_id="next-child", attempt_id="next-attempt")
+        self.clock.advance(59)
+        def delay(stage):
+            if stage == "before_state_read": self.clock.advance(2)
+        self.store._fault_hook = delay
+        with self.assertRaises(LockLeaseExpired):
+            self.store.transfer_complete((_request("dashboard:a"), _request("dashboard:b")),
+                predecessor=first, expected_records=observed, owner=successor,
+                timing=TIMING, now=self.clock.now)
+        self.store._fault_hook = None
+        self.assertEqual(self.store.state_path.read_bytes(), before)
+        # Independent claim-boundary scenario with the original lock still live.
+        self.clock = FakeClock()
+        deadline = self.clock.now() + timedelta(seconds=1)
+        self.clock.advance(2)
+        with self.assertRaises(LockLeaseExpired):
+            self.store.transfer_complete((_request("dashboard:a"), _request("dashboard:b")),
+                predecessor=first, expected_records=observed, owner=successor,
+                timing=TIMING, now=self.clock.now, valid_until=deadline)
+        self.assertEqual(self.store.state_path.read_bytes(), before)
+
     def test_transfer_write_failure_is_atomic_and_post_replace_loss_is_fenced(self):
         first = self.acquire(_owner("a"), _request("dashboard:a"), _request("dashboard:b"))
         before = self.store.state_path.read_bytes()
