@@ -19,6 +19,7 @@ from .models import (
 from .normalize import stable_hash
 from .risk import SAFETY_CRITICAL_SERVICES
 from .configuration_eligibility import bound_proof, local_member_marked, markers
+from . import configuration_rollback_eligibility as inverse_eligibility
 
 
 POLICY_VERSION = "f2-v2"
@@ -421,6 +422,13 @@ def configuration_operation_policy(
             for warning in operation.risk.warnings
         )
     )
+    if owner_authoritative and inverse_eligibility.local_member_marked(operation):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN, RiskDelta.HIGH,
+            PhysicalConsequence.SAFETY_CRITICAL,
+            ("exact_verified_garage_inverse", "owner_decision_required",
+             *(("original_internal_retry_restored",) if operation.resource_type == "script" else ())),
+        )
     if owner_authoritative and local_member_marked(operation):
         # Whole-composition revalidation occurs in _single_plan_policy. This
         # member classification also supplies the bound review projection.
@@ -715,6 +723,11 @@ def _single_plan_policy(
                     ("unknown_policy_classification",),
                 ),
             )
+        if any(inverse_eligibility.markers(op) for op in plan.operations) and inverse_eligibility.bound(plan) is None:
+            return (OperationPolicyClassification(
+                ApprovalPolicyClass.PROHIBITED, RiskDelta.HIGH,
+                PhysicalConsequence.SAFETY_CRITICAL, ("garage_inverse_proof_invalid",),
+            ),)
         if any(markers(op) for op in plan.operations) and bound_proof(plan.operations) is None:
             return (OperationPolicyClassification(
                 ApprovalPolicyClass.PROHIBITED, RiskDelta.HIGH,
@@ -944,6 +957,8 @@ def _evaluate_change_policy_version(
             )
             or (plan.operation == ChangeOperation.CONFIGURATION_PLAN
                 and bound_proof(plan.operations) is not None)
+            or (plan.operation == ChangeOperation.CONFIGURATION_PLAN
+                and inverse_eligibility.bound(plan) is not None)
             or _exact_existing_dashboard_update(plan)
         )
     )
