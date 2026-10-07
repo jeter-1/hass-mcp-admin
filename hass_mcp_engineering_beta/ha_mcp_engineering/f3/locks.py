@@ -461,6 +461,76 @@ class DurableLockStore:
             )
         return handle
 
+    def transfer_complete(
+        self,
+        requests: Iterable[object],
+        *,
+        predecessor: LockHandle,
+        expected_records: tuple[LockRecord, ...],
+        owner: LockOwner,
+        timing: LockTiming,
+        now: datetime | None = None,
+    ) -> LockHandle:
+        """Atomically fence an exact complete owner set into its successor.
+
+        The caller establishes durable sequence/receipt authority. This primitive
+        never grants it, refreshes expired authority, or resolves conflict holds.
+        Compare the entire observation, including lease/reasons, before mutation;
+        an old owner's extra lock or any changed generation refuses the whole set.
+        """
+        predecessor.validate()
+        owner.validate()
+        timing.validate()
+        normalized = normalize_lock_requests(requests)
+        instant = now or utc_now()
+        if (owner.task_id == predecessor.owner.task_id
+                or owner.attempt_id == predecessor.owner.attempt_id
+                or owner.plan_id != predecessor.owner.plan_id):
+            raise LockOwnershipError("invalid sequence successor")
+        if not expected_records or len(expected_records) > MAX_LOCK_TOKENS:
+            raise LockOwnershipError("incomplete transfer observation")
+        expected = tuple(sorted(expected_records, key=lambda item: item.key.encode("utf-8")))
+        for item in expected:
+            item.validate()
+        if (len({item.key for item in expected}) != len(expected)
+                or tuple(LockToken(item.key, item.generation, item.mode) for item in expected)
+                != predecessor.tokens):
+            raise LockOwnershipError("transfer tokens are incomplete or duplicated")
+        contract = tuple((item.key, item.scopes, item.mode, item.reason_codes) for item in normalized)
+        if contract != tuple((item.key, item.scopes, item.mode, item.evidence_references) for item in expected):
+            raise LockOwnershipError("complete transfer contract changed")
+
+        def mutate(state: dict[str, Any]) -> tuple[LockHandle, bool]:
+            records = state["records"]
+            selected = tuple(item for item in records if self._same_owner(item, predecessor.owner))
+            if (selected != expected or any(self._same_owner(item, owner) for item in records)
+                    or any(item.conflict_hold for item in selected)):
+                raise LockOwnershipError("complete transfer observation changed")
+            if any(other.key == item.key and other not in selected
+                   and (other.conflict_hold or other.mode == "exclusive" or item.mode == "exclusive"
+                        or not self._record_active(other, instant))
+                   for item in selected for other in records):
+                raise LockOwnershipError("transfer set has conflicting ownership")
+            if any(not self._record_active(item, instant) for item in selected):
+                raise LockLeaseExpired("sequence transfer requires live predecessor leases")
+            acquired = timestamp(instant)
+            expires = timestamp(instant + timedelta(seconds=timing.lease_seconds))
+            tokens = []
+            for item in selected:
+                item.owner_id, item.task_id = owner.owner_id, owner.task_id
+                item.plan_id, item.operation_id = owner.plan_id, owner.operation_id
+                item.attempt_id = owner.attempt_id
+                item.generation = state["next_generation"]
+                state["next_generation"] += 1
+                item.acquired_at = item.last_renewed_at = acquired
+                item.lease_expires_at = expires
+                tokens.append(LockToken(item.key, item.generation, item.mode))
+            handle = LockHandle(owner, tuple(tokens), acquired, expires, timing)
+            handle.validate()
+            return handle, True
+
+        return self._transact(mutate)
+
     async def acquire(
         self,
         requests: Iterable[object],

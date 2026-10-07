@@ -124,6 +124,19 @@ def _process_acquire(
         results.put((owner_name, "conflict"))
 
 
+def _process_transfer(root, predecessor, observed, name, start, results):
+    store = DurableLockStore(root)
+    start.wait(10)
+    try:
+        store.transfer_complete((_request("dashboard:a"), _request("dashboard:b")),
+            predecessor=predecessor, expected_records=observed,
+            owner=replace(predecessor.owner, owner_id=name, task_id=f"task-{name}", attempt_id=f"attempt-{name}"),
+            timing=TIMING, now=datetime(2026, 8, 4, 12, 0, tzinfo=timezone.utc))
+        results.put("transferred")
+    except LockOwnershipError:
+        results.put("fenced")
+
+
 class LockNormalizationTests(unittest.TestCase):
     def test_duplicate_key_unions_evidence_and_exclusive_dominates(self):
         normalized = normalize_lock_requests(
@@ -217,6 +230,107 @@ class DurableLockStoreTests(unittest.TestCase):
             timing=timing,
             now=self.clock.now(),
         )
+
+    def transfer(self, handle, *, observed=None, owner=None, requests=None):
+        return self.store.transfer_complete(
+            requests or (_request("dashboard:a"), _request("dashboard:b")),
+            predecessor=handle, expected_records=observed or self.store.records(),
+            owner=owner or replace(handle.owner, owner_id="successor", task_id="next-child", attempt_id="next-attempt"),
+            timing=TIMING, now=self.clock.now())
+
+    def test_complete_transfer_fences_predecessor_without_an_acquisition_gap(self):
+        first = self.acquire(_owner("a"), _request("dashboard:a"), _request("dashboard:b"))
+        other = DurableLockStore(self.temporary.name)
+        second = self.transfer(first)
+        self.assertGreater(min(t.generation for t in second.tokens), max(t.generation for t in first.tokens))
+        for handle in (first, replace(second, owner=first.owner)):
+            for operation in (other.release, lambda h: other.renew(h, now=self.clock.now()),
+                              lambda h: other.validate_handle(h, now=self.clock.now())):
+                with self.assertRaises(LockOwnershipError):
+                    operation(handle)
+        for key in ("dashboard:a", "dashboard:b"):
+            with self.assertRaises(LockConflict):
+                other.acquire_once((_request(key),), owner=_owner("competitor"), timing=TIMING, now=self.clock.now())
+        other.validate_handle(second, now=self.clock.now())
+        other.release(second)
+        self.assertEqual(other.records(), ())
+
+    def test_complete_transfer_rejects_each_changed_observation_without_mutation(self):
+        first = self.acquire(_owner("a"), _request("dashboard:a"), _request("dashboard:b"))
+        observed = self.store.records()
+        changes = (
+            {"owner_id": "wrong"}, {"task_id": "wrong"}, {"plan_id": "wrong"},
+            {"operation_id": "wrong"}, {"attempt_id": "wrong"}, {"generation": 99},
+            {"mode": "shared"}, {"scopes": ("provider",)},
+            {"evidence_references": ("changed",)}, {"conflict_hold": True},
+        )
+        candidates = [observed[:1], (observed[0], observed[0])]
+        candidates.extend((replace(observed[0], **change), observed[1]) for change in changes)
+        for candidate in candidates:
+            with self.subTest(candidate=candidate):
+                before = self.store.state_path.read_bytes()
+                with self.assertRaises((LockOwnershipError, ValueError)):
+                    self.transfer(first, observed=candidate)
+                self.assertEqual(self.store.state_path.read_bytes(), before)
+        for owner in (first.owner, replace(first.owner, plan_id="another-plan")):
+            with self.assertRaises(LockOwnershipError): self.transfer(first, owner=owner)
+
+    def test_transfer_rejects_partial_handle_extra_locks_newer_snapshot_and_hold(self):
+        first = self.acquire(_owner("a"), _request("dashboard:a"), _request("dashboard:b"))
+        original = self.store.records()
+        with self.assertRaises(LockOwnershipError):
+            self.transfer(replace(first, tokens=first.tokens[:1]), observed=original[:1], requests=(_request("dashboard:a"),))
+        self.clock.advance(1)
+        renewed = self.store.renew(first, now=self.clock.now())
+        before = self.store.state_path.read_bytes()
+        with self.assertRaises(LockOwnershipError): self.transfer(first, observed=original)
+        self.assertEqual(before, self.store.state_path.read_bytes())
+        self.store.promote_to_conflict_hold(renewed, reason_code="unresolved")
+        before = self.store.state_path.read_bytes()
+        with self.assertRaises(LockOwnershipError): self.transfer(renewed)
+        self.assertEqual(before, self.store.state_path.read_bytes())
+
+    def test_expired_transfer_never_refreshes_admission(self):
+        first = self.acquire(_owner("a"), _request("dashboard:a"), _request("dashboard:b"))
+        before = self.store.state_path.read_bytes()
+        self.clock.advance(61)
+        with self.assertRaises(LockLeaseExpired): self.transfer(first)
+        self.assertEqual(before, self.store.state_path.read_bytes())
+        with self.assertRaises(LockConflict): self.acquire(_owner("competitor"), _request("dashboard:a"))
+
+    def test_transfer_write_failure_is_atomic_and_post_replace_loss_is_fenced(self):
+        first = self.acquire(_owner("a"), _request("dashboard:a"), _request("dashboard:b"))
+        before = self.store.state_path.read_bytes()
+        def fail(stage):
+            if stage == "before_state_replace": raise OSError("synthetic transfer failure")
+        self.store._fault_hook = fail
+        with self.assertRaises(LockStorageError): self.transfer(first)
+        self.assertEqual(before, self.store.state_path.read_bytes())
+        def lost(stage):
+            if stage == "after_state_replace": raise OSError("synthetic lost transfer reply")
+        self.store._fault_hook = lost
+        with self.assertRaises(LockStorageError): self.transfer(first)
+        self.store._fault_hook = None
+        self.assertTrue(all(r.owner_id == "successor" for r in self.store.records()))
+        with self.assertRaises(LockOwnershipError): self.store.release(first)
+        with self.assertRaises(LockOwnershipError): self.transfer(first)
+
+    def test_cross_process_transfer_has_one_exact_successor(self):
+        first = self.acquire(_owner("a"), _request("dashboard:a"), _request("dashboard:b"))
+        observed = self.store.records()
+        context = multiprocessing.get_context("fork")
+        start, results = context.Event(), context.Queue()
+        processes = [context.Process(target=_process_transfer,
+            args=(self.temporary.name, first, observed, name, start, results)) for name in ("left", "right")]
+        for process in processes: process.start()
+        start.set()
+        try:
+            self.assertEqual(sorted(results.get(timeout=10) for _ in processes), ["fenced", "transferred"])
+        finally:
+            for process in processes: process.join(10)
+        self.assertTrue(all(process.exitcode == 0 for process in processes))
+        self.assertEqual(len({item.owner_id for item in self.store.records()}), 1)
+        self.assertEqual({item.key for item in self.store.records()}, {"dashboard:a", "dashboard:b"})
 
     def test_exclusive_conflicts_with_exclusive(self):
         self.acquire(_owner("a"), _request("dashboard:overview"))

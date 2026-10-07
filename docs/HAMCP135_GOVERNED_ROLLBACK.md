@@ -67,11 +67,28 @@ list selected/excluded operation IDs; plan/task operation records report actual
 restored and unrestored outcomes. Task success means the selected subset was
 verified; `rollback_partial_plan_created` never means full five-object recovery.
 
-All five resource locks are included even for F1. **Open implementation gate:**
-existing F3 releases each child's lock set before the next child. Continuous
-sequence ownership requires an authorized atomic cross-child lock transfer; the
-current candidate must not be accepted as satisfying that requirement. It remains
-a scoped development candidate pending that gate and independent review.
+All five resource locks are included even for F1. Verified intermediate inverse
+children retain the entire immutable lock union. The next exact claimed child
+receives it through one atomic compare-and-transfer, with new fencing generations,
+before its full preflight. The transfer checks the complete observed owner set,
+keys, scopes, modes, evidence, leases and fences against the immutable declarations
+and durable verified predecessor. Other F3 sequences retain their existing rules.
+
+Retention is derived from persisted plan, task, declarations and child receipts;
+an in-memory callback is not its authority. A restart with live predecessor leases
+can continue the same sequence. Expired leases, partial sets and conflict holds do
+not grant fresh admission. An expired predecessor refuses the successor and ends
+the selected inverse as partial; it cannot silently acquire a new set. A crash
+after transfer but before token persistence stops the interrupted pre-intent child
+after its claim expires. The existing exact unrecorded-set reconciliation binds
+the tokens before releasing them. Neither case repeats a provider dispatch.
+
+Terminal settlement releases only exact proven regular ownership; unknown outcomes
+retain the complete union as conflict holds. Retained terminal ownership remains
+visible in existing reconciliation diagnostics. A missing or contradictory receipt
+cannot authorize cleanup. Repeated requests keep the original bound attempt;
+partial termination does not refresh approval or promise that the inverse can be
+resumed. Further recovery must use an explicitly reviewed supported procedure.
 
 ## Approval, uncertainty and recovery
 

@@ -82,8 +82,9 @@ this forward proof. The separate [exact governed inverse contract](HAMCP135_GOVE
 binds a verified prefix of the full transfer and requires new elevated approval;
 minimal-removal plans do not gain that authority. It discloses the restored retry
 weakness and preserves explicitly partial caller-only outcomes. No inverse runs
-automatically. The inverse's continuous-lock and independent-review gates remain
-open; local configuration verification is not household recovery.
+automatically. The inverse retains its complete lock union across verified children
+using exact fenced transfer. Independent review remains a separate gate; local
+configuration verification is not household recovery.
 
 ## Validation boundaries
 

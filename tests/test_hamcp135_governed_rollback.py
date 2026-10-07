@@ -127,6 +127,192 @@ class RollbackTests(ConfigurationPlanTestCase):
         self.assertFalse(again['approval_required'])
         self.assertEqual(len(self.writes()),count)
 
+    async def test_continuous_union_at_every_boundary_and_fenced_previous_handles(self):
+        from ha_mcp_engineering.f3.locks import DurableLockStore, LockConflict, LockOwnershipError
+        from tests.test_f3_lock_manager import _owner, _request, TIMING
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        other=DurableLockStore(self.root/'plans')
+        execute=self.runtime._execute_child;boundaries=[];handles=[]
+        async def check(plan,task,d,*args,**kwargs):
+            if d['operation_ordinal']:
+                observed=other.records()
+                self.assertTrue(observed)
+                self.assertTrue({'script:fixture_close','automation:fixture_notification','automation:fixture_cleaner',
+                                 'automation:fixture_away','automation:fixture_bedtime'} <= {r.key for r in observed})
+                previous=self.runtime.children.declarations_for_task(task.task_id)[d['operation_ordinal']-1]
+                self.assertEqual({r.task_id for r in observed},{previous['child_id']})
+                for r in observed:
+                    with self.assertRaises(LockConflict):
+                        other.acquire_once((_request(r.key),),owner=_owner('competing-process'),timing=TIMING,now=self.service.now())
+                handles.append(self.runtime._observed_lock_handle(observed,TIMING))
+                boundaries.append(d['operation_ordinal'])
+            result=await execute(plan,task,d,*args,**kwargs)
+            for handle in handles:
+                with self.assertRaises(LockOwnershipError):other.release(handle)
+            return result
+        with patch.object(self.runtime,'_execute_child',side_effect=check):
+            result=await self.apply_request(request)
+        self.assertEqual(result['task_state'],'succeeded_verified')
+        self.assertEqual(boundaries,[1,2,3,4]);self.assertEqual(other.records(),())
+
+    async def test_reconstruction_before_release_retains_and_live_lease_continues(self):
+        from ha_mcp_engineering.f3.executor import SimulatedProcessLoss
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        factory=self.runtime._executor
+        def create(seconds):
+            executor=factory(seconds)
+            def stop(stage):
+                if stage=='after_verified_result_before_lock_release':raise SimulatedProcessLoss(stage)
+            executor._fault_hook=stop;return executor
+        with patch.object(self.runtime,'_executor',side_effect=create):
+            with self.assertRaises(SimulatedProcessLoss):await self.apply_request(request)
+        original=self.runtime;before=original.locks.records()
+        self.assertTrue(before);self.assertEqual(len(self.writes()),1)
+        # A second integration over the same store must derive retention from
+        # disk even though the first executor never reached its release hook.
+        await self.restart_runtime()
+        restored=self.runtime.locks.records()
+        self.assertEqual({r.key for r in restored},{r.key for r in before})
+        self.assertTrue(all(r.generation >= before[0].generation for r in restored))
+        result=await self.apply_request(request)
+        self.assertEqual(result['task_state'],'succeeded_verified')
+        self.assertEqual(len(self.writes()),5);self.assertEqual(original.locks.records(),())
+
+    async def test_expired_between_child_ownership_refuses_and_settles_partial(self):
+        from ha_mcp_engineering.f3.executor import SimulatedProcessLoss
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        execute=self.runtime._execute_child
+        async def stop(plan,task,d,*args,**kwargs):
+            if d['operation_ordinal']==1:raise SimulatedProcessLoss('retained predecessor')
+            return await execute(plan,task,d,*args,**kwargs)
+        with patch.object(self.runtime,'_execute_child',side_effect=stop):
+            with self.assertRaises(SimulatedProcessLoss):await self.apply_request(request)
+        self.assertTrue(self.runtime.locks.records());self.assertEqual(len(self.writes()),1)
+        now=self.service.now;self.service.now=lambda:now()+timedelta(minutes=3)
+        try:
+            await self.restart_runtime()
+            for _ in range(3):await self.runtime.recover_once('expired-retention')
+            task=self.service.task_repository.get_for_plan(request['plan_id'])
+            self.assertNotEqual(task.state.value,'succeeded_verified')
+            self.assertEqual(len(self.writes()),1);self.assertEqual(self.runtime.locks.records(),())
+        finally:self.service.now=now
+
+    async def test_transfer_requires_exact_successor_claim_and_verified_predecessor(self):
+        from dataclasses import replace
+        from ha_mcp_engineering.f3.locks import LockOwnershipError
+        from ha_mcp_engineering.f3.models import LockOwner
+        from ha_mcp_engineering.f3_runtime.runtime import PRODUCTION_LOCK_TIMING
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        factory=self.runtime._executor;count=0;checked=[]
+        def create(seconds):
+            nonlocal count
+            count+=1;executor=factory(seconds)
+            if count==2:
+                def check(stage):
+                    if stage!='before_lock_acquisition':return
+                    task=self.service.task_repository.get_for_plan(request['plan_id'])
+                    ds=self.runtime.children.declarations_for_task(task.task_id)
+                    record=self.runtime.children.get(ds[1]['child_id'])
+                    owner=LockOwner(record.identity['owner_id'],ds[1]['child_id'],request['plan_id'],
+                                    record.operation,record.identity['attempt_id'])
+                    requests=self.runtime._sequence_lock_cache[task.task_id]
+                    before=self.runtime.locks.records()
+                    for field in ('owner_id','operation_id','attempt_id'):
+                        with self.assertRaises(LockOwnershipError):
+                            self.runtime._inverse_lock_acquire(requests,owner=replace(owner,**{field:'wrong'}),
+                                                               timing=PRODUCTION_LOCK_TIMING,now=self.service.now())
+                    original_get=self.runtime.children.get
+                    previous=original_get(ds[0]['child_id'])
+                    bad=replace(previous,evidence=dict(previous.evidence,resulting_state_fingerprint='0'*64))
+                    with patch.object(self.runtime.children,'get',side_effect=lambda child:
+                            bad if child==ds[0]['child_id'] else original_get(child)):
+                        with self.assertRaises(LockOwnershipError):
+                            self.runtime._inverse_lock_acquire(requests,owner=owner,timing=PRODUCTION_LOCK_TIMING,
+                                                               now=self.service.now())
+                    self.assertEqual(self.runtime.locks.records(),before);checked.append(True)
+                executor._fault_hook=check
+            return executor
+        with patch.object(self.runtime,'_executor',side_effect=create):result=await self.apply_request(request)
+        self.assertEqual(checked,[True]);self.assertEqual(result['task_state'],'succeeded_verified')
+
+    async def test_transfer_process_loss_before_tokens_and_before_preflight_settles_without_redispatch(self):
+        from ha_mcp_engineering.f3.executor import SimulatedProcessLoss
+        for stage in ('after_transfer_commit','after_lock_acquisition_before_token_persistence','after_lock_acquisition_before_preflight'):
+            with self.subTest(stage=stage):
+                source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+                factory=self.runtime._executor;count=0
+                transfer=self.runtime.locks.transfer_complete
+                def interrupted_transfer(*args,**kwargs):
+                    def fault(point):
+                        if point=='after_state_replace':raise SimulatedProcessLoss(stage)
+                    if stage=='after_transfer_commit':self.runtime.locks._fault_hook=fault
+                    try:return transfer(*args,**kwargs)
+                    finally:self.runtime.locks._fault_hook=None
+                def create(seconds):
+                    nonlocal count
+                    count+=1;executor=factory(seconds)
+                    if count==2:
+                        def stop(point):
+                            if point==stage:raise SimulatedProcessLoss(stage)
+                        executor._fault_hook=stop
+                    return executor
+                with patch.object(self.runtime,'_executor',side_effect=create), patch.object(
+                        self.runtime.locks,'transfer_complete',side_effect=interrupted_transfer):
+                    with self.assertRaises(SimulatedProcessLoss):await self.apply_request(request)
+                locks=self.runtime.locks.records();self.assertTrue(locks)
+                self.assertEqual(len(self.writes()),1)
+                self.assertTrue(self.runtime.reconciliation_items())
+                now=self.service.now;self.service.now=lambda:now()+timedelta(minutes=3)
+                try:
+                    await self.restart_runtime()
+                    for _ in range(3):await self.runtime.recover_once('transfer-crash')
+                    self.assertEqual(len(self.writes()),1)
+                    self.assertEqual(self.runtime.locks.records(),())
+                    self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+                finally:self.service.now=now
+
+    async def test_transfer_durable_failure_preserves_prefix_and_cleanup_is_recoverable(self):
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        original=self.runtime.locks.transfer_complete
+        def fail(*args,**kwargs):
+            def write_failure(stage):
+                if stage=='before_state_replace':raise OSError('synthetic transfer storage failure')
+            self.runtime.locks._fault_hook=write_failure
+            try:return original(*args,**kwargs)
+            finally:self.runtime.locks._fault_hook=None
+        with patch.object(self.runtime.locks,'transfer_complete',side_effect=fail):
+            result=await self.apply_request(request)
+        self.assertNotEqual(result['task_state'],'succeeded_verified')
+        self.assertEqual(len(self.writes()),1)
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        await self.runtime.recover_once('transfer-failure')
+        self.assertEqual(self.runtime.locks.records(),())
+        self.assertEqual(len(self.writes()),1)
+
+    async def test_successor_cancellation_and_held_predecessor_prevent_transfer(self):
+        from ha_mcp_engineering.f3.locks import DurableLockStore
+        from tests.test_f3_lock_manager import TIMING
+        for reason in ('cancelled_successor','held_predecessor'):
+            with self.subTest(reason=reason):
+                source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+                acquire=self.runtime._inverse_lock_acquire
+                def refuse(requests,*,owner,timing,now):
+                    d=self.runtime.children.declaration(owner.task_id)
+                    if d['operation_ordinal']==1:
+                        if reason=='cancelled_successor':self.runtime.children.cancel(owner.task_id,now=now)
+                        else:
+                            store=DurableLockStore(self.root/'plans')
+                            store.promote_to_conflict_hold(self.runtime._observed_lock_handle(store.records(),TIMING),
+                                                          reason_code='synthetic_unresolved_ownership')
+                    return acquire(requests,owner=owner,timing=timing,now=now)
+                with patch.object(self.runtime,'_inverse_lock_acquire',side_effect=refuse):
+                    result=await self.apply_request(request)
+                self.assertNotEqual(result['task_state'],'succeeded_verified')
+                self.assertEqual(len(self.writes()),1)
+                if reason=='held_predecessor':
+                    self.assertTrue(all(r.conflict_hold for r in self.runtime.locks.records()))
+                    self.assertTrue(self.runtime.reconciliation_items())
+                else:self.assertEqual(self.runtime.locks.records(),())
     async def test_every_verified_forward_prefix_and_minimal_negative(self):
         for prefix in range(6):
             with self.subTest(prefix=prefix):
@@ -388,6 +574,11 @@ class RollbackTests(ConfigurationPlanTestCase):
                 self.assertEqual(len(writes),len(set(writes)))
                 if stage=='after_durable_intent_before_provider_invocation':
                     self.assertEqual(writes,[])
+                    held=self.runtime.locks.records()
+                    self.assertTrue(held)
+                    self.assertTrue(all(item.conflict_hold for item in held))
+                    self.assertTrue({'script:fixture_close','automation:fixture_notification','automation:fixture_cleaner',
+                                     'automation:fixture_away','automation:fixture_bedtime'} <= {r.key for r in held})
                 else:
                     self.assertEqual(len([w for w in writes if w[3]=='fixture_bedtime']),1)
 
