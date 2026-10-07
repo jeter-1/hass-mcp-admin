@@ -1,0 +1,1828 @@
+[
+  {
+    "resource_type": "script",
+    "target_id": "fixture_close",
+    "config": {
+      "alias": "Synthetic alias",
+      "description": "Synthetic description",
+      "icon": "mdi:garage-alert",
+      "mode": "single",
+      "sequence": [
+        {
+          "choose": [
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "cover.garage_fixture",
+                  "state": "closed"
+                }
+              ],
+              "sequence": [
+                {
+                  "variables": {
+                    "hamcp135_result": {
+                      "contract": "hamcp135-garage-attempt-v1",
+                      "outcome": "already_closed",
+                      "service_call": "not_sent"
+                    }
+                  }
+                },
+                {
+                  "response_variable": "hamcp135_result",
+                  "stop": "Garage attempt: already_closed"
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "cover.garage_fixture",
+                  "state": "open"
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "cover.close_cover",
+                  "target": {
+                    "entity_id": "cover.garage_fixture"
+                  }
+                },
+                {
+                  "continue_on_timeout": true,
+                  "timeout": "00:00:30",
+                  "wait_template": "{{ is_state('cover.garage_fixture', 'closed') }}"
+                },
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "state",
+                          "entity_id": "cover.garage_fixture",
+                          "state": "closed"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "variables": {
+                            "hamcp135_result": {
+                              "contract": "hamcp135-garage-attempt-v1",
+                              "outcome": "closed",
+                              "service_call": "returned"
+                            }
+                          }
+                        },
+                        {
+                          "action": "notify.fixture_8",
+                          "continue_on_error": true,
+                          "data": {
+                            "message": "Synthetic message",
+                            "title": "Synthetic title"
+                          }
+                        },
+                        {
+                          "action": "logbook.log",
+                          "continue_on_error": true,
+                          "data": {
+                            "entity_id": "cover.garage_fixture",
+                            "message": "Synthetic message",
+                            "name": "Synthetic name"
+                          }
+                        },
+                        {
+                          "response_variable": "hamcp135_result",
+                          "stop": "Garage attempt: closed"
+                        }
+                      ]
+                    },
+                    {
+                      "conditions": [
+                        {
+                          "condition": "state",
+                          "entity_id": "cover.garage_fixture",
+                          "state": "open"
+                        },
+                        {
+                          "condition": "template",
+                          "value_template": "{{ wait.completed is sameas false }}"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "variables": {
+                            "hamcp135_result": {
+                              "contract": "hamcp135-garage-attempt-v1",
+                              "outcome": "open_after_timeout",
+                              "service_call": "returned"
+                            }
+                          }
+                        },
+                        {
+                          "action": "notify.fixture_8",
+                          "continue_on_error": true,
+                          "data": {
+                            "message": "Synthetic message",
+                            "title": "Synthetic title"
+                          }
+                        },
+                        {
+                          "action": "logbook.log",
+                          "continue_on_error": true,
+                          "data": {
+                            "entity_id": "cover.garage_fixture",
+                            "message": "Synthetic message",
+                            "name": "Synthetic name"
+                          }
+                        },
+                        {
+                          "response_variable": "hamcp135_result",
+                          "stop": "Garage attempt: open_after_timeout"
+                        }
+                      ]
+                    }
+                  ],
+                  "default": [
+                    {
+                      "variables": {
+                        "hamcp135_result": {
+                          "contract": "hamcp135-garage-attempt-v1",
+                          "outcome": "unverified",
+                          "service_call": "returned"
+                        }
+                      }
+                    },
+                    {
+                      "action": "notify.fixture_8",
+                      "continue_on_error": true,
+                      "data": {
+                        "message": "Synthetic message",
+                        "title": "Synthetic title"
+                      }
+                    },
+                    {
+                      "action": "logbook.log",
+                      "continue_on_error": true,
+                      "data": {
+                        "entity_id": "cover.garage_fixture",
+                        "message": "Synthetic message",
+                        "name": "Synthetic name"
+                      }
+                    },
+                    {
+                      "response_variable": "hamcp135_result",
+                      "stop": "Garage attempt: unverified"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "default": [
+            {
+              "variables": {
+                "hamcp135_result": {
+                  "contract": "hamcp135-garage-attempt-v1",
+                  "outcome": "not_open",
+                  "service_call": "not_sent"
+                }
+              }
+            },
+            {
+              "action": "notify.fixture_8",
+              "continue_on_error": true,
+              "data": {
+                "message": "Synthetic message",
+                "title": "Synthetic title"
+              }
+            },
+            {
+              "action": "logbook.log",
+              "continue_on_error": true,
+              "data": {
+                "entity_id": "cover.garage_fixture",
+                "message": "Synthetic message",
+                "name": "Synthetic name"
+              }
+            },
+            {
+              "response_variable": "hamcp135_result",
+              "stop": "Garage attempt: not_open"
+            }
+          ]
+        }
+      ],
+      "id": "fixture_close"
+    }
+  },
+  {
+    "resource_type": "automation",
+    "target_id": "fixture_notification",
+    "config": {
+      "actions": [
+        {
+          "variables": {
+            "hamcp135_first": null,
+            "hamcp135_second": null
+          }
+        },
+        {
+          "choose": [
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "cover.garage_fixture",
+                  "state": "open"
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "script.fixture_close",
+                  "continue_on_error": true,
+                  "response_variable": "hamcp135_first"
+                }
+              ]
+            }
+          ],
+          "default": [
+            {
+              "action": "logbook.log",
+              "continue_on_error": true,
+              "data": {
+                "entity_id": "cover.garage_fixture",
+                "message": "Synthetic message",
+                "name": "Synthetic name"
+              }
+            },
+            {
+              "stop": "Positive caller policy required before first invocation"
+            }
+          ]
+        },
+        {
+          "choose": [
+            {
+              "conditions": [
+                {
+                  "condition": "template",
+                  "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                },
+                {
+                  "condition": "and",
+                  "conditions": [
+                    {
+                      "condition": "state",
+                      "entity_id": "cover.garage_fixture",
+                      "state": "open"
+                    }
+                  ]
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "script.fixture_close",
+                  "continue_on_error": true,
+                  "response_variable": "hamcp135_second"
+                },
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "template",
+                          "value_template": "{{ hamcp135_second is mapping and hamcp135_second in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "action": "logbook.log",
+                          "continue_on_error": true,
+                          "data": {
+                            "entity_id": "cover.garage_fixture",
+                            "message": "Synthetic message",
+                            "name": "Synthetic name"
+                          }
+                        },
+                        {
+                          "stop": "Two invocations completed; no third invocation"
+                        }
+                      ]
+                    }
+                  ],
+                  "default": [
+                    {
+                      "action": "notify.fixture_8",
+                      "continue_on_error": true,
+                      "data": {
+                        "message": "Synthetic message",
+                        "title": "Synthetic title"
+                      }
+                    },
+                    {
+                      "action": "logbook.log",
+                      "continue_on_error": true,
+                      "data": {
+                        "entity_id": "cover.garage_fixture",
+                        "message": "Synthetic message",
+                        "name": "Synthetic name"
+                      }
+                    },
+                    {
+                      "stop": "No positively recognized second result; no further invocation"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "condition": "template",
+                  "value_template": "{{ hamcp135_first is mapping and hamcp135_first in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                }
+              ],
+              "sequence": [
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "template",
+                          "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "action": "logbook.log",
+                          "continue_on_error": true,
+                          "data": {
+                            "entity_id": "cover.garage_fixture",
+                            "message": "Synthetic message",
+                            "name": "Synthetic name"
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "default": []
+                },
+                {
+                  "stop": "Recognized first result; positive timeout-and-policy retry gate did not pass"
+                }
+              ]
+            }
+          ],
+          "default": [
+            {
+              "action": "notify.fixture_8",
+              "continue_on_error": true,
+              "data": {
+                "message": "Synthetic message",
+                "title": "Synthetic title"
+              }
+            },
+            {
+              "action": "logbook.log",
+              "continue_on_error": true,
+              "data": {
+                "entity_id": "cover.garage_fixture",
+                "message": "Synthetic message",
+                "name": "Synthetic name"
+              }
+            },
+            {
+              "stop": "No positively recognized first result; no retry"
+            }
+          ]
+        }
+      ],
+      "alias": "Synthetic alias",
+      "conditions": [
+        {
+          "condition": "state",
+          "entity_id": "cover.garage_fixture",
+          "state": "open"
+        }
+      ],
+      "description": "Synthetic description",
+      "mode": "single",
+      "triggers": [
+        {
+          "event_data": {
+            "action": "FIXTURE_CLOSE"
+          },
+          "event_type": "mobile_app_notification_action",
+          "trigger": "event"
+        }
+      ],
+      "id": "fixture_notification"
+    }
+  },
+  {
+    "resource_type": "automation",
+    "target_id": "fixture_cleaner",
+    "config": {
+      "actions": [
+        {
+          "choose": [
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_0",
+                  "for": {
+                    "hours": 0,
+                    "milliseconds": 0,
+                    "minutes": 5,
+                    "seconds": 0
+                  },
+                  "state": [
+                    "off"
+                  ]
+                }
+              ],
+              "sequence": [
+                {
+                  "variables": {
+                    "hamcp135_first": null,
+                    "hamcp135_second": null
+                  }
+                },
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "state",
+                          "entity_id": "input_boolean.fixture_6_recovery_suppress_garage",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "cover.garage_fixture",
+                          "state": "open"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "input_boolean.fixture_5",
+                          "state": "on"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "group.fixture_4",
+                          "state": "not_home"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "input_boolean.fixture_6",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "binary_sensor.fixture_0",
+                          "for": {
+                            "hours": 0,
+                            "milliseconds": 0,
+                            "minutes": 5,
+                            "seconds": 0
+                          },
+                          "state": [
+                            "off"
+                          ]
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "action": "script.fixture_close",
+                          "continue_on_error": true,
+                          "response_variable": "hamcp135_first"
+                        }
+                      ]
+                    }
+                  ],
+                  "default": [
+                    {
+                      "action": "logbook.log",
+                      "continue_on_error": true,
+                      "data": {
+                        "entity_id": "cover.garage_fixture",
+                        "message": "Synthetic message",
+                        "name": "Synthetic name"
+                      }
+                    },
+                    {
+                      "stop": "Positive caller policy required before first invocation"
+                    }
+                  ]
+                },
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "template",
+                          "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                        },
+                        {
+                          "condition": "and",
+                          "conditions": [
+                            {
+                              "condition": "state",
+                              "entity_id": "input_boolean.fixture_6_recovery_suppress_garage",
+                              "state": "off"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "cover.garage_fixture",
+                              "state": "open"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "input_boolean.fixture_5",
+                              "state": "on"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "group.fixture_4",
+                              "state": "not_home"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "input_boolean.fixture_6",
+                              "state": "off"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "binary_sensor.fixture_0",
+                              "for": {
+                                "hours": 0,
+                                "milliseconds": 0,
+                                "minutes": 5,
+                                "seconds": 0
+                              },
+                              "state": [
+                                "off"
+                              ]
+                            }
+                          ]
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "action": "script.fixture_close",
+                          "continue_on_error": true,
+                          "response_variable": "hamcp135_second"
+                        },
+                        {
+                          "choose": [
+                            {
+                              "conditions": [
+                                {
+                                  "condition": "template",
+                                  "value_template": "{{ hamcp135_second is mapping and hamcp135_second in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                                }
+                              ],
+                              "sequence": [
+                                {
+                                  "action": "logbook.log",
+                                  "continue_on_error": true,
+                                  "data": {
+                                    "entity_id": "cover.garage_fixture",
+                                    "message": "Synthetic message",
+                                    "name": "Synthetic name"
+                                  }
+                                },
+                                {
+                                  "stop": "Two invocations completed; no third invocation"
+                                }
+                              ]
+                            }
+                          ],
+                          "default": [
+                            {
+                              "action": "notify.fixture_8",
+                              "continue_on_error": true,
+                              "data": {
+                                "message": "Synthetic message",
+                                "title": "Synthetic title"
+                              }
+                            },
+                            {
+                              "action": "logbook.log",
+                              "continue_on_error": true,
+                              "data": {
+                                "entity_id": "cover.garage_fixture",
+                                "message": "Synthetic message",
+                                "name": "Synthetic name"
+                              }
+                            },
+                            {
+                              "stop": "No positively recognized second result; no further invocation"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "conditions": [
+                        {
+                          "condition": "template",
+                          "value_template": "{{ hamcp135_first is mapping and hamcp135_first in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "choose": [
+                            {
+                              "conditions": [
+                                {
+                                  "condition": "template",
+                                  "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                                }
+                              ],
+                              "sequence": [
+                                {
+                                  "action": "logbook.log",
+                                  "continue_on_error": true,
+                                  "data": {
+                                    "entity_id": "cover.garage_fixture",
+                                    "message": "Synthetic message",
+                                    "name": "Synthetic name"
+                                  }
+                                }
+                              ]
+                            }
+                          ],
+                          "default": []
+                        },
+                        {
+                          "stop": "Recognized first result; positive timeout-and-policy retry gate did not pass"
+                        }
+                      ]
+                    }
+                  ],
+                  "default": [
+                    {
+                      "action": "notify.fixture_8",
+                      "continue_on_error": true,
+                      "data": {
+                        "message": "Synthetic message",
+                        "title": "Synthetic title"
+                      }
+                    },
+                    {
+                      "action": "logbook.log",
+                      "continue_on_error": true,
+                      "data": {
+                        "entity_id": "cover.garage_fixture",
+                        "message": "Synthetic message",
+                        "name": "Synthetic name"
+                      }
+                    },
+                    {
+                      "stop": "No positively recognized first result; no retry"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "condition": "or",
+                  "conditions": [
+                    {
+                      "condition": "state",
+                      "entity_id": "binary_sensor.fixture_0",
+                      "state": "unavailable"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "binary_sensor.fixture_0",
+                      "state": "unknown"
+                    }
+                  ]
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "notify.fixture_8",
+                  "data": {
+                    "message": "Synthetic message",
+                    "title": "Synthetic title"
+                  }
+                },
+                {
+                  "action": "logbook.log",
+                  "data": {
+                    "entity_id": "cover.garage_fixture",
+                    "message": "Synthetic message",
+                    "name": "Synthetic name"
+                  }
+                }
+              ]
+            }
+          ],
+          "default": [
+            {
+              "continue_on_timeout": false,
+              "timeout": "00:10:00",
+              "wait_for_trigger": [
+                {
+                  "entity_id": "binary_sensor.fixture_0",
+                  "for": "00:05:00",
+                  "to": "off",
+                  "trigger": "state"
+                }
+              ]
+            },
+            {
+              "condition": "state",
+              "entity_id": "cover.garage_fixture",
+              "state": "open"
+            },
+            {
+              "condition": "state",
+              "entity_id": "input_boolean.fixture_5",
+              "state": "on"
+            },
+            {
+              "condition": "state",
+              "entity_id": "group.fixture_4",
+              "state": "not_home"
+            },
+            {
+              "condition": "state",
+              "entity_id": "input_boolean.fixture_6",
+              "state": "off"
+            },
+            {
+              "variables": {
+                "hamcp135_first": null,
+                "hamcp135_second": null
+              }
+            },
+            {
+              "choose": [
+                {
+                  "conditions": [
+                    {
+                      "condition": "state",
+                      "entity_id": "input_boolean.fixture_6_recovery_suppress_garage",
+                      "state": "off"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "cover.garage_fixture",
+                      "state": "open"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "input_boolean.fixture_5",
+                      "state": "on"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "group.fixture_4",
+                      "state": "not_home"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "input_boolean.fixture_6",
+                      "state": "off"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "binary_sensor.fixture_0",
+                      "for": {
+                        "hours": 0,
+                        "milliseconds": 0,
+                        "minutes": 5,
+                        "seconds": 0
+                      },
+                      "state": [
+                        "off"
+                      ]
+                    }
+                  ],
+                  "sequence": [
+                    {
+                      "action": "script.fixture_close",
+                      "continue_on_error": true,
+                      "response_variable": "hamcp135_first"
+                    }
+                  ]
+                }
+              ],
+              "default": [
+                {
+                  "action": "logbook.log",
+                  "continue_on_error": true,
+                  "data": {
+                    "entity_id": "cover.garage_fixture",
+                    "message": "Synthetic message",
+                    "name": "Synthetic name"
+                  }
+                },
+                {
+                  "stop": "Positive caller policy required before first invocation"
+                }
+              ]
+            },
+            {
+              "choose": [
+                {
+                  "conditions": [
+                    {
+                      "condition": "template",
+                      "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                    },
+                    {
+                      "condition": "and",
+                      "conditions": [
+                        {
+                          "condition": "state",
+                          "entity_id": "input_boolean.fixture_6_recovery_suppress_garage",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "cover.garage_fixture",
+                          "state": "open"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "input_boolean.fixture_5",
+                          "state": "on"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "group.fixture_4",
+                          "state": "not_home"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "input_boolean.fixture_6",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "binary_sensor.fixture_0",
+                          "for": {
+                            "hours": 0,
+                            "milliseconds": 0,
+                            "minutes": 5,
+                            "seconds": 0
+                          },
+                          "state": [
+                            "off"
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "sequence": [
+                    {
+                      "action": "script.fixture_close",
+                      "continue_on_error": true,
+                      "response_variable": "hamcp135_second"
+                    },
+                    {
+                      "choose": [
+                        {
+                          "conditions": [
+                            {
+                              "condition": "template",
+                              "value_template": "{{ hamcp135_second is mapping and hamcp135_second in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                            }
+                          ],
+                          "sequence": [
+                            {
+                              "action": "logbook.log",
+                              "continue_on_error": true,
+                              "data": {
+                                "entity_id": "cover.garage_fixture",
+                                "message": "Synthetic message",
+                                "name": "Synthetic name"
+                              }
+                            },
+                            {
+                              "stop": "Two invocations completed; no third invocation"
+                            }
+                          ]
+                        }
+                      ],
+                      "default": [
+                        {
+                          "action": "notify.fixture_8",
+                          "continue_on_error": true,
+                          "data": {
+                            "message": "Synthetic message",
+                            "title": "Synthetic title"
+                          }
+                        },
+                        {
+                          "action": "logbook.log",
+                          "continue_on_error": true,
+                          "data": {
+                            "entity_id": "cover.garage_fixture",
+                            "message": "Synthetic message",
+                            "name": "Synthetic name"
+                          }
+                        },
+                        {
+                          "stop": "No positively recognized second result; no further invocation"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "conditions": [
+                    {
+                      "condition": "template",
+                      "value_template": "{{ hamcp135_first is mapping and hamcp135_first in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                    }
+                  ],
+                  "sequence": [
+                    {
+                      "choose": [
+                        {
+                          "conditions": [
+                            {
+                              "condition": "template",
+                              "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                            }
+                          ],
+                          "sequence": [
+                            {
+                              "action": "logbook.log",
+                              "continue_on_error": true,
+                              "data": {
+                                "entity_id": "cover.garage_fixture",
+                                "message": "Synthetic message",
+                                "name": "Synthetic name"
+                              }
+                            }
+                          ]
+                        }
+                      ],
+                      "default": []
+                    },
+                    {
+                      "stop": "Recognized first result; positive timeout-and-policy retry gate did not pass"
+                    }
+                  ]
+                }
+              ],
+              "default": [
+                {
+                  "action": "notify.fixture_8",
+                  "continue_on_error": true,
+                  "data": {
+                    "message": "Synthetic message",
+                    "title": "Synthetic title"
+                  }
+                },
+                {
+                  "action": "logbook.log",
+                  "continue_on_error": true,
+                  "data": {
+                    "entity_id": "cover.garage_fixture",
+                    "message": "Synthetic message",
+                    "name": "Synthetic name"
+                  }
+                },
+                {
+                  "stop": "No positively recognized first result; no retry"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "alias": "Synthetic alias",
+      "conditions": [
+        {
+          "condition": "state",
+          "entity_id": "input_boolean.fixture_6_recovery_suppress_garage",
+          "state": "off"
+        },
+        {
+          "condition": "state",
+          "entity_id": "cover.garage_fixture",
+          "state": "open"
+        },
+        {
+          "condition": "state",
+          "entity_id": "input_boolean.fixture_5",
+          "state": "on"
+        },
+        {
+          "condition": "state",
+          "entity_id": "group.fixture_4",
+          "state": "not_home"
+        }
+      ],
+      "description": "Synthetic description",
+      "mode": "restart",
+      "triggers": [
+        {
+          "entity_id": "input_boolean.fixture_6",
+          "to": "off",
+          "trigger": "state"
+        }
+      ],
+      "id": "fixture_cleaner"
+    }
+  },
+  {
+    "resource_type": "automation",
+    "target_id": "fixture_away",
+    "config": {
+      "actions": [
+        {
+          "choose": [
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_0",
+                  "for": "00:05:00",
+                  "state": "off"
+                }
+              ],
+              "sequence": [
+                {
+                  "variables": {
+                    "hamcp135_first": null,
+                    "hamcp135_second": null
+                  }
+                },
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "state",
+                          "entity_id": "cover.garage_fixture",
+                          "for": "00:30:00",
+                          "state": "open"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "input_boolean.fixture_5",
+                          "state": "on"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "group.fixture_4",
+                          "state": "not_home"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "input_boolean.fixture_6",
+                          "state": "off"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "binary_sensor.fixture_0",
+                          "for": "00:05:00",
+                          "state": "off"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "action": "script.fixture_close",
+                          "continue_on_error": true,
+                          "response_variable": "hamcp135_first"
+                        }
+                      ]
+                    }
+                  ],
+                  "default": [
+                    {
+                      "action": "logbook.log",
+                      "continue_on_error": true,
+                      "data": {
+                        "entity_id": "cover.garage_fixture",
+                        "message": "Synthetic message",
+                        "name": "Synthetic name"
+                      }
+                    },
+                    {
+                      "stop": "Positive caller policy required before first invocation"
+                    }
+                  ]
+                },
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "template",
+                          "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                        },
+                        {
+                          "condition": "and",
+                          "conditions": [
+                            {
+                              "condition": "state",
+                              "entity_id": "cover.garage_fixture",
+                              "for": "00:30:00",
+                              "state": "open"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "input_boolean.fixture_5",
+                              "state": "on"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "group.fixture_4",
+                              "state": "not_home"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "input_boolean.fixture_6",
+                              "state": "off"
+                            },
+                            {
+                              "condition": "state",
+                              "entity_id": "binary_sensor.fixture_0",
+                              "for": "00:05:00",
+                              "state": "off"
+                            }
+                          ]
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "action": "script.fixture_close",
+                          "continue_on_error": true,
+                          "response_variable": "hamcp135_second"
+                        },
+                        {
+                          "choose": [
+                            {
+                              "conditions": [
+                                {
+                                  "condition": "template",
+                                  "value_template": "{{ hamcp135_second is mapping and hamcp135_second in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                                }
+                              ],
+                              "sequence": [
+                                {
+                                  "action": "logbook.log",
+                                  "continue_on_error": true,
+                                  "data": {
+                                    "entity_id": "cover.garage_fixture",
+                                    "message": "Synthetic message",
+                                    "name": "Synthetic name"
+                                  }
+                                },
+                                {
+                                  "stop": "Two invocations completed; no third invocation"
+                                }
+                              ]
+                            }
+                          ],
+                          "default": [
+                            {
+                              "action": "notify.fixture_8",
+                              "continue_on_error": true,
+                              "data": {
+                                "message": "Synthetic message",
+                                "title": "Synthetic title"
+                              }
+                            },
+                            {
+                              "action": "logbook.log",
+                              "continue_on_error": true,
+                              "data": {
+                                "entity_id": "cover.garage_fixture",
+                                "message": "Synthetic message",
+                                "name": "Synthetic name"
+                              }
+                            },
+                            {
+                              "stop": "No positively recognized second result; no further invocation"
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "conditions": [
+                        {
+                          "condition": "template",
+                          "value_template": "{{ hamcp135_first is mapping and hamcp135_first in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "choose": [
+                            {
+                              "conditions": [
+                                {
+                                  "condition": "template",
+                                  "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                                }
+                              ],
+                              "sequence": [
+                                {
+                                  "action": "logbook.log",
+                                  "continue_on_error": true,
+                                  "data": {
+                                    "entity_id": "cover.garage_fixture",
+                                    "message": "Synthetic message",
+                                    "name": "Synthetic name"
+                                  }
+                                }
+                              ]
+                            }
+                          ],
+                          "default": []
+                        },
+                        {
+                          "stop": "Recognized first result; positive timeout-and-policy retry gate did not pass"
+                        }
+                      ]
+                    }
+                  ],
+                  "default": [
+                    {
+                      "action": "notify.fixture_8",
+                      "continue_on_error": true,
+                      "data": {
+                        "message": "Synthetic message",
+                        "title": "Synthetic title"
+                      }
+                    },
+                    {
+                      "action": "logbook.log",
+                      "continue_on_error": true,
+                      "data": {
+                        "entity_id": "cover.garage_fixture",
+                        "message": "Synthetic message",
+                        "name": "Synthetic name"
+                      }
+                    },
+                    {
+                      "stop": "No positively recognized first result; no retry"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "condition": "or",
+                  "conditions": [
+                    {
+                      "condition": "state",
+                      "entity_id": "binary_sensor.fixture_0",
+                      "state": "unavailable"
+                    },
+                    {
+                      "condition": "state",
+                      "entity_id": "binary_sensor.fixture_0",
+                      "state": "unknown"
+                    }
+                  ]
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "notify.fixture_8",
+                  "data": {
+                    "message": "Synthetic message",
+                    "title": "Synthetic title"
+                  }
+                },
+                {
+                  "action": "logbook.log",
+                  "data": {
+                    "entity_id": "cover.garage_fixture",
+                    "message": "Synthetic message",
+                    "name": "Synthetic name"
+                  }
+                }
+              ]
+            }
+          ],
+          "default": [
+            {
+              "action": "logbook.log",
+              "data": {
+                "entity_id": "cover.garage_fixture",
+                "message": "Synthetic message",
+                "name": "Synthetic name"
+              }
+            }
+          ]
+        }
+      ],
+      "alias": "Synthetic alias",
+      "conditions": [
+        {
+          "condition": "state",
+          "entity_id": "cover.garage_fixture",
+          "for": "00:30:00",
+          "state": "open"
+        },
+        {
+          "condition": "state",
+          "entity_id": "input_boolean.fixture_5",
+          "state": "on"
+        },
+        {
+          "condition": "state",
+          "entity_id": "group.fixture_4",
+          "state": "not_home"
+        },
+        {
+          "condition": "state",
+          "entity_id": "input_boolean.fixture_6",
+          "state": "off"
+        }
+      ],
+      "description": "Synthetic description",
+      "mode": "single",
+      "triggers": [
+        {
+          "entity_id": "cover.garage_fixture",
+          "for": "00:30:00",
+          "id": "open_30m",
+          "to": "open",
+          "trigger": "state"
+        },
+        {
+          "id": "periodic_check",
+          "minutes": "/10",
+          "trigger": "time_pattern"
+        }
+      ],
+      "id": "fixture_away"
+    }
+  },
+  {
+    "resource_type": "automation",
+    "target_id": "fixture_bedtime",
+    "config": {
+      "actions": [
+        {
+          "choose": [
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "cover.garage_fixture",
+                  "for": "00:30:00",
+                  "state": "open"
+                },
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_1",
+                  "for": "00:02:00",
+                  "state": "on"
+                },
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_0",
+                  "for": "00:10:00",
+                  "state": "off"
+                }
+              ],
+              "sequence": [
+                {
+                  "choose": [
+                    {
+                      "conditions": [
+                        {
+                          "condition": "state",
+                          "entity_id": "cover.garage_fixture",
+                          "state": "open"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "binary_sensor.fixture_1",
+                          "state": "on"
+                        },
+                        {
+                          "condition": "state",
+                          "entity_id": "binary_sensor.fixture_0",
+                          "state": "off"
+                        },
+                        {
+                          "after": "sunset",
+                          "before": "sunrise",
+                          "condition": "sun"
+                        }
+                      ],
+                      "sequence": [
+                        {
+                          "variables": {
+                            "hamcp135_first": null,
+                            "hamcp135_second": null
+                          }
+                        },
+                        {
+                          "choose": [
+                            {
+                              "conditions": [
+                                {
+                                  "after": "sunset",
+                                  "before": "sunrise",
+                                  "condition": "sun"
+                                },
+                                {
+                                  "condition": "state",
+                                  "entity_id": "cover.garage_fixture",
+                                  "for": "00:30:00",
+                                  "state": "open"
+                                },
+                                {
+                                  "condition": "state",
+                                  "entity_id": "binary_sensor.fixture_1",
+                                  "for": "00:02:00",
+                                  "state": "on"
+                                },
+                                {
+                                  "condition": "state",
+                                  "entity_id": "binary_sensor.fixture_0",
+                                  "for": "00:10:00",
+                                  "state": "off"
+                                }
+                              ],
+                              "sequence": [
+                                {
+                                  "action": "script.fixture_close",
+                                  "continue_on_error": true,
+                                  "response_variable": "hamcp135_first"
+                                }
+                              ]
+                            }
+                          ],
+                          "default": [
+                            {
+                              "action": "logbook.log",
+                              "continue_on_error": true,
+                              "data": {
+                                "entity_id": "cover.garage_fixture",
+                                "message": "Synthetic message",
+                                "name": "Synthetic name"
+                              }
+                            },
+                            {
+                              "stop": "Positive caller policy required before first invocation"
+                            }
+                          ]
+                        },
+                        {
+                          "choose": [
+                            {
+                              "conditions": [
+                                {
+                                  "condition": "template",
+                                  "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                                },
+                                {
+                                  "condition": "and",
+                                  "conditions": [
+                                    {
+                                      "after": "sunset",
+                                      "before": "sunrise",
+                                      "condition": "sun"
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "cover.garage_fixture",
+                                      "for": "00:30:00",
+                                      "state": "open"
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "binary_sensor.fixture_1",
+                                      "for": "00:02:00",
+                                      "state": "on"
+                                    },
+                                    {
+                                      "condition": "state",
+                                      "entity_id": "binary_sensor.fixture_0",
+                                      "for": "00:10:00",
+                                      "state": "off"
+                                    }
+                                  ]
+                                }
+                              ],
+                              "sequence": [
+                                {
+                                  "action": "script.fixture_close",
+                                  "continue_on_error": true,
+                                  "response_variable": "hamcp135_second"
+                                },
+                                {
+                                  "choose": [
+                                    {
+                                      "conditions": [
+                                        {
+                                          "condition": "template",
+                                          "value_template": "{{ hamcp135_second is mapping and hamcp135_second in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                                        }
+                                      ],
+                                      "sequence": [
+                                        {
+                                          "action": "logbook.log",
+                                          "continue_on_error": true,
+                                          "data": {
+                                            "entity_id": "cover.garage_fixture",
+                                            "message": "Synthetic message",
+                                            "name": "Synthetic name"
+                                          }
+                                        },
+                                        {
+                                          "stop": "Two invocations completed; no third invocation"
+                                        }
+                                      ]
+                                    }
+                                  ],
+                                  "default": [
+                                    {
+                                      "action": "notify.fixture_8",
+                                      "continue_on_error": true,
+                                      "data": {
+                                        "message": "Synthetic message",
+                                        "title": "Synthetic title"
+                                      }
+                                    },
+                                    {
+                                      "action": "logbook.log",
+                                      "continue_on_error": true,
+                                      "data": {
+                                        "entity_id": "cover.garage_fixture",
+                                        "message": "Synthetic message",
+                                        "name": "Synthetic name"
+                                      }
+                                    },
+                                    {
+                                      "stop": "No positively recognized second result; no further invocation"
+                                    }
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "conditions": [
+                                {
+                                  "condition": "template",
+                                  "value_template": "{{ hamcp135_first is mapping and hamcp135_first in [{'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'already_closed', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'not_open', 'service_call': 'not_sent'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'closed', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'}, {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'unverified', 'service_call': 'returned'}] }}"
+                                }
+                              ],
+                              "sequence": [
+                                {
+                                  "choose": [
+                                    {
+                                      "conditions": [
+                                        {
+                                          "condition": "template",
+                                          "value_template": "{{ hamcp135_first is mapping and hamcp135_first == {'contract': 'hamcp135-garage-attempt-v1', 'outcome': 'open_after_timeout', 'service_call': 'returned'} }}"
+                                        }
+                                      ],
+                                      "sequence": [
+                                        {
+                                          "action": "logbook.log",
+                                          "continue_on_error": true,
+                                          "data": {
+                                            "entity_id": "cover.garage_fixture",
+                                            "message": "Synthetic message",
+                                            "name": "Synthetic name"
+                                          }
+                                        }
+                                      ]
+                                    }
+                                  ],
+                                  "default": []
+                                },
+                                {
+                                  "stop": "Recognized first result; positive timeout-and-policy retry gate did not pass"
+                                }
+                              ]
+                            }
+                          ],
+                          "default": [
+                            {
+                              "action": "notify.fixture_8",
+                              "continue_on_error": true,
+                              "data": {
+                                "message": "Synthetic message",
+                                "title": "Synthetic title"
+                              }
+                            },
+                            {
+                              "action": "logbook.log",
+                              "continue_on_error": true,
+                              "data": {
+                                "entity_id": "cover.garage_fixture",
+                                "message": "Synthetic message",
+                                "name": "Synthetic name"
+                              }
+                            },
+                            {
+                              "stop": "No positively recognized first result; no retry"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "default": [
+                    {
+                      "action": "logbook.log",
+                      "data": {
+                        "message": "Synthetic message",
+                        "name": "Synthetic name"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_1",
+                  "for": "00:02:00",
+                  "state": "on"
+                },
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_0",
+                  "for": "00:10:00",
+                  "state": "off"
+                },
+                {
+                  "condition": "state",
+                  "entity_id": "cover.garage_fixture",
+                  "state": [
+                    "unknown",
+                    "unavailable"
+                  ]
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "notify.fixture_8",
+                  "data": {
+                    "data": {
+                      "tag": "garage_bedtime_auto_close_blocked"
+                    },
+                    "message": "Synthetic message",
+                    "title": "Synthetic title"
+                  }
+                },
+                {
+                  "action": "logbook.log",
+                  "data": {
+                    "message": "Synthetic message",
+                    "name": "Synthetic name"
+                  }
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "cover.garage_fixture",
+                  "for": "00:30:00",
+                  "state": "open"
+                },
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_0",
+                  "for": "00:10:00",
+                  "state": "off"
+                },
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_1",
+                  "state": [
+                    "unknown",
+                    "unavailable"
+                  ]
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "notify.fixture_8",
+                  "data": {
+                    "data": {
+                      "tag": "garage_bedtime_auto_close_blocked"
+                    },
+                    "message": "Synthetic message",
+                    "title": "Synthetic title"
+                  }
+                },
+                {
+                  "action": "logbook.log",
+                  "data": {
+                    "message": "Synthetic message",
+                    "name": "Synthetic name"
+                  }
+                }
+              ]
+            },
+            {
+              "conditions": [
+                {
+                  "condition": "state",
+                  "entity_id": "cover.garage_fixture",
+                  "for": "00:30:00",
+                  "state": "open"
+                },
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_1",
+                  "for": "00:02:00",
+                  "state": "on"
+                },
+                {
+                  "condition": "state",
+                  "entity_id": "binary_sensor.fixture_0",
+                  "state": [
+                    "unknown",
+                    "unavailable"
+                  ]
+                }
+              ],
+              "sequence": [
+                {
+                  "action": "notify.fixture_8",
+                  "data": {
+                    "data": {
+                      "tag": "garage_bedtime_auto_close_blocked"
+                    },
+                    "message": "Synthetic message",
+                    "title": "Synthetic title"
+                  }
+                },
+                {
+                  "action": "logbook.log",
+                  "data": {
+                    "message": "Synthetic message",
+                    "name": "Synthetic name"
+                  }
+                }
+              ]
+            }
+          ],
+          "default": []
+        }
+      ],
+      "alias": "Synthetic alias",
+      "conditions": [
+        {
+          "after": "sunset",
+          "before": "sunrise",
+          "condition": "sun"
+        }
+      ],
+      "description": "Synthetic description",
+      "mode": "single",
+      "triggers": [
+        {
+          "entity_id": "binary_sensor.fixture_1",
+          "for": "00:02:00",
+          "id": "both_in_bed_2m",
+          "to": "on",
+          "trigger": "state"
+        },
+        {
+          "entity_id": "cover.garage_fixture",
+          "for": "00:30:00",
+          "id": "garage_open_30m",
+          "to": "open",
+          "trigger": "state"
+        },
+        {
+          "entity_id": "binary_sensor.fixture_0",
+          "for": "00:10:00",
+          "id": "garage_clear_10m",
+          "to": "off",
+          "trigger": "state"
+        },
+        {
+          "id": "periodic_check",
+          "minutes": "/10",
+          "trigger": "time_pattern"
+        }
+      ],
+      "id": "fixture_bedtime"
+    }
+  }
+]
