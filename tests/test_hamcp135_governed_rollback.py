@@ -300,6 +300,129 @@ class RollbackTests(ConfigurationPlanTestCase):
                     self.assertTrue(self.runtime.readiness_state()['execution_ready'])
                 finally:self.service.now=now
 
+    async def test_recovery_cancellation_after_transfer_preserves_history_readiness_and_new_owner(self):
+        from ha_mcp_engineering.f3.locks import DurableLockStore
+        from tests.test_f3_lock_manager import _owner, _request, TIMING
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        first=self.runtime;clock=[self.service.now()];self.service.now=lambda:clock[0]
+        service2=ChangeGovernanceService(ChangePlanRepository(self.root/'plans'),self.gateway,
+            AuditLogger(str(self.audit_path),'synthetic-rollback-audit'),now=lambda:clock[0])
+        second=F3RuntimeIntegration(service=service2,storage_root=str(self.root/'plans'),
+            configuration_gateway=_ExactFakeConfigurationGateway(self.gateway),backup_gateway=None,
+            lifecycle_gateway=None,provider_identity_reader=_provider_identity,retention_days=90)
+        service2.f3_runtime=second
+        other=DurableLockStore(self.root/'plans');acquire=first.locks.acquire;seen={}
+        async def recover_in_gap(*args,**kwargs):
+            handle=await acquire(*args,**kwargs)
+            d=first.children.declaration(handle.owner.task_id)
+            if d['operation_ordinal']==1 and not seen:
+                before=first.children.get(d['child_id'])
+                self.assertFalse(before.terminal);self.assertEqual(before.dispatch_count,0)
+                self.assertEqual(before.lock_tokens,[]);self.assertTrue(first.locks.records())
+                clock[0]+=timedelta(minutes=3)
+                await second.recover_once('startup')
+                cancelled=first.children.get(d['child_id'])
+                self.assertEqual(cancelled.normalized_outcome,'cancelled_pre_dispatch')
+                self.assertEqual(cancelled.dispatch_count,0);self.assertIsNone(cancelled.dispatch_intent)
+                self.assertEqual(first.locks.records(),())
+                seen.update(child=d['child_id'],record=cancelled.to_dict())
+                seen['handle']=other.acquire_once((_request('script:fixture_close'),),
+                    owner=_owner('new-owner-after-recovery'),timing=TIMING,now=clock[0])
+                seen['locks']=other.records()
+            return handle
+        with patch.object(first.locks,'acquire',side_effect=recover_in_gap):
+            result=await self.apply_request(request)
+        self.assertTrue(seen);self.assertNotEqual(result['task_state'],'succeeded_verified')
+        self.assertEqual(first.children.get(seen['child']).to_dict(),seen['record'])
+        self.assertEqual(other.records(),seen['locks'])
+        other.release(seen['handle'])
+        for runtime in (first,second,first):
+            await runtime.recover_once('cancelled-owner-resumed')
+            self.assertTrue(runtime.readiness_state()['execution_ready'])
+        with self.assertRaises(GovernanceError) as duplicate:await self.apply_request(request)
+        self.assertEqual(duplicate.exception.code,ErrorCode.DUPLICATE_APPLY_ATTEMPT)
+        self.assertEqual(self.service.task_repository.get_for_plan(request['plan_id']).task_id,result['task_id'])
+        self.assertEqual(len(self.writes()),1)
+        self.assertEqual(first.children.get(seen['child']).to_dict(),seen['record'])
+        self.assertEqual(first.locks.records(),())
+        other_request=await self.create_automation_plan();await self.approve(other_request)
+        applied=await self.apply_request(other_request)
+        self.assertEqual(applied['task_state'],'succeeded_verified');self.assertEqual(len(self.writes()),2)
+
+    async def test_cancel_at_token_publication_preserves_history_and_claim_fences(self):
+        from ha_mcp_engineering.f3.locks import LockWaitCancelled
+        from ha_mcp_engineering.f3.persistence import ExecutionClaimLost, ExecutionStorageError
+        from ha_mcp_engineering.f3_runtime.runtime import _InverseAcquisitionRepository, PRODUCTION_LOCK_TIMING
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        factory=self.runtime._executor;count=0;seen={}
+        def create(seconds):
+            nonlocal count
+            count+=1;executor=factory(seconds)
+            if count==2:
+                def cancel(stage):
+                    if stage!='after_lock_acquisition_before_token_persistence':return
+                    locks=self.runtime.locks.records();child=locks[0].task_id
+                    handle=self.runtime._observed_lock_handle(locks,PRODUCTION_LOCK_TIMING)
+                    self.assertTrue(self.runtime.children.cancel(child,now=self.service.now()))
+                    record=self.runtime.children.get(child);d=self.runtime.children.declaration(child)
+                    args=dict(owner_id=record.identity['owner_id'],claim_generation=record.claim_generation,
+                              handle=handle,now=self.service.now())
+                    # The same atomic reader still fences the old owner/generation.
+                    for changed in ({'owner_id':'stale-owner'},{'claim_generation':record.claim_generation+1}):
+                        with self.assertRaises(ExecutionClaimLost):
+                            executor.execution_repository.record_locks(child,**dict(args,**changed))
+                    mismatched=_InverseAcquisitionRepository(self.runtime.children,
+                        dict(d,prepared_operation_hash='0'*64))
+                    with self.assertRaises(ExecutionStorageError):mismatched.record_locks(child,**args)
+                    with self.assertRaises(LockWaitCancelled):
+                        executor.execution_repository.record_locks(child,**args)
+                    with patch.object(self.runtime.children,'_raw_envelope',side_effect=OSError('synthetic read failure')):
+                        with self.assertRaises(ExecutionStorageError):
+                            executor.execution_repository.record_locks(child,**args)
+                    seen.update(child=child,record=record.to_dict())
+                executor._fault_hook=cancel
+            return executor
+        with patch.object(self.runtime,'_executor',side_effect=create):result=await self.apply_request(request)
+        self.assertNotEqual(result['task_state'],'succeeded_verified');self.assertEqual(len(self.writes()),1)
+        self.assertEqual(self.runtime.children.get(seen['child']).to_dict(),seen['record'])
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+        self.assertTrue(self.runtime.locks.records())  # Unexpired tokenless ownership stays visible.
+        now=self.service.now();self.service.now=lambda:now+timedelta(minutes=3)
+        for _ in range(2):await self.runtime.recover_once('cancelled-token-publication')
+        self.assertEqual(self.runtime.locks.records(),());self.assertEqual(len(self.writes()),1)
+        self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+
+    async def test_token_publication_write_failure_remains_a_storage_fault(self):
+        import os
+        source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
+        factory=self.runtime._executor;count=0;failed=[];armed=False;replace=os.replace
+        def write_failure(src,dst):
+            if armed and str(dst).endswith('.child.json') and not failed:
+                failed.append('token_replace');raise OSError('synthetic token write failure')
+            return replace(src,dst)
+        def create(seconds):
+            nonlocal count
+            count+=1;executor=factory(seconds)
+            if count==2:
+                def arm(stage):
+                    nonlocal armed
+                    if stage!='after_lock_acquisition_before_token_persistence':return
+                    armed=True
+                executor._fault_hook=arm
+            return executor
+        with patch.object(self.runtime,'_executor',side_effect=create), patch(
+                'ha_mcp_engineering.f3_runtime.repository.os.replace',side_effect=write_failure):
+            result=await self.apply_request(request)
+        self.assertEqual(failed,['token_replace'])
+        self.assertNotEqual(result['task_state'],'succeeded_verified');self.assertEqual(len(self.writes()),1)
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        await self.runtime.recover_once('real-token-write-failure')
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        other=await self.create_automation_plan();await self.approve(other)
+        with self.assertRaises(GovernanceError) as error:await self.apply_request(other)
+        self.assertEqual(error.exception.code,ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        self.assertEqual(len(self.writes()),1)
+
     async def test_transfer_durable_failure_preserves_prefix_and_cleanup_is_recoverable(self):
         source=await self.seed();_,request=await self.rollback(source);await self.approve(request)
         original=self.runtime.locks.transfer_complete
