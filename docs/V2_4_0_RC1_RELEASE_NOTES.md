@@ -3,8 +3,25 @@
 Engineering 2.4.0-rc.1 promotes the accepted beta.16 implementation to release
 candidate status. Preparation base is protected beta.16 source
 `fce97c66848796d68d989f12efcf53fa43ddf32d`, tree
-`d63280b0d0730b559b3f7cc9fa1f2f9deefe14f1`. This release changes version metadata
-and documentation; it adds no runtime behavior, provider or household operation.
+`d63280b0d0730b559b3f7cc9fa1f2f9deefe14f1`. This release changes version metadata,
+documentation and one dependency. Engineering runtime logic is unchanged; no
+provider or household operation is added.
+
+## Dependency security correction
+
+The RC dependency audit refused the inherited multidict 6.8.0 pin for
+[CVE-2026-104874](https://github.com/aio-libs/multidict/security/advisories/GHSA-54p9-h82j-f925).
+RC1 updates it to the maintainer's fixed 6.9.1 release in both hash locks and the
+declared build inventory. The defect leaks references during particular C-extension
+items-view set operations. No exploitation or installed impact is established by
+that audit result.
+
+All other package versions, wheel hashes and base-image inputs remain unchanged.
+The full 6.9.1 dependency release is included, not a locally cherry-picked patch;
+its upstream fixes and additive API changes require compatibility validation.
+The original metadata-only RC review does not attest this corrected payload.
+Require fresh locked-input/audit checks, Engineering tests, architecture packaging,
+catalog comparison and focused independent delta review before Ready.
 
 ## Preserved 2.4 capability
 
@@ -19,8 +36,9 @@ automation-baseline capture and offline comparison, dashboard integrity analysis
 logbook processing, configuration re-verification, F3 readiness/reconciliation and
 the exact garage configuration eligibility introduced during the 2.4 beta series.
 Public descriptors, routing, approval meaning, one-dispatch ownership, persisted
-formats, controlled dependencies, build inputs, workflows and zero-fallback
-behavior are preserved. Existing partial coverage and uncertainty remain visible.
+formats, workflows and zero-fallback behavior are preserved. Controlled inputs
+change only for the multidict correction above. Existing partial coverage and
+uncertainty remain visible.
 
 The garage forward path still requires proof of the exact minimal transformation
 or full five-object caller-owned retry composition. All 11 positive guards in the
@@ -50,8 +68,9 @@ The October 4 beta.16 closure reconciled source/release and installed read-only
 acceptance as PASS, including image binding and all 83 raw public descriptors.
 Its source campaign ran 4,725 tests: 4,701 passed and 24 skipped. The retained
 garage Core evidence contains 296 executed checks / 289 distinct cases.
-These are attributed beta.16 results, not claimed RC executions. RC source/CI,
-publication and installed results must be recorded against the actual RC source
+These are attributed beta.16 results, not claimed RC executions or proof of the
+new dependency's compatibility. RC source/CI, publication and installed results
+must be recorded against the actual RC source
 and image under the [RC1 acceptance contract](V2_4_0_RC1_ACCEPTANCE.md).
 
 Carry earlier acceptance qualifications and evidence provenance forward. The

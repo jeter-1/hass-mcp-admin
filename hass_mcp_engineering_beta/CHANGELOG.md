@@ -2,8 +2,11 @@
 
 ## 2.4.0-rc.1 - Release candidate from accepted beta.16
 
-- Promote the accepted beta.16 implementation without a functional runtime,
-  provider, dependency, storage or workflow change.
+- Promote the accepted beta.16 Engineering implementation and update only the
+  multidict dependency from 6.8.0 to 6.9.1 for CVE-2026-104874. Both hash locks
+  and the build inventory carry the reviewed correction; all other pins remain.
+- Preserve Engineering runtime logic, providers, storage and workflows. This
+  security correction changes the dependency payload and requires fresh validation.
 - Preserve all 83 descriptors, 21 Core profiles, exact ha-mcp 8.5.0 admission,
   signed applicability and the existing technical Beta installation identity.
 - Carry forward bounded analysis, baseline capture, verification, F3 and exact

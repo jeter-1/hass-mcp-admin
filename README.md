@@ -1,7 +1,8 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.0-rc.1** promotes the accepted beta.16 implementation without
-adding runtime behavior. The healthy catalog is **83 tools: 58 native and 25
+Engineering **2.4.0-rc.1** promotes the accepted beta.16 implementation with a
+bounded dependency security correction: multidict 6.8.0 -> 6.9.1 for
+CVE-2026-104874. The healthy catalog is **83 tools: 58 native and 25
 admitted delegated reads**. Exact ha-mcp 8.5.0, the 21 Core profiles, signed
 applicability, storage formats and the existing installation are preserved.
 See the [RC1 release notes](docs/V2_4_0_RC1_RELEASE_NOTES.md) and

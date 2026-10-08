@@ -1,8 +1,9 @@
 # Engineering 2.4.0-rc.1 acceptance
 
-This contract accepts the beta.16 implementation as a release candidate without
-adding runtime behavior. It defines source, publication and installed gates and
-the subsequent GA preparation boundary. Household remediation remains separate.
+This contract accepts the beta.16 Engineering implementation with the approved
+multidict 6.8.0 -> 6.9.1 security correction. It defines source, publication and
+installed gates and the later GA decision boundary. Household remediation remains
+separate.
 
 ## 1. Exact source, scope and review
 
@@ -11,8 +12,11 @@ Preparation base is protected beta.16
 `d63280b0d0730b559b3f7cc9fa1f2f9deefe14f1`. Record the actual candidate, merged
 source/tree and build identity when they exist; do not infer them from this base.
 The source delta is restricted to the three authoritative Engineering versions,
-release/acceptance documents, README and changelog. Runtime differences from the
-base must consist only of `SERVER_VERSION` in `version.py`.
+release/acceptance documents, README, changelog, both dependency locks and
+`hass_mcp_engineering_beta/build-inputs.json`. Engineering runtime-source differences
+from the base must consist only of `SERVER_VERSION` in `version.py`. The packaged
+dependency change is separately admitted below; this is no longer a metadata-only
+payload.
 
 Require canonical beta.16 -> rc.1 sequencing. Use `.release/next-version` for
 authoring, obtain exact staged document resolution from `codex-context.py`, review
@@ -23,10 +27,25 @@ release-notes/acceptance resolution and unchanged stable-v1 1.1.2.
 Compare all 83 complete descriptors with beta.16, including schemas/annotations,
 and preserve 58 native + 25 delegated registration, reviewed ha-mcp 8.5.0, all
 21 Core profile fingerprints, signed journals, routing, approval/dispatch/recovery,
-persisted formats, dependencies, build inputs and workflow permissions. Preserve
-the technical Beta add-on name/slug, image repository, ports, ingress, options,
+persisted formats and workflow permissions. In the runtime/test locks and build
+inventory, admit only multidict 6.8.0 -> 6.9.1, its verified wheel hashes and the
+resulting runtime-lock digest. Preserve every other dependency pin/hash, base
+image, Python and installer input. Preserve the technical Beta add-on name/slug,
+image repository, ports, ingress, options,
 volumes and architecture policy. No Govee, HAMCP-151, governed garage rollback or
 ha-mcp 8.6.0 implementation is included.
+
+Bind the fixed release and Python 3.12 amd64/arm64 wheel artifacts to upstream
+advisory/release evidence and official hashes. Use the existing controlled-input
+procedure with binary-only, hash-checked resolution and no source-build fallback.
+Review the full dependency release delta, including changes preceding the security
+patch. Prove the items-view leak correction with bounded synthetic operands and
+an unchanged-version control; check ordinary repeated/case-insensitive header and
+query behavior. Run the strict dependency audit, input/dependency consistency,
+both architecture packaging gates, full Engineering suite and descriptor/profile
+comparison with the corrected environment. Preserve the original failed CI and
+review evidence. No advisory waiver, audit bypass or unexplained dependency drift
+is acceptable.
 
 Run complete Full/Evidence against the actual clean candidate and exact base,
 declaring the changed protected paths. Obtain one bounded independent release-
@@ -37,9 +56,11 @@ metadata. Preserve useful authorized success and failure/recovery regressions.
 Reuse hash-bound beta.16 source/disposable semantic evidence where the functional
 inputs are unchanged, including the reviewed 296 executed / 289 distinct garage
 Core cases. Verify its source/harness/fixture bindings and retained limitations.
-Do not rerun complete historical household or disposable campaigns merely for a
-version change. A new semantic input or concrete evidence gap requires targeted
-validation. Reused evidence remains attributed to its original revision/time.
+Do not rerun complete historical household campaigns merely for a release label.
+The dependency correction requires the fresh checks above; retained beta.16
+evidence alone cannot establish its compatibility. A new semantic input or
+concrete evidence gap requires targeted validation. Reused evidence remains
+attributed to its original revision/time.
 
 ## 2. Publication
 
@@ -68,6 +89,8 @@ The accepted prior beta.16 image is
 bound to source `fce97c66848796d68d989f12efcf53fa43ddf32d`. Verify availability
 and platform binding when preparing an actual recovery action; do not infer a
 backup exists from an image reference.
+That prior image retains multidict 6.8.0; any recovery decision must disclose its
+known dependency advisory rather than present it as a security-corrected image.
 
 Before separately authorized deployment, record current storage/authority and
 task/lock/approval state, preserve existing configuration and durable records,
@@ -129,9 +152,10 @@ evidence and FAIL for an observed failure. Reconcile all failures, skips and
 qualifications; do not invent a fixed soak period or erase prior limitations.
 Existing deployment and household records must remain readable and settled.
 
-Once RC acceptance is complete, prepare `2.4.0` as a separate canonical RC ->
-stable metadata/documentation transition. Bind it to the exact accepted RC
-implementation and publication/installed receipts. Create exact GA notes and
+Once RC acceptance is complete and Josh authorizes the later GA promotion,
+prepare `2.4.0` as a separate canonical RC -> stable metadata/documentation
+transition. Bind it to the exact accepted RC implementation and publication/
+installed receipts. Create exact GA notes and
 acceptance documents before materialization; no GA image/source identity is
 known in advance. Repeat candidate source/review/CI and publication verification,
 then separately authorized GA installation and the bounded identity/catalog/read/
@@ -148,7 +172,7 @@ Josh explicitly changes the scope and the additional implementation is reviewed.
 
 Preserve the beta.16 closure's attribution and all carried historical exceptions,
 including the F027 evidence qualification and supplied smoke/history evidence.
-No-source-change promotion cannot establish missing historical facts, eliminate
+Release promotion cannot establish missing historical facts, eliminate
 coverage limits, guarantee latency or prove every audit remediation complete.
 
 Garage D2 remains open: the five saves are non-atomic, existing runs/reload effects
