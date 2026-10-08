@@ -138,17 +138,19 @@ class ExecutionTests(ConfigurationPlanTestCase):
             self.assertEqual(result['task_state'],'failed_pre_dispatch')
             self.assertFalse(any(c[0]=='write' for c in self.gateway.calls))
 
-    async def test_inverse_excludes_script_and_never_automatically_writes(self):
+    async def test_inverse_restores_exact_script_only_with_new_elevated_approval(self):
         created=await self.create_retry_plan();await self.approve(created)
         result=await self.service.apply(created['plan_id'],created['plan_hash'])
         before=len([c for c in self.gateway.calls if c[0]=='write'])
         rollback=await self.runtime.create_rollback_plan(self.repository.get(created['plan_id']),created['plan_hash'])
         self.assertEqual(len([c for c in self.gateway.calls if c[0]=='write']),before)
-        # The normal rollback route must not bypass policy to restore retries.
-        self.assertEqual(rollback['status'],'rollback_unavailable')
-        self.assertFalse(rollback['approval_required'])
+        # Exact full-transfer evidence permits a fresh, separately approved inverse.
+        self.assertEqual(rollback['status'],'rollback_plan_created')
+        self.assertTrue(rollback['approval_required'])
         inverse=self.repository.get(rollback['rollback_plan_id'])
-        self.assertEqual(inverse.policy_decision.policy_class.value,'prohibited')
+        self.assertEqual(inverse.policy_decision.policy_class.value,'elevated_admin')
+        self.assertEqual(inverse.operations[-1].resource_type,'script')
+        self.assertIn('original internal retry',inverse.description)
 
     async def test_partial_inverse_discloses_excluded_script_and_requires_new_approval(self):
         created=await self.create_retry_plan();await self.approve(created)

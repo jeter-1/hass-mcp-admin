@@ -86,6 +86,7 @@ from .configuration_eligibility import (
     derive_proof,
     markers as retry_proof_markers,
 )
+from . import configuration_rollback_eligibility as inverse_eligibility
 from .policy import (
     POLICY_VERSION,
     configuration_operation_policy,
@@ -856,7 +857,7 @@ class ChangeGovernanceService:
             else None
         )
 
-    def _require_policy_snapshot(self, plan: ChangePlan) -> None:
+    def _require_policy_snapshot(self, plan: ChangePlan, *, projection_only: bool = False) -> None:
         if plan.policy_decision is None:
             raise GovernanceError(
                 ErrorCode.POLICY_SNAPSHOT_REQUIRED,
@@ -877,6 +878,11 @@ class ChangeGovernanceService:
                     ),
                 },
             )
+        if not projection_only and any(inverse_eligibility.markers(op) for op in plan.operations):
+            if self.f3_runtime is None:
+                raise GovernanceError(ErrorCode.UNSUPPORTED_CHANGE_OPERATION,
+                                      details={"reason": "garage_inverse_f3_unavailable"})
+            self.f3_runtime.require_rollback_source(plan)
         bundle_error = self._approval_bundle_integrity_error(plan)
         if bundle_error is not None:
             METRICS.record_classified_outcome(bundle_error.value)
@@ -907,7 +913,10 @@ class ChangeGovernanceService:
             # A task invalidates the never-executed profile. Shared authority
             # checks below retain their original refusal and error semantics.
         if policy_snapshot_matches(plan):
-            self._require_policy_snapshot(plan)
+            # A durable inverse intent retains readback/projection authority even
+            # when source evidence is unavailable. New writes still require the
+            # source at load/apply and the complete-bundle preflight boundary.
+            self._require_policy_snapshot(plan, projection_only=True)
             return
         if persisted_f2_v1_policy_snapshot_matches(plan):
             # Exact F2-v1 is immutable review evidence only. Approval, apply,
@@ -4243,6 +4252,17 @@ class ChangeGovernanceService:
         caller_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Create one immutable, ordered contract-v2 configuration plan."""
+        return await self._create_configuration_plan(
+            title=title, description=description, operations=operations,
+            expiration_minutes=expiration_minutes, caller_context=caller_context,
+        )
+
+    async def _create_configuration_plan(
+        self, *, title: str, description: str, operations: list[dict[str, Any]],
+        expiration_minutes: int = 120, caller_context: dict[str, Any] | None = None,
+        _rollback_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Internal builder; only F3's inverse route supplies durable context."""
 
         if not isinstance(operations, list) or not (
             1 <= len(operations) <= MAX_CONFIGURATION_OPERATIONS
@@ -4593,11 +4613,21 @@ class ChangeGovernanceService:
                 )
         else:
             for operation in prepared:
-                if operation.resource_type == "script" and not operation.risk.apply_allowed:
+                if _rollback_context is None and operation.resource_type == "script" and not operation.risk.apply_allowed:
                     operation.risk.warnings.append(
                         "No complete retry-transformation proof: required structure "
                         "is unsupported or its proof bounds were exhausted."
                     )
+        if _rollback_context is not None:
+            proof = inverse_eligibility.build(
+                _rollback_context["plan_id"], prepared, _rollback_context
+            )
+            for operation in prepared:
+                operation.risk.apply_allowed = True
+                operation.risk.evidence.append(
+                    {"trigger": inverse_eligibility.TRIGGER, "proof": proof}
+                )
+                operation.risk.warnings.append(inverse_eligibility.DISCLOSURE)
         for prepared_operation in prepared:
             operation_policy = configuration_operation_policy(
                 prepared_operation
@@ -4643,7 +4673,7 @@ class ChangeGovernanceService:
         expiration_minutes = max(5, min(int(expiration_minutes), 1440))
         aggregate_risk = self._aggregate_configuration_risk(prepared)
         now = self.now()
-        plan_id = self._new_id()
+        plan_id = _rollback_context["plan_id"] if _rollback_context is not None else self._new_id()
         plan = ChangePlan(
             plan_id=plan_id,
             plan_version=1,
@@ -4708,8 +4738,11 @@ class ChangeGovernanceService:
         )
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
-        self._record(plan, "change_plan_created", "success")
-        self._supersede_prior(plan)
+        if _rollback_context is not None:
+            plan = self.f3_runtime.persist_rollback_plan(plan, _rollback_context)
+        else:
+            self._record(plan, "change_plan_created", "success")
+            self._supersede_prior(plan)
         return self._public(plan)
 
     def _supersede_prior(self, new_plan: ChangePlan) -> None:
@@ -4724,7 +4757,13 @@ class ChangeGovernanceService:
             try:
                 plan = self._load(plan_id)
             except GovernanceError as exc:
-                if exc.code in PLAN_PROJECTION_FAILURE_CODES:
+                if exc.code in PLAN_PROJECTION_FAILURE_CODES or (
+                    exc.code in {ErrorCode.ROLLBACK_NOT_AVAILABLE, ErrorCode.UNSUPPORTED_CHANGE_OPERATION}
+                    and exc.details.get("reason") in {"garage_inverse_source_binding_unavailable",
+                                                       "garage_inverse_f3_unavailable"}
+                ):
+                    # A local inverse-authority refusal preserves that record
+                    # and must not block unrelated replacement-plan creation.
                     continue
                 raise
             self._require_v2_persisted_plan_safe(plan)
@@ -7285,7 +7324,7 @@ class ChangeGovernanceService:
                 return self.f3_runtime.handle_legacy_apply(
                     plan, expected_plan_hash
                 )
-            if any(retry_proof_markers(op) for op in plan.operations):
+            if any(retry_proof_markers(op) or inverse_eligibility.markers(op) for op in plan.operations):
                 # This eligibility class requires F3's whole-bundle checks.
                 # Never consume approval or create a legacy execution task
                 # when that execution authority is absent.

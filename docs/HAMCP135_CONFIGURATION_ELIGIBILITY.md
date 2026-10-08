@@ -77,19 +77,21 @@ wall-clock deadline.
 Five writes are ordered S → N → C → A → B and are non-atomic. Old callers can
 consume the new script without a response. New callers reject old/empty results.
 Old in-flight runs and reload completion require separate operational evidence.
-D2 remains a separate live-application gate: restoring the original script restores
-internal retry and is outside this forward proof. A prohibited inverse is reported unavailable and receives no usable approval
-request. An incomplete eligible caller-only inverse is explicitly partial and
-still requires a fresh owner approval; it does not establish complete recovery.
-Neither runs automatically. Existing permitted exact automation restoration
-is not a script-restoration exception. Drifted/unverified members stay excluded.
+D2 remains a separate live-application gate. Script restoration remains outside
+this forward proof. The separate [exact governed inverse contract](HAMCP135_GOVERNED_ROLLBACK.md)
+binds a verified prefix of the full transfer and requires new elevated approval;
+minimal-removal plans do not gain that authority. It discloses the restored retry
+weakness and preserves explicitly partial caller-only outcomes. No inverse runs
+automatically. The inverse retains its complete lock union across verified children
+using exact fenced transfer. Independent review remains a separate gate; local
+configuration verification is not household recovery.
 
 ## Validation boundaries
 
 The two HAMCP-135 unittest modules exercise structural and authority tampering,
 positive use, guard preservation, exact member/dependency binding, every sequence
 prefix, final-bundle drift, local refusal followed by unrelated success, lost
-responses, duplicate execution and unavailable inverse. Existing risk/policy,
+responses, duplicate execution and separately governed inverse creation. Existing risk/policy,
 F3/readiness/storage/reverification regressions remain required.
 
 Disposable Core 2026.9.4 acceptance uses separately sanitized bodies, synthetic

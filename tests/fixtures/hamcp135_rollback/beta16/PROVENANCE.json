@@ -1,0 +1,10 @@
+{
+  "writer_commit": "fce97c66848796d68d989f12efcf53fa43ddf32d",
+  "source_plan_id": "1cf22e3cc06a4b8385bd65a9a0cef696",
+  "source_plan_hash": "14c59dacb59d3a01b1d28d0d448a89719aa1b50d10766092deece90bb8537a21",
+  "task_id": "2f11453e4ec84b1aadd2f3aa697fa548",
+  "cached_prohibited_inverse_id": "0bb457ed2780438080fa3e4a2e71194c",
+  "generator_sha256": "bac2b9dabdb5d5b1795494b5f8b0ca162e4e0e2ff7381650a48095c76f70e144",
+  "input_fixture_sha256": "4f62c6752c89444e7c7ceb5cb0385c9ff5b4db5cc9e870a4c2a52fce952bf035",
+  "sanitization": "Committed synthetic forward bodies used before hashing. No record edits."
+}

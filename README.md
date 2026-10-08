@@ -1,18 +1,23 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.0-rc.1** promotes the accepted beta.16 implementation with a
-bounded dependency security correction: multidict 6.8.0 -> 6.9.1 for
-CVE-2026-104874. The healthy catalog is **83 tools: 58 native and 25
-admitted delegated reads**. Exact ha-mcp 8.5.0, the 21 Core profiles, signed
-applicability, storage formats and the existing installation are preserved.
-See the [RC1 release notes](docs/V2_4_0_RC1_RELEASE_NOTES.md) and
-[acceptance contract, including the GA exit gates](docs/V2_4_0_RC1_ACCEPTANCE.md).
+Engineering **2.4.1-beta.1** adds an evidence-bound, freshly approved
+[governed garage configuration inverse](docs/HAMCP135_GOVERNED_ROLLBACK.md).
+The healthy catalog remains **83 tools: 58 native and 25 admitted delegated
+reads**. Exact ha-mcp 8.5.0, the 21 Core profiles, signed applicability, storage
+formats and RC1's multidict 6.9.1 security correction are preserved.
+See the [release notes](docs/V2_4_1_BETA1_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA1_ACCEPTANCE.md).
+
+Josh's Engineering installation continues on the development track. The earlier
+RC1-to-GA proposal is superseded; this beta uses the same existing technical Beta
+installation and public connector, with no GA prerequisite or second installation.
 
 Beta.16's [bounded garage configuration eligibility](docs/HAMCP135_CONFIGURATION_ELIGIBILITY.md)
 and beta.15's [dashboard analyzer](docs/DASHBOARD_INTEGRITY_ANALYSIS.md) remain
-available. Garage D2 and the separately developed governed rollback, Govee
-administration and add-on restart work remain outside this promotion. A release
-milestone does not authorize household operations or close those remediation gates.
+available. Garage D2 remains a separate household gate: restoring the original
+script also restores its retry weakness, and saved bytes do not prove activation
+or settled runs. Govee administration and add-on restart work are not included.
+A release milestone does not authorize household operations.
 
 Historically, beta.14 added [native automation-baseline capture](docs/V2_4_0_BETA14_RELEASE_NOTES.md)
 for the existing offline comparator. It captures loaded automations, including
@@ -81,14 +86,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.0-rc.1 release notes](docs/V2_4_0_RC1_RELEASE_NOTES.md) and
-[2.4.0-rc.1 acceptance contract](docs/V2_4_0_RC1_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.1 release notes](docs/V2_4_1_BETA1_RELEASE_NOTES.md) and
+[2.4.1-beta.1 acceptance contract](docs/V2_4_1_BETA1_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.0-rc.1 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.1 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

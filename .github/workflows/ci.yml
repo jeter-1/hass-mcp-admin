@@ -185,7 +185,7 @@ jobs:
   validate_source:
     needs: validate_prerequisites
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
     outputs:
       source_validation: ${{ steps.source_receipt.outputs.source_validation }}
     steps:
