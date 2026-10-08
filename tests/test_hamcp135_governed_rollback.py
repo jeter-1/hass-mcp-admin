@@ -12,7 +12,9 @@ from tests import test_hamcp135_configuration_eligibility as fixtures
 from tests.test_dev14_configuration_plans import ConfigurationPlanTestCase
 from tests.test_f3_runtime_integration import _ExactFakeConfigurationGateway, _provider_identity
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
-from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration
+from ha_mcp_engineering.f3_runtime.runtime import (
+    F3RuntimeIntegration, RECOVERY_SWEEP_TIME_BUDGET_SECONDS,
+)
 from ha_mcp_engineering.governance import configuration_rollback_eligibility as inverse
 from ha_mcp_engineering.governance.policy import policy_snapshot_matches
 from ha_mcp_engineering.governance.service import ChangeGovernanceService
@@ -37,6 +39,88 @@ class RollbackTests(ConfigurationPlanTestCase):
             provider_identity_reader=_provider_identity, retention_days=90)
         self.service.f3_runtime = self.runtime
         await self.runtime.recover_once('startup')
+        # Startup recovery is bounded; one unfaulted sweep can legitimately
+        # leave initialization incomplete. Establish readiness before applying.
+        for _ in range(3):
+            readiness = self.runtime.readiness_state()
+            self.assertEqual(readiness['faults'], [])
+            if readiness['execution_ready']:
+                break
+            await self.runtime.recover_once('test_startup_continuation')
+        readiness = self.runtime.readiness_state()
+        self.assertEqual(readiness['faults'], [])
+        self.assertTrue(readiness['execution_ready'], readiness)
+
+    async def test_reconstruction_continues_after_incomplete_startup_sweep(self):
+        recover = F3RuntimeIntegration.recover_once
+        incomplete = []
+        continued = []
+
+        async def bounded_recover(runtime, trigger):
+            if trigger == 'startup' and runtime.locks.records():
+                ticks = iter([0.0])
+                with patch.object(runtime, '_recovery_monotonic', side_effect=lambda:
+                        next(ticks, RECOVERY_SWEEP_TIME_BUDGET_SECONDS + 1)):
+                    result = await recover(runtime, trigger)
+                incomplete.append(runtime.readiness_state())
+            else:
+                result = await recover(runtime, trigger)
+                if incomplete:
+                    continued.append(runtime.readiness_state())
+            return result
+
+        with patch.object(F3RuntimeIntegration, 'recover_once', bounded_recover):
+            # Reuse the real crash/reconstruction scenario, including its
+            # retained-lock, exactly-five-write and final-release assertions.
+            await self.test_reconstruction_before_release_retains_and_live_lease_continues()
+        self.assertEqual(len(incomplete), 1)
+        self.assertEqual(incomplete[0], {
+            'request_ready': False, 'execution_ready': False,
+            'status': 'initializing', 'faults': [],
+        })
+        self.assertTrue(continued)
+        self.assertTrue(continued[-1]['execution_ready'])
+        self.assertEqual(continued[-1]['faults'], [])
+
+    async def test_startup_continuation_exhaustion_refuses_without_writes(self):
+        recover = F3RuntimeIntegration.recover_once
+        attempts = []
+
+        async def incomplete_recover(runtime, trigger):
+            attempts.append(trigger)
+            self.assertLessEqual(len(attempts), 4, 'unbounded startup continuation')
+            ticks = iter([0.0])
+            with patch.object(runtime, '_recovery_monotonic', side_effect=lambda:
+                    next(ticks, RECOVERY_SWEEP_TIME_BUDGET_SECONDS + 1)):
+                return await recover(runtime, trigger)
+
+        with patch.object(F3RuntimeIntegration, 'recover_once', incomplete_recover):
+            with self.assertRaises(AssertionError):
+                await self.restart_runtime()
+        self.assertEqual(attempts, ['startup'] + ['test_startup_continuation'] * 3)
+        self.assertEqual(self.runtime.readiness_state(), {
+            'request_ready': False, 'execution_ready': False,
+            'status': 'initializing', 'faults': [],
+        })
+        self.assertEqual(self.writes(), [])
+
+    async def test_startup_fault_refuses_without_continuation_or_writes(self):
+        recover = F3RuntimeIntegration.recover_once
+        attempts = []
+
+        async def faulted_recover(runtime, trigger):
+            attempts.append(trigger)
+            result = await recover(runtime, trigger)
+            runtime._readiness_fault('execution_storage')
+            return result
+
+        with patch.object(F3RuntimeIntegration, 'recover_once', faulted_recover):
+            with self.assertRaises(AssertionError):
+                await self.restart_runtime()
+        self.assertEqual(attempts, ['startup'])
+        self.assertEqual(self.runtime.readiness_state()['faults'], ['execution_storage'])
+        self.assertFalse(self.runtime.readiness_state()['execution_ready'])
+        self.assertEqual(self.writes(), [])
 
     def writes(self):
         return [c for c in self.gateway.calls if c[0]=='write']
