@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.1-beta.1 - Governed garage configuration recovery
+
+- Add the reviewed exact inverse of a durably verified HAMCP-135 forward prefix,
+  with fresh elevated approval, whole-bundle checks and script-last restoration.
+- Retain continuous lock ownership between inverse children, check deadlines
+  inside the transfer transaction and preserve recovered cancellation without
+  masking genuine storage faults or repeating dispatch.
+- Preserve partial/unknown outcomes, historical prohibited plans, all 83 public
+  descriptors, 21 Core profiles, signed authority, dependencies and stable v1.
+- Continue Josh's development track directly from RC1 to the next patch beta.1;
+  retain release sequencing checks and all owner publication/deployment controls.
+- Keep D2 separate: original-script restoration restores its known retry weakness;
+  activation, active-run settlement and household consequences need acceptance.
+- Exclude Govee, HAMCP-151 and ha-mcp 8.6.0. Carry the unresolved RC1 projection
+  warning forward; this release makes no claim to repair that separate record.
+
 ## 2.4.0-rc.1 - Release candidate from accepted beta.16
 
 - Promote the accepted beta.16 Engineering implementation and update only the

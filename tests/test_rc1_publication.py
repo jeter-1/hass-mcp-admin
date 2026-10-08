@@ -308,14 +308,18 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
             )
         )
         cases = (
-            ("2.2.0-beta.50", True),
-            ("2.2.0-beta.51", True),
-            ("2.2.0-beta.52", False),
-            ("2.2.0-rc2-dev51", False),
+            ("2.2.0-beta.50", "2.2.0-beta.50", True),
+            ("2.2.0-beta.50", "2.2.0-beta.51", True),
+            ("2.2.0-beta.50", "2.2.0-beta.52", False),
+            ("2.2.0-beta.50", "2.2.0-rc2-dev51", False),
+            ("2.4.0-rc.1", "2.4.1-beta.1", True),
+            ("2.4.0-rc.1", "2.4.1-beta.2", False),
+            ("2.4.0-rc.1", "2.4.2-beta.1", False),
+            ("2.4.0-rc.1", "2.4.1", False),
         )
-        for candidate, succeeds in cases:
+        for current, candidate, succeeds in cases:
             with (
-                self.subTest(candidate=candidate),
+                self.subTest(current=current, candidate=candidate),
                 tempfile.TemporaryDirectory() as directory,
             ):
                 repo = Path(directory)
@@ -323,7 +327,7 @@ class AutomatedPromotionWorkflowTests(unittest.TestCase):
                 script = repo / "scripts" / "promote_next_release.py"
                 config.parent.mkdir(parents=True)
                 script.parent.mkdir(parents=True)
-                config.write_text('version: "2.2.0-beta.50"\n', encoding="utf-8")
+                config.write_text(f'version: "{current}"\n', encoding="utf-8")
                 shutil.copy2(PROMOTION_PATH, script)
                 shutil.copy2(
                     RELEASE_TRANSITION_PATH,
@@ -2424,6 +2428,9 @@ class PromotionScriptTests(unittest.TestCase):
             ("2.2.0-beta.50", "2.2.0-beta.51", True),
             ("2.2.0-beta.50", "2.2.0-beta.52", False),
             ("2.2.0-beta.50", "2.2.0-rc2-dev51", False),
+            ("2.4.0-rc.1", "2.4.1-beta.1", True),
+            ("2.4.0-rc.1", "2.4.1-beta.2", False),
+            ("2.4.0-rc.1", "2.4.1", False),
         )
         for current, candidate, succeeds in cases:
             with self.subTest(current=current, candidate=candidate):

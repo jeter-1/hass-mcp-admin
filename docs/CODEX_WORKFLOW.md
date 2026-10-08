@@ -849,6 +849,15 @@ version transition or bypass.
 
 ### One-pull-request protected release
 
+Josh's October 8, 2026 direction keeps his Engineering installation on the
+development track. A GA promotion is optional, not a prerequisite to continue.
+The canonical validator permits an RC to advance to beta.1 of the immediately
+next patch version (for example `2.4.0-rc.1 -> 2.4.1-beta.1`). Same-core regression,
+skipped patch/beta sequences and RC-to-new-minor/major jumps remain refused.
+This supersedes the prospective GA progression in the historical RC1 documents;
+it does not rewrite their acceptance evidence or waive review, Ready, publication,
+deployment or household-action boundaries.
+
 A release declaration is an authoring aid on the feature branch, not mergeable
 release state. Before Ready, `promote_next_release.py --apply` updates the three
 authoritative version locations and consumes `.release/next-version` in the

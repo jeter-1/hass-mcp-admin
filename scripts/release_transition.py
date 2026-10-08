@@ -71,16 +71,29 @@ def validate_release_transition(current: str, candidate: str) -> None:
         )
     elif current_version.channel == "rc":
         current_sequence = current_version.sequence
+        next_patch = (
+            current_version.core[0],
+            current_version.core[1],
+            current_version.core[2] + 1,
+        )
         accepted = (
             current_sequence is not None
-            and candidate_version.core == current_version.core
             and (
                 (
-                    candidate_version.channel == "rc"
-                    and candidate_version.sequence
-                    == current_sequence + 1
+                    candidate_version.core == current_version.core
+                    and (
+                        (
+                            candidate_version.channel == "rc"
+                            and candidate_version.sequence == current_sequence + 1
+                        )
+                        or candidate_version.channel == "stable"
+                    )
                 )
-                or candidate_version.channel == "stable"
+                or (
+                    candidate_version.core == next_patch
+                    and candidate_version.channel == "beta"
+                    and candidate_version.sequence == 1
+                )
             )
         )
     else:

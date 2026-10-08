@@ -114,6 +114,8 @@ class Rc1ReleaseTransitionTests(unittest.TestCase):
             ("2.2.0-rc.1", "2.2.0-rc.2"),
             ("2.2.0-rc.2", "2.2.0-rc.3"),
             ("2.2.0-rc.2", "2.2.0"),
+            ("2.4.0-rc.1", "2.4.1-beta.1"),
+            ("2.4.9-rc.3", "2.4.10-beta.1"),
             ("2.2.0", "2.2.1"),
             ("2.2.1", "2.2.2"),
             ("2.2.9", "2.2.10"),
@@ -140,6 +142,16 @@ class Rc1ReleaseTransitionTests(unittest.TestCase):
             ("2.2.0-rc.1", "2.2.0-rc.1"),
             ("2.2.0-rc.1", "2.2.0-rc.3"),
             ("2.2.0-rc.1", "2.3.0-rc.2"),
+            ("2.4.0-rc.1", "2.4.0-beta.1"),
+            ("2.4.0-rc.1", "2.4.1-beta.2"),
+            ("2.4.0-rc.1", "2.4.2-beta.1"),
+            ("2.4.0-rc.1", "2.5.0-beta.1"),
+            ("2.4.0-rc.1", "3.0.0-beta.1"),
+            ("2.4.0-rc.1", "2.4.1-rc.1"),
+            ("2.4.0-rc.1", "2.4.1"),
+            ("2.4.0-rc.1", "2.3.9-beta.1"),
+            ("2.4.0-rc.1", "2.4.1-beta.01"),
+            ("2.4.0-rc.1", "2.4.1-beta.1+build"),
             ("2.2.0", "2.2.0"),
             ("2.2.1", "2.2.0"),
             ("2.2.0", "2.2.2"),
@@ -170,6 +182,42 @@ class Rc1ReleaseTransitionTests(unittest.TestCase):
                     PROMOTION.validate_sequenced_transition(current, candidate)
                 with self.assertRaises(METADATA.MetadataValidationError):
                     self._metadata_transition(current, candidate)
+
+    def test_next_patch_beta_materializes_without_a_ga_release(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for relative, text in (
+                ("hass_mcp_engineering_beta/config.yaml", 'version: "2.4.0-rc.1"\n'),
+                (
+                    "hass_mcp_engineering_beta/ha_mcp_engineering/version.py",
+                    'SERVER_VERSION = "2.4.0-rc.1"\n',
+                ),
+                ("scripts/validate_addon_metadata.py", 'BETA_VERSION = "2.4.0-rc.1"\n'),
+                (".release/next-version", "2.4.1-beta.1\n"),
+                (
+                    "docs/V2_4_1_BETA1_RELEASE_NOTES.md",
+                    "# Engineering 2.4.1-beta.1 release notes\n",
+                ),
+                (
+                    "docs/V2_4_1_BETA1_ACCEPTANCE.md",
+                    "# Engineering 2.4.1-beta.1 acceptance\n",
+                ),
+            ):
+                path = root / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+            self.assertEqual(
+                PROMOTION.apply_candidate(root), ("2.4.0-rc.1", "2.4.1-beta.1")
+            )
+            self.assertEqual(
+                set(PROMOTION.authoritative_versions(root).values()),
+                {"2.4.1-beta.1"},
+            )
+            self.assertFalse((root / PROMOTION.NEXT_VERSION_PATH).exists())
+            self.assertEqual(
+                CONTEXT.resolve_documents(root, "2.4.1-beta.1")["resolution_status"],
+                "exact",
+            )
 
 
 if __name__ == "__main__":
