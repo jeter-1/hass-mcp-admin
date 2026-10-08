@@ -86,6 +86,15 @@ after transfer but before token persistence stops the interrupted pre-intent chi
 after its claim expires. The existing exact unrecorded-set reconciliation binds
 the tokens before releasing them. Neither case repeats a provider dispatch.
 
+If the original acquisition resumes after another runtime has cancelled that
+zero-dispatch child, token publication checks the exact cancellation inside the
+existing owner/generation-fenced child transaction. It returns the established
+cancellation without rewriting history or turning healthy recovery into a global
+storage fault. The guard applies only to bound inverse children; missing/corrupt
+records and genuine durable-write failures retain their existing failure paths.
+It releases no locks: exact settlement still owns cleanup and preserves newer
+owners, unexpired tokenless ownership and uncertain-intent holds.
+
 Terminal settlement releases only exact proven regular ownership; unknown outcomes
 retain the complete union as conflict holds. Retained terminal ownership remains
 visible in existing reconciliation diagnostics. A missing or contradictory receipt

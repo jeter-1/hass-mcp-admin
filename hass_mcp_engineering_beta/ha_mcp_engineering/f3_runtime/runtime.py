@@ -296,6 +296,55 @@ class RuntimeLockStore(DurableLockStore):
         )
 
 
+class _InverseAcquisitionRepository:
+    """Preserve an exact inverse cancellation at atomic token publication.
+
+    Reuse the existing lock writer with a guarded mutate_claimed boundary.
+    Every other repository method delegates to the real repository unchanged.
+    The guard runs after its durable read and owner/generation fence, before
+    any write; it neither catches storage failures nor releases any locks.
+    """
+
+    record_locks = ChildExecutionRepository.record_locks
+
+    def __init__(self, repository, declaration):
+        self._repository = repository
+        self._declaration = declaration
+
+    def __getattr__(self, name):
+        return getattr(self._repository, name)
+
+    def mutate_claimed(self, task_id, *, owner_id, claim_generation, mutator):
+        d = self._declaration
+
+        def publish(record):
+            if (
+                task_id == d["child_id"]
+                and record.identity == {
+                    "task_id": d["child_id"], "plan_id": d["plan_id"],
+                    "attempt_id": d["attempt_id"], "request_id": d["request_id"],
+                    "owner_id": owner_id,
+                }
+                and record.prepared_operation_hash == d["prepared_operation_hash"]
+                and record.operation == d["capability_id"]
+                and record.target == {"target_type": d["target_type"], "target_id": d["target_id"]}
+                and record.terminal
+                and record.normalized_outcome == "cancelled_pre_dispatch"
+                and record.dispatch_intent is None
+                and record.dispatch_count == 0
+            ):
+                # Recovery may already have bound/settled the transferred set.
+                # The executor's existing cancellation path preserves this
+                # terminal result; sequence recovery owns exact lock settlement.
+                raise LockWaitCancelled("inverse acquisition was cancelled before token publication")
+            mutator(record)
+
+        return self._repository.mutate_claimed(
+            task_id, owner_id=owner_id, claim_generation=claim_generation,
+            mutator=publish,
+        )
+
+
 class _SequenceLockAdapter:
     """Require the full immutable sequence lock union for every child attempt."""
 
@@ -2180,6 +2229,11 @@ class F3RuntimeIntegration:
             from ..governance.configuration_eligibility import bound_proof, markers
 
             if plan.contract_version == 2 and any(inverse_eligibility.markers(op) for op in plan.operations):
+                context = self._inverse_lock_context(declaration["child_id"])
+                if context is None or declaration not in context[2]:
+                    raise LockOwnershipError("inverse acquisition declaration changed")
+                executor.execution_repository = _InverseAcquisitionRepository(
+                    self.children, declaration)
                 order = declaration["operation_ordinal"]
                 adapter = _RetryBundleAdapter(
                     adapter, complete_requests,
