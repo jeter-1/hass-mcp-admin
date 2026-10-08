@@ -56,11 +56,15 @@ is still required for every governed action.
 
 Preparation base is protected RC1 source
 `aea19575f441753817edb38292dbb88e5845566f`. The integrated garage candidate is
-`1594e2647b90301d514b6b0ab74539159eb7745e`, independently reviewed with R1 resolved.
+[`1594e2647b90301d514b6b0ab74539159eb7745e`](https://github.com/jeter-1/hass-mcp-admin/commit/1594e2647b90301d514b6b0ab74539159eb7745e),
+available on `review/garage-1594e26`, independently reviewed with R1 resolved.
 Its retained uninterrupted campaign ran 4,761 tests: 4,737 passed, 24 skipped,
 including all 29 rollback methods. Those are predecessor results; validation
-and CI for this release must bind the actual integrated revision. The 30 reviewed
-garage files are preserved byte-for-byte. Retained actual-Core inverse evidence
+and CI for this release must bind the actual integrated revision. Of the 30
+reviewed garage files, 29 remain byte-identical, including every runtime file.
+Only `tests/test_hamcp135_governed_rollback.py` differs, through the separately
+reviewed startup-recovery fixture corrections; production recovery behavior and
+budgets are unchanged. Retained actual-Core inverse evidence
 contains 30 cases; the earlier forward campaign contains 296 executions / 289
 distinct cases. Reuse is attributed, not represented as a new execution.
 
