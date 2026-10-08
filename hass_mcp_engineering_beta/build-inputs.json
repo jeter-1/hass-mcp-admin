@@ -35,7 +35,7 @@
     "jsonschema-specifications": "2025.9.1",
     "markupsafe": "3.0.3",
     "mcp": "1.28.1",
-    "multidict": "6.8.0",
+    "multidict": "6.9.1",
     "propcache": "0.5.2",
     "pycparser": "3.0",
     "pydantic": "2.13.5",
@@ -54,6 +54,6 @@
     "uvicorn": "0.51.0",
     "yarl": "1.24.5"
   },
-  "runtime_lock_sha256": "2e649fbdbcf013f61336f174b65f374a0f1b0f1614594b1ca3989b0a3e0c60ca",
+  "runtime_lock_sha256": "41bd744985006a2b27e2874173f8ea6c09b61eb27483768d410539c43ce185c9",
   "schema_version": 1
 }

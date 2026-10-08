@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.4.0-rc.1 - Release candidate from accepted beta.16
+
+- Promote the accepted beta.16 Engineering implementation and update only the
+  multidict dependency from 6.8.0 to 6.9.1 for CVE-2026-104874. Both hash locks
+  and the build inventory carry the reviewed correction; all other pins remain.
+- Preserve Engineering runtime logic, providers, storage and workflows. This
+  security correction changes the dependency payload and requires fresh validation.
+- Preserve all 83 descriptors, 21 Core profiles, exact ha-mcp 8.5.0 admission,
+  signed applicability and the existing technical Beta installation identity.
+- Carry forward bounded analysis, baseline capture, verification, F3 and exact
+  garage forward-eligibility behavior with their disclosed limitations.
+- Keep garage governed rollback/D2, Govee administration, HAMCP-151 restart and
+  ha-mcp 8.6.0 work separate. RC/GA acceptance does not authorize household work.
+- Require exact-source release review/CI, publication and bounded installed
+  acceptance before the separate 2.4.0 GA transition. Stable v1.1.2 is unchanged.
+
 ## 2.4.0-beta.16 - Bounded garage configuration eligibility
 
 - Admit only the proved minimal retry-removal or complete caller-owned retry

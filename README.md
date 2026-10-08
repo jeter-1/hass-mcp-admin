@@ -1,11 +1,25 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.0-beta.14** adds a [native automation-baseline capture](docs/V2_4_0_BETA14_RELEASE_NOTES.md)
+Engineering **2.4.0-rc.1** promotes the accepted beta.16 implementation with a
+bounded dependency security correction: multidict 6.8.0 -> 6.9.1 for
+CVE-2026-104874. The healthy catalog is **83 tools: 58 native and 25
+admitted delegated reads**. Exact ha-mcp 8.5.0, the 21 Core profiles, signed
+applicability, storage formats and the existing installation are preserved.
+See the [RC1 release notes](docs/V2_4_0_RC1_RELEASE_NOTES.md) and
+[acceptance contract, including the GA exit gates](docs/V2_4_0_RC1_ACCEPTANCE.md).
+
+Beta.16's [bounded garage configuration eligibility](docs/HAMCP135_CONFIGURATION_ELIGIBILITY.md)
+and beta.15's [dashboard analyzer](docs/DASHBOARD_INTEGRITY_ANALYSIS.md) remain
+available. Garage D2 and the separately developed governed rollback, Govee
+administration and add-on restart work remain outside this promotion. A release
+milestone does not authorize household operations or close those remediation gates.
+
+Historically, beta.14 added [native automation-baseline capture](docs/V2_4_0_BETA14_RELEASE_NOTES.md)
 for the existing offline comparator. It captures loaded automations, including
 those switched off, with canonical IDs, exact configuration hashes, explicit
 coverage and a verified registry lineage. Raw configuration bodies are not
 retained; frozen continuation pages perform no additional Home Assistant reads.
-The source catalog is **57 static tools plus 25 delegated reads (82 total)**.
+Its release catalog was **57 static tools plus 25 delegated reads (82 total)**.
 The new read requires a separately reviewed signed Core capability; this release
 does not activate it automatically. See [capture scope](docs/AUTOMATION_BASELINE_CAPTURE.md)
 and the [offline command and format](docs/AUTOMATION_AUDIT_BASELINE.md).
@@ -67,14 +81,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.0-beta.13 release notes](docs/V2_4_0_BETA13_RELEASE_NOTES.md) and
-[2.4.0-beta.13 acceptance contract](docs/V2_4_0_BETA13_ACCEPTANCE.md). A source version does
+Read the [2.4.0-rc.1 release notes](docs/V2_4_0_RC1_RELEASE_NOTES.md) and
+[2.4.0-rc.1 acceptance contract](docs/V2_4_0_RC1_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.0-beta.13 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.0-rc.1 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
