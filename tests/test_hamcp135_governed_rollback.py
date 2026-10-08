@@ -31,17 +31,20 @@ class RollbackTests(ConfigurationPlanTestCase):
         await super().asyncSetUp()
         await self.restart_runtime()
 
-    async def restart_runtime(self):
+    async def restart_runtime(self, *, before_recovery=None):
         self.runtime = F3RuntimeIntegration(
             service=self.service, storage_root=str(self.root/'plans'),
             configuration_gateway=_ExactFakeConfigurationGateway(self.gateway),
             backup_gateway=None, lifecycle_gateway=None,
             provider_identity_reader=_provider_identity, retention_days=90)
         self.service.f3_runtime = self.runtime
+        if before_recovery is not None:
+            before_recovery(self.runtime)
         await self.runtime.recover_once('startup')
         # Startup recovery is bounded; one unfaulted sweep can legitimately
         # leave initialization incomplete. Establish readiness before applying.
-        for _ in range(3):
+        # One transition per fixture member, plus a final completed sweep.
+        for _ in range(len(fixtures.fixture())):
             readiness = self.runtime.readiness_state()
             self.assertEqual(readiness['faults'], [])
             if readiness['execution_ready']:
@@ -82,13 +85,53 @@ class RollbackTests(ConfigurationPlanTestCase):
         self.assertTrue(continued[-1]['execution_ready'])
         self.assertEqual(continued[-1]['faults'], [])
 
+    async def test_reconstruction_progress_at_each_sweep_budget_boundary(self):
+        sweep = F3RuntimeIntegration._recover_once
+        cases = (
+            ('test_reconstruction_before_release_retains_and_live_lease_continues', 5),
+            ('test_reconstruction_continues_after_incomplete_startup_sweep', 6),
+        )
+        for method, expected_sweeps in cases:
+            with self.subTest(method=method):
+                tracked = set()
+                observed = []
+
+                async def budgeted_sweep(runtime, trigger):
+                    if runtime.locks.records():
+                        tracked.add(runtime)
+                    clock = runtime._recovery_monotonic
+                    active = runtime._recover_active_candidates
+                    cost = [0.0]
+
+                    async def budgeted_active(*args, **kwargs):
+                        result = await active(*args, **kwargs)
+                        if result['processed']:
+                            cost[0] += RECOVERY_SWEEP_TIME_BUDGET_SECONDS + 1
+                        return result
+
+                    with patch.object(runtime, '_recovery_monotonic', lambda: clock() + cost[0]), patch.object(
+                            runtime, '_recover_active_candidates', budgeted_active):
+                        result = await sweep(runtime, trigger)
+                    if runtime in tracked:
+                        observed.append((result['processed'], len(self.writes()), runtime._last_sweep_complete))
+                    return result
+
+                with patch.object(F3RuntimeIntegration, '_recover_once', budgeted_sweep):
+                    await getattr(self, method)()
+                self.assertEqual(len(observed), expected_sweeps)
+                self.assertEqual([writes for processed, writes, _complete in observed if processed], [2, 3, 4, 5])
+                self.assertEqual(observed[-1], (0, 5, True))
+                self.assertTrue(self.runtime.readiness_state()['execution_ready'])
+                self.assertEqual(self.runtime.locks.records(), ())
+
     async def test_startup_continuation_exhaustion_refuses_without_writes(self):
         recover = F3RuntimeIntegration.recover_once
         attempts = []
+        max_sweeps = 1 + len(fixtures.fixture())
 
         async def incomplete_recover(runtime, trigger):
             attempts.append(trigger)
-            self.assertLessEqual(len(attempts), 4, 'unbounded startup continuation')
+            self.assertLessEqual(len(attempts), max_sweeps, 'unbounded startup continuation')
             ticks = iter([0.0])
             with patch.object(runtime, '_recovery_monotonic', side_effect=lambda:
                     next(ticks, RECOVERY_SWEEP_TIME_BUDGET_SECONDS + 1)):
@@ -97,7 +140,7 @@ class RollbackTests(ConfigurationPlanTestCase):
         with patch.object(F3RuntimeIntegration, 'recover_once', incomplete_recover):
             with self.assertRaises(AssertionError):
                 await self.restart_runtime()
-        self.assertEqual(attempts, ['startup'] + ['test_startup_continuation'] * 3)
+        self.assertEqual(attempts, ['startup'] + ['test_startup_continuation'] * (max_sweeps - 1))
         self.assertEqual(self.runtime.readiness_state(), {
             'request_ready': False, 'execution_ready': False,
             'status': 'initializing', 'faults': [],
@@ -254,10 +297,11 @@ class RollbackTests(ConfigurationPlanTestCase):
         self.assertTrue(before);self.assertEqual(len(self.writes()),1)
         # A second integration over the same store must derive retention from
         # disk even though the first executor never reached its release hook.
-        await self.restart_runtime()
-        restored=self.runtime.locks.records()
-        self.assertEqual({r.key for r in restored},{r.key for r in before})
-        self.assertTrue(all(r.generation >= before[0].generation for r in restored))
+        def assert_reconstructed_ownership(runtime):
+            restored=runtime.locks.records()
+            self.assertEqual({r.key for r in restored},{r.key for r in before})
+            self.assertTrue(all(r.generation >= before[0].generation for r in restored))
+        await self.restart_runtime(before_recovery=assert_reconstructed_ownership)
         result=await self.apply_request(request)
         self.assertEqual(result['task_state'],'succeeded_verified')
         self.assertEqual(len(self.writes()),5);self.assertEqual(original.locks.records(),())
