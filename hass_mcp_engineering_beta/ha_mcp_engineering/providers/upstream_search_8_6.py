@@ -20,6 +20,7 @@ ALLOWED_PROTOCOLS = ('2025-03-26',)
 class SearchVariant:
     name: str
     catalog_fingerprint: str
+    strict_full_contract_fingerprint: str
     input_schema_fingerprint: str
     description_fingerprint: str
     runtime_contract_fingerprint: str
@@ -37,6 +38,7 @@ class SearchVariant:
 VARIANTS = (
     SearchVariant(*('reference',
  '47151934530bc8b51a04c611cfb8abeb92601fd9325cac78269bad04bea83ec8',
+ 'bb3084c8ce92ef74492c0abcb5ffc8fd357de1f23202c233a332495c34cea3e8',
  '58ed5cc91f928d9dc33437a97ad0ae46641b17891dfed2f7657f2658c83276c5',
  '595678d4544680c10cc6fead7da5224497786ac36290b75a10dd41969547643e',
  'a58dd6354865e41b162d0d91fd1584f067ae8c81d2ecdd3ed0f7ea4c24c72a3b',
@@ -55,6 +57,7 @@ VARIANTS = (
   ('/title', '69ae8316d19e36c9c7808c8047c904828afba173a4936b7877d25ab6f4528bf6')))),
     SearchVariant(*('component_unified',
  '1374a6b5c4e84100f2404b6c3fcf3824c1ead10695d67f967cda74ec80833f71',
+ '0237923e0ef6bd294fb44250775f4afde020515ff96227507bdce954c2776ecd',
  'cd5b40c5bb10fdd92f6b0a254d3cae8d6b783230349ed1c8068dbaf6c114ab55',
  '6f85b53cb197e14ebd587e1c0d560bd066b9c239380b05d2cdb40e14f6363981',
  'c60c73308bf81a67d4bb9dd2ed876184d64122ac67bf59a8f235a31024b3d970',
@@ -156,5 +159,6 @@ def search_catalog_view(release, tools):
         reviewed_runtime_description_fingerprints=tuple(sorted(descriptions.items())),
         reviewed_stock_catalog_fingerprint=variant.catalog_fingerprint)
     return replace(release, policy=view_policy, catalog_fingerprint=variant.catalog_fingerprint,
+        strict_full_contract_fingerprint=variant.strict_full_contract_fingerprint,
         tool_contracts=tuple((name, variant.contract(c) if name == "ha_search" else c)
                              for name, c in release.tool_contracts))

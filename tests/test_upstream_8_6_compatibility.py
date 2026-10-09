@@ -630,6 +630,39 @@ class SearchPairTests(unittest.IsolatedAsyncioTestCase):
     gateway = ReadCompatibilityTests.gateway
     call = ReadCompatibilityTests.call
 
+    async def test_selected_strict_diagnostics_match_each_reviewed_catalog(self):
+        for observed in (capture(), component_capture()):
+            with self.subTest(catalog=schema_fingerprint(observed['tools'])):
+                g, t = await self.gateway(observed['tools'])
+                expected = schema_fingerprint({'tools': observed['tools']})
+                health = g.health_snapshot()
+                for field in ('strict_full_contract_fingerprint',
+                              'reviewed_strict_full_contract_fingerprint',
+                              'observed_strict_full_contract_fingerprint'):
+                    self.assertEqual(health[field], expected, field)
+                result, telemetry = await self.call(g, 'ha_search', {'query': 'fixture'})
+                self.assertTrue(result['success'], result)
+                self.assertEqual(telemetry.upstream_request_count, 1)
+                self.assertEqual(t.calls, 1)
+
+    async def test_strict_diagnostics_do_not_adopt_unreviewed_sibling(self):
+        tools = component_capture()['tools']
+        expected = schema_fingerprint({'tools': tools})
+        next(t for t in tools if t['name'] == 'ha_get_state')['description'] += ' drift'
+        g, t = await self.gateway(tools)
+        health = g.health_snapshot()
+        self.assertEqual(health['reviewed_strict_full_contract_fingerprint'], expected)
+        self.assertEqual(health['observed_strict_full_contract_fingerprint'],
+                         schema_fingerprint({'tools': tools}))
+        self.assertNotEqual(health['reviewed_strict_full_contract_fingerprint'],
+                            health['observed_strict_full_contract_fingerprint'])
+        self.assertNotIn('ha_get_state', g._registered_tool_registry.snapshot())
+        self.assertEqual(t.calls, 0)
+        result, telemetry = await self.call(g, 'ha_search', {'query': 'fixture'})
+        self.assertTrue(result['success'], result)
+        self.assertEqual(telemetry.upstream_request_count, 1)
+        self.assertEqual(t.calls, 1)
+
     async def test_both_catalogs_exact_public_projection_and_one_dispatch(self):
         release = load_reviewed_upstream_release_registry().by_version['8.6.0']
         old, _ = await self.gateway(previous.capture()['tools'], '8.5.0')
@@ -773,6 +806,20 @@ class SearchPairTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SearchPairBindingTests(unittest.TestCase):
+    def test_strict_variant_bindings_preserve_reference_release(self):
+        release = load_reviewed_upstream_release_registry().by_version['8.6.0']
+        before = asdict(release)
+        for variant, observed in zip(search_pair.VARIANTS, (capture(), component_capture())):
+            with self.subTest(variant=variant.name):
+                expected = schema_fingerprint({'tools': observed['tools']})
+                self.assertEqual(variant.strict_full_contract_fingerprint, expected)
+                view = search_pair.search_catalog_view(release, observed['tools'])
+                self.assertEqual(view.strict_full_contract_fingerprint, expected)
+                self.assertEqual(view.strict_full_contract_fingerprint_model,
+                                 release.strict_full_contract_fingerprint_model)
+                self.assertEqual(asdict(release), before)
+        self.assertIs(search_pair.search_catalog_view(release, capture()['tools']), release)
+
     def test_foreign_authority_and_changed_entry_cannot_select_pair(self):
         release = load_reviewed_upstream_release_registry().by_version['8.6.0']
         entry = release.policy.by_name['ha_search']
@@ -821,6 +868,21 @@ class ComponentSignedSearchTests(Signed860Tests):
     def setUp(self):
         super().setUp()
         self.capture = component_capture()
+
+    async def test_signed_controls_preserve_selected_strict_diagnostics(self):
+        entry = _signed_entry_for(self.release, version='8.6.0')
+        for observed in (capture(), component_capture()):
+            with self.subTest(catalog=schema_fingerprint(observed['tools'])):
+                g, t, _ = await self._initialize(raw=self._raw(entry=entry),
+                    version='8.6.0', tools=observed['tools'])
+                expected = schema_fingerprint({'tools': observed['tools']})
+                health = g.health_snapshot()
+                for field in ('strict_full_contract_fingerprint',
+                              'reviewed_strict_full_contract_fingerprint',
+                              'observed_strict_full_contract_fingerprint'):
+                    self.assertEqual(health[field], expected, field)
+                self.assertEqual(set(g._registered_tool_registry.snapshot()), EXACT_READS)
+                self.assertEqual(t.calls, 0)
 
     async def test_search_authority_loss_before_commit_refuses_without_retry(self):
         entry = _signed_entry_for(self.release, version='8.6.0')
