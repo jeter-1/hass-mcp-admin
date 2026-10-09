@@ -73,7 +73,7 @@ EIGHT_FOUR_THREE = (
 
 
 def tool_for(version):
-    if version in {"8.4.1", "8.4.3", "8.5.0"}:
+    if version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0"}:
         path = EIGHT_FOUR.with_name(f"ha-mcp-{version}.json")
         evidence = json.loads(path.read_text(encoding="utf-8"))
         return next(
@@ -197,6 +197,7 @@ class ContractFamilyTests(unittest.TestCase):
                 "8.4.1",
                 "8.4.3",
                 "8.5.0",
+                "8.6.0",
             },
         )
         for version in entries:

@@ -2951,7 +2951,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         counts = json.loads(result.stdout)["tool_counts"]
-        self.assertEqual(counts["reviewed_upstream_version"], "8.5.0")
+        self.assertEqual(counts["reviewed_upstream_version"], "8.6.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
         self.assertEqual(counts["expected_delegated_reads"], 25)
         self.assertEqual(counts["expected_connector_total"], 83)

@@ -43,9 +43,36 @@ def blueprint_read_projection_count(repo_root: Path, policy: dict[str, Any]) -> 
                ("VERSION", "SOURCE", "ADAPTER", "INPUT_FINGERPRINT")}
     if not all(isinstance(value, str) and value for value in binding.values()):
         return 0
-    if (policy.get("reviewed_upstream_version") != binding["VERSION"]
-            or policy.get("reviewed_source_commit") != binding["SOURCE"]):
+    bindings = [binding]
+    # Newer compiled adapters may add literal bindings beside the historical
+    # constants. Inspect only literal entries; never execute adapter source.
+    try:
+        tree = ast.parse(read_text(source) or "")
+    except SyntaxError:
         return 0
+    for node in tree.body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        if (not any(isinstance(target, ast.Name) and target.id == "ADAPTER_BINDINGS"
+                    for target in targets) or not isinstance(node.value, ast.Dict)):
+            continue
+        for key, value in zip(node.value.keys, node.value.values):
+            try:
+                adapter = ast.literal_eval(key)
+                version, commit, fingerprint = ast.literal_eval(value)
+            except (TypeError, ValueError):
+                continue
+            if all(isinstance(item, str) and item
+                   for item in (adapter, version, commit, fingerprint)):
+                bindings.append({"ADAPTER": adapter, "VERSION": version,
+                                 "SOURCE": commit, "INPUT_FINGERPRINT": fingerprint})
+    matching = [item for item in bindings
+                if policy.get("reviewed_upstream_version") == item["VERSION"]
+                and policy.get("reviewed_source_commit") == item["SOURCE"]]
+    if len(matching) != 1:
+        return 0
+    binding = matching[0]
     tools = policy.get("tools")
     if not isinstance(tools, list):
         return 0

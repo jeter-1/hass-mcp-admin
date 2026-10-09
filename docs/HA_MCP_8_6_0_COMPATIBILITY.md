@@ -67,22 +67,42 @@ The local implementation packet is retained at
 contains commands, candidate identities, source comparisons and disposable
 cleanup evidence; its final RESULT is the authority for completed checks.
 
-The first combined offline run passed 309 tests, preserving 8.5 coverage. Six
-additional 8.6 signed-authority cases passed. A disposable standalone run against
-actual Core 2026.9.4 verified changed read behavior, ordinary fan/power execution,
-duplicate suppression, independent state checks and uncertain-result recovery.
-Dashboard preflight refused before setter dispatch because the internal guide
-transport still supplied the removed `skill` selector. The exact one-file
-transport correction is separately proposed in `SCOPE_DELTA_002.md`; it is not
-treated as successful dashboard compatibility. Add-on completion, Full/Evidence,
-independent implementation review, native arm64 and exact-head CI remain pending
-until their own recorded results establish completion.
+The original 309-test focused campaign and six signed-authority checks remain
+retained. The original Full run completed 4,856 tests: 4,825 passed, five failed,
+two errored and 24 skipped. The failures were historical version assertions and
+context accounting; the errors used an outdated local PyJWT. The metadata gate
+also refused the unchanged Engineering version. These receipts are preserved.
+
+The approved correction bundle adapts only the fixed dashboard-guide request
+for the exact 8.6 handshake, preserves strict acknowledgement parsing and the
+8.5 selector, and corrects offline blueprint counting and historical tests.
+The correction packet `corrections-20261009T183338Z` records 274 passing focused
+cases, including 19 new transport/context regressions. Four synthetic relay
+cases initially encountered sandbox socket restrictions and passed with approved
+local socket access. Tests used a process-local, hash-verified four-wheel overlay;
+all 39 declared runtime dependency versions matched. The other 35 distributions'
+installed content hashes were not reverified.
+
+Both pinned amd64 image variants passed the disposable reference-profile lane
+against Core 2026.9.4: useful reads and refusals, fan/power operations and recovery,
+and two governed dashboard operations each (change and exact restoration), with
+independent readback and duplicate suppression. Relay evidence recorded four
+dashboard saves, zero native-component edits and zero retained WebSocket sessions.
+Containers and the private network were cleaned up. This is synthetic local
+acceptance, not physical or installed-household acceptance.
+
+The optional `ha_mcp_tools` component was unconfigured in both reference runs.
+Its enabled search descriptor remains a different contract; Engineering withholds
+that read pending an explicit alternate compiled contract. Final Full/Evidence,
+independent implementation review, native arm64 and exact-head CI remain pending.
+The historical full run and the new focused checks do not replace those gates.
 
 ## Admission, upgrade and recovery handoff
 
 1. Finish the compiled candidate's focused and disposable checks, Full/Evidence
-   and independent compatibility/security review. Resolve the fixed guide request
-   without changing strict-BPS acknowledgement parsing or inventing a key.
+   and independent compatibility/security review after the component-enabled
+   search scope is reconciled. The fixed guide transport correction has passed
+   local reference-profile acceptance; its authority and strict BPS remain intact.
 2. Prepare a separately reviewed Engineering release/version and exact-head CI
    scope, including both native architectures and both upstream packaging forms.
    No workflow, version or release declaration is changed by this candidate.

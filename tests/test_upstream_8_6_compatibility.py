@@ -378,3 +378,239 @@ class Signed860Tests(unittest.IsolatedAsyncioTestCase):
         health = g.health_snapshot()['automatic_readmission']
         self.assertEqual(health['issued_lease_count'], 0)
         self.assertEqual(health['active_commit_count'], 0)
+
+
+class DashboardGuideWireTests(unittest.IsolatedAsyncioTestCase):
+    """Exercise the real fixed-guide transport and provider validation/parser.
+
+    Only SDK I/O is replaced; exact captured catalogs still pass through the
+    provider handshake. No fixture bypasses or supplies its acknowledgement.
+    """
+
+    def setUp(self):
+        from contextlib import asynccontextmanager
+        from types import SimpleNamespace
+        from mcp import types
+        from ha_mcp_engineering.clients import mcp as transport_module
+        from ha_mcp_engineering.providers.upstream_dashboard import UpstreamDashboardProvider
+
+        self.transport_module = transport_module
+        self.version = '8.6.0'
+        self.tools = deepcopy(capture()['tools'])
+        self.calls = []
+        self.closed = []
+        self.entered = asyncio.Event()
+        self.pending = False
+        self.failure = None
+        self.key = 'I-HAVE-READ-THE-BEST-PRACTICES-GUIDE-0123abcd'
+        self.payload = {'content': [{'type': 'text', 'text': self.key}], 'isError': False}
+        owner = self
+
+        class Session:
+            async def initialize(self):
+                return SimpleNamespace(protocolVersion='2025-03-26',
+                    serverInfo=SimpleNamespace(name='ha-mcp', version=owner.version))
+
+            async def list_tools(self, cursor):
+                owner.assertIsNone(cursor)
+                return types.ListToolsResult(tools=owner.tools)
+
+            async def call_tool(self, name, arguments, **kwargs):
+                owner.calls.append((name, deepcopy(arguments)))
+                owner.entered.set()
+                if owner.pending:
+                    await asyncio.Event().wait()
+                if owner.failure:
+                    raise owner.failure
+                return types.CallToolResult(**owner.payload)
+
+        @asynccontextmanager
+        async def streams(*args, **kwargs):
+            try:
+                yield None, None, None
+            finally:
+                owner.closed.append('streams')
+
+        @asynccontextmanager
+        async def session(*args, **kwargs):
+            try:
+                yield Session()
+            finally:
+                owner.closed.append('session')
+
+        for name, replacement in [('streamablehttp_client', streams), ('ClientSession', session)]:
+            patcher = patch.object(transport_module, name, replacement)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.transport = transport_module.McpDashboardTransport(
+            'http://synthetic.invalid/mcp', timeout_seconds=1, client_version='synthetic')
+        self.provider = UpstreamDashboardProvider()
+        self.provider._transport = self.transport
+
+    async def test_exact_860_fixed_guide_succeeds_with_removed_selector(self):
+        self.assertEqual(await self.provider.best_practices_acknowledgement_key(), self.key)
+        self.assertEqual(self.calls, [('ha_get_skill_guide', {'file': 'references/dashboard-guide.md'})])
+        self.assertEqual(self.closed, ['session', 'streams'])
+
+    async def test_exact_850_retains_historical_selector(self):
+        self.version = '8.5.0'
+        self.tools = deepcopy(previous.capture(self.version)['tools'])
+        self.assertEqual(await self.provider.best_practices_acknowledgement_key(), self.key)
+        self.assertEqual(self.calls, [('ha_get_skill_guide', {
+            'skill': 'home-assistant-best-practices', 'file': 'references/dashboard-guide.md'})])
+
+    async def test_caller_cannot_change_internal_file_or_arguments(self):
+        for arguments in ({'file': 'SKILL.md'},
+                          {'skill': 'other', 'file': 'references/dashboard-guide.md'},
+                          {'skill': 'home-assistant-best-practices', 'file': '../dashboard-guide.md'},
+                          {'skill': 'home-assistant-best-practices', 'file': 'references/dashboard-guide.md', 'extra': True}):
+            with self.subTest(arguments=arguments):
+                with self.assertRaises(self.transport_module.DashboardTransportError) as exc:
+                    await self.transport._run(tool_name='ha_get_skill_guide', arguments=arguments,
+                        capability_validator=self.provider._validate_write_handshake)
+                self.assertEqual(exc.exception.category, 'prohibited_argument')
+        self.assertEqual(self.calls, [])
+
+    async def test_version_and_catalog_drift_refuse_before_dispatch(self):
+        from ha_mcp_engineering.errors import DashboardProviderError
+        for drift in ('version', 'guide', 'setter'):
+            self.version = '8.6.1' if drift == 'version' else '8.6.0'
+            self.tools = deepcopy(capture()['tools'])
+            if drift != 'version':
+                name = 'ha_get_skill_guide' if drift == 'guide' else 'ha_config_set_dashboard'
+                next(t for t in self.tools if t['name'] == name)['description'] += ' changed'
+            with self.subTest(drift=drift), self.assertRaises(DashboardProviderError):
+                await self.provider.best_practices_acknowledgement_key()
+        self.assertEqual(self.calls, [])
+
+    async def test_core_dispatch_authority_still_required(self):
+        from ha_mcp_engineering.errors import DashboardProviderError
+        telemetry, token = begin_request('synthetic-guide-authority')
+        try:
+            with patch.object(type(telemetry), 'authorize_core_dispatch', return_value=False):
+                with self.assertRaises(DashboardProviderError):
+                    await self.provider.best_practices_acknowledgement_key()
+            self.assertEqual(self.calls, [])
+            self.assertEqual(telemetry.upstream_active_requests, 0)
+        finally:
+            end_request(token)
+
+    async def test_error_response_cannot_supply_a_key(self):
+        from ha_mcp_engineering.errors import DashboardProviderError
+        self.payload['isError'] = True
+        with self.assertRaises(DashboardProviderError) as exc:
+            await self.provider.best_practices_acknowledgement_key()
+        self.assertEqual(exc.exception.details['failure_category'], 'upstream_error')
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.closed, ['session', 'streams'])
+
+    async def test_missing_key_is_not_manufactured(self):
+        from ha_mcp_engineering.errors import DashboardProviderError
+        self.payload['content'][0]['text'] = 'Guide with no acknowledgement.'
+        with self.assertRaises(DashboardProviderError) as exc:
+            await self.provider.best_practices_acknowledgement_key()
+        self.assertEqual(exc.exception.details['failure_category'], 'invalid_response')
+        self.assertEqual(len(self.calls), 1)
+
+    async def test_oversized_response_remains_bounded(self):
+        from ha_mcp_engineering.errors import DashboardProviderError
+        self.payload['content'][0]['text'] = 'x' * self.transport_module.MAX_UPSTREAM_CONTENT_CHARS
+        with self.assertRaises(DashboardProviderError) as exc:
+            await self.provider.best_practices_acknowledgement_key()
+        self.assertEqual(exc.exception.details['failure_category'], 'response_too_large')
+        self.assertEqual(len(self.calls), 1)
+
+    async def test_transport_failure_has_no_retry_and_closes_session(self):
+        from ha_mcp_engineering.errors import DashboardProviderError
+        self.failure = TimeoutError('synthetic timeout')
+        with self.assertRaises(DashboardProviderError) as exc:
+            await self.provider.best_practices_acknowledgement_key()
+        self.assertEqual(exc.exception.details['failure_category'], 'timeout')
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.closed, ['session', 'streams'])
+
+    async def test_cancellation_closes_owned_session_without_retry(self):
+        self.pending = True
+        telemetry, token = begin_request('synthetic-guide-cancellation')
+        task = asyncio.create_task(self.provider.best_practices_acknowledgement_key())
+        try:
+            await asyncio.wait_for(self.entered.wait(), 2)
+            task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertEqual(len(self.calls), 1)
+            self.assertEqual(self.closed, ['session', 'streams'])
+            self.assertEqual(telemetry.upstream_active_requests, 0)
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            end_request(token)
+
+
+class BlueprintContextProjectionTests(unittest.TestCase):
+    """The offline count follows compiled bindings without executing source."""
+
+    def setUp(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location('compat860_context', ROOT / 'scripts/codex-context.py')
+        self.context = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.context)
+        self.runtime = Path('hass_mcp_engineering_beta/ha_mcp_engineering')
+
+    def policy(self, version='8.6.0'):
+        return json.loads((ROOT / self.runtime / ('upstream_tool_policy_' + version.replace('.', '_') + '.json')).read_text())
+
+    def count(self, policy, root=ROOT):
+        return self.context.blueprint_read_projection_count(root, policy)
+
+    def blueprint(self, policy):
+        return next(t for t in policy['tools'] if t['upstream_name'] == 'ha_manage_blueprints')
+
+    def test_legacy_exact_binding(self):
+        self.assertEqual(self.count(self.policy('8.5.0')), 1)
+
+    def test_new_exact_binding(self):
+        self.assertEqual(self.count(self.policy()), 1)
+
+    def test_wrong_source(self):
+        policy = self.policy()
+        policy['reviewed_source_commit'] = '0' * 40
+        self.assertEqual(self.count(policy), 0)
+
+    def test_wrong_fingerprint(self):
+        policy = self.policy()
+        self.blueprint(policy)['input_schema_fingerprint'] = '0' * 64
+        self.assertEqual(self.count(policy), 0)
+
+    def test_uncompiled_wrapper(self):
+        policy = self.policy()
+        self.blueprint(policy)['argument_restrictions'] = ['uncompiled-wrapper']
+        self.assertEqual(self.count(policy), 0)
+
+    def test_write_annotation(self):
+        policy = self.policy()
+        self.blueprint(policy)['reviewed_annotations']['destructiveHint'] = True
+        self.assertEqual(self.count(policy), 0)
+
+    def test_missing_source(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            self.assertEqual(self.count(self.policy(), Path(directory)), 0)
+
+    def source_control(self, suffix):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self.runtime / 'providers/upstream_blueprint.py'
+            (root / path).parent.mkdir(parents=True)
+            (root / path).write_text((ROOT / path).read_text() + suffix)
+            return self.count(self.policy(), root)
+
+    def test_source_is_never_executed(self):
+        self.assertEqual(self.source_control("\nraise RuntimeError('must_not_execute')\n"), 1)
+
+    def test_ambiguous_binding_refused(self):
+        policy = self.policy()
+        fingerprint = self.blueprint(policy)['input_schema_fingerprint']
+        duplicate = {'duplicate': ('8.6.0', policy['reviewed_source_commit'], fingerprint)}
+        self.assertEqual(self.source_control('\nADAPTER_BINDINGS = ' + repr(duplicate) + '\n'), 0)
