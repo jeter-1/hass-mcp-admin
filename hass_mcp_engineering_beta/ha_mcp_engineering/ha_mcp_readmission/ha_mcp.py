@@ -124,6 +124,9 @@ _ERROR_ADAPTERS = (
     ),
     _BinaryErrorContractAdapter(
         adapter_id="ha_mcp_error_contract_8_4_1_v1",
+        # Exact 8.6 OCI probes reproduce this aggregate (including the original
+        # missing-automation shape). Reuse its binary behavior and stable ID;
+        # the differing 8.5 shape remains separately bound above.
         aggregate_fingerprint=(
             "03000635a7b0a506c12a6f99ce86433a09683693a0e61d4265b1f11ec52b2d46"
         ),

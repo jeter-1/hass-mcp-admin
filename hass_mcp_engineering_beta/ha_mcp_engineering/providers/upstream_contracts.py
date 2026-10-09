@@ -197,7 +197,7 @@ def expected_contract_family(upstream_version: str) -> str:
     return (
         CONTRACT_FAMILY_V3
         if upstream_version
-        in {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.5.0"}
+        in {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.5.0", "8.6.0"}
         else CONTRACT_FAMILY
     )
 
@@ -427,6 +427,12 @@ def _schema_types(schema: Mapping[str, Any]) -> set[str]:
     return found
 
 
+def _exact_8_6_descriptor(tool: Mapping[str, Any]) -> bool:
+    # 8.6 removed private policy metadata. Its absence is permitted only for
+    # this complete reviewed descriptor, never as a relaxed family-wide rule.
+    return stable_hash(tool) == "3c37bd1eb5b0c6076dd268dfd2cc4bf512a61b5ea94dbabf1e312c747cf242c5"
+
+
 def _validate_compiled_family(
     tool: Mapping[str, Any],
     protocol_version: str,
@@ -463,7 +469,7 @@ def _validate_compiled_family(
         for namespace, value in meta.items():
             if not isinstance(value, dict) or set(value) - allowed_meta[namespace]:
                 raise ContractValidationError("upstream_runtime_contract_mismatch")
-        if contract_family == CONTRACT_FAMILY_V3:
+        if contract_family == CONTRACT_FAMILY_V3 and not _exact_8_6_descriptor(tool):
             ha_meta = meta.get("ha_mcp")
             policy = ha_meta.get("policy") if isinstance(ha_meta, dict) else None
             if not runtime_policy_state_fingerprint_projection(policy)[
@@ -587,12 +593,15 @@ def normalize_runtime_contract(
         policy = (
             ha_meta.get("policy") if isinstance(ha_meta, dict) else None
         )
-        policy_projection = runtime_policy_state_fingerprint_projection(
-            policy
+        policy_projection = (
+            {"present": False}
+            if _exact_8_6_descriptor(tool)
+            else runtime_policy_state_fingerprint_projection(policy)
         )
         security_contract["runtime_policy_state"] = policy_projection
         runtime_metadata = json.loads(canonical_json(runtime_metadata))
-        runtime_metadata["ha_mcp"]["policy"] = policy_projection
+        if not _exact_8_6_descriptor(tool):
+            runtime_metadata["ha_mcp"]["policy"] = policy_projection
     output_contract = {
         "declared_output_schema": {
             "present": "outputSchema" in tool,

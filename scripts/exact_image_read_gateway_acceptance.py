@@ -161,6 +161,11 @@ EXPECTED_STOCK_COUNTS_BY_VERSION = {
         "prohibited": 1,
         "unsupported": 1,
     },
+    "8.6.0": {
+        "automatic_read": 25, "held_for_canary": 1,
+        "mixed_or_requires_wrapper": 13, "persistent_write": 32,
+        "physical_or_high_risk_action": 4, "prohibited": 1, "unsupported": 1,
+    },
     "8.5.0": {
         "automatic_read": 25,
         "held_for_canary": 1,
@@ -499,6 +504,7 @@ UPSTREAM_ERROR_CALLS = {
 }
 EXPECTED_ERROR_SHAPE_FINGERPRINTS = {
     "invalid_search": {
+        "8.6.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "8.5.0": "fc0f1e8bf02be61d2056f1c6f11fb7b861a74ecd98978a5a38076617ac5bf939",
         "legacy": (
             "63e37a2f037ff46e9908c41745aca0e368c0cb6811a28104c990113055abdfee"
@@ -1153,7 +1159,7 @@ async def inspect_upstream(
             )
             tools = await list_all_tools(session)
             tool_names = {item.get("name") for item in tools}
-            if expected_upstream_version in {"8.4.1", "8.4.3", "8.5.0"}:
+            if expected_upstream_version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0"}:
                 require(
                     "ha_get_addon" not in tool_names
                     and {"ha_get_app", "ha_manage_app"} <= tool_names,
@@ -2629,7 +2635,7 @@ async def run(args: argparse.Namespace) -> dict[str, Any]:
         policy=policy,
         release=release,
     )
-    if args.expected_upstream_version in {"8.4.1", "8.4.3", "8.5.0"}:
+    if args.expected_upstream_version in {"8.4.1", "8.4.3", "8.5.0", "8.6.0"}:
         held_settings = Settings(
             ha_url=args.ha_url,
             ha_token=args.ha_token,

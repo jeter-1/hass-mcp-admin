@@ -21,6 +21,7 @@ from .models import DashboardPreread, RawDashboardEvidence
 
 
 EXPECTED_RELEASES: Final = {
+    "8.6.0": ("ha-mcp-v8.6.0-7426fb16", "ha_mcp_dashboard_read_v3"),
     "8.5.0": ("ha-mcp-v8.5.0-e1538bcd", "ha_mcp_dashboard_read_v3"),
     "7.14.2": (
         "ha-mcp-v7.14.2-7917b2d3",

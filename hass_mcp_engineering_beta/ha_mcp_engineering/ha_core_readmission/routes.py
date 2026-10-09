@@ -178,10 +178,10 @@ def delegated_provider_compatibility(
         or not probe_profile.strict_device_registry
     ):
         return True, None
-    # The reviewed 8.5.0 adapter preserves child-device/effective-area semantics.
+    # The exact 8.5.0 and 8.6.0 adapters preserve child-device/effective-area semantics.
     # Keep the signed Core profile and its fingerprint byte-for-byte unchanged;
     # this exact provider binding is binary-owned, not new Core authority.
-    if adapter_version == "8.5.0" and probe_profile == CHILD_DEVICE_PROBE_PROFILE:
+    if adapter_version in {"8.5.0", "8.6.0"} and probe_profile == CHILD_DEVICE_PROBE_PROFILE:
         return True, None
     if adapter_version in probe_profile.delegated_device_adapters:
         return True, None
