@@ -30,6 +30,7 @@ from .models import (
     evidence_fingerprint,
 )
 from .registry import ReleaseRegistryAuthority, SignedReleaseRegistry
+from ..providers.upstream_search_8_6 import resolve_search_variant, search_capability_contract
 
 
 PROFILE_VERSION = 1
@@ -463,6 +464,9 @@ def observation_for_catalog(
                     .runtime_contract_fingerprint_model
                 ),
             )
+            if resolve_search_variant(selection.binary_release, entry, raw) is not None:
+                contract = search_capability_contract(selection.binary_release, entry)
+
         else:
             safe_id = name
             kind = CapabilityKind.MIXED
@@ -517,7 +521,7 @@ def _profile_for_release(
         CapabilityContract(
             capability_id=entry.upstream_name,
             kind=CapabilityKind.ORDINARY_READ,
-            contract_fingerprint=_expected_contract_fingerprint(
+            contract_fingerprint=search_capability_contract(release, entry) or _expected_contract_fingerprint(
                 tool_name=entry.upstream_name,
                 argument_restrictions=entry.argument_restrictions,
                 release_contract=contracts[entry.upstream_name],

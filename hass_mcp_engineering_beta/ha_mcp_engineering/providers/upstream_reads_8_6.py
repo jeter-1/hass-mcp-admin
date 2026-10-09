@@ -990,6 +990,9 @@ PUBLIC_SCHEMAS = {'ha_config_get_automation': {'additionalProperties': False,
 
 
 def is_adapter(entry) -> bool:
+    from .upstream_search_8_6 import is_search_entry
+    if is_search_entry(entry):
+        return True
     return (
         entry.classification == "automatic_read"
         and entry.exposed_name == entry.upstream_name

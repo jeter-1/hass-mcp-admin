@@ -91,6 +91,7 @@ from .upstream_reads_8_6 import (
     read_arguments as read_arguments_8_6,
     ADAPTER as READ_ADAPTER_8_6,
 )
+from .upstream_search_8_6 import search_catalog_view
 from .upstream_blueprint import (
     is_blueprint_adapter, public_schema as blueprint_public_schema,
     read_arguments as blueprint_read_arguments,
@@ -993,6 +994,9 @@ class UpstreamReadGateway:
             identity_validated = True
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
+            selected_release = search_catalog_view(selected_release, catalog.tools)
+            if selected_release is not None:
+                selected_policy = selected_release.policy
             reviewed_contracts = (
                 selected_release.tool_contracts_by_name
                 if selected_release is not None
@@ -2776,6 +2780,9 @@ class UpstreamReadGateway:
                         "upstream_version_mismatch"
                     )
                 try:
+                    live_release = search_catalog_view(live_release, catalog.tools)
+                    if live_release is not None:
+                        live_policy = live_release.policy
                     live_evaluation = self._validate_catalog(
                         catalog,
                         policy=live_policy,

@@ -934,6 +934,8 @@ def validate_reviewed_release_catalog(
     explicit fingerprint model.
     """
 
+    from .providers.upstream_search_8_6 import search_catalog_view
+    release = search_catalog_view(release, tools)
     runtime_model = release.runtime_contract_fingerprint_model
     expected_contracts = release.tool_contracts_by_name
     expected_policy = release.policy.by_name
@@ -1259,7 +1261,13 @@ def load_upstream_tool_policy(
     entries = tuple(UpstreamToolPolicyEntry.from_mapping(item) for item in value["tools"])
     from .providers.upstream_blueprint import ADAPTER_BINDINGS, is_blueprint_adapter
     from .providers.upstream_reads_8_6 import ADAPTER as READ_ADAPTER, SOURCE as READ_SOURCE, is_adapter
+    from .providers.upstream_search_8_6 import ADAPTER as SEARCH_ADAPTER, is_search_entry
     for entry in entries:
+        if SEARCH_ADAPTER in entry.argument_restrictions and (
+            not is_search_entry(entry) or expected_version != "8.6.0"
+            or expected_source_commit != READ_SOURCE
+        ):
+            raise UpstreamToolPolicyError("policy_uncompiled_search_adapter")
         for adapter, (version, source, _) in ADAPTER_BINDINGS.items():
             if adapter in entry.argument_restrictions and (
                 not is_blueprint_adapter(entry) or expected_version != version

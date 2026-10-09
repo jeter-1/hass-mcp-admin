@@ -614,3 +614,319 @@ class BlueprintContextProjectionTests(unittest.TestCase):
         fingerprint = self.blueprint(policy)['input_schema_fingerprint']
         duplicate = {'duplicate': ('8.6.0', policy['reviewed_source_commit'], fingerprint)}
         self.assertEqual(self.source_control('\nADAPTER_BINDINGS = ' + repr(duplicate) + '\n'), 0)
+
+
+# The alternate descriptors are actual retained runtime observations. No matcher
+# in these tests transforms a foreign observation into a trusted descriptor.
+from ha_mcp_engineering.providers import upstream_search_8_6 as search_pair
+
+
+def component_capture():
+    evidence = json.loads((ROOT / 'docs/evidence/upstream-read-compatibility/ha-mcp-8.6.0-component-search.json').read_text())
+    return evidence['component_catalog']
+
+
+class SearchPairTests(unittest.IsolatedAsyncioTestCase):
+    gateway = ReadCompatibilityTests.gateway
+    call = ReadCompatibilityTests.call
+
+    async def test_both_catalogs_exact_public_projection_and_one_dispatch(self):
+        release = load_reviewed_upstream_release_registry().by_version['8.6.0']
+        old, _ = await self.gateway(previous.capture()['tools'], '8.5.0')
+        before = old._registered_tool_registry.snapshot()['ha_search']
+        for observed in (capture(), component_capture()):
+            with self.subTest(catalog=schema_fingerprint(observed['tools'])):
+                validation = validate_reviewed_release_catalog(release,
+                    observed_server_name='ha-mcp', observed_upstream_version='8.6.0',
+                    observed_protocol_version='2025-03-26', tools=observed['tools'])
+                self.assertTrue(validation.valid, validation)
+                g, t = await self.gateway(observed['tools'])
+                tools = g._registered_tool_registry.snapshot()
+                self.assertEqual(set(tools), EXACT_READS)
+                current = tools['ha_search']
+                for field in ('parameters', 'description', 'annotations'):
+                    self.assertEqual(getattr(current, field), getattr(before, field))
+                result, telemetry = await self.call(g, 'ha_search', {'query': 'fixture'})
+                self.assertTrue(result['success'], result)
+                self.assertFalse(result['metadata']['fallback_occurred'])
+                self.assertEqual(t.sent, [('ha_search', {'query': 'fixture'})])
+                self.assertEqual(telemetry.upstream_request_count, 1)
+                self.assertEqual(telemetry.upstream_active_requests, 0)
+                self.assertGreater(telemetry.upstream_duration_ms, 0)
+
+    async def test_mutated_descriptor_surfaces_refuse_search_with_useful_sibling(self):
+        mutations = {
+            'name': lambda t: t.update(name='ha_search_forged'),
+            'description': lambda t: t.update(description=t['description'] + ' drift'),
+            'input': lambda t: t['inputSchema'].update(description='drift'),
+            'output': lambda t: t.update(outputSchema={'type': 'string'}),
+            'annotations': lambda t: t['annotations'].update(readOnlyHint=False),
+            'title': lambda t: t.update(title='forged'),
+            'metadata': lambda t: t['_meta'].update(unreviewed=True),
+            'unknown': lambda t: t.update(forged_variant='component_unified'),
+        }
+        for observed in (capture(), component_capture()):
+            for field, mutate in mutations.items():
+                with self.subTest(field=field, component=observed is not None):
+                    tools = deepcopy(observed['tools'])
+                    mutate(next(t for t in tools if t['name'] == 'ha_search'))
+                    g, t = await self.gateway(tools)
+                    self.assertNotIn('ha_search', g._registered_tool_registry.snapshot())
+                    if field == 'name':
+                        self.assertEqual(t.sent, [])
+                        continue  # Unknown names retain the existing whole-catalog refusal.
+                    self.assertIn('ha_get_state', g._registered_tool_registry.snapshot())
+                    result, _ = await self.call(g, 'ha_get_state', {'entity_id': 'fan.hamcp_contract_fan'})
+                    self.assertTrue(result['success'], result)
+                    self.assertEqual([n for n, _ in t.sent], ['ha_get_state'])
+
+    async def test_missing_duplicate_hybrid_and_reordered_are_not_full_catalogs(self):
+        release = load_reviewed_upstream_release_registry().by_version['8.6.0']
+        for kind in ('missing', 'duplicate', 'hybrid', 'reordered'):
+            tools = component_capture()['tools']
+            target = next(t for t in tools if t['name'] == 'ha_search')
+            if kind == 'missing': tools.remove(target)
+            elif kind == 'duplicate': tools.append(deepcopy(target))
+            elif kind == 'hybrid':
+                target['inputSchema'] = next(t for t in capture()['tools'] if t['name'] == 'ha_search')['inputSchema']
+            else: tools.reverse()
+            result = validate_reviewed_release_catalog(release,
+                observed_server_name='ha-mcp', observed_upstream_version='8.6.0',
+                observed_protocol_version='2025-03-26', tools=tools)
+            self.assertFalse(result.valid, (kind, result))
+            if kind != 'reordered':
+                g, t = await self.gateway(tools)
+                self.assertNotIn('ha_search', g._registered_tool_registry.snapshot())
+                self.assertEqual(t.sent, [])
+
+    async def test_known_transitions_retire_old_search_without_harming_sibling(self):
+        for first, second in ((capture(), component_capture()), (component_capture(), capture())):
+            g, t = await self.gateway(first['tools'])
+            old_search = g._registered_tool_registry.snapshot()['ha_search']
+            old_sibling = g._registered_tool_registry.snapshot()['ha_get_state']
+            args = {'entity_id': 'fan.hamcp_contract_fan'}
+            self.assertTrue(json.loads(await old_sibling.run(args))['success'])
+            t.catalog = replace(t.catalog, tools=tuple(second['tools']))
+            self.assertTrue(json.loads(await old_sibling.run(args))['success'])
+            count = t.calls
+            result = json.loads(await old_search.run({'query': 'fixture'}))
+            self.assertFalse(result['success'], result)
+            self.assertFalse(result['metadata']['upstream_dispatch_occurred'])
+            self.assertEqual(t.calls, count)
+            self.assertTrue(json.loads(await old_sibling.run(args))['success'])
+            await g.initialize(FastMCP('synthetic-search-refresh'))
+            self.assertFalse(json.loads(await old_search.run({'query': 'fixture'}))['success'])
+            result, _ = await self.call(g, 'ha_search', {'query': 'fixture'})
+            self.assertTrue(result['success'], result)
+            self.assertEqual([n for n, _ in t.sent].count('ha_search'), 1)
+
+    async def test_legacy_arguments_preserve_absence_explicit_values_and_bounds(self):
+        g, t = await self.gateway(component_capture()['tools'])
+        accepted = [ {'query':'fixture'}, {'query':'fixture', 'include_config':False},
+            {'query':'fixture','include_config':True,'search_types':['automation']},
+            {'query':'fixture','config_time_budget':1}, {'query':'fixture','config_time_budget':300},
+            {'domain_filter':'light', 'limit':1, 'offset':0} ]
+        for args in accepted:
+            result, _ = await self.call(g, 'ha_search', args)
+            self.assertTrue(result['success'], result)
+            self.assertEqual(t.sent[-1], ('ha_search', args))
+        count = t.calls
+        for args in ({'query':'x','config_time_budget':0}, {'query':'x','config_time_budget':301},
+                     {'query':'x','config_time_budget':True}, {'query':'x','include_config':'false'},
+                     {'query':'x','search_types':2}, {'query':'x','offset':-1},
+                     {'query':'x','limit':0}, {'query':'x','unknown':True}):
+            result, _ = await self.call(g, 'ha_search', args)
+            self.assertFalse(result['success'], result)
+            self.assertFalse(result['metadata']['upstream_dispatch_occurred'])
+        self.assertEqual(t.calls, count)
+
+    async def test_search_failure_cancel_and_timeout_settle_without_retry(self):
+        from ha_mcp_engineering.clients.mcp import DashboardTransportError
+        g, t = await self.gateway(component_capture()['tools'])
+        for raw in ({'isError':True,'content':[{'type':'text','text':'synthetic failure'}]},
+                    {'isError':False,'content':[]},
+                    {'isError':False,'structuredContent':{'success':True,'huge':'x'*100000}}):
+            t.override = raw
+            result, telemetry = await self.call(g, 'ha_search', {'query':'fixture'})
+            self.assertFalse(result['metadata']['fallback_occurred'])
+            self.assertNotEqual(result['metadata'].get('completeness'), 'complete')
+            self.assertLessEqual(len(json.dumps(result).encode()), 60000)
+            self.assertEqual(telemetry.upstream_active_requests, 0)
+            self.assertEqual(telemetry.upstream_request_count, 1)
+        t.cancel = True
+        with self.assertRaises(asyncio.CancelledError): await self.call(g, 'ha_search', {'query':'fixture'})
+        t.cancel = False
+        original = t.execute_read
+        async def timeout(*args, **kwargs):
+            await original(*args, **kwargs)
+            raise DashboardTransportError('timeout')
+        t.execute_read = timeout
+        result, telemetry = await self.call(g, 'ha_search', {'query':'fixture'})
+        self.assertEqual(result['details']['failure_category'], 'timeout')
+        self.assertEqual(telemetry.upstream_active_requests, 0)
+        self.assertEqual(t.calls, 5)
+        t.execute_read = original
+        t.override = None
+        result, telemetry = await self.call(g, 'ha_search', {'query':'fixture'})
+        self.assertTrue(result['success'], result)
+        self.assertEqual(telemetry.upstream_active_requests, 0)
+
+
+class SearchPairBindingTests(unittest.TestCase):
+    def test_foreign_authority_and_changed_entry_cannot_select_pair(self):
+        release = load_reviewed_upstream_release_registry().by_version['8.6.0']
+        entry = release.policy.by_name['ha_search']
+        raw = next(t for t in component_capture()['tools'] if t['name'] == 'ha_search')
+        self.assertEqual(search_pair.resolve_search_variant(release, entry, raw).name, 'component_unified')
+        for fields in ({'source_commit':'0'*40}, {'version':'8.6.1'}, {'server_name':'forged'},
+                       {'allowed_protocol_versions':('2099-01-01',)}, {'revoked':True},
+                       {'policy_sha256':'sha256:'+'0'*64}, {'policy_resource':'foreign.json'}):
+            foreign = replace(release, **fields)
+            self.assertIsNone(search_pair.resolve_search_variant(foreign, entry, raw), fields)
+            self.assertIsNone(search_pair.search_capability_contract(foreign, entry), fields)
+        for fields in ({'argument_restrictions':'ha-mcp-8.6.0-closed-read-v1'},
+                       {'classification':'prohibited_write'}, {'source_evidence':()},
+                       {'input_schema_fingerprint':'0'*64}):
+            changed = replace(entry, **fields)
+            self.assertIsNone(search_pair.resolve_search_variant(release, changed, raw), fields)
+
+    def test_view_changes_only_search_and_preserves_raw_and_reference(self):
+        release = load_reviewed_upstream_release_registry().by_version['8.6.0']
+        tools = component_capture()['tools']
+        before = deepcopy(tools)
+        baseline = asdict(release)
+        view = search_pair.search_catalog_view(release, tools)
+        self.assertEqual(tools, before)
+        self.assertEqual(asdict(release), baseline)
+        self.assertNotEqual(view.catalog_fingerprint, release.catalog_fingerprint)
+        for name, contract in release.tool_contracts:
+            if name != 'ha_search': self.assertEqual(contract, view.tool_contracts_by_name[name])
+        for entry in release.policy.tools:
+            if entry.upstream_name != 'ha_search': self.assertEqual(entry, view.policy.by_name[entry.upstream_name])
+        self.assertIs(search_pair.search_catalog_view(release, capture()['tools']), release)
+
+    def test_logical_pair_and_profile_binding_do_not_hide_raw_difference(self):
+        from ha_mcp_engineering.ha_mcp_readmission.ha_mcp import _profile_for_release
+        release = load_reviewed_upstream_release_registry().by_version['8.6.0']
+        entry = release.policy.by_name['ha_search']
+        profile = _profile_for_release(release)
+        self.assertIn(release.policy_sha256.removeprefix('sha256:')[:16], profile.profile_id)
+        capability = next(c for c in profile.capabilities if c.capability_id == 'ha_search')
+        self.assertEqual(capability.contract_fingerprint, search_pair.search_capability_contract(release, entry))
+        self.assertEqual(len({v.runtime_contract_fingerprint for v in search_pair.VARIANTS}), 2)
+        self.assertNotIn(capability.contract_fingerprint, {v.runtime_contract_fingerprint for v in search_pair.VARIANTS})
+
+
+class ComponentSignedSearchTests(Signed860Tests):
+    def setUp(self):
+        super().setUp()
+        self.capture = component_capture()
+
+    async def test_search_authority_loss_before_commit_refuses_without_retry(self):
+        entry = _signed_entry_for(self.release, version='8.6.0')
+        g, t, _ = await self._initialize(raw=self._raw(entry=entry), version='8.6.0')
+        original = t.execute_read
+        async def retire(*args, **kwargs):
+            validator = kwargs['catalog_validator']
+            def retire_after_validation(catalog):
+                validator(catalog)
+                g._readmission_coordinator.retire_surface_authority(readmission.UpstreamSurface.HA_MCP)
+            kwargs['catalog_validator'] = retire_after_validation
+            return await original(*args, **kwargs)
+        t.execute_read = retire
+        result = json.loads(await g._registered_tool_registry.snapshot()['ha_search'].run({'query':'fixture'}))
+        self.assertFalse(result['success'], result)
+        self.assertEqual(t.calls, 0)
+        health = g.health_snapshot()['automatic_readmission']
+        self.assertEqual(health['issued_lease_count'], 0)
+        self.assertEqual(health['active_commit_count'], 0)
+
+    async def test_signed_controls_preserve_known_transition_and_stale_handle(self):
+        entry = _signed_entry_for(self.release, version='8.6.0')
+        for before, after in ((capture(), component_capture()), (component_capture(), capture())):
+            g, t, _ = await self._initialize(raw=self._raw(entry=entry), version='8.6.0', tools=before['tools'])
+            stale = g._registered_tool_registry.snapshot()['ha_search']
+            sibling = g._registered_tool_registry.snapshot()['ha_get_state']
+            t.catalog = replace(t.catalog, tools=tuple(after['tools']))
+            self.assertTrue(json.loads(await sibling.run({'entity_id':'fan.hamcp_contract_fan'}))['success'])
+            count = t.calls
+            result = json.loads(await stale.run({'query':'fixture'}))
+            self.assertFalse(result['success'], result)
+            self.assertEqual(t.calls, count)
+            self.assertTrue(json.loads(await sibling.run({'entity_id':'fan.hamcp_contract_fan'}))['success'])
+            await g.initialize(FastMCP('synthetic-signed-pair-refresh'))
+            self.assertFalse(json.loads(await stale.run({'query':'fixture'}))['success'])
+            self.assertTrue(json.loads(await g._registered_tool_registry.snapshot()['ha_search'].run({'query':'fixture'}))['success'])
+
+    async def test_committed_read_settles_when_authority_is_retired_in_flight(self):
+        entry = _signed_entry_for(self.release, version='8.6.0')
+        g, t, _ = await self._initialize(raw=self._raw(entry=entry), version='8.6.0')
+        original = t.execute_read
+        async def retire(*args, **kwargs):
+            result = await original(*args, **kwargs)
+            health = g.health_snapshot()['automatic_readmission']
+            self.assertEqual(health['active_commit_count'], 1)
+            g._readmission_coordinator.retire_surface_authority(readmission.UpstreamSurface.HA_MCP)
+            return result
+        t.execute_read = retire
+        tool = g._registered_tool_registry.snapshot()['ha_search']
+        result = json.loads(await tool.run({'query':'fixture'}))
+        # Dispatch was already committed. Preserve settlement instead of retrying
+        # the request or presenting a false zero-I/O refusal.
+        self.assertTrue(result['success'], result)
+        self.assertEqual(t.calls, 1)
+        self.assertFalse(json.loads(await tool.run({'query':'fixture'}))['success'])
+        self.assertEqual(t.calls, 1)
+        health = g.health_snapshot()['automatic_readmission']
+        self.assertEqual(health['issued_lease_count'], 0)
+        self.assertEqual(health['active_commit_count'], 0)
+
+
+class SearchCompletenessTests(unittest.IsolatedAsyncioTestCase):
+    gateway = ReadCompatibilityTests.gateway
+    call = ReadCompatibilityTests.call
+
+    async def test_controlled_provider_partial_warning_error_and_unknown_completeness(self):
+        g, t = await self.gateway(component_capture()['tools'])
+        base = {'success':True, 'entities':[{'entity_id':'light.synthetic'}],
+                'count':1, 'entity_total_matches':1, 'config_total_matches':0,
+                'has_more':False, 'entity_has_more':False, 'config_has_more':False,
+                'partial':False, 'errors':[], 'warnings':[]}
+        cases = [
+            ('exhaustive', base, 'complete'),
+            ('paged', {**base,'has_more':True,'next_offset':1}, 'complete'),
+            ('explicit_partial', {**base,'partial':True,'partial_reason':'synthetic bounded fault'}, 'partial'),
+            ('legacy_warning', {**base,'partial':True,'warnings':['component search path failed; served via legacy path']}, 'partial'),
+            ('error', {**base,'partial':True,'errors':['synthetic unavailable registry']}, 'partial'),
+            ('missing', {'success':True,'entities':[]}, 'partial'),
+            ('malformed', {**base,'partial':'false'}, 'partial'),
+        ]
+        for label, data, expected in cases:
+            with self.subTest(case=label):
+                t.override = {'isError':False,'structuredContent':data}
+                result, telemetry = await self.call(g, 'ha_search', {'query':'synthetic'})
+                self.assertEqual(result['metadata']['completeness'], expected, result)
+                self.assertFalse(result['metadata']['fallback_occurred'])
+                if data.get('warnings'):self.assertEqual(result['data']['warnings'], data['warnings'])
+                self.assertEqual(telemetry.upstream_request_count, 1)
+                self.assertEqual(telemetry.upstream_active_requests, 0)
+        self.assertEqual(t.calls, len(cases))
+
+    async def test_actual_component_results_retain_semantics_both_image_variants(self):
+        path = ROOT / 'tests/fixtures/ha_mcp_8_6_0/component-search-results.json'
+        provenance = json.loads((path.parent / 'provenance.json').read_text())
+        self.assertEqual('sha256:' + hashlib.sha256(path.read_bytes()).hexdigest(), provenance['component_results']['sha256'])
+        records = json.loads(path.read_text())
+        for image, cases in records.items():
+            g, t = await self.gateway(component_capture()['tools'])
+            for case in cases:
+                with self.subTest(image=image, case=case['case']):
+                    t.override = case['result']
+                    result, telemetry = await self.call(g, 'ha_search', case['arguments'])
+                    self.assertEqual(result['success'], case['engineering_success'])
+                    self.assertEqual(result.get('data'), case['engineering_data'])
+                    self.assertEqual(result['metadata'].get('completeness'), case['completeness'])
+                    self.assertFalse(result['metadata']['fallback_occurred'])
+                    self.assertEqual(telemetry.upstream_request_count, 1)
+                    self.assertEqual(telemetry.upstream_active_requests, 0)
+            self.assertEqual(t.calls, len(cases))

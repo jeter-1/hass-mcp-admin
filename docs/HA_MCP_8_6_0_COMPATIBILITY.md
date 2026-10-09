@@ -12,8 +12,8 @@ remains 8.5.0; the compiled registry's historical default remains 7.14.1.
 - Standalone index
   `sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc`.
 - Compiled entry `ha-mcp-v8.6.0-7426fb16`; protocol `2025-03-26`.
-- Both pinned amd64 packaging variants advertise the same complete 77-tool
-  catalog, fingerprint
+- With the optional component unconfigured, both pinned amd64 packaging variants
+  advertise the same complete 77-tool reference catalog, fingerprint
   `47151934530bc8b51a04c611cfb8abeb92601fd9325cac78269bad04bea83ec8`.
 - All standalone/add-on platform identities and complete descriptor contracts
   are bound in `upstream_release_registry.json` and the committed evidence
@@ -60,6 +60,33 @@ are not automatically delegated. The exact child-device provider binding changes
 no signed Core profile or fingerprint. This work does not admit HAMCP-151 restart
 or provide Core activation.
 
+## Exact search descriptor pair
+
+With the pinned `ha_mcp_tools` 2.2.1 component enabled, only the search descriptor
+changes. The complete 77-tool catalog fingerprint is
+`1374a6b5c4e84100f2404b6c3fcf3824c1ead10695d67f967cda74ec80833f71`.
+One binary-owned pair binds both full descriptors, exact 8.6/source/policy/protocol
+and the existing public search schema, description and annotations. It is not a
+generic variant registry or authority derived from observations.
+
+Search retains `search_types`, `include_config` and `config_time_budget` even
+though the component descriptor omits them; the exact upstream callable still
+accepts them. The last controls legacy per-id config fetching, not component work
+or a global deadline. Engineering retains its existing 60-second deadline.
+The changed policy hash produces a new automatic-readmission profile; old 8.6
+policy authority cannot silently acquire this alternate contract. Signed denial
+and retained revocation remain controlling. Each route pins its selected raw
+descriptor. Switching variants refuses a stale search before dispatch; unchanged
+sibling reads remain useful and fresh discovery may admit the new exact variant.
+
+Pinned upstream may internally fall back from component search to legacy reads.
+Unknown-command transitions can be silent; other failure paths retain warnings.
+Engineering makes one provider attempt and adds no direct-HA fallback or retry.
+Pagination retains `has_more`/offsets; a completely covered page can have
+`completeness=complete`. Missing/malformed `partial` remains incomplete. If any
+member is excluded by visibility, the pinned component withholds the entire
+membership list while retaining `is_group`; it does not expose a filtered list.
+
 ## Validation state
 
 The local implementation packet is retained at
@@ -91,18 +118,29 @@ dashboard saves, zero native-component edits and zero retained WebSocket session
 Containers and the private network were cleaned up. This is synthetic local
 acceptance, not physical or installed-household acceptance.
 
-The optional `ha_mcp_tools` component was unconfigured in both reference runs.
-Its enabled search descriptor remains a different contract; Engineering withholds
-that read pending an explicit alternate compiled contract. Final Full/Evidence,
-independent implementation review, native arm64 and exact-head CI remain pending.
-The historical full run and the new focused checks do not replace those gates.
+The component-enabled lane also passed on both exact amd64 images, with Core
+2026.9.4, pinned component 2.2.1 and only the two retained public dependency
+mounts. Each variant executed 14 nonempty search cases, the 12 changed-read cases,
+closed blueprint checks, fan/power recovery and two governed dashboard operations.
+There were four native dashboard edits, 22 service posts, zero remaining relay
+sessions and settled provider/Core ownership. All four containers and the private
+network were removed. The first attempt's fixture-assumption failure and cleanup
+remain retained; no product behavior was weakened to accommodate the fixture.
+
+The 28 actual search results have separate committed provenance. Controlled
+partial/error/timeout/cancellation tests are offline fixtures, not actual Core
+failure injection. Local focused checks cover both descriptor surfaces, signed
+controls, exact negative cases, stale handles and in-flight settlement. The final
+Full/Evidence and independent-review receipts belong to
+`component-implementation-20261009T191834Z`; consult its RESULT for their status.
+Native arm64, exact-head CI, release/version metadata and installed acceptance
+remain separate gates. No unchanged-version gate is waived.
 
 ## Admission, upgrade and recovery handoff
 
-1. Finish the compiled candidate's focused and disposable checks, Full/Evidence
-   and independent compatibility/security review after the component-enabled
-   search scope is reconciled. The fixed guide transport correction has passed
-   local reference-profile acceptance; its authority and strict BPS remain intact.
+1. Use the final stable-candidate Full/Evidence and independent review receipts.
+   Both search profiles and the fixed guide transport have local disposable
+   acceptance; exact authority and strict BPS remain required.
 2. Prepare a separately reviewed Engineering release/version and exact-head CI
    scope, including both native architectures and both upstream packaging forms.
    No workflow, version or release declaration is changed by this candidate.
