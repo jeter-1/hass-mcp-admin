@@ -357,7 +357,10 @@ the exact October disposable lane, keeping ha-mcp `8.5.0` fixed. This must inclu
 schema/auth/error controls, parent/child registry semantics, configuration and
 trace reads, template/script continuation semantics, governed verification and
 uncertain outcomes, typed operations, Alarmo inspection and native baseline
-capture/continuation. This change does not establish those remaining checks,
-installed custom-integration compatibility, release publication or upgrade
-permission. In particular, an older September-only disposable receipt cannot be
-relabeled as October acceptance.
+capture/continuation. The completed exact native-amd64 campaign and independent
+receipt review are bound in
+[October compatibility evidence](CORE_2026_10_COMPATIBILITY_EVIDENCE.md).
+That local evidence establishes the named 21 contracts within its disclosed
+synthetic bounds; installed custom-integration compatibility, production signing,
+release publication and upgrade permission remain separate. An older
+September-only disposable receipt cannot be relabeled as October acceptance.

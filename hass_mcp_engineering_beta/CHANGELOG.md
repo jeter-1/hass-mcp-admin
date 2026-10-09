@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.4.1-beta.2 - Exact October Core device-registry compatibility
+
+- Add the separately selected October `next_name_part` schema and probe without
+  changing historical schemas, signed fingerprints or effective-area semantics.
+- Preserve all 83 public descriptors, 21 capability contracts, exact ha-mcp
+  8.5.0, signed journals, dependency locks, durable formats and stable v1.
+- Retain independently reconciled actual-Core 2026.10.0 native-amd64 evidence
+  for all 21 profiles, both providers, Alarmo, baseline capture and garage rules.
+- Keep production registry signing and installed October acceptance separate;
+  neither a beta.2 installation nor a signature alone completes both steps.
+- Preserve completed garage recovery evidence; no new household drill, Govee,
+  HAMCP-151, ha-mcp 8.6.x or Core upgrade is included.
+
 ## 2.4.1-beta.1 - Governed garage configuration recovery
 
 - Add the reviewed exact inverse of a durably verified HAMCP-135 forward prefix,
