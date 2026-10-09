@@ -1,4 +1,4 @@
-"""Bounded Core 2026.9 child-device and effective-area validation.
+"""Bounded, profile-selected child-device and effective-area validation.
 
 Raw registry records are transient probe input.  Only counts, a reason code,
 and a deterministic semantic fingerprint are retained as compatibility
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from enum import StrEnum
 import hashlib
 import math
 from typing import Any
@@ -65,6 +66,13 @@ _REGULAR_REQUIRED_FIELDS = frozenset(
         "via_device_id",
     }
 )
+
+
+class DeviceRegistrySchema(StrEnum):
+    """Closed wire shapes; selected by reviewed probe authority, never records."""
+
+    CHILD_DEVICES = "child-devices-v1"
+    CHILD_DEVICE_NAME_PARTS = "child-device-name-parts-v1"
 
 
 @dataclass(frozen=True)
@@ -175,9 +183,15 @@ def _base_fields_valid(item: Mapping[str, Any]) -> bool:
     )
 
 
-def assess_device_registry(value: Any) -> DeviceRegistryAssessment:
+def assess_device_registry(
+    value: Any,
+    *,
+    schema: DeviceRegistrySchema = DeviceRegistrySchema.CHILD_DEVICES,
+) -> DeviceRegistryAssessment:
     """Validate a complete Core registry list without retaining its contents."""
 
+    if not isinstance(schema, DeviceRegistrySchema):
+        return _failure("device_registry_schema_unknown")
     if (
         isinstance(value, (str, bytes))
         or not isinstance(value, Sequence)
@@ -209,6 +223,8 @@ def assess_device_registry(value: Any) -> DeviceRegistryAssessment:
             if parent is not None
             else _REGULAR_REQUIRED_FIELDS
         )
+        if schema is DeviceRegistrySchema.CHILD_DEVICE_NAME_PARTS:
+            expected_fields = expected_fields | {"next_name_part"}
         if set(item) != expected_fields:
             return _failure(
                 "child_device_record_incomplete"
@@ -218,6 +234,18 @@ def assess_device_registry(value: Any) -> DeviceRegistryAssessment:
             )
         if not _base_fields_valid(item):
             return _failure("device_record_malformed", records=len(records))
+        if schema is DeviceRegistrySchema.CHILD_DEVICE_NAME_PARTS:
+            # Core's naming metadata is derived from the explicit area/parent,
+            # not a source of effective-area or membership authority.
+            expected_name_part = (
+                "area"
+                if item["area_id"] is not None
+                else "parent_device"
+                if parent is not None
+                else None
+            )
+            if item["next_name_part"] != expected_name_part:
+                return _failure("device_name_part_malformed", records=len(records))
         if parent is None:
             if (
                 not _string_sequence(item.get("config_entries"))
@@ -333,6 +361,8 @@ def assess_ha_mcp_device_projection(
     core_records: Any,
     entity_records: Any,
     projection: Any,
+    *,
+    schema: DeviceRegistrySchema = DeviceRegistrySchema.CHILD_DEVICES,
 ) -> DeviceRegistryAssessment:
     """Prove whether a delegated result retains child/effective-area semantics.
 
@@ -341,11 +371,11 @@ def assess_ha_mcp_device_projection(
     cannot make an unreviewed upstream response authoritative.
     """
 
-    core = assess_device_registry(core_records)
+    core = assess_device_registry(core_records, schema=schema)
     if not core.complete:
         return core
     entity_assessment = assess_device_entity_semantics(
-        core_records, entity_records
+        core_records, entity_records, schema=schema
     )
     if not entity_assessment.complete:
         return entity_assessment
@@ -478,10 +508,12 @@ def _projection_sequence(
 def assess_device_entity_semantics(
     device_records: Any,
     entity_records: Any,
+    *,
+    schema: DeviceRegistrySchema = DeviceRegistrySchema.CHILD_DEVICES,
 ) -> DeviceRegistryAssessment:
     """Validate entity-to-child-device and effective-area semantics."""
 
-    devices = assess_device_registry(device_records)
+    devices = assess_device_registry(device_records, schema=schema)
     if not devices.complete:
         return devices
     if (
@@ -586,6 +618,7 @@ def assess_device_entity_semantics(
 
 
 __all__ = [
+    "DeviceRegistrySchema",
     "DeviceRegistryAssessment",
     "MAX_DEVICE_RECORDS",
     "assess_device_registry",

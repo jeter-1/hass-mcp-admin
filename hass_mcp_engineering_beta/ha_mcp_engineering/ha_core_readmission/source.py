@@ -11,7 +11,7 @@ from typing import Any
 import aiohttp
 
 from ..configuration import Settings
-from .device_registry import assess_device_registry
+from .device_registry import DeviceRegistrySchema, assess_device_registry
 from .models import CORE_IDENTITY
 from .profiles import CORE_RUNTIME_CAPABILITY_PROFILES, CORE_TYPED_OPERATION_PROFILES
 from .probe_profiles import CoreProbeProfile, compiled_probe_profile
@@ -183,7 +183,14 @@ def capability_evidence_for_probes(
         ),
     )
     device_records = websocket_results.get("devices")
-    device_assessment = assess_device_registry(device_records)
+    device_assessment = assess_device_registry(
+        device_records,
+        schema=(
+            probe_profile.device_registry_schema
+            if probe_profile is not None
+            else DeviceRegistrySchema.CHILD_DEVICES
+        ),
+    )
     legacy_device_shape = _bounded_sequence(device_records) and all(
         isinstance(item, Mapping) for item in device_records
     )

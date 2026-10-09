@@ -310,3 +310,54 @@ five device comparisons, dependency freshness, approved canaries and settled
 resources. The Core-only update still needs compatibility review, selected
 backup/recovery evidence and separate owner authorization. This feature changes
 how compatibility authority is delivered; it does not authorize the update.
+
+## October device-registry wire profile
+
+Core `2026.10.0` at `6a811d3359c7b2076dc9e1cf900843a129c044af`
+adds `next_name_part` to both regular and child device records. The earlier
+child-device profile deliberately rejects this extra field. Signing that release
+with the earlier probe profile therefore cannot establish device-registry,
+delegated effective-area, or dependency/helper-planning evidence.
+
+The code-owned `core-probes-child-device-name-parts-v1` probe selects a separate
+closed schema and the existing ha-mcp `8.5.0` adapter. Regular devices require
+`next_name_part` to be `area` when an explicit area exists and null otherwise.
+Child devices require `area` with an explicit area and `parent_device` otherwise.
+The field is checked as naming metadata; it never supplies an effective area or
+changes the existing entity → device → parent inheritance rules. Missing fields,
+unreviewed extra fields, inconsistent naming metadata, invalid references,
+cycles, duplicate identities and existing collection bounds still fail closed.
+
+Existing probe IDs, fingerprints and September schema defaults remain unchanged.
+The new probe fingerprint additionally binds its device wire schema. The existing
+21 capability contracts, public tool descriptors, transport commands, signed
+journal schema and production journal are unchanged. No compiled October release
+authority is added. The exact observed version must independently select this
+profile through reviewed signed applicability; a version prefix, field presence,
+successful probe, or caller flag cannot select it. Signing remains contingent on
+complete exact-release compatibility evidence, not this schema correction alone.
+
+The default device validator and its entity/delegated projection helpers continue
+to use the September shape unless an internal caller supplies the selected schema.
+Runtime probe collection obtains that selection from the existing authenticated
+registry path. `tests/test_core_2026_10_device_registry.py` covers the new and old
+shapes, malformed/refusal cases, effective-area projections, unchanged historical
+fingerprints and ephemeral signed selection/expiry/revocation. Its synthetic
+21-capability result proves the selection mechanism, not assembled October Core.
+
+The committed wire fixture is generated from the exact source archive by
+`scripts/generate_core_2026_10_device_fixture.py`. Its provenance binds the archive,
+member hashes, verbatim getter locations/hashes and output digest. It executes
+only named pure getters on synthetic objects, not a full Core installation.
+Regeneration requires the pinned archive and a new output directory; compare both
+JSON files byte-for-byte with the committed fixture. No household records are used.
+
+Before production applicability: independently review the correction and execute
+the exact October disposable lane, keeping ha-mcp `8.5.0` fixed. This must include
+schema/auth/error controls, parent/child registry semantics, configuration and
+trace reads, template/script continuation semantics, governed verification and
+uncertain outcomes, typed operations, Alarmo inspection and native baseline
+capture/continuation. This change does not establish those remaining checks,
+installed custom-integration compatibility, release publication or upgrade
+permission. In particular, an older September-only disposable receipt cannot be
+relabeled as October acceptance.
