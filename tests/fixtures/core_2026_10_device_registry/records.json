@@ -1,0 +1,164 @@
+{
+  "devices": [
+    {
+      "area_id": "synthetic-area",
+      "config_entries": [
+        "synthetic-config"
+      ],
+      "config_entries_subentries": {
+        "synthetic-config": [
+          null
+        ]
+      },
+      "config_entry_id": "synthetic-config",
+      "config_subentry_id": null,
+      "configuration_url": null,
+      "connections": [],
+      "created_at": 1788220800.0,
+      "disabled_by": null,
+      "entry_type": null,
+      "hw_version": null,
+      "id": "parent-area",
+      "identifiers": [
+        [
+          "synthetic",
+          "parent-area"
+        ]
+      ],
+      "labels": [],
+      "manufacturer": null,
+      "model": null,
+      "model_id": null,
+      "modified_at": 1788220800.0,
+      "name": null,
+      "name_by_user": null,
+      "next_name_part": "area",
+      "parent_device_id": null,
+      "primary_config_entry": "synthetic-config",
+      "serial_number": null,
+      "sw_version": null,
+      "via_device_id": null
+    },
+    {
+      "area_id": null,
+      "config_entries": [
+        "synthetic-config"
+      ],
+      "config_entries_subentries": {
+        "synthetic-config": [
+          null
+        ]
+      },
+      "config_entry_id": "synthetic-config",
+      "config_subentry_id": null,
+      "configuration_url": null,
+      "connections": [],
+      "created_at": 1788220800.0,
+      "disabled_by": null,
+      "entry_type": null,
+      "hw_version": null,
+      "id": "parent-none",
+      "identifiers": [
+        [
+          "synthetic",
+          "parent-none"
+        ]
+      ],
+      "labels": [],
+      "manufacturer": null,
+      "model": null,
+      "model_id": null,
+      "modified_at": 1788220800.0,
+      "name": null,
+      "name_by_user": null,
+      "next_name_part": null,
+      "parent_device_id": null,
+      "primary_config_entry": "synthetic-config",
+      "serial_number": null,
+      "sw_version": null,
+      "via_device_id": null
+    },
+    {
+      "area_id": "synthetic-other-area",
+      "config_entry_id": "synthetic-config",
+      "config_subentry_id": null,
+      "created_at": 1788220800.0,
+      "disabled_by": null,
+      "id": "child-own",
+      "identifiers": [
+        [
+          "synthetic",
+          "child-own"
+        ]
+      ],
+      "labels": [],
+      "modified_at": 1788220800.0,
+      "name": null,
+      "name_by_user": null,
+      "next_name_part": "area",
+      "parent_device_id": "parent-none"
+    },
+    {
+      "area_id": null,
+      "config_entry_id": "synthetic-config",
+      "config_subentry_id": null,
+      "created_at": 1788220800.0,
+      "disabled_by": null,
+      "id": "child-inherit",
+      "identifiers": [
+        [
+          "synthetic",
+          "child-inherit"
+        ]
+      ],
+      "labels": [],
+      "modified_at": 1788220800.0,
+      "name": null,
+      "name_by_user": null,
+      "next_name_part": "parent_device",
+      "parent_device_id": "parent-area"
+    },
+    {
+      "area_id": null,
+      "config_entry_id": "synthetic-config",
+      "config_subentry_id": null,
+      "created_at": 1788220800.0,
+      "disabled_by": null,
+      "id": "child-none",
+      "identifiers": [
+        [
+          "synthetic",
+          "child-none"
+        ]
+      ],
+      "labels": [],
+      "modified_at": 1788220800.0,
+      "name": null,
+      "name_by_user": null,
+      "next_name_part": "parent_device",
+      "parent_device_id": "parent-none"
+    }
+  ],
+  "entities": [
+    {
+      "area_id": null,
+      "device_id": "child-inherit",
+      "entity_id": "sensor.synthetic_inherited"
+    },
+    {
+      "area_id": null,
+      "device_id": "child-own",
+      "entity_id": "sensor.synthetic_own"
+    },
+    {
+      "area_id": "synthetic-override",
+      "device_id": "child-inherit",
+      "entity_id": "sensor.synthetic_override"
+    },
+    {
+      "area_id": null,
+      "device_id": "child-none",
+      "entity_id": "sensor.synthetic_unassigned"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 
 from .models import fingerprint
+from .device_registry import DeviceRegistrySchema
 from .profiles import CORE_CAPABILITY_PROFILES, CORE_2026_9_RELEASE_AUTHORITIES
 from .profiles import SUPPORTED_CORE_RELEASES
 from ..dependency.semantic_registry import EXPECTED_SEMANTIC_REGISTRY_SHA256
@@ -13,10 +14,11 @@ class CoreProbeProfile:
     profile_id: str
     strict_device_registry: bool
     delegated_device_adapters: tuple[str, ...]
+    device_registry_schema: DeviceRegistrySchema = DeviceRegistrySchema.CHILD_DEVICES
 
     @property
     def contract_fingerprint(self) -> str:
-        return fingerprint({
+        material = {
             "model": "core-probe-profile-v1",
             "profile_id": self.profile_id,
             "strict_device_registry": self.strict_device_registry,
@@ -25,12 +27,27 @@ class CoreProbeProfile:
             "template_registry_sha256": EXPECTED_SEMANTIC_REGISTRY_SHA256,
             "probe_contract": "bounded-two-observation-core-v1",
             "fallback": "none",
-        })
+        }
+        # Preserve every already-signed probe fingerprint. New wire shapes
+        # explicitly bind their schema; they cannot replace an older profile.
+        if self.device_registry_schema is not DeviceRegistrySchema.CHILD_DEVICES:
+            material["device_registry_schema"] = self.device_registry_schema.value
+        return fingerprint(material)
 
 
 LEGACY_PROBE_PROFILE = CoreProbeProfile("core-probes-pre-2026-9-v1", False, ())
 CHILD_DEVICE_PROBE_PROFILE = CoreProbeProfile("core-probes-child-devices-v1", True, ("8.4.3",))
-CORE_PROBE_PROFILES = (LEGACY_PROBE_PROFILE, CHILD_DEVICE_PROBE_PROFILE)
+CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE = CoreProbeProfile(
+    "core-probes-child-device-name-parts-v1",
+    True,
+    ("8.5.0",),
+    DeviceRegistrySchema.CHILD_DEVICE_NAME_PARTS,
+)
+CORE_PROBE_PROFILES = (
+    LEGACY_PROBE_PROFILE,
+    CHILD_DEVICE_PROBE_PROFILE,
+    CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
+)
 
 
 def compiled_probe_profile(version: str) -> CoreProbeProfile | None:

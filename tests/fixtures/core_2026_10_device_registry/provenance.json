@@ -1,0 +1,37 @@
+{
+  "archive_sha256": "96778e8c130c16e86619e82741d308e41c76d2963da649f0748f7b51fb9703b9",
+  "full_core_execution": false,
+  "generator": "scripts/generate_core_2026_10_device_fixture.py",
+  "getters": {
+    "ChildDeviceEntry.dict_repr": {
+      "first_line": 741,
+      "last_line": 759,
+      "verbatim_sha256": "0a857651d500b65e36bcca5a10cc5200f39e4da1054d4182e6c784aa6173960e"
+    },
+    "ChildDeviceEntry.next_name_part": {
+      "first_line": 733,
+      "last_line": 738,
+      "verbatim_sha256": "6a10b850960123c3a49a089c7d4e37d2afb7e30798d1c2a8ff3a6e960ff8adcd"
+    },
+    "DeviceEntry.dict_repr": {
+      "first_line": 591,
+      "last_line": 631,
+      "verbatim_sha256": "97c1bd75e0b59b3db952b207ee6d3934cca4f0f3bd577fa096ccf68690fbd4c3"
+    },
+    "DeviceEntry.next_name_part": {
+      "first_line": 575,
+      "last_line": 578,
+      "verbatim_sha256": "bb539e9db17305dfc9b285c35a1bae19f6db8dd27ef4c05f493338b8a0041c24"
+    }
+  },
+  "member_sha256": {
+    "homeassistant/helpers/device_registry.py": "a7121fe607eae7e0b9128ba23517072925890eab8904dca9e4554ed71f62ac20",
+    "homeassistant/helpers/registry.py": "a481648fdca6f27cb19a72ea44e0c42b204674a8f5c10ed52bcedb07ec220cae"
+  },
+  "method": "Verbatim pure getters; synthetic namespace inputs; JSON wire round-trip",
+  "records_sha256": "89a497b3bff842734084a1b03ece898b0bd5747dfdb6e846c68bae0e90ebd058",
+  "source_commit": "6a811d3359c7b2076dc9e1cf900843a129c044af",
+  "source_license": "Apache-2.0",
+  "source_url": "https://github.com/home-assistant/core/tree/6a811d3359c7b2076dc9e1cf900843a129c044af",
+  "version": "2026.10.0"
+}
