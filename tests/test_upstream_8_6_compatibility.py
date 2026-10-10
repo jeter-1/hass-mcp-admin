@@ -836,6 +836,14 @@ class EvidenceProvenanceTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(canonical).hexdigest(),
                          self.evidence['component_catalog_sha256'])
 
+    def test_component_file_digest_matches_reviewed_reference(self):
+        directory = ROOT / 'docs/evidence/upstream-read-compatibility'
+        component = directory / 'ha-mcp-8.6.0-component-search.json'
+        review = json.loads((directory / 'ha-mcp-8.6.0-contract-review.json').read_text())
+        digest = hashlib.sha256(component.read_bytes()).hexdigest()
+        self.assertIn(f'{component.name} sha256:{digest}',
+                      review['changed_runtime_descriptors']['ha_search']['review'])
+
 
 class SearchPairBindingTests(unittest.TestCase):
     def test_strict_variant_bindings_preserve_reference_release(self):
