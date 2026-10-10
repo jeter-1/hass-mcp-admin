@@ -59,8 +59,8 @@ This release adds fixed September/October CI rows for native amd64 and arm64,
 each with both catalog profiles and both packaging forms, immutable pins,
 bounded evidence and unconditional owned cleanup. Local October results and
 revision-bound validation are recorded in the
-[compatibility evidence](HA_MCP_8_6_0_COMPATIBILITY.md). CI has not been triggered
-by local preparation; native arm64 and exact-head CI remain release gates.
+[compatibility evidence](HA_MCP_8_6_0_COMPATIBILITY.md). Exact-head CI, including
+native arm64 acceptance, is a release gate.
 Disposable add-on execution uses a Core relay, not a real Supervisor. Synthetic
 state/readback is not physical or household acceptance.
 

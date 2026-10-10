@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import asdict, replace
 import hashlib
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import sys
 import unittest
 from unittest.mock import patch
@@ -803,6 +803,38 @@ class SearchPairTests(unittest.IsolatedAsyncioTestCase):
         result, telemetry = await self.call(g, 'ha_search', {'query':'fixture'})
         self.assertTrue(result['success'], result)
         self.assertEqual(telemetry.upstream_active_requests, 0)
+
+
+class EvidenceProvenanceTests(unittest.TestCase):
+    def setUp(self):
+        self.evidence = json.loads((ROOT / 'docs/evidence/upstream-read-compatibility/ha-mcp-8.6.0-component-search.json').read_text())
+
+    def test_component_evidence_has_no_absolute_host_paths(self):
+        # Scope this new capture's portability without rewriting historical evidence.
+        def check(value, location='$'):
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    check(child, f'{location}.{key}')
+            elif isinstance(value, list):
+                for index, child in enumerate(value):
+                    check(child, f'{location}[{index}]')
+            elif isinstance(value, str):
+                with self.subTest(location=location):
+                    self.assertFalse(PurePosixPath(value).is_absolute())
+                    self.assertFalse(PureWindowsPath(value).is_absolute())
+
+        check(self.evidence)
+        self.assertEqual(self.evidence['component_capture'],
+                         self.evidence['variants']['component_unified']['catalog_capture'])
+        self.assertEqual(self.evidence['reference_capture'],
+                         self.evidence['variants']['reference']['catalog_capture'])
+
+    def test_embedded_catalog_hash_is_publicly_reproducible(self):
+        canonical = json.dumps(self.evidence['component_catalog'], sort_keys=True,
+                               separators=(',', ':'), ensure_ascii=True,
+                               allow_nan=False).encode('utf-8')
+        self.assertEqual(hashlib.sha256(canonical).hexdigest(),
+                         self.evidence['component_catalog_sha256'])
 
 
 class SearchPairBindingTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 {
   "capture_sha256": "5c9b78dba1d4a98c3a39c54acde5a7bc087d67802084a958576ca83e33f0af3b",
-  "component_capture": "/home/josh/repos/hass-mcp-admin/.artifacts/ha-mcp-8.6.0-implementation-20261009/disposable-20261009T165127Z/addon-catalog-1.json",
+  "component_capture": "ha-mcp-8.6.0-implementation-20261009/disposable-20261009T165127Z/addon-catalog-1.json",
   "component_catalog": {
     "pages": [
       {
@@ -15299,6 +15299,7 @@
       }
     ]
   },
+  "component_catalog_sha256": "b41ef6c8d610ffe646f970edb9bd330cb2d9c98f44f3f1ec1a8da94de2b1b805",
   "component_version": "2.2.1",
   "core_version": "2026.9.4",
   "descriptor_pair": {
@@ -15314,6 +15315,7 @@
   },
   "descriptor_pair_sha256": "c8f9bcb835da016fd775bed195bb97c402e8b99fed5f0f6cb46edeeee19d2422",
   "format": 1,
+  "hash_provenance": "Capture references are portable run/file identifiers for retained local artifacts, not repository paths or publicly retrievable files. capture_sha256 values identify the original raw capture bytes and are retained as historical provenance. component_catalog_sha256 is independently reproducible from component_catalog using SHA-256 of UTF-8 json.dumps with sort_keys=True, separators=(',', ':'), ensure_ascii=True, allow_nan=False, and no trailing newline.",
   "implementation": {
     "adapter": "ha-mcp-8.6.0-search-descriptor-pair-v1",
     "admission": "Binary-owned exact descriptor pair only; active routes retain selected raw descriptor; original catalog and every historical contract remain unchanged.",
@@ -15338,7 +15340,7 @@
     "upstream_internal_read_fallback": "Pinned upstream can fall back internally from component search to legacy reads. Unknown-command transition can be silent; other failures preserve diagnostics. Engineering performs no fallback or retry."
   },
   "origin": "Actual pinned add-on image in approved disposable synthetic Core; no household data",
-  "reference_capture": "/home/josh/repos/hass-mcp-admin/.artifacts/ha-mcp-8.6.0-implementation-20261009/corrections-20261009T183338Z/disposable-20261009T183553Z/addon-catalog-1.json",
+  "reference_capture": "ha-mcp-8.6.0-implementation-20261009/corrections-20261009T183338Z/disposable-20261009T183553Z/addon-catalog-1.json",
   "source_commit": "fc54437a804858732e4bc927add98e202d879a09",
   "source_files": {
     "custom_components/ha_mcp_tools/manifest.json": "65be388f556bc6619fe93182110a9b32d7f05db96ab988568b9aa98875fd33b1",
@@ -15352,7 +15354,7 @@
   "variants": {
     "component_unified": {
       "capture_sha256": "5c9b78dba1d4a98c3a39c54acde5a7bc087d67802084a958576ca83e33f0af3b",
-      "catalog_capture": "/home/josh/repos/hass-mcp-admin/.artifacts/ha-mcp-8.6.0-implementation-20261009/disposable-20261009T165127Z/addon-catalog-1.json",
+      "catalog_capture": "ha-mcp-8.6.0-implementation-20261009/disposable-20261009T165127Z/addon-catalog-1.json",
       "catalog_fingerprint": "1374a6b5c4e84100f2404b6c3fcf3824c1ead10695d67f967cda74ec80833f71",
       "descriptor": {
         "_meta": {
@@ -15523,7 +15525,7 @@
     },
     "reference": {
       "capture_sha256": "6ac3c9e62a7ff591506a23a8227fbe9e3b7b4020bd9819d5bed99f3a984ee1c7",
-      "catalog_capture": "/home/josh/repos/hass-mcp-admin/.artifacts/ha-mcp-8.6.0-implementation-20261009/corrections-20261009T183338Z/disposable-20261009T183553Z/addon-catalog-1.json",
+      "catalog_capture": "ha-mcp-8.6.0-implementation-20261009/corrections-20261009T183338Z/disposable-20261009T183553Z/addon-catalog-1.json",
       "catalog_fingerprint": "47151934530bc8b51a04c611cfb8abeb92601fd9325cac78269bad04bea83ec8",
       "descriptor": {
         "_meta": {
