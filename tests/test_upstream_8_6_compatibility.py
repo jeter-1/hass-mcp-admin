@@ -992,3 +992,63 @@ class SearchCompletenessTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(telemetry.upstream_request_count, 1)
                     self.assertEqual(telemetry.upstream_active_requests, 0)
             self.assertEqual(t.calls, len(cases))
+
+
+class OctoberPairTests(unittest.IsolatedAsyncioTestCase):
+    async def test_both_descriptors_keep_five_reads_under_exact_october_authority(self):
+        from test_core_2026_10_device_registry import OctoberSignedSelectionTests
+        from ha_mcp_engineering.ha_core_readmission.routes import DEVICE_DEPENDENT_DELEGATED_TOOLS
+        case = OctoberSignedSelectionTests()
+        await case.asyncSetUp()
+        self.addCleanup(case.doCleanups)
+        self.assertEqual((await case.publish())['compatible_count'], 21)
+        for captured in (capture(), component_capture()):
+            transport = Transport(captured['tools'])
+            gateway = UpstreamReadGateway()
+            gateway.configure(replace(_settings('synthetic-october-860'),
+                ha_mcp_release_registry_enabled=False), transport=transport, core_runtime=case.core)
+            await gateway.initialize(FastMCP('synthetic-october-860'))
+            self.assertTrue(DEVICE_DEPENDENT_DELEGATED_TOOLS <= gateway._registered_tool_registry.snapshot().keys())
+            result, telemetry = await ReadCompatibilityTests.call(self, gateway, 'ha_search', {'query': 'fixture'})
+            self.assertTrue(result['success'], result)
+            self.assertEqual(telemetry.upstream_request_count, 1)
+            self.assertEqual(telemetry.upstream_active_requests, 0)
+            self.assertFalse(result['metadata']['fallback_occurred'])
+        self.assertEqual(case.core.health_snapshot()['active_commit_count'], 0)
+
+    async def test_october_expiry_withdraws_delegated_search_without_dispatch(self):
+        from test_core_2026_10_device_registry import OctoberSignedSelectionTests, NOW
+        case = OctoberSignedSelectionTests()
+        await case.asyncSetUp()
+        self.addCleanup(case.doCleanups)
+        await case.publish()
+        transport = Transport(component_capture()['tools'])
+        gateway = UpstreamReadGateway()
+        gateway.configure(replace(_settings('synthetic-october-revoked'),
+            ha_mcp_release_registry_enabled=False), transport=transport, core_runtime=case.core)
+        await gateway.initialize(FastMCP('synthetic-october-revoked'))
+        handle = gateway._registered_tool_registry.snapshot()['ha_search']
+        case.now = NOW + timedelta(days=400)
+        await case.core.reconcile_once('synthetic_october_expired')
+        result = json.loads(await handle.run({'query': 'fixture'}))
+        self.assertFalse(result['success'], result)
+        self.assertEqual(transport.calls, 0)
+
+    def test_october_binding_does_not_change_profile_or_admit_later_core(self):
+        from ha_mcp_engineering.ha_core_readmission.probe_profiles import CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE as profile
+        from ha_mcp_engineering.ha_core_readmission.routes import delegated_provider_compatibility, DEVICE_DEPENDENT_DELEGATED_TOOLS
+        self.assertEqual(profile.contract_fingerprint,
+            'sha256:8dad86e454ca58ae558c9229ebd0fd7b748a3a2ff2a9bbb860a1f97a71eaee6b')
+        self.assertEqual(profile.delegated_device_adapters, ('8.5.0',))
+        for name in DEVICE_DEPENDENT_DELEGATED_TOOLS:
+            for core, upstream, selected, expected in (
+                ('2026.10.0', '8.6.0', profile, True),
+                ('2026.10.1', '8.6.0', profile, False),
+                ('2026.9.4', '8.6.0', profile, False),
+                ('2026.10.0', '8.6.1', profile, False),
+                ('2026.10.0', '8.6.0', replace(profile, profile_id='unknown'), False),
+            ):
+                with self.subTest(tool=name, core=core, upstream=upstream, profile=selected.profile_id):
+                    result, _ = delegated_provider_compatibility(tool_name=name,
+                        core_version=core, adapter_version=upstream, probe_profile=selected)
+                    self.assertEqual(result, expected)

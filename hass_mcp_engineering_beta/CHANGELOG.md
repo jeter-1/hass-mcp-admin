@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.4.1-beta.3 - Exact ha-mcp 8.6 and October pairing
+
+- Add exact 8.6 reference/component catalogs, closed read adapters and skill-guide
+  migration, preserving 25 reads and existing governed fan/power/dashboard routes.
+- Bind Core 2026.10.0/8.6 to beta.2's unchanged October probe and fingerprints;
+  retain September and 8.5 behavior, signed authority and withheld capabilities.
+- Add bounded native-architecture CI coverage for both Core versions, profiles
+  and packaging forms, with immutable inputs and owned cleanup.
+- Preserve stable v1, durable ownership/recovery, dependency locks, workflow
+  permissions and previous evidence. Upstream installation, HACS startup effects,
+  household acceptance, Govee and HAMCP-151 remain separate decisions.
+
 ## 2.4.1-beta.2 - Exact October Core device-registry compatibility
 
 - Add the separately selected October `next_name_part` schema and probe without

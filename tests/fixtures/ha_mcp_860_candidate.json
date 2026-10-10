@@ -1,0 +1,43 @@
+{
+  "version": "8.6.0",
+  "upstream_source": "fc54437a804858732e4bc927add98e202d879a09",
+  "upstream_tree": "6b726b7501e914ad0a98e77c0fbaf8089b9ce950",
+  "skills_source": "bc73bdac9f2be4b7e62bb3fcfe8b826050dcf851",
+  "assessment_source": "f832ac49f8e4d2b1f142bc0c142d6b64776c13be",
+  "assessment_provenance": "72cc3ca9dc483cd89c01c90ff4829734ca25777eeccd1b79668559047dd57e3d",
+  "images": {
+    "amd64": {
+      "standalone": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc",
+        "index": "sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc",
+        "manifest": "sha256:760d7149cdea93c2037f6d3267ce4c9954a8e763a4e745388b6c44604f94562e",
+        "configuration": "sha256:5dc273ffbe3be59ae86f3ef9a46337f041b9523daf1605663a649e9cd98af8e3",
+        "revision": "7431f2f5d0d98e3a514b6314ceb7901736abb1fd"
+      },
+      "addon": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-amd64@sha256:e7650a2955503b8afe53a2c8f2ff73e0c9a7691125cd59ed7ed8c9c87a0356d3",
+        "index": "sha256:e7650a2955503b8afe53a2c8f2ff73e0c9a7691125cd59ed7ed8c9c87a0356d3",
+        "manifest": "sha256:0f4b9472794ca5b2f5f7117c34c48600dadc9cabf6ae9ed2535e333c8d351f79",
+        "configuration": "sha256:5155ef67e4bcd5891d5421b14d7dc73d95133368095fc706492f1447ed0e8ad1",
+        "revision": null
+      }
+    },
+    "arm64": {
+      "standalone": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp@sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc",
+        "index": "sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc",
+        "manifest": "sha256:4f7d72f5e1a052f5094c1549e8ac50a7fb876cca07cb64fd3b55afc7080cef7b",
+        "configuration": "sha256:42a0fd8bb551aacc85eb1f940a46d82896fe0d7f80af4d4b22118f05e43cc468",
+        "revision": "7431f2f5d0d98e3a514b6314ceb7901736abb1fd"
+      },
+      "addon": {
+        "image": "ghcr.io/homeassistant-ai/ha-mcp-addon-aarch64@sha256:8c6f7f1d510f538b68129c0712bfcd4ea3be815b75239a2ab1b16a38b237589e",
+        "index": "sha256:8c6f7f1d510f538b68129c0712bfcd4ea3be815b75239a2ab1b16a38b237589e",
+        "manifest": "sha256:36cb4f3616cc1a66cca0885788241ffdf56f47f901e4e467080f8f507c0e3f7a",
+        "configuration": "sha256:8a828874e37fe06cfe6b8029a79f63de1ae6c628310b087066e4cea4b8d28c27",
+        "revision": null
+      }
+    }
+  },
+  "standalone_index": "sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc"
+}

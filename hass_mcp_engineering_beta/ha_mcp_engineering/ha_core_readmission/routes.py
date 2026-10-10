@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from .probe_profiles import CoreProbeProfile, compiled_probe_profile, CHILD_DEVICE_PROBE_PROFILE
+from .probe_profiles import (
+    CoreProbeProfile, compiled_probe_profile, CHILD_DEVICE_PROBE_PROFILE,
+    CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
+)
 
 
 DEVICE_DEPENDENT_DELEGATED_TOOLS = frozenset(
@@ -163,7 +166,7 @@ def delegated_provider_compatibility(
     adapter_version: str | None,
     probe_profile: CoreProbeProfile | None = None,
 ) -> tuple[bool, str | None]:
-    """Bind Core 2026.9 device routes to a reviewed corrected ha-mcp adapter.
+    """Bind exact reviewed Core device profiles to corrected ha-mcp adapters.
 
     The Core observation proves only Core's child-device/effective-area
     contract.  The independent upstream admission generation proves the
@@ -182,6 +185,12 @@ def delegated_provider_compatibility(
     # Keep the signed Core profile and its fingerprint byte-for-byte unchanged;
     # this exact provider binding is binary-owned, not new Core authority.
     if adapter_version in {"8.5.0", "8.6.0"} and probe_profile == CHILD_DEVICE_PROBE_PROFILE:
+        return True, None
+    if (
+        adapter_version == "8.6.0"
+        and core_version == "2026.10.0"
+        and probe_profile == CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE
+    ):
         return True, None
     if adapter_version in probe_profile.delegated_device_adapters:
         return True, None

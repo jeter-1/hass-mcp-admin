@@ -575,7 +575,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "matrix.upstream_version == '8.1.1' || "
             "matrix.upstream_version == '8.2.0' || "
             "matrix.upstream_version == '8.4.1' || "
-            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')",
+            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0')",
             workflow,
         )
         self.assertNotIn("--delete-branch", workflow)

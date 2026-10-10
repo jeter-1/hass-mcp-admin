@@ -1,8 +1,9 @@
 # ha-mcp 8.6.0 compiled compatibility candidate
 
-This candidate adds the exact 8.6.0 provider profile to Engineering. It does not
-upgrade an installed provider, publish or sign admission, change Engineering's
-version, or release a withheld operation. The advertised upstream reference
+This beta.3 candidate adds the exact 8.6.0 provider profile to Engineering on
+beta.2's October Core support. Local release metadata is materialized as
+2.4.1-beta.3. This does not upgrade an installed provider, publish or sign
+admission, or release a withheld operation. The advertised upstream reference
 remains 8.5.0; the compiled registry's historical default remains 7.14.1.
 
 ## Exact authority
@@ -133,17 +134,73 @@ failure injection. Local focused checks cover both descriptor surfaces, signed
 controls, exact negative cases, stale handles and in-flight settlement. The final
 Full/Evidence and independent-review receipts belong to
 `component-implementation-20261009T191834Z`; consult its RESULT for their status.
-Native arm64, exact-head CI, release/version metadata and installed acceptance
-remain separate gates. No unchanged-version gate is waived.
+Those original receipts remain unchanged. The release preparation below resolves
+the version metadata locally; native arm64, exact-head CI and installed acceptance
+remain separate gates.
+
+## October reconciliation and release validation
+
+The release checkout begins at protected beta.2 source
+`9871f4b7ad7ed0f9fba6bf49bf5f8603c84636b8`. All 37 reviewed compatibility files
+were replayed byte-for-byte at `25d712dba1260e4b5f98cd7ac3ead63825df892d`.
+The original branch and sealed evidence were preserved. Beta.2's October parser,
+probe and source-selector bytes are retained. An additional exact binding permits
+8.6.0 with Core 2026.10.0 and the unchanged October profile; it does not extend
+that pair to later patches or alter signed Core authority.
+
+The combined source baseline passed 155 tests. The corrected October-focused
+campaign passed 27 tests, including both catalogs, useful reads, authority expiry,
+zero-I/O refusals and unchanged profile fingerprints. The first test-fixture
+sequence mistake remains recorded; anti-replay was not changed. Historical CI
+regressions passed 76 tests after granting the loopback access needed by four
+synthetic relay tests. The initial sandbox refusals remain preserved.
+
+The exact Core image index is
+`sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4`,
+source `6a811d3359c7b2076dc9e1cf900843a129c044af`. Retained raw index,
+platform and configuration bytes were verified for both architectures; execution
+here was native amd64 only. The two local October runs are retained beneath
+`.artifacts/ha-mcp-8.6.0-release-20261010T041145Z` in the parent workspace:
+
+- `disposable-reference-20261010T043029Z`: both exact images, twice-captured
+  77-tool catalogs, 25 admitted reads, 17 changed/October read cases per image,
+  closed blueprint checks, three fan and four light/switch operations per image,
+  typed fault/recovery checks and two governed dashboard operations per image.
+  Relay settlement: 22 service posts, four legacy dashboard saves, zero retained
+  WebSockets; providers, locks and Core leases/commits settled.
+- `disposable-component-20261010T043216Z`: the same contracts plus 14 nonempty
+  search cases per image under exact component 2.2.1. Relay settlement: 22 service
+  posts, four native dashboard edits, zero legacy saves and retained WebSockets.
+  Both runs restored the fixed fixtures; all four containers and each internal
+  network were removed, with zero container exit codes and no OOM kill.
+
+The first reference attempt correctly refused a device lookup for a synthetic
+fan without a device. Its complete cleanup and failure receipt are retained; the
+positive test now selects the existing device-backed switch by exact registry
+identity. No product behavior was weakened. These runs used the candidate input
+hashes captured before execution, atop the recorded Git head; the head alone does
+not describe those then-uncommitted bytes. The final packet reconciles them with
+the committed release. Only synthetic local data, cached exact images and two
+hash-verified pure wheels were used. No new household observation occurred.
+
+This focused lane selected 19 ephemeral test profiles and exercises the delegated
+provider boundary. It is not a repeat of beta.2's all-21 native October campaign.
+The unchanged native parser and capability evidence remains described in
+[the beta.2 October summary](CORE_2026_10_COMPATIBILITY_EVIDENCE.md).
+Neither campaign establishes native arm64, actual Supervisor lifecycle, process
+crash/restart, physical feedback, later Core patches or installed 8.6 acceptance.
+The final RESULT in the new packet records Full/Evidence and independent-review
+status; pending checks must not be inferred from the disposable results.
 
 ## Admission, upgrade and recovery handoff
 
 1. Use the final stable-candidate Full/Evidence and independent review receipts.
    Both search profiles and the fixed guide transport have local disposable
    acceptance; exact authority and strict BPS remain required.
-2. Prepare a separately reviewed Engineering release/version and exact-head CI
-   scope, including both native architectures and both upstream packaging forms.
-   No workflow, version or release declaration is changed by this candidate.
+2. Complete the beta.3 integration/release review and exact-head CI. The local
+   workflow includes both native architectures, Core versions and profiles; each
+   row runs both packaging forms. Permissions and historical rows are preserved.
+   Local workflow preparation does not trigger CI or establish its results.
 3. Build/publish only after separate authorization. Establish the exact installed
    Engineering and upstream artifact identities through the governed route.
    Preserve the working 8.5 artifact/configuration and the signed authority journal
@@ -164,5 +221,8 @@ remain separate gates. No unchanged-version gate is waived.
    without repeating a write; recover the exact prior upstream artifact and
    re-establish matching authority. Never rewrite journals or relabel stale plans.
 
+Local beta.3 version materialization is part of the approved release preparation.
 No push, PR, CI trigger, publication, signing, household access, installed change,
-merge, version application or deployment is part of this local candidate phase.
+merge or deployment is included. With October already installed, beta.1 alone is
+not a compatible recovery target; retain the working beta.2/8.5 pair and exact
+journals/ownership. See the [beta.3 acceptance contract](V2_4_1_BETA3_ACCEPTANCE.md).

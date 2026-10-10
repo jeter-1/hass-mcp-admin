@@ -356,13 +356,16 @@ class WorkflowTests(unittest.TestCase):
         job = workflow["jobs"]["exact-addon-runtime-acceptance"]
         rows = job["strategy"]["matrix"]["include"]
         lanes = [x for x in rows if x.get("candidate_power")]
-        self.assertEqual(len(lanes), 6)
+        self.assertEqual(len(lanes), 14)
         self.assertEqual({(x["upstream_version"], x["architecture"], x["candidate_core_version"]) for x in lanes},
                          {(v, a, "2026.9.2") for v in ("8.4.3", "8.5.0") for a in ("amd64", "arm64")}
-                         | {("8.5.0", a, "2026.9.3") for a in ("amd64", "arm64")})
+                         | {("8.5.0", a, "2026.9.3") for a in ("amd64", "arm64")}
+                         | {("8.6.0", a, c) for a in ("amd64", "arm64") for c in ("2026.9.4", "2026.10.0")})
         for row in lanes:
             pin_path = (lane.PINS if row["upstream_version"] == "8.5.0" else
                         ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json")
+            if row["upstream_version"] == "8.6.0":
+                pin_path = ROOT / "tests/fixtures/ha_mcp_860_candidate.json"
             pins = json.loads(pin_path.read_bytes())
             self.assertEqual(row["candidate_source"], pins["upstream_source"])
             self.assertEqual(row["runner"], "ubuntu-latest" if row["architecture"] == "amd64" else "ubuntu-24.04-arm")
@@ -380,7 +383,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(execution["if"], "matrix.candidate_power == true")
         self.assertIn('--upstream-version "$UPSTREAM_VERSION"', execution["run"])
         self.assertIn('--core-version "$ASSESSMENT_CORE"', execution["run"])
-        self.assertEqual(len({(x["candidate_resource_code"], x["architecture"]) for x in lanes}), 6)
+        self.assertEqual(len({(x["candidate_resource_code"], x["architecture"]) for x in lanes}), 14)
         planning = next(s for s in job["steps"] if s.get("name", "").startswith("Run planning-only"))
         self.assertEqual(planning["if"], "matrix.candidate_power != true")
         self.assertNotIn("secrets.", json.dumps(workflow))

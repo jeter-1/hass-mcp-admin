@@ -204,11 +204,11 @@ class OctoberDeviceShapeTests(unittest.TestCase):
         self.assertIsNone(compiled_probe_profile('2026.10.0'))
         self.assertEqual(compiled_exact_authority('2026.10.0'), ())
 
-    def test_october_provider_binding_only_admits_fixed_850_adapter(self):
-        for version in ('8.5.0', '8.4.3', '8.6.0', None):
+    def test_october_provider_binding_only_admits_exact_reviewed_adapters(self):
+        for version in ('8.5.0', '8.6.0', '8.4.3', '8.6.1', None):
             ok, reason = delegated_provider_compatibility(tool_name='ha_get_device',
                 core_version='2026.10.0', adapter_version=version, probe_profile=OCTOBER)
-            self.assertEqual(ok, version == '8.5.0')
+            self.assertEqual(ok, version in {'8.5.0', '8.6.0'})
             self.assertEqual(reason, None if ok else 'ha_mcp_child_device_contract_unproven')
 
 
