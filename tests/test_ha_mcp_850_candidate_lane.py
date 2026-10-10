@@ -81,6 +81,109 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(namespace["ROOT"], Path("/"))
 
 
+class InternalFixtureNetworkTests(unittest.TestCase):
+    def setUp(self):
+        self.identity = "h860c10c-1234-1-amd64"
+        self.network = {"Id": "synthetic-network-id", "Internal": True, "Driver": "bridge",
+                        "Labels": {lane.LABEL: self.identity},
+                        "IPAM": {"Config": [{"Subnet": "172.25.0.0/16"}]}}
+        self.bindings = {self.identity: {"NetworkID": "synthetic-network-id",
+                                       "IPAddress": "172.25.0.2", "Gateway": "172.25.0.1"}}
+        self.owner = self.identity
+
+    def docker(self, *args, **kwargs):
+        if args[:2] == ("network", "inspect"):
+            self.assertEqual(args[-1], self.identity)
+            value = json.dumps(self.network)
+        else:
+            self.assertIn(args[-1], lane.resource_names(self.identity))
+            value = json.dumps(self.bindings) if "Networks" in args[2] else self.owner
+        return subprocess.CompletedProcess(args, 0, value, "")
+
+    def test_all_owned_roles_use_private_bridge_and_fixed_ports(self):
+        with patch.object(lane, "docker", self.docker):
+            for role, port in (("core", 8123), ("relay", 80), ("standalone", 8086), ("addon", 9583)):
+                with self.subTest(role=role):
+                    path = "/synthetic-850/mcp" if role in {"standalone", "addon"} else ""
+                    self.assertEqual(lane.internal_fixture_endpoint(self.identity, role),
+                                     f"http://172.25.0.2:{port}{path}")
+                    self.assertEqual(lane.published_ports("8.6.0", role), [])
+
+    def test_retained_lanes_keep_loopback_ports(self):
+        for version in ("8.4.3", "8.5.0"):
+            for role, ports in {"core": "18123:8123", "relay": "18080:80",
+                                "standalone": "18086:8086", "addon": "19583:9583"}.items():
+                self.assertEqual(lane.published_ports(version, role), ["-p", "127.0.0.1:" + ports])
+
+    def test_wrong_owner_or_network_refuses(self):
+        for case in ("owner", "network_owner", "external", "driver", "membership", "network_id"):
+            with self.subTest(case=case):
+                self.setUp()
+                if case == "owner": self.owner = "another-run"
+                if case == "network_owner": self.network["Labels"][lane.LABEL] = "another-run"
+                if case == "external": self.network["Internal"] = False
+                if case == "driver": self.network["Driver"] = "host"
+                if case == "membership": self.bindings["other"] = dict(self.bindings[self.identity])
+                if case == "network_id": self.bindings[self.identity]["NetworkID"] = "another-network"
+                with patch.object(lane, "docker", self.docker), self.assertRaises(lane.Refusal):
+                    lane.internal_fixture_endpoint(self.identity, "core")
+
+    def test_unowned_or_invalid_addresses_never_become_endpoints(self):
+        for address in ("8.8.8.8", "127.0.0.1", "169.254.1.1", "::1", "0.0.0.0",
+                        "172.26.0.2", "172.25.0.0", "172.25.255.255", "172.25.0.1", "", None):
+            with self.subTest(address=address):
+                self.bindings[self.identity]["IPAddress"] = address
+                with patch.object(lane, "docker", self.docker), self.assertRaises(lane.Refusal):
+                    lane.internal_fixture_endpoint(self.identity, "core")
+
+    def test_invalid_identity_or_role_never_inspects_docker(self):
+        with patch.object(lane, "docker") as docker:
+            for identity, role in (("h850-1234-1-amd64", "core"), ("unowned", "core"),
+                                   (self.identity, "../other")):
+                with self.assertRaises(lane.Refusal):
+                    lane.internal_fixture_endpoint(identity, role)
+            docker.assert_not_called()
+
+
+class InternalCoreStartupTests(unittest.IsolatedAsyncioTestCase):
+    async def test_assessment_bootstraps_owned_bridge_without_publishing(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        import real_ha_contract_tests as existing
+        controls = InternalFixtureNetworkTests()
+        controls.setUp()
+        pins = lane.candidate_pins("8.6.0", "2026.10.0", "component")
+        calls = []
+        def docker(*args, **kwargs):
+            calls.append(args)
+            if args[:2] == ("image", "inspect"):
+                return subprocess.CompletedProcess(args, 0, "amd64", "")
+            if args[0] == "inspect" or args[:2] == ("network", "inspect"):
+                return controls.docker(*args, **kwargs)
+            return subprocess.CompletedProcess(args, 0, "", "")
+        class BootstrapReached(Exception):
+            pass
+        async def bootstrap():
+            self.assertEqual(existing.HA_URL, "http://172.25.0.2:8123")
+            self.assertEqual(existing.CLIENT_ID, existing.HA_URL + "/")
+            create = next(args for args in calls if args[:2] == ("network", "create"))
+            self.assertIn("--internal", create)
+            run = next(args for args in calls if args[0] == "run")
+            self.assertNotIn("-p", run)
+            self.assertIn("--skip-pip", run)
+            self.assertIn("no-new-privileges:true", run)
+            raise BootstrapReached()
+        with tempfile.TemporaryDirectory() as directory, patch.object(lane, "CORE_URL", lane.CORE_URL), \
+                patch.object(existing, "HA_URL", existing.HA_URL), \
+                patch.object(existing, "CLIENT_ID", existing.CLIENT_ID), \
+                patch.object(existing, "bootstrap_disposable_admin", bootstrap), \
+                patch.object(lane, "docker", docker), patch.object(lane.shutil, "copytree"), \
+                patch.object(lane, "prepare_component_dependencies", return_value=Path(directory)), \
+                patch.object(lane.subprocess, "check_output", side_effect=[
+                    pins["upstream_source"], pins["upstream_tree"], pins["skills_source"]]):
+            with self.assertRaises(BootstrapReached):
+                await lane.assess("amd64", Path(directory), Path(directory), controls.identity, pins)
+
+
 class CatalogTests(unittest.TestCase):
     def test_complete_multiple_pages(self):
         a, b = {"name": "first"}, {"name": "second"}

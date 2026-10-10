@@ -293,7 +293,11 @@ async def run(endpoint: str, fixture_stats_url: str) -> dict[str, Any]:
         and health.get("last_failure_category") is None
         and health.get("admission_status") == "admitted_builtin_attestation"
         and health.get("release_runtime_contract_match") is True
-        and health.get("runtime_policy_state_normalized") is True,
+        and health.get("release_runtime_contract_fingerprint_model")
+        == release.runtime_contract_fingerprint_model
+        # Exact 8.6 has no dynamic policy state; its release fingerprint is exact.
+        and health.get("runtime_policy_state_normalized")
+        is (EXPECTED_VERSION != "8.6.0"),
         "reviewed dashboard provider accounting changed",
     )
     require(

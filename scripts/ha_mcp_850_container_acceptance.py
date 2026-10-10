@@ -12,6 +12,7 @@ import asyncio
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -196,6 +197,52 @@ def resource_names(identity):
     require(re.fullmatch(r"h(843|850|850c3|860c4[rc]|860c10[rc])-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
+
+
+FIXTURE_PORTS = {"core": (18123, 8123), "relay": (18080, 80),
+                 "standalone": (18086, 8086), "addon": (19583, 9583)}
+
+
+def published_ports(version, role):
+    version_code(version)
+    require(role in FIXTURE_PORTS, "fixture_role_invalid")
+    host, container = FIXTURE_PORTS[role]
+    # Docker does not publish ports for containers on only an internal network.
+    return [] if version == "8.6.0" else ["-p", f"127.0.0.1:{host}:{container}"]
+
+
+def internal_fixture_endpoint(identity, role):
+    """Connect only to an owned fixture on this run's isolated bridge."""
+    resource_names(identity)
+    require(identity.startswith("h860") and role in FIXTURE_PORTS,
+            "internal_fixture_identity_invalid")
+    name = identity + "-" + role
+    owner = docker("inspect", "--format", '{{index .Config.Labels "' + LABEL + '"}}', name)
+    require(owner.stdout.strip() == identity, "fixture_owner_mismatch")
+    network = json.loads(docker("network", "inspect", "--format", "{{json .}}", identity).stdout)
+    require(network.get("Internal") is True and network.get("Driver") == "bridge"
+            and network.get("Labels", {}).get(LABEL) == identity,
+            "fixture_network_not_owned_internal_bridge")
+    bindings = json.loads(docker("inspect", "--format", "{{json .NetworkSettings.Networks}}", name).stdout)
+    require(set(bindings) == {identity}, "fixture_network_membership_mismatch")
+    binding = bindings[identity]
+    require(binding.get("NetworkID") == network.get("Id") and bool(network.get("Id")),
+            "fixture_network_identity_mismatch")
+    try:
+        address = ipaddress.IPv4Address(binding["IPAddress"])
+        subnets = [ipaddress.IPv4Network(item["Subnet"])
+                   for item in network["IPAM"]["Config"] if ":" not in item["Subnet"]]
+        private = any(address in ipaddress.IPv4Network(cidr)
+                      for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+        member = any(address in subnet and address not in (subnet.network_address, subnet.broadcast_address)
+                     for subnet in subnets)
+    except (KeyError, TypeError, ValueError):
+        raise Refusal("fixture_address_invalid") from None
+    require(private and member and str(address) != binding.get("Gateway"),
+            "fixture_address_invalid")
+    port = FIXTURE_PORTS[role][1]
+    path = "/synthetic-850/mcp" if role in {"standalone", "addon"} else ""
+    return f"http://{address}:{port}{path}"
 
 
 def startup_diagnostics(identity):
@@ -413,6 +460,7 @@ def validate_860_catalog(tools, profile):
 
 
 async def assess(architecture, output, private, identity, pins):
+    global CORE_URL, RELAY_URL
     phase("disposable_core_startup")
     import aiohttp
     from mcp import types
@@ -466,8 +514,10 @@ async def assess(architecture, output, private, identity, pins):
         dependency_mounts = ["-v", str(dependencies) + ":/disposable-dependencies:ro",
                              "-e", "PYTHONPATH=/disposable-dependencies",
                              "--entrypoint", "python"]
-    docker("run", "-d", "--name", identity + "-core", *common, "--network-alias", "core", "--memory", "3g", "-p", "127.0.0.1:18123:8123", "-v", str(config) + ":/config", *dependency_mounts, pins["core_image"],
+    docker("run", "-d", "--name", identity + "-core", *common, "--network-alias", "core", "--memory", "3g", *published_ports(version, "core"), "-v", str(config) + ":/config", *dependency_mounts, pins["core_image"],
            *(["-m", "homeassistant", "--config", "/config", "--skip-pip"] if version == "8.6.0" else []))
+    if version == "8.6.0":
+        CORE_URL = internal_fixture_endpoint(identity, "core")
     existing.HA_URL, existing.CLIENT_ID = CORE_URL, CORE_URL + "/"
     token = await existing.bootstrap_disposable_admin()
     configured = existing.settings(token)
@@ -501,7 +551,9 @@ async def assess(architecture, output, private, identity, pins):
         phase("core_authority")
         await configure_with_test_authority(core, configured, cache_path=private / "core-cache.json", expected_image=pins["core_image"], core_version=core_version)
         save(output, "core-authority.json", {"version": observed["version"], "compatible_count": core.health_snapshot()["compatible_count"], "ephemeral_test_authority": True, "production_authority": False})
-        docker("run", "-d", "--name", identity + "-relay", *common, "--network-alias", "supervisor", "--memory", "256m", "--read-only", "--tmpfs", "/tmp", "-p", "127.0.0.1:18080:80", "-v", str(Path(__file__).resolve()) + ":/assessment.py:ro", "--entrypoint", "python", pins["core_image"], "/assessment.py", "--relay")
+        docker("run", "-d", "--name", identity + "-relay", *common, "--network-alias", "supervisor", "--memory", "256m", "--read-only", "--tmpfs", "/tmp", *published_ports(version, "relay"), "-v", str(Path(__file__).resolve()) + ":/assessment.py:ro", "--entrypoint", "python", pins["core_image"], "/assessment.py", "--relay")
+        if version == "8.6.0":
+            RELAY_URL = internal_fixture_endpoint(identity, "relay")
         await wait_endpoint(RELAY_URL + "/_assessment/stats")
         for kind in ("standalone", "addon"):
             phase(kind + "_startup")
@@ -534,8 +586,9 @@ async def assess(architecture, output, private, identity, pins):
                 data.mkdir()
                 (data / "options.json").write_text(json.dumps({"secret_path": "/synthetic-850/mcp", "enable_tool_search": False, "read_only_mode": False, "enable_mandatory_bps": True, "enable_strict_mandatory_bps": True, "enable_auto_backup": False, "enable_tool_security_policies": True}))
                 mounts += ["-v", str(data) + ":/data"]
-            port = "127.0.0.1:18086:8086" if kind == "standalone" else "127.0.0.1:19583:9583"
-            docker("run", "-d", "--name", identity + "-" + kind, *common, "--read-only", "--memory", "1g", *mounts, "--env-file", str(env_file), "-p", port, image["image"], *(["ha-mcp-web"] if kind == "standalone" else []))
+            docker("run", "-d", "--name", identity + "-" + kind, *common, "--read-only", "--memory", "1g", *mounts, "--env-file", str(env_file), *published_ports(version, kind), image["image"], *(["ha-mcp-web"] if kind == "standalone" else []))
+            if version == "8.6.0":
+                ENDPOINTS[kind] = internal_fixture_endpoint(identity, kind)
             require(docker("inspect", "--format", "{{.Image}}", identity + "-" + kind).stdout.strip() == image_id, "running_image_mismatch")
             if version == "8.6.0" and image_id != image["configuration"]:
                 descriptor = json.loads(docker("inspect", "--format", "{{json .ImageManifestDescriptor}}",

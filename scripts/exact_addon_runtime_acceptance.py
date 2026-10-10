@@ -110,7 +110,7 @@ EXACT_ADDON_PROFILES = {
     # Reuse the existing synthetic Supervisor detail fixture, not installed data.
     "8.6.0": {'addon_detail_profile': 'live-8.4.3',
  'automatic_read_count': 25,
- 'dashboard_runtime_fingerprint': 'cb7157a428d26caf49ba9d3abdff85f111628ebee9a64c35253c1b0c7abd4b01',
+ 'dashboard_runtime_fingerprint': '3c37bd1eb5b0c6076dd268dfd2cc4bf512a61b5ea94dbabf1e312c747cf242c5',
  'dashboard_status': 'reviewed',
  'entry_id': 'ha-mcp-v8.6.0-7426fb16',
  'held_tools': {'ha_get_operation_status'},
@@ -502,7 +502,11 @@ async def _dashboard_acceptance(
     health = provider.health_snapshot()
     require(health.get("contract_family") == "ha_mcp_dashboard_read_v3", "dashboard contract family changed")
     require(health.get("admission_status") == "admitted_builtin_attestation", "dashboard descriptor was not admitted")
-    require(health.get("runtime_policy_state_normalized") is True, "dashboard policy projection was not applied")
+    require(health.get("runtime_policy_state_normalized") is (EXPECTED_UPSTREAM_VERSION != "8.6.0"),
+            "dashboard policy projection differs from the exact release")
+    release = load_reviewed_upstream_release_registry().by_version[EXPECTED_UPSTREAM_VERSION]
+    require(health.get("release_runtime_contract_fingerprint_model") == release.runtime_contract_fingerprint_model,
+            "dashboard release runtime fingerprint model changed")
     require(health.get("release_runtime_contract_match") is True, "dashboard release runtime contract did not match")
     require(health.get("observed_release_runtime_contract_fingerprint") == EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT, "dashboard release runtime fingerprint changed")
     require(health.get("screenshots_allowed") is False, "dashboard screenshots became reachable")
