@@ -28,7 +28,7 @@ from ha_mcp_engineering.mcp_sdk_compatibility import (  # noqa: E402
 )
 
 
-SUPPORTED_VERSIONS = frozenset({"8.2.0", "8.4.1", "8.4.3", "8.5.0"})
+SUPPORTED_VERSIONS = frozenset({"8.2.0", "8.4.1", "8.4.3", "8.5.0", "8.6.0"})
 EXPECTED_PROTOCOL = "2025-03-26"
 MAX_RESPONSE_BYTES = 32_768
 ACK_KEY_PATTERN = re.compile(
@@ -132,10 +132,10 @@ async def probe(
             )
             skill_result = await session.call_tool(
                 "ha_get_skill_guide",
-                {
+                ({"file": "references/dashboard-guide.md"} if expected_version == "8.6.0" else {
                     "skill": "home-assistant-best-practices",
                     "file": "references/dashboard-guide.md",
-                },
+                }),
             )
             require(
                 getattr(skill_result, "isError", False) is not True,

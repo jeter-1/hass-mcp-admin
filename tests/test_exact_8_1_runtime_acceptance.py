@@ -78,7 +78,7 @@ class ExactAddonProfileTests(unittest.TestCase):
     def test_exact_profiles_retain_8_0_and_bind_all_8_1_identities(self):
         self.assertEqual(
             set(addon_acceptance.EXACT_ADDON_PROFILES),
-            {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3"},
+            {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.6.0"},
         )
 
         addon_acceptance._select_exact_addon_profile("8.1.0")
@@ -575,7 +575,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "matrix.upstream_version == '8.1.1' || "
             "matrix.upstream_version == '8.2.0' || "
             "matrix.upstream_version == '8.4.1' || "
-            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')",
+            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0')",
             workflow,
         )
         self.assertNotIn("--delete-branch", workflow)

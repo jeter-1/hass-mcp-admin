@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 
-async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, save):
+async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, save, core_version="2026.9.3"):
     from ha_mcp_engineering.fan.contracts import FanRequest, digest
     from ha_mcp_engineering.power.contracts import PowerRequest
 
@@ -91,7 +91,7 @@ async def failure_contract(fan, power, rest, telemetry, kind, output, *, check, 
             lost = False
             recovered = await replacement.control(uncertain_request)
             check(recovered["state"] == "succeeded_verified"
-                  and recovered["core_binding"]["version"] == "2026.9.3"
+                  and recovered["core_binding"]["version"] == core_version
                   and recovered["provider_attempt_count"] == 1
                   and not recovered["provider_response_received"]
                   and dispatches == 1, "read_only_recovery_failed")

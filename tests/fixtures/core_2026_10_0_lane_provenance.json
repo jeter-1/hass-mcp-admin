@@ -1,0 +1,13 @@
+{
+  "entry_id": "disposable-core-2026.10.0-1b64d38f",
+  "server_name": "home-assistant-core",
+  "version": "2026.10.0",
+  "source_commit": "6a811d3359c7b2076dc9e1cf900843a129c044af",
+  "source_tree": "89b64557858f8b65e152aa3d35b32fab4a168045",
+  "source_archive_sha256": "96778e8c130c16e86619e82741d308e41c76d2963da649f0748f7b51fb9703b9",
+  "image_index_digest": "sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4",
+  "architecture_manifests": {
+    "linux/amd64": "sha256:956a5d9effc091888cd34cb0b6fb4f66c448d257d20519e72302557682734fd0",
+    "linux/arm64": "sha256:0c73235a9140a9b02e4bf618d06d8c496b12ae70656ecddb0e02ad31ad122be4"
+  }
+}

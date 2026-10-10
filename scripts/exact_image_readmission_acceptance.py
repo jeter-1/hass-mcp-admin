@@ -32,8 +32,9 @@ EXPECTED_ENTRY_BY_VERSION = {
     "8.4.1": "ha-mcp-v8.4.1-7823b365",
     "8.4.3": "ha-mcp-v8.4.3-d5cea47a",
     "8.5.0": "ha-mcp-v8.5.0-e1538bcd",
+    "8.6.0": "ha-mcp-v8.6.0-7426fb16",
 }
-EXPECTED_UPSTREAM_TOOL_COUNTS = {version: 77 if version == "8.5.0" else 78
+EXPECTED_UPSTREAM_TOOL_COUNTS = {version: 77 if version in {"8.5.0", "8.6.0"} else 78
                                  for version in EXPECTED_ENTRY_BY_VERSION}
 EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT = ENGINEERING_STATIC_TOOL_COUNT
 EXPECTED_ACCOUNTING_BY_VERSION = {
@@ -73,6 +74,11 @@ EXPECTED_ACCOUNTING_BY_VERSION = {
         ),
     },
     "8.5.0": {
+        "delegated_read_count": 25,
+        "held_tools": {"ha_get_operation_status"},
+        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 25,
+    },
+    "8.6.0": {
         "delegated_read_count": 25,
         "held_tools": {"ha_get_operation_status"},
         "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 25,

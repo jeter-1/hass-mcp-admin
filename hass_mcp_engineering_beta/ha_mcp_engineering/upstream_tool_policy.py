@@ -69,6 +69,7 @@ REVIEWED_NORMALIZED_CATALOG_FINGERPRINT_MODEL_V1 = (
 # sequence to this fingerprint instead of treating alphabetical order as an
 # upstream contract.
 EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS = {
+    "8.6.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.5.0": "0aab73755d36e877b4ae6ed35683e7232974b04c98edb4fb4a0ea1f0bc8f6c8e",
     "8.4.1": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
     "8.4.3": "b78ae4ddde97e9db9250830c96a666fbaa8561abe747fcab1223d43754bead34",
@@ -933,6 +934,8 @@ def validate_reviewed_release_catalog(
     explicit fingerprint model.
     """
 
+    from .providers.upstream_search_8_6 import search_catalog_view
+    release = search_catalog_view(release, tools)
     runtime_model = release.runtime_contract_fingerprint_model
     expected_contracts = release.tool_contracts_by_name
     expected_policy = release.policy.by_name
@@ -1256,13 +1259,26 @@ def load_upstream_tool_policy(
     if not isinstance(value["tools"], list) or not value["tools"]:
         raise UpstreamToolPolicyError("policy_tools_invalid")
     entries = tuple(UpstreamToolPolicyEntry.from_mapping(item) for item in value["tools"])
-    from .providers.upstream_blueprint import ADAPTER, SOURCE, VERSION, is_blueprint_adapter
+    from .providers.upstream_blueprint import ADAPTER_BINDINGS, is_blueprint_adapter
+    from .providers.upstream_reads_8_6 import ADAPTER as READ_ADAPTER, SOURCE as READ_SOURCE, is_adapter
+    from .providers.upstream_search_8_6 import ADAPTER as SEARCH_ADAPTER, is_search_entry
     for entry in entries:
-        if ADAPTER in entry.argument_restrictions and (
-            not is_blueprint_adapter(entry) or expected_version != VERSION
-            or expected_source_commit != SOURCE
+        if SEARCH_ADAPTER in entry.argument_restrictions and (
+            not is_search_entry(entry) or expected_version != "8.6.0"
+            or expected_source_commit != READ_SOURCE
         ):
-            raise UpstreamToolPolicyError("policy_uncompiled_blueprint_adapter")
+            raise UpstreamToolPolicyError("policy_uncompiled_search_adapter")
+        for adapter, (version, source, _) in ADAPTER_BINDINGS.items():
+            if adapter in entry.argument_restrictions and (
+                not is_blueprint_adapter(entry) or expected_version != version
+                or expected_source_commit != source
+            ):
+                raise UpstreamToolPolicyError("policy_uncompiled_blueprint_adapter")
+        if READ_ADAPTER in entry.argument_restrictions and (
+            not is_adapter(entry) or expected_version != "8.6.0"
+            or expected_source_commit != READ_SOURCE
+        ):
+            raise UpstreamToolPolicyError("policy_uncompiled_read_adapter")
     if len(entries) != stock_tool_count:
         raise UpstreamToolPolicyError("policy_stock_catalog_count_invalid")
     names = [entry.upstream_name for entry in entries]
@@ -2306,11 +2322,18 @@ def _reviewed_artifact_evidence(
         tools=standalone_tools,
     )
     addon_tools = json.loads(canonical_json(standalone_tools))
-    for tool in addon_tools:
-        policy_state = tool["_meta"]["ha_mcp"]["policy"]
-        policy_state.update(
-            {"deployment": "addon", "enabled": True, "live": True}
-        )
+    policy_differences = []
+    if release.version != "8.6.0":
+        for tool in addon_tools:
+            policy_state = tool["_meta"]["ha_mcp"]["policy"]
+            policy_state.update(
+                {"deployment": "addon", "enabled": True, "live": True}
+            )
+        policy_differences = [
+            "/_meta/ha_mcp/policy/deployment",
+            "/_meta/ha_mcp/policy/enabled",
+            "/_meta/ha_mcp/policy/live",
+        ]
     addon_catalog_validation = validate_reviewed_release_catalog(
         release,
         observed_server_name=release.server_name,
@@ -2377,11 +2400,7 @@ def _reviewed_artifact_evidence(
         or runtime_catalog["normalized_aggregate_fingerprint"]
         != addon_catalog_validation.normalized_catalog_fingerprint
         or runtime_catalog["policy_only_standalone_addon_differences"]
-        != [
-            "/_meta/ha_mcp/policy/deployment",
-            "/_meta/ha_mcp/policy/enabled",
-            "/_meta/ha_mcp/policy/live",
-        ]
+        != policy_differences
         or runtime_catalog["controlling_evidence"]
         != "exact immutable OCI runtime tools/list"
         or any(

@@ -34,6 +34,19 @@ COMMON_OUTPUT_CONTRACT_FINGERPRINT = (
 )
 
 EXACT_CONTRACTS: Final = {
+    "8.6.0": ProviderRuntimeEvidence(
+        upstream_version="8.6.0",
+        protocol_version=PROTOCOL_VERSION,
+        compatibility_entry="ha-mcp-v8.6.0-7426fb16",
+        source_commit="fc54437a804858732e4bc927add98e202d879a09",
+        tool_name=TOOL_NAME,
+        input_schema_fingerprint="02cde8fbfca6548d70cf5ab6a981f5d2f1de4479e3a3f18bfec92bb09abe2be7",
+        annotation_fingerprint=COMMON_ANNOTATION_FINGERPRINT,
+        description_fingerprint="dfe6a3c7f1cd7d2681d8bc5b4b643841ed2fe553a5ba4489140f82ba11b8be7e",
+        output_contract_fingerprint=COMMON_OUTPUT_CONTRACT_FINGERPRINT,
+        runtime_contract_fingerprint="3b5ee1ab7b954356ea145502ff41089a54a121947a97bf6b4769e55ea99ff423",
+        policy_classification="persistent_write",
+    ),
     "8.5.0": ProviderRuntimeEvidence(
         upstream_version='8.5.0',
         protocol_version='2025-03-26',

@@ -1,14 +1,16 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.2** adds the reviewed Core **2026.10.0** device-registry
-schema through a separate code-owned probe. Exact October admission still needs
-the separately reviewed signed registry entry and authenticated observations.
+Engineering **2.4.1-beta.3** adds exact **ha-mcp 8.6.0** compatibility on top
+of beta.2's **Core 2026.10.0** support, retaining the working 8.5.0 contracts.
 The healthy catalog remains **83 tools: 58 native and 25 admitted delegated
-reads**. Exact ha-mcp 8.5.0, the 21 Core profiles, signed applicability, storage
-formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA2_RELEASE_NOTES.md),
-[acceptance contract](docs/V2_4_1_BETA2_ACCEPTANCE.md), and
-[local October compatibility evidence](docs/CORE_2026_10_COMPATIBILITY_EVIDENCE.md).
+reads**. The exact reference/component search variants, skill-guide migration,
+and closed template/scene/blueprint adapters require compiled compatibility and
+matching authority. All 21 Core profiles, signed fingerprints, storage formats
+and RC1's multidict 6.9.1 security correction are preserved.
+See the [release notes](docs/V2_4_1_BETA3_RELEASE_NOTES.md),
+[acceptance contract](docs/V2_4_1_BETA3_ACCEPTANCE.md), and
+[8.6/October compatibility evidence](docs/HA_MCP_8_6_0_COMPATIBILITY.md).
+Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
 RC1-to-GA proposal is superseded; this beta uses the same existing technical Beta
@@ -91,14 +93,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.2 release notes](docs/V2_4_1_BETA2_RELEASE_NOTES.md) and
-[2.4.1-beta.2 acceptance contract](docs/V2_4_1_BETA2_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.3 release notes](docs/V2_4_1_BETA3_RELEASE_NOTES.md) and
+[2.4.1-beta.3 acceptance contract](docs/V2_4_1_BETA3_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.2 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.3 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -140,10 +142,10 @@ implement Host/Origin enforcement.
 
 ## Capabilities and compatibility
 
-This development source paired with reviewed **ha-mcp 8.4.3 or 8.5.0** defines
-**56 static tools plus 25 delegated reads, 81 total**. The Core inventory represents
-**20 capability profiles**. The retained sequence-4 signed journal includes all
-20 for Core 2026.9.4; older entries retain their reviewed reference sets.
+This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
+**58 static tools plus 25 delegated reads, 83 total**. The Core inventory represents
+**21 capability profiles**. Each signed entry selects its exact reviewed reference
+set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol
 enumeration and descriptor comparison establish the catalog; a health count or
 cached client inventory alone does not.
@@ -162,9 +164,9 @@ no detected references does not prove none exist. See
 [dependency coverage](docs/ENTITY_DEPENDENCY_ANALYSIS.md).
 
 Installed inspector acceptance requires the actual installed Core version
-to be admitted by a valid signed registry, with all 20 applicable profiles
-compatible after the separately authorized extension, and exactly
-admitted ha-mcp 8.5.0. Record REST/WebSocket identity agreement, the observed Core
+to be admitted by a valid signed registry, with all 21 applicable profiles
+compatible after the separately authorized extension, and an exactly
+admitted provider. The 8.6 upgrade has its separate acceptance contract. Record REST/WebSocket identity agreement, the observed Core
 version, registry sequence and authority state in each acceptance receipt;
 beta.13 adds no installed-Core version pin. Reproducible CI lanes keep
 their explicit version pins and prove only their declared scenarios.
@@ -192,7 +194,7 @@ for one fan under ordinary authenticated connector authorization. The assistant
 generates and reuses the operation ID; no configuration plan or panel approval
 is added for this typed action. Generic service forwarding stays closed.
 
-Fan operations require admitted ha-mcp 8.4.3 or 8.5.0 and exact Core authority.
+Fan operations require admitted ha-mcp 8.4.3, 8.5.0 or 8.6.0 and exact Core authority.
 The signed registry selects reviewed typed applicability for each exact Core
 version; Core 2026.9.2 retains its historical route. A version without reviewed
 applicability remains unavailable.
@@ -207,7 +209,7 @@ a separate exact owner request. See [typed fan control](docs/TYPED_FAN_CONTROL.m
 `control_power` supports one exact light or switch ON/OFF request under ordinary
 authenticated connector authority. The assistant manages its operation ID; no
 configuration plan or panel approval is created. The contracts require exact
-Core authority and admitted ha-mcp 8.4.3 or 8.5.0, with the same registry-selected
+Core authority and admitted ha-mcp 8.4.3, 8.5.0 or 8.6.0, with the same registry-selected
 and historical routes described above. Generic services, toggle, brightness,
 color, bulk targets and other domains remain outside this tool.
 
