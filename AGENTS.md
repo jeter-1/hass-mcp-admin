@@ -1,4 +1,4 @@
-# Repository Instructions for Codex
+# Repository Instructions
 
 These instructions apply repository-wide. More-specific nested `AGENTS.md`
 files add requirements for their subtrees and take precedence on conflicts when
@@ -100,6 +100,7 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 
 ## Default Workflow
 
+- Start new tasks in a fresh worktree from freshly fetched origin/main. Existing checkouts may be historical.
 - Inspect before editing. Inventory instructions, scripts, tests, workflows, and
   current release declarations before choosing an implementation.
 - Use one branch and preferably one worktree per logical pull request. Never
@@ -203,15 +204,23 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 ## Local Commands
 
 - Show context: `python scripts/codex-context.py --format markdown`
+  Linux (scriptbox): not verified in this environment.
 - Show machine-readable context: `python scripts/codex-context.py --format json`
+  Linux (scriptbox): not verified in this environment.
 - Fast workflow check: `.\scripts\check.ps1 -Tier Fast -Area Workflow`
+  Linux (scriptbox): not verified in this environment.
 - Full local gate: `.\scripts\check.ps1 -Tier Full`
+  Linux (scriptbox): not verified in this environment.
 - Full gate with validation evidence: `.\scripts\check.ps1 -Tier Evidence`
+  Linux (scriptbox): not verified in this environment.
 - Protected-path gate for an explicitly scoped file:
   `.\scripts\check.ps1 -Tier Full -AuthorizedProtectedPath 'hass_mcp_admin/example.py'`
+  Linux (scriptbox): not verified in this environment.
 - Generate a PR draft: `python scripts/pr-evidence.py --base origin/main --head HEAD --output .artifacts/pr-evidence.md`
+  Linux (scriptbox): not verified in this environment.
 - Materialize a staged release in its original pull request before Ready:
   `python scripts/promote_next_release.py --apply`
+  Linux (scriptbox): not verified in this environment.
 - For deployment of the currently advertised version, run the context command
   and read `documents.active_acceptance_document`. Continue only when its
   `resolution_status` is `exact` and that field is known.
