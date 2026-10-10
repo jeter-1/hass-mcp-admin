@@ -3749,8 +3749,9 @@ class F3RuntimeIntegration:
         self.service._task_audit(task, outcome, "success")
         return {"status": outcome, "child_id": child_id}
 
-    def _health_fence(self) -> HealthScanFence:
-        return HealthScanFence((
+    def _health_fence_sources(self):
+        """Describe storage reads without acquiring their initial tokens."""
+        return (
             (ErrorCode.CHANGE_PLAN_STORAGE_ERROR, lambda: (
                 self.service.repository.generation, self.service.repository._directory_token())),
             (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, self.service.task_repository._directory_token),
@@ -3758,7 +3759,10 @@ class F3RuntimeIntegration:
                 self.children._health_generation, HealthScanFence.stamp(self.children.root))),
             (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, lambda: (
                 HealthScanFence.stamp(self.locks.root), HealthScanFence.stamp(self.locks.state_path))),
-        ))
+        )
+
+    def _health_fence(self) -> HealthScanFence:
+        return HealthScanFence(self._health_fence_sources())
 
     async def async_health(self, *, tasks=None, plans=None, fence=None) -> dict[str, Any]:
         """Owner-loop deep diagnostic; the collection is discarded after use."""

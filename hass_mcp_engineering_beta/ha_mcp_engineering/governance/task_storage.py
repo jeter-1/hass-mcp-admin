@@ -728,6 +728,8 @@ class ExecutionTaskRepository:
                 check()
                 if task is None:
                     raise ExecutionTaskStorageError("Execution-task record is missing")
+                if path != self._path(task.task_id, plan_id=task.plan_id):
+                    raise ExecutionTaskStorageError("Execution-task record path is not canonical")
                 if (task.task_id in staged._entries or task.plan_id in staged._task_by_plan
                         or task.idempotency_key in staged._task_by_idempotency):
                     raise ExecutionTaskStorageError("Execution-task ownership is ambiguous")

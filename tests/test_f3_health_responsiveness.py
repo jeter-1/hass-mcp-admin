@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import Counter
+from copy import deepcopy
 import gc
 import json
 from pathlib import Path
@@ -16,7 +17,10 @@ from tests import test_hamcp135_governed_rollback as inverse_fixtures
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError
 from ha_mcp_engineering.f3_runtime.health_scan import HealthScanFence
 from ha_mcp_engineering.f3_runtime import repository as child_storage
-from ha_mcp_engineering.governance.task_storage import ExecutionTaskStorageError
+from ha_mcp_engineering.governance.task_storage import (
+    ExecutionTaskStorageError,
+    _TASK_NAVIGATION_FIELDS,
+)
 
 
 class ChildCollectionTests(unittest.IsolatedAsyncioTestCase):
@@ -251,6 +255,140 @@ class ChildCollectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(error.exception.details.get("reason"), "health_snapshot_superseded")
         self.assertIn("health", self.runtime.readiness_state()["faults"])
         self.assertIsNone(self.fixture.service._health_cache_key)
+
+    async def test_initial_lock_namespace_failure_latches_health_fault(self):
+        service = self.fixture.service
+        cached = service._health_cache
+        root = self.runtime.locks.root
+        retained = root.with_name(root.name + "-retained")
+        root.rename(retained)
+        root.write_text("synthetic non-directory")
+        try:
+            with self.assertRaises(GovernanceError) as error:
+                await service.async_health_summary()
+        finally:
+            root.unlink()
+            retained.rename(root)
+        self.assertEqual(error.exception.code, ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+        self.assertNotEqual(error.exception.details.get("reason"), "health_snapshot_superseded")
+        state = self.runtime.readiness_state()
+        self.assertTrue(state["request_ready"])
+        self.assertFalse(state["execution_ready"])
+        self.assertIn("health", state["faults"])
+        self.assertIs(service._health_cache, cached)
+        self.assertIsNone(service._health_cache_key)
+        self.assertIsNone(service._health_validation_job)
+        self.assertFalse(any(call[0] == "write" for call in self.fixture.gateway.calls))
+
+    async def test_initial_and_later_namespace_stat_failures_keep_source_category(self):
+        for namespace in ("plan", "task", "child", "lock", "lock_state"):
+            for fail_on in (1, 2):
+                with self.subTest(namespace=namespace, fail_on=fail_on):
+                    fixture = fixtures.OrphanChildRecoveryTests()
+                    await fixture.asyncSetUp()
+                    try:
+                        service, runtime = fixture.service, fixture.runtime
+                        cached = service._health_cache
+                        target = {
+                            "plan": service.repository.root,
+                            "task": service.task_repository.root,
+                            "child": runtime.children.root,
+                            "lock": runtime.locks.root,
+                            "lock_state": runtime.locks.state_path,
+                        }[namespace]
+                        original, reads = Path.stat, []
+                        def unavailable(path, *args, **kwargs):
+                            if path == target:
+                                reads.append(path)
+                                if len(reads) >= fail_on:
+                                    raise PermissionError("synthetic namespace refusal")
+                            return original(path, *args, **kwargs)
+                        with patch.object(Path, "stat", unavailable):
+                            with self.assertRaises(GovernanceError) as error:
+                                await service.async_health_summary()
+                        code = (ErrorCode.CHANGE_PLAN_STORAGE_ERROR if namespace == "plan"
+                                else ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                        self.assertEqual(error.exception.code, code)
+                        self.assertNotEqual(error.exception.details.get("reason"), "health_snapshot_superseded")
+                        self.assertIs(service._health_cache, cached)
+                        self.assertIsNone(service._health_cache_key)
+                        self.assertIsNone(service._health_validation_job)
+                        state = runtime.readiness_state()
+                        self.assertTrue(state["request_ready"])
+                        self.assertEqual(state["execution_ready"], namespace == "plan")
+                        self.assertEqual("health" in state["faults"], namespace != "plan")
+                        self.assertFalse(any(call[0] == "write" for call in fixture.gateway.calls))
+                    finally:
+                        await fixture.asyncTearDown()
+                        fixture.doCleanups()
+
+    async def test_initial_fence_cancellation_preserves_readiness_and_ownership(self):
+        service = self.fixture.service
+        cached = service._health_cache
+        original, before = Path.stat, self.runtime.readiness_state()
+        def cancelled(path, *args, **kwargs):
+            if path == self.runtime.locks.state_path:
+                raise asyncio.CancelledError()
+            return original(path, *args, **kwargs)
+        with patch.object(Path, "stat", cancelled):
+            with self.assertRaises(asyncio.CancelledError):
+                await service.async_health_summary()
+        self.assertEqual(self.runtime.readiness_state(), before)
+        self.assertIs(service._health_cache, cached)
+        self.assertIsNone(service._health_cache_key)
+        self.assertIsNone(service._health_validation_job)
+        self.assertFalse(service._health_read_lock.locked())
+
+    async def test_noncanonical_parent_paths_refuse_without_navigation_or_cache_publication(self):
+        for variant in ("misplaced", "wrong_plan", "wrong_task", "duplicate"):
+            for public in (False, True):
+                with self.subTest(variant=variant, public=public):
+                    fixture = fixtures.OrphanChildRecoveryTests()
+                    await fixture.asyncSetUp()
+                    try:
+                        fixture._populate_terminal_history(task_count=3, declarations_per_task=2)
+                        service, runtime = fixture.service, fixture.runtime
+                        cached, cache_key = service._health_cache, service._health_cache_key
+                        parents = service.task_repository
+                        task = parents.list()[0]
+                        canonical = parents._path(task.task_id, plan_id=task.plan_id)
+                        wrong_plan = task.plan_id[:-1] + ("0" if task.plan_id[-1] != "0" else "1")
+                        wrong_task = task.task_id[:-1] + ("0" if task.task_id[-1] != "0" else "1")
+                        name = {
+                            "misplaced": "misplaced-parent.json",
+                            "wrong_plan": f"{wrong_plan}.{task.task_id}.json",
+                            "wrong_task": f"{task.plan_id}.{wrong_task}.json",
+                            "duplicate": "duplicate-parent.json",
+                        }[variant]
+                        misplaced = canonical.with_name(name)
+                        if variant == "duplicate":
+                            misplaced.write_bytes(canonical.read_bytes())
+                        else:
+                            canonical.rename(misplaced)
+                        # A failed staged rebuild must not repair even this
+                        # deliberately damaged navigation, or any stored bytes.
+                        parents._ordered_keys.clear()
+                        navigation = {name: deepcopy(getattr(parents, name))
+                                      for name in _TASK_NAVIGATION_FIELDS}
+                        generation, rebuilds = parents.generation, parents.index_rebuild_count
+                        bodies = {path.name: path.read_bytes() for path in parents.root.glob("*.json")}
+                        error_type = GovernanceError if public else ExecutionTaskStorageError
+                        with self.assertRaises(error_type) as error:
+                            await (service.async_health_summary() if public else runtime.async_health())
+                        if public:
+                            self.assertEqual(error.exception.code, ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                        self.assertEqual(parents.generation, generation)
+                        self.assertEqual(parents.index_rebuild_count, rebuilds)
+                        self.assertEqual({name: getattr(parents, name) for name in navigation}, navigation)
+                        self.assertEqual({path.name: path.read_bytes() for path in parents.root.glob("*.json")}, bodies)
+                        self.assertIs(service._health_cache, cached)
+                        self.assertEqual(service._health_cache_key, None if public else cache_key)
+                        self.assertFalse(runtime.readiness_state()["execution_ready"])
+                        self.assertIn("health", runtime.readiness_state()["faults"])
+                        self.assertFalse(any(call[0] == "write" for call in fixture.gateway.calls))
+                    finally:
+                        await fixture.asyncTearDown()
+                        fixture.doCleanups()
 
     async def test_empty_collection_matches_sync_counts(self):
         fence = self.fence()

@@ -12320,15 +12320,16 @@ class ChangeGovernanceService:
             task_metrics = self.task_repository.navigation_metrics(validated=True)
             self._health_cache_key = None
             built_at = self.now()
-            sources = [
-                (ErrorCode.CHANGE_PLAN_STORAGE_ERROR, self.repository._directory_token),
-                (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, self.task_repository._directory_token),
-            ]
-            if self.f3_runtime is not None:
-                sources.extend(self.f3_runtime._health_fence().sources[2:])
-            fence = HealthScanFence(tuple(sources))
+            fence = None
             corruption_before = (self.repository.corruption_count, self.task_repository.corruption_count)
             try:
+                sources = [
+                    (ErrorCode.CHANGE_PLAN_STORAGE_ERROR, self.repository._directory_token),
+                    (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, self.task_repository._directory_token),
+                ]
+                if self.f3_runtime is not None:
+                    sources.extend(self.f3_runtime._health_fence_sources()[2:])
+                fence = HealthScanFence(tuple(sources))
                 try:
                     plans = await self.repository.collect_health(
                         checkpoint=fence.check,
@@ -12429,13 +12430,20 @@ class ChangeGovernanceService:
                     else ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
             except (ChangePlanStorageError, ExecutionTaskStorageError) as exc:
                 self._health_cache_key = None
-                if corruption_before == (self.repository.corruption_count, self.task_repository.corruption_count):
+                if fence is not None and corruption_before == (self.repository.corruption_count, self.task_repository.corruption_count):
                     fence.check_after_failure()
                 if isinstance(exc, ExecutionTaskStorageError) and self.f3_runtime is not None:
                     self.f3_runtime._readiness_fault("health")
                 raise GovernanceError(
                     ErrorCode.CHANGE_PLAN_STORAGE_ERROR if isinstance(exc, ChangePlanStorageError)
                     else ErrorCode.EXECUTION_TASK_STORAGE_ERROR) from exc
+            except GovernanceError as exc:
+                self._health_cache_key = None
+                if (exc.code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                        and exc.details.get("reason") != "health_snapshot_superseded"
+                        and self.f3_runtime is not None):
+                    self.f3_runtime._readiness_fault("health")
+                raise
             except BaseException:
                 self._health_cache_key = None
                 raise

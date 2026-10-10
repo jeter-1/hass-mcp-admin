@@ -20,7 +20,7 @@ class HealthScanFence:
 
     def __init__(self, sources: tuple[tuple[ErrorCode, Callable[[], Any]], ...]):
         self.sources = sources
-        self.tokens = tuple(read() for _, read in sources)
+        self.tokens = tuple(self._read_source(code, read) for code, read in sources)
         self.files: dict[Path, tuple[int, int, int, int] | None] = {}
         self.file_codes: dict[Path, ErrorCode] = {}
 
@@ -36,9 +36,20 @@ class HealthScanFence:
     def superseded(code: ErrorCode = ErrorCode.EXECUTION_TASK_STORAGE_ERROR) -> None:
         raise GovernanceError(code, details={"reason": "health_snapshot_superseded"})
 
+    @staticmethod
+    def _read_source(code: ErrorCode, read: Callable[[], Any]) -> Any:
+        try:
+            return read()
+        except GovernanceError:
+            raise
+        except Exception as exc:
+            # Unavailable evidence is a storage failure, never supersession.
+            # Preserve the source's category without exposing exception text.
+            raise GovernanceError(code) from exc
+
     def check(self) -> None:
         for (code, read), token in zip(self.sources, self.tokens, strict=True):
-            if read() != token:
+            if self._read_source(code, read) != token:
                 self.superseded(code)
 
     def check_after_failure(self) -> None:

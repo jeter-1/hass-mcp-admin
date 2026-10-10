@@ -37,6 +37,14 @@ replaced with a cached healthy result. Async parent collection errors refuse the
 health request instead of projecting an empty task history. Existing synchronous
 error projections remain supported.
 
+Initial fence-token acquisition uses the same storage-failure boundary as the
+collection. Unavailable plan evidence retains plan-storage attribution; unavailable
+parent, child or lock evidence withholds F3 execution while request readiness
+remains available after startup. A collected parent must also occupy the exact
+canonical filename derived from its validated plan/task identity. Misplaced or
+duplicate bodies cannot certify terminal settlement or publish a partial index;
+the diagnostic refuses without renaming or repairing those records.
+
 Owner-loop plan/challenge expiry remains an existing once-only side effect.
 After a complete safety and file check, its synchronous persistence section
 refreshes only that plan's watched stamp and the plan namespace fence. Concurrent
