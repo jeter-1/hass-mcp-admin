@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from copy import copy
+from typing import Callable
 from bisect import insort
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -67,6 +70,20 @@ def is_terminal_plan(plan: ChangePlan) -> bool:
 
 class ChangePlanStorageError(RuntimeError):
     pass
+
+
+class PlanHealthSnapshotSuperseded(ChangePlanStorageError):
+    """A cooperative health read lost its optimistic source fence."""
+
+
+_PLAN_NAVIGATION_FIELDS = (
+    "_entries", "_ordered_keys", "_status_keys", "_active_ids",
+    "_approval_candidate_ids", "_recovery_candidate_ids", "_active_keys",
+    "_approval_candidate_keys", "_recovery_candidate_keys",
+    "_expected_active_count", "_expected_approval_candidate_count",
+    "_expected_recovery_candidate_count", "_expected_active_signature",
+    "_expected_approval_signature", "_expected_recovery_signature",
+)
 
 
 @dataclass(frozen=True)
@@ -437,9 +454,10 @@ class ChangePlanRepository:
                 plan_id for _, plan_id in self._recovery_candidate_keys
             )
 
-    def navigation_metrics(self) -> dict[str, int]:
+    def navigation_metrics(self, *, validated: bool = False) -> dict[str, int]:
         with self._lock:
-            self._ensure_navigation_index()
+            if not validated:
+                self._ensure_navigation_index()
             return {
                 "generation": self.generation,
                 "record_count": len(self._entries),
@@ -564,7 +582,9 @@ class ChangePlanRepository:
                     self._mark_navigation_current()
             return plan
 
-    def _load(self, path: Path) -> ChangePlan | None:
+    def _load(
+        self, path: Path, *, before_quarantine: Callable[[], None] | None = None
+    ) -> ChangePlan | None:
         try:
             with self._lock:
                 value = json.loads(path.read_text(encoding="utf-8"))
@@ -578,6 +598,8 @@ class ChangePlanRepository:
         except OSError as exc:
             raise ChangePlanStorageError("Governance record read failed") from exc
         except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            if before_quarantine is not None:
+                before_quarantine()
             self._quarantine(path)
             raise ChangePlanStorageError("Governance record is corrupt") from exc
 
@@ -585,6 +607,62 @@ class ChangePlanRepository:
         plans, _evidence = self._scan_and_rebuild(
             count_full_history_scan=True
         )
+        return sorted(plans, key=lambda plan: plan.created_at, reverse=True)
+
+    async def collect_health(
+        self, *, checkpoint: Callable[[], None], watch: Callable[[Path], None]
+    ) -> list[ChangePlan]:
+        """Validate once and stage the existing navigation projection cooperatively.
+
+        Synchronous readers/writers keep their existing APIs. No lock, partial
+        navigation table or mutable repository is handed to an async worker.
+        """
+        generation, directory = self.generation, self._directory_token()
+
+        def check() -> None:
+            checkpoint()
+            if self.generation != generation or self._directory_token() != directory:
+                raise PlanHealthSnapshotSuperseded("health_snapshot_superseded")
+
+        staged = copy(self)
+        for name in _PLAN_NAVIGATION_FIELDS:
+            setattr(staged, name, type(getattr(self, name))())
+        staged._refresh_expected_active_signatures()
+        plans = []
+        self.full_history_scan_count += 1
+        for root in (self.root, self.operational_root):
+            with os.scandir(root) as entries:
+                for entry in entries:
+                    await asyncio.sleep(0)
+                    check()
+                    if not entry.name.endswith(".json"):
+                        continue
+                    path = Path(entry.path)
+                    watch(path)
+                    with self._lock:
+                        plan = self._load(path, before_quarantine=check)
+                    check()
+                    if plan is None:
+                        raise ChangePlanStorageError("Governance record is missing")
+                    if (plan.plan_id in staged._entries
+                            or path != self._path_for_plan(plan)):
+                        raise ChangePlanStorageError("Ambiguous governance record identifier")
+                    staged._put_entry(plan, count_update=False)
+                    plans.append(plan)
+        changed = self._observed_directory_token != directory
+        for name in _PLAN_NAVIGATION_FIELDS:
+            await asyncio.sleep(0)
+            check()
+            changed |= getattr(self, name) != getattr(staged, name)
+        with self._lock:
+            check()
+            if changed:
+                for name in _PLAN_NAVIGATION_FIELDS:
+                    setattr(self, name, getattr(staged, name))
+                self.generation += 1
+                self.index_rebuild_count += 1
+                self.index_invalidation_count += 1
+                self._mark_navigation_current()
         return sorted(plans, key=lambda plan: plan.created_at, reverse=True)
 
     def _quarantine(self, path: Path) -> None:
@@ -904,9 +982,10 @@ class ChangePlanRepository:
             recovered += 1
         return recovered
 
-    def health(self) -> dict[str, int | str | bool]:
+    def health(self, *, validated: bool = False) -> dict[str, int | str | bool]:
         with self._lock:
-            self._ensure_navigation_index()
+            if not validated:
+                self._ensure_navigation_index()
             plan_count = len(self._entries)
         return {
             "configured": True,
@@ -915,5 +994,5 @@ class ChangePlanRepository:
             "corruption_count": self.corruption_count,
             "write_failures": self.write_failures,
             "retention_days": self.retention_days,
-            "navigation": self.navigation_metrics(),
+            "navigation": self.navigation_metrics(**({"validated": True} if validated else {})),
         }

@@ -1,5 +1,71 @@
 # Governance health cache correctness and responsiveness
 
+## Current cooperative deep-health correction
+
+Public asynchronous health collects each plan, public task, child envelope and
+manifest once per call. Plan/task repositories stage their existing navigation
+projections on the owner loop, yield between records and publish a repaired
+in-memory index only after consistency checks. F3 counts, reconciliation and
+inverse lock reporting reuse the same detached records. Fixed namespace bounds
+(1,024 F3 parents, 8,192 children, at most eight declared children per manifest)
+and the bounded recovery output remain enforced. No durable format changes.
+
+The explicit async diagnostic performs a fresh collection and safety validation
+even after an unchanged call; its aggregate rebuild/read counters describe that
+work. It does not use a previously healthy aggregate to skip current integrity
+inspection. The existing synchronous summary cache and synchronous repository
+APIs remain available, with their original default behavior. Historical warm-cache
+measurements below describe earlier increments, not current async read counts.
+
+Only detached plan safety validation uses the existing single pure worker. No
+repository or mutable runtime goes to a worker. Readers serialize under the
+existing service reader coordination; cancellation discards staged collection
+and publication. A surviving validation worker must finish and be drained before
+a later reader submits another. Repository/thread/file locks never span an await.
+Individual file I/O, bounded record decoding, in-memory sorting/aggregation and
+lifecycle work remain synchronous; this is not a hard per-request latency bound
+or a guarantee against external filesystem/lock contention.
+
+Directory tokens, plan/task and child-writer generations, lock-file identity
+and per-file identity/size/timestamp stamps
+fence the collection, projection and final overlay. Owner-loop writes invalidate the snapshot even when directory timestamps
+coalesce. External replacements are checked through namespace and file stamps. A changed file detected during the final stamp
+pass also invalidates it. The fixed `health_snapshot_superseded` refusal does not
+latch a global storage fault. Quarantined corruption and genuine failed writes
+retain their error/counter and readiness protections. No current scan failure is
+replaced with a cached healthy result. Async parent collection errors refuse the
+health request instead of projecting an empty task history. Existing synchronous
+error projections remain supported.
+
+Owner-loop plan/challenge expiry remains an existing once-only side effect.
+After a complete safety and file check, its synchronous persistence section
+refreshes only that plan's watched stamp and the plan namespace fence. Concurrent
+loop tasks cannot run in that section. These optimistic checks do not claim an
+atomic snapshot or compare-and-swap against arbitrary external/in-place writers.
+Locks and holds are freshly collected once for F3 and rechecked before reporting;
+health neither settles ownership nor performs recovery or provider dispatch.
+
+The existing phase fields retain their names: snapshot includes cooperative plan
+and task collection; overlay includes awaited F3 collection/reconciliation plus
+live overlays. Each explicit async call now has collection/validation/assembly
+work. Worker elapsed remains nested within validation wait. CPU time, total wall
+time, maximum loop gaps, GC attribution and structural progress must be measured
+separately; no arbitrary sub-100-ms pass threshold is introduced.
+
+Focused tests cover cold navigation repair, current corruption/duplicates,
+concurrent plan/task/child/lock movement, cancellation and worker drainage,
+legacy parents, orphan holds, inverse retained-lock reporting, no-probe routing,
+current-writer approved execution and duplicate suppression. A synthetic public
+health fixture with 200 parents and three children each performs 200 parent,
+600 envelope and 200 manifest reads, once each, with ticker progress between
+reads. Saved run artifacts contain exact timing/CPU/GC measurements. They are
+local offline evidence, not installed acceptance or proof that health caused the
+historical October disconnect. Routine request readiness still does no history
+scan; release, installation and live acceptance are separate gates.
+
+## Earlier cache and worker increments
+
+
 This increment fixes repeated rebuilding of the governance health aggregate.
 It does not change public tool schemas, execution authority, provider routing,
 approval policy, persisted formats, or release metadata.

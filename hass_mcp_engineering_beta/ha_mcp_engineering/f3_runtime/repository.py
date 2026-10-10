@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 import fcntl
 import hashlib
@@ -222,6 +223,7 @@ class ChildExecutionRepository(DurableExecutionRepository):
         self.event_sink = event_sink or null_event_sink
         self._fault_hook = fault_hook
         self._thread_lock = threading.RLock()
+        self._health_generation = 0
         self._navigation_logger = get_logger("f3_recovery_navigation")
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -290,8 +292,13 @@ class ChildExecutionRepository(DurableExecutionRepository):
             ) from exc
 
     def _raw_envelope(self, child_id: str) -> dict[str, Any] | None:
+        return self._envelope_at(self._path(child_id), child_id)
+
+    def _envelope_at(
+        self, path: Path, child_id: str | None = None
+    ) -> dict[str, Any] | None:
         try:
-            value = json.loads(self._path(child_id).read_text(encoding="utf-8"))
+            value = json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return None
         except (OSError, json.JSONDecodeError) as exc:
@@ -300,7 +307,8 @@ class ChildExecutionRepository(DurableExecutionRepository):
             if set(value) != {"declaration", "execution", "runtime"}:
                 raise ValueError
             _validate_declaration(value["declaration"])
-            if value["declaration"]["child_id"] != child_id:
+            declared_id = value["declaration"]["child_id"]
+            if (child_id is not None and declared_id != child_id) or path != self._path(declared_id):
                 raise ValueError
             runtime = value["runtime"]
             if set(runtime) != {
@@ -424,9 +432,14 @@ class ChildExecutionRepository(DurableExecutionRepository):
 
     def _read_unlocked(self, task_id: str) -> ExecutionRecord | None:
         envelope = self._raw_envelope(task_id)
+        return self._record_from_envelope(envelope)
+
+    @staticmethod
+    def _record_from_envelope(envelope: dict[str, Any] | None) -> ExecutionRecord | None:
         if envelope is None or envelope["execution"] is None:
             return None
         try:
+            task_id = envelope["declaration"]["child_id"]
             record = ExecutionRecord.from_dict(envelope["execution"])
             if (
                 record.execution_identity().task_id != task_id
@@ -514,6 +527,7 @@ class ChildExecutionRepository(DurableExecutionRepository):
                 handle.flush()
                 os.fsync(handle.fileno())
             os.replace(temporary, path)
+            self._health_generation += 1
             directory_fd = os.open(self.root, os.O_RDONLY)
             try:
                 os.fsync(directory_fd)
@@ -1218,6 +1232,56 @@ class ChildExecutionRepository(DurableExecutionRepository):
             if envelope is None:
                 raise ExecutionRecordCorrupt("child record is missing")
             return dict(envelope["runtime"])
+
+    async def collect_health(self, fence: Any) -> dict[str, Any]:
+        """Read each bounded envelope/manifest once; no lock spans a yield."""
+        envelopes: dict[str, Any] = {}
+        records: dict[str, ExecutionRecord | None] = {}
+        manifests: dict[str, Any] = {}
+        with os.scandir(self.root) as entries:
+            for entry in entries:
+                await asyncio.sleep(0)
+                fence.check()
+                path = Path(entry.path)
+                if entry.name.endswith(".child.json"):
+                    if len(envelopes) >= MAX_F3_CHILD_EXECUTIONS:
+                        raise ExecutionStorageError("F3 execution namespace exceeds its reviewed bound")
+                    fence.watch(path)
+                    with self._exclusive_transaction():
+                        envelope = self._envelope_at(path)
+                    fence.check()
+                    if envelope is None:
+                        raise ExecutionRecordCorrupt("child record is missing")
+                    child_id = envelope["declaration"]["child_id"]
+                    if child_id in envelopes:
+                        raise ExecutionRecordCorrupt("child identity is duplicated")
+                    envelopes[child_id] = envelope
+                    records[child_id] = self._record_from_envelope(envelope)
+                elif entry.name.endswith(".manifest.json"):
+                    if len(manifests) >= MAX_F3_PUBLIC_TASKS:
+                        raise ExecutionStorageError("F3 execution namespace exceeds its reviewed bound")
+                    fence.watch(path)
+                    task_id = entry.name.removesuffix(".manifest.json")
+                    manifest = self.manifest_for_task(task_id)
+                    fence.check()
+                    if manifest is None:
+                        raise ExecutionRecordCorrupt("F3 manifest is missing")
+                    declarations = manifest.get("declarations")
+                    if not isinstance(declarations, list) or not 1 <= len(declarations) <= 8:
+                        raise ExecutionRecordCorrupt("F3 manifest declarations are invalid")
+                    for declaration in declarations:
+                        _validate_declaration(declaration)
+                        if declaration["public_task_id"] != task_id:
+                            raise ExecutionRecordCorrupt("F3 manifest identity changed")
+                    manifests[task_id] = manifest
+        for manifest in manifests.values():
+            await asyncio.sleep(0)
+            fence.check()
+            for declaration in manifest["declarations"]:
+                envelope = envelopes.get(declaration["child_id"])
+                if envelope is None or envelope["declaration"] != declaration:
+                    raise ExecutionRecordCorrupt("F3 manifest child authority changed")
+        return {"envelopes": envelopes, "records": records, "manifests": manifests}
 
     def health(self) -> dict[str, Any]:
         records = self.list()
