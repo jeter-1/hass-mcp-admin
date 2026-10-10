@@ -17,7 +17,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
 from prepare_core_release_registry import prepare_candidate, sign_candidate
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
-from ha_mcp_engineering.ha_core_readmission.probe_profiles import CHILD_DEVICE_PROBE_PROFILE
+from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
+    CHILD_DEVICE_PROBE_PROFILE, CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
+)
 from ha_mcp_engineering.ha_core_readmission.profiles import CORE_CAPABILITY_PROFILES, CORE_TYPED_OPERATION_PROFILES, compiled_exact_authority
 from ha_mcp_engineering.signed_registry import canonical_json
 
@@ -26,6 +28,7 @@ CORE_FIXTURES = {
     "2026.9.2": "core_2026_9_2_lane_provenance.json",
     "2026.9.3": "core_2026_9_3_lane_provenance.json",
     "2026.9.4": "core_2026_9_4_lane_provenance.json",
+    "2026.10.0": "core_2026_10_0_lane_provenance.json",
 }
 
 
@@ -48,11 +51,14 @@ async def configure_with_test_authority(runtime, configured, *, cache_path, expe
     )
     assert compiled_exact_authority(entry["version"]) == ()
     evidence = b"Disposable test authority only; actual contract result follows."
-    profiles = CORE_CAPABILITY_PROFILES + (CORE_TYPED_OPERATION_PROFILES if core_version in {"2026.9.3", "2026.9.4"} else ())
+    typed = core_version in {"2026.9.3", "2026.9.4", "2026.10.0"}
+    profiles = CORE_CAPABILITY_PROFILES + (CORE_TYPED_OPERATION_PROFILES if typed else ())
+    probe = (CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE if core_version == "2026.10.0"
+             else CHILD_DEVICE_PROBE_PROFILE)
     entry.update({
         "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
-        "probe_profile_id": CHILD_DEVICE_PROBE_PROFILE.profile_id,
-        "probe_profile_sha256": CHILD_DEVICE_PROBE_PROFILE.contract_fingerprint,
+        "probe_profile_id": probe.profile_id,
+        "probe_profile_sha256": probe.contract_fingerprint,
         "capabilities": [{name: profile.to_mapping()[name] for name in (
             "capability_id", "profile_id", "profile_version", "adapter_id", "contract_fingerprint"
         )} for profile in profiles],
@@ -91,7 +97,7 @@ async def configure_with_test_authority(runtime, configured, *, cache_path, expe
                for p in after["authority_profiles"] if p["disposition"].startswith("admitted_"))
     # The historical .2 lane retains only its original 17 references. New .3
     # test authority must explicitly include the two operation profiles.
-    assert all(p["disposition"].startswith("admitted_") == (core_version in {"2026.9.3", "2026.9.4"})
+    assert all(p["disposition"].startswith("admitted_") == typed
                for p in after["authority_profiles"]
                if p["capability_id"] in {"core.typed_fan_operation", "core.typed_power_operation"})
     assert after["fallback_count"] == 0

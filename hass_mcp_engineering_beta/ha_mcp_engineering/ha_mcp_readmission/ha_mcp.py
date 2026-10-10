@@ -30,6 +30,7 @@ from .models import (
     evidence_fingerprint,
 )
 from .registry import ReleaseRegistryAuthority, SignedReleaseRegistry
+from ..providers.upstream_search_8_6 import resolve_search_variant, search_capability_contract
 
 
 PROFILE_VERSION = 1
@@ -124,6 +125,9 @@ _ERROR_ADAPTERS = (
     ),
     _BinaryErrorContractAdapter(
         adapter_id="ha_mcp_error_contract_8_4_1_v1",
+        # Exact 8.6 OCI probes reproduce this aggregate (including the original
+        # missing-automation shape). Reuse its binary behavior and stable ID;
+        # the differing 8.5 shape remains separately bound above.
         aggregate_fingerprint=(
             "03000635a7b0a506c12a6f99ce86433a09683693a0e61d4265b1f11ec52b2d46"
         ),
@@ -460,6 +464,9 @@ def observation_for_catalog(
                     .runtime_contract_fingerprint_model
                 ),
             )
+            if resolve_search_variant(selection.binary_release, entry, raw) is not None:
+                contract = search_capability_contract(selection.binary_release, entry)
+
         else:
             safe_id = name
             kind = CapabilityKind.MIXED
@@ -514,7 +521,7 @@ def _profile_for_release(
         CapabilityContract(
             capability_id=entry.upstream_name,
             kind=CapabilityKind.ORDINARY_READ,
-            contract_fingerprint=_expected_contract_fingerprint(
+            contract_fingerprint=search_capability_contract(release, entry) or _expected_contract_fingerprint(
                 tool_name=entry.upstream_name,
                 argument_restrictions=entry.argument_restrictions,
                 release_contract=contracts[entry.upstream_name],

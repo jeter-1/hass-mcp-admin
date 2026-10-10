@@ -13,7 +13,7 @@ import asyncio
 from copy import deepcopy
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
 from mcp.server.fastmcp import FastMCP
@@ -233,6 +233,150 @@ class PostCoreRegressions(unittest.IsolatedAsyncioTestCase):
         self.supervisor = asyncio.create_task(
             self.core.supervise(interval_seconds=300, sleep=self.clock.sleep)
         )
+
+    def capture_failure_audit(self):
+        events = []
+        def sink(event):
+            # RLock recursion would conceal an in-lock sink; check ownership.
+            self.assertFalse(self.core._lock._is_owned())
+            events.append(deepcopy(event))
+            return True
+        self.core._audit_sink = sink
+        return events
+
+    def assert_failed_attempt(self, events, reason, observation_reason):
+        self.assertEqual(len(events), 1)
+        event = events[0]
+        self.assertEqual(event["event"], "home_assistant_core_authority_reconciliation_failed")
+        self.assertEqual(event["result_status"], "withheld")
+        summary = event["analysis_summary"]
+        self.assertEqual(summary["reason_code"], reason)
+        self.assertEqual(summary["observation_reason_code"], observation_reason)
+        self.assertIsNone(summary["generation"])
+        self.assertLess(len(json.dumps(event)), 1024)
+        self.assertEqual(self.core.health_snapshot()["counters"]["verification_failures"], 1)
+        self.assertIsNone(self.core.acquire(("core.basic_rest_read",)))
+
+    async def test_failed_attempt_audit_and_explicit_failure_retry_preserve_backoff(self):
+        events = self.capture_failure_audit()
+        self.network.mode = "http"
+        self.start_supervisor()
+        delay = await self.clock.next_delay()
+        self.assert_failed_attempt(events, "core_lifecycle_monitor_unavailable",
+                                   "core_observation_unavailable")
+        self.assertIsNone(events[0]["analysis_summary"]["observed_core_version"])
+        before = len(self.network.sessions)
+        self.network.mode = "ok"
+        for _ in range(20):
+            self.core.request_reconciliation()
+            await asyncio.sleep(0)
+        self.assertEqual(len(events), 1)
+        self.assertEqual(len(self.network.sessions), before)
+        self.assertEqual(self.clock.delays, [300])
+        delay.set_result(None)
+        await self.until(lambda: self.core.initialized)
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[-1]["analysis_summary"]["trigger"], "failure_retry")
+        self.assertEqual(events[-1]["result_status"], "success")
+        self.assert_authority_round_trip()
+
+    async def test_connection_fence_failure_is_audited_without_publication(self):
+        events = self.capture_failure_audit()
+        original = self.core._authority_provider
+        def change_epoch(version):
+            result = original(version)
+            self.core.request_reconciliation(connection_changed=True)
+            return result
+        with patch.object(self.core, "_authority_provider", side_effect=change_epoch):
+            await self.core.reconcile_once("periodic")
+        self.assert_failed_attempt(events, "core_connection_generation_stale", "observation_complete")
+        self.assertEqual(events[0]["analysis_summary"]["phase"], "connection_fence")
+
+    async def test_successful_idempotent_retry_is_explicit_without_generation_churn(self):
+        events = self.capture_failure_audit()
+        await self.core.reconcile_once("startup")
+        generation = self.core.health_snapshot()["current_generation"]
+        await self.core.reconcile_once("periodic")
+        self.assertEqual(len(events), 1)
+        await self.core.reconcile_once("failure_retry")
+        self.assertEqual(len(events), 2)
+        self.assertEqual(events[-1]["analysis_summary"]["trigger"], "failure_retry")
+        self.assertEqual(events[-1]["result_status"], "success")
+        self.assertEqual(self.core.health_snapshot()["current_generation"], generation)
+        self.assert_authority_round_trip()
+
+    async def test_monitor_fence_failure_is_audited_without_publication(self):
+        events = self.capture_failure_audit()
+        original = self.core._authority_provider
+        def change_monitor(version):
+            result = original(version)
+            self.core._connection_monitor_epoch = -1
+            return result
+        with patch.object(self.core, "_authority_provider", side_effect=change_monitor):
+            await self.core.reconcile_once("periodic")
+        self.assert_failed_attempt(events, "core_lifecycle_monitor_stale", "observation_complete")
+        self.assertEqual(events[0]["analysis_summary"]["phase"], "monitor_fence")
+
+    async def test_registry_collection_and_selection_failures_are_audited_once(self):
+        from ha_mcp_engineering.ha_core_readmission.observation import stable_observation
+        from types import SimpleNamespace
+        snapshot = core_tests._core_2026_9_snapshot()
+        observation = stable_observation(snapshot, snapshot)
+        for selection in (False, True):
+            with self.subTest(selection=selection):
+                events = self.capture_failure_audit()
+                before = self.core._counters["verification_failures"]
+                registry = SimpleNamespace(
+                    enabled=True, refresh_if_due=AsyncMock(),
+                    collection_token=iter(["a", "a" if selection else "b"]).__next__,
+                    selection_token=lambda version: "unused", snapshot=lambda: {},
+                )
+                tokens = iter(["a", "b"])
+                registry.selection_token = lambda version: next(tokens)
+                with patch.object(self.core, "_release_registry", registry), patch.object(
+                    self.core._collector, "collect", AsyncMock(return_value=observation)
+                ), patch.object(self.core, "_ensure_connection_monitor", AsyncMock(return_value=(False, True, False))):
+                    await self.core.reconcile_once("startup_retry")
+                self.assertEqual(len(events), 1)
+                expected = "core_registry_changed_during_selection" if selection else "core_registry_changed_during_probe"
+                self.assertEqual(events[0]["analysis_summary"]["reason_code"], expected)
+                self.assertEqual(events[0]["analysis_summary"]["observed_core_version"], "2026.9.0")
+                self.assertEqual(self.core._counters["verification_failures"], before + 1)
+                self.assertFalse(self.core.initialized)
+
+    async def test_audit_sink_refusal_exception_and_sanitization_preserve_failure(self):
+        sentinel = "https://synthetic.invalid/private?token=SYNTHETIC_SECRET"
+        for raises in (False, True):
+            with self.subTest(raises=raises):
+                events = []
+                def sink(event):
+                    self.assertFalse(self.core._lock._is_owned())
+                    events.append(deepcopy(event))
+                    if raises:
+                        raise RuntimeError(sentinel)
+                    return False
+                self.core._audit_sink = sink
+                before = self.core._counters["audit_write_failures"]
+                with patch.object(self.core._source, "capture_core_snapshot", AsyncMock(side_effect=RuntimeError(sentinel))) as capture:
+                    await self.core.reconcile_once(sentinel)
+                    self.assertEqual(capture.await_count, 1)
+                self.assertEqual(len(events), 1)
+                self.assertNotIn(sentinel, json.dumps(events))
+                self.assertEqual(events[0]["analysis_summary"]["trigger"], "other")
+                self.assertEqual(events[0]["analysis_summary"]["observation_reason_code"], "core_observation_unavailable")
+                self.assertEqual(self.core._counters["audit_write_failures"], before + 1)
+                self.assertIsNone(self.core.acquire(("core.basic_rest_read",)))
+
+    async def test_unknown_observation_reason_is_not_exported(self):
+        from dataclasses import replace
+        from ha_mcp_engineering.ha_core_readmission.observation import _failure_observation
+        observation = replace(_failure_observation("core_observation_unavailable"),
+                              reason_code="synthetic_secret_reason")
+        events = self.capture_failure_audit()
+        with patch.object(self.core._collector, "collect", AsyncMock(return_value=observation)):
+            await self.core.reconcile_once("mutation_verification")
+        self.assert_failed_attempt(events, "core_lifecycle_monitor_unavailable", "other")
+        self.assertNotIn("synthetic_secret_reason", json.dumps(events))
 
     async def test_display_values_preserve_authority_on_both_reviewed_versions(self):
         original = deepcopy(self.network.records)

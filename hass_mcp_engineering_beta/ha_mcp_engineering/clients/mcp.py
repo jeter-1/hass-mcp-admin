@@ -352,6 +352,19 @@ class McpDashboardTransport:
                     if tool_name is None:
                         raise DashboardTransportError("internal_error")
                     capability_validator(handshake)
+                    if (
+                        tool_name == REQUIRED_BEST_PRACTICES_TOOL
+                        and handshake.server_version == "8.6.0"
+                    ):
+                        # The validated exact 8.6 guide dropped the skill selector.
+                        # Keep this one internal read fixed; caller data cannot
+                        # select another file or manufacture an acknowledgement.
+                        if arguments != {
+                            "skill": "home-assistant-best-practices",
+                            "file": "references/dashboard-guide.md",
+                        }:
+                            raise DashboardTransportError("prohibited_argument")
+                        arguments = {"file": "references/dashboard-guide.md"}
                     telemetry = current_telemetry()
                     if (
                         telemetry is not None

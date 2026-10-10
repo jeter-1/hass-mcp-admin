@@ -107,6 +107,17 @@ EXPECTED_OPERATIONAL_PLANNING_SUPPORTED = True
 ACCEPTANCE_TIMEOUT_SECONDS = 180
 
 EXACT_ADDON_PROFILES = {
+    # Reuse the existing synthetic Supervisor detail fixture, not installed data.
+    "8.6.0": {'addon_detail_profile': 'live-8.4.3',
+ 'automatic_read_count': 25,
+ 'dashboard_runtime_fingerprint': '3c37bd1eb5b0c6076dd268dfd2cc4bf512a61b5ea94dbabf1e312c747cf242c5',
+ 'dashboard_status': 'reviewed',
+ 'entry_id': 'ha-mcp-v8.6.0-7426fb16',
+ 'held_tools': {'ha_get_operation_status'},
+ 'normalized_catalog_fingerprint': 'bea800f314710d3665afb6169bc81d3b1f6b284ce550e182df5a3159072f28b8',
+ 'operational_planning_supported': False,
+ 'raw_catalog_fingerprint': '47151934530bc8b51a04c611cfb8abeb92601fd9325cac78269bad04bea83ec8',
+ 'tool_count': 77},
     "8.0.0": {
         "entry_id": "ha-mcp-v8.0.0-d65630f6",
         "raw_catalog_fingerprint": (
@@ -218,6 +229,7 @@ def _select_exact_addon_profile(version: str) -> None:
     profile = EXACT_ADDON_PROFILES.get(version)
     if profile is None:
         raise AcceptanceFailure("unsupported exact add-on acceptance profile")
+    global EXPECTED_TOOL_COUNT
     global EXPECTED_UPSTREAM_VERSION
     global EXPECTED_ENTRY_ID
     global EXPECTED_RAW_CATALOG_FINGERPRINT
@@ -228,6 +240,7 @@ def _select_exact_addon_profile(version: str) -> None:
     global EXPECTED_HELD_TOOLS
     global EXPECTED_DASHBOARD_STATUS
     global EXPECTED_OPERATIONAL_PLANNING_SUPPORTED
+    EXPECTED_TOOL_COUNT = profile.get("tool_count", 78)
     EXPECTED_UPSTREAM_VERSION = version
     EXPECTED_ENTRY_ID = str(profile["entry_id"])
     EXPECTED_RAW_CATALOG_FINGERPRINT = str(
@@ -421,6 +434,7 @@ async def _automatic_read_acceptance(
         "8.2.0",
         "8.4.1",
         "8.4.3",
+        "8.6.0",
     }:
         search_tool = published.get("ha_search")
         require(search_tool is not None, "promoted ha_search was not exposed")
@@ -488,7 +502,11 @@ async def _dashboard_acceptance(
     health = provider.health_snapshot()
     require(health.get("contract_family") == "ha_mcp_dashboard_read_v3", "dashboard contract family changed")
     require(health.get("admission_status") == "admitted_builtin_attestation", "dashboard descriptor was not admitted")
-    require(health.get("runtime_policy_state_normalized") is True, "dashboard policy projection was not applied")
+    require(health.get("runtime_policy_state_normalized") is (EXPECTED_UPSTREAM_VERSION != "8.6.0"),
+            "dashboard policy projection differs from the exact release")
+    release = load_reviewed_upstream_release_registry().by_version[EXPECTED_UPSTREAM_VERSION]
+    require(health.get("release_runtime_contract_fingerprint_model") == release.runtime_contract_fingerprint_model,
+            "dashboard release runtime fingerprint model changed")
     require(health.get("release_runtime_contract_match") is True, "dashboard release runtime contract did not match")
     require(health.get("observed_release_runtime_contract_fingerprint") == EXPECTED_DASHBOARD_RUNTIME_FINGERPRINT, "dashboard release runtime fingerprint changed")
     require(health.get("screenshots_allowed") is False, "dashboard screenshots became reachable")

@@ -85,6 +85,13 @@ from ..upstream_tool_policy import (
     runtime_description_fingerprint,
     schema_fingerprint,
 )
+from .upstream_reads_8_6 import (
+    is_adapter as is_8_6_read_adapter,
+    public_schema as public_schema_8_6,
+    read_arguments as read_arguments_8_6,
+    ADAPTER as READ_ADAPTER_8_6,
+)
+from .upstream_search_8_6 import search_catalog_view
 from .upstream_blueprint import (
     is_blueprint_adapter, public_schema as blueprint_public_schema,
     read_arguments as blueprint_read_arguments,
@@ -113,6 +120,7 @@ HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1 = (
 )
 _REVIEWED_SUCCESS_ENVELOPE_MODELS = {
     ("8.5.0", REVIEWED_PROTOCOL_VERSION, "ha_get_hacs_info"): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
+    ("8.6.0", REVIEWED_PROTOCOL_VERSION, "ha_get_hacs_info"): HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1,
     (
         "8.1.0",
         REVIEWED_PROTOCOL_VERSION,
@@ -311,7 +319,7 @@ _EXPECTED_PROVIDER_OUTCOMES = {
 
 
 def _public_read_schema(entry, observed):
-    schema = blueprint_public_schema(entry, observed)
+    schema = public_schema_8_6(entry, blueprint_public_schema(entry, observed))
     # Preserve the shipped public descriptor. This exact upstream schema differs
     # only in one example; raw descriptor validation still binds all its bytes.
     if (entry.upstream_name == "ha_get_overview" and
@@ -986,6 +994,9 @@ class UpstreamReadGateway:
             identity_validated = True
             if self._admission_validator is not None:
                 self._admission_validator(catalog)
+            selected_release = search_catalog_view(selected_release, catalog.tools)
+            if selected_release is not None:
+                selected_policy = selected_release.policy
             reviewed_contracts = (
                 selected_release.tool_contracts_by_name
                 if selected_release is not None
@@ -2677,12 +2688,12 @@ class UpstreamReadGateway:
         )
         if errors:
             raise _GatewayFailure("argument_validation", dispatched=False)
-        dispatch_arguments = dict(arguments)
-        if is_blueprint_adapter(policy_entry):
-            try:
+        try:
+            dispatch_arguments = read_arguments_8_6(policy_entry, arguments)
+            if is_blueprint_adapter(policy_entry):
                 dispatch_arguments = blueprint_read_arguments(arguments)
-            except ValueError:
-                raise _GatewayFailure("argument_validation", dispatched=False) from None
+        except ValueError:
+            raise _GatewayFailure("argument_validation", dispatched=False) from None
         if transport is None:
             raise _GatewayFailure("not_configured", dispatched=False)
 
@@ -2769,6 +2780,9 @@ class UpstreamReadGateway:
                         "upstream_version_mismatch"
                     )
                 try:
+                    live_release = search_catalog_view(live_release, catalog.tools)
+                    if live_release is not None:
+                        live_policy = live_release.policy
                     live_evaluation = self._validate_catalog(
                         catalog,
                         policy=live_policy,
@@ -5093,8 +5107,9 @@ def _compare_tool_contract(
         observed_tool.get("description")
     )
     behavior_adapter = (
-        "ha-mcp-8.5.0-blueprint-list-get-v1"
-        if is_blueprint_adapter(entry) else "ha_search_partial_v1"
+        entry.argument_restrictions[0]
+        if is_blueprint_adapter(entry) else READ_ADAPTER_8_6
+        if is_8_6_read_adapter(entry) else "ha_search_partial_v1"
         if entry.upstream_name == "ha_search"
         else "bounded_opaque_read_v1"
     )

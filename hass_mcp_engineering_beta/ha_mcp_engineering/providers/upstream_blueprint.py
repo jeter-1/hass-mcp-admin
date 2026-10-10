@@ -1,7 +1,7 @@
 """Compiled list/get adapter; the mixed upstream tool is never a public tool.
 
 The public schema is the exact shipped 8.4.3 getter schema. Only two constructed
-argument shapes can reach 8.5.0; upstream data cannot select an action.
+argument shapes can reach an exact compiled release; upstream data cannot select an action.
 """
 from copy import deepcopy
 import re
@@ -10,6 +10,13 @@ VERSION = "8.5.0"
 ADAPTER = "ha-mcp-8.5.0-blueprint-list-get-v1"
 SOURCE = "311d6dc273fb4e9a5b8cde0de15f69472a64fe44"
 INPUT_FINGERPRINT = "6a71b650a3286f3fd5cf80e71b7f96735b1fac98c45ffeb839519988c5ae71d9"
+ADAPTER_BINDINGS = {
+    ADAPTER: (VERSION, SOURCE, INPUT_FINGERPRINT),
+    "ha-mcp-8.6.0-blueprint-list-get-v1": (
+        "8.6.0", "fc54437a804858732e4bc927add98e202d879a09",
+        "6a09a0f2e070835f0c93ba40c643069f15168d36dfd1d76815775190a194388f",
+    ),
+}
 PUBLIC_SCHEMA = {'additionalProperties': False,
  'properties': {'domain': {'default': 'automation',
                            'description': "Blueprint domain: 'automation' or 'script'",
@@ -24,12 +31,14 @@ PUBLIC_SCHEMA = {'additionalProperties': False,
 
 
 def is_blueprint_adapter(entry) -> bool:
+    binding = (ADAPTER_BINDINGS.get(entry.argument_restrictions[0])
+               if len(entry.argument_restrictions) == 1 else None)
     return (
         entry.upstream_name == "ha_manage_blueprints"
         and entry.exposed_name == "ha_get_blueprint"
         and entry.classification == "mixed_or_requires_wrapper"
-        and entry.input_schema_fingerprint == INPUT_FINGERPRINT
-        and entry.argument_restrictions == (ADAPTER,)
+        and binding is not None
+        and entry.input_schema_fingerprint == binding[2]
         and entry.reviewed_annotations.read_only
         and not entry.reviewed_annotations.destructive
     )

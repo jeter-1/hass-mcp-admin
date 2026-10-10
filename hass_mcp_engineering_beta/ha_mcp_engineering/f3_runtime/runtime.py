@@ -6,7 +6,7 @@ import asyncio
 from contextvars import ContextVar
 from copy import deepcopy
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import threading
@@ -15,6 +15,8 @@ import uuid
 from typing import Any, Awaitable, Callable
 
 from ..errors import ErrorCode, GovernanceError
+from .health_scan import HealthScanFence
+from ..governance.task_storage import TaskHealthSnapshotSuperseded
 from ..f3.executor import PreIntentRetryRequired, SharedOperationExecutor
 from ..f3.contracts import (
     LockMode,
@@ -1871,9 +1873,12 @@ class F3RuntimeIntegration:
             raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
 
     def _validate_sequence_state(
-        self, task: Any
+        self, task: Any, *, health_data: dict[str, Any] | None = None
     ) -> tuple[tuple[dict[str, Any], ...], tuple[Any | None, ...]]:
-        declarations = self.children.declarations_for_task(task.task_id)
+        declarations = (
+            self.children.declarations_for_task(task.task_id) if health_data is None
+            else tuple(health_data["manifests"][task.task_id]["declarations"])
+        )
         if (
             not declarations
             or [item["operation_ordinal"] for item in declarations]
@@ -1892,7 +1897,8 @@ class F3RuntimeIntegration:
             dependencies = set(declaration["operation_dependency_ids"])
             if not dependencies.issubset(known):
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
-            record = self.children.get(declaration["child_id"])
+            record = (self.children.get(declaration["child_id"]) if health_data is None
+                      else health_data["records"][declaration["child_id"]])
             if record is not None:
                 record.execution_class()
                 if not prior_all_verified:
@@ -2795,19 +2801,36 @@ class F3RuntimeIntegration:
             "task": self.service._public_task(task),
         }
 
-    def _inverse_lock_context(self, child_id):
+    def _inverse_lock_context(self, child_id, *, health_data=None):
         """Bounded durable authority; no callback/cache is a retention receipt."""
-        declaration = self.children.declaration(child_id)
-        plan = self.service._load_for_projection(declaration["plan_id"])
+        declaration = (self.children.declaration(child_id) if health_data is None
+                       else health_data["envelopes"][child_id]["declaration"])
+        task_id = declaration["public_task_id"]
+        if health_data is not None and task_id in health_data["inverse_contexts"]:
+            return health_data["inverse_contexts"][task_id]
+        if health_data is None or health_data.get("plans") is None:
+            plan = self.service._load_for_projection(declaration["plan_id"])
+        else:
+            plan = health_data["plans"].get(declaration["plan_id"])
+            if plan is None:
+                raise LockOwnershipError("inverse source plan is missing")
+            # Service collection has validated safety, but projection failures
+            # must never grant an inverse lock-retention context.
+            if plan.policy_decision is not None:
+                self.service._require_projection_policy_snapshot(plan)
         if not any(inverse_eligibility.markers(op) for op in plan.operations):
+            if health_data is not None:
+                health_data["inverse_contexts"][task_id] = None
             return None
         proof = inverse_eligibility.bound(plan)
-        task = self.service._load_task(declaration["public_task_id"])
+        task = (self.service._load_task(task_id) if health_data is None
+                else health_data["parents"][task_id])
         if (proof is None or task.plan_hash != self.service.plan_hash(plan)
                 or task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY):
             raise LockOwnershipError("inverse sequence binding unavailable")
-        declarations, records = self._validate_sequence_state(task)
-        manifest = self.children.manifest_for_task(task.task_id)
+        declarations, records = self._validate_sequence_state(task, health_data=health_data)
+        manifest = (self.children.manifest_for_task(task.task_id) if health_data is None
+                    else health_data["manifests"][task.task_id])
         if (len(declarations) != len(plan.operations)
                 or manifest["sequence_hash"] != task.legacy_projection.get("sequence_hash")):
             raise LockOwnershipError("inverse sequence manifest changed")
@@ -2829,7 +2852,10 @@ class F3RuntimeIntegration:
                     or record.operation != d["capability_id"]
                     or record.target != {"target_type": op.resource_type, "target_id": op.target_id}):
                 raise LockOwnershipError("inverse child receipt changed")
-        return plan, task, declarations, records
+        result = plan, task, declarations, records
+        if health_data is not None:
+            health_data["inverse_contexts"][task_id] = result
+        return result
 
     def _retain_inverse_locks(self, child_id):
         context = self._inverse_lock_context(child_id)
@@ -3387,26 +3413,38 @@ class F3RuntimeIntegration:
             raise
 
     def _reconciliation_items(self) -> list[dict[str, Any]]:
+        steps = self._reconciliation_steps()
+        while True:
+            try:
+                next(steps)
+            except StopIteration as complete:
+                return complete.value
+
+    def _reconciliation_steps(self, health_data=None):
         items = []
-        lock_records = self.locks.records()
+        lock_records = (self.locks.records() if health_data is None
+                        else health_data["lock_records"])
         lock_task_ids = {item.task_id for item in lock_records}
-        for declaration in sorted(
-            (
-                item
-                for task in self.service.task_repository.list()
-                if task.legacy_projection.get("execution_authority")
-                == F3_EXECUTION_AUTHORITY
-                for item in self.children.declarations_for_task(task.task_id)
-            ),
-            key=lambda item: (
-                item["public_task_id"], item["operation_ordinal"]
-            ),
-        ):
-            record = self.children.get(declaration["child_id"])
-            runtime = self.children.runtime(declaration["child_id"])
-            parent = self.service.task_repository.get(
-                declaration["public_task_id"]
-            )
+        declarations = (
+            (item for task in self.service.task_repository.list()
+             if task.legacy_projection.get("execution_authority") == F3_EXECUTION_AUTHORITY
+             for item in self.children.declarations_for_task(task.task_id))
+            if health_data is None else
+            (item for task in health_data["parents"].values()
+             if task.legacy_projection.get("execution_authority") == F3_EXECUTION_AUTHORITY
+             for item in health_data["manifests"].get(task.task_id, {}).get("declarations", ()))
+        )
+        for declaration in sorted(declarations, key=lambda item: (
+            item["public_task_id"], item["operation_ordinal"]
+        )):
+            yield
+            child_id = declaration["child_id"]
+            record = (self.children.get(child_id) if health_data is None
+                      else health_data["records"][child_id])
+            runtime = (self.children.runtime(child_id) if health_data is None
+                       else health_data["envelopes"][child_id]["runtime"])
+            parent = (self.service.task_repository.get(declaration["public_task_id"])
+                      if health_data is None else health_data["parents"][declaration["public_task_id"]])
             cleanup_pending = self._orphan_cleanup_pending(
                 parent=parent,
                 declaration=declaration,
@@ -3420,7 +3458,7 @@ class F3RuntimeIntegration:
                 and not runtime["selective_hold_tokens"]
                 and not cleanup_pending
                 and not (declaration["child_id"] in lock_task_ids
-                         and self._inverse_lock_context(declaration["child_id"]) is not None)
+                         and self._inverse_lock_context(declaration["child_id"], health_data=health_data) is not None)
             ):
                 continue
             if record is None and parent is not None:
@@ -3711,6 +3749,91 @@ class F3RuntimeIntegration:
         self.service._task_audit(task, outcome, "success")
         return {"status": outcome, "child_id": child_id}
 
+    def _health_fence_sources(self):
+        """Describe storage reads without acquiring their initial tokens."""
+        return (
+            (ErrorCode.CHANGE_PLAN_STORAGE_ERROR, lambda: (
+                self.service.repository.generation, self.service.repository._directory_token())),
+            (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, self.service.task_repository._directory_token),
+            (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, lambda: (
+                self.children._health_generation, HealthScanFence.stamp(self.children.root))),
+            (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, lambda: (
+                HealthScanFence.stamp(self.locks.root), HealthScanFence.stamp(self.locks.state_path))),
+        )
+
+    def _health_fence(self) -> HealthScanFence:
+        return HealthScanFence(self._health_fence_sources())
+
+    async def async_health(self, *, tasks=None, plans=None, fence=None) -> dict[str, Any]:
+        """Owner-loop deep diagnostic; the collection is discarded after use."""
+        parent_repository = self.service.task_repository
+        corruption_before = parent_repository.corruption_count
+        try:
+            fence = fence or self._health_fence()
+            if tasks is None:
+                tasks = await parent_repository.collect_health(
+                    checkpoint=fence.check, watch=fence.watch)
+            task_generation = parent_repository.generation
+            data = await self.children.collect_health(fence)
+            data["plans"] = plans
+            data["parents"] = {task.task_id: task for task in tasks}
+            data["inverse_contexts"] = {}
+            for task in tasks:
+                await asyncio.sleep(0)
+                fence.check()
+                if (task.legacy_projection.get("execution_authority") == F3_EXECUTION_AUTHORITY
+                        and task.task_id not in data["manifests"]):
+                    raise ExecutionStorageError("F3 parent manifest is missing")
+            fence.watch(self.locks.state_path)
+            data["lock_records"] = self.locks.records()
+            steps = self._reconciliation_steps(data)
+            while True:
+                await asyncio.sleep(0)
+                fence.check()
+                if parent_repository.generation != task_generation:
+                    fence.superseded()
+                try:
+                    next(steps)
+                except StopIteration as complete:
+                    data["reconciliation"] = complete.value
+                    break
+            await fence.verify_files()
+            if parent_repository.generation != task_generation:
+                fence.superseded()
+            records = [record for record in data["records"].values() if record is not None]
+            data["materialized"] = records
+            data["child_health"] = {
+                "status": "healthy",
+                "record_count": sum(len(m["declarations"]) for m in data["manifests"].values()),
+                "materialized_execution_count": len(records),
+                "nonterminal_execution_count": sum(not record.terminal for record in records),
+                "manual_review_count": sum(record.normalized_outcome == "manual_review_required" for record in records),
+            }
+            now = datetime.now(timezone.utc)
+            locks = data["lock_records"]
+            active = sum(self.locks._record_active(record, now) for record in locks)
+            data["lock_health"] = self.locks.metrics.snapshot(
+                current_active_lock_count=active,
+                current_conflict_hold_count=sum(record.conflict_hold for record in locks),
+                current_expired_lease_count=len(locks) - active,
+            )
+            result = self._health(collected=data)
+            fence.check()
+            return result
+        except TaskHealthSnapshotSuperseded:
+            HealthScanFence.superseded()
+        except GovernanceError as exc:
+            if exc.details.get("reason") != "health_snapshot_superseded":
+                self._readiness_fault("health")
+            raise
+        except Exception:
+            # The owner may have quarantined a truly malformed parent. That
+            # known corruption is not reclassified as its own directory race.
+            if fence is not None and parent_repository.corruption_count == corruption_before:
+                fence.check_after_failure()
+            self._readiness_fault("health")
+            raise
+
     def health(self) -> dict[str, Any]:
         try:
             return self._health()
@@ -3718,15 +3841,16 @@ class F3RuntimeIntegration:
             self._readiness_fault("health")
             raise
 
-    def _health(self) -> dict[str, Any]:
-        child = self.children.health()
-        lock = self.locks.snapshot()
+    def _health(self, *, collected=None) -> dict[str, Any]:
+        child = self.children.health() if collected is None else collected["child_health"]
+        lock = self.locks.snapshot() if collected is None else collected["lock_health"]
         registry = self.registry.health()
         holds = int(lock.get("current_conflict_hold_count", 0))
         task_navigation = (
-            self.service.task_repository.navigation_metrics()
+            self.service.task_repository.navigation_metrics(**({"validated": True} if collected is not None else {}))
         )
-        reconciliation = self.reconciliation_items()
+        reconciliation = (self.reconciliation_items() if collected is None
+                          else collected["reconciliation"])
         pending_reconciliation = bool(reconciliation)
         manual_recovery = any(item["lock_recovery"]["requires_manual_intervention"]
                               for item in reconciliation)
@@ -3762,7 +3886,9 @@ class F3RuntimeIntegration:
             "last_recovery_sweep_at": self._last_sweep_at,
             "next_recovery_sweep_at": self._next_sweep_at,
             "nonterminal_execution_count": child["nonterminal_execution_count"],
-            "observing_count": sum(item.state == "observation" for item in self.children.list()),
+            "observing_count": sum(item.state == "observation" for item in (
+                self.children.list() if collected is None else collected["materialized"]
+            )),
             "manual_review_count": child["manual_review_count"],
             "legacy_task_count": task_navigation["legacy_task_count"],
             "legacy_active_task_count": task_navigation[

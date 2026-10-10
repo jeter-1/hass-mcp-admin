@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from itertools import count
 import json
 import threading
 import time
@@ -59,7 +60,7 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.sleep(0.001)
         await asyncio.wait_for(wait(), 2)
 
-    async def test_cold_read_yields_and_concurrent_read_shares_one_rebuild(self):
+    async def test_concurrent_reads_serialize_complete_collections(self):
         await self.fixture.update_plan()
         rebuilds = self.service._health_cache_rebuild_count
         with patch.object(service_module, "_validate_health_records", side_effect=self.validation) as validation:
@@ -79,8 +80,8 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(self.thread_ids, [threading.get_ident()])
         self.assertEqual(cold["total_plans"], 1)
         self.assertEqual(warm["plans_requiring_approval"], 1)
-        self.assertEqual(self.service._health_cache_rebuild_count, rebuilds + 1)
-        self.assertEqual(warm["plan_store_scaling"]["hot_paths"]["governance_health"]["plan_records_deserialized"], 0)
+        self.assertEqual(self.service._health_cache_rebuild_count, rebuilds + 2)
+        self.assertEqual(warm["plan_store_scaling"]["hot_paths"]["governance_health"]["plan_records_deserialized"], 1)
         self.assertEqual(self.fixture.gateway.write_calls, 0)
 
     async def test_cancel_does_not_write_expiry_or_queue_more_workers(self):
@@ -196,8 +197,9 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
     async def test_live_unavailability_and_locks_remain_visible_after_yield(self):
         await self.fixture.update_plan()
         state = {"status": "ready", "active_locks": 0}
-        live = Mock(side_effect=lambda: dict(state))
-        self.service.f3_runtime = SimpleNamespace(health=live)
+        live = AsyncMock(side_effect=lambda **kwargs: dict(state))
+        self.service.f3_runtime = SimpleNamespace(
+            async_health=live, _health_fence_sources=lambda: ())
         with patch.object(service_module, "_validate_health_records", side_effect=self.validation):
             pending = asyncio.create_task(self.service.async_health_summary())
             await self.wait_for_worker()
@@ -220,20 +222,22 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
         for _ in range(2):
             warm = await self.service.async_health_summary()
             self.assertEqual(warm["execution_tasks"]["verified_successes"], 0)
-            self.assertEqual(warm["plan_store_scaling"]["hot_paths"]["governance_health"]["plan_records_deserialized"], 0)
+            self.assertEqual(warm["plan_store_scaling"]["hot_paths"]["governance_health"]["plan_records_deserialized"], 1)
             self.assertEqual(generations, (self.repository.generation, self.service.task_repository.generation))
 
     async def test_history_errors_are_not_cached_as_healthy(self):
         await self.fixture.update_plan()
-        with patch.object(self.repository, "list", side_effect=ChangePlanStorageError("synthetic")):
+        with patch.object(self.repository, "collect_health", side_effect=ChangePlanStorageError("synthetic")):
             with self.assertRaises(GovernanceError) as error:
                 await self.service.async_health_summary()
             self.assertNotEqual(error.exception.details.get("reason"), "health_snapshot_superseded")
         self.assertIsNone(self.service._health_cache_key)
-        with patch.object(self.service.task_repository, "list", side_effect=ExecutionTaskStorageError("synthetic")) as listing:
+        with patch.object(self.service.task_repository, "collect_health", side_effect=ExecutionTaskStorageError("synthetic")) as listing:
             for _ in range(2):
-                result = await self.service.async_health_summary()
-                self.assertEqual(result["execution_tasks"]["storage_status"], "error")
+                with self.assertRaises(GovernanceError) as error:
+                    await self.service.async_health_summary()
+                self.assertEqual(error.exception.code, ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                self.assertIsNone(self.service._health_cache_key)
             self.assertEqual(listing.call_count, 2)
         self.assertEqual((await self.service.async_health_summary())["execution_tasks"]["storage_status"], "healthy")
 
@@ -308,7 +312,12 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_phase_measurements_are_per_call_and_do_not_survive_sync_read(self):
         await self.fixture.update_plan()
-        cold = await self.service.async_health_summary()
+        # Real sub-microsecond phases may legitimately round to 0.000 ms.
+        # Advance only the service's clock, preserving asyncio's real clock.
+        clock = Mock(wraps=time)
+        clock.monotonic.side_effect = count(step=0.01)
+        with patch.object(service_module, "time", clock):
+            cold = await self.service.async_health_summary()
         phases = cold["plan_store_scaling"]["hot_paths"]["governance_health"]["phase_elapsed_ms"]
         self.assertEqual(set(phases), {
             "reader_wait_ms", "abandoned_worker_wait_ms", "snapshot_ms",
@@ -318,10 +327,13 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(isinstance(value, float) and value >= 0 for value in phases.values()))
         self.assertGreater(phases["validation_wait_ms"], 0)
         self.assertLessEqual(phases["worker_elapsed_ms"], phases["validation_wait_ms"] + 0.001)
-        warm = await self.service.async_health_summary()
+        clock.monotonic.side_effect = count(start=1000.0, step=0.02)
+        with patch.object(service_module, "time", clock):
+            warm = await self.service.async_health_summary()
         warm_phases = warm["plan_store_scaling"]["hot_paths"]["governance_health"]["phase_elapsed_ms"]
         for field in ("validation_wait_ms", "worker_elapsed_ms", "projection_ms", "assembly_ms"):
-            self.assertEqual(warm_phases[field], 0)
+            self.assertGreater(warm_phases[field], 0)
+        self.assertGreater(warm_phases["worker_elapsed_ms"], phases["worker_elapsed_ms"])
         sync = self.service.health_summary()
         self.assertNotIn("phase_elapsed_ms", sync["plan_store_scaling"]["hot_paths"]["governance_health"])
 
@@ -490,3 +502,129 @@ class AsyncF3HealthTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(service._health_cache_key)
         finally:
             await fixture.asyncTearDown()
+
+
+class CooperativePlanCollectionTests(unittest.IsolatedAsyncioTestCase):
+    asyncSetUp = AsyncHealthTests.asyncSetUp
+    asyncTearDown = AsyncHealthTests.asyncTearDown
+
+    async def test_cold_damaged_index_yields_between_each_exact_plan_read(self):
+        from pathlib import Path
+        for _ in range(32):
+            await self.fixture.update_plan()
+        self.repository._ordered_keys.clear()
+        reads, ticks, boundaries = [], [], []
+        original = Path.read_text
+        async def pulse():
+            while True:
+                await asyncio.sleep(0)
+                ticks.append(None)
+        def read(path, *args, **kwargs):
+            if path.parent == self.repository.root and path.suffix == ".json":
+                reads.append(path)
+                boundaries.append(len(ticks))
+            return original(path, *args, **kwargs)
+        pulse_task = asyncio.create_task(pulse())
+        try:
+            with patch.object(Path, "read_text", read), patch.object(
+                self.repository, "_scan_and_rebuild", side_effect=AssertionError("hidden synchronous scan")
+            ):
+                result = await self.service.async_health_summary()
+        finally:
+            pulse_task.cancel()
+            await asyncio.gather(pulse_task, return_exceptions=True)
+        self.assertEqual(result["total_plans"], 32)
+        self.assertEqual(len(reads), 32)
+        self.assertEqual(len(set(reads)), 32)
+        self.assertTrue(all(b > a for a, b in zip(boundaries, boundaries[1:])))
+        self.assertEqual(len(self.repository._ordered_keys), 32)
+        self.assertEqual(result["plan_store_scaling"]["hot_paths"]["governance_health"]["plan_records_deserialized"], 32)
+        self.assertEqual(self.fixture.gateway.write_calls, 0)
+
+    async def test_external_plan_replacement_during_collection_is_local_refusal(self):
+        created = await self.fixture.update_plan()
+        writer = ChangePlanRepository(self.repository.root)
+        plan = writer.get(created["plan_id"])
+        entered = asyncio.Event()
+        original = self.repository._load
+        def read(*args, **kwargs):
+            result = original(*args, **kwargs)
+            entered.set()
+            return result
+        with patch.object(self.repository, "_load", side_effect=read):
+            pending = asyncio.create_task(self.service.async_health_summary())
+            await entered.wait()
+            plan.status = PlanStatus.REJECTED
+            writer.save(plan)
+            with self.assertRaises(GovernanceError) as error:
+                await pending
+        self.assertEqual(error.exception.details, {"reason": "health_snapshot_superseded"})
+        self.assertIsNone(self.service._health_cache_key)
+        self.assertEqual((await self.service.async_health_summary())["rejected_plans"], 1)
+
+    async def test_cancellation_during_index_rebuild_discards_partial_navigation(self):
+        for _ in range(4):
+            await self.fixture.update_plan()
+        entries = dict(self.repository._entries)
+        self.repository._ordered_keys.clear()
+        generation = self.repository.generation
+        entered = asyncio.Event()
+        original = self.repository._load
+        def read(*args, **kwargs):
+            value = original(*args, **kwargs)
+            entered.set()
+            return value
+        for _ in range(3):
+            entered.clear()
+            with patch.object(self.repository, "_load", side_effect=read) as reads:
+                pending = asyncio.create_task(self.service.async_health_summary())
+                await entered.wait()
+                pending.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await pending
+                count = reads.call_count
+                await asyncio.sleep(0)
+                self.assertEqual(reads.call_count, count)
+            self.assertEqual(self.repository.generation, generation)
+            self.assertEqual(self.repository._entries, entries)
+            self.assertEqual(self.repository._ordered_keys, [])
+            self.assertIsNone(self.service._health_validation_job)
+        self.assertEqual((await self.service.async_health_summary())["total_plans"], 4)
+
+    async def test_warm_current_corruption_and_duplicate_identity_are_not_hidden(self):
+        created = await self.fixture.update_plan()
+        await self.service.async_health_summary()
+        path = self.repository._path(created["plan_id"])
+        body = path.read_bytes()
+        duplicate = path.with_name("0" * 32 + ".json")
+        duplicate.write_bytes(body)
+        with self.assertRaises(GovernanceError):
+            await self.service.async_health_summary()
+        self.assertIsNone(self.service._health_cache_key)
+        duplicate.unlink()
+        path.write_text("{")
+        before = self.repository.corruption_count
+        with self.assertRaises(GovernanceError) as error:
+            await self.service.async_health_summary()
+        self.assertNotEqual(error.exception.details.get("reason"), "health_snapshot_superseded")
+        self.assertEqual(self.repository.corruption_count, before + 1)
+        self.assertTrue(tuple(self.repository.quarantine.glob("*.corrupt")))
+        result = await self.service.async_health_summary()
+        self.assertEqual(result["storage_corruption_count"], before + 1)
+
+    async def test_in_place_plan_update_during_validation_refuses_before_expiry_save(self):
+        created = await self.fixture.update_plan(expiration_minutes=5)
+        path = self.repository._path(created["plan_id"])
+        with patch.object(service_module, "_validate_health_records", side_effect=self.validation):
+            pending = asyncio.create_task(self.service.async_health_summary())
+            await AsyncHealthTests.wait_for_worker(self)
+            path.write_text(path.read_text() + " ")
+            before = path.read_bytes()
+            self.fixture.clock.advance(minutes=6)
+            self.release.set()
+            with self.assertRaises(GovernanceError) as error:
+                await pending
+        self.assertEqual(error.exception.details, {"reason": "health_snapshot_superseded"})
+        self.assertEqual(error.exception.code, ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual((await self.service.async_health_summary())["expired_plans"], 1)

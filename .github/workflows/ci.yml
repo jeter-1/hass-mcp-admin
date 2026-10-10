@@ -749,7 +749,7 @@ jobs:
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
             --output "$RUNNER_TEMP/exact-8.2.0-dashboard-setter-result.json"
       - name: Verify exact reviewed dashboard authority
-        if: matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0'
+        if: matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0'
         shell: bash
         run: |
           python scripts/exact_8_2_dashboard_setter_acceptance.py \
@@ -763,7 +763,7 @@ jobs:
             --fixture-stats-url http://127.0.0.1:18123/__fixture__/stats \
             --output "$RUNNER_TEMP/exact-${UPSTREAM_VERSION}-dashboard-authority-result.json"
       - name: Verify exact 8.1+ stdio lifecycle
-        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0'
+        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0'
         shell: bash
         run: |
           set -euo pipefail
@@ -797,7 +797,7 @@ jobs:
             --expected-source-commit "$source_commit" \
             --output "$RUNNER_TEMP/exact-custom-component-shutdown-result.json"
       - name: Verify exact 8.1+ disconnect and readmission
-        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0'
+        if: matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0'
         shell: bash
         run: |
           set -euo pipefail
@@ -862,7 +862,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload exact reviewed dashboard authority evidence
-        if: always() && (matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')
+        if: always() && (matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0')
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: exact-${{ matrix.upstream_version }}-dashboard-authority
@@ -872,7 +872,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Upload bounded 8.1+ lifecycle evidence
-        if: always() && (matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')
+        if: always() && (matrix.upstream_version == '8.1.0' || matrix.upstream_version == '8.1.1' || matrix.upstream_version == '8.2.0' || matrix.upstream_version == '8.4.1' || matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0')
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: exact-image-readmission-${{ matrix.upstream_version }}
@@ -991,6 +991,78 @@ jobs:
             candidate_core_version: "2026.9.3"
             candidate_resource_code: "850c3"
             candidate_source: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+          - upstream_version: "8.6.0"
+            architecture: amd64
+            runner: ubuntu-latest
+            candidate_power: true
+            candidate_code: "860"
+            candidate_core_version: "2026.9.4"
+            candidate_profile: reference
+            candidate_resource_code: "860c4r"
+            candidate_source: fc54437a804858732e4bc927add98e202d879a09
+          - upstream_version: "8.6.0"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+            candidate_power: true
+            candidate_code: "860"
+            candidate_core_version: "2026.9.4"
+            candidate_profile: reference
+            candidate_resource_code: "860c4r"
+            candidate_source: fc54437a804858732e4bc927add98e202d879a09
+          - upstream_version: "8.6.0"
+            architecture: amd64
+            runner: ubuntu-latest
+            candidate_power: true
+            candidate_code: "860"
+            candidate_core_version: "2026.9.4"
+            candidate_profile: component
+            candidate_resource_code: "860c4c"
+            candidate_source: fc54437a804858732e4bc927add98e202d879a09
+          - upstream_version: "8.6.0"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+            candidate_power: true
+            candidate_code: "860"
+            candidate_core_version: "2026.9.4"
+            candidate_profile: component
+            candidate_resource_code: "860c4c"
+            candidate_source: fc54437a804858732e4bc927add98e202d879a09
+          - upstream_version: "8.6.0"
+            architecture: amd64
+            runner: ubuntu-latest
+            candidate_power: true
+            candidate_code: "860"
+            candidate_core_version: "2026.10.0"
+            candidate_profile: reference
+            candidate_resource_code: "860c10r"
+            candidate_source: fc54437a804858732e4bc927add98e202d879a09
+          - upstream_version: "8.6.0"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+            candidate_power: true
+            candidate_code: "860"
+            candidate_core_version: "2026.10.0"
+            candidate_profile: reference
+            candidate_resource_code: "860c10r"
+            candidate_source: fc54437a804858732e4bc927add98e202d879a09
+          - upstream_version: "8.6.0"
+            architecture: amd64
+            runner: ubuntu-latest
+            candidate_power: true
+            candidate_code: "860"
+            candidate_core_version: "2026.10.0"
+            candidate_profile: component
+            candidate_resource_code: "860c10c"
+            candidate_source: fc54437a804858732e4bc927add98e202d879a09
+          - upstream_version: "8.6.0"
+            architecture: arm64
+            runner: ubuntu-24.04-arm
+            candidate_power: true
+            candidate_code: "860"
+            candidate_core_version: "2026.10.0"
+            candidate_profile: component
+            candidate_resource_code: "860c10c"
+            candidate_source: fc54437a804858732e4bc927add98e202d879a09
     env:
       UPSTREAM_VERSION: ${{ matrix.upstream_version }}
       ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}
@@ -1251,22 +1323,25 @@ jobs:
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
           ASSESSMENT_CORE: ${{ matrix.candidate_core_version }}
+          ASSESSMENT_PROFILE: ${{ matrix.candidate_profile || 'legacy' }}
           PYTHONDONTWRITEBYTECODE: '1'
-        run: python scripts/ha_mcp_850_container_acceptance.py --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION" --core-version "$ASSESSMENT_CORE"
+        run: python scripts/ha_mcp_850_container_acceptance.py --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION" --core-version "$ASSESSMENT_CORE" --profile "$ASSESSMENT_PROFILE"
       - name: Always reconcile owned container cleanup
         if: always() && matrix.candidate_power == true
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
           ASSESSMENT_CORE: ${{ matrix.candidate_core_version }}
+          ASSESSMENT_PROFILE: ${{ matrix.candidate_profile || 'legacy' }}
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/ha_mcp_850_container_acceptance.py --cleanup --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION" --core-version "$ASSESSMENT_CORE"
+          python scripts/ha_mcp_850_container_acceptance.py --cleanup --architecture "$ASSESSMENT_ARCH" --upstream-version "$UPSTREAM_VERSION" --core-version "$ASSESSMENT_CORE" --profile "$ASSESSMENT_PROFILE"
       - name: Remove disposable private runner files
         if: always() && matrix.candidate_power == true
         env:
           ASSESSMENT_ARCH: ${{ matrix.architecture }}
           ASSESSMENT_CORE: ${{ matrix.candidate_core_version }}
+          ASSESSMENT_PROFILE: ${{ matrix.candidate_profile || 'legacy' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -1275,11 +1350,20 @@ jobs:
           case "$UPSTREAM_VERSION" in
             8.4.3) code=843 ;;
             8.5.0) code=850 ;;
+            8.6.0) code=860 ;;
             *) exit 1 ;;
           esac
           case "$ASSESSMENT_CORE:$UPSTREAM_VERSION" in
             2026.9.2:8.4.3|2026.9.2:8.5.0) ;;
             2026.9.3:8.5.0) code=850c3 ;;
+            2026.9.4:8.6.0) code=860c4 ;;
+            2026.10.0:8.6.0) code=860c10 ;;
+            *) exit 1 ;;
+          esac
+          case "$UPSTREAM_VERSION:$ASSESSMENT_PROFILE" in
+            8.4.3:legacy|8.5.0:legacy) ;;
+            8.6.0:reference) code="${code}r" ;;
+            8.6.0:component) code="${code}c" ;;
             *) exit 1 ;;
           esac
           prefix="h$code-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$ASSESSMENT_ARCH-private-"

@@ -279,5 +279,22 @@ class UpstreamReviewCandidateTests(unittest.TestCase):
         self.assertIn("must exactly match explicit review decisions", result.stderr)
 
 
+class Exact860ProjectionBindingTests(unittest.TestCase):
+    def test_candidate_data_cannot_rebind_compiled_projection_to_other_source(self):
+        from ha_mcp_engineering.upstream_tool_policy import load_upstream_tool_policy, UpstreamToolPolicyError
+        path = ROOT / 'hass_mcp_engineering_beta/ha_mcp_engineering/upstream_tool_policy_8_6_0.json'
+        original = json.loads(path.read_text())
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / path.name
+            for version, source in [('8.6.1', original['reviewed_source_commit']), ('8.6.0', '0' * 40)]:
+                value = json.loads(json.dumps(original))
+                value.update(reviewed_upstream_version=version, reviewed_source_tag='v' + version,
+                             reviewed_source_commit=source)
+                target.write_text(json.dumps(value))
+                with self.assertRaises(UpstreamToolPolicyError):
+                    load_upstream_tool_policy(target, expected_version=version,
+                                              expected_source_tag='v' + version, expected_source_commit=source)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from copy import copy
 from bisect import insort
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
@@ -29,6 +31,19 @@ F3_EXECUTION_AUTHORITY = "f3_child_sequence"
 
 class ExecutionTaskStorageError(RuntimeError):
     pass
+
+
+class TaskHealthSnapshotSuperseded(ExecutionTaskStorageError):
+    """A cooperative health read lost its optimistic source fence."""
+
+
+_TASK_NAVIGATION_FIELDS = (
+    "_entries", "_ordered_keys", "_nonterminal_ids", "_nonterminal_keys",
+    "_f3_nonterminal_ids", "_f3_nonterminal_keys", "_task_by_plan",
+    "_task_by_idempotency", "_expected_nonterminal_count", "_total_event_count",
+    "_manual_review_count", "_legacy_task_count", "_legacy_active_task_count",
+    "_expected_nonterminal_signature", "_expected_f3_nonterminal_signature",
+)
 
 
 @dataclass(frozen=True)
@@ -334,9 +349,10 @@ class ExecutionTaskRepository:
                 tasks.append(task)
         return tasks
 
-    def navigation_metrics(self) -> dict[str, int]:
+    def navigation_metrics(self, *, validated: bool = False) -> dict[str, int]:
         with self._lock:
-            self._ensure_navigation_index()
+            if not validated:
+                self._ensure_navigation_index()
             return {
                 "generation": self.generation,
                 "record_count": len(self._entries),
@@ -625,6 +641,7 @@ class ExecutionTaskRepository:
         path: Path,
         *,
         quarantine_corrupt: bool = True,
+        before_quarantine: Callable[[], None] | None = None,
     ) -> ExecutionTask | None:
         try:
             value = json.loads(path.read_text(encoding="utf-8"))
@@ -640,6 +657,8 @@ class ExecutionTaskRepository:
                 "Execution-task record read failed"
             ) from exc
         except (ValueError, TypeError, KeyError, json.JSONDecodeError) as exc:
+            if before_quarantine is not None:
+                before_quarantine()
             if quarantine_corrupt:
                 self._quarantine(path)
             raise ExecutionTaskStorageError(
@@ -673,6 +692,65 @@ class ExecutionTaskRepository:
             return sorted(
                 tasks, key=lambda task: task.created_at, reverse=True
             )
+
+    async def collect_health(
+        self, *, checkpoint: Callable[[], None], watch: Callable[[Path], None]
+    ) -> list[ExecutionTask]:
+        """One validated parent read per call, with staged navigation repair.
+
+        Only detached navigation containers are staged. The canonical writer's
+        existing metadata projection is reused on the owner loop; no durable
+        authority, repository lock or partial index crosses an await.
+        """
+        generation, directory = self.generation, self._directory_token()
+        def check() -> None:
+            checkpoint()
+            if (self.generation != generation or self._directory_token() != directory):
+                raise TaskHealthSnapshotSuperseded("health_snapshot_superseded")
+
+        staged = copy(self)
+        for name in _TASK_NAVIGATION_FIELDS:
+            setattr(staged, name, type(getattr(self, name))())
+        staged._refresh_expected_nonterminal_signature()
+        tasks = []
+        self.rehydration_attempts += 1
+        self.full_history_scan_count += 1
+        with os.scandir(self.root) as entries:
+            for entry in entries:
+                await asyncio.sleep(0)
+                check()
+                if not entry.name.endswith(".json"):
+                    continue
+                path = Path(entry.path)
+                watch(path)
+                with self._lock:
+                    task = self._load(path, before_quarantine=check)
+                check()
+                if task is None:
+                    raise ExecutionTaskStorageError("Execution-task record is missing")
+                if path != self._path(task.task_id, plan_id=task.plan_id):
+                    raise ExecutionTaskStorageError("Execution-task record path is not canonical")
+                if (task.task_id in staged._entries or task.plan_id in staged._task_by_plan
+                        or task.idempotency_key in staged._task_by_idempotency):
+                    raise ExecutionTaskStorageError("Execution-task ownership is ambiguous")
+                staged._put_entry(task, count_update=False)
+                tasks.append(task)
+        changed = self._observed_directory_token != directory
+        for name in _TASK_NAVIGATION_FIELDS:
+            await asyncio.sleep(0)
+            check()
+            changed |= getattr(self, name) != getattr(staged, name)
+        # No await while publishing the fixed collection of navigation tables.
+        with self._lock:
+            check()
+            if changed:
+                for name in _TASK_NAVIGATION_FIELDS:
+                    setattr(self, name, getattr(staged, name))
+                self.generation += 1
+                self.index_rebuild_count += 1
+                self.index_invalidation_count += 1
+                self._mark_navigation_current()
+        return sorted(tasks, key=lambda task: task.created_at, reverse=True)
 
     def _quarantine(self, path: Path) -> None:
         self.corruption_count += 1
@@ -721,9 +799,10 @@ class ExecutionTaskRepository:
                     self.write_failures += 1
         return removed
 
-    def health(self) -> dict[str, object]:
+    def health(self, *, validated: bool = False) -> dict[str, object]:
         with self._lock:
-            self._ensure_navigation_index()
+            if not validated:
+                self._ensure_navigation_index()
             record_count = len(self._entries)
             event_count = self._total_event_count
             manual_review_count = self._manual_review_count
@@ -746,5 +825,5 @@ class ExecutionTaskRepository:
             "rehydration_attempts": self.rehydration_attempts,
             "retention_days": self.retention_days,
             "manual_review_count": manual_review_count,
-            "navigation": self.navigation_metrics(),
+            "navigation": self.navigation_metrics(**({"validated": True} if validated else {})),
         }

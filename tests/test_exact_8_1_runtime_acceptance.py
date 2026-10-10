@@ -78,7 +78,7 @@ class ExactAddonProfileTests(unittest.TestCase):
     def test_exact_profiles_retain_8_0_and_bind_all_8_1_identities(self):
         self.assertEqual(
             set(addon_acceptance.EXACT_ADDON_PROFILES),
-            {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3"},
+            {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.6.0"},
         )
 
         addon_acceptance._select_exact_addon_profile("8.1.0")
@@ -575,7 +575,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             "matrix.upstream_version == '8.1.1' || "
             "matrix.upstream_version == '8.2.0' || "
             "matrix.upstream_version == '8.4.1' || "
-            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0')",
+            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0')",
             workflow,
         )
         self.assertNotIn("--delete-branch", workflow)
@@ -1024,6 +1024,107 @@ class ExactImageReadmissionTests(unittest.IsolatedAsyncioTestCase):
         ):
             with self.assertRaises(readmission.ReadmissionFailure):
                 await readmission.run(self._args("readmitted"))
+
+
+class DashboardAuthorityAccountingTests(unittest.IsolatedAsyncioTestCase):
+    """Exercise acceptance with the real provider and retained exact catalogs."""
+
+    async def run_acceptance(self, version, *, addon=False):
+        from dataclasses import replace
+        from test_dashboard_update_mvp import _ExactProviderTransport
+
+        class Transport(_ExactProviderTransport):
+            async def discover(self):
+                return self.handshake
+
+            async def execute_dashboard_read(self, arguments, validator):
+                result = await super().execute_dashboard_read(arguments, validator)
+                if arguments.get("list_only"):
+                    value = json.loads(json.dumps(result.call_result).replace(
+                        "operations", "compatibility-fixture"))
+                    result = replace(result, call_result=value)
+                return result
+
+        transport = Transport(version=version)
+        module = addon_acceptance if addon else dashboard_authority_acceptance
+        if addon:
+            module._select_exact_addon_profile(version)
+            self.addCleanup(module._select_exact_addon_profile, "8.0.0")
+        else:
+            module.select_exact_release(version)
+            self.addCleanup(module.select_exact_release, "8.4.1")
+        with patch.object(module, "McpDashboardTransport",
+                          return_value=transport), patch.object(
+                module, "fixture_stats",
+                return_value={"http_mutations": 0, "websocket_mutations": 0}):
+            endpoint = "http://synthetic.invalid/synthetic-fixture/mcp"
+            if addon:
+                result = await module._dashboard_acceptance(
+                    dashboard_authority_acceptance.provider_settings(endpoint), endpoint)
+            else:
+                result = await module.run(endpoint, "http://synthetic.invalid/stats")
+        self.assertEqual(transport.read_count, 2)
+        self.assertEqual(transport.write_count, 0)
+        return result
+
+    async def test_all_exact_dashboard_profiles_accept_real_provider_accounting(self):
+        for version in ("8.4.1", "8.4.3", "8.5.0", "8.6.0"):
+            with self.subTest(version=version):
+                result = await self.run_acceptance(version)
+                self.assertEqual(result["result"], "PASS")
+                self.assertEqual(result["version"], version)
+
+    async def test_accounting_drift_still_refuses(self):
+        provider = dashboard_authority_acceptance.UpstreamDashboardProvider
+        original = provider.health_snapshot
+        for field, value in (
+            ("request_count", 3), ("success_count", 1),
+            ("last_failure_category", "synthetic_failure"),
+            ("admission_status", "rejected_unknown_release"),
+            ("release_runtime_contract_match", False),
+            ("release_runtime_contract_fingerprint_model", "wrong-model"),
+            ("runtime_policy_state_normalized", True),
+            ("runtime_policy_state_normalized", None),
+        ):
+            with self.subTest(field=field, value=value):
+                def changed(instance):
+                    return {**original(instance), field: value}
+                with patch.object(provider, "health_snapshot", changed), self.assertRaisesRegex(
+                        dashboard_authority_acceptance.DashboardAuthorityFailure,
+                        "provider accounting changed"):
+                    await self.run_acceptance("8.6.0")
+
+    async def test_retained_policy_normalization_remains_required(self):
+        provider = dashboard_authority_acceptance.UpstreamDashboardProvider
+        original = provider.health_snapshot
+        def changed(instance):
+            return {**original(instance), "runtime_policy_state_normalized": False}
+        with patch.object(provider, "health_snapshot", changed), self.assertRaisesRegex(
+                dashboard_authority_acceptance.DashboardAuthorityFailure,
+                "provider accounting changed"):
+            await self.run_acceptance("8.5.0")
+
+    async def test_addon_acceptance_uses_the_exact_policy_contract(self):
+        for version in ("8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3", "8.6.0"):
+            with self.subTest(version=version):
+                result = await self.run_acceptance(version, addon=True)
+                self.assertIs(result["runtime_policy_state_normalized"], version != "8.6.0")
+
+    async def test_addon_acceptance_preserves_exact_fingerprint_and_policy_refusal(self):
+        provider = addon_acceptance.UpstreamDashboardProvider
+        original = provider.health_snapshot
+        for version, field, value in (
+            ("8.6.0", "observed_release_runtime_contract_fingerprint", "0" * 64),
+            ("8.6.0", "release_runtime_contract_fingerprint_model", "wrong-model"),
+            ("8.6.0", "runtime_policy_state_normalized", True),
+            ("8.4.3", "runtime_policy_state_normalized", False),
+        ):
+            with self.subTest(version=version, field=field):
+                def changed(instance):
+                    return {**original(instance), field: value}
+                with patch.object(provider, "health_snapshot", changed), self.assertRaises(
+                        addon_acceptance.AcceptanceFailure):
+                    await self.run_acceptance(version, addon=True)
 
 
 if __name__ == "__main__":

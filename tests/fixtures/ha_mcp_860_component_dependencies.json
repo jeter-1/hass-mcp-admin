@@ -1,0 +1,74 @@
+{
+  "dependencies": [
+    {
+      "name": "ruamel-yaml",
+      "version": "0.19.1",
+      "wheel": {
+        "url": "https://files.pythonhosted.org/packages/b8/0c/51f6841f1d84f404f92463fc2b1ba0da357ca1e3db6b7fbda26956c3b82a/ruamel_yaml-0.19.1-py3-none-any.whl",
+        "hash": "sha256:27592957fedf6e0b62f281e96effd28043345e0e66001f97683aa9a40c667c93",
+        "size": 118102,
+        "upload-time": "2026-01-02T16:50:29.201Z"
+      },
+      "members": {
+        "ruamel/yaml/__init__.py": "43aba634d5da461169bb47f7180306323d0bb64f2d9c4e53e67d0b482dbc97d5",
+        "ruamel/yaml/anchor.py": "bbaa5622e0df29f199523520c3a6997b11e27ec1fd9eb8048d84b3247dda1728",
+        "ruamel/yaml/comments.py": "fccdf4d964c7cac3bb236be9cdd098452df8c43f3e499c31713ae0c52fdee101",
+        "ruamel/yaml/compat.py": "ca05082fbfde00843a12bf4d815b4c08198d0418ae9b9033985dd03cbb2f9f47",
+        "ruamel/yaml/composer.py": "981b0fd0db996cc109ac8639e66129a0e0a2b0b1ea615bc30ece99f4b9569778",
+        "ruamel/yaml/configobjwalker.py": "d20bd45cdc8862f4dd96245389b5036fb216e42eafe23b2499d85004a5973160",
+        "ruamel/yaml/constructor.py": "bdaace288852001493bff213299314bb5ff1d9d6aeca217c0c4f91fa61145298",
+        "ruamel/yaml/cyaml.py": "7accfa42e8d67b3893fa04660f45ccd91265fc8a4c5630b29ef19b76eadd8d88",
+        "ruamel/yaml/docinfo.py": "e0d3ef3bffa6e9ce1f4219be67ddfc9d42a4564a0bd8e050127ffa7e367e265f",
+        "ruamel/yaml/dumper.py": "65d9d9c305b44bdc061e741ebac97940106a0fe23220801802a74cd1030e9dc5",
+        "ruamel/yaml/emitter.py": "9a5bd5e7281cf80d897780208c62452eb6601f641d0c6edc442e51ec2a5013d7",
+        "ruamel/yaml/error.py": "b26755eaa80dd18bea58997eec1b567269a544df5402ac7398f8e08620708703",
+        "ruamel/yaml/events.py": "cf0de91a87e7b498f354119c508c4a943c02b35df23d5d9433a212bf1f11d691",
+        "ruamel/yaml/loader.py": "d5d59b07c79be84549344b625f1fe4dfd3806122f0369704f8c940fa10bc3604",
+        "ruamel/yaml/main.py": "fa7fbcadac0b9f979fb14a653109bb831f95b94a4450caa896c14d2a10b571d6",
+        "ruamel/yaml/mergevalue.py": "38bb322fd2f906453a2d9117106c3519934f7d047b5678d65811076afaf83988",
+        "ruamel/yaml/nodes.py": "107801e641e2554ca8a0d23bd231d65c56f4c79022dc42567caf16df4621ed64",
+        "ruamel/yaml/parser.py": "44b2d0b372807d08fa2175841ed3d1c974320a5858d238a1b8ba50cd77d78f9a",
+        "ruamel/yaml/py.typed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ruamel/yaml/reader.py": "5daf425f708a3a69f6877cd388a41b7d560670a7010f127c3dc7a055ebcf0b6c",
+        "ruamel/yaml/representer.py": "088b992f351b85902fbc405815b31284661c37d1e3b433c21c814db63f62023f",
+        "ruamel/yaml/resolver.py": "aad8c7f2a4ffbff69a9aac646bc87440e7f6227f2cc6b2a914eeaa3b10d50171",
+        "ruamel/yaml/scalarbool.py": "9af7b7435b033b5c586acb42e7f6c9d59477b0bef20c704824f44363e51b3767",
+        "ruamel/yaml/scalarfloat.py": "4a36b81924af3b799c3f877da85b12d540d08364a0d6fe6e405f2cf2be4b02cd",
+        "ruamel/yaml/scalarint.py": "ab400bdb6b1762ee9d274a350b778426f3d1c1faf0b9d7e77ac98e8c0c8a6c6e",
+        "ruamel/yaml/scalarstring.py": "2ac30fbc108b5f5286a471e440aacd234c4a21dc88776e55abf22a2c57125ef4",
+        "ruamel/yaml/scanner.py": "b716df08841b725be09153e1a093a1359a16044a395bc892a975f9b1509cc8ce",
+        "ruamel/yaml/serializer.py": "96cfd7ccd8241e850a608a7054d99e921f84c9c5490eeae3b1523048d3d3f626",
+        "ruamel/yaml/tag.py": "31452644fc34c569b596bfda0e0645a49ba468f9fa573651b2699289f1cddf2d",
+        "ruamel/yaml/timestamp.py": "980e052c95c85172a4a66a2e0193b46ed1bb4fee7349c04b898563360594d15d",
+        "ruamel/yaml/tokens.py": "241b3a8a46a3677b7089cce31c8dcbf7e260d39e90bb10101457ac7af4bee7bf",
+        "ruamel/yaml/util.py": "a5b49c11e319149d919e9767d63a60d63a26fbe51e83bf4149d8e05fd777f308",
+        "ruamel/yaml/clibz/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "ruamel/yaml/clibz/setup.py": "fe8f9136b29c334bfdf01de36252bab19894f483077c2364d4369d9302607025",
+        "ruamel_yaml-0.19.1.dist-info/licenses/LICENSE": "3e7632bb0dc1150f15f8161f5eec48dec8a99aaa1dfc9e8f63c02931e0fba7f8",
+        "ruamel_yaml-0.19.1.dist-info/METADATA": "1ecd311518266882ede8804686f758255d6dff89a71a646bb6970a69615e39f6",
+        "ruamel_yaml-0.19.1.dist-info/WHEEL": "ff309ddcdd65ebd02bc724dbf2bcc4a0ff53a5b61792a44548d383e4ebb19d3b",
+        "ruamel_yaml-0.19.1.dist-info/top_level.txt": "96ee5aafd8a5bf24b4de336f4b9c7d234ff737008a92f225636934407f4002b9",
+        "ruamel_yaml-0.19.1.dist-info/RECORD": "595c21642fab99bf070d3b80ee156fce8d87c8d6dc38748819b4543ab389b218"
+      }
+    },
+    {
+      "name": "voluptuous-openapi",
+      "version": "0.4.1",
+      "wheel": {
+        "url": "https://files.pythonhosted.org/packages/bc/bb/64db054ad3852e3b63841a570942d3ce29e6b44979d5ac4be806973a2338/voluptuous_openapi-0.4.1-py3-none-any.whl",
+        "hash": "sha256:b30abc527c622cd62dba1269a05099e6b6170678c2838908d347fa85ab0cdb44",
+        "size": 12824,
+        "upload-time": "2026-06-26T13:31:35.126Z"
+      },
+      "members": {
+        "voluptuous_openapi/__init__.py": "521487913d204f9340b29247ea0639491405fcde3ac3d6a17437ecd2d6b6899f",
+        "voluptuous_openapi-0.4.1.dist-info/licenses/LICENSE": "a265d325ac5d9090ecffdbe0198c15237c2349cf16f8409de7e35ae3c5b769bf",
+        "voluptuous_openapi-0.4.1.dist-info/METADATA": "dd9b71a083d96329796c553f5ebe1956d10e15e0b165530216d04b724b74ded2",
+        "voluptuous_openapi-0.4.1.dist-info/WHEEL": "69e6228a0d35958183cc1812f07c565ce837b95eb51bd8a33acba9fa4f68d6c9",
+        "voluptuous_openapi-0.4.1.dist-info/top_level.txt": "b2e976167020b37780d9675b6c19c5a4e4d5b77687bbf0f763099eac413adb5b",
+        "voluptuous_openapi-0.4.1.dist-info/RECORD": "1b29f70a4bcb0173fab9b014220c2a16b97e829e267b6a663911472f3ca9b837"
+      }
+    }
+  ],
+  "policy": "Two exact pure-Python wheels only; no resolver, pip installation or rebuild. Core provides remaining dependencies."
+}

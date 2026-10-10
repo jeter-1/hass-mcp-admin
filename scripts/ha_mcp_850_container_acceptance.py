@@ -12,6 +12,7 @@ import asyncio
 from collections import Counter
 from datetime import datetime, timezone
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -28,6 +29,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PINS = ROOT / "tests/fixtures/ha_mcp_850_candidate.json"
 BRANCH = "refs/heads/main"
 CORE_URL = "http://127.0.0.1:18123"
+RELAY_URL = "http://127.0.0.1:18080"
 ENDPOINTS = {"standalone": "http://127.0.0.1:18086/synthetic-850/mcp",
              "addon": "http://127.0.0.1:19583/synthetic-850/mcp"}
 MAX_BYTES = 4_000_000
@@ -70,33 +72,50 @@ def save(folder, name, value):
 
 
 def version_code(version):
-    require(version in {"8.4.3", "8.5.0"}, "upstream_version_invalid")
-    return {"8.4.3": "843", "8.5.0": "850"}[version]
+    require(version in {"8.4.3", "8.5.0", "8.6.0"}, "upstream_version_invalid")
+    return {"8.4.3": "843", "8.5.0": "850", "8.6.0": "860"}[version]
 
 
 def core_code(core_version, version):
     require((core_version, version) in {
         ("2026.9.2", "8.4.3"), ("2026.9.2", "8.5.0"), ("2026.9.3", "8.5.0"),
+        ("2026.9.4", "8.6.0"), ("2026.10.0", "8.6.0"),
     }, "core_pair_invalid")
-    return "c3" if core_version == "2026.9.3" else ""
+    return {"2026.9.2": "", "2026.9.3": "c3", "2026.9.4": "c4", "2026.10.0": "c10"}[core_version]
 
 
-def candidate_pins(version, core_version):
+def profile_code(version, profile):
+    require((version == "8.6.0" and profile in {"reference", "component"})
+            or (version in {"8.4.3", "8.5.0"} and profile == "legacy"),
+            "profile_pair_invalid")
+    return {"legacy": "", "reference": "r", "component": "c"}[profile]
+
+
+def typed_core(core_version):
+    return core_version in {"2026.9.3", "2026.9.4", "2026.10.0"}
+
+
+def candidate_pins(version, core_version, profile="legacy"):
     core_code(core_version, version)
+    profile_code(version, profile)
     pin_path = PINS if version == "8.5.0" else ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json"
+    if version == "8.6.0":
+        pin_path = ROOT / "tests/fixtures/ha_mcp_860_candidate.json"
     pins = json.loads(pin_path.read_bytes())
     require(pins["version"] == version, "pin_version_mismatch")
     pins["core_version"] = core_version
-    if core_version == "2026.9.3":
-        entry = json.loads((ROOT / "tests/fixtures/core_2026_9_3_lane_provenance.json").read_bytes())
+    pins["profile"] = profile
+    if typed_core(core_version):
+        fixture = "core_" + core_version.replace(".", "_") + "_lane_provenance.json"
+        entry = json.loads((ROOT / "tests/fixtures" / fixture).read_bytes())
         require(entry["version"] == core_version, "core_pin_version_mismatch")
         pins["core_image"] = "ghcr.io/home-assistant/home-assistant:" + core_version + "@" + entry["image_index_digest"]
     return pins
 
 
-def execution_guard(env, architecture, version="8.5.0", core_version="2026.9.2"):
+def execution_guard(env, architecture, version="8.5.0", core_version="2026.9.2", profile="legacy"):
     code = version_code(version)
-    code += core_code(core_version, version)
+    code += core_code(core_version, version) + profile_code(version, profile)
     require(env.get("GITHUB_ACTIONS") == "true", "github_runner_required")
     require(env.get("GITHUB_REPOSITORY") == "jeter-1/hass-mcp-admin", "repository_mismatch")
     event, ref = env.get("GITHUB_EVENT_NAME"), env.get("GITHUB_REF", "")
@@ -175,9 +194,55 @@ def docker(*args, timeout=90, check=True):
 
 
 def resource_names(identity):
-    require(re.fullmatch(r"h(843|850|850c3)-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
+    require(re.fullmatch(r"h(843|850|850c3|860c4[rc]|860c10[rc])-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
+
+
+FIXTURE_PORTS = {"core": (18123, 8123), "relay": (18080, 80),
+                 "standalone": (18086, 8086), "addon": (19583, 9583)}
+
+
+def published_ports(version, role):
+    version_code(version)
+    require(role in FIXTURE_PORTS, "fixture_role_invalid")
+    host, container = FIXTURE_PORTS[role]
+    # Docker does not publish ports for containers on only an internal network.
+    return [] if version == "8.6.0" else ["-p", f"127.0.0.1:{host}:{container}"]
+
+
+def internal_fixture_endpoint(identity, role):
+    """Connect only to an owned fixture on this run's isolated bridge."""
+    resource_names(identity)
+    require(identity.startswith("h860") and role in FIXTURE_PORTS,
+            "internal_fixture_identity_invalid")
+    name = identity + "-" + role
+    owner = docker("inspect", "--format", '{{index .Config.Labels "' + LABEL + '"}}', name)
+    require(owner.stdout.strip() == identity, "fixture_owner_mismatch")
+    network = json.loads(docker("network", "inspect", "--format", "{{json .}}", identity).stdout)
+    require(network.get("Internal") is True and network.get("Driver") == "bridge"
+            and network.get("Labels", {}).get(LABEL) == identity,
+            "fixture_network_not_owned_internal_bridge")
+    bindings = json.loads(docker("inspect", "--format", "{{json .NetworkSettings.Networks}}", name).stdout)
+    require(set(bindings) == {identity}, "fixture_network_membership_mismatch")
+    binding = bindings[identity]
+    require(binding.get("NetworkID") == network.get("Id") and bool(network.get("Id")),
+            "fixture_network_identity_mismatch")
+    try:
+        address = ipaddress.IPv4Address(binding["IPAddress"])
+        subnets = [ipaddress.IPv4Network(item["Subnet"])
+                   for item in network["IPAM"]["Config"] if ":" not in item["Subnet"]]
+        private = any(address in ipaddress.IPv4Network(cidr)
+                      for cidr in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"))
+        member = any(address in subnet and address not in (subnet.network_address, subnet.broadcast_address)
+                     for subnet in subnets)
+    except (KeyError, TypeError, ValueError):
+        raise Refusal("fixture_address_invalid") from None
+    require(private and member and str(address) != binding.get("Gateway"),
+            "fixture_address_invalid")
+    port = FIXTURE_PORTS[role][1]
+    path = "/synthetic-850/mcp" if role in {"standalone", "addon"} else ""
+    return f"http://{address}:{port}{path}"
 
 
 def startup_diagnostics(identity):
@@ -327,7 +392,75 @@ async def wait_endpoint(url):
     raise Refusal("startup_timeout")
 
 
+def prepare_component_dependencies(target):
+    """Download/extract exactly two public pure wheels into the disposable mount."""
+    import io
+    import stat
+    from urllib.parse import urlsplit
+    from urllib.request import urlopen
+    import zipfile
+
+    contract = json.loads((ROOT / "tests/fixtures/ha_mcp_860_component_dependencies.json").read_bytes())
+    require([(d["name"], d["version"]) for d in contract["dependencies"]] ==
+            [("ruamel-yaml", "0.19.1"), ("voluptuous-openapi", "0.4.1")], "dependency_contract_mismatch")
+    target.mkdir()
+    seen = set()
+    for dependency in contract["dependencies"]:
+        wheel = dependency["wheel"]
+        url = urlsplit(wheel["url"])
+        require(url.scheme == "https" and url.netloc == "files.pythonhosted.org"
+                and not url.query and not url.fragment and url.path.endswith("-py3-none-any.whl"),
+                "dependency_url_invalid")
+        require(0 < wheel["size"] <= 200_000, "dependency_wheel_bound")
+        with urlopen(wheel["url"], timeout=30) as response:
+            require(response.geturl() == wheel["url"], "dependency_redirect_refused")
+            raw = response.read(wheel["size"] + 1)
+        require(len(raw) == wheel["size"]
+                and "sha256:" + hashlib.sha256(raw).hexdigest() == wheel["hash"], "dependency_hash_mismatch")
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            members = archive.infolist()
+            require(len(members) <= 64 and sum(i.file_size for i in members) <= 2_000_000,
+                    "dependency_member_bound")
+            require({i.filename for i in members if not i.is_dir()} == set(dependency["members"])
+                    and len({i.filename for i in members}) == len(members), "dependency_member_set_mismatch")
+            for item in members:
+                name = item.filename
+                require(not name.startswith("/") and "\\" not in name
+                        and all(x not in {"", ".", ".."} for x in name.rstrip("/").split("/"))
+                        and not stat.S_ISLNK(item.external_attr >> 16), "dependency_member_path_invalid")
+                if item.is_dir():
+                    continue
+                require(name not in seen, "dependency_member_collision")
+                seen.add(name)
+                content = archive.read(item)
+                require(hashlib.sha256(content).hexdigest() == dependency["members"][name],
+                        "dependency_member_hash_mismatch")
+                destination = target / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with destination.open("xb") as stream:
+                    stream.write(content)
+    return target
+
+
+def validate_860_catalog(tools, profile):
+    """Require the complete exact variant selected before startup."""
+    from ha_mcp_engineering.upstream_tool_policy import (
+        load_reviewed_upstream_release_registry, validate_reviewed_release_catalog, schema_fingerprint,
+    )
+    profile_code("8.6.0", profile)
+    verdict = validate_reviewed_release_catalog(
+        load_reviewed_upstream_release_registry().by_version["8.6.0"],
+        observed_server_name="ha-mcp", observed_upstream_version="8.6.0",
+        observed_protocol_version="2025-03-26", tools=tools)
+    require(verdict.valid, "candidate_complete_catalog_not_exact")
+    expected = {"reference": "47151934530bc8b51a04c611cfb8abeb92601fd9325cac78269bad04bea83ec8",
+                "component": "1374a6b5c4e84100f2404b6c3fcf3824c1ead10695d67f967cda74ec80833f71"}
+    require(schema_fingerprint(sorted(tools, key=lambda tool: tool["name"])) == expected[profile],
+            "candidate_catalog_profile_mismatch")
+
+
 async def assess(architecture, output, private, identity, pins):
+    global CORE_URL, RELAY_URL
     phase("disposable_core_startup")
     import aiohttp
     from mcp import types
@@ -341,18 +474,20 @@ async def assess(architecture, output, private, identity, pins):
 
     version = pins["version"]
     core_version = pins.get("core_version", "2026.9.2")
+    profile = pins.get("profile", "legacy")
+    profile_code(version, profile)
     upstream_source = ROOT / (".upstream-" + version_code(version))
     source_sha = subprocess.check_output(["git", "-C", str(upstream_source), "rev-parse", "HEAD"], text=True).strip()
     require(source_sha == pins["upstream_source"], "upstream_source_mismatch")
     source_tree = subprocess.check_output(["git", "-C", str(upstream_source), "rev-parse", "HEAD^{tree}"], text=True).strip()
     require(source_tree == pins["upstream_tree"], "upstream_tree_mismatch")
-    skills_sha = subprocess.check_output(["git", "-C", str(upstream_source / "src/ha_mcp/resources/skills-vendor"), "rev-parse", "HEAD"], text=True).strip()
+    skills_sha = subprocess.check_output(["git", "-C", str(upstream_source), "rev-parse", "HEAD:src/ha_mcp/resources/skills-vendor"], text=True).strip()
     require(skills_sha == pins["skills_source"], "upstream_skills_mismatch")
     config = private / "core"
     config.mkdir()
     (config / "custom_components").mkdir()
     components = [ROOT / "tests/fixtures/real_ha_power/custom_components/power_contract_fixture"]
-    if version == "8.5.0":
+    if version in {"8.5.0", "8.6.0"}:
         components += [ROOT / "tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture",
                        upstream_source / "custom_components/ha_mcp_tools"]
     for source in components:
@@ -360,14 +495,29 @@ async def assess(architecture, output, private, identity, pins):
     (config / "configuration.yaml").write_text("default_config:\nautomation: !include automations.yaml\nscript: !include scripts.yaml\ninput_boolean: {}\ninput_number: {}\nkitchen_sink:\n")
     (config / "automations.yaml").write_text("[]\n")
     (config / "scripts.yaml").write_text("{}\n")
+    if version == "8.6.0":
+        (config / "automations.yaml").write_text(
+            "- id: component_search_fixture\n  alias: Synthetic Search Fixture Automation\n"
+            "  triggers: []\n  conditions: []\n  actions: []\n  initial_state: false\n")
+        (config / "scripts.yaml").write_text(
+            "component_search_fixture:\n  alias: Synthetic Search Fixture Script\n  sequence: []\n")
     bp = config / "blueprints/automation/assessment"
     bp.mkdir(parents=True)
     (bp / "read.yaml").write_text("blueprint:\n  name: Assessment Read Fixture\n  description: Synthetic offline fixture\n  domain: automation\n  input: {}\ntrigger: []\ncondition: []\naction: []\n")
-    docker("network", "create", "--label", f"{LABEL}={identity}", identity)
+    docker("network", "create", *(["--internal"] if version == "8.6.0" else []), "--label", f"{LABEL}={identity}", identity)
     common = ["--network", identity, "--label", f"{LABEL}={identity}", "--security-opt", "no-new-privileges:true", "--pids-limit", "512"]
     docker("pull", "--platform", "linux/" + architecture, pins["core_image"], timeout=300)
     require(docker("image", "inspect", "--format", "{{.Architecture}}", pins["core_image"]).stdout.strip() == architecture, "core_architecture_mismatch")
-    docker("run", "-d", "--name", identity + "-core", *common, "--network-alias", "core", "--memory", "3g", "-p", "127.0.0.1:18123:8123", "-v", str(config) + ":/config", pins["core_image"])
+    dependency_mounts = []
+    if version == "8.6.0":
+        dependencies = prepare_component_dependencies(private / "component-dependencies")
+        dependency_mounts = ["-v", str(dependencies) + ":/disposable-dependencies:ro",
+                             "-e", "PYTHONPATH=/disposable-dependencies",
+                             "--entrypoint", "python"]
+    docker("run", "-d", "--name", identity + "-core", *common, "--network-alias", "core", "--memory", "3g", *published_ports(version, "core"), "-v", str(config) + ":/config", *dependency_mounts, pins["core_image"],
+           *(["-m", "homeassistant", "--config", "/config", "--skip-pip"] if version == "8.6.0" else []))
+    if version == "8.6.0":
+        CORE_URL = internal_fixture_endpoint(identity, "core")
     existing.HA_URL, existing.CLIENT_ID = CORE_URL, CORE_URL + "/"
     token = await existing.bootstrap_disposable_admin()
     configured = existing.settings(token)
@@ -377,11 +527,14 @@ async def assess(architecture, output, private, identity, pins):
         observed = await existing.wait_for_runtime_ready(rest)
         require(observed["version"] == core_version, "core_version_mismatch")
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as client:
-            if version == "8.5.0":
+            if version in {"8.5.0", "8.6.0"}:
                 await existing._advance_config_flow(client, token, "beta23_device_fixture", [{"slot": "a"}])
             await existing._advance_config_flow(client, token, "power_contract_fixture", [{}])
+            if profile == "component":
+                # Tools only, before either provider starts; never the embedded server.
+                await existing._advance_config_flow(client, token, "ha_mcp_tools", [{"next_step_id": "tools"}, {}])
         original = {"title": "Assessment", "views": [{"title": "Original", "path": "test", "cards": []}]}
-        if version == "8.5.0":
+        if version in {"8.5.0", "8.6.0"}:
             await websocket.command({"type": "lovelace/config/save", "config": original})
             await websocket.command({"type": "lovelace/dashboards/create", "url_path": DASHBOARD, "title": "Assessment", "require_admin": True, "show_in_sidebar": False})
             await websocket.command({"type": "lovelace/config/save", "url_path": DASHBOARD, "config": original})
@@ -398,8 +551,10 @@ async def assess(architecture, output, private, identity, pins):
         phase("core_authority")
         await configure_with_test_authority(core, configured, cache_path=private / "core-cache.json", expected_image=pins["core_image"], core_version=core_version)
         save(output, "core-authority.json", {"version": observed["version"], "compatible_count": core.health_snapshot()["compatible_count"], "ephemeral_test_authority": True, "production_authority": False})
-        docker("run", "-d", "--name", identity + "-relay", *common, "--network-alias", "supervisor", "--memory", "256m", "--read-only", "--tmpfs", "/tmp", "-p", "127.0.0.1:18080:80", "-v", str(Path(__file__).resolve()) + ":/assessment.py:ro", "--entrypoint", "python", pins["core_image"], "/assessment.py", "--relay")
-        await wait_endpoint("http://127.0.0.1:18080/_assessment/stats")
+        docker("run", "-d", "--name", identity + "-relay", *common, "--network-alias", "supervisor", "--memory", "256m", "--read-only", "--tmpfs", "/tmp", *published_ports(version, "relay"), "-v", str(Path(__file__).resolve()) + ":/assessment.py:ro", "--entrypoint", "python", pins["core_image"], "/assessment.py", "--relay")
+        if version == "8.6.0":
+            RELAY_URL = internal_fixture_endpoint(identity, "relay")
+        await wait_endpoint(RELAY_URL + "/_assessment/stats")
         for kind in ("standalone", "addon"):
             phase(kind + "_startup")
             if kind == "addon" and version == "8.5.0":
@@ -409,7 +564,8 @@ async def assess(architecture, output, private, identity, pins):
             image = pins["images"][architecture][kind]
             docker("pull", "--platform", "linux/" + architecture, image["image"], timeout=300)
             image_id = docker("image", "inspect", "--format", "{{.Id}}", image["image"]).stdout.strip()
-            require(image_id == image["configuration"], "image_configuration_mismatch")
+            require(image_id == image["configuration"] or version == "8.6.0"
+                    and image_id in {image["manifest"], image["index"]}, "image_configuration_mismatch")
             require(docker("image", "inspect", "--format", "{{.Architecture}}", image["image"]).stdout.strip() == architecture, "upstream_architecture_mismatch")
             labels = json.loads(docker("image", "inspect", "--format", "{{json .Config.Labels}}", image["image"]).stdout)
             require(labels.get("org.opencontainers.image.version" if kind == "standalone" else "io.hass.version") == version, "image_version_mismatch")
@@ -430,10 +586,16 @@ async def assess(architecture, output, private, identity, pins):
                 data.mkdir()
                 (data / "options.json").write_text(json.dumps({"secret_path": "/synthetic-850/mcp", "enable_tool_search": False, "read_only_mode": False, "enable_mandatory_bps": True, "enable_strict_mandatory_bps": True, "enable_auto_backup": False, "enable_tool_security_policies": True}))
                 mounts += ["-v", str(data) + ":/data"]
-            port = "127.0.0.1:18086:8086" if kind == "standalone" else "127.0.0.1:19583:9583"
-            docker("run", "-d", "--name", identity + "-" + kind, *common, "--read-only", "--memory", "1g", *mounts, "--env-file", str(env_file), "-p", port, image["image"], *(["ha-mcp-web"] if kind == "standalone" else []))
+            docker("run", "-d", "--name", identity + "-" + kind, *common, "--read-only", "--memory", "1g", *mounts, "--env-file", str(env_file), *published_ports(version, kind), image["image"], *(["ha-mcp-web"] if kind == "standalone" else []))
+            if version == "8.6.0":
+                ENDPOINTS[kind] = internal_fixture_endpoint(identity, kind)
             require(docker("inspect", "--format", "{{.Image}}", identity + "-" + kind).stdout.strip() == image_id, "running_image_mismatch")
-            save(output, kind + "-image.json", {**image, "observed_configuration": image_id, "architecture": architecture, "default_addon_startup": kind == "addon"})
+            if version == "8.6.0" and image_id != image["configuration"]:
+                descriptor = json.loads(docker("inspect", "--format", "{{json .ImageManifestDescriptor}}",
+                                               identity + "-" + kind).stdout)
+                require(isinstance(descriptor, dict) and descriptor.get("digest") == image["manifest"],
+                        "running_platform_manifest_mismatch")
+            save(output, kind + "-image.json", {**image, "observed_docker_image_id": image_id, "architecture": architecture, "default_addon_startup": kind == "addon"})
             await wait_endpoint(ENDPOINTS[kind])
             async with streamablehttp_client(ENDPOINTS[kind]) as (read, write, _):
                 async with ReviewedProtocolClientSession(read, write, client_info=types.Implementation(name="isolated-850-assessment", version="1")) as session:
@@ -451,31 +613,33 @@ async def assess(architecture, output, private, identity, pins):
                             if not cursor:
                                 break
                         tools = complete_catalog(pages)
-                        require(len(tools) == {"8.4.3": 78, "8.5.0": 77}[version], "unexpected_catalog_count")
+                        require(len(tools) == {"8.4.3": 78, "8.5.0": 77, "8.6.0": 77}[version], "unexpected_catalog_count")
                         save(output, f"{kind}-catalog-{capture}.json", {"pages": pages, "tools": tools})
                         catalogs.append(tools)
                     require(catalogs[0] == catalogs[1], "catalog_changed_in_session")
+                    if version == "8.6.0":
+                        validate_860_catalog(catalogs[0], profile)
                     names = {t["name"] for t in tools}
                     require(("ha_manage_blueprints" in names and "ha_get_blueprint" not in names)
-                            if version == "8.5.0" else ("ha_get_blueprint" in names and "ha_manage_blueprints" not in names),
+                            if version in {"8.5.0", "8.6.0"} else ("ha_get_blueprint" in names and "ha_manage_blueprints" not in names),
                             "blueprint_catalog_contract")
             phase(kind + "_candidate_contract")
-            if version == "8.5.0":
+            if version in {"8.5.0", "8.6.0"}:
                 await candidate_contract(kind, configured, core, rest, websocket,
-                                         original, output, private, core_version=core_version)
+                                         original, output, private, core_version=core_version, version=version, profile=profile)
             else:
                 await power_only_candidate_contract(kind, configured, core, rest, output, private, version)
             docker("stop", "--time", "20", identity + "-" + kind, timeout=30)
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5)) as client:
-            async with client.get("http://127.0.0.1:18080/_assessment/stats") as response:
+            async with client.get(RELAY_URL + "/_assessment/stats") as response:
                 stats = await response.json()
-        extra = 4 if core_version == "2026.9.3" else 0
-        require(stats.get("service_posts", 0) == (14 if version == "8.5.0" else 8) + 2 * extra, "unexpected_total_dispatch_count")
-        require(stats.get("service_posts_fan", 0) == (6 if version == "8.5.0" else 0) + extra, "unexpected_fan_dispatch_count")
+        extra = 4 if typed_core(core_version) else 0
+        require(stats.get("service_posts", 0) == (14 if version in {"8.5.0", "8.6.0"} else 8) + 2 * extra, "unexpected_total_dispatch_count")
+        require(stats.get("service_posts_fan", 0) == (6 if version in {"8.5.0", "8.6.0"} else 0) + extra, "unexpected_fan_dispatch_count")
         require(stats.get("service_posts_light", 0) == 4, "unexpected_light_dispatch_count")
         require(stats.get("service_posts_switch", 0) == 4 + extra, "unexpected_switch_dispatch_count")
-        require(stats.get("lovelace/config/save", 0) == (2 if version == "8.5.0" else 0), "legacy_dashboard_dispatch_count")
-        require(stats.get("ha_mcp_tools/dashboard_edit", 0) == (2 if version == "8.5.0" else 0), "native_dashboard_dispatch_count")
+        require(stats.get("lovelace/config/save", 0) == (4 if profile == "reference" else 0 if profile == "component" else 2 if version == "8.5.0" else 0), "legacy_dashboard_dispatch_count")
+        require(stats.get("ha_mcp_tools/dashboard_edit", 0) == (4 if profile == "component" else 0 if profile == "reference" else 2 if version == "8.5.0" else 0), "native_dashboard_dispatch_count")
         require(stats.get("active_websockets", 0) == 0, "relay_sessions_retained")
         save(output, "relay-settlement.json", stats)
     finally:
@@ -486,7 +650,7 @@ async def assess(architecture, output, private, identity, pins):
 
 
 
-async def candidate_contract(kind, configured, core, rest, websocket, original, output, private, *, core_version="2026.9.2"):
+async def candidate_contract(kind, configured, core, rest, websocket, original, output, private, *, core_version="2026.9.2", version="8.5.0", profile="legacy"):
     """Actual candidate providers/executors; only synthetic targets owned by this lane."""
     from dataclasses import replace
     from uuid import uuid4
@@ -505,6 +669,10 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
     from ha_mcp_engineering.audit import AuditLogger
     from ha_mcp_engineering.request_context import begin_request, end_request
 
+    if version == "8.6.0":
+        await changed_reads(kind, configured, core, output, websocket)
+        if profile == "component":
+            await search_checks(kind, configured, core, rest, websocket, output)
     work = private / (kind + "-engineering")
     work.mkdir()
     configured = replace(configured, upstream_dashboard_mcp_url=ENDPOINTS[kind],
@@ -528,7 +696,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             save(output, kind + "-candidate-blueprint-" + label + ".json", result)
             require(result.get("success") is True, "candidate_blueprint_failed")
             require(result["metadata"]["completeness"] ==
-                    ("partial" if kind == "standalone" and label == "get" else "complete"),
+                    ("partial" if label == "get" and (profile == "reference" or profile == "legacy" and kind == "standalone") else "complete"),
                     "candidate_blueprint_completeness")
         denied = json.loads(await tools["ha_get_blueprint"].run({"action": "delete"}))
         require(denied.get("success") is not True
@@ -564,11 +732,11 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             require(receipt["state"] == "succeeded_verified"
                     and receipt["provider_attempt_count"] == 1
                     and receipt["dispatch_intent_recorded"] is True
-                    and receipt["provider_contract"] == (FAN_SEMANTIC_CONTRACTS["8.5.0"]
-                        if core_version == "2026.9.3" else FAN_RELEASES["8.5.0"][2]),
+                    and receipt["provider_contract"] == (FAN_SEMANTIC_CONTRACTS[version]
+                        if typed_core(core_version) else FAN_RELEASES[version][2]),
                     "candidate_fan_not_verified")
             require((receipt.get("core_binding") or {}).get("version") ==
-                    (core_version if core_version == "2026.9.3" else None), "fan_core_binding_mismatch")
+                    (core_version if typed_core(core_version) else None), "fan_core_binding_mismatch")
             require(await fan_service.control(request) == receipt, "candidate_duplicate_fan_changed")
             independent = await rest.request("GET", "/states/" + FAN)
             require(independent["state"] == ("off" if action == "turn_off" else "on")
@@ -581,11 +749,11 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
         from ha_mcp_engineering.providers.upstream_power import PowerProvider
         power_service = PowerService(str(work / "fan"), PowerProvider.configured(configured, gateway),
                                      PowerCoreAuthority(core), audit=AuditLogger(configured.audit_path, "synthetic-850-access"))
-        power_summary = await power_contract(power_service, rest, telemetry, kind, output, core_version=core_version)
-        if core_version == "2026.9.3":
+        power_summary = await power_contract(power_service, rest, telemetry, kind, output, version, core_version=core_version)
+        if typed_core(core_version):
             from typed_core_container_contract import failure_contract
             await failure_contract(fan_service, power_service, rest, telemetry, kind, output,
-                                   check=require, save=save)
+                                   check=require, save=save, core_version=core_version)
 
         provider = UpstreamDashboardProvider()
         provider.configure(configured)
@@ -647,16 +815,17 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             "nonterminal_execution_count", "active_conflict_hold_count",
             "active_normal_lock_count", "fallback_count")), "candidate_dashboard_not_settled")
         core_health = core.health_snapshot()
-        require(core_health["compatible_count"] == (19 if core_version == "2026.9.3" else 17)
+        require(core_health["compatible_count"] == (19 if typed_core(core_version) else 17)
                 and core_health["issued_lease_count"] == 0
                 and core_health["active_commit_count"] == 0
                 and core_health["fallback_count"] == 0, "candidate_core_not_settled")
         save(output, kind + "-candidate-result.json", {
-            "status": "PASS", "engineering_source": os.environ["GITHUB_SHA"],
-            "read_count": 25, "blueprint_completeness": "partial" if kind == "standalone" else "complete",
+            "status": "PASS", "engineering_source": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
+            "read_count": 25, "blueprint_completeness": "partial" if profile == "reference" or profile == "legacy" and kind == "standalone" else "complete",
+            "upstream_version": version, "core_version": core_version, "profile": profile,
             "fan_operations": 3, "fan_restored": "off", "dashboard_operations": 2,
-            "typed_failure_contracts": core_version == "2026.9.3",
-            "dashboard_restored": True, "component_configured": kind == "addon",
+            "typed_failure_contracts": typed_core(core_version),
+            "dashboard_restored": True, "component_configured": profile == "component" or profile == "legacy" and kind == "addon",
             "f3": settled, "fan": fan_service.health(), "power": power_summary,
             "core": {k: core_health[k] for k in (
                 "compatible_count", "issued_lease_count", "active_commit_count", "fallback_count")},
@@ -671,6 +840,142 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
         if gateway._transport is not None:
             await gateway._transport.aclose()
         end_request(context)
+
+async def changed_reads(kind,configured,core,output,websocket):
+    from dataclasses import replace
+    from mcp.server.fastmcp import FastMCP
+    from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+    from ha_mcp_engineering.request_context import begin_request,end_request
+    g=UpstreamReadGateway();g.configure(replace(configured,upstream_dashboard_mcp_url=ENDPOINTS[kind]),core_runtime=core)
+    await g.initialize(FastMCP('synthetic-860-reads'))
+    tools=g._registered_tool_registry.snapshot();results=[]
+    cases=[
+        ('template_arithmetic','ha_eval_template',{'template':'{{ 1 + 1 }}'}),
+        ('template_undefined','ha_eval_template',{'template':'{{ synthetic_missing_variable }}'}),
+        ('template_error','ha_eval_template',{'template':'{{ 1 / 0 }}'}),
+        ('template_condition_refused','ha_eval_template',{'condition':{'condition':'template','value_template':'{{ true }}'}}),
+        ('template_variables_refused','ha_eval_template',{'template':'{{ x }}','variables':{'x':2}}),
+        ('template_timeout_refused','ha_eval_template',{'template':'x','timeout':61}),
+        ('skill_default','ha_get_skill_guide',{}),
+        ('skill_missing','ha_get_skill_guide',{'file':'references/synthetic-missing.md'}),
+        ('skill_traversal_refused','ha_get_skill_guide',{'file':'../SKILL.md'}),
+        ('scene_missing','ha_config_get_scene',{'scene_id':'synthetic_missing_scene'}),
+        ('scene_search_refused','ha_config_get_scene',{'query':'all'}),
+        ('script_missing','ha_config_get_script',{'script_id':'synthetic_missing_script'}),
+    ]
+    registry = await websocket.command({'type': 'config/entity_registry/list'})
+    devices = [row['entity_id'] for row in registry
+               if row.get('unique_id') == 'beta23-device-fixture-a'
+               and row.get('platform') == 'beta23_device_fixture' and row.get('device_id')]
+    require(len(devices) == 1, 'device_read_fixture_unavailable')
+    cases += [
+        ('october_device', 'ha_get_device', {'entity_id': devices[0]}),
+        ('october_entity', 'ha_get_entity', {'entity_id': FAN}),
+        ('october_exposure', 'ha_get_entity_exposure', {'entity_id': FAN}),
+        ('october_overview', 'ha_get_overview', {'detail_level': 'full', 'domains': ['fan']}),
+        ('october_search', 'ha_search', {'query': FAN}),
+    ]
+    try:
+        for label,name,args in cases:
+            telemetry,token=begin_request('synthetic-860-'+label)
+            try:
+                result=json.loads(await tools[name].run(args))
+                results.append({'case':label,'tool':name,'arguments':args,'result':result,
+                    'telemetry':{'requests':telemetry.upstream_request_count,'active':telemetry.upstream_active_requests,'duration_ms':telemetry.upstream_duration_ms}})
+                require(telemetry.upstream_active_requests==0,'read_telemetry_unsettled')
+                require(not result['metadata']['fallback_occurred'],'read_fallback')
+                if label.endswith('_refused'):
+                    require(not result['success'] and telemetry.upstream_request_count==0,'closed_read_dispatched')
+                else:
+                    require(telemetry.upstream_request_count==1 and telemetry.upstream_duration_ms>0,'read_attempt_unaccounted')
+                if label in {'template_arithmetic','template_undefined','skill_default'} or label.startswith('october_'):
+                    require(result['success'],'useful_read_failed_'+label)
+            finally:end_request(token)
+        save(output, kind+'-changed-read-results.json', results)
+    finally:
+        if g._transport is not None:await g._transport.aclose()
+        if not (output/(kind+'-changed-read-results.json')).exists():save(output, kind+'-changed-read-results.json', results)
+
+async def search_checks(kind,configured,core,rest,websocket,output):
+    from dataclasses import replace
+    from mcp.server.fastmcp import FastMCP
+    from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
+    from ha_mcp_engineering.request_context import begin_request, end_request
+    from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry, validate_reviewed_release_catalog
+    phase(kind+'_component_search')
+    hidden='light.hamcp_contract_light'
+    group='sensor.synthetic_search_group'
+    await rest.request('POST','/states/'+group,body={'state':'on','attributes':{'friendly_name':'Synthetic Search Group','entity_id':[hidden,'switch.hamcp_contract_switch']}})
+    await rest.request('POST','/states/light.synthetic_search_fixture',body={'state':'on','attributes':{'friendly_name':'Synthetic Search Fixture Light'}})
+    baseline=await websocket.command({'type':'config/entity_registry/get','entity_id':hidden})
+    require(baseline.get('hidden_by') is None,'synthetic_hidden_baseline')
+    await websocket.command({'type':'config/entity_registry/update','entity_id':hidden,'hidden_by':'user'})
+    g=UpstreamReadGateway();g.configure(replace(configured,upstream_dashboard_mcp_url=ENDPOINTS[kind]),core_runtime=core)
+    records=[];raw_records=[]
+    try:
+        health=await g.initialize(FastMCP('synthetic-component-search'))
+        require(health['dynamically_exposed_count']==25,'component_read_count')
+        transport=g._transport;original=transport.execute_read
+        async def observed(*args,**kwargs):
+            exchange=await original(*args,**kwargs)
+            raw_records.append(exchange.call_result)
+            return exchange
+        transport.execute_read=observed
+        catalog=await transport.discover()
+        verdict=validate_reviewed_release_catalog(load_reviewed_upstream_release_registry().by_version['8.6.0'],observed_server_name=catalog.server_name,observed_upstream_version=catalog.server_version,observed_protocol_version=catalog.protocol_version,tools=catalog.tools)
+        require(verdict.valid,'component_complete_catalog_not_exact')
+        cases=[
+            ('ordinary',{'query':'synthetic search fixture'}),
+            ('config_false',{'query':'synthetic search fixture','search_types':['automation'],'include_config':False}),
+            ('config_true',{'query':'synthetic search fixture','search_types':['automation'],'include_config':True}),
+            ('config_budget',{'query':'synthetic search fixture','search_types':['automation'],'include_config':True,'config_time_budget':0.001}),
+            ('script_only',{'query':'synthetic search fixture','search_types':['script'],'include_config':True}),
+            ('queryless',{'domain_filter':'light','limit':20}),
+            ('state_filter',{'domain_filter':'light','state_filter':'off','limit':20}),
+            ('hidden_excluded',{'domain_filter':'light','include_hidden':False,'limit':20}),
+            ('hidden_included',{'domain_filter':'light','include_hidden':True,'limit':20}),
+            ('members_visible',{'query':group,'include_hidden':False,'result_fields':['entity_id','member_entity_ids']}),
+            ('members_all',{'query':group,'include_hidden':True,'result_fields':['entity_id','member_entity_ids']}),
+            ('page_first',{'domain_filter':'light','limit':1,'offset':0}),
+            ('page_second',{'domain_filter':'light','limit':1,'offset':1}),
+            ('invalid_bucket',{'query':'fixture','search_types':['write']}),
+        ]
+        tools=g._registered_tool_registry.snapshot()
+        for label,args in cases:
+            before=len(raw_records)
+            telemetry,token=begin_request('synthetic-component-'+kind+'-'+label)
+            try:result=json.loads(await tools['ha_search'].run(args))
+            finally:end_request(token)
+            require(len(raw_records)==before+1,'search_not_single_dispatch')
+            records.append({'case':label,'arguments':args,'raw_result':raw_records[-1],'result':result,'telemetry':{'requests':telemetry.upstream_request_count,'active':telemetry.upstream_active_requests,'duration_ms':telemetry.upstream_duration_ms}})
+            require(len(encode(records)) <= MAX_BYTES, 'search_evidence_bound')
+            require(not result['metadata']['fallback_occurred'] and telemetry.upstream_request_count==1 and telemetry.upstream_active_requests==0,'search_attempt_unsettled')
+            if label!='invalid_bucket':require(result['success'],'component_search_failed_'+label)
+        by={r['case']:r['result'] for r in records}
+        data={name:r.get('data',{}) for name,r in by.items()}
+        configs=data['config_true']['automations']
+        require(configs and any('config' in r for r in configs),'include_config_true_unproved')
+        require(data['config_false']['automations'] and all('config' not in r for r in data['config_false']['automations']),'include_config_false_unproved')
+        require(data['config_true']['entities']==[] and data['script_only']['scripts'] and not data['script_only']['automations'],'selected_buckets_unproved')
+        ids=lambda case:{r['entity_id'] for r in data[case]['entities']}
+        require(hidden in ids('hidden_included') and hidden not in ids('hidden_excluded'),'hidden_filter_unproved')
+        require(data['queryless']['entities'] and all(r['domain']=='light' for r in data['queryless']['entities']),'queryless_filter_unproved')
+        require(data['state_filter']['entities'] and all(r['state']=='off' for r in data['state_filter']['entities']),'state_filter_unproved')
+        visible=next(r for r in data['members_visible']['entities'] if r['entity_id']==group)
+        all_members=next(r for r in data['members_all']['entities'] if r['entity_id']==group)
+        require(visible['is_group'] and 'member_entity_ids' not in visible,'visible_members_unproved')
+        require(all_members['is_group'] and all_members['member_entity_ids']==[hidden,'switch.hamcp_contract_switch'],'all_members_unproved')
+        require(ids('page_first') and ids('page_second') and ids('page_first').isdisjoint(ids('page_second')) and data['page_first']['has_more'],'pagination_unproved')
+        require(by['queryless']['metadata']['completeness']=='complete' and by['page_first']['metadata']['completeness']=='complete','completeness_unproved')
+        require(not by['invalid_bucket']['success'],'unknown_bucket_not_refused_by_upstream')
+        save(output,kind+'-component-search-results.json', records)
+        save(output,kind+'-component-search-summary.json',{'status':'PASS','cases':len(records),'catalog_exact':True,'engineering_attempts':len(records),'real_nonempty_results':True,'config_time_budget_scope':'legacy per-id budget; component call still returned nonempty complete data; no global deadline claim','controlled_fault_checks':'separate offline tests'})
+    finally:
+        if g._transport:await g._transport.aclose()
+        await websocket.command({'type':'config/entity_registry/update','entity_id':hidden,'hidden_by':None})
+        await rest.request('DELETE','/states/'+group)
+        await rest.request('DELETE','/states/light.synthetic_search_fixture')
+
 
 async def power_only_candidate_contract(kind, configured, core, rest, output, private, version):
     """Close the historical provider gap without replacing older contract lanes."""
@@ -705,7 +1010,7 @@ async def power_only_candidate_contract(kind, configured, core, rest, output, pr
         require(state["compatible_count"] == 17 and all(state[k] == 0 for k in
                 ("issued_lease_count", "active_commit_count", "fallback_count")), "candidate_core_not_settled")
         save(output, kind + "-candidate-result.json", {
-            "status": "PASS", "engineering_source": os.environ["GITHUB_SHA"],
+            "status": "PASS", "engineering_source": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
             "upstream_version": version, "read_count": 25, "power": summary,
             "core": {k: state[k] for k in
                 ("compatible_count", "issued_lease_count", "active_commit_count", "fallback_count")},
@@ -747,9 +1052,9 @@ async def power_contract(service, rest, telemetry, kind, output, version="8.5.0"
                     and receipt["dispatch_intent_recorded"] is True
                     and receipt["provider"] == "upstream_typed_power"
                     and receipt["provider_contract"] == (POWER_SEMANTIC_CONTRACTS[version]
-                        if core_version == "2026.9.3" else POWER_RELEASES[version][2]), "candidate_power_not_verified")
+                        if typed_core(core_version) else POWER_RELEASES[version][2]), "candidate_power_not_verified")
             require((receipt.get("core_binding") or {}).get("version") ==
-                    (core_version if core_version == "2026.9.3" else None), "power_core_binding_mismatch")
+                    (core_version if typed_core(core_version) else None), "power_core_binding_mismatch")
             require(await service.control(request) == receipt, "candidate_duplicate_power_changed")
             readback = await rest.request("GET", "/states/" + entity)
             calls += 1
@@ -769,25 +1074,26 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--relay", action="store_true")
     parser.add_argument("--cleanup", action="store_true")
-    parser.add_argument("--upstream-version", choices=("8.4.3", "8.5.0"), default="8.5.0")
-    parser.add_argument("--core-version", choices=("2026.9.2", "2026.9.3"), default="2026.9.2")
+    parser.add_argument("--upstream-version", choices=("8.4.3", "8.5.0", "8.6.0"), default="8.5.0")
+    parser.add_argument("--core-version", choices=("2026.9.2", "2026.9.3", "2026.9.4", "2026.10.0"), default="2026.9.2")
+    parser.add_argument("--profile", choices=("legacy", "reference", "component"), default="legacy")
     parser.add_argument("--architecture", choices=("amd64", "arm64"))
     args = parser.parse_args()
     if args.relay:
         asyncio.run(run_relay())
         return
-    identity = execution_guard(os.environ, args.architecture, args.upstream_version, args.core_version)
+    identity = execution_guard(os.environ, args.architecture, args.upstream_version, args.core_version, args.profile)
     if args.cleanup:
         print(json.dumps({"cleanup": cleanup(identity)}))
         return
-    pins = candidate_pins(args.upstream_version, args.core_version)
+    pins = candidate_pins(args.upstream_version, args.core_version, args.profile)
     checked_sha = subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip()
     require(checked_sha == os.environ["GITHUB_SHA"], "candidate_checkout_mismatch")
     runner = Path(os.environ["RUNNER_TEMP"]).resolve(strict=True)
     output = runner / (identity + "-evidence")
     output.mkdir(mode=0o700)
     private = Path(tempfile.mkdtemp(prefix=identity + "-private-", dir=runner))
-    receipt = {"started_at": now(), "status": "FAILED", "source": os.environ.get("GITHUB_SHA"), "assessment_base": pins["assessment_source"], "architecture": args.architecture, "upstream_version": args.upstream_version, "core_version": args.core_version, "core_image": pins["core_image"], "production_access": False, "signing": "ephemeral_Core_test_key_only", "scope": "candidate_runtime_with_disposable_containers"}
+    receipt = {"started_at": now(), "status": "FAILED", "source": os.environ.get("GITHUB_SHA"), "assessment_base": pins["assessment_source"], "architecture": args.architecture, "upstream_version": args.upstream_version, "core_version": args.core_version, "profile": args.profile, "core_image": pins["core_image"], "production_access": False, "signing": "ephemeral_Core_test_key_only", "scope": "candidate_runtime_with_disposable_containers"}
     failed = False
     try:
         async def bounded():
