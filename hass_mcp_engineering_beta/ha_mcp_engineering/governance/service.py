@@ -109,9 +109,11 @@ from .resources import (
     validate_resource_create_identity,
     validate_resource,
 )
+from ..f3_runtime.health_scan import HealthScanFence
 from .storage import (
     ChangePlanRepository,
     ChangePlanStorageError,
+    PlanHealthSnapshotSuperseded,
     is_terminal_plan,
 )
 from .task_models import (
@@ -124,6 +126,7 @@ from .task_models import (
 from .task_storage import (
     ExecutionTaskRepository,
     ExecutionTaskStorageError,
+    TaskHealthSnapshotSuperseded,
 )
 from .operational import (
     BackupAdministrationGateway,
@@ -558,9 +561,10 @@ class ChangeGovernanceService:
         plans_before: dict[str, int],
         tasks_before: dict[str, int] | None = None,
         recovery_candidates_examined: int = 0,
+        validated: bool = False,
     ) -> None:
-        plans_after = self.repository.navigation_metrics()
-        task_after = self.task_repository.navigation_metrics()
+        plans_after = self.repository.navigation_metrics(**({"validated": True} if validated else {}))
+        task_after = self.task_repository.navigation_metrics(**({"validated": True} if validated else {}))
         task_before = tasks_before or task_after
         self._hot_path_metrics[operation] = {
             "last_duration_ms": round(
@@ -12310,27 +12314,47 @@ class ChangeGovernanceService:
             ) * 1000.0
             started = time.monotonic()
             phase_started = started
-            plan_metrics = self.repository.navigation_metrics()
-            task_metrics = self.task_repository.navigation_metrics()
-            key = (self.repository.generation, self.task_repository.generation)
-            rebuilt = self._health_cache_needs_rebuild(key)
-            if rebuilt:
-                self._health_cache_key = None
-                built_at = self.now()
+            # Even a warm aggregate is not evidence of today's durable health.
+            # Collect/decode once per call and share it with every projection.
+            plan_metrics = self.repository.navigation_metrics(validated=True)
+            task_metrics = self.task_repository.navigation_metrics(validated=True)
+            self._health_cache_key = None
+            built_at = self.now()
+            fence = None
+            corruption_before = (self.repository.corruption_count, self.task_repository.corruption_count)
+            try:
+                sources = [
+                    (ErrorCode.CHANGE_PLAN_STORAGE_ERROR, self.repository._directory_token),
+                    (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, self.task_repository._directory_token),
+                ]
+                if self.f3_runtime is not None:
+                    sources.extend(self.f3_runtime._health_fence_sources()[2:])
+                fence = HealthScanFence(tuple(sources))
                 try:
-                    plans = self.repository.list()
-                except ChangePlanStorageError as exc:
-                    raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR) from exc
+                    plans = await self.repository.collect_health(
+                        checkpoint=fence.check,
+                        watch=lambda path: fence.watch(path, code=ErrorCode.CHANGE_PLAN_STORAGE_ERROR))
+                except (GovernanceError, ChangePlanStorageError):
+                    raise
+                except Exception as exc:
+                    raise ChangePlanStorageError("Governance health collection failed") from exc
                 plan_generation = self.repository.generation
+                try:
+                    tasks = await self.task_repository.collect_health(
+                        checkpoint=fence.check, watch=fence.watch)
+                except (GovernanceError, ExecutionTaskStorageError):
+                    raise
+                except Exception as exc:
+                    raise ExecutionTaskStorageError("Execution-task health collection failed") from exc
                 task_generation = self.task_repository.generation
+                fence.check()
+                self._require_health_generations(plan_generation, task_generation)
                 phases["snapshot_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
                 job = asyncio.create_task(asyncio.to_thread(
                     _validate_health_records, plans, self.sensitive_values
                 ))
                 self._health_validation_job = job
-                # Retrieve a canceled caller's eventual failure without logging
-                # record contents. The next caller drains this same job first.
                 job.add_done_callback(lambda completed: (
                     completed.exception() if not completed.cancelled() else None
                 ))
@@ -12340,11 +12364,14 @@ class ChangeGovernanceService:
                     if job.done():
                         self._health_validation_job = None
                 phases["validation_wait_ms"] = (time.monotonic() - phase_started) * 1000.0
+                # Detect in-place movement before the owner can persist expiry.
+                await fence.verify_files()
                 phase_started = time.monotonic()
                 resolved: list[ChangePlan] = []
                 failures: list[tuple[ChangePlan, ErrorCode]] = []
                 for plan in plans:
                     await asyncio.sleep(0)
+                    fence.check()
                     self._require_health_generations(plan_generation, task_generation)
                     try:
                         if plan.policy_decision is not None:
@@ -12356,37 +12383,72 @@ class ChangeGovernanceService:
                         failures.append((plan, exc.code))
                     else:
                         resolved.append(plan)
-                    # The synchronous lifecycle resolver may persist expiry.
-                    # No other owner-loop task runs in that commit section.
-                    plan_generation = self.repository.generation
-                    task_generation = self.task_repository.generation
+                    if self.repository.generation != plan_generation:
+                        # Only this synchronous owner section may persist this
+                        # plan's expiry; no other loop task runs until the yield.
+                        path = self.repository._path_for_plan(plan)
+                        fence.files[path] = fence.stamp(path)
+                        fence.tokens = (self.repository._directory_token(), *fence.tokens[1:])
+                        plan_generation = self.repository.generation
+                fence.check()
                 self._require_health_generations(plan_generation, task_generation)
                 phases["projection_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
                 self._health_cache = self._build_health_summary(
                     include_provider_health=False,
-                    resolved_history=(
-                        resolved, sorted(failures, key=lambda item: item[0].plan_id)
-                    ),
+                    resolved_history=(resolved, sorted(failures, key=lambda item: item[0].plan_id)),
                     captured_plan_generation=plan_generation,
-                    captured_built_at=built_at,
+                    captured_built_at=built_at, collected_tasks=tasks,
                 )
                 phases["assembly_ms"] = (time.monotonic() - phase_started) * 1000.0
                 self._health_cache_rebuild_count += 1
-            else:
-                self._health_cache_hit_count += 1
-                phases["snapshot_ms"] = (time.monotonic() - phase_started) * 1000.0
-            return self._health_summary_overlay(
-                started=started, plan_metrics=plan_metrics, task_metrics=task_metrics,
-                cache_rebuilt=rebuilt,
-                home_assistant_status=home_assistant_status,
-                home_assistant_websocket_status=home_assistant_websocket_status,
-                phase_elapsed_ms=phases,
-            )
+                phase_started = time.monotonic()
+                f3 = None
+                if self.f3_runtime is not None:
+                    f3 = await self.f3_runtime.async_health(
+                        tasks=tasks, plans={plan.plan_id: plan for plan in plans}, fence=fence)
+                else:
+                    await fence.verify_files()
+                fence.check()
+                self._require_health_generations(plan_generation, task_generation)
+                phases["overlay_ms"] = (time.monotonic() - phase_started) * 1000.0
+                result = self._health_summary_overlay(
+                    started=started, plan_metrics=plan_metrics, task_metrics=task_metrics,
+                    cache_rebuilt=True,
+                    home_assistant_status=home_assistant_status,
+                    home_assistant_websocket_status=home_assistant_websocket_status,
+                    phase_elapsed_ms=phases, collected_f3=f3, validated=True,
+                )
+                fence.check()
+                self._require_health_generations(plan_generation, task_generation)
+                return result
+            except (PlanHealthSnapshotSuperseded, TaskHealthSnapshotSuperseded) as exc:
+                self._health_cache_key = None
+                HealthScanFence.superseded(
+                    ErrorCode.CHANGE_PLAN_STORAGE_ERROR
+                    if isinstance(exc, PlanHealthSnapshotSuperseded)
+                    else ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            except (ChangePlanStorageError, ExecutionTaskStorageError) as exc:
+                self._health_cache_key = None
+                if fence is not None and corruption_before == (self.repository.corruption_count, self.task_repository.corruption_count):
+                    fence.check_after_failure()
+                if isinstance(exc, ExecutionTaskStorageError) and self.f3_runtime is not None:
+                    self.f3_runtime._readiness_fault("health")
+                raise GovernanceError(
+                    ErrorCode.CHANGE_PLAN_STORAGE_ERROR if isinstance(exc, ChangePlanStorageError)
+                    else ErrorCode.EXECUTION_TASK_STORAGE_ERROR) from exc
+            except GovernanceError as exc:
+                self._health_cache_key = None
+                if (exc.code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR
+                        and exc.details.get("reason") != "health_snapshot_superseded"
+                        and self.f3_runtime is not None):
+                    self.f3_runtime._readiness_fault("health")
+                raise
+            except BaseException:
+                self._health_cache_key = None
+                raise
 
     def _require_health_generations(self, plans: int, tasks: int) -> None:
-        self.repository.navigation_metrics()
-        self.task_repository.navigation_metrics()
         if self.repository.generation != plans:
             self._health_cache_key = None
             raise GovernanceError(
@@ -12410,12 +12472,14 @@ class ChangeGovernanceService:
         home_assistant_status: str | None,
         home_assistant_websocket_status: str | None,
         phase_elapsed_ms: dict[str, float] | None = None,
+        collected_f3: dict[str, Any] | None = None,
+        validated: bool = False,
     ) -> dict[str, Any]:
         overlay_started = time.monotonic()
         summary = deepcopy(self._health_cache)
 
-        storage = self.repository.health()
-        task_storage = self.task_repository.health()
+        storage = self.repository.health(**({"validated": True} if validated else {}))
+        task_storage = self.task_repository.health(**({"validated": True} if validated else {}))
         summary["storage"] = storage
         summary["storage_status"] = storage["status"]
         summary["storage_corruption_count"] = storage[
@@ -12442,7 +12506,7 @@ class ChangeGovernanceService:
             lock.locked() for lock in self._target_locks.values()
         )
         if self.f3_runtime is not None:
-            summary["f3"] = self.f3_runtime.health()
+            summary["f3"] = (self.f3_runtime.health() if collected_f3 is None else collected_f3)
         summary["approval_notifications"] = (
             self.approval_notifications.health_snapshot()
             if self.approval_notifications is not None
@@ -12540,7 +12604,7 @@ class ChangeGovernanceService:
             )
 
         self._record_hot_path_metrics(
-            "governance_health",
+            "governance_health", validated=validated,
             started=started,
             records_enumerated=(
                 int(storage["total_plans"])
@@ -12554,15 +12618,15 @@ class ChangeGovernanceService:
         if phase_elapsed_ms is not None:
             # Bounded numeric diagnostics, never record content. Worker elapsed
             # is nested within validation wait; these are wall times, not CPU.
-            phase_elapsed_ms["overlay_ms"] = (time.monotonic() - overlay_started) * 1000.0
+            phase_elapsed_ms["overlay_ms"] += (time.monotonic() - overlay_started) * 1000.0
             self._hot_path_metrics["governance_health"]["phase_elapsed_ms"] = {
                 name: round(elapsed, 3) for name, elapsed in phase_elapsed_ms.items()
             }
         summary["plan_store_scaling"] = {
             "authorization_source": "persisted_records",
             "derived_state_role": "navigation_and_status_only",
-            "plan_navigation": self.repository.navigation_metrics(),
-            "task_navigation": self.task_repository.navigation_metrics(),
+            "plan_navigation": self.repository.navigation_metrics(**({"validated": True} if validated else {})),
+            "task_navigation": self.task_repository.navigation_metrics(**({"validated": True} if validated else {})),
             "projection_index_rebuild_count": (
                 self._projection_index_rebuild_count
             ),
@@ -12734,6 +12798,7 @@ class ChangeGovernanceService:
         ] | None = None,
         captured_plan_generation: int | None = None,
         captured_built_at: datetime | None = None,
+        collected_tasks: list[ExecutionTask] | None = None,
     ) -> dict[str, Any]:
         # Invalidate before rebuilding: an exception must never leave an old
         # ready aggregate reusable. There is no await/provider read in this
@@ -12771,13 +12836,13 @@ class ChangeGovernanceService:
         self._observed_plan_index_rebuild_count = (
             self.repository.index_rebuild_count
         )
-        storage = self.repository.health()
+        storage = self.repository.health(**({"validated": True} if collected_tasks is not None else {}))
         try:
-            tasks = self.task_repository.list()
+            tasks = self.task_repository.list() if collected_tasks is None else collected_tasks
             # Bind to the captured task list before health/navigation can
             # observe a newer writer generation. The final check rejects it.
             task_generation = self.task_repository.generation
-            task_storage = self.task_repository.health()
+            task_storage = self.task_repository.health(**({"validated": True} if collected_tasks is not None else {}))
         except ExecutionTaskStorageError:
             tasks = []
             task_generation = self.task_repository.generation
@@ -13541,8 +13606,9 @@ class ChangeGovernanceService:
         )
         # Navigation detects supported external replacements/index damage.
         # Do not attach a new generation to data captured before that change.
-        self.repository.navigation_metrics()
-        self.task_repository.navigation_metrics()
+        if collected_tasks is None:
+            self.repository.navigation_metrics()
+            self.task_repository.navigation_metrics()
         if self.repository.generation != plan_generation:
             raise GovernanceError(ErrorCode.CHANGE_PLAN_STORAGE_ERROR)
         if self.task_repository.generation != task_generation:

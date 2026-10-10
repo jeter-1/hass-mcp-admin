@@ -30,6 +30,23 @@ from .models import CORE_IDENTITY
 CORE_RECONCILIATION_INTERVAL_SECONDS = 300.0
 CORE_MONITOR_ATTACHMENT_TIMEOUT_SECONDS = 30.0
 MAX_CORE_AUDIT_EVENTS = 32
+_AUDIT_TRIGGERS = frozenset({
+    "startup", "startup_retry", "periodic", "identity_or_connection_change",
+    "mutation_pre_dispatch", "mutation_verification", "failure_retry",
+})
+_EARLY_FAILURE_PHASES = {
+    "core_lifecycle_monitor_unavailable": "monitor_attachment",
+    "core_registry_changed_during_probe": "registry_collection",
+    "core_connection_generation_stale": "connection_fence",
+    "core_lifecycle_monitor_stale": "monitor_fence",
+    "core_registry_changed_during_selection": "registry_selection",
+}
+_OBSERVATION_REASONS = frozenset({
+    "core_observation_unavailable", "malformed_core_evidence",
+    "core_version_disagreement", "core_identity_changed", "core_session_changed",
+    "core_observation_unstable", "transport_unavailable", "authentication_failed",
+    "observation_complete",
+})
 
 
 @dataclass(frozen=True)
@@ -246,13 +263,9 @@ class CoreRuntime:
                 # monitored generation usable.  Retire it just as an observed
                 # socket movement would, then retry from a fresh source epoch.
                 self.request_reconciliation(connection_changed=True)
-                with self._lock:
-                    self._counters["verification_failures"] += 1
-                    self._append_event_locked(
-                        "core_reconciliation",
-                        "core_lifecycle_monitor_unavailable",
-                        None,
-                    )
+                self._audit_early_failure(
+                    trigger, observation, "core_lifecycle_monitor_unavailable"
+                )
                 return self.health_snapshot()
             if newly_attached:
                 # The first observation supplied only the expected version for
@@ -262,9 +275,9 @@ class CoreRuntime:
             if registry and registry.enabled and registry.collection_token() != collection_token:
                 self._sync_registry_authority()
                 self._reprobe_event.set()
-                with self._lock:
-                    self._counters["verification_failures"] += 1
-                    self._append_event_locked("core_reconciliation", "core_registry_changed_during_probe", None)
+                self._audit_early_failure(
+                    trigger, observation, "core_registry_changed_during_probe"
+                )
                 return self.health_snapshot()
             # Fence selection itself as well as the preceding probe collection.
             # Retain this token through publication: sampling a fresh token
@@ -279,93 +292,117 @@ class CoreRuntime:
                 else ()
             )
             now = datetime.now(timezone.utc)
+            failure_reason = None
             with self._lock:
                 if connection_epoch != self._connection_epoch:
-                    self._counters["verification_failures"] += 1
-                    self._append_event_locked(
-                        "core_reconciliation",
-                        "core_connection_generation_stale",
-                        None,
-                    )
-                    return self.health_snapshot()
-                if monitor_required and (
+                    failure_reason = "core_connection_generation_stale"
+                elif monitor_required and (
                     self._connection_monitor_version != observation.version
                     or self._connection_monitor_epoch != self._connection_epoch
                 ):
-                    self._counters["verification_failures"] += 1
-                    self._append_event_locked(
-                        "core_reconciliation",
-                        "core_lifecycle_monitor_stale",
-                        None,
-                    )
-                    return self.health_snapshot()
-                if (
+                    failure_reason = "core_lifecycle_monitor_stale"
+                elif (
                     selected_registry_token is not None
                     and registry.selection_token(observation.version) != selected_registry_token
                 ):
                     self._reprobe_event.set()
-                    self._counters["verification_failures"] += 1
-                    self._append_event_locked(
-                        "core_reconciliation", "core_registry_changed_during_selection", None
-                    )
-                    return self.health_snapshot()
-                # Publish the decision generation and its exact observation
-                # under one runtime lock.  Routes and health must never see a
-                # new generation paired with the prior observation.
-                result = self._coordinator.reconcile(observation, authority)
-                changed = bool(result.published and not result.idempotent)
-                self._initialized = True
-                if result.published:
-                    self._observation = observation
-                    # A change during coordinator publication must differ from
-                    # this token at the final health/use-time synchronization.
-                    self._published_registry_token = selected_registry_token
-                if result.published and any(
-                    item.disposition.admitted
-                    for item in result.generation.decisions
-                ):
-                    self._counters["verification_successes"] += 1
-                else:
-                    self._counters["verification_failures"] += 1
-                # Any new authority generation invalidates plans created under
-                # the preceding evidence, including same-version revocation or
-                # capability-profile changes.  A mere periodic replay remains
-                # idempotent and does not churn this cutoff.
-                if changed:
-                    self._last_material_change_at = now
-                    if prior_observation is not None:
-                        self._counters["retirements"] += 1
-                self._append_event_locked(
-                    "core_reconciliation",
-                    result.reason_code,
-                    result.generation.generation if result.generation else None,
-                )
-                listeners = tuple(self._listeners) if changed else ()
-                audit_sink = self._audit_sink
-                audit_event = (
-                    self._audit_event_locked(
-                        trigger=trigger,
-                        observation=observation,
-                        generation=result.generation,
-                    )
-                    if changed
-                    or not any(
+                    failure_reason = "core_registry_changed_during_selection"
+                if failure_reason is None:
+                    # Publish the decision generation and its exact observation
+                    # under one runtime lock.  Routes and health must never see a
+                    # new generation paired with the prior observation.
+                    result = self._coordinator.reconcile(observation, authority)
+                    changed = bool(result.published and not result.idempotent)
+                    self._initialized = True
+                    if result.published:
+                        self._observation = observation
+                        # A change during coordinator publication must differ from
+                        # this token at the final health/use-time synchronization.
+                        self._published_registry_token = selected_registry_token
+                    if result.published and any(
                         item.disposition.admitted
                         for item in result.generation.decisions
+                    ):
+                        self._counters["verification_successes"] += 1
+                    else:
+                        self._counters["verification_failures"] += 1
+                    # Any new authority generation invalidates plans created under
+                    # the preceding evidence, including same-version revocation or
+                    # capability-profile changes.  A mere periodic replay remains
+                    # idempotent and does not churn this cutoff.
+                    if changed:
+                        self._last_material_change_at = now
+                        if prior_observation is not None:
+                            self._counters["retirements"] += 1
+                    self._append_event_locked(
+                        "core_reconciliation",
+                        result.reason_code,
+                        result.generation.generation if result.generation else None,
                     )
-                    else None
-                )
+                    listeners = tuple(self._listeners) if changed else ()
+                    audit_sink = self._audit_sink
+                    audit_event = (
+                        self._audit_event_locked(
+                            trigger=trigger,
+                            observation=observation,
+                            generation=result.generation,
+                        )
+                        if changed
+                        or trigger == "failure_retry"
+                        or not any(
+                            item.disposition.admitted
+                            for item in result.generation.decisions
+                        )
+                        else None
+                    )
+            if failure_reason is not None:
+                self._audit_early_failure(trigger, observation, failure_reason)
+                return self.health_snapshot()
             for listener in listeners:
                 listener()
-            if audit_sink is not None and audit_event is not None:
-                try:
-                    if audit_sink(audit_event) is False:
-                        with self._lock:
-                            self._counters["audit_write_failures"] += 1
-                except Exception:
-                    with self._lock:
-                        self._counters["audit_write_failures"] += 1
+            self._write_audit(audit_sink, audit_event)
             return self.health_snapshot()
+
+    def _audit_early_failure(
+        self, trigger: str, observation: CoreObservation, reason: str
+    ) -> None:
+        """Capture one attempted refusal, then invoke the sink outside the lock."""
+        phase = _EARLY_FAILURE_PHASES[reason]
+        with self._lock:
+            self._counters["verification_failures"] += 1
+            self._append_event_locked("core_reconciliation", reason, None)
+            sink = self._audit_sink
+            event = {
+                "event": "home_assistant_core_authority_reconciliation_failed",
+                "result_status": "withheld",
+                "analysis_summary": {
+                    "model": "ha-core-authority-audit-v1",
+                    "trigger": trigger if trigger in _AUDIT_TRIGGERS else "other",
+                    "phase": phase,
+                    "reason_code": reason,
+                    "observation_reason_code": (
+                        observation.reason_code
+                        if observation.reason_code in _OBSERVATION_REASONS else "other"
+                    ),
+                    "observed_core_version": observation.version,
+                    # No decision generation was published by this attempt.
+                    "generation": None,
+                    "identity_agreement": observation.identity_agrees,
+                    "fallback_count": 0,
+                },
+            }
+        self._write_audit(sink, event)
+
+    def _write_audit(self, sink: Any, event: dict[str, Any] | None) -> None:
+        if sink is None or event is None:
+            return
+        try:
+            failed = sink(event) is False
+        except Exception:
+            failed = True
+        if failed:
+            with self._lock:
+                self._counters["audit_write_failures"] += 1
 
     async def reconcile_until_initialized(
         self,
@@ -891,14 +928,6 @@ class CoreRuntime:
         observation: CoreObservation,
         generation: Any,
     ) -> dict[str, Any]:
-        allowed_triggers = {
-            "startup",
-            "startup_retry",
-            "periodic",
-            "identity_or_connection_change",
-            "mutation_pre_dispatch",
-            "mutation_verification",
-        }
         decisions = generation.decisions
         admitted = sum(item.disposition.admitted for item in decisions)
         return {
@@ -906,7 +935,7 @@ class CoreRuntime:
             "result_status": "success" if admitted else "withheld",
             "analysis_summary": {
                 "model": "ha-core-authority-audit-v1",
-                "trigger": trigger if trigger in allowed_triggers else "other",
+                "trigger": trigger if trigger in _AUDIT_TRIGGERS else "other",
                 "observed_core_version": observation.version,
                 "identity_agreement": observation.identity_agrees,
                 "generation": generation.generation,
