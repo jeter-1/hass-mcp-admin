@@ -1,18 +1,29 @@
 # Engineering 2.4.1-beta.3 acceptance
 
 This contract covers exact ha-mcp 8.6.0 compatibility integrated with beta.2's
-Core 2026.10.0 support. It distinguishes source/disposable acceptance, release
+Core 2026.10.0 support, cooperative deep-health collection and bounded Core
+reconciliation diagnostics. It distinguishes source/disposable acceptance, release
 CI, publication, installed Engineering acceptance and upstream activation.
 This document authorizes none of the latter operations. Josh continues on the
 existing development-track installation and single Engineering connector.
 
 ## 1. Source, review and CI
 
-Bind the protected preparation base
-`9871f4b7ad7ed0f9fba6bf49bf5f8603c84636b8`, the preserved compatibility source
-`f832ac49f8e4d2b1f142bc0c142d6b64776c13be`, the reconciled branch and final
-commit/tree. Preserve the original source and evidence. Record any correction
-and its proving tests; do not claim that earlier review covers later changes.
+Bind the original compatibility base
+`9871f4b7ad7ed0f9fba6bf49bf5f8603c84636b8`, reviewed 8.6 candidate
+`396374cbc9db617212205b997e67a433fc8b767e`, diagnostics
+`3146706b0bdf2ab12d9d01a33e9c0c492198c441`, and corrected health candidate
+`f0495863ec10f4f875e45c73e9718a64a6ef7da1`. Integration starts from main
+`3fb0c26e63d6212e84d7286b7df695ba277c4699`; record any later main movement,
+reconciled branch and final commit/tree. Preserve sequence-6 signed registry
+history and the original source/review evidence. Record integration corrections
+and proving tests; do not claim that earlier review covers changed code.
+
+The retained health full-suite result is 4,800 passed / 24 skipped. Its original
+launcher exited 143 after suite completion; the receipt was recovered by
+reusing that result and rerunning the other short checks. Retain that distinction
+and the unresolved launcher-termination cause. It is not a successful uninterrupted
+gate or a substitute for the final combined clean-head Full/Evidence run.
 
 Materialize 2.4.1-beta.3 in all three version authorities through the existing
 staging tool. Require exact acceptance/release-note resolution and no remaining
@@ -48,6 +59,18 @@ failed attempts and their corrections. The focused provider lane admits 19 test
 profiles; it is not a new execution of all 21 native capability campaigns.
 Unchanged native October coverage retains beta.2's source-bound evidence.
 
+For health, retain the independent R1/R2 regressions: initial plan/task/child/lock
+fence failures keep correct attribution and execution protection; misplaced or
+duplicate parent bodies cannot certify settlement or publish navigation/cache
+state. Preserve useful approved execution, inverse retained-lock reporting,
+cancellation and single-worker drainage, superseded-snapshot refusal and
+one-content-read-per-record evidence. Prove loop progress using deterministic
+controls and record wall/CPU/GC observations without an arbitrary wall-time SLA.
+For diagnostics, retain failed-attempt audit persistence, successful retry
+attribution, sanitization and sink-failure accounting; do not force a new retry
+policy or authority transition. The accepted garage D2 and production reapply
+are not reopened by this source release.
+
 ## 2. Publication and recovery preparation
 
 Publication needs Josh's applicable Ready authorization and the protected merge
@@ -81,6 +104,8 @@ HAMCP-151 add-on restart does not supply Core activation or recovery authority.
    unrestricted environment or credential export. Take useful harmless native,
    delegated and retained task-history reads. Observe the existing approval panel
    without creating/approving a plan. Preserve any prior RC1 warning separately.
+   Complete the bounded health/diagnostics checks in section 4 before upstream
+   activation so the two changes have separately attributable observations.
 3. Prepare the exact 8.6 upstream admission: intended OCI package/architecture,
    component bytes/configuration, complete catalog, compiled policy/profile and
    authoritative signed applicability. Signing selects reviewed compiled
@@ -104,3 +129,40 @@ HAMCP-151 add-on restart does not supply Core activation or recovery authority.
 
 No push, CI trigger, signing, publication, installation, upstream upgrade,
 Core activation or household operation is authorized by source completion.
+
+## 4. Installed health and diagnostic continuity
+
+After separately authorized Engineering deployment and image binding, record a
+no-probe baseline and three serial unchanged `get_server_health(check_ha=false)`
+observations on the retained 8.5 provider. Retain per-call work counters, phase
+times, end-to-end duration, authority generation/retirements, provider admission,
+audit failures, pending approvals, task/lock/hold counts and recovery state.
+Compare current-inventory work with the once-per-record source contract;
+disclose counters that the installed interface cannot substantiate. The synthetic
+1,000-read fixture is not the household count. Async deep reads deliberately
+collect anew: zero repeat reads and increasing cache hits are not pass criteria.
+Phase wall times do not establish CPU time or maximum event-loop blockage.
+
+Within this bounded window, perform one useful native read, one admitted
+delegated read and one retained successful plan/task read without replay; finish
+with no-probe health settlement. Require truthful work accounting and no new
+storage/audit fault, unexplained admission loss, fallback or authority churn.
+Preserve and reconcile concurrent legitimate work rather than assuming the
+household was idle. An explained concurrent update may yield the fixed
+`health_snapshot_superseded` refusal; retain it and do not reclassify it as disk
+corruption or silently retry the same acceptance observation.
+
+Use retained offline concurrency/cancellation and fault-injection evidence for
+paths that cannot be exercised by installed read-only checks. Do not create a
+plan, mutate a store, disconnect Core, restart a service or force an authority
+failure solely to exercise diagnostics. If a natural reconciliation failure or
+retry occurs, retain its available sanitized audit evidence and reconcile the
+transition. If none occurs, report the installed failure-event path as not
+exercised, with source evidence retained. Stable observed authority is not proof
+that the historical October disconnect's cause has been established or fixed.
+
+Any later authorized upstream activation retains its own identity, catalog,
+admission, useful-read and settlement checks from section 3. Stop affected
+acceptance on provider loss, unexplained retirement, new storage fault,
+uncertain execution or fallback. Do not trigger another restart or household
+canary automatically to manufacture a pass.

@@ -2,6 +2,10 @@
 
 Engineering **2.4.1-beta.3** adds exact **ha-mcp 8.6.0** compatibility on top
 of beta.2's **Core 2026.10.0** support, retaining the working 8.5.0 contracts.
+It also makes explicit deep-health collection yield between records and adds
+bounded Core reconciliation failure attribution. These corrections preserve
+authority, execution ownership and storage-failure handling; they do not establish
+the cause of the historical October disconnect or an installed latency guarantee.
 The healthy catalog remains **83 tools: 58 native and 25 admitted delegated
 reads**. The exact reference/component search variants, skill-guide migration,
 and closed template/scene/blueprint adapters require compiled compatibility and

@@ -2,8 +2,34 @@
 
 Engineering 2.4.1-beta.3 adds exact ha-mcp **8.6.0** compatibility on top of
 beta.2's **Core 2026.10.0** support. It retains the existing 8.5.0 provider and
-September contracts. Installing Engineering does not upgrade upstream, select
-new signed authority or admit an unreviewed operation.
+September contracts. The same release integrates cooperative deep-health
+collection and bounded Core reconciliation diagnostics. Installing Engineering
+does not upgrade upstream, select new signed authority or admit an unreviewed
+operation.
+
+Explicit asynchronous health now reads each retained plan, parent, child and
+manifest once per call, yields during collection, and reuses validated records
+for F3 reconciliation. In the offline 200-parent/three-child fixture, this reduces
+5,000 cold / 4,800 repeated reads to 1,000 per call. These are synthetic operation
+counts, not installed latency results. Every explicit async request still makes
+a fresh integrity collection; historical warm-cache acceptance criteria do not
+apply to this path. Routine request readiness continues without a history scan.
+Per-file I/O remains synchronous and external-process snapshot checks are
+optimistic. See [health behavior and limits](HEALTH_PERFORMANCE.md).
+
+Initial consistency-fence failures retain their storage attribution and execution
+readiness protection. Collected parent records must match their canonical
+plan/task filenames before they can certify settlement. Concurrent writer
+movement remains a local `health_snapshot_superseded` refusal; cancellation does
+not publish partial navigation or transfer worker ownership prematurely. No
+durable format, approval, dispatch or recovery authority is changed.
+
+Core reconciliation now records fixed, sanitized early-failure reasons through
+the existing audit sink and identifies successful `failure_retry` events.
+The 300-second failure pacing, signed authority, retirement and stale-plan
+controls remain unchanged. The diagnostics cannot reconstruct discarded
+historical details, and neither correction proves the cause of the October
+disconnect. See [diagnostic fields and limits](CORE_AUTHORITY_DIAGNOSTICS.md).
 
 The healthy catalog remains **83 tools: 58 native and 25 delegated reads**.
 On 8.6, `ha_get_skill_guide` takes `file` (default `SKILL.md`) instead of the
@@ -25,7 +51,8 @@ checks. Core 2026.10.0 with 8.6.0 has an exact adapter binding to beta.2's uncha
 October probe. Its fingerprint and all 21 Core capability contracts are retained;
 a signature cannot supply a missing parser or adapter. Future versions are not
 covered. Backup, lifecycle and operation-status remain held. Govee package work
-and HAMCP-151 restart are separate.
+is shelved; HAMCP-151 automated add-on restart is owner-deferred with admission
+held. Neither is included in this release.
 
 The prior 8.6 source review and September amd64 disposable receipts are retained.
 This release adds fixed September/October CI rows for native amd64 and arm64,
