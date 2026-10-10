@@ -44,7 +44,8 @@ class PublicationCIContextTests(unittest.TestCase):
         command = next(line for line in step["run"].splitlines() if line.startswith("python "))
         env = {**self.env, "GITHUB_EVENT_NAME": event, "RUNNER_TEMP": str(runner),
                "ASSESSMENT_ARCH": row["architecture"], "UPSTREAM_VERSION": row["upstream_version"],
-               "ASSESSMENT_CORE": row["candidate_core_version"]}
+               "ASSESSMENT_CORE": row["candidate_core_version"],
+               "ASSESSMENT_PROFILE": row.get("candidate_profile", "legacy")}
         if event == "pull_request":
             env.update(GITHUB_REF="refs/pull/999/merge",
                        GITHUB_WORKFLOW_REF="jeter-1/hass-mcp-admin/.github/workflows/ci.yml@refs/pull/999/merge")
@@ -81,7 +82,10 @@ class PublicationCIContextTests(unittest.TestCase):
         self.assertEqual(self.publisher["jobs"]["validate"]["needs"], "detect-release")
         self.assertEqual(self.publisher["jobs"]["validate"]["if"],
                          "needs.detect-release.outputs.release_action == 'publish'")
-        self.assertEqual(len(self.rows), 6)
+        historical = [row for row in self.rows if row["upstream_version"] != "8.6.0"]
+        added = [row for row in self.rows if row["upstream_version"] == "8.6.0"]
+        self.assertEqual(len(historical), 6)
+        self.assertEqual(len(added), 8)
         for event in (*triggers, "pull_request"):
             for row in self.rows:
                 with self.subTest(event=event, row=row), tempfile.TemporaryDirectory() as tmp:
@@ -94,6 +98,8 @@ class PublicationCIContextTests(unittest.TestCase):
                     receipt = json.loads((Path(tmp) / (identity + "-evidence/receipt.json")).read_text())
                     self.assertEqual(receipt["status"], "PASS")
                     self.assertEqual(receipt["source"], self.env["GITHUB_SHA"])
+                    self.assertEqual(receipt["profile"], row.get("candidate_profile", "legacy"))
+                    self.assertEqual(receipt["core_version"], row["candidate_core_version"])
                     result, output, assess, clean, _, _ = self.invoke(row, Path(tmp), event=event, cleanup=True)
                     self.assertEqual(result, 0, output)
                     clean.assert_called_once_with(identity)
