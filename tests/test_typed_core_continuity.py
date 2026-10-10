@@ -359,7 +359,10 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
 
     def test_original_seventeen_fingerprints_are_not_redefined(self):
         journal = json.loads((ROOT/'upstream-trust/ha-core-release-registry.json').read_text())
-        references = journal['envelopes'][-1]['entries'][0]['capabilities']
+        original_entries = [entry for entry in journal['envelopes'][-1]['entries']
+                            if entry['version'] == '2026.9.2']
+        self.assertEqual(len(original_entries), 1)
+        references = original_entries[0]['capabilities']
         compiled = {p.capability_id:p.contract_fingerprint for p in CORE_CAPABILITY_PROFILES}
         self.assertEqual({p['capability_id']:p['contract_fingerprint'] for p in references}, compiled)
         self.assertEqual(len(CORE_TYPED_OPERATION_PROFILES), 2)
