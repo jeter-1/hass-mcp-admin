@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+from itertools import count
 import json
 import threading
 import time
@@ -311,7 +312,12 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_phase_measurements_are_per_call_and_do_not_survive_sync_read(self):
         await self.fixture.update_plan()
-        cold = await self.service.async_health_summary()
+        # Real sub-microsecond phases may legitimately round to 0.000 ms.
+        # Advance only the service's clock, preserving asyncio's real clock.
+        clock = Mock(wraps=time)
+        clock.monotonic.side_effect = count(step=0.01)
+        with patch.object(service_module, "time", clock):
+            cold = await self.service.async_health_summary()
         phases = cold["plan_store_scaling"]["hot_paths"]["governance_health"]["phase_elapsed_ms"]
         self.assertEqual(set(phases), {
             "reader_wait_ms", "abandoned_worker_wait_ms", "snapshot_ms",
@@ -321,10 +327,13 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(isinstance(value, float) and value >= 0 for value in phases.values()))
         self.assertGreater(phases["validation_wait_ms"], 0)
         self.assertLessEqual(phases["worker_elapsed_ms"], phases["validation_wait_ms"] + 0.001)
-        warm = await self.service.async_health_summary()
+        clock.monotonic.side_effect = count(start=1000.0, step=0.02)
+        with patch.object(service_module, "time", clock):
+            warm = await self.service.async_health_summary()
         warm_phases = warm["plan_store_scaling"]["hot_paths"]["governance_health"]["phase_elapsed_ms"]
         for field in ("validation_wait_ms", "worker_elapsed_ms", "projection_ms", "assembly_ms"):
             self.assertGreater(warm_phases[field], 0)
+        self.assertGreater(warm_phases["worker_elapsed_ms"], phases["worker_elapsed_ms"])
         sync = self.service.health_summary()
         self.assertNotIn("phase_elapsed_ms", sync["plan_store_scaling"]["hot_paths"]["governance_health"])
 
