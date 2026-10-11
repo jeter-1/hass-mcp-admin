@@ -68,6 +68,17 @@ class PublicationValidationReuseTests(unittest.TestCase):
         with self.assertRaises(validation.Refusal):
             self.decide(dict(self.env, GITHUB_RUN_ATTEMPT="2"))
 
+    def test_scheduled_run_records_but_never_authorizes_publication(self):
+        # Nightly CI may bind its own receipt, but a schedule event is never a
+        # publication context, so decide() still refuses it.
+        self.env["GITHUB_EVENT_NAME"] = "schedule"
+        self.env["SOURCE_VALIDATION_RECEIPT"] = json.dumps(validation.record(self.root, self.env))
+        with self.assertRaisesRegex(validation.Refusal, "wrong_publication_workflow"):
+            self.decide()
+        for event in ("issue_comment", "pull_request_target", "", None):
+            with self.subTest(event=event), self.assertRaises(validation.Refusal):
+                validation.record(self.root, dict(self.env, GITHUB_EVENT_NAME=event))
+
     def test_historical_source_runs_discovery_even_when_trees_are_identical(self):
         self.git("commit", "--allow-empty", "-qm", "New workflow authority")
         trigger = self.git("rev-parse", "HEAD")
@@ -172,7 +183,25 @@ class PublicationValidationWiringTests(unittest.TestCase):
         self.assertEqual(source["outputs"]["source_validation"],
                          "${{ steps.source_receipt.outputs.source_validation }}")
         unit, receipt = source["steps"][-2:]
-        self.assertEqual(unit["run"], validation.COMMAND)
+        # The receipt's command identity names the sharded full discovery; the
+        # step itself is the completeness aggregate over this attempt's shards.
+        self.assertEqual(unit["id"], "unit_tests")
+        self.assertEqual(receipt["id"], "source_receipt")
+        self.assertEqual(
+            unit["run"],
+            'python scripts/unit_test_shards.py aggregate --manifests "$RUNNER_TEMP/unit-test-shards"',
+        )
+        self.assertEqual(
+            validation.COMMAND,
+            "python scripts/unit_test_shards.py aggregate"
+            " (all shards of: python -m unittest discover -s tests -v)",
+        )
+        self.assertTrue(unit["run"].startswith(validation.COMMAND.split(" (", 1)[0] + " "))
+        for bound in ("scripts/unit_test_shards.py", "ci/unit-test-shards.json",
+                      ".github/workflows/ci.yml", "scripts/publication_validation.py"):
+            self.assertIn(bound, validation.BOUND_FILES)
+        self.assertEqual(source["needs"], ["validate_prerequisites", "unit_test_shards"])
+        self.assertNotIn("if", source)
         self.assertEqual(receipt["env"]["FULL_SUITE_OUTCOME"], "${{ steps.unit_tests.outcome }}")
         for step in (unit, receipt):
             self.assertNotIn("continue-on-error", step)

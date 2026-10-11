@@ -79,7 +79,7 @@ def version_code(version):
 def core_code(core_version, version):
     require((core_version, version) in {
         ("2026.9.2", "8.4.3"), ("2026.9.2", "8.5.0"), ("2026.9.3", "8.5.0"),
-        ("2026.9.4", "8.6.0"), ("2026.10.0", "8.6.0"),
+        ("2026.9.4", "8.6.0"), ("2026.10.0", "8.5.0"), ("2026.10.0", "8.6.0"),
     }, "core_pair_invalid")
     return {"2026.9.2": "", "2026.9.3": "c3", "2026.9.4": "c4", "2026.10.0": "c10"}[core_version]
 
@@ -121,7 +121,7 @@ def execution_guard(env, architecture, version="8.5.0", core_version="2026.9.2",
     event, ref = env.get("GITHUB_EVENT_NAME"), env.get("GITHUB_REF", "")
     require(
         event == "pull_request" and re.fullmatch(r"refs/pull/[1-9][0-9]*/merge", ref)
-        or event in {"push", "workflow_dispatch"} and ref == BRANCH
+        or event in {"push", "workflow_dispatch", "schedule"} and ref == BRANCH
         # Reusable CI inherits the publisher's event and workflow reference.
         # This admits disposable validation only; the publisher independently
         # verifies the merge handoff before it can claim or publish a release.
@@ -194,7 +194,7 @@ def docker(*args, timeout=90, check=True):
 
 
 def resource_names(identity):
-    require(re.fullmatch(r"h(843|850|850c3|860c4[rc]|860c10[rc])-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
+    require(re.fullmatch(r"h(843|850|850c3|850c10|860c4[rc]|860c10[rc])-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
 

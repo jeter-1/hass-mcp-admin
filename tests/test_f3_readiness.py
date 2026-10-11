@@ -14,6 +14,7 @@ from tests import test_f3_orphan_child_recovery as history_fixtures
 from tests import test_beta24_pre_rc_hardening as gateway_fixtures
 from ha_mcp_engineering import application
 from tests.test_catalog_readiness import application_gateway
+from support.real_time import real_time_measurement
 
 
 class ReadinessHistoryTests(unittest.IsolatedAsyncioTestCase):
@@ -25,6 +26,7 @@ class ReadinessHistoryTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.fixture.asyncTearDown()
 
+    @real_time_measurement("asserts readiness request time and thread CPU gap bounds")
     async def test_routine_readiness_never_traverses_retained_history(self):
         for count in (0, 12, 200, 1023):
             with self.subTest(history=count):

@@ -21,6 +21,7 @@ from ha_mcp_engineering.governance.task_storage import (
     ExecutionTaskStorageError,
     _TASK_NAVIGATION_FIELDS,
 )
+from support.real_time import real_time_measurement
 
 
 class ChildCollectionTests(unittest.IsolatedAsyncioTestCase):
@@ -38,6 +39,7 @@ class ChildCollectionTests(unittest.IsolatedAsyncioTestCase):
         return HealthScanFence(((ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
                                 lambda: HealthScanFence.stamp(self.children.root)),))
 
+    @real_time_measurement("asserts event-loop wall and CPU gap bounds")
     async def test_reads_each_parent_envelope_and_manifest_once_and_yields_throughout(self):
         self.fixture._populate_terminal_history(task_count=200, declarations_per_task=3)
         parents = self.fixture.service.task_repository

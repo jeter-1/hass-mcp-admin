@@ -185,7 +185,12 @@ def fake_http_endpoint(
             return
 
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    # A short poll keeps shutdown() from waiting out the default 0.5 s poll.
+    thread = threading.Thread(
+        target=server.serve_forever,
+        kwargs={"poll_interval": 0.05},
+        daemon=True,
+    )
     thread.start()
     try:
         host, port = server.server_address

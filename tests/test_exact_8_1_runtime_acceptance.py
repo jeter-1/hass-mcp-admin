@@ -12,6 +12,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from jsonschema import validate
+import yaml
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,9 @@ from ha_mcp_engineering.ha_core_readmission.profiles import (  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.source import (  # noqa: E402
     capability_evidence_for_probes,
 )
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
+from support.support_window_matrix import rows as support_rows  # noqa: E402
 
 
 def _load_script(name: str):
@@ -468,7 +472,35 @@ class ExactAddonProfileTests(unittest.TestCase):
 
     def test_workflow_pins_all_exact_addon_release_profiles(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        for value in (
+        ci = yaml.safe_load(workflow)
+        addon_job = ci["jobs"]["exact-addon-runtime-acceptance"]
+        # Add-on lanes derive from ci/support-window.yaml; only the in-window
+        # live-detail release profile (rollback 8.4.3) keeps its digest pins.
+        self.assertEqual(
+            addon_job["strategy"]["matrix"],
+            "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}",
+        )
+        in_window = {
+            "addon_amd64_index_digest": "sha256:366361a088089f3cb55b51318d86eeb968f3deb913a41397d741075da879c2fb",
+            "addon_amd64_manifest_digest": "sha256:13ed061af93d539b0872564ea340e4e683b5d437e5a520a3ac5d4e9732442b32",
+            "addon_arm64_index_digest": "sha256:90e850213882d6c83dd4b2076546d34873b90e83800eadaccd94558936dd74b3",
+            "addon_arm64_manifest_digest": "sha256:a51107e1a1f1f9dec9c52b9a9e714362a3f2374e80613d8c4810e8f54e43c41e",
+        }
+        live = [row for row in support_rows("addon", "full") if "addon_detail_profile" in row]
+        self.assertEqual(len(live), 1)
+        self.assertEqual(
+            live[0],
+            {"upstream_version": "8.4.3", "support_slot": "rollback",
+             "addon_detail_profile": "live-8.4.3", "secret_path": "/beta58-synthetic/mcp",
+             **in_window},
+        )
+        self.assertIn("8.4.3", addon_acceptance.EXACT_ADDON_PROFILES)
+        self.assertFalse(any("addon_detail_profile" in row
+                             for row in support_rows("addon", "pr")))
+        # Retired out-of-window live-detail lanes (8.0.0, 8.1.0, 8.1.1, 8.2.0,
+        # 8.4.1) must not silently return to CI.
+        window = (ROOT / "ci/support-window.yaml").read_text(encoding="utf-8")
+        for retired in (
             "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
             "sha256:65856752c37e4c1f9093060fbbc4a1a826cac1cbd6a76e856af5f5672a96c404",
             "sha256:2744a11c90f7a66e61fabe8166d058191d236094393c50d976978407c039d45d",
@@ -487,20 +519,23 @@ class ExactAddonProfileTests(unittest.TestCase):
             "sha256:3fbe577a9e50ecdb91291b7c1346fff8a2f46a515e29f4a21cfebd8de7e588c3",
             "sha256:40f6762f85fe7f228c929c9fe6185eaf4bd23ce28887a7e52027bcd068c3dc78",
             "sha256:69a738be869064819788d5db84691045ae78f60e092335e3c194f5dfe7ba5031",
-            "sha256:366361a088089f3cb55b51318d86eeb968f3deb913a41397d741075da879c2fb",
-            "sha256:13ed061af93d539b0872564ea340e4e683b5d437e5a520a3ac5d4e9732442b32",
-            "sha256:90e850213882d6c83dd4b2076546d34873b90e83800eadaccd94558936dd74b3",
-            "sha256:a51107e1a1f1f9dec9c52b9a9e714362a3f2374e80613d8c4810e8f54e43c41e",
         ):
-            self.assertIn(value, workflow)
-        self.assertIn(
-            "matrix.upstream_version == '8.1.0' || "
-            "matrix.upstream_version == '8.1.1' || "
-            "matrix.upstream_version == '8.2.0' || "
-            "matrix.upstream_version == '8.4.1' || "
-            "matrix.upstream_version == '8.4.3'",
-            workflow,
-        )
+            self.assertNotIn(retired, workflow)
+            self.assertNotIn(retired, window)
+        for value in in_window.values():
+            self.assertNotIn(value, workflow)  # pinned in the window, not ci.yml
+            self.assertIn(value, window)
+        # Every in-window gateway version needs the lifecycle, readmission and
+        # dashboard-authority evidence, so those steps are unconditional.
+        gateway = {step.get("name"): step for step in ci["jobs"]["exact-image-read-gateway"]["steps"]}
+        for name in ("Verify exact reviewed dashboard authority",
+                     "Verify exact stdio lifecycle",
+                     "Verify exact disconnect and readmission"):
+            self.assertNotIn("if", gateway[name])
+        for name in ("Upload exact reviewed dashboard authority evidence",
+                     "Upload bounded lifecycle evidence"):
+            self.assertEqual(gateway[name]["if"], "always()")
+        self.assertNotIn("matrix.upstream_version ==", workflow)
         self.assertIn("exact_image_readmission_acceptance.py", workflow)
         self.assertIn("exact_image_sidecar_lifecycle_acceptance.py", workflow)
         self.assertIn("docker exec -i", workflow)
@@ -521,33 +556,28 @@ class ExactAddonProfileTests(unittest.TestCase):
             "exact-read-gateway-upstream:/tmp/exact-image-sidecar-lifecycle-result.json",
             workflow,
         )
-        self.assertIn(
+        # The 8.1.0 custom-component worker-shutdown lane is out of window and
+        # retired from CI; its script and unit coverage remain in this module.
+        self.assertNotIn(
             "exact_custom_component_shutdown_acceptance.py", workflow
         )
-        self.assertIn(
+        self.assertNotIn(
             "d1ea2b571e5737c59e459d155163ae750228c2e455796e38f848c543720ba108",
             workflow,
         )
+        self.assertNotIn("Verify exact 8.1.0 custom-component worker shutdown", workflow)
+        self.assertNotIn("exact-custom-component-shutdown-result.json", workflow)
         self.assertIn(
             'EXPECTED_SOURCE_COMMIT: ${{ matrix.source_commit }}',
             workflow,
         )
-        self.assertIn(
+        for retired in (
             'test "$source_commit" = 0683f5ff34e5c71f35bce08d1cedcdee3c0a60b2',
-            workflow,
-        )
-        self.assertIn(
             'test "$EXPECTED_IMAGE_REVISION" = 6213fc8047171a2731af6299f9bcecd73e96fcad',
-            workflow,
-        )
-        self.assertIn(
-            'test "$EXPECTED_IMAGE_REVISION" != "$source_commit"',
-            workflow,
-        )
-        self.assertIn(
             "custom_components/ha_mcp_tools/embedded_server.py",
-            workflow,
-        )
+            "raw.githubusercontent.com/homeassistant-ai/ha-mcp",
+        ):
+            self.assertNotIn(retired, workflow)
         self.assertIn(
             "exact-image-sidecar-lifecycle-result.json", workflow
         )
@@ -570,12 +600,10 @@ class ExactAddonProfileTests(unittest.TestCase):
             workflow,
         )
         self.assertIn("docker stop --time 20", workflow)
+        # Lifecycle evidence uploads are unconditional (always()) for every
+        # in-window version rather than gated on a version list.
         self.assertIn(
-            "always() && (matrix.upstream_version == '8.1.0' || "
-            "matrix.upstream_version == '8.1.1' || "
-            "matrix.upstream_version == '8.2.0' || "
-            "matrix.upstream_version == '8.4.1' || "
-            "matrix.upstream_version == '8.4.3' || matrix.upstream_version == '8.5.0' || matrix.upstream_version == '8.6.0')",
+            "      - name: Upload bounded lifecycle evidence\n        if: always()\n",
             workflow,
         )
         self.assertNotIn("--delete-branch", workflow)

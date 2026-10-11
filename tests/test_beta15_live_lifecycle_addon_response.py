@@ -13,6 +13,9 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 BETA = ROOT / "hass_mcp_engineering_beta"
 sys.path.insert(0, str(BETA))
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
+from support.support_window_matrix import rows as support_rows  # noqa: E402
 
 from ha_mcp_engineering.clients.upstream_read import McpReadResult  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
@@ -215,15 +218,24 @@ class LiveLifecycleAddonResponseTests(unittest.IsolatedAsyncioTestCase):
             ROOT / "scripts/exact_addon_runtime_acceptance.py"
         ).read_text(encoding="utf-8")
 
-        self.assertIn("addon_detail_profile: live-8.0.0", workflow)
-        self.assertIn("addon_detail_profile: live-8.1.0", workflow)
+        # Live-detail lanes derive from ci/support-window.yaml; the retired
+        # live-8.0.0/live-8.1.0 lanes must stay out of CI.
+        self.assertNotIn("addon_detail_profile: live-8.0.0", workflow)
+        self.assertNotIn("addon_detail_profile: live-8.1.0", workflow)
+        self.assertNotIn(
+            "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
+            workflow,
+        )
         self.assertIn(
             '--addon-detail-profile "$ADDON_DETAIL_PROFILE"', workflow
         )
         self.assertIn(
-            "sha256:693ecd5c68f98e64111fbf58e02547a51b2168a942056684dbe262c550aff9cd",
-            workflow,
+            "ADDON_DETAIL_PROFILE: ${{ matrix.addon_detail_profile }}", workflow
         )
+        live = [row["addon_detail_profile"] for row in support_rows("addon", "full")
+                if "addon_detail_profile" in row]
+        self.assertEqual(live, ["live-8.4.3"])
+        self.assertIn('"live-8.4.3"', fixture)
         self.assertIn("SOURCE_DERIVED_MINIMUM_ADDON_DETAIL_BYTES", fixture)
         self.assertIn('ADDON_DETAIL_PROFILE = "compact"', fixture)
         self.assertIn(

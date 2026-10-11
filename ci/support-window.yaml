@@ -1,0 +1,80 @@
+# Compatibility support window for Engineering CI (HAMCP-154).
+#
+# Josh is the only consumer of the Engineering add-on, so compatibility CI covers
+# only three slots per component:
+#   current   - what is deployed now
+#   candidate - the next version under evaluation (evaluation only; a passing lane
+#               never admits anything, and admission policy, the signed registries
+#               and any upstream HOLD are decided elsewhere)
+#   rollback  - the version that ran immediately before current
+#
+# Tiers (scripts/support_window.py derives every lane matrix from this file):
+#   pr   - pull_request runs: current + candidate
+#   full - nightly schedule, workflow_dispatch and every workflow_call (the
+#          release/publication gate): current + candidate + rollback
+#
+# Lane pairing varies one component at a time from the current deployment:
+#   real-HA contract  : each Core slot in the tier, paired with ha_mcp.current
+#   exact-image gateway: each ha-mcp slot in the tier (Core is synthetic there)
+#   add-on runtime    : each ha-mcp slot's addon_runtime lanes, on core.current
+#
+# Rotation (the only file to edit for the window itself): when a candidate is
+# deployed, move current to rollback, candidate to current, and put the next
+# evaluation target in candidate. All three slots are required and must be
+# distinct; scripts/support_window.py refuses a missing, null or repeated slot.
+# Every pin must be an immutable digest copied from reviewed evidence. A Core slot
+# also needs tests/fixtures/core_<version>_lane_provenance.json, and the contract
+# scripts must already support the new pairing: for example the add-on acceptance
+# script must accept each ha-mcp version with the new current Core, or the window
+# refuses (addon_<slot>_pair_unsupported). Alarmo acceptance is bound to Core
+# 2026.9.4 by its own evidence model; tests/test_support_window.py fails when that
+# Core leaves the window, so re-binding or retiring Alarmo is an explicit decision.
+# The 2026.7.2 migration-fixture writer image in ci.yml is a deliberate constant
+# (it writes the persisted fixture), not a window slot.
+schema_version: 1
+
+core:
+  current:
+    version: "2026.10.0"
+    image_index_digest: sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4
+  candidate:
+    version: "2026.10.1"
+    image_index_digest: sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0
+  rollback:
+    version: "2026.9.4"
+    image_index_digest: sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76
+
+ha_mcp:
+  current:
+    version: "8.5.0"
+    image_index_digest: sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c
+    source_commit: 311d6dc273fb4e9a5b8cde0de15f69472a64fe44
+    source_archive_sha256: 02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e
+    addon_runtime:
+      - kind: candidate_power
+        profile: legacy
+        architectures: [amd64, arm64]
+  candidate:
+    version: "8.6.0"
+    image_index_digest: sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc
+    source_commit: fc54437a804858732e4bc927add98e202d879a09
+    addon_runtime:
+      - kind: candidate_power
+        profile: reference
+        architectures: [amd64, arm64]
+      - kind: candidate_power
+        profile: component
+        architectures: [amd64, arm64]
+  rollback:
+    version: "8.4.3"
+    image_index_digest: sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456
+    source_commit: eac7a3aa7063432e9af17e7d7726040e909c7b8f
+    source_archive_sha256: 4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc
+    addon_runtime:
+      - kind: live_detail
+        addon_detail_profile: live-8.4.3
+        secret_path: /beta58-synthetic/mcp
+        addon_amd64_index_digest: sha256:366361a088089f3cb55b51318d86eeb968f3deb913a41397d741075da879c2fb
+        addon_amd64_manifest_digest: sha256:13ed061af93d539b0872564ea340e4e683b5d437e5a520a3ac5d4e9732442b32
+        addon_arm64_index_digest: sha256:90e850213882d6c83dd4b2076546d34873b90e83800eadaccd94558936dd74b3
+        addon_arm64_manifest_digest: sha256:a51107e1a1f1f9dec9c52b9a9e714362a3f2374e80613d8c4810e8f54e43c41e

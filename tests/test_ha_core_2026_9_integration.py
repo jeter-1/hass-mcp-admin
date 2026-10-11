@@ -1960,8 +1960,18 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         import yaml
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         job = workflow["jobs"]["real-ha-contract-tests"]
-        matrix = job["strategy"]["matrix"]["include"]
+        self.assertEqual(job["strategy"]["matrix"],
+                         "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.real_ha) }}")
+        if str(ROOT / "tests") not in sys.path:
+            sys.path.append(str(ROOT / "tests"))
+        from support.support_window_matrix import rows as support_rows
+        matrix = support_rows("real_ha", "full")
         lane = next(row for row in matrix if row["ha_version"] == "2026.9.4")
+        # Core 2026.9.4 is now the support-window rollback slot: the Alarmo
+        # interval lane runs on the full tier (nightly, dispatch, release gate)
+        # and is not part of the pull-request tier.
+        self.assertEqual(lane["support_slot"], "rollback")
+        self.assertNotIn("2026.9.4", [row["ha_version"] for row in support_rows("real_ha", "pr")])
         provenance = _fixture(ROOT / "tests/fixtures/core_2026_9_4_lane_provenance.json")
         self.assertEqual(lane["ha_image"], "ghcr.io/home-assistant/home-assistant:2026.9.4@" + provenance["image_index_digest"])
         self.assertEqual(lane["ha_mcp_version"], "8.5.0")

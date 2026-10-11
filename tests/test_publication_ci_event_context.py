@@ -18,6 +18,7 @@ from unittest.mock import AsyncMock, patch
 
 import yaml
 from tests.test_ha_mcp_850_candidate_lane import lane, ROOT
+from tests.support.support_window_matrix import rows as support_rows, tier_for
 
 
 class PublicationCIContextTests(unittest.TestCase):
@@ -25,8 +26,12 @@ class PublicationCIContextTests(unittest.TestCase):
         self.publisher = yaml.safe_load((ROOT / ".github/workflows/publish-rc-image.yml").read_text())
         self.ci = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         self.job = self.ci["jobs"]["exact-addon-runtime-acceptance"]
-        self.rows = [row for row in self.job["strategy"]["matrix"]["include"]
-                     if row.get("candidate_power")]
+        # The add-on matrix is derived by prepare_exact_image_matrix from the
+        # support window; workflow_call inherits the publisher's event, which
+        # always selects the full tier.
+        self.assertEqual(self.job["strategy"]["matrix"],
+                         "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}")
+        self.rows = self.power_rows("workflow_run")
         self.env = {
             "GITHUB_ACTIONS": "true", "GITHUB_REPOSITORY": "jeter-1/hass-mcp-admin",
             "GITHUB_EVENT_NAME": "workflow_run", "GITHUB_REF": "refs/heads/main",
@@ -35,6 +40,10 @@ class PublicationCIContextTests(unittest.TestCase):
             "GITHUB_JOB": "exact-addon-runtime-acceptance",
             "GITHUB_RUN_ID": "1234", "GITHUB_RUN_ATTEMPT": "1",
         }
+
+    @staticmethod
+    def power_rows(event):
+        return [row for row in support_rows("addon", tier_for(event)) if row.get("candidate_power")]
 
     def invoke(self, row, runner, *, event="workflow_run", cleanup=False,
                overrides=None, checked_sha=None, assessment_error=None):
@@ -82,12 +91,18 @@ class PublicationCIContextTests(unittest.TestCase):
         self.assertEqual(self.publisher["jobs"]["validate"]["needs"], "detect-release")
         self.assertEqual(self.publisher["jobs"]["validate"]["if"],
                          "needs.detect-release.outputs.release_action == 'publish'")
-        historical = [row for row in self.rows if row["upstream_version"] != "8.6.0"]
-        added = [row for row in self.rows if row["upstream_version"] == "8.6.0"]
-        self.assertEqual(len(historical), 6)
-        self.assertEqual(len(added), 8)
+        for event in triggers:
+            self.assertEqual(tier_for(event), "full")
+        self.assertEqual(tier_for("pull_request"), "pr")
+        current = [row for row in self.rows if row["support_slot"] == "current"]
+        candidate = [row for row in self.rows if row["support_slot"] == "candidate"]
+        self.assertEqual({row["upstream_version"] for row in current}, {"8.5.0"})
+        self.assertEqual({row["upstream_version"] for row in candidate}, {"8.6.0"})
+        self.assertEqual(len(current), 2)
+        self.assertEqual(len(candidate), 4)
+        self.assertEqual(len(self.rows), 6)
         for event in (*triggers, "pull_request"):
-            for row in self.rows:
+            for row in self.power_rows(event):
                 with self.subTest(event=event, row=row), tempfile.TemporaryDirectory() as tmp:
                     result, output, assess, clean, git, _ = self.invoke(row, Path(tmp), event=event)
                     self.assertEqual(result, 0, output)

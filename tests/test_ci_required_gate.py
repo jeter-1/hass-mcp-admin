@@ -1,5 +1,6 @@
 """Exercise the required CI result gate without running or publishing workflows."""
 
+import ast
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 REQUIRED_JOBS = (
     "validate_prerequisites",
+    "unit_test_shards",
     "validate_packaging",
     "validate_source",
     "real-ha-contract-tests",
@@ -67,6 +69,12 @@ class RequiredCIGateTests(unittest.TestCase):
             {"types": ["opened", "reopened", "synchronize"]},
         )
         self.assertIn("workflow_call", events)
+        # Nightly and manual runs exercise the full support window.
+        self.assertEqual(events["schedule"], [{"cron": "17 7 * * *"}])
+        self.assertIn("workflow_dispatch", events)
+        self.assertEqual(
+            set(events), {"pull_request", "schedule", "workflow_dispatch", "workflow_call"}
+        )
         for name in REQUIRED_JOBS:
             self.assertNotIn("if", self.jobs[name])
         result = self._run(self._results())
@@ -101,6 +109,26 @@ class RequiredCIGateTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         for name in ("validate_prerequisites", "validate_source", "validate_packaging"):
             self.assertIn(name, result.stderr)
+
+    def test_failed_unit_shard_cannot_skip_source_receipt_into_success(self):
+        results = self._results()
+        results["unit_test_shards"]["result"] = "failure"
+        results["validate_source"]["result"] = "skipped"
+        result = self._run(results)
+        self.assertNotEqual(result.returncode, 0)
+        for name in ("unit_test_shards", "validate_source"):
+            self.assertIn(name, result.stderr)
+        self.assertFalse(self.jobs["unit_test_shards"]["strategy"]["fail-fast"])
+        self.assertFalse(self.jobs["unit_test_shards"].get("continue-on-error", False))
+
+    def test_embedded_required_job_tuple_matches_aggregate_needs(self):
+        step = self._step()["run"]
+        start = step.index("required_jobs = (")
+        tuple_text = step[start + len("required_jobs = "):step.index(")", start) + 1]
+        embedded = ast.literal_eval(tuple_text)
+        self.assertEqual(embedded, tuple(self.jobs["validate"]["needs"]))
+        self.assertEqual(set(embedded), set(REQUIRED_JOBS))
+        self.assertEqual(len(embedded), len(set(embedded)))
 
     def test_successful_preparation_cannot_hide_failed_matrix_child(self):
         # GitHub reports a failed matrix job family when any required child

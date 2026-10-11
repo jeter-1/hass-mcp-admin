@@ -150,19 +150,31 @@ class Rc2ReleaseTests(unittest.TestCase):
             (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         )
         job = workflow["jobs"]["real-ha-contract-tests"]
-        rows = {
-            row["ha_version"]: row
-            for row in job["strategy"]["matrix"]["include"]
-        }
-        for version in ("2026.9.0", "2026.9.1"):
-            row = rows[version]
-            self.assertIn(f":{version}@sha256:", row["ha_image"])
-            self.assertIn(":8.4.3@sha256:", row["ha_mcp_image"])
-            self.assertEqual(
-                row["ha_mcp_source_commit"],
-                "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
-            )
+        self.assertEqual(
+            job["strategy"]["matrix"],
+            "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.real_ha) }}",
+        )
+        if str(ROOT / "tests") not in sys.path:
+            sys.path.append(str(ROOT / "tests"))
+        from support.support_window_matrix import rows as support_rows
+
+        # The RC2 Core 2026.9.0/2026.9.1 lanes (paired with ha-mcp 8.4.3) are
+        # retired from CI; every derived lane stays immutable.
+        workflow_text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        for tier in ("pr", "full"):
+            rows = {row["ha_version"]: row for row in support_rows("real_ha", tier)}
+            for version in ("2026.9.0", "2026.9.1"):
+                self.assertNotIn(version, rows)
+                self.assertNotIn(version, workflow_text)
+            for version, row in rows.items():
+                self.assertRegex(row["ha_image"], rf":{re.escape(version)}@sha256:[0-9a-f]{{64}}$")
+                self.assertRegex(row["ha_mcp_image"], r":8\.5\.0@sha256:[0-9a-f]{64}$")
+                self.assertEqual(
+                    row["ha_mcp_source_commit"],
+                    "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+                )
         self.assertNotIn("permissions", job)
+        self.assertEqual(workflow["permissions"], {"contents": "read"})
         cleanup = next(
             step
             for step in job["steps"]
