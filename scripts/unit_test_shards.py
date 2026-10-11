@@ -12,6 +12,12 @@ manifest comes from this run attempt and commit, the shards are exactly
 shards equals the full discovered set with no duplicates, and every executed
 test succeeded (skips and expected failures are successes, as in unittest).
 Only then may the same-run full-discovery receipt be recorded.
+
+Skips are accounted as unittest accounts them. A test unittest never starts
+because its own class's ``setUpClass`` or its module's ``setUpModule`` raised
+``SkipTest`` is recorded once as skipped; any other assigned test that never
+started stays missing and is refused. A skipped subtest does not give its
+parent an outcome of its own, so a parent with no failing subtest is a success.
 """
 
 from __future__ import annotations
@@ -27,6 +33,9 @@ import subprocess
 import sys
 import time
 import unittest
+from unittest.case import _SubTest
+from unittest.suite import _ErrorHolder
+from unittest.util import strclass
 
 PLAN_FILE = "ci/unit-test-shards.json"
 REAL_TIME_ATTRIBUTE = "__hamcp_real_time_measurement__"
@@ -177,28 +186,47 @@ def run_identity(env):
 
 
 class RecordingResult(unittest.TextTestResult):
-    """Record each started test id and its final outcome."""
+    """Record each started test id and its final outcome.
+
+    Only started tests receive outcomes. A class or module fixture reports
+    through a placeholder (``setUpClass (module.Class)``); its skips and errors
+    are kept apart, so a fixture error stays unattributed.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.executed = []
         self.outcomes = {}
         self.durations = {}
-        self._started = {}
+        self.fixture_skips = set()
+        self.fixture_errors = set()
+        self.skipped_subtest_parents = set()
+        self.started = set()
+        self._start_times = {}
 
     def _set(self, test, outcome):
         test_id = test.id()
+        if test_id not in self.started:
+            return
         if outcome in SUCCESS_OUTCOMES and self.outcomes.get(test_id) not in (None, "success"):
             return
         self.outcomes[test_id] = outcome
 
+    def outcome(self, test_id):
+        """The final outcome; unittest reports none for a parent after a subtest skipped."""
+
+        if test_id in self.outcomes:
+            return self.outcomes[test_id]
+        return "success" if test_id in self.skipped_subtest_parents else "error"
+
     def startTest(self, test):
         self.executed.append(test.id())
-        self._started[test.id()] = time.monotonic()
+        self.started.add(test.id())
+        self._start_times[test.id()] = time.monotonic()
         super().startTest(test)
 
     def stopTest(self, test):
-        started = self._started.pop(test.id(), None)
+        started = self._start_times.pop(test.id(), None)
         if started is not None:
             self.durations[test.id()] = round(time.monotonic() - started, 3)
         super().stopTest(test)
@@ -209,7 +237,12 @@ class RecordingResult(unittest.TextTestResult):
 
     def addSkip(self, test, reason):
         super().addSkip(test, reason)
-        self._set(test, "skipped")
+        if isinstance(test, _SubTest):
+            self.skipped_subtest_parents.add(test.test_case.id())
+        elif isinstance(test, _ErrorHolder):
+            self.fixture_skips.add(test.id())
+        else:
+            self._set(test, "skipped")
 
     def addExpectedFailure(self, test, err):
         super().addExpectedFailure(test, err)
@@ -225,12 +258,36 @@ class RecordingResult(unittest.TextTestResult):
 
     def addError(self, test, err):
         super().addError(test, err)
+        if isinstance(test, _ErrorHolder):
+            self.fixture_errors.add(test.id())
         self._set(test, "error")
 
     def addSubTest(self, test, subtest, err):
         super().addSubTest(test, subtest, err)
         if err is not None:
             self._set(test, "failure" if issubclass(err[0], test.failureException) else "error")
+
+
+def fixture_skipped(selected, result):
+    """Rows for assigned tests never started because their own fixture raised SkipTest.
+
+    Each test's placeholder names are built from its own class and module the
+    way unittest builds them, so a skip never covers a test of another class or
+    module. A class placeholder counts only when unittest marked that class's
+    setup failed, and a fixture that also reported an error covers nothing.
+    """
+
+    rows = []
+    for case in selected:
+        if case.id() in result.started:
+            continue
+        cls = type(case)
+        placeholders = {f"setUpModule ({cls.__module__})"}
+        if getattr(cls, "_classSetupFailed", False) is True:
+            placeholders.add(f"setUpClass ({strclass(cls)})")
+        if placeholders & result.fixture_skips and not placeholders & result.fixture_errors:
+            rows.append([case.id(), "skipped"])
+    return rows
 
 
 def run_shard(root, shard, env, output):
@@ -249,7 +306,8 @@ def run_shard(root, shard, env, output):
         "shard": shard,
         **bound,
         "assigned": sorted(case.id() for case in selected),
-        "executed": [[test_id, result.outcomes.get(test_id, "error")] for test_id in result.executed],
+        "executed": [[test_id, result.outcome(test_id)] for test_id in result.executed]
+        + fixture_skipped(selected, result),
         "unattributed_errors": len([t for t, _ in result.errors if t.id() not in result.outcomes])
         + len([t for t, _ in result.failures if t.id() not in result.outcomes]),
         "was_successful": result.wasSuccessful(),

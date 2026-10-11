@@ -1,6 +1,7 @@
 """Sharded unit-suite completeness proof; synthetic disposable repositories only."""
 
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -363,6 +364,269 @@ class SplitModuleShardTests(ShardFixture):
         for index, (changes, category) in enumerate(cases):
             with self.subTest(changes=changes):
                 self.assertRefused(self.cli("describe", root=self.with_plan(f"bad{index}", **changes)), category)
+
+
+SKIP_PLAN = {"schema_version": 1, "general_shards": 1, "default_module_seconds": 1, "module_seconds": {}}
+
+CLASS_SKIP = {
+    "test_cls.py": """
+import unittest
+
+class Sample(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        raise unittest.SkipTest("synthetic optional prerequisite absent")
+
+    def test_one(self):
+        self.fail("must not run")
+
+    def test_two(self):
+        self.fail("must not run")
+
+class SampleExtra(unittest.TestCase):
+    def test_runs(self):
+        self.assertTrue(True)
+""",
+}
+
+MODULE_SKIP = {
+    "test_mod.py": """
+import unittest
+
+def setUpModule():
+    raise unittest.SkipTest("synthetic optional prerequisite absent")
+
+class First(unittest.TestCase):
+    def test_a(self):
+        self.fail("must not run")
+
+    def test_b(self):
+        self.fail("must not run")
+
+class Second(unittest.TestCase):
+    def test_c(self):
+        self.fail("must not run")
+""",
+    "test_mod_extra.py": """
+import unittest
+
+class Extra(unittest.TestCase):
+    def test_runs(self):
+        self.assertTrue(True)
+""",
+}
+
+SUBTEST_SKIP = {
+    "test_sub.py": """
+import unittest
+
+class Sample(unittest.TestCase):
+    def test_example(self):
+        with self.subTest(case="optional"):
+            self.skipTest("synthetic optional prerequisite absent")
+        with self.subTest(case="available"):
+            self.assertTrue(True)
+
+    def test_plain(self):
+        self.assertTrue(True)
+""",
+}
+
+SUBTEST_SKIP_AND_FAILURE = {
+    "test_sub.py": """
+import unittest
+
+class Sample(unittest.TestCase):
+    def test_example(self):
+        with self.subTest(case="optional"):
+            self.skipTest("synthetic optional prerequisite absent")
+        with self.subTest(case="broken"):
+            self.fail("synthetic failure")
+        with self.subTest(case="available"):
+            self.assertTrue(True)
+""",
+}
+
+CLASS_SETUP_ERROR = {
+    "test_cls.py": """
+import unittest
+
+class Sample(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        raise RuntimeError("synthetic fixture error")
+
+    def test_one(self):
+        self.assertTrue(True)
+
+class SampleExtra(unittest.TestCase):
+    def test_runs(self):
+        self.assertTrue(True)
+""",
+}
+
+MODULE_SETUP_ERROR = {
+    "test_mod.py": """
+import unittest
+
+def setUpModule():
+    raise RuntimeError("synthetic fixture error")
+
+class First(unittest.TestCase):
+    def test_a(self):
+        self.assertTrue(True)
+""",
+    "test_mod_extra.py": MODULE_SKIP["test_mod_extra.py"],
+}
+
+SKIP_BESIDE_NEVER_RUN = {
+    "test_cls.py": CLASS_SKIP["test_cls.py"] + """
+class Unready(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        raise RuntimeError("synthetic fixture error")
+
+    def test_never_runs(self):
+        self.assertTrue(True)
+""",
+}
+
+
+class SkipAccountingTests(unittest.TestCase):
+    """Synthetic suites through the real runner and aggregator, against plain unittest."""
+
+    def suite(self, modules):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.temp = Path(temp.name)
+        self.root = self.temp / "source"
+        (self.root / "tests").mkdir(parents=True)
+        for name, body in modules.items():
+            (self.root / "tests" / name).write_text(body.lstrip())
+        (self.root / "ci").mkdir()
+        (self.root / shards.PLAN_FILE).write_text(json.dumps(SKIP_PLAN))
+        for args in (("init", "-q"), ("config", "user.name", "Synthetic test"),
+                     ("config", "user.email", "synthetic@example.invalid"), ("add", "."),
+                     ("commit", "-qm", "Synthetic source")):
+            subprocess.check_call(["git", "-C", str(self.root), *args], stdout=subprocess.DEVNULL)
+        self.env = {**os.environ, "GITHUB_RUN_ID": "2001", "GITHUB_RUN_ATTEMPT": "1"}
+        self.manifests, self.shard_codes = [], []
+        for shard in json.loads(self.cli("count").stdout):
+            output = self.temp / "out" / f"m{shard}.json"
+            self.shard_codes.append(self.cli("run", "--shard", str(shard), "--output", str(output)).returncode)
+            self.manifests.append(json.loads(output.read_text()))
+        self.plain = subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=self.root,
+                                    env=self.env, capture_output=True, text=True, timeout=120)
+        result = self.aggregate(self.manifests)
+        self.assertEqual(result.returncode == 0, self.plain.returncode == 0,
+                         "sharded verdict differs from plain unittest:\n" + result.stderr + self.plain.stderr)
+        return result
+
+    def cli(self, *args):
+        return subprocess.run([sys.executable, str(SCRIPT), *args, "--repo-root", str(self.root)], env=self.env,
+                              cwd=str(self.root), capture_output=True, text=True, timeout=120)
+
+    def aggregate(self, manifests):
+        directory = Path(tempfile.mkdtemp(dir=self.temp))
+        for index, manifest in enumerate(manifests):
+            (directory / f"shard-{index}.json").write_text(json.dumps(manifest))
+        return self.cli("aggregate", "--manifests", str(directory))
+
+    def rows(self):
+        return sorted(row for manifest in self.manifests for row in manifest["executed"])
+
+    def assertAccepted(self, result, rows):
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.plain.returncode, 0, self.plain.stderr)
+        self.assertEqual(self.shard_codes, [0, 0])
+        self.assertEqual(self.rows(), sorted(rows))
+        self.assertEqual([m["unattributed_errors"] for m in self.manifests], [0, 0])
+
+    def assertRefused(self, result, category):
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("refused: " + category, result.stderr)
+        self.assertNotEqual(self.plain.returncode, 0)
+
+    def test_class_setup_skip_records_only_that_class_as_skipped(self):
+        result = self.suite(CLASS_SKIP)
+        self.assertAccepted(result, [["test_cls.Sample.test_one", "skipped"],
+                                     ["test_cls.Sample.test_two", "skipped"],
+                                     ["test_cls.SampleExtra.test_runs", "success"]])
+        self.assertIn("OK (skipped=1)", self.plain.stderr)
+
+    def test_module_setup_skip_records_only_that_module_as_skipped(self):
+        result = self.suite(MODULE_SKIP)
+        self.assertAccepted(result, [["test_mod.First.test_a", "skipped"], ["test_mod.First.test_b", "skipped"],
+                                     ["test_mod.Second.test_c", "skipped"],
+                                     ["test_mod_extra.Extra.test_runs", "success"]])
+
+    def test_skipped_subtest_leaves_parent_successful_without_extra_rows(self):
+        result = self.suite(SUBTEST_SKIP)
+        self.assertAccepted(result, [["test_sub.Sample.test_example", "success"],
+                                     ["test_sub.Sample.test_plain", "success"]])
+        self.assertIn("OK (skipped=1)", self.plain.stderr)
+
+    def test_failing_subtest_beside_skipped_subtest_fails_parent(self):
+        result = self.suite(SUBTEST_SKIP_AND_FAILURE)
+        self.assertRefused(result, "test_did_not_succeed")
+        self.assertEqual(self.rows(), [["test_sub.Sample.test_example", "failure"]])
+        self.assertEqual(self.shard_codes[0], 1)
+        self.assertFalse(self.manifests[0]["was_successful"])
+
+    def test_class_setup_error_is_refused(self):
+        result = self.suite(CLASS_SETUP_ERROR)
+        self.assertRefused(result, "shard_execution_incomplete_or_extra")
+        self.assertEqual(self.rows(), [["test_cls.SampleExtra.test_runs", "success"]])
+        self.assertEqual(self.manifests[0]["unattributed_errors"], 1)
+        self.assertFalse(self.manifests[0]["was_successful"])
+        self.assertEqual(self.shard_codes[0], 1)
+
+    def test_module_setup_error_is_refused(self):
+        result = self.suite(MODULE_SETUP_ERROR)
+        self.assertRefused(result, "shard_execution_incomplete_or_extra")
+        self.assertEqual(self.rows(), [["test_mod_extra.Extra.test_runs", "success"]])
+        self.assertEqual(self.manifests[0]["unattributed_errors"], 1)
+        self.assertFalse(self.manifests[0]["was_successful"])
+
+    def test_assigned_test_that_never_ran_is_refused_beside_a_recognized_skip(self):
+        result = self.suite(SKIP_BESIDE_NEVER_RUN)
+        self.assertRefused(result, "shard_execution_incomplete_or_extra")
+        self.assertIn("test_cls.Unready.test_never_runs", self.manifests[0]["assigned"])
+        self.assertNotIn("test_cls.Unready.test_never_runs", [t for t, _ in self.manifests[0]["executed"]])
+        self.assertIn(["test_cls.Sample.test_one", "skipped"], self.manifests[0]["executed"])
+
+    def test_forged_or_dropped_skip_rows_are_refused(self):
+        self.suite(CLASS_SKIP)
+        manifests = json.loads(json.dumps(self.manifests))
+        manifests[0]["executed"] = [r for r in manifests[0]["executed"] if r[0] != "test_cls.Sample.test_two"]
+        self.assertIn("refused: shard_execution_incomplete_or_extra", self.aggregate(manifests).stderr)
+        manifests = json.loads(json.dumps(self.manifests))
+        manifests[0]["executed"].append(["test_cls.Sample.test_two", "skipped"])
+        self.assertIn("refused: test_executed_more_than_once", self.aggregate(manifests).stderr)
+
+    def test_fixture_skip_attribution_uses_each_test_identity(self):
+        class Skipped(unittest.TestCase):
+            def test_x(self):
+                pass
+
+        class SkippedTwin(unittest.TestCase):
+            def test_x(self):
+                pass
+
+        Skipped._classSetupFailed = True
+        SkippedTwin._classSetupFailed = True
+        result = shards.RecordingResult(io.StringIO(), True, 0)
+        result.fixture_skips.add(f"setUpClass ({unittest.util.strclass(Skipped)})")
+        cases = [Skipped("test_x"), SkippedTwin("test_x")]
+        self.assertEqual(shards.fixture_skipped(cases, result), [[cases[0].id(), "skipped"]])
+        result.started.add(cases[0].id())
+        self.assertEqual(shards.fixture_skipped(cases, result), [])
+        result.started.clear()
+        result.fixture_errors.add(f"setUpClass ({unittest.util.strclass(Skipped)})")
+        self.assertEqual(shards.fixture_skipped(cases, result), [])
+        result.fixture_errors.clear()
+        Skipped._classSetupFailed = False
+        self.assertEqual(shards.fixture_skipped(cases, result), [])
 
 
 if __name__ == "__main__":
