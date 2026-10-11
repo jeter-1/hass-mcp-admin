@@ -35,6 +35,9 @@ from ha_mcp_engineering.providers.upstream_contracts import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     UpstreamDashboardProvider,
 )
+from ha_mcp_engineering.capabilities import (  # noqa: E402
+    replace_dynamic_upstream_capabilities,
+)
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
@@ -140,6 +143,8 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.now = datetime(2026, 9, 4, 20, tzinfo=timezone.utc)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
+        # Each initialized gateway publishes its catalog process-wide.
+        self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
 
     def _registry(self, entry: dict | None) -> SignedReleaseRegistry:
         raw = self.signer.journal_raw(
