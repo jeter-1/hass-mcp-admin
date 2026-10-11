@@ -92,10 +92,18 @@ class ProvenanceValueTests(unittest.TestCase):
     def test_capability_and_health_outputs_do_not_gain_provenance_fields(self):
         sys.path.insert(0, str(BETA_ROOT))
         try:
-            from ha_mcp_engineering.capabilities import build_capability_catalog
+            from ha_mcp_engineering.capabilities import (
+                build_capability_catalog,
+                replace_dynamic_upstream_capabilities,
+            )
             from ha_mcp_engineering.health import HealthRegistry
         finally:
             sys.path.pop(0)
+        # The counts below are the static catalog; start from the module's
+        # initial empty dynamic snapshot rather than whatever an earlier test
+        # module's gateway published in this process.
+        replace_dynamic_upstream_capabilities((), {})
+        self.addCleanup(replace_dynamic_upstream_capabilities, (), {})
         catalog = build_capability_catalog()
         health = HealthRegistry().snapshot({"checked": False, "status": "not_checked"})
         self.assertEqual(catalog["registered_count"], 58)
