@@ -534,7 +534,7 @@ jobs:
           set -euo pipefail
           python scripts/review_upstream_read_release.py ci-matrix > "$RUNNER_TEMP/reviewed-registry-matrix.json"
           test -s "$RUNNER_TEMP/reviewed-registry-matrix.json"
-          python scripts/support_window.py --tier full \
+          python scripts/support_window.py \
             --registry-matrix "$RUNNER_TEMP/reviewed-registry-matrix.json" \
             --github-output "$GITHUB_OUTPUT"
 
