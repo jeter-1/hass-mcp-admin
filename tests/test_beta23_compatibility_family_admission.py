@@ -5,9 +5,13 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.compatibility_family import (
     CompatibilityFamilyError,
@@ -30,7 +34,6 @@ from scripts.admit_upstream_compatibility_family import (
 )
 
 
-ROOT = Path(__file__).resolve().parents[1]
 CAPTURE_DIR = ROOT / "docs/evidence/upstream-read-compatibility"
 FAMILY_PATH = (
     ROOT

@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from statistics import median
+import sys
 import time
 import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
 from ha_mcp_engineering.dependency.extraction import (
     MAX_CONTEXT_ENTITY_IDS,

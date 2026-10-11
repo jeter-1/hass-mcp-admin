@@ -189,6 +189,7 @@
   "test_logbook_bounds": 1,
   "test_mcp_inbound_security": 1,
   "test_mcp_sdk_compatibility": 1,
+  "test_module_isolation": 8,
   "test_prepare_ha_mcp_release_registry_update": 3,
   "test_prepare_ha_mcp_release_registry_workflow": 1,
   "test_promotion_regression_manifest": 10,

@@ -7,6 +7,9 @@ import sys
 import tempfile
 import unittest
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+
 from ha_mcp_engineering.dependency.semantic_registry import (
     SEMANTIC_REGISTRY_CATEGORIES,
     SEMANTIC_REGISTRY_FILE,
@@ -17,9 +20,6 @@ from ha_mcp_engineering.dependency.semantic_registry import (
     semantic_registry_identity,
     semantic_registry_sha256,
 )
-
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class TemplateSemanticRegistryTests(unittest.TestCase):
