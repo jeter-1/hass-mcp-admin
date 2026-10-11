@@ -16,8 +16,9 @@ Only then may the same-run full-discovery receipt be recorded.
 Skips are accounted as unittest accounts them. A test unittest never starts
 because its own class's ``setUpClass`` or its module's ``setUpModule`` raised
 ``SkipTest`` is recorded once as skipped; any other assigned test that never
-started stays missing and is refused. A skipped subtest does not give its
-parent an outcome of its own, so a parent with no failing subtest is a success.
+started stays missing and is refused. A skipped subtest gives its parent no
+outcome of its own: the parent keeps any failure, error or skip it reports and
+is otherwise a success.
 """
 
 from __future__ import annotations
