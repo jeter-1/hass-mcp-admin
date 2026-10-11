@@ -100,7 +100,12 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 
 ## Default Workflow
 
-- Start new tasks in a fresh worktree from freshly fetched origin/main. Existing checkouts may be historical.
+- For new implementation work with no specified starting revision, start in a
+  fresh worktree from freshly fetched origin/main. Existing checkouts may be
+  historical.
+- For reviews, corrective follow-ups, continuations, and historical
+  investigations, use the exact branch, commit, or PR head the task names.
+  Never substitute origin/main.
 - Inspect before editing. Inventory instructions, scripts, tests, workflows, and
   current release declarations before choosing an implementation.
 - Use one branch and preferably one worktree per logical pull request. Never
@@ -142,6 +147,22 @@ guidance conflicts. Nonconflicting root instructions continue to apply.
 - Do not merge, release, publish, promote, deploy, or change live systems without
   explicit authorization for that distinct action or the bounded Ready action
   above.
+
+## Work tracking
+
+- Work items live in the HAMCP "03 Task Register" (Google Sheet
+  1yaGx6TbKFNskb-hQLX6nN_bf-E0c_W0XlnZfaOF6I3E). Read and write it only
+  through the `register` command.
+- Start: `register get HAMCP-NNN`. If the work has no ID, create one with
+  `register add HAMCP Task="..." Outcome="..." Status=Active Owner="<agent>"`
+  and use the ID it prints.
+- Keep the row current at each step: Status=Active when you start;
+  Status=Blocked plus Blocker=... when blocked; Status=Completed when done.
+  Always update "Next Action". Record evidence with
+  "Notes+=Evidence: <PR/commit/tests>". Append, never overwrite Notes.
+- Edit only your own task's row.
+- Use the ID in commit messages, PR titles, completion reports, and names of
+  NEW branches. Continuation and correction work keeps its branch.
 
 ## Stable and Engineering Boundaries
 
