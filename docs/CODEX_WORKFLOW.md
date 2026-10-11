@@ -353,7 +353,9 @@ shard also requires the matching matrix entry.
 A rebalance can place any module first in its shard process, so a test module
 must not rely on another module having altered `sys.path` or other process
 state. `tests/test_module_isolation.py` runs the modules that once depended on
-suite order alone, loaded as a shard loads them, in a fresh interpreter.
+suite order alone, loaded as a shard loads them, in a fresh interpreter. It also
+requires each module that initializes an upstream read gateway to restore the
+empty process-wide dynamic catalog the gateway publishes.
 
 The full tier (schedule, `workflow_dispatch` and `workflow_call`) also
 regenerates the Beta 6 compatibility fixtures from their exact historical
