@@ -1,0 +1,203 @@
+name: Latest stable early warning
+
+# HAMCP-154: nightly, non-required observation of the newest stable Home
+# Assistant Core and ha-mcp releases (never drafts or prereleases). It runs the
+# real Home Assistant contracts against the newest Core, pinned by the digest
+# resolved in this run and paired with the support window's current reviewed
+# ha-mcp source. It never changes admission policy, the signed registries, any
+# upstream HOLD or ci/support-window.yaml, publishes nothing, and is not a
+# required check. A version outside the window or a contract failure fails this
+# workflow only, as a warning to rotate or onboard the window.
+on:
+  schedule:
+    - cron: "41 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: latest-stable-early-warning
+  cancel-in-progress: true
+
+jobs:
+  resolve_latest_stable:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      real_ha: ${{ steps.resolve.outputs.real_ha }}
+      summary: ${{ steps.resolve.outputs.summary }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
+      - name: Install support-window dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+      - name: Resolve newest stable releases and pin their image digests
+        id: resolve
+        env:
+          # Read-only workflow token, used only to avoid anonymous API rate limits.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/latest_stable_release.py resolve --github-output "$GITHUB_OUTPUT"
+
+  latest-stable-real-ha:
+    name: Latest stable Real HA ${{ matrix.lane }}
+    needs: resolve_latest_stable
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve_latest_stable.outputs.real_ha) }}
+    env:
+      HA_CONTRACT_LANE: ${{ matrix.lane }}
+      HA_CONTRACT_VERSION: ${{ matrix.ha_version }}
+      HA_CONTRACT_IMAGE: ${{ matrix.ha_image }}
+      HA_FIXTURE_WRITER_IMAGE: "ghcr.io/home-assistant/home-assistant:2026.7.2@sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b"
+      REAL_HA_EXPECTED_VERSION: ${{ matrix.ha_version }}
+      REAL_HA_UPSTREAM_IMAGE: ${{ matrix.ha_mcp_image }}
+      REAL_HA_UPSTREAM_VERSION: ${{ matrix.ha_mcp_version }}
+      REAL_HA_UPSTREAM_SOURCE_COMMIT: ${{ matrix.ha_mcp_source_commit }}
+      REAL_HA_UPSTREAM_SOURCE_SHA256: ${{ matrix.ha_mcp_source_sha256 }}
+      REAL_HA_UPSTREAM_CONTAINER: latest-real-ha-upstream-${{ matrix.lane }}
+      REAL_HA_UPSTREAM_PORT: "18086"
+      HA_WRITER_CONTAINER: latest-real-ha-writer-${{ matrix.lane }}
+      HA_CONTRACT_CONTAINER: latest-real-ha-${{ matrix.lane }}
+      HA_CONTRACT_NETWORK: latest-contract-${{ matrix.lane }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12.14"
+          cache: pip
+          cache-dependency-path: hass_mcp_engineering_beta/requirements.lock
+      - name: Install Engineering client dependencies
+        run: >-
+          python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r hass_mcp_engineering_beta/requirements.lock
+      - name: Prepare exact source and disposable migration configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_archive="$RUNNER_TEMP/ha-mcp-source-$HA_CONTRACT_LANE.tar.gz"
+          source_parent="$RUNNER_TEMP/ha-mcp-source-$HA_CONTRACT_LANE"
+          contract_dir="$RUNNER_TEMP/latest-real-ha-$HA_CONTRACT_LANE"
+          {
+            echo "REAL_HA_CONTRACT_DIR=$contract_dir"
+            echo "REAL_HA_DEVICE_FIXTURE=$contract_dir/beta23-device-fixture.json"
+            echo "REAL_HA_TOKEN_FILE=$RUNNER_TEMP/latest-real-ha-$HA_CONTRACT_LANE.token"
+          } >> "$GITHUB_ENV"
+          mkdir -p "$source_parent" "$contract_dir/custom_components"
+          curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
+            "https://codeload.github.com/homeassistant-ai/ha-mcp/legacy.tar.gz/$REAL_HA_UPSTREAM_SOURCE_COMMIT" \
+            --output "$source_archive"
+          printf '%s  %s\n' \
+            "$REAL_HA_UPSTREAM_SOURCE_SHA256" \
+            "$source_archive" | sha256sum --check --strict
+          tar -xzf "$source_archive" -C "$source_parent"
+          source_root="$(find "$source_parent" -mindepth 1 -maxdepth 1 -type d -print -quit)"
+          test -n "$source_root"
+          test "$(find "$source_parent" -mindepth 1 -maxdepth 1 -type d | wc -l)" = 1
+          printf 'HA_MCP_SOURCE_ROOT=%s\n' "$source_root" >> "$GITHUB_ENV"
+          cp -R \
+            tests/fixtures/real_ha_device_migration/custom_components/beta23_device_fixture \
+            "$contract_dir/custom_components/"
+          cp -R "$source_root/custom_components/ha_mcp_tools" \
+            "$contract_dir/custom_components/"
+          printf '%s\n' \
+            'default_config:' \
+            'automation: !include automations.yaml' \
+            'http:' \
+            '  server_port: 8123' \
+            'input_boolean: {}' \
+            'input_number: {}' \
+            'script: !include scripts.yaml' \
+            'kitchen_sink:' \
+            > "$contract_dir/configuration.yaml"
+          : > "$contract_dir/automations.yaml"
+          : > "$contract_dir/scripts.yaml"
+          docker network create --driver bridge "$HA_CONTRACT_NETWORK"
+      - name: Persist migration fixture with exact Home Assistant 2026.7.2
+        shell: bash
+        env:
+          REAL_HA_URL: http://127.0.0.1:18123
+        run: |
+          set -euo pipefail
+          docker pull "$HA_FIXTURE_WRITER_IMAGE"
+          docker run -d --name "$HA_WRITER_CONTAINER" \
+            --network "$HA_CONTRACT_NETWORK" -p 127.0.0.1:18123:8123 \
+            -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_FIXTURE_WRITER_IMAGE"
+          python scripts/real_ha_contract_tests.py --prepare-migration-fixture
+          docker stop --time 30 "$HA_WRITER_CONTAINER"
+          docker rm "$HA_WRITER_CONTAINER"
+      - name: Start disposable newest stable Home Assistant Core
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$HA_CONTRACT_IMAGE"
+          docker run -d --name "$HA_CONTRACT_CONTAINER" \
+            --network "$HA_CONTRACT_NETWORK" -p 127.0.0.1:8123:8123 \
+            -v "$REAL_HA_CONTRACT_DIR:/config" "$HA_CONTRACT_IMAGE"
+          echo "HA contract version: $HA_CONTRACT_VERSION"
+          docker image inspect "$HA_CONTRACT_IMAGE" \
+            --format='HA contract image digest: {{index .RepoDigests 0}}'
+      - name: Verify exact ha-mcp component inside disposable Home Assistant
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$REAL_HA_UPSTREAM_IMAGE"
+          docker cp "$HA_MCP_SOURCE_ROOT" "$HA_CONTRACT_CONTAINER:/tmp/ha-mcp-source"
+          docker cp scripts/disposable_ha_websockets_probe.py \
+            "$HA_CONTRACT_CONTAINER:/tmp/disposable_ha_websockets_probe.py"
+          docker exec "$HA_CONTRACT_CONTAINER" python \
+            /tmp/disposable_ha_websockets_probe.py \
+            --source-root /tmp/ha-mcp-source \
+            --upstream-version "$REAL_HA_UPSTREAM_VERSION" \
+            --output /tmp/ha-mcp-disposable-ha.json
+      - name: Run real Home Assistant contracts against the newest stable Core
+        env:
+          REAL_HA_URL: http://127.0.0.1:8123
+        run: python scripts/real_ha_contract_tests.py
+      - name: Remove disposable Home Assistant
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f "$REAL_HA_UPSTREAM_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f "$HA_CONTRACT_CONTAINER" >/dev/null 2>&1 || true
+          docker rm -f "$HA_WRITER_CONTAINER" >/dev/null 2>&1 || true
+          rm -f "$REAL_HA_TOKEN_FILE"
+          sudo rm -rf "$REAL_HA_CONTRACT_DIR"
+          docker network rm "$HA_CONTRACT_NETWORK" >/dev/null 2>&1 || true
+
+  report_latest_stable:
+    if: ${{ always() }}
+    needs:
+      - resolve_latest_stable
+      - latest-stable-real-ha
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report window position and contract outcome
+        env:
+          RESOLVE_RESULT: ${{ needs.resolve_latest_stable.result }}
+          CONTRACT_RESULT: ${{ needs['latest-stable-real-ha'].result }}
+          SUMMARY: ${{ needs.resolve_latest_stable.outputs.summary }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Latest stable early warning"
+            echo
+            echo "Resolution: $RESOLVE_RESULT; newest-Core contracts: $CONTRACT_RESULT"
+            echo
+            printf '```json\n%s\n```\n' "$SUMMARY"
+          } >> "$GITHUB_STEP_SUMMARY"
+          test "$RESOLVE_RESULT" = success
+          test "$CONTRACT_RESULT" = success
+          inside="$(printf '%s' "$SUMMARY" | jq -r '.inside_window')"
+          if [ "$inside" != true ]; then
+            echo "::warning::A newest stable release is outside ci/support-window.yaml; rotate or onboard the window."
+            exit 1
+          fi

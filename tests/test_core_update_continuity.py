@@ -175,6 +175,68 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(version=version), self.assertRaises(ValueError):
                 lane_entry(version)
 
+    async def test_core10_disposable_lanes_bind_name_parts_probe_and_exact_fixture(self):
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from core_registry_contract_lane import configure_with_test_authority, lane_entry
+        from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
+            CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE, CHILD_DEVICE_PROBE_PROFILE,
+        )
+        from tests.test_ha_core_2026_9_integration import settings
+        records = json.loads((ROOT / "tests/fixtures/core_2026_10_device_registry/records.json").read_text())
+        expected_digests = {
+            "2026.10.0": "sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4",
+            "2026.10.1": "sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",
+        }
+        for version, digest in expected_digests.items():
+            with self.subTest(version=version):
+                entry = lane_entry(version)
+                self.assertEqual(entry["version"], version)
+                self.assertEqual(entry["image_index_digest"], digest)
+                self.assertEqual(entry["entry_id"], "disposable-core-" + version + "-" + digest[7:15])
+                self.assertEqual(set(entry["architecture_manifests"]), {"linux/amd64", "linux/arm64"})
+                self.assertEqual(compiled_exact_authority(version), ())
+                runtime = CoreRuntime()
+                configure = runtime.configure
+                seen = {}
+
+                def synthetic_transport(configured, *, release_registry, version=version):
+                    source = ProjectedCoreSource(release_registry, version, typed_operations=True)
+                    source.fixture = deepcopy(records)
+                    seen["registry"] = release_registry
+                    configure(configured, release_registry=release_registry, source=source)
+                image = "ghcr.io/home-assistant/home-assistant:" + version + "@" + digest
+                with patch.object(runtime, "configure", side_effect=synthetic_transport):
+                    await configure_with_test_authority(
+                        runtime, settings(), cache_path=self.cache.with_name(version + ".json"),
+                        expected_image=image, core_version=version)
+                self.assert_admitted(runtime, 19)
+                probe = seen["registry"].probe_profile_for(version)
+                self.assertEqual(probe, CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE)
+                self.assertNotEqual(probe, CHILD_DEVICE_PROBE_PROFILE)
+                with self.assertRaises(AssertionError):
+                    await configure_with_test_authority(
+                        CoreRuntime(), settings(), cache_path=self.cache.with_name(version + "-x.json"),
+                        expected_image="ghcr.io/home-assistant/home-assistant:" + version,
+                        core_version=version)
+                # Pre-2026.10 device records cannot satisfy the bound name-parts
+                # probe; the lane must not admit them under the 10.x fixture.
+                legacy = CoreRuntime()
+                legacy_configure = legacy.configure
+
+                def legacy_transport(configured, *, release_registry, version=version):
+                    legacy_configure(configured, release_registry=release_registry,
+                                     source=ProjectedCoreSource(release_registry, version, typed_operations=True))
+                with patch.object(legacy, "configure", side_effect=legacy_transport), \
+                        self.assertRaises(AssertionError):
+                    await configure_with_test_authority(
+                        legacy, settings(), cache_path=self.cache.with_name(version + "-legacy.json"),
+                        expected_image=image, core_version=version)
+                self.assertLess(legacy.health_snapshot()["compatible_count"], 19)
+        # A future or unreviewed 2026.10 patch has no disposable fixture.
+        for version in ("2026.10.2", "2026.10", "2026.11.0"):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                lane_entry(version)
+
     async def test_registry_failure_keeps_compiled_pairing_but_cannot_admit_future(self):
         self.raw = OSError("synthetic transport failure")
         runtime, source = await self.runtime("2026.9.1")

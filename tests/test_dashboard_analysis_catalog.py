@@ -31,6 +31,7 @@ from ha_mcp_engineering.request_context import begin_request, end_request
 from ha_mcp_engineering.tools import dashboard as dashboard_tools
 from test_rc3a_dashboard_provider import settings, handshake, call_result, dashboard_tool
 import test_dashboard_analysis_transport as transport_cases
+from support.real_time import real_time_measurement
 
 
 class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
@@ -457,6 +458,7 @@ class AssembledTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(result["success"])
             self.assertEqual(self.service.snapshots, {})
 
+    @real_time_measurement("asserts event-loop wall and CPU gap bounds")
     async def test_full_assembled_responsiveness_with_cpu_and_gc_attribution(self):
         command = [sys.executable, "-I", "-B", "-c",
             "import sys,unittest; sys.path.insert(0,sys.argv.pop(1)); unittest.main(module=None)",

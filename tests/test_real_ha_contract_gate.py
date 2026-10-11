@@ -6,6 +6,7 @@ import io
 import json
 from pathlib import Path
 import re
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -16,6 +17,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_PATH = ROOT / "scripts" / "real_ha_contract_tests.py"
 CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
+from support.support_window_matrix import rows as support_rows  # noqa: E402
 PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 DEVICE_FIXTURE_ROOT = (
     ROOT
@@ -1192,62 +1196,74 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
     def test_real_ha_job_runs_contract_runner_and_always_destroys_config(self):
         job = self.ci["jobs"]["real-ha-contract-tests"]
         self.assertFalse(job["strategy"]["fail-fast"])
-        matrix = job["strategy"]["matrix"]["include"]
+        self.assertEqual(
+            job["strategy"]["matrix"],
+            "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.real_ha) }}",
+        )
+        self.assertEqual(job["needs"], "prepare_exact_image_matrix")
+        pr_rows = support_rows("real_ha", "pr")
+        matrix = support_rows("real_ha", "full")
+        self.assertEqual(matrix[: len(pr_rows)], pr_rows)
         by_version = {item["ha_version"]: item for item in matrix}
         self.assertEqual(
-            set(by_version),
-            {"2026.7.2", "2026.8.0", "2026.8.1", "2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3", "2026.9.4"},
+            [(item["support_slot"], item["ha_version"]) for item in matrix],
+            [("current", "2026.10.0"), ("candidate", "2026.10.1"), ("rollback", "2026.9.4")],
+        )
+        self.assertEqual([item["ha_version"] for item in pr_rows], ["2026.10.0", "2026.10.1"])
+        # Retired Core lanes are no longer derived or pinned in the workflow.
+        ci_text = CI_PATH.read_text(encoding="utf-8")
+        for retired, digest in (
+            ("2026.8.0", None), ("2026.8.1", None),
+            ("2026.9.0", "372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293"),
+            ("2026.9.1", "612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918"),
+            ("2026.9.2", "a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe"),
+            ("2026.9.3", "d8922685169707fd91e8b9729902d975f06157d005e422874d201e0261dda196"),
+        ):
+            self.assertNotIn(retired, by_version)
+            self.assertNotIn(retired, ci_text)
+            if digest:
+                self.assertNotIn(digest, ci_text)
+        # 2026.7.2 survives only as the pinned migration fixture writer.
+        self.assertNotIn("2026.7.2", by_version)
+        self.assertEqual(
+            by_version["2026.10.0"]["ha_image"],
+            "ghcr.io/home-assistant/home-assistant:2026.10.0@"
+            "sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4",
         )
         self.assertEqual(
-            by_version["2026.9.0"]["ha_image"],
-            "ghcr.io/home-assistant/home-assistant:2026.9.0@"
-            "sha256:372d991e58882a1d8c68c07e9aa3f3b509276e695355f73ccdb03baa70407293",
+            by_version["2026.10.1"]["ha_image"],
+            "ghcr.io/home-assistant/home-assistant:2026.10.1@"
+            "sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",
         )
         self.assertEqual(
-            by_version["2026.9.1"]["ha_image"],
-            "ghcr.io/home-assistant/home-assistant:2026.9.1@"
-            "sha256:612d76760b544cb40b7ba01387fdac964c59a6a550a50a4d30b4773c822d2918",
+            by_version["2026.9.4"]["ha_image"],
+            "ghcr.io/home-assistant/home-assistant:2026.9.4@"
+            "sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76",
         )
-        for version in ("2026.7.2", "2026.8.0", "2026.8.1"):
-            self.assertEqual(by_version[version]["ha_mcp_version"], "8.2.0")
+        # Every Core slot is paired with ha_mcp.current only.
+        for row in matrix:
+            self.assertEqual(row["ha_mcp_version"], "8.5.0")
             self.assertEqual(
-                by_version[version]["ha_mcp_source_commit"],
-                "098540ba22d495fdb1701daf830d54762350fd46",
+                row["ha_mcp_image"],
+                "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@"
+                "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
             )
-        for version in ("2026.9.0", "2026.9.1", "2026.9.2"):
-            self.assertEqual(by_version[version]["ha_mcp_version"], "8.4.3")
+            self.assertEqual(row["ha_mcp_source_commit"], "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
             self.assertEqual(
-                by_version[version]["ha_mcp_source_commit"],
-                "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
+                row["ha_mcp_source_sha256"],
+                "02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e",
             )
-            self.assertEqual(
-                by_version[version]["ha_mcp_source_sha256"],
-                "4504b0f086f20b21350269ed330886ed5398a96a671a30af97444ece412cf3cc",
-            )
+            self.assertEqual(row["lane"], "ha-" + row["ha_version"].replace(".", "-"))
         self.assertEqual(job["env"]["HA_CONTRACT_VERSION"], "${{ matrix.ha_version }}")
-        self.assertEqual(by_version["2026.9.2"]["ha_image"],
-                         "ghcr.io/home-assistant/home-assistant:2026.9.2@"
-                         "sha256:a1bc133af84ee6505fe2c266d9805b7c75b780dfdc188edfee3b11e8f3cd8efe")
-        core3 = by_version["2026.9.3"]
-        self.assertEqual(core3["ha_image"],
-                         "ghcr.io/home-assistant/home-assistant:2026.9.3@"
-                         "sha256:d8922685169707fd91e8b9729902d975f06157d005e422874d201e0261dda196")
-        self.assertEqual(core3["ha_mcp_version"], "8.5.0")
-        self.assertEqual(core3["ha_mcp_image"],
-                         "ghcr.io/homeassistant-ai/ha-mcp:8.5.0@"
-                         "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c")
-        self.assertEqual(core3["ha_mcp_source_commit"],
-                         "311d6dc273fb4e9a5b8cde0de15f69472a64fe44")
-        self.assertEqual(core3["ha_mcp_source_sha256"],
-                         "02a0f9d8534d7265a21cf52daac193c405c703aac013be0c808ebd8fb9aa056e")
-        core4 = by_version["2026.9.4"]
-        self.assertEqual(core4["ha_image"],
-                         "ghcr.io/home-assistant/home-assistant:2026.9.4@"
-                         "sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76")
-        for key in ("ha_mcp_version", "ha_mcp_image", "ha_mcp_source_commit", "ha_mcp_source_sha256"):
-            self.assertEqual(core4[key], core3[key])
         self.assertEqual(job["env"]["HA_CONTRACT_IMAGE"], "${{ matrix.ha_image }}")
-        self.assertEqual(job["env"]["HA_FIXTURE_WRITER_IMAGE"], matrix[0]["ha_image"])
+        # The migration fixture writer is a fixed pinned constant, independent
+        # of the rotating support window (it is no longer the first matrix row).
+        self.assertEqual(
+            job["env"]["HA_FIXTURE_WRITER_IMAGE"],
+            "ghcr.io/home-assistant/home-assistant:2026.7.2@"
+            "sha256:1476924357b46e80735c13e94232ba5c853cac052e9df4bb28d50fa56348097b",
+        )
+        self.assertNotIn(job["env"]["HA_FIXTURE_WRITER_IMAGE"], [row["ha_image"] for row in matrix])
         self.assertEqual(
             job["env"]["REAL_HA_UPSTREAM_IMAGE"],
             "${{ matrix.ha_mcp_image }}",
@@ -1504,8 +1520,73 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.2"))
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.3"))
         self.assertIsNone(expected_adapter(home_assistant_version="2026.9.4"))
-        with self.assertRaises(ValueError):
-            expected_adapter(home_assistant_version="2026.9.5")
+        self.assertIsNone(expected_adapter(home_assistant_version="2026.10.0"))
+        self.assertIsNone(expected_adapter(home_assistant_version="2026.10.1"))
+        for version in ("2026.9.5", "2026.10.2"):
+            with self.subTest(version=version), self.assertRaises(ValueError):
+                expected_adapter(home_assistant_version=version)
+
+    def test_core_2026_10_routes_to_child_contract_with_name_parts_and_850(self):
+        contract = self.contract
+        self.assertEqual(contract.CORE_2026_10_VERSIONS, {"2026.10.0", "2026.10.1"})
+        self.assertEqual(
+            contract.CORE_CHILD_CONTRACT_VERSIONS,
+            {"2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3", "2026.9.4",
+             "2026.10.0", "2026.10.1"},
+        )
+        self.assertEqual(
+            contract.CORE_TEST_AUTHORITY_VERSIONS,
+            {"2026.9.2", "2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"},
+        )
+        self.assertEqual(
+            contract.CORE_UPSTREAM_850_VERSIONS,
+            {"2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"},
+        )
+        for version in ("2026.10.2", "2026.11.0", "2026.8.1", "2026.7.2"):
+            with self.subTest(version=version):
+                self.assertNotIn(version, contract.CORE_CHILD_CONTRACT_VERSIONS)
+                self.assertNotIn(version, contract.CORE_TEST_AUTHORITY_VERSIONS)
+        # Every test-authority lane must have a closed disposable fixture.
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from core_registry_contract_lane import CORE_FIXTURES
+        self.assertTrue(contract.CORE_TEST_AUTHORITY_VERSIONS.issubset(CORE_FIXTURES))
+
+        schema = contract.DeviceRegistrySchema
+        expected = contract._expected_device_registry_schema
+        for version in ("2026.10.0", "2026.10.1"):
+            self.assertIs(expected(version), schema.CHILD_DEVICE_NAME_PARTS)
+        for version in ("2026.9.2", "2026.9.3", "2026.9.4"):
+            self.assertIs(expected(version), schema.CHILD_DEVICES)
+
+        runner = self.functions["run_contracts"]
+        runner_source = ast.get_source_segment(self.source, runner) or ""
+        self.assertIn(
+            "if EXPECTED_HA_VERSION in CORE_CHILD_CONTRACT_VERSIONS:\n"
+            "            phase = 'core_2026_9_child_device_semantics'".replace("'", '"'),
+            runner_source,
+        )
+        child = self.functions["_run_core_2026_9_child_contract"]
+        child_source = ast.get_source_segment(self.source, child) or ""
+        self.assertIn("EXPECTED_HA_VERSION in CORE_CHILD_CONTRACT_VERSIONS", child_source)
+        self.assertIn(
+            'UPSTREAM_VERSION == ("8.5.0" if EXPECTED_HA_VERSION in CORE_UPSTREAM_850_VERSIONS else "8.4.3")',
+            child_source,
+        )
+        self.assertIn("schema=_expected_device_registry_schema()", child_source)
+        # Alarmo and automation-baseline acceptance stay exact to Core 2026.9.4.
+        alarmo_guards = [
+            ast.unparse(node.test)
+            for node in ast.walk(child)
+            if isinstance(node, ast.If) and "run_disposable" in ast.unparse(node)
+            and "alarmo" in ast.unparse(node)
+            and not any(
+                isinstance(inner, ast.If) and inner is not node and "alarmo" in ast.unparse(inner)
+                and "run_disposable" in ast.unparse(inner)
+                for inner in ast.walk(node)
+            )
+        ]
+        self.assertEqual(alarmo_guards, ["EXPECTED_HA_VERSION == '2026.9.4'"])
 
     def test_composite_device_contract_evidence_is_bounded_and_structural(self):
         project = self.contract._bounded_device_lookup_shape
@@ -1548,31 +1629,36 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertNotIn("must-not-be-projected", encoded)
         self.assertNotIn("secret", encoded)
 
-    def test_validate_job_regenerates_every_beta6_compatibility_fixture(self):
-        validate = self.ci["jobs"]["validate_prerequisites"]
-        step = next(
-            item
-            for item in validate["steps"]
-            if item.get("name")
-            == "Regenerate historical compatibility fixtures"
-        )
-        script = str(step["run"])
-        self.assertIn(
+    def test_beta6_fixture_regeneration_is_retired_but_provenance_is_retained(self):
+        # HAMCP-154 retired per-run regeneration of the beta6 fixtures from the
+        # historical worktree. The committed fixtures and their provenance
+        # (exact shipped writer commit and generator) must remain.
+        ci_text = CI_PATH.read_text(encoding="utf-8")
+        for job in self.ci["jobs"].values():
+            for item in job.get("steps", ()):
+                self.assertNotEqual(item.get("name"), "Regenerate historical compatibility fixtures")
+        for retired in (
             "5c7eebf962837f85f2309b1b5099401fb075cd6e",
-            script,
-        )
-        self.assertIn("git worktree add --detach", script)
-        self.assertIn("git worktree remove", script)
-        self.assertIn("cmp", script)
+            "git worktree add --detach",
+            "generate_beta6_prohibited_compatibility_fixtures.py",
+        ):
+            self.assertNotIn(retired, ci_text)
+        fixtures = ROOT / "tests" / "fixtures"
+        self.assertTrue((ROOT / "scripts" / "generate_beta6_prohibited_compatibility_fixtures.py").is_file())
         for fixture in (
             "beta6_prohibited_superseded_contract_v2_a.json",
             "beta6_prohibited_superseded_contract_v2_b.json",
-            "beta6_prohibited_superseded_contract_v2_provenance.json",
             "beta6_legacy_prohibited_expired_automation_a.json",
             "beta6_legacy_prohibited_expired_automation_b.json",
+        ):
+            json.loads((fixtures / fixture).read_text(encoding="utf-8"))
+        for provenance in (
+            "beta6_prohibited_superseded_contract_v2_provenance.json",
             "beta6_legacy_prohibited_expired_automation_provenance.json",
         ):
-            self.assertIn(fixture, script)
+            text = (fixtures / provenance).read_text(encoding="utf-8")
+            json.loads(text)
+            self.assertIn("5c7eebf962837f85f2309b1b5099401fb075cd6e", text)
 
     def test_automatic_publication_requires_the_reusable_complete_ci(self):
         events = workflow_events(self.ci)

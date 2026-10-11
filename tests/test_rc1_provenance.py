@@ -141,10 +141,16 @@ class ProvenancePipelineTests(unittest.TestCase):
         self.assertIn('"HAMCP_BUILD_TIME=$($build.Time)"', self.deployment)
 
     def test_production_image_build_remains_unmodified(self):
+        # HAMCP-154 retired the stable-v1 image build from CI: no release path
+        # consumes it. Stable v1 source stays frozen and is still compiled.
+        self.assertNotIn("docker build -t hass-mcp-admin:test ./hass_mcp_admin", self.workflow)
+        self.assertNotIn("hass-mcp-admin:test", self.workflow)
+        self.assertNotIn("Build retired stable-v1 image packaging", self.workflow)
         self.assertIn(
-            "docker build -t hass-mcp-admin:test ./hass_mcp_admin",
+            "run: python -m compileall -q hass_mcp_admin hass_mcp_engineering_beta tests",
             self.workflow,
         )
+        self.assertTrue((ROOT / "hass_mcp_admin" / "Dockerfile").is_file())
 
 
 if __name__ == "__main__":

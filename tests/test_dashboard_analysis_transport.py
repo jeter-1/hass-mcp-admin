@@ -17,6 +17,7 @@ from ha_mcp_engineering.clients.dashboard_analysis import CollectionBudget, Dash
 from ha_mcp_engineering.dashboard_analysis import contracts as c
 from ha_mcp_engineering.dashboard_analysis.provider import project_inventory
 from ha_mcp_engineering.request_context import begin_request, end_request
+from support.real_time import real_time_measurement
 
 
 class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
@@ -268,6 +269,7 @@ class NativeTransportTests(unittest.IsolatedAsyncioTestCase):
                 await peer.read("states")
         self.assertEqual(self.calls, ["states"])
 
+    @real_time_measurement("asserts event-loop wall and CPU gap bounds")
     async def test_maximum_native_path_responsiveness(self):
         # Keep full-suite heap/GC history out of this measurement. The child
         # preserves natural GC and reports both wall and loop-thread CPU gaps.
@@ -850,6 +852,7 @@ class UpstreamTransportTests(unittest.IsolatedAsyncioTestCase):
                 release.set()
                 await asyncio.gather(task, return_exceptions=True)
 
+    @real_time_measurement("asserts event-loop wall and CPU gap bounds")
     async def test_maximum_upstream_transport_responsiveness(self):
         root = Path(__file__).resolve().parents[1]
         command = [sys.executable, '-I', '-B', '-c',

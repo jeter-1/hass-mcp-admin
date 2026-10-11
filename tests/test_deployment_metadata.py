@@ -615,12 +615,17 @@ class CIWorkflowTests(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertTrue(path.is_file())
                 self.assertFalse(path.name.startswith("test"))
-        self.assertIn("Run Engineering unit tests", self.workflow)
-        self.assertNotIn("hass_mcp_admin/requirements", self.workflow)
+        # Engineering discovery now runs as shards proven complete by the
+        # aggregate; retired stable-v1 dependencies and image build stay out.
+        self.assertIn("Run Engineering unit test shard", self.workflow)
         self.assertIn(
-            "Build retired stable-v1 image packaging",
+            "Prove every discovered Engineering unit test ran exactly once and passed",
             self.workflow,
         )
+        self.assertIn("python scripts/unit_test_shards.py aggregate", self.workflow)
+        self.assertNotIn("hass_mcp_admin/requirements", self.workflow)
+        self.assertNotIn("Build retired stable-v1 image packaging", self.workflow)
+        self.assertNotIn("hass-mcp-admin:test", self.workflow)
 
     def test_current_assurance_docs_record_dns_and_stable_boundaries(self):
         release = (ROOT / "docs" / "V2_0_1_RELEASE_NOTES.md").read_text(

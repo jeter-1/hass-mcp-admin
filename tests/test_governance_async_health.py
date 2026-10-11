@@ -22,6 +22,7 @@ from ha_mcp_engineering.governance.runtime import GovernanceRuntime
 from ha_mcp_engineering.governance.storage import ChangePlanRepository, ChangePlanStorageError
 from ha_mcp_engineering.governance.task_storage import ExecutionTaskStorageError
 from ha_mcp_engineering.health import HealthRegistry
+from support.real_time import real_time_measurement
 
 
 class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
@@ -337,6 +338,7 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
         sync = self.service.health_summary()
         self.assertNotIn("phase_elapsed_ms", sync["plan_store_scaling"]["hot_paths"]["governance_health"])
 
+    @real_time_measurement("asserts real owner-loop tick progress during a CPU scan")
     async def test_real_cpu_scanner_permits_owner_loop_progress(self):
         fixture = f3_fixtures.F3ConfigurationActivationTests()
         await fixture.asyncSetUp()

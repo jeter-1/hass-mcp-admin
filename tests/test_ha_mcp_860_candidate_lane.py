@@ -4,13 +4,14 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import re
 import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
 
 import yaml
-from test_ha_mcp_850_candidate_lane import lane
+from test_ha_mcp_850_candidate_lane import lane, support_rows
 import test_upstream_8_6_compatibility as compatibility
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -178,18 +179,38 @@ class WorkflowTests(unittest.TestCase):
     def test_matrix_runs_both_architectures_core_versions_profiles_and_cleanup(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
         job = workflow['jobs']['exact-addon-runtime-acceptance']
-        rows = [row for row in job['strategy']['matrix']['include'] if row['upstream_version'] == '8.6.0']
+        self.assertEqual(job['strategy']['matrix'], '${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}')
+        rows = [row for row in support_rows('addon', 'pr') if row['upstream_version'] == '8.6.0']
+        # 8.6.0 is the support-window candidate: it runs on every tier against
+        # core.current only. The retired 2026.9.4 pairing stays supported by the
+        # acceptance script (PairTests) but is no longer a CI lane.
+        self.assertEqual(rows, [row for row in support_rows('addon', 'full') if row['upstream_version'] == '8.6.0'])
         self.assertEqual({(row['architecture'], row['candidate_core_version'], row['candidate_profile']) for row in rows},
-                         {(arch, core, profile) for arch in ('amd64', 'arm64') for core in ('2026.9.4', '2026.10.0') for profile in ('reference', 'component')})
-        self.assertEqual(len(rows), 8)
+                         {(arch, '2026.10.0', profile) for arch in ('amd64', 'arm64') for profile in ('reference', 'component')})
+        self.assertEqual({row['support_slot'] for row in rows}, {'candidate'})
+        self.assertEqual(len(rows), 4)
         self.assertEqual(workflow['permissions'], {'contents': 'read'})
         for step in job['steps']:
             if 'scripts/ha_mcp_850_container_acceptance.py' in step.get('run', ''):
                 self.assertIn('--profile "$ASSESSMENT_PROFILE"', step['run'])
         private = next(step for step in job['steps'] if step.get('name') == 'Remove disposable private runner files')
         self.assertEqual(private['if'], 'always() && matrix.candidate_power == true')
-        self.assertIn('2026.10.0:8.6.0) code=860c10', private['run'])
-        self.assertIn('8.6.0:component) code="${code}c"', private['run'])
+        # The resource code now comes from the derived matrix (computed by the
+        # acceptance script's own pairing authority) and is shape-checked before
+        # it can select any runner path; the hard-coded case table is retired.
+        self.assertEqual(private['env']['ASSESSMENT_RESOURCE_CODE'], '${{ matrix.candidate_resource_code }}')
+        guard = '[[ "$ASSESSMENT_RESOURCE_CODE" =~ ^[0-9]{3}(c[0-9]{1,2})?[rc]?$ ]]'
+        self.assertIn(guard, private['run'])
+        self.assertLess(private['run'].index(guard), private['run'].index('code="$ASSESSMENT_RESOURCE_CODE"'))
+        self.assertLess(private['run'].index('code="$ASSESSMENT_RESOURCE_CODE"'), private['run'].index('sudo rm -rf'))
+        self.assertNotIn('2026.10.0:8.6.0) code=860c10', private['run'])
+        shape = re.compile(r'^[0-9]{3}(c[0-9]{1,2})?[rc]?$')
+        for hostile in ('', '../860', '860c10r/..', '860c10;rm', '*', '860c10\n', '860c100'):
+            # Bash ERE `$` never matches before a trailing newline; fullmatch mirrors that.
+            self.assertIsNone(shape.fullmatch(hostile), hostile)
+        for row in support_rows('addon', 'full'):
+            if row.get('candidate_power'):
+                self.assertRegex(row['candidate_resource_code'], shape)
         for row in rows:
             identity = lane.execution_guard(GUARD_ENV, row['architecture'], '8.6.0', row['candidate_core_version'], row['candidate_profile'])
             self.assertTrue(identity.startswith('h' + row['candidate_resource_code'] + '-'))

@@ -12,6 +12,9 @@ from unittest.mock import patch
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
+from support.support_window_matrix import rows as support_rows  # noqa: E402
 spec = importlib.util.spec_from_file_location("assessment850", ROOT / "scripts/ha_mcp_850_container_acceptance.py")
 lane = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lane)
@@ -440,8 +443,14 @@ class WorkflowTests(unittest.TestCase):
         install = next(i for i, step in enumerate(steps)
                        if step.get("name") == "Install reviewed registry runtime dependencies")
         derive = next(i for i, step in enumerate(steps)
-                      if step.get("id") == "reviewed-registry")
+                      if step.get("id") == "support-window")
         self.assertLess(install, derive)
+        # The reviewed registry is loaded (and cross-checked by the support
+        # window) only after the locked dependencies are installed.
+        self.assertFalse(any(step.get("id") == "reviewed-registry" for step in steps))
+        derivation = steps[derive]["run"]
+        self.assertLess(derivation.index("scripts/review_upstream_read_release.py ci-matrix"),
+                        derivation.index("python scripts/support_window.py"))
         self.assertIn("--require-hashes --only-binary=:all:", steps[install]["run"])
         self.assertIn("-r hass_mcp_engineering_beta/requirements.lock", steps[install]["run"])
         result = subprocess.run([sys.executable, "scripts/review_upstream_read_release.py", "ci-matrix"],
@@ -457,13 +466,23 @@ class WorkflowTests(unittest.TestCase):
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         self.assertEqual(workflow["permissions"], {"contents": "read"})
         job = workflow["jobs"]["exact-addon-runtime-acceptance"]
-        rows = job["strategy"]["matrix"]["include"]
+        self.assertEqual(job["strategy"]["matrix"],
+                         "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}")
+        self.assertEqual(job["needs"], "prepare_exact_image_matrix")
+        self.assertFalse(job["strategy"]["fail-fast"])
+        pr_rows = support_rows("addon", "pr")
+        rows = support_rows("addon", "full")
+        # The PR tier is a strict prefix of the full tier; only rollback is added.
+        self.assertEqual(rows[:len(pr_rows)], pr_rows)
+        self.assertEqual({x["support_slot"] for x in rows[len(pr_rows):]}, {"rollback"})
         lanes = [x for x in rows if x.get("candidate_power")]
-        self.assertEqual(len(lanes), 14)
-        self.assertEqual({(x["upstream_version"], x["architecture"], x["candidate_core_version"]) for x in lanes},
-                         {(v, a, "2026.9.2") for v in ("8.4.3", "8.5.0") for a in ("amd64", "arm64")}
-                         | {("8.5.0", a, "2026.9.3") for a in ("amd64", "arm64")}
-                         | {("8.6.0", a, c) for a in ("amd64", "arm64") for c in ("2026.9.4", "2026.10.0")})
+        self.assertEqual(lanes, [x for x in pr_rows if x.get("candidate_power")])
+        self.assertEqual(len(lanes), 6)
+        self.assertEqual({(x["upstream_version"], x["architecture"], x["candidate_core_version"],
+                           x["candidate_profile"]) for x in lanes},
+                         {("8.5.0", a, "2026.10.0", "legacy") for a in ("amd64", "arm64")}
+                         | {("8.6.0", a, "2026.10.0", p) for a in ("amd64", "arm64")
+                            for p in ("reference", "component")})
         for row in lanes:
             pin_path = (lane.PINS if row["upstream_version"] == "8.5.0" else
                         ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json")
@@ -473,8 +492,13 @@ class WorkflowTests(unittest.TestCase):
             self.assertEqual(row["candidate_source"], pins["upstream_source"])
             self.assertEqual(row["runner"], "ubuntu-latest" if row["architecture"] == "amd64" else "ubuntu-24.04-arm")
         historical = [x for x in rows if not x.get("candidate_power")]
-        self.assertEqual({x["upstream_version"] for x in historical},
-                         {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1", "8.4.3"})
+        self.assertEqual([(x["upstream_version"], x["support_slot"]) for x in historical],
+                         [("8.4.3", "rollback")])
+        self.assertEqual([x for x in pr_rows if not x.get("candidate_power")], [])
+        # Retired historical live-detail lanes no longer run in CI.
+        text = (ROOT / ".github/workflows/ci.yml").read_text()
+        for retired in ("8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1"):
+            self.assertNotIn(f"live-{retired}", text)
         self.assertEqual(job["timeout-minutes"], 20)
         self.assertIn("exact-addon-runtime-acceptance", workflow["jobs"]["validate"]["needs"])
         for step in job["steps"]:
@@ -486,7 +510,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(execution["if"], "matrix.candidate_power == true")
         self.assertIn('--upstream-version "$UPSTREAM_VERSION"', execution["run"])
         self.assertIn('--core-version "$ASSESSMENT_CORE"', execution["run"])
-        self.assertEqual(len({(x["candidate_resource_code"], x["architecture"]) for x in lanes}), 14)
+        self.assertEqual(len({(x["candidate_resource_code"], x["architecture"]) for x in lanes}), 6)
         planning = next(s for s in job["steps"] if s.get("name", "").startswith("Run planning-only"))
         self.assertEqual(planning["if"], "matrix.candidate_power != true")
         self.assertNotIn("secrets.", json.dumps(workflow))
@@ -512,9 +536,9 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(pins["upstream_tree"], "ffc545fa7e3ad683737454de0217e2b9f672589e")
         self.assertEqual(pins["skills_source"], "d0c6129c2296d6a39b1955b6c36b80067382c67b")
         self.assertEqual(pins["core_image"], json.loads(lane.PINS.read_bytes())["core_image"])
-        workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
-        old = next(row for row in workflow["jobs"]["exact-addon-runtime-acceptance"]["strategy"]["matrix"]["include"]
+        old = next(row for row in support_rows("addon", "full")
                    if row["upstream_version"] == "8.4.3" and not row.get("candidate_power"))
+        self.assertEqual(old["support_slot"], "rollback")
         self.assertEqual(set(pins["images"]), {"amd64", "arm64"})
         for arch, images in pins["images"].items():
             self.assertEqual(set(images), {"standalone", "addon"})

@@ -224,15 +224,18 @@ promotion pull request is neither created nor required.
 The public required check remains `validate`. It is an aggregate over every
 required CI job family, not the source/unit-test worker alone:
 
-- `validate_prerequisites`: source, dependency audit, historical compatibility
-  fixtures, metadata/release and syntax checks;
-- `validate_source`: complete unit discovery after successful prerequisites;
-- `validate_packaging`: frozen-v1 and Engineering packaging, embedded build
-  identity and all declared architectures, after successful prerequisites;
-- `real-ha-contract-tests`: every configured disposable Core contract lane;
-- `prepare_exact_image_matrix`: reviewed gateway-matrix preparation;
-- `exact-image-read-gateway`: every prepared exact-image gateway lane; and
-- `exact-addon-runtime-acceptance`: every configured exact add-on runtime lane.
+- `validate_prerequisites`: source, dependency audit, generated registry
+  comparison, metadata/release and syntax checks;
+- `unit_test_shards`: every deterministic shard of complete unit discovery;
+- `validate_source`: the shard aggregation that proves complete discovery and
+  records the `source_validation` receipt, after prerequisites and all shards;
+- `validate_packaging`: Engineering packaging, embedded build identity and all
+  declared architectures, after successful prerequisites;
+- `real-ha-contract-tests`: every disposable Core contract lane in the tier;
+- `prepare_exact_image_matrix`: support-window matrix derivation, cross-checked
+  against the reviewed gateway registry;
+- `exact-image-read-gateway`: every derived exact-image gateway lane; and
+- `exact-addon-runtime-acceptance`: every derived exact add-on runtime lane.
 
 The aggregate and its result-checking step use `always()` so a failed dependency
 does not merely skip the required gate. Every expected job must report exactly
@@ -309,14 +312,75 @@ recovery validation; `cancel-in-progress: false` alone would not prevent that
 replacement in a shared group. Publication retains its separate serialized
 concurrency policy. No triggers, merge authority or permissions are added.
 
-After prerequisites succeed, complete unit discovery and packaging run in
-parallel. Every worker checks out the same event revision without overriding
-the ref. Source tests install the same declared dependencies in their own job;
-packaging uses its existing Docker builds. Fixture regeneration and generated
-registry comparison finish inside the prerequisite job and require no transfer
-to later workers. No built image or validation result is reused from another run.
+Unit shards start immediately; packaging starts after prerequisites succeed.
+Every worker checks out the same event revision without overriding the ref.
+Source tests install the same declared dependencies in their own job; packaging
+uses its existing Docker builds. Generated registry comparison finishes inside
+the prerequisite job and requires no transfer to later workers. No built image
+or validation result is reused from another run.
 
-Publication may reuse the successful full unittest discovery from its own
+### Sharded unit discovery
+
+`scripts/unit_test_shards.py` partitions the tests found by
+`python -m unittest discover -s tests` across the shards declared in
+`ci/unit-test-shards.json`. The scheduling unit is a module, except that each
+module named in `split_modules` contributes its individual tests as units, so a
+single very long module cannot set the shard floor. The partition is
+deterministic: longest-processing-time first over measured `module_seconds`
+(and `test_seconds` for split modules), ties broken by name. A unit containing
+a test marked `@real_time_measurement` (`tests/support/real_time.py`) is
+isolated in the final shard, so wall-clock bounds are not distorted by CPU-bound
+neighbours. To rebalance, re-measure and update the weights; any plan change
+changes the plan hash bound into every manifest. The `unit_test_shards` matrix list must equal the output of
+`python scripts/unit_test_shards.py count`; a unit test pins this.
+
+Each shard re-runs the complete discovery, executes only its assigned tests
+and uploads a run/attempt-named manifest that binds run ID and attempt, source
+commit, discovered test IDs, plan hash, assignment and every per-test outcome.
+`validate_source` downloads only this attempt's manifests and runs
+`aggregate`, which re-discovers the suite at its own checkout. It refuses unless
+every shard is present exactly once, the union of executed tests equals the
+discovered set with no test missing or repeated, every outcome succeeded (an
+import failure is a failing `_FailedTest`, never an omission), and run, attempt,
+commit and plan agree. Only then does `source_receipt` record the same receipt
+fields as before; `COMMAND` names the sharded aggregation, and the shard script
+and plan are bound files. GitHub's "re-run failed jobs" yields mixed-attempt
+manifests and therefore no receipt; use "re-run all jobs".
+
+Rebalance by editing measured seconds in `ci/unit-test-shards.json`; adding a
+shard also requires the matching matrix entry.
+
+### Compatibility support window
+
+Compatibility lanes cover only the support window in `ci/support-window.yaml`:
+the current, candidate and rollback slots for Core and ha-mcp, each pinned by
+digest. `scripts/support_window.py` derives the real-HA, exact-image gateway
+and add-on runtime matrices in `prepare_exact_image_matrix`:
+
+| Event | Tier | Slots |
+| --- | --- | --- |
+| `pull_request` | `pr` | current + candidate |
+| `schedule` (nightly), `workflow_dispatch`, `workflow_call` (release and publication gate) | `full` | current + candidate + rollback |
+
+Real-HA lanes pair each Core slot with the current ha-mcp; gateway lanes take
+each ha-mcp slot's reviewed-registry row (a pin that differs from the registry
+refuses); add-on lanes run each ha-mcp slot's declared runtime lanes on the
+current Core, keeping amd64 and arm64 where declared. Lane pairing varies one
+component at a time from the deployment.
+
+Rotation edits only `ci/support-window.yaml`: after a candidate is deployed,
+move current to rollback, candidate to current, and put the next evaluation
+target in candidate, copying digests from reviewed evidence. A Core slot also
+needs its lane-provenance fixture and contract-script support; the derivation
+refuses otherwise rather than skipping a lane. The window never changes
+admission policy, the signed registries or any upstream HOLD.
+
+The separate non-required `latest-stable-early-warning.yml` resolves the newest
+stable (never prerelease) Core and ha-mcp nightly, runs the real-HA contracts
+against the newest Core pinned by the digest resolved in that run, and fails
+only itself when a release falls outside the window or a contract fails.
+
+Publication may reuse the successful sharded full discovery from its own
 completed reusable CI call. `scripts/publication_validation.py` binds the job
 output to the repository, run and attempt, caller workflow/ref/commit, event,
 tested source commit/tree, Python version, both dependency locks and the verifier
@@ -335,11 +399,10 @@ and provenance guards still run. The publisher records whether discovery was
 reused or executed; reuse must not be counted as a second test execution. Actual
 wall-time savings require a subsequent authorized publication observation.
 
-Explicit limits are 15 minutes for prerequisites, 40 for unit discovery, 30 for
-packaging and 10 for matrix preparation. These allow headroom over the inspected
-successful pre-change CI run 34798268513: about 16 minutes for unit discovery and
-seven minutes for the following packaging steps, with short prerequisite and
-matrix-preparation work. Existing 50/25/20-minute runtime-family limits and the
+Explicit limits are 15 minutes for prerequisites, 20 per unit shard, 15 for the
+shard aggregation, 30 for packaging and 10 for matrix preparation. Shards are
+planned to finish well under eight minutes each; the aggregation re-runs
+discovery only, not the tests. Existing 50/25/20-minute runtime-family limits and the
 five-minute aggregate limit are unchanged. A timeout cannot satisfy `validate`.
 Existing exit-trap and `always()` cleanup remain; forced runner termination can
 prevent cleanup completion and must not be reported as verified cleanup.

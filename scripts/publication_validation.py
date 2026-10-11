@@ -18,10 +18,14 @@ import subprocess
 
 REPOSITORY = "jeter-1/hass-mcp-admin"
 WORKFLOW = ".github/workflows/publish-rc-image.yml"
-COMMAND = "python -m unittest discover -s tests -v"
+# The full discovered suite runs as deterministic shards; the aggregator proves
+# every discovered test ran exactly once in this run attempt and passed.
+COMMAND = "python scripts/unit_test_shards.py aggregate (all shards of: python -m unittest discover -s tests -v)"
 BOUND_FILES = (
     ".github/workflows/ci.yml", WORKFLOW,
     "scripts/publication_validation.py",
+    "scripts/unit_test_shards.py",
+    "ci/unit-test-shards.json",
     "tests/requirements.lock",
     "hass_mcp_engineering_beta/requirements.lock",
 )
@@ -66,7 +70,7 @@ def context(env):
             and workflow_ref.startswith(REPOSITORY + "/.github/workflows/")
             and "\n" not in workflow_ref, "wrong_workflow_ref")
     event = env.get("GITHUB_EVENT_NAME")
-    require(event in {"pull_request", "push", "workflow_dispatch", "workflow_run"}, "unsupported_event")
+    require(event in {"pull_request", "push", "schedule", "workflow_dispatch", "workflow_run"}, "unsupported_event")
     return {
         "repository": REPOSITORY,
         "run_id": positive(env.get("GITHUB_RUN_ID")),
