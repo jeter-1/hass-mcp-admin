@@ -1629,35 +1629,46 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         self.assertNotIn("must-not-be-projected", encoded)
         self.assertNotIn("secret", encoded)
 
-    def test_beta6_fixture_regeneration_is_retired_but_provenance_is_retained(self):
-        # HAMCP-154 retired per-run regeneration of the beta6 fixtures from the
-        # historical worktree. The committed fixtures and their provenance
-        # (exact shipped writer commit and generator) must remain.
-        ci_text = CI_PATH.read_text(encoding="utf-8")
-        for job in self.ci["jobs"].values():
-            for item in job.get("steps", ()):
-                self.assertNotEqual(item.get("name"), "Regenerate historical compatibility fixtures")
-        for retired in (
+    def test_full_tier_regenerates_every_beta6_compatibility_fixture(self):
+        # HAMCP-158 restored the regeneration in the full tier only; pull
+        # requests keep relying on the committed fixtures and their tests.
+        validate = self.ci["jobs"]["validate_prerequisites"]
+        self.assertEqual(validate["steps"][0]["with"]["fetch-depth"], 0)
+        step = next(
+            item
+            for item in validate["steps"]
+            if item.get("name")
+            == "Regenerate historical compatibility fixtures"
+        )
+        self.assertEqual(step["if"], "github.event_name != 'pull_request'")
+        self.assertNotIn("continue-on-error", step)
+        script = str(step["run"])
+        self.assertIn("set -euo pipefail", script)
+        self.assertIn(
             "5c7eebf962837f85f2309b1b5099401fb075cd6e",
-            "git worktree add --detach",
-            "generate_beta6_prohibited_compatibility_fixtures.py",
-        ):
-            self.assertNotIn(retired, ci_text)
+            script,
+        )
+        self.assertIn("git worktree add --detach", script)
+        self.assertIn("git worktree remove", script)
+        self.assertIn("trap cleanup EXIT", script)
+        self.assertIn("generate_beta6_prohibited_compatibility_fixtures.py", script)
+        self.assertIn("cmp", script)
         fixtures = ROOT / "tests" / "fixtures"
-        self.assertTrue((ROOT / "scripts" / "generate_beta6_prohibited_compatibility_fixtures.py").is_file())
         for fixture in (
             "beta6_prohibited_superseded_contract_v2_a.json",
             "beta6_prohibited_superseded_contract_v2_b.json",
+            "beta6_prohibited_superseded_contract_v2_provenance.json",
             "beta6_legacy_prohibited_expired_automation_a.json",
             "beta6_legacy_prohibited_expired_automation_b.json",
+            "beta6_legacy_prohibited_expired_automation_provenance.json",
         ):
+            self.assertIn(fixture, script)
             json.loads((fixtures / fixture).read_text(encoding="utf-8"))
         for provenance in (
             "beta6_prohibited_superseded_contract_v2_provenance.json",
             "beta6_legacy_prohibited_expired_automation_provenance.json",
         ):
             text = (fixtures / provenance).read_text(encoding="utf-8")
-            json.loads(text)
             self.assertIn("5c7eebf962837f85f2309b1b5099401fb075cd6e", text)
 
     def test_automatic_publication_requires_the_reusable_complete_ci(self):

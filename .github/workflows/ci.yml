@@ -109,6 +109,38 @@ jobs:
       - name: Install dependencies
         run: >-
           python -m pip --isolated install --require-hashes --only-binary=:all: --index-url https://pypi.org/simple -r tests/requirements.lock
+      # Full tier only (schedule, workflow_dispatch, workflow_call), matching
+      # scripts/support_window.py tier_for: pull requests rely on the committed
+      # fixtures and their compatibility tests in the unit suite.
+      - name: Regenerate historical compatibility fixtures
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          historical_sha="5c7eebf962837f85f2309b1b5099401fb075cd6e"
+          historical_worktree="$RUNNER_TEMP/beta6-fixture-source"
+          generated="$RUNNER_TEMP/beta6-generated-fixtures"
+          cleanup() {
+            git worktree remove "$historical_worktree" >/dev/null 2>&1 || true
+            git worktree prune
+          }
+          trap cleanup EXIT
+          git worktree add --detach "$historical_worktree" "$historical_sha"
+          PYTHONDONTWRITEBYTECODE=1 \
+            python scripts/generate_beta6_prohibited_compatibility_fixtures.py \
+            --beta6-worktree "$historical_worktree" \
+            --output-dir "$generated" \
+            --generated-at 2026-08-02T22:00:00Z
+          for fixture in \
+            beta6_prohibited_superseded_contract_v2_a.json \
+            beta6_prohibited_superseded_contract_v2_b.json \
+            beta6_prohibited_superseded_contract_v2_provenance.json \
+            beta6_legacy_prohibited_expired_automation_a.json \
+            beta6_legacy_prohibited_expired_automation_b.json \
+            beta6_legacy_prohibited_expired_automation_provenance.json
+          do
+            cmp "$generated/$fixture" "tests/fixtures/$fixture"
+          done
       - name: Verify committed build inputs
         run: python hass_mcp_engineering_beta/build_inputs.py source
       - name: Audit Engineering dependencies

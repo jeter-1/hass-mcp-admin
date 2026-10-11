@@ -157,16 +157,20 @@ class CIEfficiencyTests(unittest.TestCase):
         ):
             self.assertIn(name, by_name)
 
-    def test_beta6_fixture_regeneration_is_retired_from_ci(self):
-        # HAMCP-154 retired the per-run beta6 regeneration (and its historical
-        # git worktree). The committed fixtures and their compatibility tests
-        # remain the storage-format authority and still run in the unit suite.
+    def test_beta6_fixture_regeneration_runs_in_the_full_tier_only(self):
+        # HAMCP-158 restored the beta6 regeneration for schedule,
+        # workflow_dispatch and workflow_call (the support window's full tier)
+        # and keeps it off pull requests. The committed fixtures and their
+        # compatibility tests remain the storage-format authority.
+        steps = [s for j in self.jobs.values() for s in j.get("steps", [])
+                 if s.get("name") == "Regenerate historical compatibility fixtures"]
+        self.assertEqual(len(steps), 1)
+        self.assertEqual(steps[0]["if"], "github.event_name != 'pull_request'")
+        self.assertIn(steps[0], self.jobs["validate_prerequisites"]["steps"])
+        self.assertIn("trap cleanup EXIT", steps[0]["run"])
         text = (ROOT / ".github/workflows/ci.yml").read_text()
-        names = {s.get("name") for j in self.jobs.values() for s in j.get("steps", [])}
-        self.assertNotIn("Regenerate historical compatibility fixtures", names)
-        for marker in ("generate_beta6_prohibited_compatibility_fixtures.py",
-                       "5c7eebf962837f85f2309b1b5099401fb075cd6e", "git worktree add"):
-            self.assertNotIn(marker, text)
+        self.assertEqual(text.count("generate_beta6_prohibited_compatibility_fixtures.py"), 1)
+        self.assertEqual(text.count("git worktree add"), 1)
         for fixture in ("beta6_prohibited_superseded_contract_v2_a.json",
                         "beta6_prohibited_superseded_contract_v2_b.json",
                         "beta6_prohibited_superseded_contract_v2_provenance.json",
