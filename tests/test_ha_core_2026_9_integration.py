@@ -1956,8 +1956,9 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("call_service", source)
         self.assertNotIn("ha_config_set", source)
 
-    def test_alarmo_core4_lane_requires_real_interval_and_verified_cleanup(self):
+    def test_alarmo_lane_follows_every_core_slot_with_real_interval_and_verified_cleanup(self):
         import yaml
+        from unittest.mock import patch
         workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
         job = workflow["jobs"]["real-ha-contract-tests"]
         self.assertEqual(job["strategy"]["matrix"],
@@ -1966,35 +1967,55 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
             sys.path.append(str(ROOT / "tests"))
         from support.support_window_matrix import rows as support_rows
         matrix = support_rows("real_ha", "full")
-        lane = next(row for row in matrix if row["ha_version"] == "2026.9.4")
-        # Core 2026.9.4 is now the support-window rollback slot: the Alarmo
-        # interval lane runs on the full tier (nightly, dispatch, release gate)
-        # and is not part of the pull-request tier.
-        self.assertEqual(lane["support_slot"], "rollback")
-        self.assertNotIn("2026.9.4", [row["ha_version"] for row in support_rows("real_ha", "pr")])
-        provenance = _fixture(ROOT / "tests/fixtures/core_2026_9_4_lane_provenance.json")
-        self.assertEqual(lane["ha_image"], "ghcr.io/home-assistant/home-assistant:2026.9.4@" + provenance["image_index_digest"])
-        self.assertEqual(lane["ha_mcp_version"], "8.5.0")
-        self.assertEqual(len([r for r in matrix if r["ha_version"] == "2026.9.4"]), 1)
+        pr = support_rows("real_ha", "pr")
+        # HAMCP-159: every non-empty Core slot is its own Alarmo matrix job,
+        # bound to that slot's committed Core source provenance.
+        from support.support_window_matrix import support_window as loaded_support_window
+        window_module = loaded_support_window()
+        window = window_module.load(ROOT)
+        filled = window_module.core_slots(window, window_module.SLOTS)
+        self.assertTrue({"current", "rollback"}.issubset(filled))
+        self.assertEqual([row["support_slot"] for row in matrix], list(filled))
+        self.assertEqual([row["support_slot"] for row in pr], [s for s in filled if s != "rollback"])
+        self.assertEqual(len({row["ha_version"] for row in matrix}), len(matrix))
+        with patch.object(sys, "path", [str(ROOT / "scripts"), *sys.path]), patch.dict(sys.modules):
+            from core_registry_contract_lane import lane_entry
+            for lane in matrix:
+                version = lane["ha_version"]
+                provenance = _fixture(ROOT / "tests/fixtures" / (
+                    "core_" + version.replace(".", "_") + "_lane_provenance.json"))
+                with self.subTest(slot=lane["support_slot"]):
+                    self.assertIs(lane["alarmo"], True)
+                    self.assertEqual(lane["ha_image"],
+                                     "ghcr.io/home-assistant/home-assistant:" + version + "@"
+                                     + provenance["image_index_digest"])
+                    self.assertEqual(lane["core_source_commit"], provenance["source_commit"])
+                    self.assertEqual(lane["core_source_sha256"], provenance["source_archive_sha256"])
+                    self.assertEqual(lane["ha_mcp_version"], "8.5.0")
+                    self.assertEqual(lane_entry(version), provenance)
         self.assertEqual(job["timeout-minutes"], 50)
         steps = job["steps"]
         names = [step.get("name") for step in steps]
-        stage = names.index("Stage exact Alarmo and independent interval observer for Core 2026.9.4")
+        stage = names.index("Stage exact Alarmo and independent interval observer for the Core slot")
         self.assertLess(names.index("Persist migration fixture with exact Home Assistant 2026.7.2"), stage)
         self.assertLess(stage, names.index("Start disposable exact target Home Assistant Core"))
+        self.assertEqual(steps[stage]["if"], "matrix.alarmo")
         self.assertIn("--prepare-archive", steps[stage]["run"])
         self.assertIn("alarmo_interval_observer", steps[stage]["run"])
-        self.assertIn(provenance["source_archive_sha256"], steps[stage]["run"])
+        # The Core archive digest comes from the matrix row, never a literal.
+        self.assertEqual(steps[stage]["env"]["REAL_HA_CORE_SOURCE_SHA256"], "${{ matrix.core_source_sha256 }}")
+        self.assertEqual(steps[stage]["env"]["REAL_HA_CORE_SOURCE_COMMIT"], "${{ matrix.core_source_commit }}")
+        for lane in matrix:
+            self.assertNotIn(lane["core_source_sha256"], steps[stage]["run"])
+            self.assertNotIn(lane["core_source_commit"], steps[stage]["run"])
         cleanup = names.index("Verify owned cleanup and required Alarmo interval")
         self.assertLess(names.index("Sanitize and remove disposable Home Assistant"), cleanup)
-        self.assertEqual(steps[cleanup]["if"], "always() && matrix.ha_version == '2026.9.4'")
+        self.assertEqual(steps[cleanup]["if"], "always() && matrix.alarmo")
         self.assertIn("--verify-cleanup", steps[cleanup]["run"])
+        self.assertNotIn("matrix.ha_version ==", (ROOT / ".github/workflows/ci.yml").read_text())
         self.assertIn("real-ha-contract-tests", workflow["jobs"]["validate"]["needs"])
         self.assertNotIn("continue-on-error", job)
         self.assertNotIn("permissions", job)
-        sys.path.insert(0, str(ROOT / "scripts"))
-        from core_registry_contract_lane import lane_entry
-        self.assertEqual(lane_entry("2026.9.4"), provenance)
 
     def test_disposable_lane_is_immutable_bounded_and_nonproduction(self):
         lane = _fixture(LANE_FIXTURE)

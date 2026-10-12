@@ -78,34 +78,52 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
         tree = ast.parse((root / "scripts/real_ha_contract_tests.py").read_text())
         owner = next(n for n in tree.body if isinstance(n, ast.AsyncFunctionDef) and n.name == "_run_core_2026_9_child_contract")
         block = next(n for n in ast.walk(owner) if isinstance(n, ast.If)
-                     and isinstance(n.test, ast.Compare) and ast.unparse(n.test) == "EXPECTED_HA_VERSION == '2026.9.4'")
+                     and ast.unparse(n.test) == "_alarmo_slot_required(EXPECTED_HA_VERSION)")
         wrapper = ast.AsyncFunctionDef(name="invoke", args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
                                       body=[block], decorator_list=[])
         import tempfile
-        cases = ((None, "PASS", "PASS"), (Path("synthetic.json"), "NOT_RUN", "PASS"),
-                 (Path("synthetic.json"), "PASS", "NOT_RUN"), (Path("synthetic.json"), "PASS", "PASS"))
-        for receipt, result, baseline_result in cases:
+        core = "2026.10.1"  # Any support-window slot; the gate itself is exercised in test_real_ha_contract_gate.
+        cases = ((None, "PASS", "PASS", True), (Path("synthetic.json"), "NOT_RUN", "PASS", True),
+                 (Path("synthetic.json"), "PASS", "NOT_RUN", True), (Path("synthetic.json"), "PASS", "PASS", True),
+                 (Path("synthetic.json"), "PASS", "PASS", False), (None, "PASS", "PASS", False))
+        for receipt, result, baseline_result, required in cases:
+            gate = []
             module = ModuleType("alarmo_inspection_contract_acceptance")
             module.run_disposable = AsyncMock(return_value={"result": result})
             baseline = ModuleType("automation_baseline_contract_acceptance")
             baseline.run_disposable = AsyncMock(return_value={"result": baseline_result})
-            context = dict(EXPECTED_HA_VERSION="2026.9.4", configured=object(), core_runtime=object(),
+            configured, core_runtime = object(), object()
+            context = dict(EXPECTED_HA_VERSION=core, configured=configured, core_runtime=core_runtime,
+                           _alarmo_slot_required=lambda version, required=required, gate=gate:
+                           gate.append(version) or required,
                            _environment_path=lambda name: receipt, os=os, Path=Path, json=json)
             exec(compile(ast.fix_missing_locations(ast.Module(body=[wrapper], type_ignores=[])), "bounded-ci-hook", "exec"), context)
             with tempfile.TemporaryDirectory() as directory:
                 retained = Path(directory)/"combined.json"
                 retained.write_text(json.dumps({"result": result}))
                 with patch.dict(sys.modules, {module.__name__: module, baseline.__name__: baseline}), patch.dict(
-                        os.environ, {"REAL_HA_ALARMO_RESULT": str(retained)}):
-                    if receipt is None or result != "PASS" or baseline_result != "PASS":
+                        os.environ, {"REAL_HA_ALARMO_RESULT": str(retained), "HA_CONTRACT_IMAGE": "synthetic-image"}):
+                    if not required:
+                        await context["invoke"]()
+                        self.assertEqual(json.loads(retained.read_text()), {"result": result})
+                    elif receipt is None or result != "PASS" or baseline_result != "PASS":
                         with self.assertRaises(RuntimeError):
                             await context["invoke"]()
                         self.assertNotIn("automation_baseline", json.loads(retained.read_text()))
                     else:
                         await context["invoke"]()
                         self.assertEqual(json.loads(retained.read_text())["automation_baseline"], {"result": "PASS"})
-            self.assertEqual(module.run_disposable.await_count, int(receipt is not None))
-            self.assertEqual(baseline.run_disposable.await_count, int(receipt is not None and result == "PASS"))
+            self.assertEqual(gate, [core])
+            self.assertEqual(module.run_disposable.await_count, int(required and receipt is not None))
+            self.assertEqual(baseline.run_disposable.await_count,
+                             int(required and receipt is not None and result == "PASS"))
+            if module.run_disposable.await_count:
+                module.run_disposable.assert_awaited_once_with(
+                    configured, core_runtime, fixture_receipt=receipt, expected_image="synthetic-image",
+                    core_version=core)
+            if baseline.run_disposable.await_count:
+                baseline.run_disposable.assert_awaited_once_with(
+                    configured, expected_image="synthetic-image", core_version=core)
 
     def test_fixture_source_identity_and_archive_are_bound_without_installed_claim(self):
         profile = fixture("alarmo_profile.json")

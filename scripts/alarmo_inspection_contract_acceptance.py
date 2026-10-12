@@ -20,6 +20,26 @@ COMMIT = "169e134f4b70d87aae36ba54a72a398ecc960afd"
 MODES = ("armed_away", "armed_home", "armed_night", "armed_custom_bypass", "armed_vacation")
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests/fixtures/integration_inspection"
+# Core files that serve the three metadata reads Engineering adds around the
+# Alarmo commands. Each run hashes them from the slot's verified source archive
+# (HAMCP-159); docs/evidence/alarmo-inspection-source-review.json is historical.
+CORE_READ_SOURCES = ("homeassistant/components/config/entity_registry.py",
+                     "homeassistant/components/config/config_entries.py",
+                     "homeassistant/components/websocket_api/commands.py")
+
+
+def slot_binding(core_version):
+    """Exact Alarmo-bearing support-window Core slot; never a family or prefix."""
+    import sys
+    if str(ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(ROOT / "scripts"))
+    from support_window import Refusal, alarmo_slot
+    if type(core_version) is not str:
+        raise ValueError("Alarmo requires an exact support-window Core slot")
+    try:
+        return alarmo_slot(core_version)
+    except Refusal as exc:
+        raise ValueError("Alarmo requires an exact support-window Core slot") from exc
 
 
 def extract(source, names, namespace):
@@ -159,7 +179,7 @@ OBSERVER_HOOKS = {"ActiveConnection.async_handle", "ConfigEntriesFlowManager.asy
 STORE_HASH_KEYS = {"alarmo.storage", "core.config_entries", "core.entity_registry", "core.device_registry"}
 
 
-def verify_interval(value, identity, expected_commands, *, kind="inspection"):
+def verify_interval(value, identity, expected_commands, *, core_version, kind="inspection"):
     """Require independently observed Core activity, never client-side zero claims."""
     import math
     import re
@@ -169,7 +189,8 @@ def verify_interval(value, identity, expected_commands, *, kind="inspection"):
         if not condition:
             raise ValueError("Disposable Core interval failed verification")
     require(type(value) is dict and set(value) == keys)
-    require(value["model"] == "alarmo-core-interval-v1" and value["core_version"] == "2026.9.4")
+    require(type(core_version) is str and value["model"] == "alarmo-core-interval-v1"
+            and value["core_version"] == core_version)
     require(value["interval_id"] == identity and type(identity) is str and re.fullmatch(r"[0-9a-f]{32}", identity))
     require(value["kind"] == kind and value["overflow"] is False and value["expired"] is False)
     elapsed = value["elapsed_seconds"]
@@ -246,8 +267,8 @@ async def close_disposable_authority(runtime):
     assert runtime._connection_monitor_task is None
 
 
-async def run_disposable(configured, existing_core, *, fixture_receipt, expected_image):
-    """Required Core .4 integration using a real signed 19-to-20 extension.
+async def run_disposable(configured, existing_core, *, fixture_receipt, expected_image, core_version):
+    """Required slot-Core integration using a real signed 19-to-20 extension.
 
     Setup is confined to an owned loopback disposable Core. Observer intervals
     surround public-tool calls; setup flows and registry probes stay outside.
@@ -262,13 +283,12 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
     from urllib.parse import urlsplit
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
-    from core_registry_contract_lane import lane_entry
+    from core_registry_contract_lane import lane_entry, probe_profile_for
     from prepare_core_release_registry import prepare_candidate, sign_candidate, EXTENSION_EVIDENCE_MODEL
     from ha_mcp_engineering.clients import HomeAssistantRestClient, HomeAssistantWebSocketClient
     from ha_mcp_engineering.ha_core_readmission import CoreRuntime
     from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
-    from ha_mcp_engineering.ha_core_readmission.probe_profiles import CHILD_DEVICE_PROBE_PROFILE
     from ha_mcp_engineering.signed_registry import canonical_json
     from ha_mcp_engineering.integration_inspection import contracts as c
     from ha_mcp_engineering.integration_inspection.models import Inspection
@@ -284,10 +304,12 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
     if (receipt.get("fixture") != "synthetic-alarmo-inspection-v1" or receipt.get("alarmo_source") != COMMIT
             or receipt.get("archive_sha256") != profile["archive_sha256"]):
         raise ValueError("Missing exact disposable fixture binding")
-    entry = lane_entry("2026.9.4")
-    if expected_image != "ghcr.io/home-assistant/home-assistant:2026.9.4@" + entry["image_index_digest"]:
+    binding = slot_binding(core_version)
+    entry = lane_entry(core_version)
+    if expected_image != binding["image"] or entry["image_index_digest"] != binding["image_index_digest"]:
         raise ValueError("Disposable Core image mismatch")
-    assert existing_core.current_observation.version == "2026.9.4"
+    assert existing_core.current_observation.version == core_version
+    probe_profile = probe_profile_for(core_version)
     assert existing_core.acquire(c.CORE_REQUIREMENTS) is None
     rest, websocket = HomeAssistantRestClient(configured), HomeAssistantWebSocketClient(configured)
     entries = await websocket.command({"type": "config_entries/get", "domain": "alarmo"})
@@ -317,9 +339,9 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
     control_id = await start("control")
     await websocket.command({"type": "get_states"})
     control = await finish(control_id)
-    verify_interval(control, control_id, ["other"], kind="control")
+    verify_interval(control, control_id, ["other"], kind="control", core_version=core_version)
     try:
-        verify_interval(control, control_id, [], kind="control")
+        verify_interval(control, control_id, [], kind="control", core_version=core_version)
     except ValueError:
         pass
     else:
@@ -333,8 +355,8 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
     old = [r for r in refs if r not in added]
     assert len(old) == 19 and len(added) == 1
     entry.update(evidence_sha256=hashlib.sha256(evidence).hexdigest(),
-        probe_profile_id=CHILD_DEVICE_PROBE_PROFILE.profile_id,
-        probe_profile_sha256=CHILD_DEVICE_PROBE_PROFILE.contract_fingerprint, capabilities=old)
+        probe_profile_id=probe_profile.profile_id,
+        probe_profile_sha256=probe_profile.contract_fingerprint, capabilities=old)
     key, now = Ed25519PrivateKey.generate(), datetime.now(timezone.utc)
     candidate = canonical_json(prepare_candidate(entry=entry, evidence=evidence, previous=None, public_key=key.public_key(), now=now))
     signed = sign_candidate(candidate, expected_sha256=hashlib.sha256(candidate).hexdigest(), previous=None, key=key, now=now)
@@ -363,7 +385,8 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
             finally:
                 end_request(token)
             denied_observation = await finish(denied_id)
-            denial_proof = verify_interval(denied_observation, denied_id, [], kind="control")
+            denial_proof = verify_interval(denied_observation, denied_id, [], kind="control",
+                                           core_version=core_version)
             previous = signed
             extension = canonical_json({"model": EXTENSION_EVIDENCE_MODEL, "version": entry["version"],
                 "previous_entry_sha256": hashlib.sha256(canonical_json(entry)).hexdigest(),
@@ -407,7 +430,7 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
                 end_request(token)
                 assert runtime.finish(commits)
             observed = await finish(measured_id)
-            measured = verify_interval(observed, measured_id, EXPECTED_COMMANDS)
+            measured = verify_interval(observed, measured_id, EXPECTED_COMMANDS, core_version=core_version)
             records = []
             for page in (first["data"], second["data"]):
                 Inspection.model_validate(page)
@@ -430,7 +453,8 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
             assert "synthetic-excluded" not in encoded and "mqtt" not in json.dumps(records)
             health = runtime.health_snapshot()
             assert all(health[k] == 0 for k in ("issued_lease_count", "active_commit_count", "fallback_count"))
-            result = {"scenario": "alarmo_inspection", "result": "PASS", "core": "2026.9.4", "alarmo_commit": COMMIT,
+            result = {"scenario": "alarmo_inspection", "result": "PASS", "core": core_version,
+                "support_slot": binding["slot"], "core_image": binding["image"], "alarmo_commit": COMMIT,
                 "setup_readiness": setup_readiness,
                 "authority_transition": [19, 20], "same_registry_instance": True, "preserved_envelopes": 1,
                 "observer_negative_control": "PASS", "negative_control_observation": control,
@@ -470,12 +494,32 @@ def generate(source_root):
     return {"result": "generated", "alarmo_source": COMMIT, "fixture_scope": "synthetic_named_exact_source_getters_and_callbacks", "full_core_execution": False}
 
 
-def verify_disposable_publication(image, container, source_archive, output):
+def core_read_source_hashes(archive):
+    """Hash the Core read handlers inside the already digest-verified archive."""
+    import tarfile
+    with tarfile.open(archive) as stream:
+        roots, found = set(), {}
+        for member in stream:
+            parts = Path(member.name).parts
+            if not parts or Path(member.name).is_absolute() or ".." in parts:
+                raise ValueError("Invalid Core source archive member")
+            roots.add(parts[0])
+            relative = "/".join(parts[1:])
+            if relative in CORE_READ_SOURCES and member.isfile():
+                if relative in found or member.size > 4 * 1024 * 1024:
+                    raise ValueError("Ambiguous or oversized Core read source")
+                found[relative] = hashlib.sha256(stream.extractfile(member).read()).hexdigest()
+    if len(roots) != 1 or set(found) != set(CORE_READ_SOURCES):
+        raise ValueError("Core read sources unavailable in verified archive")
+    return dict(sorted(found.items()))
+
+
+def verify_disposable_publication(image, container, source_archive, output, core_version):
     """Bind owned linux/amd64 container to verified index/manifest bytes."""
     import subprocess
-    entry = json.loads((ROOT / "tests/fixtures/core_2026_9_4_lane_provenance.json").read_text())
-    expected = "ghcr.io/home-assistant/home-assistant:2026.9.4@" + entry["image_index_digest"]
-    if image != expected or container != "beta25-real-ha-ha-2026-9-4":
+    binding = slot_binding(core_version)
+    entry = binding["provenance"]
+    if image != binding["image"] or container != "beta25-real-ha-" + binding["lane"]:
         raise ValueError("Unexpected disposable image or container")
     archive = Path(source_archive)
     digest = hashlib.sha256()
@@ -516,9 +560,11 @@ def verify_disposable_publication(image, container, source_archive, output):
     after = command(["container", "inspect", "--format", "{{.Id}} {{.Image}}", container]).decode().strip().split()
     if len(before) != 2 or before != after or before[1] != config_digest or image_identity != [config_digest, "linux/amd64"]:
         raise ValueError("Running disposable image binding failed")
-    receipt = {"result": "PASS", "index": entry["image_index_digest"], "platform": "linux/amd64",
+    receipt = {"result": "PASS", "core_version": core_version, "support_slot": binding["slot"],
+               "index": entry["image_index_digest"], "platform": "linux/amd64",
                "platform_manifest": descriptor["digest"], "configuration_digest": config_digest,
                "source_commit": entry["source_commit"], "source_archive_sha256": digest.hexdigest(),
+               "core_read_sources_sha256": core_read_source_hashes(archive),
                "container_identity_continuity": True, "arm64_execution": False}
     output = Path(output)
     output.write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
@@ -527,33 +573,38 @@ def verify_disposable_publication(image, container, source_archive, output):
     return receipt
 
 
-def verify_disposable_cleanup(result_path, output):
+def verify_disposable_cleanup(result_path, output, core_version):
     """After outer cleanup, fail on Docker errors, missing run or owned residue."""
     import subprocess
+    binding = slot_binding(core_version)
+    lane = binding["lane"]
     def names(arguments):
         result = subprocess.run(["docker", *arguments], check=True, capture_output=True, timeout=30)
         if len(result.stdout) > 1024 * 1024:
             raise ValueError("Oversized disposable cleanup inventory")
         return set(result.stdout.decode().splitlines())
-    owned = {"beta25-real-ha-ha-2026-9-4", "beta25-real-ha-writer-ha-2026-9-4", "beta25-real-ha-upstream-ha-2026-9-4"}
+    owned = {"beta25-real-ha-" + lane, "beta25-real-ha-writer-" + lane, "beta25-real-ha-upstream-" + lane}
     if owned & names(["container", "ls", "--all", "--format", "{{.Names}}"]):
         raise ValueError("Disposable containers remain")
-    if "beta-rc2-contract-ha-2026-9-4" in names(["network", "ls", "--format", "{{.Name}}"]):
+    if "beta-rc2-contract-" + lane in names(["network", "ls", "--format", "{{.Name}}"]):
         raise ValueError("Disposable network remains")
     value = json.loads(Path(result_path).read_text())
     if (value.get("result") != "PASS" or value.get("scenario") != "alarmo_inspection"
-            or value.get("core") != "2026.9.4" or value.get("runtime_monitor_closed") is not True):
+            or value.get("core") != core_version or value.get("support_slot") != binding["slot"]
+            or value.get("core_image") != binding["image"] or value.get("runtime_monitor_closed") is not True):
         raise ValueError("Required Alarmo integration did not pass")
     for key, proof, expected, kind in (("interval_observation", "interval", EXPECTED_COMMANDS, "inspection"),
                 ("missing_authority_observation", "missing_authority", [], "control")):
         observation = value[key]
-        if verify_interval(observation, observation["interval_id"], expected, kind=kind) != value[proof]:
+        if verify_interval(observation, observation["interval_id"], expected, kind=kind,
+                           core_version=core_version) != value[proof]:
             raise ValueError("Retained interval verification mismatch")
     control = value["negative_control_observation"]
-    verify_interval(control, control["interval_id"], ["other"], kind="control")
+    verify_interval(control, control["interval_id"], ["other"], kind="control", core_version=core_version)
     from automation_baseline_contract_acceptance import verify_result as verify_baseline
-    baseline = verify_baseline(value["automation_baseline"])
-    receipt = {"result": "PASS", "owned_containers_remaining": 0, "owned_network_remaining": False,
+    baseline = verify_baseline(value["automation_baseline"], core_version=core_version, support_slot=binding["slot"])
+    receipt = {"result": "PASS", "core": core_version, "support_slot": binding["slot"],
+               "owned_containers_remaining": 0, "owned_network_remaining": False,
                "required_alarmo_interval": "PASS", "required_automation_baseline": baseline,
                "integration_receipt_sha256": hashlib.sha256(Path(result_path).read_bytes()).hexdigest()}
     Path(output).write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
@@ -572,11 +623,12 @@ def main():
     import os
     if arguments.verify_publication:
         print(json.dumps(verify_disposable_publication(os.environ["HA_CONTRACT_IMAGE"], os.environ["HA_CONTRACT_CONTAINER"],
-            os.environ["REAL_HA_CORE_ARCHIVE"], os.environ["REAL_HA_ALARMO_IMAGE_RESULT"]), sort_keys=True))
+            os.environ["REAL_HA_CORE_ARCHIVE"], os.environ["REAL_HA_ALARMO_IMAGE_RESULT"],
+            os.environ["HA_CONTRACT_VERSION"]), sort_keys=True))
         return
     if arguments.verify_cleanup:
         print(json.dumps(verify_disposable_cleanup(os.environ["REAL_HA_ALARMO_RESULT"],
-            os.environ["REAL_HA_ALARMO_CLEANUP_RESULT"]), sort_keys=True))
+            os.environ["REAL_HA_ALARMO_CLEANUP_RESULT"], os.environ["HA_CONTRACT_VERSION"]), sort_keys=True))
         return
     if arguments.prepare_archive and arguments.destination:
         print(json.dumps(prepare_disposable_fixture(arguments.prepare_archive, arguments.destination), sort_keys=True))

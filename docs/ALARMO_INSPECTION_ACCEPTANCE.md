@@ -42,17 +42,53 @@ python scripts/alarmo_inspection_contract_acceptance.py --alarmo-source <exact c
 
 Source getters and callbacks are executed from hash-verified official source.
 This proves fixture provenance; it is not real Core/Alarmo integration acceptance.
-The exact Core source/tests are listed in the source-review record; inspection
-alone must not be reported as execution of those upstream tests.
+The exact Core 2026.9.4 source/tests are listed in the source-review record,
+which is kept as a historical record of that review (HAMCP-159). It is no longer
+the CI basis: each Alarmo run now records mechanical per-slot evidence (see
+below). Inspection alone must not be reported as execution of upstream tests.
 
 ## Disposable Core/Alarmo gate
 
-Required pairing: Core **2026.9.4** source
-`9212531f40a0b7b23229a90d688dd79d9dfccff4`, pinned index and linux/amd64 descriptor
-from `tests/fixtures/core_2026_9_4_lane_provenance.json`, ha-mcp 8.5.0, and Alarmo
-commit `169e134f4b70d87aae36ba54a72a398ecc960afd`. The matrix's older lanes retain
-their contracts. This new lane has the same 50-minute job bound and unchanged
-permissions/action pins. No ARM execution, production endpoint or key is implied.
+Required pairing (HAMCP-159): every non-empty Core slot in
+`ci/support-window.yaml` that the run's tier covers. Pull requests run
+`core.current` and, when one exists, `core.candidate`; the full tier adds
+`core.rollback`. Each slot is its own parallel Real HA matrix job, flagged by
+`alarmo: true` from `scripts/support_window.py`. An explicitly empty candidate
+(`candidate: null`) creates and requires no candidate job. Each slot binds, by
+exact string with no prefix, family or wildcard:
+
+- the Core version and image index digest from the window, which must equal
+  that Core's exact entry in the one reviewed binding list,
+  `scripts/core_lane_bindings.py` (a window Core without one refuses with
+  `core_<slot>_binding_unreviewed` before any matrix row is generated);
+- the linux/amd64 descriptor, source commit and source-archive SHA-256 from
+  `tests/fixtures/core_<version>_lane_provenance.json`;
+- the ha-mcp `current` slot; and
+- Alarmo commit `169e134f4b70d87aae36ba54a72a398ecc960afd`.
+
+A version outside those slots refuses (`alarmo_core_not_in_window_slot`). The
+image receipt records `core_version`, `support_slot` and the SHA-256 of the three
+Core read handlers (`core_read_sources_sha256`), hashed from the digest-verified
+source archive. That receipt is the per-slot CI evidence. The automation-baseline
+proof travels with Alarmo to the same slot under the same rules, and its retained
+result must carry the exact nested `support_slot` of the job (a missing or
+different nested slot refuses, as do a different Core or outer slot) (an owner-approved
+deviation recorded in the HAMCP-159 pull request). Lanes keep the 50-minute job
+bound and unchanged permissions/action pins. No ARM execution, production
+endpoint or key is implied.
+
+Rotation among Cores already in the window edits only `ci/support-window.yaml`;
+a brand-new Core first adds its exact binding to `scripts/core_lane_bindings.py`
+as one deliberate review step (contract amendment, Josh 2026-10-11). The
+real-HA runner routes every Core that a window slot advertises for Alarmo to the
+child-device contract that runs Alarmo and the baseline proof; there is no other
+route for such a Core.
+
+Failure triage per slot: harness breakage is fixed in the harness. A
+production-path difference on a slot, including the candidate, is not absorbed
+by adjusting fixtures, expectations or receipts. The job stays failing and is
+reported as a compatibility finding (candidate-blocking on the candidate slot),
+and Josh decides whether to adopt that Core.
 
 The workflow stages the hash-verified Alarmo archive and synthetic source-written
 store **after** the historical migration writer stops and **before** target Core
@@ -106,7 +142,7 @@ Alarmo/config-entry/entity/device stores supplement the hooks without retaining
 store contents. The observer retains no arguments, config bodies or credentials.
 
 The required result marker is `Alarmo disposable inspection contract:`. Missing
-fixture receipt or a non-PASS result now fails the Core .4 runner. The final
+fixture receipt or a non-PASS result fails that slot's Real HA runner. The final
 artifact includes independently verified interval observations, image identity
 and cleanup receipts. Unit/synthetic hook checks do not close this assembled gate.
 Run `tests.test_alarmo_interval_observer`, the seven inspector modules,

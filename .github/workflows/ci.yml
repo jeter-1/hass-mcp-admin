@@ -439,9 +439,15 @@ jobs:
           python scripts/real_ha_contract_tests.py --prepare-migration-fixture
           docker stop --time 30 "$HA_WRITER_CONTAINER"
           docker rm "$HA_WRITER_CONTAINER"
-      - name: Stage exact Alarmo and independent interval observer for Core 2026.9.4
-        if: matrix.ha_version == '2026.9.4'
+      # Alarmo and the automation-baseline proof follow every non-empty Core slot
+      # (HAMCP-159); scripts/support_window.py sets matrix.alarmo and binds the
+      # exact Core source commit and archive digest from the slot's provenance.
+      - name: Stage exact Alarmo and independent interval observer for the Core slot
+        if: matrix.alarmo
         shell: bash
+        env:
+          REAL_HA_CORE_SOURCE_COMMIT: ${{ matrix.core_source_commit }}
+          REAL_HA_CORE_SOURCE_SHA256: ${{ matrix.core_source_sha256 }}
         run: |
           set -euo pipefail
           archive="$RUNNER_TEMP/alarmo-169e134f.tar.gz"
@@ -461,12 +467,24 @@ jobs:
           sudo install -m 600 "$overlay/.storage/alarmo.storage" "$REAL_HA_CONTRACT_DIR/.storage/alarmo.storage"
           cp -R tests/fixtures/alarmo_interval_observer/custom_components/alarmo_interval_observer \
             "$REAL_HA_CONTRACT_DIR/custom_components/"
-          printf '%s\n' 'alarmo_interval_observer:' >> "$REAL_HA_CONTRACT_DIR/configuration.yaml"
+          printf '%s\n' 'alarmo_interval_observer:' "  core_version: \"$HA_CONTRACT_VERSION\"" \
+            'beta23_device_fixture:' "  baseline_core_version: \"$HA_CONTRACT_VERSION\"" \
+            >> "$REAL_HA_CONTRACT_DIR/configuration.yaml"
           printf 'REAL_HA_ALARMO_FIXTURE_RECEIPT=%s\n' "$overlay/alarmo-inspection-fixture.json" >> "$GITHUB_ENV"
-          curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
-            'https://codeload.github.com/home-assistant/core/legacy.tar.gz/9212531f40a0b7b23229a90d688dd79d9dfccff4' --output "$core_archive"
-          printf '%s  %s\n' 'c8d814b63c0b7043ad54980044f9824c9582450af9cac38ba376fadc37fa4056' \
-            "$core_archive" | sha256sum --check --strict
+          # Committed lane provenance pins the archive digest; older records hash
+          # GitHub's legacy.tar.gz form and newer ones its tar.gz form. Only these
+          # two fixed forms are tried, and only the exact digest is accepted.
+          matched=""
+          for form in legacy.tar.gz tar.gz; do
+            if curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
+                 "https://codeload.github.com/home-assistant/core/$form/$REAL_HA_CORE_SOURCE_COMMIT" --output "$core_archive" \
+               && printf '%s  %s\n' "$REAL_HA_CORE_SOURCE_SHA256" "$core_archive" | sha256sum --check --strict --status; then
+              matched="$form"
+              break
+            fi
+          done
+          test -n "$matched"
+          echo "Core source archive form: $matched"
       - name: Start disposable exact target Home Assistant Core
         shell: bash
         run: |
@@ -481,8 +499,8 @@ jobs:
           echo "HA contract version: $HA_CONTRACT_VERSION"
           docker image inspect "$HA_CONTRACT_IMAGE" \
             --format='HA contract image digest: {{index .RepoDigests 0}}'
-      - name: Bind Core 2026.9.4 disposable image and source
-        if: matrix.ha_version == '2026.9.4'
+      - name: Bind the Core slot's disposable image and source
+        if: matrix.alarmo
         run: python scripts/alarmo_inspection_contract_acceptance.py --verify-publication
       - name: Verify exact ha-mcp component inside disposable Home Assistant
         shell: bash
@@ -527,17 +545,17 @@ jobs:
           docker network rm "$HA_CONTRACT_NETWORK" >/dev/null 2>&1 || true
 
       - name: Verify owned cleanup and required Alarmo interval
-        if: always() && matrix.ha_version == '2026.9.4'
+        if: always() && matrix.alarmo
         run: python scripts/alarmo_inspection_contract_acceptance.py --verify-cleanup
       - name: Upload bounded Alarmo interval and image evidence
-        if: always() && matrix.ha_version == '2026.9.4'
+        if: always() && matrix.alarmo
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: alarmo-inspection-core-2026.9.4-amd64
+          name: alarmo-inspection-core-${{ matrix.ha_version }}-${{ matrix.support_slot }}-amd64
           path: |
-            ${{ runner.temp }}/alarmo-integration-ha-2026-9-4.json
-            ${{ runner.temp }}/alarmo-image-ha-2026-9-4*.json
-            ${{ runner.temp }}/alarmo-cleanup-ha-2026-9-4.json
+            ${{ runner.temp }}/alarmo-integration-${{ matrix.lane }}.json
+            ${{ runner.temp }}/alarmo-image-${{ matrix.lane }}*.json
+            ${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json
           if-no-files-found: error
           retention-days: 14
 

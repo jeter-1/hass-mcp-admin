@@ -44,7 +44,8 @@ Preparation and signing both enforce the transition. See
 the R3 tooling restriction; production review, signing and activation remain
 separate and have not occurred.
 
-A required disposable Core 2026.9.4/ha-mcp 8.5.0/Alarmo 1.10.19 CI case proves
+A required disposable Core/ha-mcp/Alarmo 1.10.19 CI case on each support-window
+Core slot (originally Core 2026.9.4/ha-mcp 8.5.0; HAMCP-159) proves
 19-to-20 admission, public-tool reads and continuation against the actual
 components. Its independent test-only Core observer records commands, flows,
 services and Store activity. Source checks are not a substitute for its executed
@@ -155,7 +156,9 @@ runtime, tool descriptors and provider/approval authority are unchanged.
 ## Validation and stage
 
 See [acceptance](ALARMO_INSPECTION_ACCEPTANCE.md),
-[source references](evidence/alarmo-inspection-source-review.json), and
+[source references](evidence/alarmo-inspection-source-review.json) (the Core
+2026.9.4 review, kept as a historical record; per-slot CI image receipts are now the
+CI basis), and
 [ADR-024](architecture/ADR-024-SANITIZED-INTEGRATION-INSPECTION.md).
 Release preparation and draft delivery are authorized; publication, activation,
 deployment and installed tests retain their separate decisions. Completed beta.10 acceptance and existing operational holds remain

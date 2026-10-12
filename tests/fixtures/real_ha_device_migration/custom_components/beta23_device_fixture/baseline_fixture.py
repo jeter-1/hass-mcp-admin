@@ -1,4 +1,4 @@
-"""Exact-.4 disposable baseline fixture; never part of the Engineering image.
+"""Exact-slot disposable baseline fixture; never part of the Engineering image.
 
 The anchor is synthetic Core registry metadata, not a running Supervisor. All
 setup mutations precede observed reads. No production or caller-selected paths.

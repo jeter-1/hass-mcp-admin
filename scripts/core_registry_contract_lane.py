@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
+from core_lane_bindings import CHILD_DEVICE_NAME_PARTS, provenance_name, reviewed_lane_binding
 from prepare_core_release_registry import prepare_candidate, sign_candidate
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
 from ha_mcp_engineering.ha_core_readmission.probe_profiles import (
@@ -24,25 +25,32 @@ from ha_mcp_engineering.ha_core_readmission.profiles import CORE_CAPABILITY_PROF
 from ha_mcp_engineering.signed_registry import canonical_json
 
 
-CORE_FIXTURES = {
-    "2026.9.2": "core_2026_9_2_lane_provenance.json",
-    "2026.9.3": "core_2026_9_3_lane_provenance.json",
-    "2026.9.4": "core_2026_9_4_lane_provenance.json",
-    "2026.10.0": "core_2026_10_0_lane_provenance.json",
-    "2026.10.1": "core_2026_10_1_lane_provenance.json",
-}
-# Core 2026.10 device registries carry name parts; earlier lanes do not.
-CORE_NAME_PARTS_VERSIONS = frozenset({"2026.10.0", "2026.10.1"})
-CORE_TYPED_VERSIONS = frozenset({"2026.9.3", "2026.9.4", *CORE_NAME_PARTS_VERSIONS})
+# Exact releases, digests and semantics come only from the one reviewed list in
+# scripts/core_lane_bindings.py (HAMCP-159); there is no local version list.
+
+
+def _lane_binding(core_version):
+    binding = reviewed_lane_binding(core_version)
+    if binding is None:
+        raise ValueError("unknown disposable Core release")
+    return binding
+
+
+def probe_profile_for(core_version):
+    """The reviewed device-registry probe profile for one exact disposable Core."""
+    return (CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE
+            if _lane_binding(core_version).device_registry == CHILD_DEVICE_NAME_PARTS
+            else CHILD_DEVICE_PROBE_PROFILE)
 
 
 def lane_entry(version):
     """Closed disposable fixtures, never runtime admission or caller image input."""
-    if version not in CORE_FIXTURES:
-        raise ValueError("unknown disposable Core release")
-    entry = json.loads((ROOT / "tests/fixtures" / CORE_FIXTURES[version]).read_text())
+    binding = _lane_binding(version)
+    entry = json.loads((ROOT / "tests/fixtures" / provenance_name(version)).read_text())
     if entry["version"] != version:
         raise ValueError("disposable Core fixture version mismatch")
+    if entry.get("image_index_digest") != binding.image_index_digest:
+        raise ValueError("disposable Core fixture digest mismatch")
     return entry
 
 
@@ -55,10 +63,9 @@ async def configure_with_test_authority(runtime, configured, *, cache_path, expe
     )
     assert compiled_exact_authority(entry["version"]) == ()
     evidence = b"Disposable test authority only; actual contract result follows."
-    typed = core_version in CORE_TYPED_VERSIONS
+    typed = _lane_binding(core_version).typed_operations
     profiles = CORE_CAPABILITY_PROFILES + (CORE_TYPED_OPERATION_PROFILES if typed else ())
-    probe = (CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE if core_version in CORE_NAME_PARTS_VERSIONS
-             else CHILD_DEVICE_PROBE_PROFILE)
+    probe = probe_profile_for(core_version)
     entry.update({
         "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
         "probe_profile_id": probe.profile_id,
