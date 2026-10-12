@@ -109,8 +109,6 @@ from .resources import (
     validate_resource_create_identity,
     validate_resource,
 )
-from ..f3.locks import LockStorageError
-from ..f3.persistence import ExecutionStorageError
 from ..f3_runtime.health_scan import HEALTH_FENCE_CATEGORIES, HealthScanFence
 from .storage import (
     ChangePlanRepository,
@@ -12499,12 +12497,19 @@ class ChangeGovernanceService:
             # While this scan holds its fence, F3 recovery defers (boundedly)
             # only its idle historical-cursor write; real writes still move it.
             fence_holder = self.f3_runtime
+            # F3 storage classes stay behind the f3_runtime boundary.
+            f3_storage_categories = getattr(
+                fence_holder, "health_storage_error_categories", ())
+            if not isinstance(f3_storage_categories, tuple):
+                f3_storage_categories = ()
+            f3_storage_errors = tuple(kind for kind, _ in f3_storage_categories)
 
             def refusal(code, *, superseded, exc=None):
                 # Diagnostic only: it must never replace the original refusal.
                 try:
                     self._warn_health_refusal(
                         code=code, superseded=superseded, exc=exc, fence=fence,
+                        f3_storage_categories=f3_storage_categories,
                         phase=phase, requested_at=requested_at,
                         phase_started=phase_started, phases=phases,
                         plan_count=plan_metrics.get("record_count"),
@@ -12656,7 +12661,7 @@ class ChangeGovernanceService:
                 if exc.code in _HEALTH_STORAGE_ERROR_CODES:
                     refusal(exc.code, superseded=superseded, exc=None if superseded else exc)
                 raise
-            except (ExecutionStorageError, LockStorageError) as exc:
+            except f3_storage_errors as exc:
                 # F3 storage failures propagate unconverted, as before.
                 self._health_cache_key = None
                 refusal(None, superseded=False, exc=exc)
@@ -12671,6 +12676,7 @@ class ChangeGovernanceService:
     def _warn_health_refusal(
         self, *, code: ErrorCode | None, superseded: bool,
         exc: BaseException | None, fence: HealthScanFence | None, phase: str,
+        f3_storage_categories: tuple = (),
         requested_at: float, phase_started: float, phases: dict[str, float],
         plan_count: Any, task_count: Any,
     ) -> None:
@@ -12685,12 +12691,12 @@ class ChangeGovernanceService:
         category = None
         if fence is not None:
             category = fence.moved_category if superseded else fence.failed_category
+        if category is None and exc is not None:
+            category = next(
+                (name for kind, name in f3_storage_categories if isinstance(exc, kind)),
+                None)
         if category is None:
-            if isinstance(exc, LockStorageError):
-                category = "f3_locks"
-            elif isinstance(exc, ExecutionStorageError):
-                category = "f3_children"
-            elif code == ErrorCode.CHANGE_PLAN_STORAGE_ERROR:
+            if code == ErrorCode.CHANGE_PLAN_STORAGE_ERROR:
                 category = "plans"
             elif code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR:
                 category = "tasks"

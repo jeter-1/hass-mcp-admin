@@ -87,13 +87,16 @@ class HealthScanFence:
         If the fence itself is unavailable, the caller must still attribute
         and propagate its original storage failure. Cancellation is untouched.
         """
+        # A swallowed re-read failure must not claim the original's category.
+        original_category = self.failed_category
         try:
             self.check()
         except GovernanceError as exc:
             if exc.details.get("reason") == "health_snapshot_superseded":
                 raise
+            self.failed_category = original_category
         except Exception:
-            pass
+            self.failed_category = original_category
 
     def watch(
         self, path: Path, *, code: ErrorCode = ErrorCode.EXECUTION_TASK_STORAGE_ERROR

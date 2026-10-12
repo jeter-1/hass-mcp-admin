@@ -9,8 +9,9 @@ refused, silently, every time.
 
 **A-1, bounded cursor deferral.** While a deep-health scan holds its fence, an
 idle recovery sweep (one that processed no orphaned child) defers only its
-historical recovery-cursor write. At most three consecutive sweeps defer
-(`RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT`); the next sweep advances the cursor
+historical recovery-cursor write. At most three consecutive fenced sweeps
+defer (`RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT`; any sweep with no scan
+in flight restores the full bound); the next sweep advances the cursor
 even under continuous health load, so historical recovery navigation still
 progresses (about every two minutes in the worst case). Re-examining the same
 idempotent page is the only cost. Real recovery writes are not deferred:
@@ -26,7 +27,11 @@ to `reason` (`health_snapshot_superseded` or `storage_failure`), `error_code`,
 `phase`, `elapsed_ms`, rounded `phase_elapsed_ms`, `plan_count`, `task_count`
 and, for real failures, `error_type` (exception class name only). It contains
 no path, identifier, record content or exception text. The fence now records
-which source moved or failed so the category is exact.
+which fenced source moved or failed; refusals the fence cannot attribute
+(generation-only supersession, a failure while the fence is built, or an F3
+storage error) fall back to the error's own family. F3 storage errors
+still propagate unconverted. The F3 storage classes stay behind the
+reviewed `f3_runtime` import boundary.
 
 The public error code and message are unchanged
 (`execution_task_storage_error`, "Execution-task storage is unavailable.").

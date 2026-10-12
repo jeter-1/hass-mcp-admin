@@ -3,7 +3,7 @@
 ## 2.4.1-beta.5 - Deep health survives the idle recovery sweep (HAMCP-168)
 
 - Defer only the idle historical recovery-cursor write while a deep-health
-  scan holds its fence, for at most three consecutive sweeps, so an idle
+  scan holds its fence, for at most three consecutive fenced sweeps, so an idle
   scan longer than the 30-second cadence no longer fails as superseded.
 - Keep every real recovery, child, lock, task and plan write superseding the
   scan; the public error code and message are unchanged.

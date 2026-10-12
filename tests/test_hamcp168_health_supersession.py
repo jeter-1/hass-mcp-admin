@@ -29,6 +29,10 @@ from ha_mcp_engineering.f3_runtime.health_scan import HealthScanFence
 from ha_mcp_engineering.governance import service as service_module
 from ha_mcp_engineering.governance.task_storage import ExecutionTaskStorageError
 
+# F3 storage classes, reached through the reviewed f3_runtime boundary.
+ExecutionStorageError = f3_runtime_module.ExecutionStorageError
+LockStorageError = f3_runtime_module.LockStorageError
+
 _HOLD_TIMEOUT_SECONDS = 30
 _SUPERSEDED = {"reason": "health_snapshot_superseded"}
 _WARNING_FIELDS = {
@@ -495,6 +499,96 @@ class HealthRefusalWarningTests(_HealthScanCase):
         cursor = self.children.recovery_cursor()
         await self.runtime.recover_once("periodic")
         self.assertNotEqual(cursor, self.children.recovery_cursor())
+
+    async def test_f3_storage_failures_propagate_unconverted_with_their_category(self):
+        for error, category in (
+            (ExecutionStorageError, "f3_children"),
+            (LockStorageError, "f3_locks"),
+        ):
+            self.clock.now += 61
+            failure = error(f"synthetic failure at {self.children.root} for {self.child_id}")
+            with self.subTest(error=error.__name__), patch.object(
+                    self.runtime, "_async_health", side_effect=failure):
+                with self.assertRaises(error) as raised:
+                    await self.service.async_health_summary()
+                self.assertIs(failure, raised.exception)
+                record = self.logs.refusals()[-1]
+                context = record.safe_context
+                self.assertEqual(_WARNING_FIELDS, set(context))
+                self.assertEqual("storage_failure", context["reason"])
+                self.assertIsNone(context["error_code"])
+                self.assertEqual(category, context["source_category"])
+                self.assertEqual("overlay", context["phase"])
+                self.assertEqual(error.__name__, context["error_type"])
+                self.assertFalse(record.exc_info)
+                self._assert_redacted(record)
+                self.assertEqual(0, self.runtime._health_fence_holders)
+        self.assertEqual(2, len(self.logs.refusals()))
+
+    async def test_storage_failure_with_proven_movement_refuses_as_superseded(self):
+        def moved_then_failed(*args, **kwargs):
+            self._move_child()
+            raise ExecutionTaskStorageError("synthetic failure")
+
+        with patch.object(
+                self.service.task_repository, "_load", side_effect=moved_then_failed):
+            with self.assertRaises(GovernanceError) as error:
+                await self.service.async_health_summary()
+        self.assertSuperseded(error.exception)
+        [record] = self.logs.refusals()
+        self.assertEqual("health_snapshot_superseded", record.safe_context["reason"])
+        self.assertEqual("f3_children", record.safe_context["source_category"])
+        self.assertIsNone(record.safe_context["error_type"])
+
+    async def test_swallowed_fence_reread_failure_keeps_the_original_category(self):
+        fence = self.runtime._health_fence()
+
+        def unavailable():
+            raise OSError("synthetic fence failure")
+
+        code, _ = fence.sources[1]
+        fence.sources = [fence.sources[0], (code, unavailable), *fence.sources[2:]]
+        fence.check_after_failure()
+        self.assertIsNone(fence.failed_category)
+        self.assertIsNone(fence.moved_category)
+
+    async def test_standalone_runtime_health_holds_and_releases_the_fence(self):
+        observed = []
+
+        async def recorded(**kwargs):
+            observed.append(self.runtime._health_fence_holders)
+            if len(observed) == 2:
+                raise ExecutionStorageError("synthetic failure")
+            return {}
+
+        with patch.object(self.runtime, "_async_health", side_effect=recorded):
+            await self.runtime.async_health()
+            self.assertEqual(0, self.runtime._health_fence_holders)
+            with self.assertRaises(ExecutionStorageError):
+                await self.runtime.async_health()
+        self.assertEqual([1, 1], observed)
+        self.assertEqual(0, self.runtime._health_fence_holders)
+
+
+class DeferralBoundResetTests(_HealthScanCase):
+    async def test_unfenced_sweep_restores_the_full_deferral_bound(self):
+        """A sweep with no scan in flight restores the bound, even if it writes nothing."""
+
+        limit = f3_runtime_module.RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT
+        self.runtime._recovery_cursor_deferrals = limit
+        # Empty history: an unfenced sweep has no cursor to move.
+        token = self._children_fence_token()
+        await self.runtime.recover_once("periodic")
+        self.assertIsNone(self.children.recovery_cursor())
+        self.assertEqual(token, self._children_fence_token())
+        self.assertEqual(0, self.runtime._recovery_cursor_deferrals)
+        self.fixture._populate_terminal_history(task_count=4, declarations_per_task=2)
+        cursor = self.children.recovery_cursor()
+        result = await self._held_health(
+            lambda: self.runtime.recover_once("periodic"))
+        self.assertHealthy(result)
+        self.assertEqual(cursor, self.children.recovery_cursor())
+        self.assertEqual(1, self.runtime._recovery_cursor_deferrals)
 
 
 if __name__ == "__main__":

@@ -135,6 +135,12 @@ RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
 # An idle historical-cursor write may wait for an active deep-health fence at
 # most this many consecutive sweeps; the next sweep advances it regardless.
 RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT = 3
+# F3 storage failures a deep-health scan propagates unconverted, with the
+# bounded source category its refusal warning reports (most specific first).
+HEALTH_STORAGE_ERROR_CATEGORIES = (
+    (LockStorageError, "f3_locks"),
+    (ExecutionStorageError, "f3_children"),
+)
 ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_DECLARATION_PAGE_SIZE
 ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
 ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
@@ -4007,6 +4013,8 @@ class F3RuntimeIntegration:
             self._health_fence_sources(), categories=HEALTH_FENCE_CATEGORIES,
             roots=self._health_fence_roots())
 
+    health_storage_error_categories = HEALTH_STORAGE_ERROR_CATEGORIES
+
     def _enter_health_fence(self) -> None:
         self._health_fence_holders += 1
 
@@ -5609,12 +5617,15 @@ class F3RuntimeIntegration:
                 stale_release_decisions, now=now
             )
 
+        if not self._health_fence_holders:
+            # The bound covers one continuous stretch of fenced sweeps.
+            self._recovery_cursor_deferrals = 0
         if orphaned["next_cursor"] != page["cursor"]:
             # An idle cursor move is navigation only, yet it writes the fenced
             # children namespace and would supersede an in-flight deep-health
             # scan. Defer only that write, and only for a bounded number of
-            # consecutive sweeps. Any real recovery write above still moves
-            # the fence; re-examining the same page is idempotent.
+            # consecutive fenced sweeps. Any real recovery write above still
+            # moves the fence; re-examining the same page is idempotent.
             if (
                 self._health_fence_holders
                 and orphaned["processed"] == 0

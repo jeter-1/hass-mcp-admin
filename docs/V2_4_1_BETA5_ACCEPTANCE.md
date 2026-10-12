@@ -38,8 +38,12 @@ and repositories:
 - refusal preserved: a real child update, a lock race, lock-only movement,
   in-place child and task file movement, a parent task or plan update and an
   orphan-terminalizing sweep during a scan are each refused as superseded;
-- boundedness: under continuous health load the fourth consecutive sweep
-  advances the cursor (and supersedes the held scan);
+- boundedness: under continuous health load the fourth consecutive fenced
+  sweep advances the cursor (and supersedes the held scan), and an unfenced
+  sweep restores the full bound;
+- F3 `ExecutionStorageError` and `LockStorageError` still propagate
+  unconverted, with `f3_children` / `f3_locks` warning categories, and the
+  F3 import-boundary tests pass;
 - the fence-holder count returns to zero after success, refusal and
   cancellation;
 - one warning per reason per 60 seconds with exactly the bounded fields, the
