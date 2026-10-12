@@ -6,6 +6,11 @@ Only beta.3 registry, runtime and test-fixture code is imported. The journals an
 public key come from build_journals.py (ephemeral key); in Part 2 pass the owner's
 signed journal with the production PUBLIC key instead.
 
+Part 2 also runs it with --runtime beta4 against an extract of current main's
+2.4.1-beta.4 source (a3aa4d1 or later). There the entity-metadata profile is
+compiled in and its transport evidence is captured, but it must stay unavailable
+because no signed reference selects it.
+
 Synthetic I/O only: no network, no Home Assistant, no credentials.
 """
 
@@ -21,7 +26,8 @@ import sys
 import tempfile
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--beta3", type=Path, required=True)
+parser.add_argument("--beta3", type=Path, required=True, help="source extract to import (beta.3 or beta.4)")
+parser.add_argument("--runtime", choices=("beta3", "beta4"), default="beta3")
 parser.add_argument("--public-key", type=Path, required=True)
 parser.add_argument("--baseline", type=Path, required=True, help="journal currently served (seq 6)")
 parser.add_argument("--final", type=Path, action="append", required=True,
@@ -50,7 +56,11 @@ SEPTEMBER = json.loads((ROOT / "tests/fixtures/ha_core_2026_9_device_registry.js
 NOW = datetime.fromisoformat(args.now.replace("Z", "+00:00")).astimezone(timezone.utc)
 PUBLIC = args.public_key.read_text().strip()
 BETA3_CAPABILITIES = {p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES}
-assert ENTITY not in BETA3_CAPABILITIES, "checker must run the beta.3 source"
+if args.runtime == "beta3":
+    assert ENTITY not in BETA3_CAPABILITIES, "checker must run the beta.3 source"
+else:
+    assert ENTITY in BETA3_CAPABILITIES, "beta.4 source must compile the dormant entity profile"
+ENTITY_TARGET = {"target_type": "entity_registry_metadata", "target_id": "light.synthetic"}
 FAILURES: list[str] = []
 
 
@@ -134,6 +144,10 @@ async def observe(h: Harness) -> dict:
             "admitted": admitted,
             "entity_route_available": runtime.route_status((ENTITY,))["available"],
             "entity_acquire": runtime.acquire((ENTITY,)) is not None,
+            "entity_acquire_exact_target": runtime.acquire((ENTITY,), target=ENTITY_TARGET) is not None,
+            "entity_probe_evidence": any(
+                e.get("capability_id") == ENTITY
+                for e in (await runtime._source.capture_core_snapshot())["capability_evidence"]),
             "legacy_fan_power_2026_9_2_pin": legacy_pin(runtime),
         }
     return result
@@ -241,7 +255,8 @@ def evaluate(result: dict) -> None:
         check(f["deny_only"] == len(CORE_RUNTIME_CAPABILITY_PROFILES), f"{label}: {version} deny_only")
     for version, f in final["versions"].items():
         check(ENTITY not in f["positive"] and ENTITY not in f["admitted"]
-              and not f["entity_route_available"] and not f["entity_acquire"],
+              and not f["entity_route_available"] and not f["entity_acquire"]
+              and not f["entity_acquire_exact_target"],
               f"{label}: unknown entity profile became available on {version}")
     for version, lease in result["leases"].items():
         check(lease["acquired"] and lease["refreshed"] and lease["finished"]
@@ -258,7 +273,7 @@ async def main() -> None:
         result = await scenario(label, baseline, own_steps, path.read_bytes())
         evaluate(result)
         results.append(result)
-    report = {"beta3_source": str(ROOT), "now": args.now,
+    report = {"beta3_source": str(ROOT), "runtime": args.runtime, "now": args.now,
               "public_key_sha256": hashlib.sha256(__import__("base64").b64decode(PUBLIC)).hexdigest(),
               "baseline_sha256": hashlib.sha256(baseline).hexdigest(),
               "results": results, "failures": FAILURES, "passed": not FAILURES}

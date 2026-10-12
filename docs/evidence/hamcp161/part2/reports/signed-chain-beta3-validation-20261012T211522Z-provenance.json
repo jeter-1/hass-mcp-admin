@@ -1,0 +1,41 @@
+{
+  "source_commit": "872685b884bbc6e2b16a48d99516d390dbbd87bd",
+  "source_archive_sha256": "d2dd5225392def171b94e77469d1432a88082fb6308b3e281fb9dfe7111b0d9b",
+  "source_directory": "/tmp/hamcp161-owner-signed-beta3-5zan1k56/source",
+  "command": [
+    "/tmp/hamcp069a-py312/bin/python",
+    "-B",
+    "/home/josh/repos/hass-mcp-admin/.claude/worktrees/bridge-cse_014c98dy1HEXGCFiGhDwAYXA/docs/evidence/hamcp161/harness/beta3_check.py",
+    "--beta3",
+    "/tmp/hamcp161-owner-signed-beta3-5zan1k56/source",
+    "--public-key",
+    "/home/josh/repos/hass-mcp-admin/.claude/worktrees/bridge-cse_014c98dy1HEXGCFiGhDwAYXA/docs/evidence/hamcp161/core-public-key.txt",
+    "--baseline",
+    "/home/josh/repos/hass-mcp-admin/.claude/worktrees/bridge-cse_014c98dy1HEXGCFiGhDwAYXA/upstream-trust/ha-core-release-registry.json",
+    "--final",
+    "owner=/home/josh/repos/hass-mcp-admin/.artifacts/hamcp161-registry/owner/journal-3.json",
+    "--steps",
+    "owner=/home/josh/repos/hass-mcp-admin/.artifacts/hamcp161-registry/owner/journal-1.json",
+    "--steps",
+    "owner=/home/josh/repos/hass-mcp-admin/.artifacts/hamcp161-registry/owner/journal-2.json",
+    "--now",
+    "2026-10-12T21:15:22Z",
+    "--report",
+    "/home/josh/repos/hass-mcp-admin/.artifacts/hamcp161-registry/owner/signed-chain-beta3-validation-20261012T211522Z.json"
+  ],
+  "report": "/home/josh/repos/hass-mcp-admin/.artifacts/hamcp161-registry/owner/signed-chain-beta3-validation-20261012T211522Z.json",
+  "report_sha256": "cab5bc097c9f1a4b0e883ef8d1144a33b3816bfb402363c20659e4afc1effd80",
+  "log": "/home/josh/repos/hass-mcp-admin/.artifacts/hamcp161-registry/owner/signed-chain-beta3-validation-20261012T211522Z.log",
+  "passed": true,
+  "extra_assertions": [
+    "10.0 and 9.4 selection tokens unchanged",
+    "10.0 and 9.4 in-flight leases revalidated"
+  ],
+  "private_key_access": false,
+  "network_access": false,
+  "signed_journals": {
+    "journal-1.json": "44d7d05f88ae9a54677d5eaa9d7ab09da974a1cdf151790c89502691702b63cc",
+    "journal-2.json": "e35af914d9974be61cf324b8dc2d61ef8584428ec10efef1340063fb1e39c06e",
+    "journal-3.json": "ecaccd79ff79582f633e1406546a844ee4b38920703e4192e6463162dd4a4402"
+  }
+}

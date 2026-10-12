@@ -1,0 +1,12 @@
+Step 1 add 2026.10.1: sequence 7, entries ['2026.10.0', '2026.10.1', '2026.9.2', '2026.9.3', '2026.9.4'], revoked []
+Candidate SHA256: faa529e8957178882b532731f154e1d7952755012e2a8ba30450d5dc68027d8b
+Signed journal verified with the public key: sequence 7, digest sha256:4fbfb6a4fcf863ec38a453488af6f2308f4a455d5195899619ca9f9b380f9ad8, SHA256 44d7d05f88ae9a54677d5eaa9d7ab09da974a1cdf151790c89502691702b63cc
+OK
+Step 2 revoke 2026.9.2: sequence 8, entries ['2026.10.0', '2026.10.1', '2026.9.3', '2026.9.4'], revoked ['2026.9.2']
+Candidate SHA256: 8c9f1682a697ee39f7886051ae7f313e1b40ca5824e632fa67142d57234a22d5
+Signed journal verified with the public key: sequence 8, digest sha256:b8bdf181f1dd5b3c63305096f823474699707798c22cba5dcd65dc5f3cd94f90, SHA256 e35af914d9974be61cf324b8dc2d61ef8584428ec10efef1340063fb1e39c06e
+OK
+Step 3 revoke 2026.9.3: sequence 9, entries ['2026.10.0', '2026.10.1', '2026.9.4'], revoked ['2026.9.2', '2026.9.3']
+Candidate SHA256: b37bf7ed37cebd2a5ae501cb55d65cdf2517289860895519ecd13d5779d769d8
+Signed journal verified with the public key: sequence 9, digest sha256:9a5431ccc32992df336a6119c6d90f2c91be5d93328c1d9cda7377ae75d8d89d, SHA256 ecaccd79ff79582f633e1406546a844ee4b38920703e4192e6463162dd4a4402
+OK
