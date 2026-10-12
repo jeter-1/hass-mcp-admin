@@ -1018,8 +1018,37 @@ owner direction. V9 is approved with the condition recorded under it.
     `succeeded_verified`; the task state remains `succeeded_verified`, because
     the final state is verified;
   - the audit records `task_completed_without_dispatch` (not
-    `task_completed`) with `provider_dispatch_occurred: false`, and the child
-    records `f3_preflight_noop_verified` with `dispatch_count: 0`; approval is
-    not consumed.
+    `task_completed`) with `provider_dispatch_occurred: false` and
+    `approval_consumed: false`, and the child records
+    `f3_preflight_noop_verified` with `dispatch_count: 0` and reason
+    `desired_state_already_reached`.
   The distinct projection is scoped to entity metadata; other verified
-  no-dispatch capabilities keep their shipped projection.
+  no-dispatch capabilities keep their shipped projection (HAMCP-167, out of
+  scope).
+
+  Replay property (owner direction 2026-10-12), as proven by
+  `tests/test_hamcp069a_entity_metadata_v9_replay.py` through the shipped
+  service, F3 runtime and registry gateway:
+  - (a) The plan is terminal: plan `status: applied` (the shared lifecycle
+    terminal state) with `execution_outcome:
+    desired_state_already_present_not_dispatched`, and the execution task is
+    terminal.
+  - (b) Re-applying the same plan returns the same task with
+    `status: already_present`, `task_reused: true`,
+    `provider_dispatch_occurred: false`, records
+    `duplicate_apply_prevented`, and sends nothing to Home Assistant.
+  - (c) After the entity's state changes, including back to the plan's
+    original pre-state, re-applying still returns that terminal result and
+    never dispatches. This also holds after a runtime restart and after the
+    approval window has passed. Re-approving the plan is refused
+    (`approval_already_consumed`), so the approval cannot authorize a later
+    write.
+  - Approval recording: the approval stays `approved` with `consumed_at`
+    null (only a dispatched apply consumes it, as the contrast test shows).
+    The no-later-dispatch guarantee therefore comes from the plan's terminal
+    execution task and the terminal plan status, not from approval
+    consumption. The refusal code on re-approval is the existing
+    `approval_already_consumed`, although the record is not marked consumed.
+  - Rollback of a forward plan that finished without dispatch is refused with
+    `rollback_not_available`, reason `forward_not_dispatched`, before any
+    inverse plan is created: Engineering made no change to invert.
