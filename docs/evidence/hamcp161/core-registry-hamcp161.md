@@ -1,0 +1,495 @@
+# HAMCP-161: Core registry update (add 2026.10.1, revoke 2026.9.2 and 2026.9.3)
+
+Owner direction, Josh, 2026-10-12:
+
+- (a) admit Core 2026.10.1;
+- (b) revoke 2026.9.2 and 2026.9.3, reason "outside the CI support window;
+  retired by owner direction 2026-10-12 (HAMCP-161)";
+- (c) select `core.entity_registry_metadata_operation` on 2026.10.0, 2026.10.1
+  and 2026.9.4.
+
+Josh holds the Core signing key and performs every `sign` step. This record
+and every tool in this directory use only the public key
+(`core-public-key.txt`, raw-key SHA256
+`7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac`).
+
+**Path: (a) and (b) only. (c) is stopped:** no disposable-container contract
+for the entity-metadata profile exists (see section 4).
+
+| Commit | Role |
+|---|---|
+| `a3aa4d17900895a6d22dbea75346dad1c674f613` | main, 2.4.1-beta.4 source; preparation utility |
+| `872685b884bbc6e2b16a48d99516d390dbbd87bd` | deployed 2.4.1-beta.3 build; this consumes the journal |
+| `5fe5ddd82d4d8363dd9643fdfaee471b13117400` | main; full-tier CI on 2026.10.1 with the beta.3 package tree |
+
+Production journal before the change (Part 2 replaces it with the signed
+sequence 9, section 6): `upstream-trust/ha-core-release-registry.json`.
+
+- SHA256 `1d3530345c0d923bda17951c28ddf913e5c8e07d6fa69ca2d258302b418bbf4a`.
+- Sequence 6, digest
+  `sha256:74ab72380189312f580ee1dcabc6c469aeaf6bbb3580c338d25881004959beda`.
+- Expires 2027-01-08.
+
+## Part 0: what the deployed beta.3 does with the final journal
+
+The harness is in `harness/`.
+
+- `build_journals.py` imports the a3aa4d1 preparation utility (`prepare_candidate`
+  and `sign_candidate`). It re-signs the six unchanged production envelopes with
+  a throwaway in-memory Ed25519 key. The twin has the same content digests,
+  sequences and entries as production, and this is asserted. It then applies
+  every planned operation, using the real inputs in `inputs/`.
+- `beta3_check.py` imports only the beta.3 source (`git archive 872685b`). It
+  drives the real `CoreReleaseRegistry` and `CoreRuntime` with a fixed clock and
+  September/October device-registry probe fixtures.
+
+Variants:
+
+| Variant | Operations | Final sequence |
+|---|---|---|
+| `ab` | add 2026.10.1, revoke 2026.9.2, revoke 2026.9.3 | 9 |
+| `abc-extend` | `ab`, then extend 2026.10.0, 2026.9.4 and 2026.10.1 | 12 |
+| `abc-in-add` | entity reference inside the add, then the revokes, then extend 2026.10.0 and 2026.9.4 | 11 |
+
+Result: all variants `passed: true` (`part0-beta3-report.json`, rehearsal
+SHAs in `part0-rehearsal-manifest.json`). These are the R1 rerun on the
+regenerated evidence, entry and candidate; the per-version results equal the
+first run's. The first run's records are kept in `superseded-r0/`.
+
+| Version | Before (seq 6) | After `ab` (seq 9) |
+|---|---|---|
+| 2026.10.0 | 21 admitted, name-parts probe | 21 admitted, same selection token |
+| 2026.9.4 | 21 admitted, child-devices probe | 21 admitted, same selection token |
+| 2026.10.1 | absent, 0 admitted | 21 admitted, name-parts probe |
+| 2026.9.2 | 17 admitted | revoked: 0 admitted, 21 deny-only, no probe |
+| 2026.9.3 | 19 admitted | revoked: 0 admitted, 21 deny-only, no probe |
+| entity metadata | unavailable | unavailable (all variants) |
+
+Also proven:
+
+- Registry status is `accepted`/`valid` with zero failure reasons.
+- A restart from the cache with the upstream failing keeps the new tip.
+- Serving the old seq-6 journal afterwards is refused (rollback), and the
+  sequence stays.
+- The stepwise path (step1 → step2 → step3) equals the direct jump.
+- Leases on 2026.10.0 and 2026.9.4 acquire, survive the refresh (in-flight
+  revalidation true for `ab`), finish, and re-acquire.
+- The legacy 2026.9.2 fan/power pin is usable only on a 2026.9.2 Core at
+  baseline and never after revocation.
+- In the `abc` variants beta.3 accepts the unknown entity reference without
+  rejecting the journal. It keeps the profile unavailable. One in-flight lease
+  on 2026.10.0/2026.9.4 fails revalidation at that refresh, because extending an
+  entry changes its selection token (fail closed). New leases work.
+- Negative controls fail as required:
+  - the stale seq-6 journal as final (8 failures);
+  - the partial `ab` step 2 (3 failures);
+  - the wrong public key (refused).
+
+## 1. Executable binding
+
+The `hass_mcp_engineering_beta` tree `d340d0f61da9d2c73ecaaeb99df083e0f5efc97c`
+(runtime package tree `955495a85a5133677b1e9a7e8ea88de094c0cd86`) is identical
+at 872685b and 5fe5ddd. The commits between them change only tests, scripts,
+docs, ci, `.github` and `AGENTS.md`.
+
+The registry, probe-profile, device-registry, source and profile modules are
+byte-identical between 872685b and 5fe5ddd. Their hashes are in the 2026.10.1
+evidence, `unchanged_implementation_files`.
+
+## 2. Core 2026.10.1 evidence
+
+`upstream-trust/evidence/ha-core-2026.10.1-a431916502b68089834e7e152947b3f32e26c31840acd65cc4ce94364cc923d7.json`
+(generated by `harness/make_inputs.py`, which cross-checks every source and
+asserts the text of every cited upstream and Engineering line). The R0 evidence
+`ha-core-2026.10.1-c22d1e95….json` is kept and superseded (section 2a).
+
+**Source**
+- Tag `2026.10.1`, commit `abe1fdd7cd6b4de1715c87b6fd87d92699514ef9`, tree
+  `f84f3a161b96beb66d91cc2f08909ea5e8ae0cd8`.
+- Stable release, published 2026-10-10T16:14:23Z. GitHub reports the commit as
+  verified; no local GPG check was done.
+- Codeload archive SHA256
+  `a4305046e34fb6bad4669915c64dfaec0f2b22ff56b6baefca9e8890cabd81c4`.
+
+**Image**
+- OCI index
+  `sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0`.
+- amd64 manifest `sha256:a7ecc966…5fbe`; arm64 manifest `sha256:17100609…1db7`.
+- The index digest equals the SHA256 of the committed `artifacts/index-2026.10.1.json`.
+- SLSA provenance names revision abe1fdd7 (`artifacts/provenance-*.json`).
+  Its signatures were not verified.
+
+**Upstream 2026.10.0 → 2026.10.1**
+- 71 commits, 157 files, +3832/−720.
+- Flagged (`artifacts/flagged-diffs.patch`):
+  - IndieAuth/login-flow redirect handling;
+  - automation trace storage, now only for automations with an id;
+  - trace models;
+  - restored deprecated device template attributes.
+
+  IndieAuth is not an Engineering surface. The trace and template changes touch
+  the selected references `core.automation_trace_read` and
+  `core.template_semantics`; section 2a assesses both.
+- Every registry helper, `config_validation`, `service`, `websocket_api`,
+  `config`, `lovelace`, `script`, `input_*`, `fan`, `switch`, `light`, `api`,
+  `search`, `http`, `core.py` and `loader.py` is unchanged.
+
+**CI**: full tier, candidate slot, ha-mcp 8.5.0.
+
+| Run | Job | Event | Commit |
+|---|---|---|---|
+| 38279374013 | 114912771115 | schedule | 5fe5ddd |
+| 38252614026 | 114822698417 | workflow_dispatch | 5fe5ddd |
+| 38283397548 | 114926024490 | workflow_dispatch | a3aa4d1 |
+| 38282769077 | 114924143102 | workflow_call (publication gate) | a3aa4d1 |
+
+Each run passed:
+- the exact-image record;
+- the real-HA contract;
+- Alarmo, with authority transition 19→20 and the observer negative control;
+- the automation baseline (20→21, 124 records);
+- the script dependency contract;
+- the typed fan contract.
+
+**Reference set**
+
+The entry carries the 2026.10.0 entry's 21 references unchanged. CI proves all
+21 together:
+
+| Source | References proven |
+|---|---|
+| Lane test authority (`compatible_count == len(profiles)` after the real-HA probe) | 19: 17 base + 2 typed |
+| Alarmo (19 → 20) | adds `core.integration_inspection_metadata_read` |
+| Baseline (20 → 21) | adds `core.automation_baseline_metadata_read` |
+
+Nothing is dropped. The probe profile is `core-probes-child-device-name-parts-v1`,
+the same as 2026.10.0 and the lane binding for 2026.10.1.
+
+**Negative controls in CI**
+- Lane `compatible_count` is 0 before the probe.
+- Baseline predecessor admission is refused (`authority_unavailable`).
+- Script-contract injected faults: `canonical_key_mismatch` and `provider_unavailable`.
+- Alarmo observer negative control.
+
+**Limitations** (also in the evidence `limits`)
+- There was no run on 872685b itself; binding is by tree identity.
+- amd64 execution only.
+- Attestation and provenance signatures were not verified.
+- The image base label differs from the provenance base (observation only).
+- No household effects, Supervisor lifecycle, installed add-on continuity on
+  2026.10.1, or ha-mcp 8.6.x claim.
+
+## 2a. R1: selected-capability assessment
+
+The independent review (R1) found that R0 dismissed two upstream changes that
+touch selected references. The evidence now carries
+`selected_capability_assessment`, with tag-pinned Core citations
+(`core <tag>:<path>@<blob>:<lines>`, verified in the hash-bound archives) and
+Engineering citations at the deployed build. **Both contracts are satisfied.
+All 21 references are retained; none is removed.**
+
+**`core.automation_trace_read`**: bounded `trace/list` and `trace/get` for an
+automation's config id, with a missing trace returning `not_found`.
+- Upstream: 2026.10.1 stores a run only when the automation has an id
+  (`automation/trace.py:67-68`). It links a parent run to a child only when the
+  child has an id (`trace/models.py:97-98`). The WebSocket handlers and
+  `child_id` serialization are unchanged.
+- Id-bearing automations: unchanged.
+- Id-less automations: newly generated runs are no longer stored, so a read
+  returns `[]`, `not_found`, or only traces restored from before the upgrade,
+  all inside the contract. (L1, Part 2: Core 2026.10.1
+  `trace/util.py:103-147` `async_restore_traces` restores persisted buckets, so
+  the id-less bucket is not necessarily empty right after the upgrade.) Every
+  Engineering consumer starts from a config id. ha-mcp 8.5.0 resolves the item
+  id from the registry unique_id first, with an object_id fallback (L2, Part 2:
+  `tools_traces.py:406-446` at ha-mcp `311d6dc`, per the delta review; the same
+  resolver in both Core versions, no new dispatch). Engineering does not read
+  `child_id`.
+- Executed: the CI step "Run real Home Assistant contracts", phase
+  `trace_generation`, against the id-bearing fixture automation on 2026.10.1, in
+  every run in section 2. The admission probe also ran there.
+- **Untested on 2026.10.1:**
+  - id-less runs, including restored pre-upgrade id-less traces;
+  - `child_id` links;
+  - delegated `ha_get_automation_traces`;
+  - end-to-end trace reads of the reliability, incident, handoff and
+    change-impact consumers (offline unit coverage only).
+- No test was added. Executing these needs a real 2026.10.1 Core (new Real HA
+  lane work), and the result would not change the conclusion.
+
+**`core.template_semantics`**: the binary-owned semantic registry for analysis
+and the direct renderer.
+- Upstream: `device_attr` and `is_device_attr` return `config_entries`,
+  `config_entries_subentries` and `primary_config_entry` again for
+  non-composite devices, where 2026.10.0 raised.
+- Analysis: classified by function name as `attribute_item_access`, which is
+  opaque and conservative, so the rendered value cannot change the dependency
+  result.
+- Rendering: Engineering forwards Core's text and relies on no rendered value.
+- Executed:
+  - the script dependency contract PASS on 2026.10.1 (same CI step);
+  - real 2026.10.0 `ha_eval_template` renders in run 38279374013, jobs
+    114912771142 and 114912771210 (L3, Part 2: GitHub jobs API step 14
+    "Verify power candidate with both exact upstream variants and Core", nested
+    log group "Run python scripts/ha_mcp_850_container_acceptance.py"; the
+    evidence JSON's "CI step" wording names the log group). The render path is byte-identical in
+    2026.10.1 except `devices.py`.
+- **New offline test** `tests/test_hamcp161_device_template_attribute_analysis.py`
+  (3 tests). It proves that the three restored names:
+  - analyze as opaque/conservative;
+  - analyze identically to an ordinary attribute;
+  - cannot hide a dependent state read.
+- **Untested:**
+  - any real 2026.10.1 render;
+  - the restored attributes on any real Core;
+  - the native `render_template` on any real Core.
+
+**R2**: CI run 38287694859 (PR #244 head 243e416) has **27/27** successful
+jobs, including the final aggregate. The earlier "26/26" was wrong.
+
+## 3. Revocation dependency review
+
+Evidence:
+- `upstream-trust/evidence/ha-core-2026.9.2-fb4828c5….json`
+- `upstream-trust/evidence/ha-core-2026.9.3-50101fb5….json`
+
+Model `core-release-withdrawal-evidence-v1`. Each file binds:
+- the exact withdrawn signed entry and its SHA;
+- the seq-6 journal;
+- `ci/support-window.yaml` at a3aa4d1;
+- the dependency review.
+
+Findings: nothing relied on at 2026.10.0 or 2026.9.4 is affected.
+
+- Legacy fan/power receipts pin `expected_core_version="2026.9.2"`. They are
+  usable only while a 2026.9.2 Core runs, which Part 0 proves. Revocation
+  withdraws them on such a Core (fail closed).
+- `compiled_exact_authority` is empty for 2026.9.2 and 2026.9.3 in beta.3 and
+  a3aa4d1.
+- `f3_dashboard/atomicity.py` cites 2026.9.2 only as static source evidence.
+- `tests/test_typed_core_continuity.py` read the tip 2026.9.2 entry. It now
+  reads retained signed history, and passes against the current and the
+  rehearsed final journal (test-only).
+
+## 4. (c) entity-metadata selection: STOPPED
+
+No script under `scripts/` or workflow exercises the entity-metadata profile
+against a disposable Core: zero hits for `create_entity_metadata_plan` or
+`update_entity_registry_metadata_configuration`. The Alarmo and baseline lanes
+explicitly exclude it. The required container evidence on 2026.9.4, 2026.10.0
+and 2026.10.1 therefore does not exist.
+
+Part 0 shows the selection would be safe on beta.3 later: the reference is
+ignored and the only effect is a one-time fence on in-flight leases.
+
+**Smallest bounded follow-up**: add an entity-metadata disposable contract (to
+`scripts/real_ha_contract_tests.py` or a dedicated script). It covers:
+- update, get and readback;
+- `not_found`;
+- the 2026.10 area/name refusal;
+- dropped label IDs;
+- response loss.
+
+Run it through the existing full-tier Core slots, record a `docs/evidence`
+entry, and then prepare `extend-capabilities` for each version with the exact
+profile, adapter and fingerprint from a3aa4d1.
+
+## 5. Candidates and owner signing
+
+`inputs/` holds the CLI inputs. The 2026.10.1 entry has SHA256
+`2f7bb081d2732160681cf1d741cca8576780c04c40e11afded5beed878754f4f`, and its
+evidence `a431916502b68089834e7e152947b3f32e26c31840acd65cc4ce94364cc923d7`.
+The revoke entries are the exact tip entries with `evidence_sha256` replaced.
+
+Candidate 1 (add 2026.10.1) was prepared from the seq-6 journal with the
+production public key: SHA256
+`faa529e8957178882b532731f154e1d7952755012e2a8ba30450d5dc68027d8b`.
+
+Superseded by R1, **do not sign**:
+
+| Artifact | R0 SHA256 |
+|---|---|
+| Evidence (`superseded-r0/evidence-2026.10.1.json`) | `c22d1e95fd315165a87124413bdd2ced641d9e64b2a7e8c0e71d8f7b284a67c5` |
+| Entry (`superseded-r0/entry-2026.10.1.json`) | `56f16dcc6ebd370a3ec9a835c5489db20308eb0ccb732ef03dc41dc373bfb06e` |
+| Candidate 1 | `57298e644ff5c77f766e357d07b8e8a87df65f3d720d5c855c462eee288f3e2f` |
+
+The R1 candidate differs from R0 only in `evidence_sha256`,
+`review_evidence_sha256`, `generated_at` and `expires_at`.
+
+Candidates 2 and 3 depend on the bytes Josh signs. They are content-checked
+by `check_step.py`, which refuses:
+- any other key;
+- a different predecessor;
+- changed entries;
+- another tombstone or reason;
+- earlier envelopes that changed.
+
+The runbook is in the HAMCP-161 handoff.
+
+## 6. Part 2: signed journal, verification and publication
+
+### 6.1 Signed outputs
+
+Josh signed all three steps. This record handles the signed outputs and the
+public key only; no private key material was opened, copied or used by the
+agent.
+
+| Step | File (`part2/signed/`, final in `upstream-trust/`) | Sequence | Content digest | File SHA256 |
+|---|---|---|---|---|
+| Candidate 1, add 2026.10.1 | `candidate-1-add-2026.10.1-r1.json` | — | — | `faa529e8957178882b532731f154e1d7952755012e2a8ba30450d5dc68027d8b` |
+| Signed step 1 | `journal-1.json` | 7 | `sha256:4fbfb6a4fcf863ec38a453488af6f2308f4a455d5195899619ca9f9b380f9ad8` | `44d7d05f88ae9a54677d5eaa9d7ab09da974a1cdf151790c89502691702b63cc` |
+| Candidate 2, revoke 2026.9.2 | `candidate-2-revoke-2026.9.2.json` | — | — | `8c9f1682a697ee39f7886051ae7f313e1b40ca5824e632fa67142d57234a22d5` |
+| Signed step 2 | `journal-2.json` | 8 | `sha256:b8bdf181f1dd5b3c63305096f823474699707798c22cba5dcd65dc5f3cd94f90` | `e35af914d9974be61cf324b8dc2d61ef8584428ec10efef1340063fb1e39c06e` |
+| Candidate 3, revoke 2026.9.3 | `candidate-3-revoke-2026.9.3.json` | — | — | `b37bf7ed37cebd2a5ae501cb55d65cdf2517289860895519ecd13d5779d769d8` |
+| Signed step 3 (final) | `upstream-trust/ha-core-release-registry.json` (owner `journal-3.json`, byte-identical) | 9 | `sha256:9a5431ccc32992df336a6119c6d90f2c91be5d93328c1d9cda7377ae75d8d89d` | `ecaccd79ff79582f633e1406546a844ee4b38920703e4192e6463162dd4a4402` |
+
+Sequence 9 expires **2027-01-10T21:12:05Z**. A renewal journal must be
+published before then; after expiry, positive authority becomes `denial_only`
+and every Core capability is denied until a current journal is accepted.
+
+### 6.2 Verification (public key only)
+
+- `check_step.py` on each signed step: OK for sequences 7, 8 and 9
+  (`part2/reports/check-step-signed.log`).
+- `harness/verify_signed_chain.py` from the sequence-6 predecessor main still
+  serves (`1d353034…bf4a`, re-confirmed on `origin/main` `a3aa4d1`) to
+  sequence 9 (`part2/reports/verify-signed-chain.log`):
+  - the first six envelopes are an unchanged canonical prefix;
+  - 2026.10.1 is admitted with exactly the cleared candidate-1 entry (21
+    references, evidence `a4319165…23d7`);
+  - only 2026.9.2 and 2026.9.3 are revoked, with the directed reason and the
+    sequence-6 `entry_id` and `image_index_digest`;
+  - the 2026.10.0 and 2026.9.4 entries are canonically unchanged;
+  - no envelope references `core.entity_registry_metadata_operation`.
+- Negative controls, all refused: journal-2 as final, journal-1 as
+  predecessor, the superseded R0 candidate, an expired clock (2027-02-01), and
+  a one-byte same-length mutation of the sequence-9 revocation reason
+  (refused by the registry signature check).
+
+No binding or predecessor problem was found, so nothing was re-signed or
+regenerated.
+
+### 6.3 Runtime compatibility (beta.3 and beta.4)
+
+`harness/beta3_check.py` ran the actual signed chain through the exact source
+of each runtime (`git archive` extract; no network, no Home Assistant, clock
+`2026-10-12T21:25:10Z`). Reports and provenance are in `part2/reports/`.
+
+| Runtime | Source | Archive SHA256 | Report |
+|---|---|---|---|
+| 2.4.1-beta.3 (deployed) | `872685b` | `d2dd5225392def171b94e77469d1432a88082fb6308b3e281fb9dfe7111b0d9b` | `signed-chain-beta3-part2.json`; the owner-run original `signed-chain-beta3-validation-20261012T211522Z.json` is retained |
+| 2.4.1-beta.4 (main) | `a3aa4d1` | `569636628da5e466d70ded0c820b5f712fddccb17c797720c34e775d9fc595b8` | `signed-chain-beta4-part2.json` (`--runtime beta4`) |
+
+The harness gained a `--runtime beta4` mode (SHA256
+`2d0491978a122d35fa94642c4cfd9b898626ec2c18fe146cab8a840649cefe90`). It requires
+beta.4 to compile the dormant entity profile and also asserts that `acquire`
+with an exact `entity_registry_metadata` target is refused. The original
+report used the previous harness revision (`afa0564c…9caa`).
+
+Both runtimes passed:
+- 2026.10.0 and 2026.9.4: 21 admitted, selection tokens unchanged from
+  sequence 6.
+- 2026.10.1: 0 → 21 admitted.
+- 2026.9.2 and 2026.9.3: 0 admitted, deny-only (21 profiles on beta.3, 22 on
+  beta.4).
+- `core.entity_registry_metadata_operation`: unavailable on every version, and
+  acquire with the exact target is refused. On beta.4 the probe evidence is
+  present, so the profile is dormant rather than absent.
+- The cache survives a restart at sequence 9, a rollback refresh to sequence 6
+  is refused (stays at 9), and stepwise 7 → 8 → 9 equals the direct jump.
+  In-flight leases on 2026.10.0 and 2026.9.4 revalidate.
+
+### 6.4 Signing-path deviation
+
+The reviewed runbook signs with the raw-base64 key command. That command
+refused twice on Josh's machine. Josh then signed all three steps with
+owner-run PEM adapter helpers that were **not part of the reviewed runbook**.
+Byte-identical copies are in `part2/owner-helpers/`:
+
+| Helper | SHA256 |
+|---|---|
+| `sign-step1-pem.py` | `d31d8d07c2afeee49306255c1c354c102742fe8d8810b97c5c2d3dce6f2641f2` |
+| `sign-step2-pem.py` | `fa2b77cf5884e1ed6433f62ad7e76313dc791a5b97124c3187b9ef4ef4a926ed` |
+| `sign-step3-pem.py` | `7ec0341a06d3b2171e91449fbf6de88720615cd5ddd0056a40e5487110cb6eef` |
+
+As written, each helper:
+- pins the PR head, public key, candidate, predecessor, signer and checker
+  hashes;
+- reads the PEM (at most 64 KiB) and loads it with
+  `serialization.load_pem_private_key`, first without a password and otherwise
+  with a hidden `getpass` passphrase prompt;
+- checks that the loaded key matches the reviewed public key before signing.
+
+Steps 2 and 3 differ from step 1 only in the step and identity substitutions.
+
+The signed outputs verify against the production public key regardless of
+how they were produced. Whether the helpers exposed key material is a separate
+question, which the independent review's helper audit answers. A concern there
+means rotating the Core signing key, not re-signing with the same key.
+
+### 6.5 Publication, refresh and cache
+
+**Publication is the merge.** The runtime fetches the fixed URL
+`https://raw.githubusercontent.com/jeter-1/hass-mcp-admin/main/upstream-trust/ha-core-release-registry.json`.
+- No registry tag, release or workflow is involved, so there is no owner tag
+  action. (`scripts/publish_registry_tags_guarded.py` handles GHCR image tags
+  and is unrelated.)
+- Josh's Ready, and the merge it authorizes, publishes sequence 9 to the
+  running Engineering.
+
+Runtime behavior (both beta.3 and beta.4, `ha_core_readmission/registry.py`
+and `runtime.py`):
+- **First refresh:** on the first Core reconcile after start.
+- **Routine refresh:** every 6 h (`REFRESH_INTERVAL_SECONDS = 21600`, monotonic
+  clock). The interval is checked on each Core reconcile, which runs every
+  300 s, so sequence 9 is picked up within about 6 h of the merge, or at the
+  next add-on restart.
+- **Unknown release:** observing a Core version that has no entry and no
+  revocation triggers an early refresh. This is rate-limited to once per 60 s
+  per version.
+- **Transport:** bounded to 5 s connect, 15 s overall and 32 MiB.
+- **Cache:** an accepted journal is written to
+  `/data/ha-core-release-registry-cache.json` and reloaded at startup, so it
+  survives restarts.
+- **Rollback and revocations:** an older sequence is never accepted, and
+  revocations are retained.
+- **Expiry:** checked at use.
+
+Production Core is 2026.10.0, which has the same entry and selection token at
+sequences 6 and 9. No MCP-visible behavior changes until Core 2026.10.1 is
+installed.
+
+### 6.6 Read-only post-merge confirmation
+
+1. **Preferred, after HAMCP-168 is fixed** (`get_server_health` currently
+   fails; the fix is in PR #246, beta.5). Call `get_server_health` and read
+   `home_assistant_core_authority.release_registry`. Expect:
+   - `sequence` 9;
+   - `registry_id_status` `accepted`;
+   - `freshness_status` `current`;
+   - `cache_status` `valid`;
+   - `retained_revocation_count` 2.
+
+   `server_info`, `list_capabilities` and the operational snapshot do not
+   expose the sequence.
+2. **Host-level read-only file inspection** (a live-system action, so Josh
+   decides). Read `/data/ha-core-release-registry-cache.json` in the
+   `hass_mcp_engineering_beta` add-on and check that
+   `.authority_journal.envelopes[-1].sequence` is 9. The file can also be
+   compared with the published journal.
+3. **Behavioral signal.** This appears only on Core 2026.10.1: the 21
+   capabilities are admitted instead of being denied as an unknown release.
+
+### 6.7 Delta-review Low items
+
+These were folded into this document only. The hash-bound evidence JSON and
+`harness/make_inputs.py` keep their original wording, because changing them
+would change the cleared and signed hashes.
+- **L1:** section 2a now qualifies the id-less trace claim with restored
+  pre-upgrade traces (Core 2026.10.1 `trace/util.py:103-147`, checked in the
+  release archive).
+- **L2:** section 2a now states ha-mcp's unique_id-first resolution with an
+  object_id fallback. This cites the delta review; it was not re-verified
+  locally.
+- **L3:** section 2a now cites jobs-API step 14 and the nested log group
+  separately. The step names were checked through the GitHub jobs API.
