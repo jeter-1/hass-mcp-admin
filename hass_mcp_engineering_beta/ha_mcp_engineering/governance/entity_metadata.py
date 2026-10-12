@@ -34,6 +34,17 @@ ENTITY_METADATA_PROVIDER_OPERATION = "entity_registry_metadata_update"
 ENTITY_METADATA_NORMALIZATION_MODEL = "entity_registry_metadata_projection_v1"
 ENTITY_METADATA_BINDINGS_KEY = "plan_bindings"
 ENTITY_METADATA_UNAUTHORIZED_REASON = "entity_registry_update_unauthorized"
+# V9 (owner condition 2026-10-12): a plan whose final state was already
+# present at preflight is verified but was never dispatched.  It must not read
+# as a change Engineering made, in the outcome code, the text or the audit.
+ENTITY_METADATA_NOT_DISPATCHED_OUTCOME = (
+    "desired_state_already_present_not_dispatched"
+)
+ENTITY_METADATA_NOT_DISPATCHED_TEXT = (
+    "desired state already present; not dispatched. Engineering did not "
+    "make this change."
+)
+ENTITY_METADATA_NOT_DISPATCHED_EVENT = "task_completed_without_dispatch"
 
 # The complete reviewed metadata vocabulary, in Home Assistant field names.
 MANAGED_FIELDS = (

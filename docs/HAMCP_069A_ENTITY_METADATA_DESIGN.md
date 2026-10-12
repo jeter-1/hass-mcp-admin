@@ -928,6 +928,9 @@ Each item below is an implementation detail found during Part 2. None of them
 changes an approved decision. Each is also recorded in the register and in the
 PR deviation list.
 
+Owner review (2026-10-12): V1-V7 are approved as written. V8 is changed by
+owner direction. V9 is approved with the condition recorded under it.
+
 - **V1 — Freshness binding in the configuration family.** §3.2 says
   fingerprints are bound into `baseline`. `baseline` belongs to the
   operational family (contract v3). Under D1, the same evidence is bound through
@@ -985,13 +988,38 @@ PR deviation list.
   `except HomeAssistantApiError` could never fire (the two exception types are
   unrelated), so removing it changed no behaviour; the new handler is a
   separate `except AuthorizationError` clause.
-- **V8 — `check_config` preflight.** The shared configuration preflight still
-  runs Home Assistant's configuration check before an entity metadata update,
-  although a registry update does not read YAML. Kept for consistency with the
-  other configuration children (conservative).
+- **V8 — No `check_config` gate (changed by owner direction 2026-10-12).**
+  An entity metadata update does not run Home Assistant's configuration check.
+  A registry update does not read YAML, so an unrelated configuration error
+  must not block it (product principle: no restriction without a demonstrated
+  safety reason). It is a strategy hook (`requires_configuration_check =
+  False`) on the entity metadata strategy only. The check is skipped both at
+  preflight and at exact verification, where the recorded status is
+  `not_applicable`, so a post-dispatch readback is not failed by the same
+  unrelated error. Every existing configuration child keeps the check,
+  unchanged, at both points. The earlier proposal to keep the check
+  "for consistency" is withdrawn.
 - **V9 — Verified no-dispatch detection.** At preflight, if the entry no
   longer matches the plan's current-state fingerprint but its normalized state
   already equals the plan's final state, the step completes as verified with
   no dispatch (`desired_state_already_reached`). Any other mismatch is the
   normal stale refusal. A matching fingerprint always proceeds to the
   reference-definition and consumer-evidence recheck.
+
+  Approved on condition (owner direction 2026-10-12). The result must not read
+  as a change Engineering made:
+  - the client result has `status: already_present`, `outcome_code:
+    desired_state_already_present_not_dispatched`, `dispatch_performed:
+    false`, `changed_by_engineering: false`, `provider_dispatch_occurred:
+    false` and the text "desired state already present; not dispatched.
+    Engineering did not make this change.";
+  - the task's `terminal_outcome` and the plan's `execution_outcome` are
+    `desired_state_already_present_not_dispatched`, not
+    `succeeded_verified`; the task state remains `succeeded_verified`, because
+    the final state is verified;
+  - the audit records `task_completed_without_dispatch` (not
+    `task_completed`) with `provider_dispatch_occurred: false`, and the child
+    records `f3_preflight_noop_verified` with `dispatch_count: 0`; approval is
+    not consumed.
+  The distinct projection is scoped to entity metadata; other verified
+  no-dispatch capabilities keep their shipped projection.

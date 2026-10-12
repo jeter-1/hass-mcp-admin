@@ -98,6 +98,9 @@ from ..governance import configuration_rollback_eligibility as inverse_eligibili
 from ..governance.policy import POLICY_VERSION
 from ..governance.entity_metadata import (
     ENTITY_METADATA_CAPABILITY_IDENTITY,
+    ENTITY_METADATA_NOT_DISPATCHED_EVENT,
+    ENTITY_METADATA_NOT_DISPATCHED_OUTCOME,
+    ENTITY_METADATA_NOT_DISPATCHED_TEXT,
     ENTITY_METADATA_RESOURCE_TYPE,
 )
 from ..governance.resources import resource_fingerprint
@@ -2371,6 +2374,28 @@ class F3RuntimeIntegration:
             changes=changes,
         )
 
+    @staticmethod
+    def _entity_metadata_not_dispatched(
+        declarations: Any, records: Any
+    ) -> bool:
+        """Whether an entity metadata sequence was verified with no dispatch.
+
+        Scoped to entity metadata (V9); other verified no-dispatch children
+        keep their shipped ``succeeded_verified`` projection.
+        """
+
+        return bool(declarations) and all(
+            declaration["capability_id"] == ENTITY_METADATA_CAPABILITY_IDENTITY
+            and record is not None
+            and record.dispatch_intent is None
+            and record.dispatch_count == 0
+            and any(
+                event.get("event_type") == "preflight_noop_verified"
+                for event in record.events
+            )
+            for declaration, record in zip(declarations, records, strict=True)
+        )
+
     def _project(self, plan: Any, task: Any) -> None:
         with self.children.public_projection_transaction():
             current = self.service._load_task(task.task_id)
@@ -2461,6 +2486,23 @@ class F3RuntimeIntegration:
             "children": child_projection,
         }
         if all(outcome == "succeeded_verified" for outcome in outcomes):
+            not_dispatched = self._entity_metadata_not_dispatched(
+                declarations, records
+            )
+            terminal_outcome = (
+                ENTITY_METADATA_NOT_DISPATCHED_OUTCOME
+                if not_dispatched
+                else "succeeded_verified"
+            )
+            verified_summary = {**summary, "status": "verified"}
+            if not_dispatched:
+                verified_summary.update(
+                    {
+                        "outcome_code": terminal_outcome,
+                        "dispatch_performed": False,
+                        "result_text": ENTITY_METADATA_NOT_DISPATCHED_TEXT,
+                    }
+                )
             if task.state == ExecutionTaskState.DISPATCHING:
                 self.service._record_task_event(
                     task, "observation_completed", new_state=ExecutionTaskState.OBSERVING,
@@ -2474,19 +2516,23 @@ class F3RuntimeIntegration:
                 )
                 task = self.service._load_task(task.task_id)
             terminal_event(
-                "task_completed",
+                (
+                    ENTITY_METADATA_NOT_DISPATCHED_EVENT
+                    if not_dispatched
+                    else "task_completed"
+                ),
                 new_state=ExecutionTaskState.SUCCEEDED_VERIFIED,
                 changes={
                     "completed_at": self.service._timestamp(),
-                    "terminal_outcome": "succeeded_verified",
-                    "verification_summary": {**summary, "status": "verified"},
+                    "terminal_outcome": terminal_outcome,
+                    "verification_summary": verified_summary,
                 },
             )
             plan.status = PlanStatus.APPLIED
             plan.applied_at = (
                 task.completed_at if terminal_recovery else self.service._timestamp()
             )
-            plan.execution_outcome = "succeeded_verified"
+            plan.execution_outcome = terminal_outcome
         else:
             active = next(
                 (item for item in records if item is not None and not item.terminal), None
@@ -2685,7 +2731,7 @@ class F3RuntimeIntegration:
             self.service._active_task_ids_by_plan.pop(plan.plan_id, None)
         task = self.service._load_task(task.task_id)
         plan = self.service._load(plan.plan_id)
-        return {
+        result = {
             "status": "applied" if task.state == ExecutionTaskState.SUCCEEDED_VERIFIED else "accepted",
             "task_id": task.task_id,
             "task_state": task.state.value,
@@ -2695,6 +2741,17 @@ class F3RuntimeIntegration:
             "execution_task": self.service._public_task(task),
             "plan": self.service._public(plan, include_configs=False),
         }
+        if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME:
+            result.update(
+                {
+                    "status": "already_present",
+                    "outcome_code": ENTITY_METADATA_NOT_DISPATCHED_OUTCOME,
+                    "dispatch_performed": False,
+                    "changed_by_engineering": False,
+                    "result_text": ENTITY_METADATA_NOT_DISPATCHED_TEXT,
+                }
+            )
+        return result
 
     def _operational_authority(self, operation: Any) -> OperationalAuthoritySnapshot:
         declaration = self.children.declaration(operation.child_execution_id)

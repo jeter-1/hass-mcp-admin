@@ -195,6 +195,10 @@ class ConfigurationStrategy(ABC):
     # Optional preflight and outcome hooks.  The defaults preserve the
     # shipped behaviour of every full-replacement configuration strategy.
 
+    #: Whether Home Assistant's configuration check gates preflight and
+    #: exact verification.  YAML-backed configuration children keep it.
+    requires_configuration_check = True
+
     def already_reached(
         self,
         observed: dict[str, Any] | None,
@@ -371,6 +375,9 @@ class EntityRegistryMetadataConfigurationStrategy(ConfigurationStrategy):
     provider = ENTITY_METADATA_PROVIDER
     provider_contract = ENTITY_METADATA_PROVIDER_CONTRACT
     validation_contract = "entity_registry_metadata_validation_v1"
+    # V8 (owner direction 2026-10-12): a registry update reads no YAML, so
+    # an unrelated configuration error must not block or fail it.
+    requires_configuration_check = False
 
     def __init__(self, action: str) -> None:
         if action != "update":

@@ -319,7 +319,7 @@ class ConfigurationOperationAdapter:
             )
 
         validation_status = await self._configuration_check_status()
-        if validation_status != "valid":
+        if validation_status != self._expected_configuration_check_status:
             self._increment("validation_failures")
             return self._preflight_rejected(
                 operation,
@@ -594,7 +594,8 @@ class ConfigurationOperationAdapter:
             observation.identity_match
             and observation.semantic_match
             and observation.normalization_valid
-            and observation.configuration_check_status == "valid"
+            and observation.configuration_check_status
+            == self._expected_configuration_check_status
         )
         if exact:
             self._increment("verification_successes")
@@ -703,7 +704,17 @@ class ConfigurationOperationAdapter:
         except Exception as exc:
             return None, self.strategy.read_error_code(exc)
 
+    @property
+    def _expected_configuration_check_status(self) -> str:
+        return (
+            "valid"
+            if self.strategy.requires_configuration_check
+            else "not_applicable"
+        )
+
     async def _configuration_check_status(self) -> str:
+        if not self.strategy.requires_configuration_check:
+            return "not_applicable"
         try:
             result = await self.gateway.validate_all()
         except Exception:

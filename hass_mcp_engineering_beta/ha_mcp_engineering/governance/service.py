@@ -146,6 +146,10 @@ from .helper_state import (
     validate_desired_state,
     validate_input_boolean_entity_id,
 )
+from .entity_metadata import (
+    ENTITY_METADATA_NOT_DISPATCHED_OUTCOME,
+    ENTITY_METADATA_NOT_DISPATCHED_TEXT,
+)
 from .helper_dependency import (
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
@@ -6965,7 +6969,7 @@ class ChangeGovernanceService:
                     ),
                 },
             )
-        return {
+        result = {
             "status": "already_applied",
             "task_id": task.task_id,
             "task_state": task.state.value,
@@ -6976,6 +6980,17 @@ class ChangeGovernanceService:
             "task": self._public_task(task),
             "plan": self._public(plan, include_configs=False),
         }
+        if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME:
+            result.update(
+                {
+                    "status": "already_present",
+                    "outcome_code": ENTITY_METADATA_NOT_DISPATCHED_OUTCOME,
+                    "dispatch_performed": False,
+                    "changed_by_engineering": False,
+                    "result_text": ENTITY_METADATA_NOT_DISPATCHED_TEXT,
+                }
+            )
+        return result
 
     def _task_deadline_expired(self, task: ExecutionTask) -> bool:
         if (
