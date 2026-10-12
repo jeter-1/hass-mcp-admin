@@ -40,12 +40,18 @@ def verify_predecessor(response, requests, acquired):
     return {'acquired': acquired, 'ha_requests': requests, 'reason': 'authority_unavailable'}
 
 
-def verify_result(result, *, core_version):
-    """Offline receipt reconstruction; does not substitute for execution."""
+def verify_result(result, *, core_version, support_slot):
+    """Offline receipt reconstruction; does not substitute for execution.
+
+    The receipt must name the exact Core and the exact support-window slot the
+    caller bound that Core to (HAMCP-159); a missing or other slot refuses.
+    """
     from ha_mcp_engineering.audit_baseline import load_baseline, compare_baselines
     from ha_mcp_engineering.audit_baseline.capture_contracts import digest, canonical
     from alarmo_inspection_contract_acceptance import verify_interval
     assert type(core_version) is str and result['result'] == 'PASS' and result['core'] == core_version
+    assert type(support_slot) is str and type(result.get('support_slot')) is str
+    assert result['support_slot'] == support_slot
     assert result['production_authority'] is False and result['fixture_cleanup'] is True
     assert result['authority_transition'] == [20, 21]
     assert result['continuation_reads'] == 0 and result['nonadmin_refusal'] == 'access_denied'
@@ -240,7 +246,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
                 for runtime in runtimes: await close_disposable_authority(runtime)
         result['fixture_cleanup']=True
         try:
-            summary=verify_result(result, core_version=core_version)
+            summary=verify_result(result, core_version=core_version, support_slot=binding['slot'])
         except Exception:
             # Retain sanitized synthetic exports even when their final proof
             # fails; outer CI cleanup must continue to reject this receipt.

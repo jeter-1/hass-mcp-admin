@@ -120,15 +120,11 @@ HA_CONTRACT_CONTAINER = os.environ.get(
 )
 UPSTREAM_PORT = int(os.environ.get("REAL_HA_UPSTREAM_PORT", "18086"))
 UPSTREAM_SECRET_PATH = "/beta23-real-ha-mcp"
-CORE_2026_9_VERSIONS = frozenset({"2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3", "2026.9.4"})
-# Core 2026.10 uses the same child-device contract path with the name-parts
-# device-registry schema; admission is CI-only ephemeral test authority.
-CORE_2026_10_VERSIONS = frozenset({"2026.10.0", "2026.10.1"})
-CORE_CHILD_CONTRACT_VERSIONS = CORE_2026_9_VERSIONS | CORE_2026_10_VERSIONS
-# Exact releases whose disposable lane admits CI-only ephemeral Core authority.
-CORE_TEST_AUTHORITY_VERSIONS = frozenset({"2026.9.2", "2026.9.3", "2026.9.4", *CORE_2026_10_VERSIONS})
-# Exact releases paired with the reviewed ha-mcp 8.5.0 child consumer catalog.
-CORE_UPSTREAM_850_VERSIONS = frozenset({"2026.9.3", "2026.9.4", *CORE_2026_10_VERSIONS})
+# Exact child-device Core releases, their disposable-lane test authority,
+# device-registry schema and paired ha-mcp child consumer all come from the one
+# reviewed list in scripts/core_lane_bindings.py (HAMCP-159).
+CHILD_CONTRACT_PHASE = "core_2026_9_child_device_semantics"
+MIGRATION_CONTRACT_PHASE = "device_registry_migration_and_analysis"
 MIGRATION_AUTOMATION_ID = "beta23_composite_device_reference"
 FIXTURE_PLATFORM = "beta23_device_fixture"
 RESOURCE_ORDER = (
@@ -1399,7 +1395,7 @@ async def _run_governed_helper_state_contract(
     with tempfile.TemporaryDirectory(prefix="helper-core-authority-") as directory:
         try:
             configured = settings(token)
-            if EXPECTED_HA_VERSION in CORE_TEST_AUTHORITY_VERSIONS:
+            if _core_test_authority(EXPECTED_HA_VERSION):
                 from core_registry_contract_lane import configure_with_test_authority
                 await configure_with_test_authority(
                     core_runtime, configured, cache_path=Path(directory) / "core.json",
@@ -1584,7 +1580,7 @@ async def _run_governed_helper_state_with_authority(
                 )
             assert helper_dependency.get("home_assistant_version_observed") == EXPECTED_HA_VERSION
             assert dependency_index.snapshot.semantic_evidence.matches(EXPECTED_HA_VERSION)
-            if EXPECTED_HA_VERSION in CORE_TEST_AUTHORITY_VERSIONS:
+            if _core_test_authority(EXPECTED_HA_VERSION):
                 assert helper_dependency.get("reviewed_core_semantics", {}).get("core_version") == EXPECTED_HA_VERSION
             _assert_device_contract(
                 (await exact_gateway.read_state(entity_id))["state"] == "off",
@@ -2391,7 +2387,7 @@ async def _assert_http_configuration_contract() -> None:
         assert stored.get("has_pending") is False
         assert stored.get("has_stable") is False
         return
-    assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1", *CORE_CHILD_CONTRACT_VERSIONS}
+    assert EXPECTED_HA_VERSION in {"2026.8.0", "2026.8.1"} or _core_binding(EXPECTED_HA_VERSION) is not None
     assert stored.get("version") == 2
     assert stored.get("has_yaml_migration_done") is True
     assert stored.get("yaml_migration_done") is True
@@ -2745,7 +2741,7 @@ def _expected_device_response_adapter(
 ) -> str | None:
     """Return the adapter reviewed for the exact Home Assistant release."""
 
-    if home_assistant_version == "2026.7.2" or home_assistant_version in CORE_CHILD_CONTRACT_VERSIONS:
+    if home_assistant_version == "2026.7.2" or _core_binding(home_assistant_version) is not None:
         return None
     try:
         return HA_DEVICE_ADAPTER_IDS_BY_HA_VERSION[home_assistant_version]
@@ -3425,9 +3421,30 @@ def _expected_device_registry_schema(
     """Return the reviewed device-registry wire schema for one exact release."""
 
     version = EXPECTED_HA_VERSION if home_assistant_version is None else home_assistant_version
-    if version in CORE_2026_10_VERSIONS:
+    binding = _core_binding(version)
+    if binding is not None and binding.device_registry == "child_device_name_parts":
         return DeviceRegistrySchema.CHILD_DEVICE_NAME_PARTS
     return DeviceRegistrySchema.CHILD_DEVICES
+
+
+def _core_lane_bindings():
+    if str(ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(ROOT / "scripts"))
+    import core_lane_bindings
+
+    return core_lane_bindings
+
+
+def _core_binding(version: str):
+    """The exact reviewed Core binding (scripts/core_lane_bindings.py), or None."""
+
+    return _core_lane_bindings().reviewed_core_binding(version)
+
+
+def _core_test_authority(version: str) -> bool:
+    """Exact releases whose disposable lane admits CI-only ephemeral Core authority."""
+
+    return _core_lane_bindings().reviewed_lane_binding(version) is not None
 
 
 def _alarmo_slot_required(version: str) -> bool:
@@ -3442,18 +3459,34 @@ def _alarmo_slot_required(version: str) -> bool:
                for slot in support_window.core_slots(window, support_window.ALARMO_SLOTS))
 
 
+def _device_contract_phase(version: str) -> str:
+    """The one device-contract route for ``version`` (HAMCP-159).
+
+    A version that any support-window slot advertises Alarmo for always takes the
+    child contract, which is the only path that runs the Alarmo and baseline
+    acceptance; the migration contract is unreachable for it. Window validation
+    already refused any slot Core without a reviewed binding, and the child
+    contract itself fails closed on a missing binding.
+    """
+
+    if _alarmo_slot_required(version) or _core_binding(version) is not None:
+        return CHILD_CONTRACT_PHASE
+    return MIGRATION_CONTRACT_PHASE
+
+
 async def _run_core_2026_9_child_contract(
     websocket: HomeAssistantWebSocketClient,
     token: str,
 ) -> None:
     """Prove reviewed child-device reads on exact disposable Core releases."""
 
+    binding = _core_binding(EXPECTED_HA_VERSION)
     _assert_device_contract(
-        EXPECTED_HA_VERSION in CORE_CHILD_CONTRACT_VERSIONS,
+        binding is not None,
         "child_device_registry",
     )
     _assert_device_contract(
-        UPSTREAM_VERSION == ("8.5.0" if EXPECTED_HA_VERSION in CORE_UPSTREAM_850_VERSIONS else "8.4.3"), "child_consumer_catalog"
+        UPSTREAM_VERSION == binding.child_consumer, "child_consumer_catalog"
     )
     devices = await websocket.command({"type": "config/device_registry/list"})
     entities = await websocket.command({"type": "config/entity_registry/list"})
@@ -3539,7 +3572,7 @@ async def _run_core_2026_9_child_contract(
         )
         configured = settings(token)
         core_runtime = CoreRuntime()
-        if EXPECTED_HA_VERSION in CORE_TEST_AUTHORITY_VERSIONS:
+        if _core_test_authority(EXPECTED_HA_VERSION):
             # CI-only ephemeral authority exercises data admission without
             # adding test releases to the production compiled release table.
             sys.path.insert(0, str(ROOT / "scripts"))
@@ -3585,9 +3618,9 @@ async def _run_core_2026_9_child_contract(
         )
         server = FastMCP("rc2-core-2026-9-disposable")
         await read_gateway.reconcile_until_initialized(server)
-        if EXPECTED_HA_VERSION in CORE_UPSTREAM_850_VERSIONS:
+        if binding.child_consumer == "8.5.0":
             await _run_script_dependency_contract(configured, core_runtime, read_gateway)
-        if EXPECTED_HA_VERSION in CORE_TEST_AUTHORITY_VERSIONS:
+        if _core_test_authority(EXPECTED_HA_VERSION):
             await _run_typed_fan_contract(configured, core_runtime, read_gateway)
         tools = registered_tools(server)
         device_assessment = assess_device_registry(devices, schema=_expected_device_registry_schema())
@@ -3852,11 +3885,10 @@ async def run_contracts() -> None:
         phase = "http_configuration_migration"
         await _assert_http_configuration_contract()
 
-        if EXPECTED_HA_VERSION in CORE_CHILD_CONTRACT_VERSIONS:
-            phase = "core_2026_9_child_device_semantics"
+        phase = _device_contract_phase(EXPECTED_HA_VERSION)
+        if phase == CHILD_CONTRACT_PHASE:
             await _run_core_2026_9_child_contract(websocket, token)
         else:
-            phase = "device_registry_migration_and_analysis"
             await _run_device_migration_contract(rest, websocket, token)
 
         phase = "fresh_resource_preflight"

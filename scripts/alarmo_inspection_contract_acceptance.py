@@ -602,7 +602,7 @@ def verify_disposable_cleanup(result_path, output, core_version):
     control = value["negative_control_observation"]
     verify_interval(control, control["interval_id"], ["other"], kind="control", core_version=core_version)
     from automation_baseline_contract_acceptance import verify_result as verify_baseline
-    baseline = verify_baseline(value["automation_baseline"], core_version=core_version)
+    baseline = verify_baseline(value["automation_baseline"], core_version=core_version, support_slot=binding["slot"])
     receipt = {"result": "PASS", "core": core_version, "support_slot": binding["slot"],
                "owned_containers_remaining": 0, "owned_network_remaining": False,
                "required_alarmo_interval": "PASS", "required_automation_baseline": baseline,
