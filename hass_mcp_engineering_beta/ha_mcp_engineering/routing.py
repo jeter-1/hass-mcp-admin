@@ -25,7 +25,7 @@ from .inbound_security import bounded_request_id, compile_policy
 from .errors import ErrorCode, error_definition
 from .fan.audit import request_summary as _fan_request_summary
 from .power.service import request_summary as _power_request_summary
-from .ha_core_readmission.routes import static_tool_requirements
+from .ha_core_readmission.routes import static_tool_requirements, static_tool_target
 from .logging_config import get_logger, log_event
 from .models import FailureResponse, Timing
 from .observability import METRICS
@@ -710,8 +710,17 @@ class AuthenticatedMcpGateway:
                 else ()
             )
             if self._core_runtime is not None and core_requirements:
-                core_authority = self._core_runtime.acquire(
-                    core_requirements
+                core_target = (
+                    static_tool_target(tool_name, parameters)
+                    if isinstance(tool_name, str)
+                    else None
+                )
+                core_authority = (
+                    self._core_runtime.acquire(core_requirements)
+                    if core_target is None
+                    else self._core_runtime.acquire(
+                        core_requirements, target=core_target
+                    )
                 )
                 if core_authority is None:
                     definition = error_definition(

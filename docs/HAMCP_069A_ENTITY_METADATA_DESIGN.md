@@ -595,8 +595,11 @@ endpoints for areas, floors, labels and entities, not
 There is one new mutation-capable profile, `core.entity_registry_metadata_operation`.
 It gets a new `CoreCapabilityClass` member and is appended as a **separate
 tuple** to `CORE_RUNTIME_CAPABILITY_PROFILES`, never to
-`CORE_CAPABILITY_PROFILES`. That tuple is hashed into every signed probe
-fingerprint (`probe_profiles.py:26`).
+`CORE_CAPABILITY_PROFILES`. Only `CORE_CAPABILITY_PROFILES` is hashed into
+the signed probe fingerprints (`CoreProbeProfile.contract_fingerprint`,
+`probe_profiles.py:19-35`), and compiled exact authority iterates only that
+tuple, so adding the profile changes no signed fingerprint and no compiled
+admission.
 
 - `adapter_id`: `compiled-core-entity-registry-metadata-operation-v1`
 - `provider_boundary`: `direct_ha_api`
@@ -620,7 +623,9 @@ fingerprint (`probe_profiles.py:26`).
   `core.dependency_helper_planning`.
 - The F3 identities `update_entity_registry_metadata` and
   `create_label_registry_entry` map to `core.entity_registry_metadata_operation`
-  plus `core.f3_mutation_verification`.
+  plus `core.f3_mutation_verification`. (As implemented in 069A-1: the
+  identity is `update_entity_registry_metadata_configuration` (§15 V5), and
+  `create_label_registry_entry` is not registered (§15 V3).)
 - They do not map to `core.governed_configuration_operation`. That profile's
   signed contract attests `existing_governed_configuration_adapters`, and
   reusing it would admit a new write adapter under evidence that never covered
@@ -900,7 +905,8 @@ Creation is separable because 069A-1 already accepts existing labels.
   should load 069A plans and refuse to act on them (§3.1). Whether every beta.3
   load path tolerates the new resource types without quarantining the record
   as corrupt is **unverified**. Part 2 will add a test that loads a 069A record
-  through the beta.3 parsing path, or will report the result.
+  through the beta.3 parsing path, or will report the result. (Result: §15,
+  "F12 downgrade result".)
 
 ## 13. Owner decisions requested
 
@@ -967,6 +973,14 @@ owner direction. V9 is approved with the condition recorded under it.
   hidden by the integration (hidden_by=integration)". It is not listed in
   `already_satisfied`. `hidden: false` on an integration-hidden entity remains
   the §2.3 refusal `entity_metadata_integration_hidden`.
+  Partial requests: when the same request also changes another field, the
+  plan is created for the other fields only. `hidden` is not touched and is
+  not sent, `hidden_by` stays `integration`, and the plan's projection lists
+  the refused item under `refused_no_op`. When nothing else changes, the whole
+  request is the refused no-op above. If every requested value is already
+  current and none is refused, the result is `outcome:
+  already_in_desired_state` with `verified: true`, and `already_satisfied`
+  names each item (for example `name` and `add_labels:night`).
 - **V5 — Capability identity.** The F3 runtime derives configuration
   capability identities as `{action}_{resource_type}_configuration`. The
   identity is therefore `update_entity_registry_metadata_configuration`, not
@@ -1052,3 +1066,120 @@ owner direction. V9 is approved with the condition recorded under it.
   - Rollback of a forward plan that finished without dispatch is refused with
     `rollback_not_available`, reason `forward_not_dispatched`, before any
     inverse plan is created: Engineering made no change to invert.
+
+- **V10 — D4 consequence follows E1.** The amended D4 elevates alias changes
+  on locks, alarm panels and garage, gate or door covers, but does not name a
+  physical consequence. The implementation uses the E1 mapping for the same
+  domain: `safety_critical` for `lock` and `alarm_control_panel`, and
+  `indirect` for the covers. The cover's effective device class is its
+  `device_class`, or `original_device_class` when the user has not set one.
+  Required acknowledgements are the elevated pair (`plan_approval`,
+  `elevated_risk_acknowledgement`). Name changes and alias changes on any
+  other entity stay standard.
+
+- **V11 — The planner's Core lease binds the exact entity (defect found and
+  fixed in 069A-1; owner disposition requested).** §9 maps
+  `create_entity_metadata_plan` to `core.entity_registry_metadata_operation`
+  plus `core.dependency_helper_planning`. The new profile is mutation-capable,
+  and the Core coordinator issues a mutation-capable lease only for an exact
+  target. The gateway acquired static-tool authority without a target, so
+  after an owner-signed admission the planner would still have been refused
+  with `CoreCapabilityUnavailable` on every call. No other static tool
+  requires a mutation-capable profile. The fix adds `static_tool_target`
+  (`ha_core_readmission/routes.py`): for `create_entity_metadata_plan` with a
+  non-empty string `entity_id`, the target is `{"target_type":
+  "entity_registry_metadata", "target_id": <entity_id>}`, the same identity
+  and fingerprint the F3 apply identity binds. The gateway passes `target=`
+  only when a target exists, so every other tool's acquisition call is
+  unchanged. A missing or malformed `entity_id` gets no target and is refused
+  before the MCP application. Admission policy, profiles, fingerprints and the
+  signed registry are unchanged. Proven by
+  `tests/test_hamcp069a_entity_metadata_readmission.py`: refused while
+  unadmitted; admitted through an exact signed reference with the bound
+  target (lease consume and revalidate, gateway reaches the application);
+  refused without a target; and a guard that every mutation-capable static
+  route has a target. A mutation that drops the target makes the admitted
+  test fail.
+
+Further precision found during the 069A-1 tests. None of these changes an
+approved decision.
+
+- **Stale-state code.** §7 names the stale refusal `stale_baseline`. The
+  entity metadata child uses the shared configuration adapter, so the
+  recorded child diagnostic is that adapter's existing `stale_target_state`
+  (entry changed) or `stale_reference_definition` (a referenced label, area
+  or category definition changed). In both cases the outcome is
+  `preflight_rejected` with no dispatch, as designed.
+- **V7 evidence.** The stage codes are recorded as child diagnostic codes in
+  the F3 child record. Preflight leaves the approval unconsumed. A dispatch
+  refusal is `dispatch_failed_confirmed` with `dispatch_count: 1` and no
+  mutation: the task state is `failed_post_dispatch`, because the command
+  was sent and Home Assistant refused it. A readback failure leaves the task
+  `observing` and the plan `verification_required`. Re-applying a terminal
+  failed task is refused with the existing `duplicate_apply_attempt` and
+  never redispatches. A lost response is reconciled by readback only, never
+  by a second send.
+- **Rollback reasons.** In addition to the §8 reasons, rollback is refused
+  with `forward_not_dispatched` (the forward finished without dispatch, V9)
+  and `rollback_reference_missing` (a label, area or category that the
+  pre-state referenced no longer exists). `entry_changed_since_apply` is
+  reported with `reason_code` and `plan_created: false`. A repeated
+  `rollback_change` returns the same reverse plan.
+- **Provider not configured.** If the service has no entity metadata gateway,
+  planning and rollback planning are refused with
+  `home_assistant_unavailable`, reason `entity_metadata_provider_unavailable`,
+  before any read. The operational health block `entity_metadata_provider`
+  reports `configured`, `operational_status` (`configured_unprobed` or
+  `unavailable`), the required Core profile, `core_admission:
+  owner_signed_reference_required`, `label_creation: false` and no fallback.
+  It makes no Core or Home Assistant call.
+- **Unavailable consumer evidence at planning.** A dependency snapshot reader
+  that fails, or that returns no snapshot, is refused with
+  `home_assistant_unavailable`,
+  reason `dependency_snapshot_unavailable`, and no plan. Before this fix, a
+  missing snapshot escaped as an unhandled evidence exception.
+- **Disposable Real HA lanes.** The alarmo and automation-baseline disposable
+  lanes sign every runtime profile except the dormant
+  `core.entity_registry_metadata_operation`. Their signed capability sets are
+  therefore unchanged. The October synthetic registry fixture signs all 22
+  runtime profiles.
+- **Probe fingerprints.** §9 originally said the runtime tuple is hashed into
+  every signed probe fingerprint. It is not: the fingerprint material and
+  compiled exact authority use only `CORE_CAPABILITY_PROFILES`, which does not
+  contain the new profile. The pinned legacy and child-device probe
+  fingerprints are unchanged, and a test asserts it.
+
+**F12 downgrade result (2026-10-12).** Engineering 2.4.1-beta.3 (`5fe5ddd`,
+extracted with `git archive`) was run offline against plan, approval, task
+and child records written by the beta.4 service in six states: awaiting
+approval, approved, applied and verified, already present (V9), rollback plan
+awaiting approval, and a non-terminal `observing` task (dispatched, readback
+unauthorized). The probe scripts are not committed; the result is recorded
+here and in the pull request.
+
+- Every state: beta.3 loads every plan, task and child record. Repository
+  health stays `healthy` with `corruption_count: 0`, and nothing is
+  quarantined. No Home Assistant command of any kind is sent.
+- Beta.3 refuses `get_change_plan`, `approve`, `apply` and `rollback_change`
+  on every 069A plan with `policy_snapshot_mismatch`; plan status and approval
+  are unchanged. `list_change_plans` omits the plans and reports them under
+  `partial: true` / `projection_failures`. Task and child reads work.
+- Why it refuses: beta.3's policy evaluates the plan as an ordinary standard
+  configuration change and derives a different reason code from the stored
+  `entity_metadata_standard_policy`, so the persisted decision does not match.
+  The plan hash is identical. The refusal is deterministic for every 069A
+  plan, but its message describes a snapshot mismatch rather than a version
+  mismatch. With that check bypassed in memory, `apply` is refused a second
+  time by beta.3's F3 adapter registry (`unknown F3 capability`) before any
+  task, approval consumption or dispatch.
+- **Limitation, non-terminal tasks.** In the `observing` state, beta.3's
+  startup and periodic recovery raise `policy_snapshot_mismatch` while
+  loading the plan for the task's inverse lock, and F3 readiness becomes
+  faulted (`recovery_child`, `recovery_pass`) and stays faulted. Beta.3 cannot
+  reverify or cancel the task. Nothing is dispatched; this is fail-closed.
+  From source, a faulted readiness blocks every F3 apply in beta.3, not only
+  entity metadata (inferred, not executed). Recovery is to return to beta.4,
+  which reconciles the task by readback. Journals and locks must not be
+  cleared to force recovery.
+- Downgrade guidance: downgrade to beta.3 only after every entity metadata
+  execution task is terminal. Beta.3 is not changed.

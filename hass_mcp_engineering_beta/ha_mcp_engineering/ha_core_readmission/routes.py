@@ -245,6 +245,25 @@ def static_tool_requirements(
     return tuple(sorted(set(requirements)))
 
 
+def static_tool_target(
+    tool_name: str,
+    arguments: Any = None,
+) -> dict[str, str] | None:
+    """Return the exact target a mutation-capable static route must bind.
+
+    A mutation-capable Core profile issues a lease only for one exact target.
+    The entity metadata planner binds the same target identity its F3 apply
+    identity binds; every other static tool has no target.
+    """
+
+    if tool_name != "create_entity_metadata_plan" or not isinstance(arguments, dict):
+        return None
+    entity_id = arguments.get("entity_id")
+    if not isinstance(entity_id, str) or not entity_id:
+        return None
+    return {"target_type": "entity_registry_metadata", "target_id": entity_id}
+
+
 def f3_requirements(prepared: Any) -> tuple[str, ...]:
     """Map an existing typed F3 operation to its complete Core authority set."""
 
@@ -291,4 +310,5 @@ __all__ = [
     "delegated_provider_compatibility",
     "f3_requirements",
     "static_tool_requirements",
+    "static_tool_target",
 ]

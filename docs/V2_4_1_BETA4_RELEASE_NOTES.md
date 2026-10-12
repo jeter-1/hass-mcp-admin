@@ -6,7 +6,7 @@ Engineering 2.4.1-beta.4 adds governed entity-registry metadata administration
 `aliases`, `area_id`, `hidden`, existing `labels` and `categories`. Approval,
 execution and reversal use the existing `approve_change_plan`,
 `apply_change_plan` and `rollback_change` tools. The approved design and every
-implementation deviation (V1-V10) are in the
+implementation deviation (V1-V11) are in the
 [HAMCP-069A design](HAMCP_069A_ENTITY_METADATA_DESIGN.md).
 
 **The capability is dormant on every supported Core.** It requires the new
@@ -55,5 +55,10 @@ permissions, the support window and the signed Core and upstream registries are
 unchanged. Label creation (HAMCP-069A-2/HAMCP-165), enable/disable and exposure
 (069B), and the shared no-dispatch projection for other capabilities
 (HAMCP-167) are not included.
+
+Downgrade: beta.3 loads beta.4 entity metadata records without quarantine and
+refuses every action on them without dispatch, but an entity metadata task
+that is not yet terminal faults beta.3's F3 readiness. Downgrade only after
+every entity metadata task is terminal (design §15, F12 result).
 
 Follow the [beta.4 acceptance contract](V2_4_1_BETA4_ACCEPTANCE.md).

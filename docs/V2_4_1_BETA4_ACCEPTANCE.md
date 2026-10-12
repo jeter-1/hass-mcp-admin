@@ -9,7 +9,7 @@ the new profile. This document authorizes none of the latter operations.
 
 Bind the design approval (`53954b9`, 2026-10-11), the base `main` and every
 later main merge into the branch, and the final reviewed commit and tree.
-Record each implementation deviation (V1-V10) and its owner disposition from
+Record each implementation deviation (V1-V11) and its owner disposition from
 the design's §15. Earlier review does not cover changed code.
 
 Materialize 2.4.1-beta.4 in all three version authorities through the existing
@@ -46,7 +46,9 @@ registry gateway:
 - rollback success, refusal after a later edit and refusal of a not-dispatched
   forward plan;
 - fail-closed `CoreCapabilityUnavailable` with zero transport while the profile
-  is unadmitted, and that upstream `ha_set_entity` is never invoked.
+  is unadmitted, admission only through an exact owner-signed reference with
+  the planner's lease bound to its exact entity target (design §15 V11), and
+  that upstream `ha_set_entity` is never invoked.
 
 ## 2. Publication and recovery preparation
 
@@ -55,10 +57,13 @@ handoff. Verify the merged source, v2.4.1-beta.4, immutable version/commit
 images, provenance and SBOM with the shipped verifiers. Never invent future
 image identities. Local commits or disposable PASS do not establish
 publication. Retain the known-good beta.3 artifacts and options for recovery.
-How beta.3 loads a retained beta.4 entity metadata plan is established by the
-F12 load-path test recorded in the pull request; rely on an Engineering
-downgrade only within that proven behavior, and never clear journals or locks
-to force recovery.
+How beta.3 handles retained beta.4 entity metadata records is established by
+the F12 load-path result in the design's §15. Beta.3 loads every record
+without quarantine and refuses every action on 069A plans without dispatch,
+but a non-terminal entity metadata task faults beta.3's F3 readiness. Downgrade
+to beta.3 only after every entity metadata execution task is terminal; if one
+is not, return to beta.4 so that it reconciles the task by readback. Never
+clear journals or locks to force recovery.
 
 ## 3. Installed Engineering
 
