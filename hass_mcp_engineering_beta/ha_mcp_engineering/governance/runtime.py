@@ -17,6 +17,7 @@ from .historical_policy import (
 )
 from .operational_lifecycle import OperationalLifecycleGateway
 from .resources import ConfigurationResourceGateway
+from .entity_metadata_disclosure import runtime_consumer_evidence
 from .operational import BackupAdministrationGateway
 from .helper_state import (
     HELPER_STATE_PROVIDER,
@@ -143,6 +144,11 @@ class GovernanceRuntime:
             resource_gateway = ConfigurationResourceGateway(
                 rest_client, websocket_client
             )
+            # Post-lock preflight recheck of an entity metadata plan's bound
+            # consumer evidence over the fenced dependency index.
+            resource_gateway.entity_metadata_consumer_evidence = (
+                runtime_consumer_evidence()
+            )
             helper_state_gateway = HelperStateGateway(
                 rest_client, websocket_client
             )
@@ -167,6 +173,7 @@ class GovernanceRuntime:
                 dashboard_gateway=dashboard_gateway,
                 provider_identity_reader=provider_identity_reader,
                 approval_notifications=approval_notifications,
+                entity_metadata_gateway=resource_gateway.entity_metadata,
             )
             from ..f3_runtime.runtime import F3RuntimeIntegration
 

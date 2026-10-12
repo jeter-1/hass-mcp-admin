@@ -64,6 +64,7 @@ class CoreCapabilityClass(str, Enum):
     F3_MUTATION_VERIFICATION = "f3_mutation_verification"
     GOVERNED_CONFIGURATION_OPERATION = "governed_configuration_operation"
     GOVERNANCE_OBSERVABILITY = "governance_observability"
+    ENTITY_REGISTRY_METADATA_OPERATION = "entity_registry_metadata_operation"
     UNCLASSIFIED = "unclassified"
 
     @property
@@ -73,6 +74,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
             CoreCapabilityClass.F3_MUTATION_VERIFICATION,
             CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
+            CoreCapabilityClass.ENTITY_REGISTRY_METADATA_OPERATION,
             CoreCapabilityClass.UNCLASSIFIED,
         }
 
@@ -91,6 +93,7 @@ class CoreCapabilityClass(str, Enum):
             CoreCapabilityClass.TYPED_ORDINARY_OPERATION,
             CoreCapabilityClass.F3_MUTATION_VERIFICATION,
             CoreCapabilityClass.GOVERNED_CONFIGURATION_OPERATION,
+            CoreCapabilityClass.ENTITY_REGISTRY_METADATA_OPERATION,
         }
 
 

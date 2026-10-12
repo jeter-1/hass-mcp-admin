@@ -127,6 +127,7 @@ def capability_evidence_for_probes(
     include_typed_operations: bool = False,
     include_integration_inspection: bool = False,
     include_automation_baseline: bool = False,
+    include_entity_metadata: bool = False,
 ) -> list[dict[str, Any]]:
     """Project transient raw probes into bounded binary-owned check evidence."""
 
@@ -276,6 +277,14 @@ def capability_evidence_for_probes(
             rest_ok and websocket_ok,
             semantic=True,
         )
+        if include_entity_metadata:
+            # Transport readiness only; no registry probe is dispatched. An
+            # exact owner-signed reference must still select this contract.
+            add(
+                "core.entity_registry_metadata_operation",
+                rest_ok and websocket_ok,
+                semantic=True,
+            )
     return evidence
 
 
@@ -696,6 +705,7 @@ class AiohttpCoreSnapshotSource:
             include_typed_operations=True,
             include_integration_inspection=True,
             include_automation_baseline=True,
+            include_entity_metadata=True,
             version=version,
             probe_profile=self._profile_selector(version),
             rest_config=rest_config,

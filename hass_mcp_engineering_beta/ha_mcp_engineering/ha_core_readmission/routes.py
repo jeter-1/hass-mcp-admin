@@ -61,6 +61,15 @@ _F3_GOVERNED_CONFIGURATION_OPERATIONS = frozenset(
     }
 )
 
+_F3_ENTITY_METADATA_OPERATIONS = frozenset(
+    {
+        (
+            "update_entity_registry_metadata_configuration",
+            "update_entity_registry_metadata_configuration",
+        )
+    }
+)
+
 DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_automation": ("core.automation_configuration_read",),
     "ha_config_get_calendar_events": ("core.basic_websocket_read",),
@@ -127,6 +136,10 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "create_helper_state_plan": ("core.dependency_helper_planning",),
     "create_change_plan": ("core.dependency_helper_planning",),
     "create_configuration_plan": ("core.dependency_helper_planning",),
+    "create_entity_metadata_plan": (
+        "core.dependency_helper_planning",
+        "core.entity_registry_metadata_operation",
+    ),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -257,6 +270,10 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         values.add("core.typed_helper_operation")
     elif identity in _F3_GOVERNED_CONFIGURATION_OPERATIONS:
         values.add("core.governed_configuration_operation")
+    elif identity in _F3_ENTITY_METADATA_OPERATIONS:
+        # Never the signed governed_configuration_operation contract: that
+        # evidence did not cover the entity registry write adapter.
+        values.add("core.entity_registry_metadata_operation")
     else:
         # There is deliberately no profile for this requirement. Unknown or
         # conflicting identities therefore cannot acquire a Core route lease.

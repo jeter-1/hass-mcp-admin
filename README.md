@@ -6,7 +6,7 @@ It also makes explicit deep-health collection yield between records and adds
 bounded Core reconciliation failure attribution. These corrections preserve
 authority, execution ownership and storage-failure handling; they do not establish
 the cause of the historical October disconnect or an installed latency guarantee.
-The healthy catalog remains **83 tools: 58 native and 25 admitted delegated
+The healthy catalog remains **84 tools: 59 native and 25 admitted delegated
 reads**. The exact reference/component search variants, skill-guide migration,
 and closed template/scene/blueprint adapters require compiled compatibility and
 matching authority. All 21 Core profiles, signed fingerprints, storage formats
@@ -147,7 +147,7 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**58 static tools plus 25 delegated reads, 83 total**. The Core inventory represents
+**59 static tools plus 25 delegated reads, 84 total**. The Core inventory represents
 **21 capability profiles**. Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

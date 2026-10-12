@@ -20,6 +20,8 @@ from .normalize import stable_hash
 from .risk import SAFETY_CRITICAL_SERVICES
 from .configuration_eligibility import bound_proof, local_member_marked, markers
 from . import configuration_rollback_eligibility as inverse_eligibility
+from .entity_metadata import ENTITY_METADATA_RESOURCE_TYPE
+from .entity_metadata_planning import POLICY_TRIGGER as ENTITY_METADATA_POLICY_TRIGGER
 
 
 POLICY_VERSION = "f2-v2"
@@ -364,12 +366,109 @@ def _retained_safety_critical_effect_is_non_risk_increasing(
     )
 
 
+_ENTITY_METADATA_ELEVATED_CONSEQUENCES = frozenset(
+    {
+        PhysicalConsequence.INDIRECT,
+        PhysicalConsequence.DIRECT,
+        PhysicalConsequence.SAFETY_CRITICAL,
+    }
+)
+
+
+def _entity_metadata_operation_policy(
+    operation: ConfigurationOperation,
+) -> OperationPolicyClassification:
+    """Classify one entity registry metadata update (HAMCP-069A-1 §5).
+
+    Only an incomplete execution contract is prohibited; a disclosed
+    physical consequence elevates the plan and is never prohibited alone.
+    """
+
+    incomplete = OperationPolicyClassification(
+        ApprovalPolicyClass.PROHIBITED,
+        RiskDelta.CRITICAL,
+        PhysicalConsequence.UNKNOWN,
+        ("entity_metadata_execution_contract_incomplete",),
+    )
+    markers_found = [
+        item
+        for item in operation.risk.evidence
+        if isinstance(item, dict)
+        and item.get("trigger") == ENTITY_METADATA_POLICY_TRIGGER
+    ]
+    if (
+        operation.action != "update"
+        or operation.helper_type is not None
+        or not isinstance(operation.target_id, str)
+        or not operation.target_id
+        or not isinstance(operation.current_config, dict)
+        or not isinstance(operation.proposed_config, dict)
+        or not isinstance(operation.current_state_fingerprint, str)
+        or len(operation.current_state_fingerprint) != 64
+        or not isinstance(operation.proposed_config_hash, str)
+        or len(operation.proposed_config_hash) != 64
+        or operation.risk.apply_allowed is not True
+        or len(markers_found) != 1
+    ):
+        return incomplete
+    marker = markers_found[0]
+    policy = marker.get("policy")
+    try:
+        consequence = PhysicalConsequence(marker.get("physical_consequence"))
+    except ValueError:
+        return incomplete
+    basis = marker.get("basis")
+    basis_codes = (
+        tuple(item for item in basis.split(",") if item)
+        if isinstance(basis, str)
+        else ()
+    )
+    if (
+        policy == "standard"
+        and operation.risk.level is RiskLevel.LOW
+        and consequence is PhysicalConsequence.NONE
+        and not basis_codes
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.STANDARD_ADMIN,
+            RiskDelta.LOW,
+            PhysicalConsequence.NONE,
+            (
+                "entity_metadata_standard_policy",
+                "supported_configuration_change",
+            ),
+        )
+    if (
+        policy == "elevated"
+        and operation.risk.level is RiskLevel.HIGH
+        and consequence in _ENTITY_METADATA_ELEVATED_CONSEQUENCES
+        and basis_codes
+    ):
+        return OperationPolicyClassification(
+            ApprovalPolicyClass.ELEVATED_ADMIN,
+            RiskDelta.HIGH,
+            consequence,
+            tuple(
+                sorted(
+                    {
+                        *basis_codes,
+                        "entity_metadata_elevated_policy",
+                        "supported_configuration_change",
+                    }
+                )
+            ),
+        )
+    return incomplete
+
+
 def configuration_operation_policy(
     operation: ConfigurationOperation,
     *,
     owner_authoritative: bool = True,
 ) -> OperationPolicyClassification:
     """Classify one operation for both policy and approval review."""
+    if operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+        return _entity_metadata_operation_policy(operation)
     triggers = _risk_triggers(operation)
     safety_critical_services = _risk_services(operation)
     risk_delta = _risk_delta(operation.risk.level)
@@ -721,6 +820,19 @@ def _single_plan_policy(
                     RiskDelta.CRITICAL,
                     PhysicalConsequence.NONE,
                     ("unknown_policy_classification",),
+                ),
+            )
+        if len(plan.operations) != 1 and any(
+            op.resource_type == ENTITY_METADATA_RESOURCE_TYPE
+            for op in plan.operations
+        ):
+            # An entity metadata update is always a single-operation plan.
+            return (
+                OperationPolicyClassification(
+                    ApprovalPolicyClass.PROHIBITED,
+                    RiskDelta.CRITICAL,
+                    PhysicalConsequence.UNKNOWN,
+                    ("entity_metadata_execution_contract_incomplete",),
                 ),
             )
         if any(inverse_eligibility.markers(op) for op in plan.operations) and inverse_eligibility.bound(plan) is None:

@@ -149,7 +149,10 @@ from .helper_state import (
 from .entity_metadata import (
     ENTITY_METADATA_NOT_DISPATCHED_OUTCOME,
     ENTITY_METADATA_NOT_DISPATCHED_TEXT,
+    ENTITY_METADATA_RESOURCE_TYPE,
 )
+from . import entity_metadata_planning
+from .entity_metadata_disclosure import read_runtime_dependency_snapshot
 from .helper_dependency import (
     HELPER_DEPENDENCY_RISK_COMPATIBLE_MODELS,
     HELPER_DEPENDENCY_RISK_EXECUTION_MODELS,
@@ -465,6 +468,9 @@ class ChangeGovernanceService:
         provider_identity_reader: Callable[[], Awaitable[dict[str, str]]] | None = None,
         approval_notifications: Any | None = None,
         plan_observability_cursor_key: bytes | None = None,
+        entity_metadata_gateway: Any | None = None,
+        entity_metadata_snapshot_reader: Callable[..., Awaitable[Any]]
+        | None = None,
     ):
         self.repository = repository
         self.gateway = gateway
@@ -479,6 +485,10 @@ class ChangeGovernanceService:
             or read_runtime_helper_dependency_risk
         )
         self.dashboard_gateway = dashboard_gateway
+        self.entity_metadata_gateway = entity_metadata_gateway
+        self.entity_metadata_snapshot_reader = (
+            entity_metadata_snapshot_reader or read_runtime_dependency_snapshot
+        )
         self.provider_identity_reader = provider_identity_reader
         self.approval_notifications = approval_notifications
         self._plan_observability_cursor_key = (
@@ -4265,12 +4275,112 @@ class ChangeGovernanceService:
             expiration_minutes=expiration_minutes, caller_context=caller_context,
         )
 
+    async def create_entity_metadata_plan(
+        self,
+        arguments: Any,
+        *,
+        caller_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Plan one governed entity registry metadata update (HAMCP-069A-1).
+
+        Input is validated before any Home Assistant read.  A request that
+        changes nothing returns the bounded no-change result without storing
+        a plan.  Otherwise one single-operation contract-v2 configuration
+        plan is created; nothing is dispatched here.
+        """
+
+        try:
+            request = entity_metadata_planning.validate_request(arguments)
+            if self.entity_metadata_gateway is None:
+                raise entity_metadata_planning.EntityMetadataRefusal(
+                    "entity_metadata_provider_unavailable", kind="unavailable"
+                )
+            prepared = await entity_metadata_planning.prepare(
+                self.entity_metadata_gateway,
+                self.entity_metadata_snapshot_reader,
+                request,
+            )
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self._entity_metadata_refusal_error(exc, arguments) from None
+        if prepared.no_change is not None:
+            return prepared.no_change
+        return await self._create_configuration_plan(
+            title=f"Entity metadata: {request.entity_id}",
+            description=(
+                "Update entity registry metadata for "
+                f"{request.entity_id}: {', '.join(prepared.touched)}."
+            ),
+            operations=[
+                {
+                    "operation_id": "entity_metadata",
+                    "resource_type": ENTITY_METADATA_RESOURCE_TYPE,
+                    "action": "update",
+                    "target_id": request.entity_id,
+                    "proposed_config": prepared.final,
+                }
+            ],
+            expiration_minutes=request.expiration_minutes,
+            caller_context=caller_context,
+            _entity_metadata_context=prepared,
+        )
+
+    @staticmethod
+    def _entity_metadata_refusal_error(
+        exc: Exception, arguments: Any
+    ) -> GovernanceError:
+        refusal = exc
+        kind = getattr(refusal, "kind", "invalid_request")
+        code = {
+            "permission": ErrorCode.AUTHORIZATION_FAILURE,
+            "not_found": ErrorCode.ENTITY_NOT_FOUND,
+            "unavailable": ErrorCode.HA_UNAVAILABLE,
+            "rollback": ErrorCode.ROLLBACK_NOT_AVAILABLE,
+        }.get(kind, ErrorCode.INVALID_REQUEST)
+        entity_id = (
+            arguments.get("entity_id") if isinstance(arguments, dict) else None
+        )
+        details: dict[str, Any] = {
+            "reason": refusal.reason_code,
+            "reason_code": refusal.reason_code,
+            "plan_created": False,
+            "provider_dispatch_occurred": False,
+            **refusal.details,
+        }
+        if isinstance(entity_id, str) and len(entity_id) <= 255:
+            details["resource_id"] = entity_id
+        return GovernanceError(code, details=details)
+
     async def _create_configuration_plan(
         self, *, title: str, description: str, operations: list[dict[str, Any]],
         expiration_minutes: int = 120, caller_context: dict[str, Any] | None = None,
         _rollback_context: dict[str, Any] | None = None,
+        _entity_metadata_context: Any | None = None,
     ) -> dict[str, Any]:
-        """Internal builder; only F3's inverse route supplies durable context."""
+        """Internal builder; only F3's inverse route supplies durable context.
+
+        ``_entity_metadata_context`` is supplied only by
+        ``create_entity_metadata_plan`` (and its F3 inverse route).  It admits
+        exactly one ``entity_registry_metadata`` update whose current entry,
+        final entry and classification were already prepared; the public
+        configuration resource set is unchanged.
+        """
+
+        entity_plan_id: str | None = None
+        if _entity_metadata_context is not None:
+            if len(operations) != 1:
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                    details={
+                        "validation_errors": [
+                            "entity metadata plans contain exactly one operation"
+                        ]
+                    },
+                )
+            entity_plan_id = (
+                _rollback_context["plan_id"]
+                if _rollback_context is not None
+                else self._new_id()
+            )
 
         if not isinstance(operations, list) or not (
             1 <= len(operations) <= MAX_CONFIGURATION_OPERATIONS
@@ -4382,12 +4492,28 @@ class ChangeGovernanceService:
                 if isinstance(resource_type_value, str)
                 else ""
             )
-            if resource_type not in SUPPORTED_CONFIGURATION_RESOURCES:
+            if resource_type not in (
+                SUPPORTED_CONFIGURATION_RESOURCES
+                if _entity_metadata_context is None
+                else {ENTITY_METADATA_RESOURCE_TYPE}
+            ):
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_VALIDATION_FAILED,
                     details={
                         "validation_errors": [
                             f"{operation_id}: resource_type must be automation, script, or helper"
+                        ]
+                    },
+                )
+            if (
+                _entity_metadata_context is not None
+                and raw_operation["action"] != "update"
+            ):
+                raise GovernanceError(
+                    ErrorCode.CONFIGURATION_VALIDATION_FAILED,
+                    details={
+                        "validation_errors": [
+                            f"{operation_id}: entity metadata is update-only"
                         ]
                     },
                 )
@@ -4510,9 +4636,15 @@ class ChangeGovernanceService:
                     },
                 )
 
-            current = await self._read_configuration_resource(
-                resolved_type, target_id
-            )
+            if _entity_metadata_context is not None:
+                # The prepared entry is the exact state the classification,
+                # disclosure and bindings were derived from; re-reading here
+                # could bind a different entry to that review.
+                current = _entity_metadata_context.current
+            else:
+                current = await self._read_configuration_resource(
+                    resolved_type, target_id
+                )
             if current is not None and persistence_safety_errors(
                 current, self.sensitive_values
             ):
@@ -4559,16 +4691,27 @@ class ChangeGovernanceService:
                     resolved_type, current
                 )
                 proposed_hash = stable_hash(normalized_proposed)
-                diff = structured_resource_diff(
-                    resolved_type, current, proposed_config
-                )
-                risk = self._configuration_risk(
-                    operation_id,
-                    resource_type,
-                    action,
-                    diff,
-                    proposed_config,
-                )
+                if _entity_metadata_context is not None:
+                    diff = {
+                        "has_changes": True,
+                        "entity_metadata": entity_metadata_planning.projection(
+                            _entity_metadata_context, plan_id=entity_plan_id
+                        ),
+                    }
+                    risk = entity_metadata_planning.risk_assessment(
+                        operation_id, _entity_metadata_context.classification
+                    )
+                else:
+                    diff = structured_resource_diff(
+                        resolved_type, current, proposed_config
+                    )
+                    risk = self._configuration_risk(
+                        operation_id,
+                        resource_type,
+                        action,
+                        diff,
+                        proposed_config,
+                    )
             except (TypeError, ValueError, OverflowError) as exc:
                 raise GovernanceError(
                     ErrorCode.CONFIGURATION_PROJECTION_UNREVIEWABLE,
@@ -4681,7 +4824,13 @@ class ChangeGovernanceService:
         expiration_minutes = max(5, min(int(expiration_minutes), 1440))
         aggregate_risk = self._aggregate_configuration_risk(prepared)
         now = self.now()
-        plan_id = _rollback_context["plan_id"] if _rollback_context is not None else self._new_id()
+        plan_id = (
+            entity_plan_id
+            if entity_plan_id is not None
+            else _rollback_context["plan_id"]
+            if _rollback_context is not None
+            else self._new_id()
+        )
         plan = ChangePlan(
             plan_id=plan_id,
             plan_version=1,
@@ -4744,6 +4893,10 @@ class ChangeGovernanceService:
             execution_outcome="not_started",
             configuration_check_status="not_run",
         )
+        if _entity_metadata_context is not None:
+            plan.dry_run_results["entity_metadata"] = prepared[0].dry_run_results[
+                "entity_metadata"
+            ]
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
         if _rollback_context is not None:
@@ -12557,6 +12710,9 @@ class ChangeGovernanceService:
         operational["provider"] = backup_provider
         operational["lifecycle_provider"] = lifecycle_provider
         operational["helper_state_provider"] = helper_state_provider
+        operational["entity_metadata_provider"] = (
+            self._entity_metadata_provider_health_snapshot()
+        )
         for operation, operation_health in operational["operations"].items():
             operation_health["active_reconciliations"] = (
                 self._active_lifecycle_reconciliations
@@ -12708,6 +12864,28 @@ class ChangeGovernanceService:
                 "fallback_count": 0,
                 "fallback_policy": "none",
             }
+
+    def _entity_metadata_provider_health_snapshot(self) -> dict[str, Any]:
+        """Report the code-owned entity metadata provider without a Core call."""
+
+        configured = self.entity_metadata_gateway is not None
+        return {
+            "provider": "direct_home_assistant_entity_registry",
+            "provider_contract": (
+                "compiled-core-entity-registry-metadata-operation-v1"
+            ),
+            "provider_contract_status": "code_owned_exact",
+            "configured": configured,
+            "operational_status": (
+                "configured_unprobed" if configured else "unavailable"
+            ),
+            "core_capability": "core.entity_registry_metadata_operation",
+            "core_admission": "owner_signed_reference_required",
+            "label_creation": False,
+            "fallback": "none",
+            "fallback_count": 0,
+            "fallback_policy": "none",
+        }
 
     def _helper_state_provider_health_snapshot(
         self,
