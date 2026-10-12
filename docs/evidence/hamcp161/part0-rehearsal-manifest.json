@@ -6,13 +6,13 @@
   "profile_id": "core_entity_registry_metadata_operation_v1",
   "profile_version": 1
  },
- "ephemeral_public_key_sha256": "5b22d6bc76fe990f9434debd21c5256beb7039232cededc96034523dc1e50e73",
+ "ephemeral_public_key_sha256": "04e303f9864af0a7a805ef17fe4be2fd9c288d9935cddde37d5a4d9f70e6d93d",
  "production_journal_sha256": "1d3530345c0d923bda17951c28ddf913e5c8e07d6fa69ca2d258302b418bbf4a",
  "production_tip_digest": "sha256:74ab72380189312f580ee1dcabc6c469aeaf6bbb3580c338d25881004959beda",
  "variants": {
   "ab": [
    {
-    "candidate_sha256": "1791ea8c86cae9372f5afccb4fe408af154e571e4ffd23cbed9b23a8f9cbeed1",
+    "candidate_sha256": "7f727d8139f56ada48263623b469247c455c9f9982759f57ca97993054c23aaf",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 21,
@@ -20,21 +20,21 @@
      "2026.9.3": 19,
      "2026.9.4": 21
     },
-    "journal_sha256": "dcd8039fbc50e389b71b3bfeadeeada9ffaa3badb7b7fc8096b7c9c81ed314a3",
+    "journal_sha256": "a8e7131c8cfdfaa972dbf5bf4edd3b68dea2c9ce343ee7d6a5ac55b3afb433b3",
     "operation": "add-2026.10.1",
     "revoked": [],
     "sequence": 7,
     "step": 1
    },
    {
-    "candidate_sha256": "d5948858d6b0d5ccad11c75a7401c705f2613af078080e7bc4950f6385d98a13",
+    "candidate_sha256": "ab44458623276182dfcdc1f6d8f4aafe9ec5962d0b4776181f0fcfc703a1fd25",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 21,
      "2026.9.3": 19,
      "2026.9.4": 21
     },
-    "journal_sha256": "8612176c5b7768fc77fa14cea2f0c399eeb57e33e4ccf53fbb65209b9608e659",
+    "journal_sha256": "0a711b1d3452ac75871c6b07aa3ea66e8b27ad6ff721f6112fda8e6ab01f0db4",
     "operation": "revoke-2026.9.2",
     "revoked": [
      "2026.9.2"
@@ -43,13 +43,13 @@
     "step": 2
    },
    {
-    "candidate_sha256": "671b8cae55ce411d0b26ae0903bb8cabf85832c9633bdd7b5f1d911312eb2e6b",
+    "candidate_sha256": "d0b2017340c3ae4f75059dfd436d8480a08e8b241ba19e9d5efa4c1f6801e403",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 21,
      "2026.9.4": 21
     },
-    "journal_sha256": "c39a0997b2f8b327a83c1667e1f822443615e3f9b234d9ef0fe97364f062df36",
+    "journal_sha256": "868f57ff04b16956688c79e0bc2a7debf4b249c5391f5693a3f9c1c8a661a549",
     "operation": "revoke-2026.9.3",
     "revoked": [
      "2026.9.2",
@@ -61,7 +61,7 @@
   ],
   "abc-extend": [
    {
-    "candidate_sha256": "1791ea8c86cae9372f5afccb4fe408af154e571e4ffd23cbed9b23a8f9cbeed1",
+    "candidate_sha256": "7f727d8139f56ada48263623b469247c455c9f9982759f57ca97993054c23aaf",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 21,
@@ -69,21 +69,21 @@
      "2026.9.3": 19,
      "2026.9.4": 21
     },
-    "journal_sha256": "dcd8039fbc50e389b71b3bfeadeeada9ffaa3badb7b7fc8096b7c9c81ed314a3",
+    "journal_sha256": "a8e7131c8cfdfaa972dbf5bf4edd3b68dea2c9ce343ee7d6a5ac55b3afb433b3",
     "operation": "add-2026.10.1",
     "revoked": [],
     "sequence": 7,
     "step": 1
    },
    {
-    "candidate_sha256": "d5948858d6b0d5ccad11c75a7401c705f2613af078080e7bc4950f6385d98a13",
+    "candidate_sha256": "ab44458623276182dfcdc1f6d8f4aafe9ec5962d0b4776181f0fcfc703a1fd25",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 21,
      "2026.9.3": 19,
      "2026.9.4": 21
     },
-    "journal_sha256": "8612176c5b7768fc77fa14cea2f0c399eeb57e33e4ccf53fbb65209b9608e659",
+    "journal_sha256": "0a711b1d3452ac75871c6b07aa3ea66e8b27ad6ff721f6112fda8e6ab01f0db4",
     "operation": "revoke-2026.9.2",
     "revoked": [
      "2026.9.2"
@@ -92,13 +92,13 @@
     "step": 2
    },
    {
-    "candidate_sha256": "671b8cae55ce411d0b26ae0903bb8cabf85832c9633bdd7b5f1d911312eb2e6b",
+    "candidate_sha256": "d0b2017340c3ae4f75059dfd436d8480a08e8b241ba19e9d5efa4c1f6801e403",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 21,
      "2026.9.4": 21
     },
-    "journal_sha256": "c39a0997b2f8b327a83c1667e1f822443615e3f9b234d9ef0fe97364f062df36",
+    "journal_sha256": "868f57ff04b16956688c79e0bc2a7debf4b249c5391f5693a3f9c1c8a661a549",
     "operation": "revoke-2026.9.3",
     "revoked": [
      "2026.9.2",
@@ -108,13 +108,13 @@
     "step": 3
    },
    {
-    "candidate_sha256": "62c74568b6b1e31949bfd59842e4faff747413c93b09d01d1546630d9c0ea5d8",
+    "candidate_sha256": "63b1c4d5291bbef4445dd257066acd1783dc0f9e7994c60e43233e188fa56b0d",
     "entries": {
      "2026.10.0": 22,
      "2026.10.1": 21,
      "2026.9.4": 21
     },
-    "journal_sha256": "33752724179fa55666409e5b115697ae8ca206822dd7e10974a980cef422f064",
+    "journal_sha256": "35ba1f626bf6b4a6a60837924d87dd022eb887b8beb62394c41675623d9c9d2e",
     "operation": "extend-2026.10.0",
     "revoked": [
      "2026.9.2",
@@ -124,13 +124,13 @@
     "step": 4
    },
    {
-    "candidate_sha256": "1bea8f6de40c5d174a80ccc4e27dfc0d02dc4cc39028d6a10131286500a32f46",
+    "candidate_sha256": "3c085067ded23d6ba7d9f782c864d4b688ea973c9e2214d747d95a1882ac42bc",
     "entries": {
      "2026.10.0": 22,
      "2026.10.1": 21,
      "2026.9.4": 22
     },
-    "journal_sha256": "379b0f694652976394539a4b0f009b32bef7c7a8e8d9fc810eabdf458d9919ca",
+    "journal_sha256": "0a8312df9a0c51632ad01a5ac0100972480863c124fde98525199a5f37092add",
     "operation": "extend-2026.9.4",
     "revoked": [
      "2026.9.2",
@@ -140,13 +140,13 @@
     "step": 5
    },
    {
-    "candidate_sha256": "417515d5184708bb38f7f7d48601511d731d194bc422d0f33aaf095ed6b03508",
+    "candidate_sha256": "6fc9273e6654096778aa83296c2a53131561d5f98ed2b6dcd049719f23a25b35",
     "entries": {
      "2026.10.0": 22,
      "2026.10.1": 22,
      "2026.9.4": 22
     },
-    "journal_sha256": "5390b199b3f3626daa71ad47a5bf31261ba58d7b599268e07cb0e889191c6117",
+    "journal_sha256": "e54d1d8c27a8e4493d2f556b092631e3fb64dee5ab06235cd1a22da226d2a249",
     "operation": "extend-2026.10.1",
     "revoked": [
      "2026.9.2",
@@ -158,7 +158,7 @@
   ],
   "abc-in-add": [
    {
-    "candidate_sha256": "0896724bf562aad173b8848ec04ca65cef9db67dd1fa86e9b7b0eb33c570e29d",
+    "candidate_sha256": "f55a67888c87d3db91151066673acb42685f532345021944131476985d4f2332",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 22,
@@ -166,21 +166,21 @@
      "2026.9.3": 19,
      "2026.9.4": 21
     },
-    "journal_sha256": "e17607500936e01961f9a13fd8c150e87ea0624d393950258505bf1580f25605",
+    "journal_sha256": "d3df56292cddacfb2b4d2f1a6a44d8d029ecb67f6b659ac23c1125810ae5b673",
     "operation": "add-2026.10.1+entity",
     "revoked": [],
     "sequence": 7,
     "step": 1
    },
    {
-    "candidate_sha256": "8f6d2c8aca1d25bfbb98b9e3d491ce38559382831799ad9eeeeeb81070bfb683",
+    "candidate_sha256": "595abe641cb4c6d6c3ea7302266f6bac918de3199e4887d67cd7997dd7e5abe2",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 22,
      "2026.9.3": 19,
      "2026.9.4": 21
     },
-    "journal_sha256": "4b2fac71a19add7f9aabba5ead9502548360e9771756ca30159a10249011e7e9",
+    "journal_sha256": "c48d224a1f9d6fa01d677f151a2b82de2b3d8129614542caee4708ff162848a1",
     "operation": "revoke-2026.9.2",
     "revoked": [
      "2026.9.2"
@@ -189,13 +189,13 @@
     "step": 2
    },
    {
-    "candidate_sha256": "bcef9e7dbc477fd97034c32a441b557d145a52d5fa47b8c2014becaa0c52c0e4",
+    "candidate_sha256": "b854c2fdbf2448ca3ab78ee30e1e94c68ab8ec0b83d76ab3fc0d8088c1ba9c9d",
     "entries": {
      "2026.10.0": 21,
      "2026.10.1": 22,
      "2026.9.4": 21
     },
-    "journal_sha256": "9a9247183c286da36f2faf3196dc4cb663ed314e4a39ada4419de33e43ffe6fb",
+    "journal_sha256": "7331becd82915d75f2ecb894eeae1bb1e65d06f0bbd1a4f9615ca9c6bff90900",
     "operation": "revoke-2026.9.3",
     "revoked": [
      "2026.9.2",
@@ -205,13 +205,13 @@
     "step": 3
    },
    {
-    "candidate_sha256": "401afa349904b013224f13c71ca77f3e49f4d220af7906171c671774c6620a43",
+    "candidate_sha256": "8c4ad4f1cbc00fbf96fdc2969ff09974162a7b4a0229c457a976ff9ee3207728",
     "entries": {
      "2026.10.0": 22,
      "2026.10.1": 22,
      "2026.9.4": 21
     },
-    "journal_sha256": "39e31869ce3d0d8eb052df332b5ac8c8c321273fee1da2f85065ddf78840a3ab",
+    "journal_sha256": "656f92499a6beb59d2245a190fb0e9882849f107acade6413b0a0ba905ea4a08",
     "operation": "extend-2026.10.0",
     "revoked": [
      "2026.9.2",
@@ -221,13 +221,13 @@
     "step": 4
    },
    {
-    "candidate_sha256": "4b407362f3b1fb684a26cc695a84c2f3e37ae603b512274f47b7b69c32c5a0df",
+    "candidate_sha256": "d7892e5c5d034b3c98a4e541e9de4aed096b87d51d79ef4cba3bc20f9dde8d91",
     "entries": {
      "2026.10.0": 22,
      "2026.10.1": 22,
      "2026.9.4": 22
     },
-    "journal_sha256": "4efac423b0b121bca5bed6f09b6de17ec55463415378d7d8768ac39efbe956dc",
+    "journal_sha256": "b7564de9b532a0a8e99e342303346b34076e278388f5bf5198013ac8a048c8de",
     "operation": "extend-2026.9.4",
     "revoked": [
      "2026.9.2",

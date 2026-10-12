@@ -1,10 +1,10 @@
 {
- "baseline_sha256": "4de1bd44dedff765a8d2b19b2f2d105e7d3638c9dcbc69b70afa9923a6da7d8e",
- "beta3_source": "/tmp/hamcp161/beta3",
+ "baseline_sha256": "3df67eae066a80779a9bf95b8c35364f122919ce2c837e00aacb8975b353e4c2",
+ "beta3_source": "/tmp/hamcp161r1/beta3",
  "failures": [],
  "now": "2026-10-12T19:00:00Z",
  "passed": true,
- "public_key_sha256": "5b22d6bc76fe990f9434debd21c5256beb7039232cededc96034523dc1e50e73",
+ "public_key_sha256": "04e303f9864af0a7a805ef17fe4be2fd9c288d9935cddde37d5a4d9f70e6d93d",
  "results": [
   {
    "after_rollback_sequence": 9,
@@ -276,7 +276,7 @@
     }
    },
    "final": {
-    "content_digest": "sha256:8bb671179841926517eec8cef3987d57715572961492e9dd7ce95bc4205039a0",
+    "content_digest": "sha256:58c08a8c09fef1981d17accf9232f042019cd4c9d60f212d0da6973848d5e28b",
     "positive_current": true,
     "revoked": [
      "2026.9.2",
@@ -414,7 +414,7 @@
       ],
       "probe_profile": "core-probes-child-device-name-parts-v1",
       "revoked": false,
-      "selection_token": "sha256:23f8d587f94f69b744932c4195cb450935ba1f8d481c9f6b300636abb1da7b6b"
+      "selection_token": "sha256:c74e7a89c6ac8944a1f77971d8202066ffab17c2a18d178015cdad21bb055e1f"
      },
      "2026.9.2": {
       "admitted": [],
@@ -513,7 +513,7 @@
      }
     }
    },
-   "final_sha256": "c39a0997b2f8b327a83c1667e1f822443615e3f9b234d9ef0fe97364f062df36",
+   "final_sha256": "868f57ff04b16956688c79e0bc2a7debf4b249c5391f5693a3f9c1c8a661a549",
    "jump_refreshed": true,
    "label": "ab",
    "leases": {
@@ -533,7 +533,7 @@
     }
    },
    "restart_cache": {
-    "content_digest": "sha256:8bb671179841926517eec8cef3987d57715572961492e9dd7ce95bc4205039a0",
+    "content_digest": "sha256:58c08a8c09fef1981d17accf9232f042019cd4c9d60f212d0da6973848d5e28b",
     "sequence": 9
    },
    "rollback_refresh_result": false,
@@ -823,7 +823,7 @@
     }
    },
    "final": {
-    "content_digest": "sha256:6b4820c9ad3bb167539ef8ec6f94106e145da40e5c70d0ec989a0a87b497f97a",
+    "content_digest": "sha256:bae7cc473ba6f0a859f6798153c1c6183e3738b9c3f64a01de1426e5fa6d2201",
     "positive_current": true,
     "revoked": [
      "2026.9.2",
@@ -961,7 +961,7 @@
       ],
       "probe_profile": "core-probes-child-device-name-parts-v1",
       "revoked": false,
-      "selection_token": "sha256:f1f00b9800bb1f79300358363b9ae566362c87a9250b2b3b77416e6a8ad7c040"
+      "selection_token": "sha256:06d6ef8b235384336d4d7ff8b9471dc6b4e25ac0a973126b9f9e27da970ce027"
      },
      "2026.9.2": {
       "admitted": [],
@@ -1060,7 +1060,7 @@
      }
     }
    },
-   "final_sha256": "5390b199b3f3626daa71ad47a5bf31261ba58d7b599268e07cb0e889191c6117",
+   "final_sha256": "e54d1d8c27a8e4493d2f556b092631e3fb64dee5ab06235cd1a22da226d2a249",
    "jump_refreshed": true,
    "label": "abc-extend",
    "leases": {
@@ -1080,7 +1080,7 @@
     }
    },
    "restart_cache": {
-    "content_digest": "sha256:6b4820c9ad3bb167539ef8ec6f94106e145da40e5c70d0ec989a0a87b497f97a",
+    "content_digest": "sha256:bae7cc473ba6f0a859f6798153c1c6183e3738b9c3f64a01de1426e5fa6d2201",
     "sequence": 12
    },
    "rollback_refresh_result": false
@@ -1592,7 +1592,7 @@
      }
     }
    },
-   "final_sha256": "4efac423b0b121bca5bed6f09b6de17ec55463415378d7d8768ac39efbe956dc",
+   "final_sha256": "b7564de9b532a0a8e99e342303346b34076e278388f5bf5198013ac8a048c8de",
    "jump_refreshed": true,
    "label": "abc-in-add",
    "leases": {

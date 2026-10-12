@@ -21,6 +21,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--repo", type=Path, required=True)
@@ -97,6 +98,151 @@ for job in LOGS:
     assert '"authority_transition": [19, 20]' in text, job
     assert "Native automation baseline disposable contract:" in text and '"TOTAL": 124' in text, job
     assert fixture["image_index_digest"] in text and '"arm64_execution": false' in text, job
+    assert ('{"script_dependency_contract": "PASS"' in text
+            and '"core": "2026.10.1", "upstream": "8.5.0"' in text), job
+    assert "##[group]Run python scripts/real_ha_contract_tests.py\n" in text, job
+
+# R1: every upstream line the capability assessment cites is checked in the
+# hash-bound Core archives (2026.10.0 by its signed entry, 2026.10.1 by the
+# lane fixture). Each path pins its git blob id; each line pins its exact text.
+CORE_ARCHIVES = {"2026.10.0": ("archives/core-2026.10.0-tar.gz", october["source_archive_sha256"]),
+                 "2026.10.1": ("archives/core-2026.10.1-tar.gz", archive_sha)}
+CITED = {
+    ("2026.10.0", "homeassistant/components/automation/trace.py", "c440624b7f68882cdda480eb85be5cd669ae6aaf"): {
+        67: "async_store_trace(hass, trace, trace_config[CONF_STORED_TRACES])"},
+    ("2026.10.1", "homeassistant/components/automation/trace.py", "8e42028047feeb38b4f09047de71f2c21f9730f4"): {
+        53: "def trace_automation(", 67: "if automation_id:",
+        68: "async_store_trace(hass, trace, trace_config[CONF_STORED_TRACES])"},
+    ("2026.10.0", "homeassistant/components/trace/models.py", "89b2d2d3ddd6ed5580081aacdaaa676f2cf1bef0"): {
+        93: 'self.key = f"{self._domain}.{item_id}"', 96: "if trace_id_get():",
+        97: "trace_set_child_id(self.key, self.run_id)"},
+    ("2026.10.1", "homeassistant/components/trace/models.py", "d3a42ede803d8b88ddc6b75ceb007aa4dbaee4ef"): {
+        93: 'self.key = f"{self._domain}.{item_id}"', 97: "if item_id and trace_id_get():",
+        98: "trace_set_child_id(self.key, self.run_id)"},
+    ("2026.10.1", "homeassistant/components/automation/__init__.py", "9cf80728504bf97fe38d6865ef1a28a7ebb7b4a0"): {
+        403: "self._attr_unique_id = automation_id", 515: "self._attr_unique_id = automation_id",
+        704: "with trace_automation(", 706: "self.unique_id,",
+        926: "with trace_automation(", 928: "self.unique_id,"},
+    ("2026.10.1", "homeassistant/components/trace/websocket_api.py", "7eddc5326601fbc3a3ea7e488c7cc165bc3d696b"): {
+        59: "async def websocket_trace_get(",
+        72: 'msg["id"], websocket_api.ERR_NOT_FOUND, "The trace could not be found"',
+        92: "async def websocket_trace_list("},
+    ("2026.10.1", "homeassistant/helpers/trace.py", "7255c562924dc882111ddef4a8b1d5015999ac82"): {
+        51: "def set_child_id(self, child_key: str, child_run_id: str) -> None:",
+        112: 'result["child_id"] = {',
+        279: "def trace_set_child_id(child_key: str, child_run_id: str) -> None:"},
+    ("2026.10.0", "homeassistant/helpers/template/extensions/devices.py", "8d79983628ddf0ac5c1ebb2a0954a1e8a3ad50e1"): {
+        117: "def device_attr(self, device_or_entity_id: str, attr_name: str) -> Any:",
+        130: "if device is None or not hasattr(device, attr_name):",
+        132: "return getattr(device, attr_name)"},
+    ("2026.10.1", "homeassistant/helpers/template/extensions/devices.py", "a10a33746371fe3745aff32086e19ac97754510a"): {
+        33: "_DEPRECATED_DEVICE_ATTRS: dict[str, tuple[str, Callable[[dr.BaseDeviceEntry], Any]]] = {",
+        144: "def device_attr(self, device_or_entity_id: str, attr_name: str) -> Any:",
+        160: "if not device.is_composite_device and (",
+        174: "return resolve(device)",
+        180: "def is_device_attr("},
+    ("2026.10.1", "homeassistant/helpers/device_registry.py", "52ab4273c2ddcb5447df4192ef0dda55739b7d86"): {
+        384: "def _report_deprecated_config_entries_property(",
+        394: "core_behavior=ReportBehavior.ERROR,",
+        429: "def config_entries(self) -> set[str]:",
+        442: "def config_entries_subentries(self) -> dict[str, set[str | None]]:",
+        459: "def primary_config_entry(self) -> str:",
+        473: "def is_composite_device(self) -> bool:"},
+    ("2026.10.1", "homeassistant/helpers/frame.py", "3734871ec81872b1b30fa52685164238b230cec3"): {
+        373: "def _report_usage_no_integration(", 386: "raise RuntimeError(msg) from err"},
+    ("2026.10.1", "homeassistant/components/api/__init__.py", "a66f75403c21c1dd64771713d60704502de0ee81"): {
+        497: "class APITemplateView(HomeAssistantView):",
+        519: 'return tpl.async_render(variables=data.get("variables"), parse_result=False)  # type: ignore[no-any-return]'},
+    ("2026.10.1", "homeassistant/helpers/template/__init__.py", "11b51a84021f7b140d65b48911b0a88ffdabcd6c"): {},
+}
+# Unchanged between the tags: the same blob must be at both.
+SAME_BLOB = ["homeassistant/components/automation/__init__.py",
+             "homeassistant/components/trace/websocket_api.py", "homeassistant/helpers/trace.py",
+             "homeassistant/helpers/device_registry.py", "homeassistant/helpers/frame.py",
+             "homeassistant/components/api/__init__.py", "homeassistant/helpers/template/__init__.py"]
+
+
+def git_blob_id(data: bytes) -> str:
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+core_files: dict[tuple[str, str], bytes] = {}
+for version, (path, expected) in CORE_ARCHIVES.items():
+    assert sha((raw / path).read_bytes()) == expected, path
+    with tarfile.open(raw / path) as archive:
+        members = {m.name.split("/", 1)[1]: m for m in archive.getmembers() if "/" in m.name}
+        for name in {p for (_, p, _) in CITED} | set(SAME_BLOB):
+            core_files[version, name] = archive.extractfile(members[name]).read()
+for (version, path, blob_id), lines in CITED.items():
+    data = core_files[version, path]
+    assert git_blob_id(data) == blob_id, (version, path)
+    text_lines = data.decode().splitlines()
+    for number, expected in lines.items():
+        assert text_lines[number - 1].strip() == expected, (version, path, number)
+for path in SAME_BLOB:
+    assert core_files["2026.10.0", path] == core_files["2026.10.1", path], path
+
+
+def cite(version: str, path: str, *numbers: int) -> str:
+    blob_id = next(b for (v, p, b) in CITED if v == version and p == path)
+    assert all(n in CITED[version, path, blob_id] for n in numbers), (version, path, numbers)
+    return f"core {version}:{path}@{blob_id[:12]}" + (":" + ",".join(map(str, numbers)) if numbers else "")
+
+
+# Engineering lines cited by the assessment, at the deployed beta.3 build that consumes
+# the journal (same bytes at the CI source by tree identity).
+ENGINEERING_PACKAGE = "hass_mcp_engineering_beta/ha_mcp_engineering/"
+ENGINEERING_CITED = {
+    "ha_core_readmission/profiles.py": {260: '"core.automation_trace_read",', 297: '"core.template_semantics",',
+                                        301: '"template_source_release_supported",'},
+    "ha_core_readmission/source.py": {223: '"core.automation_trace_read",',
+                                      251: 'add("core.template_semantics", websocket_ok, semantic=True)'},
+    "ha_core_readmission/routes.py": {74: '"ha_eval_template": ("core.template_semantics",),',
+                                      75: '"ha_get_automation_traces": ("core.automation_trace_read",),',
+                                      105: '"render_template": ("core.template_semantics",),',
+                                      106: '"list_automation_traces": ("core.automation_trace_read",),',
+                                      107: '"get_automation_trace": ("core.automation_trace_read",),'},
+    "trace_normalization.py": {67: '{"type": "trace/list", "domain": "automation", "item_id": automation_id}'},
+    "tools/compatibility.py": {502: 'return await rest("POST", "/template", {"template": template}, raw=True)',
+                               506: "async def list_automation_traces(automation_id: str) -> str:",
+                               520: "async def get_automation_trace(automation_id: str, run_id: str) -> str:"},
+    "reliability/provider.py": {123: '"GET", f"/config/automation/config/{automation_id}"',
+                                589: "def _normalize_trace(summary: dict[str, Any], detail: Any) -> dict[str, Any]:"},
+    "dependency/provider.py": {399: 'return state, None, "automation_id_missing"'},
+    "incident/service.py": {44: 'AUTOMATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")'},
+    "handoff/service.py": {38: 'AUTOMATION_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,128}$")'},
+    "dependency/template_semantic_registry.json": {10: '"parse_only": true',
+                                                   244: '"device_attr": "attribute_item_access",',
+                                                   259: '"is_device_attr": "attribute_item_access",'},
+    "dependency/obligation_ledger.py": {2466: 'reason=f"{name}_registry_lookup_opaque",'},
+}
+for path, lines in ENGINEERING_CITED.items():
+    data = blob(DEPLOYED, ENGINEERING_PACKAGE + path)
+    assert data == blob(CI_SOURCE, ENGINEERING_PACKAGE + path), path
+    text_lines = data.decode().splitlines()
+    for number, expected in lines.items():
+        assert text_lines[number - 1].strip() == expected, (path, number)
+
+
+def ecite(path: str, *numbers: int) -> str:
+    assert all(n in ENGINEERING_CITED[path] for n in numbers), (path, numbers)
+    return f"engineering {ENGINEERING_PACKAGE}{path}:" + ",".join(map(str, numbers))
+
+
+CONTRACT_SCRIPT = "scripts/real_ha_contract_tests.py"
+contract_lines = blob(CI_SOURCE, CONTRACT_SCRIPT).decode().splitlines()
+assert blob(CI_SOURCE, CONTRACT_SCRIPT) == blob(PREPARED_ON, CONTRACT_SCRIPT)
+for number, expected in {140: '"automation": "dev14_real_contract_automation",',
+                         3196: "async def _run_script_dependency_contract(configured, core_runtime, read_gateway):",
+                         3215: 'bodies[keys[4]]["sequence"].append({"condition": "template", "value_template":',
+                         3966: 'phase = "trace_generation"',
+                         3976: "normalized = await fetch_normalized_trace_list(",
+                         3990: '"type": "trace/get",', 3992: '"item_id": RESOURCE_IDS["automation"],',
+                         3998: 'assert isinstance(detail.get("config"), dict)'}.items():
+    assert contract_lines[number - 1].strip() == expected, (CONTRACT_SCRIPT, number)
+
+REAL_HA_STEP = ("CI step 'Run real Home Assistant contracts' (python scripts/real_ha_contract_tests.py, "
+                "Core 2026.10.1 candidate slot, ha-mcp 8.5.0) in every job of executed_evidence.ci_runs")
 
 ARTIFACTS = {
     "oci-index": "oci/index-2026.10.1.json",
@@ -177,9 +323,9 @@ evidence = {
         "changed_paths": len([line for line in changed if line.strip()]),
         "flagged": [
             "auth indieauth/login_flow (#185544): loopback redirect port relaxation; PKCE S256 only. Not an Engineering read or write surface.",
-            "automation/trace.py (#185161): traces stored only for automations with an id. Affects trace reads of id-less automations; no signed capability depends on it.",
-            "trace/models.py (#185207): trace model change; same scope as above.",
-            "helpers/template/extensions/devices.py (#185361): deprecated device template attributes restored. Template rendering only.",
+            "automation/trace.py (#185161): traces stored only for automations with an id. Selected reference core.automation_trace_read: assessed in selected_capability_assessment.",
+            "trace/models.py (#185207): no child link to an id-less automation run. Selected reference core.automation_trace_read: assessed in selected_capability_assessment.",
+            "helpers/template/extensions/devices.py (#185361): deprecated device template attributes restored. Selected reference core.template_semantics: assessed in selected_capability_assessment.",
         ],
         "unchanged_relied_on": ["helpers/device_registry.py", "helpers/entity_registry.py",
                                 "helpers/area_registry.py", "helpers/floor_registry.py",
@@ -191,6 +337,129 @@ evidence = {
                                 "components/api", "components/homeassistant", "components/search",
                                 "components/http", "core.py", "loader.py"],
     },
+    "selected_capability_assessment": {
+        "citation_form": ("core <tag>:<path>@<git blob id prefix>:<lines>, verified in the hash-bound Core "
+                          "archives; engineering <path>:<lines> at the deployed build (byte-identical at the CI "
+                          "source). harness/make_inputs.py asserts every cited line's text."),
+        "core.automation_trace_read": {
+            "contract": [
+                "Bounded trace/list headers and trace/get for an automation's config id; a missing trace is not_found: "
+                + ecite("ha_core_readmission/profiles.py", 260) + "; admission probe " + ecite("ha_core_readmission/source.py", 223) + ".",
+                "Consumers: list_automation_traces, get_automation_trace (" + ecite("ha_core_readmission/routes.py", 106, 107)
+                + "; " + ecite("tools/compatibility.py", 506, 520) + ", documented to take the automation's config 'id'); "
+                "delegated ha_get_automation_traces (" + ecite("ha_core_readmission/routes.py", 75) + "); shared list transport "
+                + ecite("trace_normalization.py", 67) + ".",
+                "automation_reliability_analysis and incident_correlation fetch /config/automation/config/{id} before any trace read ("
+                + ecite("reliability/provider.py", 123) + "), and both incident and handoff accept only an id pattern ("
+                + ecite("incident/service.py", 44) + "; " + ecite("handoff/service.py", 38) + "). change_impact_analysis reads "
+                "traces only for an automation with an 'id' attribute; without one it records automation_id_missing ("
+                + ecite("dependency/provider.py", 399) + ").",
+            ],
+            "upstream_change": [
+                "2026.10.0 stored every run (" + cite("2026.10.0", "homeassistant/components/automation/trace.py", 67)
+                + "). An automation without an id has unique_id None (" + cite("2026.10.1", "homeassistant/components/automation/__init__.py", 403, 515)
+                + ", passed at 704-706 and 926-928), so its runs were stored under the key 'automation.None' ("
+                + cite("2026.10.0", "homeassistant/components/trace/models.py", 93) + ").",
+                "2026.10.1 stores a run only when the automation has an id (" + cite("2026.10.1", "homeassistant/components/automation/trace.py", 67, 68)
+                + ") and links a parent run to a child only when the child has an id ("
+                + cite("2026.10.1", "homeassistant/components/trace/models.py", 97, 98) + "; 2026.10.0: "
+                + cite("2026.10.0", "homeassistant/components/trace/models.py", 96, 97) + ").",
+                "Unchanged: trace/get, trace/list and not_found (" + cite("2026.10.1", "homeassistant/components/trace/websocket_api.py", 59, 72, 92)
+                + "), child_id serialization (" + cite("2026.10.1", "homeassistant/helpers/trace.py", 51, 112, 279) + ").",
+            ],
+            "assessment": [
+                "Id-bearing automations: unchanged. Same store call, key, child link and WebSocket handlers.",
+                "Id-less automations: runs are no longer stored, so trace/list for item_id 'None' returns [] and trace/get returns "
+                "not_found. Both are inside the contract (bounded list; missing trace is not_found). No Engineering consumer "
+                "addresses that bucket by design: each starts from an automation config id. ha-mcp 8.5.0 resolves the item_id "
+                "from the entity registry unique_id, which an id-less automation does not have.",
+                "Child links: a parent run no longer carries child_id for an id-less child, whose run is no longer stored. "
+                "Id-bearing child links are unchanged. Engineering's normalized traces do not read child_id ("
+                + ecite("reliability/provider.py", 589) + "); get_automation_trace returns trace/get as Core sends it.",
+                "Edge: an automation whose configured id is the literal string 'None' shared its trace bucket with id-less "
+                "runs on 2026.10.0; on 2026.10.1 the bucket holds only its own runs (narrower, not wider).",
+                "Conclusion: contract satisfied on 2026.10.1. Reference retained.",
+            ],
+            "executed_evidence": [
+                REAL_HA_STEP + ": phase trace_generation (" + CONTRACT_SCRIPT + ":3966-3998 at the CI source) reloads "
+                "automations, fires the fixture event, requires non-empty trace/list headers with run_id and started_at "
+                "through fetch_normalized_trace_list for the id-bearing fixture automation 'dev14_real_contract_automation' "
+                "(line 140), and requires trace/get to return trace and config objects. The step prints 'Real Home Assistant "
+                "2026.10.1 contract assertions passed.' only after every phase passes.",
+                "Same step: the admission probe (bounded trace/list plus a missing trace/get that must be not_found) admits "
+                "core.automation_trace_read within the lane's 19 compatible references.",
+            ],
+            "untested_on_2026_10_1": [
+                "Runs of an automation without an id (their absence from storage).",
+                "child_id links from a parent run to a child automation or script run.",
+                "The delegated ha_get_automation_traces path (ha-mcp 8.5.0).",
+                "automation_reliability_analysis, incident_correlation, handoff_generation and change_impact_analysis trace "
+                "reads end to end (covered offline by the unit suite only).",
+            ],
+            "test_added": "None. The changed behavior is inside Core and outside what any Engineering consumer depends on; "
+                          "executing it needs a real 2026.10.1 Core (new Real HA lane work) and would not change the conclusion.",
+        },
+        "core.template_semantics": {
+            "contract": [
+                "Analysis: offline, binary-owned semantic registry (parse only, "
+                + ecite("dependency/template_semantic_registry.json", 10) + "). Rendering: the existing bounded direct HA "
+                "template provider. Profile checks include template_source_release_supported ("
+                + ecite("ha_core_readmission/profiles.py", 297, 301) + "); projection " + ecite("ha_core_readmission/source.py", 251) + ".",
+                "Consumers: render_template forwards the template to Core's /api/template and returns Core's text ("
+                + ecite("tools/compatibility.py", 502) + "; " + ecite("ha_core_readmission/routes.py", 105)
+                + "); delegated ha_eval_template (" + ecite("ha_core_readmission/routes.py", 74) + "); dependency and "
+                "helper-planning analysis through the semantic registry.",
+                "device_attr and is_device_attr are attribute_item_access (" + ecite("dependency/template_semantic_registry.json", 244, 259)
+                + "); every such lookup except entity_name is bounded_semantic_opaque with a conservative lock ("
+                + ecite("dependency/obligation_ledger.py", 2466) + ").",
+            ],
+            "upstream_change": [
+                "2026.10.0: device_attr returns getattr(device, attr) (" + cite("2026.10.0", "homeassistant/helpers/template/extensions/devices.py", 117, 130, 132)
+                + "). For a non-composite device the config_entries, config_entries_subentries and primary_config_entry "
+                "properties report a deprecated use with core_behavior ERROR (" + cite("2026.10.1", "homeassistant/helpers/device_registry.py", 384, 394, 429, 442, 459, 473)
+                + ", same blob at 2026.10.0), which raises RuntimeError (" + cite("2026.10.1", "homeassistant/helpers/frame.py", 373, 386)
+                + ", same blob at 2026.10.0). hasattr does not catch it, so the render fails.",
+                "2026.10.1: for those three names on a non-composite device, device_attr returns a value derived from "
+                "config_entry_id and config_subentry_id and logs a one-time warning (" + cite("2026.10.1", "homeassistant/helpers/template/extensions/devices.py", 33, 144, 160, 174, 180)
+                + "). is_device_attr compares that value. Composite devices and every other attribute behave as on 2026.10.0.",
+                "Unchanged: the template engine (" + cite("2026.10.1", "homeassistant/helpers/template/__init__.py")
+                + ") and the /api/template view (" + cite("2026.10.1", "homeassistant/components/api/__init__.py", 497, 519)
+                + "). The global names and signatures of device_attr and is_device_attr are unchanged.",
+            ],
+            "assessment": [
+                "Analysis: unaffected. The registry classifies the lookup by function name, not attribute, and returns an "
+                "opaque value; a different rendered value cannot change the dependency result. The added offline test "
+                "executes this for the three restored names.",
+                "Rendering: a template that read these attributes on a non-composite device failed on 2026.10.0 and returns "
+                "a value on 2026.10.1, matching releases before 2026.10.0. Engineering forwards Core's output and relies on "
+                "no rendered value. Error handling for other failures is unchanged.",
+                "The device-registry probe reads config_entries_subentries and primary_config_entry from the WebSocket "
+                "registry serialization, not from templates; that path is unchanged.",
+                "Conclusion: contract satisfied on 2026.10.1. Reference retained.",
+            ],
+            "executed_evidence": [
+                REAL_HA_STEP + ": script dependency contract printed {\"script_dependency_contract\": \"PASS\", ..., \"core\": "
+                "\"2026.10.1\", \"upstream\": \"8.5.0\"}; its fixtures include a template condition (" + CONTRACT_SCRIPT
+                + ":3196, 3215 at the CI source) analyzed through the semantic registry.",
+                "Real 2026.10.0 renders through delegated ha_eval_template (arithmetic, undefined, error and refusal cases; "
+                "scripts/ha_mcp_850_container_acceptance.py:853-858) in run 38279374013, jobs 114912771142 and 114912771210 "
+                "(ha-mcp 8.6.0 candidate, Core 2026.10.0, step 'Run python scripts/ha_mcp_850_container_acceptance.py'). "
+                "The render path is byte-identical in 2026.10.1 except devices.py.",
+                "Offline: tests/test_hamcp161_device_template_attribute_analysis.py (sha256 "
+                + sha((args.repo / "tests/test_hamcp161_device_template_attribute_analysis.py").read_bytes())
+                + ") executes the analysis of device_attr and is_device_attr for the three restored names and proves it "
+                "equals an ordinary attribute's and cannot hide a dependent state read.",
+            ],
+            "untested_on_2026_10_1": [
+                "Any template render on a real 2026.10.1 Core, through render_template or ha_eval_template.",
+                "Rendering of the three restored attributes on any Core.",
+                "Native render_template against any real Core: no script in this repository's real-HA lanes calls it; only the "
+                "delegated ha_eval_template is executed (on 2026.10.0).",
+            ],
+            "test_added": "tests/test_hamcp161_device_template_attribute_analysis.py (offline analysis only). A real-Core "
+                          "render on 2026.10.1 would need new Real HA lane work; it is disclosed above, not added.",
+        },
+    },
     "review_artifacts_sha256": {name: sha((raw / path).read_bytes()) for name, path in ARTIFACTS.items()},
     "unchanged_implementation_files": {path: sha(blob(DEPLOYED, path)) for path in UNCHANGED},
     "limits": [
@@ -199,7 +468,7 @@ evidence = {
         "OCI attestation and SLSA provenance signatures were not cryptographically verified; digests and declared source revision are recorded as observed.",
         "The image label io.hass.base.version (2026.06.1) differs from the provenance base (2026.07.0); recorded as an observation, not relied on.",
         "The baseline printed summary omits authority_transition; [20, 21] is asserted by scripts/automation_baseline_contract_acceptance.py at the CI source.",
-        "Upstream 2026.10.1 changes automation tracing for id-less automations and IndieAuth redirect handling; neither is a signed capability surface.",
+        "Upstream 2026.10.1 changes trace storage and child links for automations without an id, and restores deprecated device template attributes. Both touch selected references (core.automation_trace_read, core.template_semantics); selected_capability_assessment finds both contracts satisfied and lists what is untested on 2026.10.1. IndieAuth redirect handling is not an Engineering surface.",
         "No household physical effects, Supervisor lifecycle, installed add-on continuity on 2026.10.1, all-custom-integration coverage or ha-mcp 8.6.x claim.",
         "core.entity_registry_metadata_operation is NOT included: no disposable container contract for it exists (HAMCP-161 item (c) stopped).",
     ],
