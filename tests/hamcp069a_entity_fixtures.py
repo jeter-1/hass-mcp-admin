@@ -9,6 +9,7 @@ update command without any live dependency.  Every value is synthetic.
 from __future__ import annotations
 
 from copy import deepcopy
+from types import SimpleNamespace
 from datetime import datetime, timezone
 from pathlib import Path
 import sys
@@ -150,14 +151,46 @@ class SyntheticRegistryRest:
         raise AssertionError(f"unreviewed REST request: {method} {path}")
 
 
+def dependency_snapshot(*, profiles: tuple = (), obligations: tuple = ()) -> Any:
+    """A synthetic dependency snapshot with the attributes disclosure reads."""
+
+    return SimpleNamespace(
+        obligations=tuple(obligations),
+        automation_action_profiles=tuple(profiles),
+        coverage=(),
+        automation_read_failures=(),
+        obligation_overflow_count=0,
+    )
+
+
+def action_profile(
+    source_id: str,
+    *,
+    target: str,
+    consequence: str,
+    services: tuple[str, ...] = ("lock.unlock",),
+) -> Any:
+    """One automation whose action targets ``target`` (``label_id:x`` or ``area_id:x``)."""
+
+    selector, value = target.split(":", 1)
+    return SimpleNamespace(
+        source_id=source_id,
+        source_entity_id=f"automation.{source_id}",
+        physical_consequence=consequence,
+        services=services,
+        effect_projection_clipped=False,
+        processing_limit_exceeded=False,
+        effect_targets=(f"{services[0]}|{selector}|{value}",),
+        complete=True,
+    )
+
+
 async def _provider_identity() -> dict[str, Any]:
     return {"slug": "core_ha_mcp", "evidence_hash": "a" * 64}
 
 
 class EntityMetadataServiceTestCase(unittest.IsolatedAsyncioTestCase):
     """Real service, real F3 runtime, real gateways, synthetic registry."""
-
-    snapshot: Any = None
 
     async def asyncSetUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
@@ -166,6 +199,7 @@ class EntityMetadataServiceTestCase(unittest.IsolatedAsyncioTestCase):
         self.rest = SyntheticRegistryRest(self.ws)
         self.resource_gateway = ConfigurationResourceGateway(self.rest, self.ws)
         self.snapshot_reads: list[bool] = []
+        self.snapshot = dependency_snapshot()
 
         async def snapshot_reader(*, fenced: bool) -> Any:
             self.snapshot_reads.append(fenced)
@@ -262,5 +296,7 @@ __all__ = [
     "SyntheticRegistryRest",
     "SyntheticRegistryWebSocket",
     "UPDATE",
+    "action_profile",
+    "dependency_snapshot",
     "registry_entry",
 ]

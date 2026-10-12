@@ -496,20 +496,21 @@ async def prepare(
         )
     references = membership_references(current, final, definitions)
     snapshot = None
-    if references["label"] or references["area"]:
-        try:
+    try:
+        if references["label"] or references["area"]:
             snapshot = await snapshot_reader(fenced=False)
-        except EntityMetadataEvidenceUnavailable:
-            raise EntityMetadataRefusal(
-                "dependency_snapshot_unavailable", kind="unavailable"
-            ) from None
-    disclosure = build_consumer_disclosure(
-        snapshot,
-        entity_id=entity_id,
-        current=current,
-        final=final,
-        reference_definitions=definitions,
-    )
+        # A reader that answers with no snapshot is refused here as well.
+        disclosure = build_consumer_disclosure(
+            snapshot,
+            entity_id=entity_id,
+            current=current,
+            final=final,
+            reference_definitions=definitions,
+        )
+    except EntityMetadataEvidenceUnavailable:
+        raise EntityMetadataRefusal(
+            "dependency_snapshot_unavailable", kind="unavailable"
+        ) from None
     final[ENTITY_METADATA_BINDINGS_KEY] = {
         "reference_definitions": definitions,
         "consumer_evidence_fingerprint": consumer_evidence_fingerprint(disclosure),

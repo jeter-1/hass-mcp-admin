@@ -1041,7 +1041,7 @@ class OctoberPairTests(unittest.IsolatedAsyncioTestCase):
         case = OctoberSignedSelectionTests()
         await case.asyncSetUp()
         self.addCleanup(case.doCleanups)
-        self.assertEqual((await case.publish())['compatible_count'], 21)
+        self.assertEqual((await case.publish())['compatible_count'], 22)
         for captured in (capture(), component_capture()):
             transport = Transport(captured['tools'])
             gateway = UpstreamReadGateway()

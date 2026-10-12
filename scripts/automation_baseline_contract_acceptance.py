@@ -130,7 +130,9 @@ async def _run_disposable(configured, *, expected_image, core_version):
     assert (image['result']=='PASS' and image['index']==entry['image_index_digest']
             and image['core_version']==core_version and image['support_slot']==binding['slot'])
     refs = [{k:p.to_mapping()[k] for k in ('capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
-            for p in CORE_RUNTIME_CAPABILITY_PROFILES]
+            for p in CORE_RUNTIME_CAPABILITY_PROFILES
+            # HAMCP-069A: the dormant entity metadata profile is not signed here.
+            if p.capability_id != 'core.entity_registry_metadata_operation']
     old = [r for r in refs if r['capability_id'] != c.CAPABILITY]
     assert len(old)==20 and len(refs)==21
     key=Ed25519PrivateKey.generate(); now=datetime.now(timezone.utc)

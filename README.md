@@ -1,19 +1,16 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.3** adds exact **ha-mcp 8.6.0** compatibility on top
-of beta.2's **Core 2026.10.0** support, retaining the working 8.5.0 contracts.
-It also makes explicit deep-health collection yield between records and adds
-bounded Core reconciliation failure attribution. These corrections preserve
-authority, execution ownership and storage-failure handling; they do not establish
-the cause of the historical October disconnect or an installed latency guarantee.
-The healthy catalog remains **84 tools: 59 native and 25 admitted delegated
-reads**. The exact reference/component search variants, skill-guide migration,
-and closed template/scene/blueprint adapters require compiled compatibility and
-matching authority. All 21 Core profiles, signed fingerprints, storage formats
-and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA3_RELEASE_NOTES.md),
-[acceptance contract](docs/V2_4_1_BETA3_ACCEPTANCE.md), and
-[8.6/October compatibility evidence](docs/HA_MCP_8_6_0_COMPATIBILITY.md).
+Engineering **2.4.1-beta.4** adds governed entity-registry metadata
+administration (`create_entity_metadata_plan`) on top of beta.3's exact
+**ha-mcp 8.6.0** and **Core 2026.10.0** support. The capability is dormant:
+its new Core profile is not selected by any signed registry entry, so it fails
+closed with no Home Assistant request until a separate owner-signed admission.
+The healthy catalog is **84 tools: 59 native and 25 admitted delegated
+reads**. The 21 existing Core profiles, probe and signed fingerprints, storage
+formats and RC1's multidict 6.9.1 security correction are preserved.
+See the [release notes](docs/V2_4_1_BETA4_RELEASE_NOTES.md),
+[acceptance contract](docs/V2_4_1_BETA4_ACCEPTANCE.md), and
+[entity metadata design](docs/HAMCP_069A_ENTITY_METADATA_DESIGN.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -97,14 +94,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.3 release notes](docs/V2_4_1_BETA3_RELEASE_NOTES.md) and
-[2.4.1-beta.3 acceptance contract](docs/V2_4_1_BETA3_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.4 release notes](docs/V2_4_1_BETA4_RELEASE_NOTES.md) and
+[2.4.1-beta.4 acceptance contract](docs/V2_4_1_BETA4_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.3 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.4 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -148,7 +145,7 @@ implement Host/Origin enforcement.
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
 **59 static tools plus 25 delegated reads, 84 total**. The Core inventory represents
-**21 capability profiles**. Each signed entry selects its exact reviewed reference
+**22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol
 enumeration and descriptor comparison establish the catalog; a health count or
