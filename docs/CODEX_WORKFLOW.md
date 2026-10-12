@@ -387,6 +387,15 @@ needs its lane-provenance fixture and contract-script support; the derivation
 refuses otherwise rather than skipping a lane. The window never changes
 admission policy, the signed registries or any upstream HOLD.
 
+Alarmo acceptance, and the automation-baseline proof bound to it, runs in every
+real-HA lane whose Core slot is non-empty (HAMCP-159). Pull requests cover
+current and candidate; the full tier adds rollback. Each slot binds its exact
+version, digest and lane provenance, and a Core outside the window refuses. Only
+`core.candidate` may be explicitly `null`, which creates and requires no
+candidate lane. A candidate Alarmo failure caused by a production-path difference
+stays failing as a candidate-blocking compatibility finding; it is never fixed by
+adjusting fixtures.
+
 The separate non-required `latest-stable-early-warning.yml` resolves the newest
 stable (never prerelease) Core and ha-mcp nightly, runs the real-HA contracts
 against the newest Core pinned by the digest resolved in that run, and fails
