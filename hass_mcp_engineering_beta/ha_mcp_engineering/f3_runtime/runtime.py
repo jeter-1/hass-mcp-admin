@@ -133,7 +133,8 @@ RECOVERY_CADENCE_SECONDS = 30
 RECOVERY_BATCH_SIZE = ACTIVE_RECOVERY_CHECKPOINT_LIMIT
 RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
 # An idle historical-cursor write may wait for an active deep-health fence at
-# most this many consecutive sweeps; the next sweep advances it regardless.
+# most this many consecutive fenced sweeps; the next sweep advances it
+# regardless. Any unfenced sweep restores the full allowance.
 RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT = 3
 # F3 storage failures a deep-health scan propagates unconverted, with the
 # bounded source category its refusal warning reports (most specific first).
@@ -4057,6 +4058,7 @@ class F3RuntimeIntegration:
                 await asyncio.sleep(0)
                 fence.check()
                 if parent_repository.generation != task_generation:
+                    fence.moved_category = "tasks"
                     fence.superseded()
                 try:
                     next(steps)
@@ -4065,6 +4067,7 @@ class F3RuntimeIntegration:
                     break
             await fence.verify_files()
             if parent_repository.generation != task_generation:
+                fence.moved_category = "tasks"
                 fence.superseded()
             records = [record for record in data["records"].values() if record is not None]
             data["materialized"] = records

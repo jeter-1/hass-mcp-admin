@@ -26,6 +26,9 @@ from tests.test_readonly_upstream_gateway import (
 )
 
 _BURST = 5
+# Safety bound only; every assertion is event-driven. Matches the hold
+# allowance of tests/test_hamcp168_health_supersession.py.
+_WAIT_TIMEOUT_SECONDS = 30
 
 
 class _HeldSearchTransport(FakeTransport):
@@ -110,14 +113,15 @@ class ConcurrentDelegatedReadTests(unittest.IsolatedAsyncioTestCase):
         # queue or semaphore admits them one at a time.
         await asyncio.wait_for(
             asyncio.gather(*(event.wait() for event in self.transport.entered.values())),
-            timeout=2,
+            timeout=_WAIT_TIMEOUT_SECONDS,
         )
         self.assertEqual(_BURST, self.transport.max_in_flight)
 
         # An unrelated delegated read is not queued behind the held burst.
         state = json.loads(
             await asyncio.wait_for(
-                self.get_state.run({"entity_id": "sun.sun"}), timeout=2
+                self.get_state.run({"entity_id": "sun.sun"}),
+                timeout=_WAIT_TIMEOUT_SECONDS,
             )
         )
         self.assertTrue(state["success"])
@@ -127,7 +131,8 @@ class ConcurrentDelegatedReadTests(unittest.IsolatedAsyncioTestCase):
         # exchange does. Engineering does not batch or release them together.
         for key in reversed(self.keys):
             self.transport.release[key].set()
-            value = json.loads(await asyncio.wait_for(tasks[key], timeout=2))
+            value = json.loads(await asyncio.wait_for(
+                tasks[key], timeout=_WAIT_TIMEOUT_SECONDS))
             self.assertTrue(value["success"])
             expected = "partial" if self.partial_by_key[key] else "complete"
             self.assertEqual(expected, value["metadata"]["completeness"])

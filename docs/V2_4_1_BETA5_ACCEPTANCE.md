@@ -47,10 +47,18 @@ and repositories:
 - the fence-holder count returns to zero after success, refusal and
   cancellation;
 - one warning per reason per 60 seconds with exactly the bounded fields, the
-  correct source category for each fenced source, and no path, identifier or
-  exception text; and
-- mutation checks: removing the deferral fails the inverted tests, and
-  removing the rate limit fails the warning test.
+  correct provenance-derived source category for each fenced source
+  (including a failure of each initial fence read), `unknown` when provenance
+  is not established, and no path, identifier or exception text;
+- delivery isolation: with the log sink held indefinitely, health returns the
+  original refusal, the fence holder clears and the recovery heartbeat keeps
+  running; repeated refusals keep at most one worker and a bounded queue with
+  counted drops; after release, delivery, the rate limit and exception
+  containment work; and
+- mutation checks: removing the deferral fails the inverted tests, removing
+  the rate limit fails the warning test, awaiting the log sink or removing the
+  queue bound fails the delivery tests, and dropping the initial-read category
+  fails the attribution test.
 
 ## 2. Publication and recovery preparation
 
@@ -68,9 +76,14 @@ no migration.
 2. Compare all 84 public descriptors, Core signed selection, storage/audit
    health, F3 readiness and zero fallback.
 3. Repeat idle `get_server_health(check_ha=false)` calls whose duration exceeds
-   the 30-second recovery cadence; they must succeed. Any refusal must be
-   accompanied by one bounded `governance_health_refused` warning per reason
-   per minute. Scan latency is not changed by this release.
+   the 30-second recovery cadence. A scan that spans at most three idle
+   recovery-cursor opportunities, with no real recovery, child, lock, task or
+   plan write during it, must succeed. A longer idle scan is intentionally
+   refused when the fourth consecutive fenced sweep advances the cursor; that
+   bound is part of the design and is not a defect. Any refusal must be
+   accompanied by at most one bounded `governance_health_refused` warning per
+   reason per minute (best-effort; a stalled log sink may drop it). Scan
+   latency is not changed by this release.
 
 No push, CI trigger, signing, publication or installation is authorized by
 source completion.

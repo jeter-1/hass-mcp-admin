@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
+from collections import deque
+import contextvars
 from copy import deepcopy
 from contextlib import AsyncExitStack
 from dataclasses import asdict
@@ -13,6 +15,7 @@ import hmac
 import logging
 import json
 import secrets
+import threading
 import time
 from typing import Any, Awaitable, Callable
 import uuid
@@ -560,6 +563,8 @@ class ChangeGovernanceService:
         # Diagnostic-only rate limit for refused deep-health scans, per reason.
         self._health_refusal_clock = time.monotonic
         self._health_refusal_warned_at: dict[str, float] = {}
+        # Delivery happens off the owner loop; a stalled sink never blocks health.
+        self._health_refusal_warnings = _BestEffortWarningHandoff()
         self._health_validation_job: asyncio.Task[float] | None = None
         self._health_cache = self._build_health_summary(
             include_provider_health=False
@@ -12493,6 +12498,9 @@ class ChangeGovernanceService:
             built_at = self.now()
             fence = None
             phase = "snapshot"
+            # The store being read, when known: provenance for a refusal the
+            # fence did not attribute. Never inferred from a shared error code.
+            reading: str | None = None
             corruption_before = (self.repository.corruption_count, self.task_repository.corruption_count)
             # While this scan holds its fence, F3 recovery defers (boundedly)
             # only its idle historical-cursor write; real writes still move it.
@@ -12504,11 +12512,12 @@ class ChangeGovernanceService:
                 f3_storage_categories = ()
             f3_storage_errors = tuple(kind for kind, _ in f3_storage_categories)
 
-            def refusal(code, *, superseded, exc=None):
+            def refusal(code, *, superseded, exc=None, source=None):
                 # Diagnostic only: it must never replace the original refusal.
                 try:
                     self._warn_health_refusal(
                         code=code, superseded=superseded, exc=exc, fence=fence,
+                        source_category=source,
                         f3_storage_categories=f3_storage_categories,
                         phase=phase, requested_at=requested_at,
                         phase_started=phase_started, phases=phases,
@@ -12530,7 +12539,13 @@ class ChangeGovernanceService:
                     sources.extend(self.f3_runtime._health_fence_sources()[2:])
                     categories.extend(HEALTH_FENCE_CATEGORIES[2:len(sources)])
                     roots = self.f3_runtime._health_fence_roots()
-                fence = HealthScanFence(tuple(sources), categories=tuple(categories), roots=roots)
+                # Constructed before its initial read, so a failing initial
+                # read still reports which source failed.
+                fence = HealthScanFence(
+                    tuple(sources), categories=tuple(categories), roots=roots,
+                    acquire=False)
+                fence.acquire()
+                reading = "plans"
                 try:
                     plans = await self.repository.collect_health(
                         checkpoint=fence.check,
@@ -12540,6 +12555,7 @@ class ChangeGovernanceService:
                 except Exception as exc:
                     raise ChangePlanStorageError("Governance health collection failed") from exc
                 plan_generation = self.repository.generation
+                reading = "tasks"
                 try:
                     tasks = await self.task_repository.collect_health(
                         checkpoint=fence.check, watch=fence.watch)
@@ -12548,11 +12564,14 @@ class ChangeGovernanceService:
                 except Exception as exc:
                     raise ExecutionTaskStorageError("Execution-task health collection failed") from exc
                 task_generation = self.task_repository.generation
+                reading = None
                 fence.check()
-                self._require_health_generations(plan_generation, task_generation)
+                self._require_health_generations(plan_generation, task_generation, fence=fence)
                 phases["snapshot_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
                 phase = "validation"
+                # The worker validates persisted plans only.
+                reading = "plans"
                 job = asyncio.create_task(asyncio.to_thread(
                     _validate_health_records, plans, self.sensitive_values
                 ))
@@ -12566,6 +12585,7 @@ class ChangeGovernanceService:
                     if job.done():
                         self._health_validation_job = None
                 phases["validation_wait_ms"] = (time.monotonic() - phase_started) * 1000.0
+                reading = None
                 # Detect in-place movement before the owner can persist expiry.
                 await fence.verify_files()
                 phase_started = time.monotonic()
@@ -12575,7 +12595,7 @@ class ChangeGovernanceService:
                 for plan in plans:
                     await asyncio.sleep(0)
                     fence.check()
-                    self._require_health_generations(plan_generation, task_generation)
+                    self._require_health_generations(plan_generation, task_generation, fence=fence)
                     try:
                         if plan.policy_decision is not None:
                             self._require_projection_policy_snapshot(plan)
@@ -12594,7 +12614,7 @@ class ChangeGovernanceService:
                         fence.tokens = (self.repository._directory_token(), *fence.tokens[1:])
                         plan_generation = self.repository.generation
                 fence.check()
-                self._require_health_generations(plan_generation, task_generation)
+                self._require_health_generations(plan_generation, task_generation, fence=fence)
                 phases["projection_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
                 phase = "assembly"
@@ -12615,7 +12635,7 @@ class ChangeGovernanceService:
                 else:
                     await fence.verify_files()
                 fence.check()
-                self._require_health_generations(plan_generation, task_generation)
+                self._require_health_generations(plan_generation, task_generation, fence=fence)
                 phases["overlay_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase = "publication"
                 result = self._health_summary_overlay(
@@ -12626,7 +12646,7 @@ class ChangeGovernanceService:
                     phase_elapsed_ms=phases, collected_f3=f3, validated=True,
                 )
                 fence.check()
-                self._require_health_generations(plan_generation, task_generation)
+                self._require_health_generations(plan_generation, task_generation, fence=fence)
                 return result
             except (PlanHealthSnapshotSuperseded, TaskHealthSnapshotSuperseded) as exc:
                 self._health_cache_key = None
@@ -12634,7 +12654,8 @@ class ChangeGovernanceService:
                     ErrorCode.CHANGE_PLAN_STORAGE_ERROR
                     if isinstance(exc, PlanHealthSnapshotSuperseded)
                     else ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
-                refusal(code, superseded=True)
+                refusal(code, superseded=True, source=(
+                    "plans" if isinstance(exc, PlanHealthSnapshotSuperseded) else "tasks"))
                 HealthScanFence.superseded(code)
             except (ChangePlanStorageError, ExecutionTaskStorageError) as exc:
                 self._health_cache_key = None
@@ -12646,10 +12667,13 @@ class ChangeGovernanceService:
                         raise
                 if isinstance(exc, ExecutionTaskStorageError) and self.f3_runtime is not None:
                     self.f3_runtime._readiness_fault("health")
+                plan_failure = isinstance(exc, ChangePlanStorageError)
                 code = (
-                    ErrorCode.CHANGE_PLAN_STORAGE_ERROR if isinstance(exc, ChangePlanStorageError)
+                    ErrorCode.CHANGE_PLAN_STORAGE_ERROR if plan_failure
                     else ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
-                refusal(code, superseded=False, exc=exc)
+                # Each repository raises only its own storage class.
+                refusal(code, superseded=False, exc=exc,
+                        source="plans" if plan_failure else "tasks")
                 raise GovernanceError(code) from exc
             except GovernanceError as exc:
                 self._health_cache_key = None
@@ -12659,7 +12683,8 @@ class ChangeGovernanceService:
                         and self.f3_runtime is not None):
                     self.f3_runtime._readiness_fault("health")
                 if exc.code in _HEALTH_STORAGE_ERROR_CODES:
-                    refusal(exc.code, superseded=superseded, exc=None if superseded else exc)
+                    refusal(exc.code, superseded=superseded,
+                            exc=None if superseded else exc, source=reading)
                 raise
             except f3_storage_errors as exc:
                 # F3 storage failures propagate unconverted, as before.
@@ -12676,11 +12701,16 @@ class ChangeGovernanceService:
     def _warn_health_refusal(
         self, *, code: ErrorCode | None, superseded: bool,
         exc: BaseException | None, fence: HealthScanFence | None, phase: str,
+        source_category: str | None = None,
         f3_storage_categories: tuple = (),
         requested_at: float, phase_started: float, phases: dict[str, float],
         plan_count: Any, task_count: Any,
     ) -> None:
-        """One bounded WARNING per reason per window; never paths, IDs or text."""
+        """One bounded WARNING per reason per window; never paths, IDs or text.
+
+        The context is built here; delivery is handed off, best effort, so a
+        slow or stalled log sink cannot delay the refusal or the owner loop.
+        """
 
         reason = "health_snapshot_superseded" if superseded else "storage_failure"
         now = self._health_refusal_clock()
@@ -12691,17 +12721,15 @@ class ChangeGovernanceService:
         category = None
         if fence is not None:
             category = fence.moved_category if superseded else fence.failed_category
+        if category is None:
+            category = source_category
         if category is None and exc is not None:
             category = next(
                 (name for kind, name in f3_storage_categories if isinstance(exc, kind)),
                 None)
         if category is None:
-            if code == ErrorCode.CHANGE_PLAN_STORAGE_ERROR:
-                category = "plans"
-            elif code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR:
-                category = "tasks"
-            else:
-                category = "unknown"
+            # Only genuinely unknown provenance; the error code is shared.
+            category = "unknown"
         elapsed = {name: round(value) for name, value in phases.items()}
         in_progress = _HEALTH_PHASE_ELAPSED_KEYS.get(phase)
         if in_progress is not None:
@@ -12712,31 +12740,38 @@ class ChangeGovernanceService:
         if not superseded and exc is not None:
             cause = exc.__cause__ if isinstance(exc, GovernanceError) else None
             error_type = type(cause if cause is not None else exc).__name__
-        log_event(
-            self.logger, logging.WARNING, "governance_health_refused",
-            "Deep health scan was refused.",
-            context={
-                "reason": reason,
-                "error_code": None if code is None else code.value,
-                "source_category": category,
-                "phase": phase,
-                "elapsed_ms": round((time.monotonic() - requested_at) * 1000.0),
-                "phase_elapsed_ms": elapsed,
-                "plan_count": plan_count if isinstance(plan_count, int) else None,
-                "task_count": task_count if isinstance(task_count, int) else None,
-                "error_type": error_type,
-            },
-        )
+        context = {
+            "reason": reason,
+            "error_code": None if code is None else code.value,
+            "source_category": category,
+            "phase": phase,
+            "elapsed_ms": round((time.monotonic() - requested_at) * 1000.0),
+            "phase_elapsed_ms": elapsed,
+            "plan_count": plan_count if isinstance(plan_count, int) else None,
+            "task_count": task_count if isinstance(task_count, int) else None,
+            "error_type": error_type,
+        }
+        # Delivery keeps the caller's request attribution.
+        request_context = contextvars.copy_context()
+        self._health_refusal_warnings.submit(lambda: request_context.run(
+            log_event, self.logger, logging.WARNING, "governance_health_refused",
+            "Deep health scan was refused.", context=context))
 
-    def _require_health_generations(self, plans: int, tasks: int) -> None:
+    def _require_health_generations(
+        self, plans: int, tasks: int, *, fence: HealthScanFence | None = None
+    ) -> None:
         if self.repository.generation != plans:
             self._health_cache_key = None
+            if fence is not None:
+                fence.moved_category = "plans"
             raise GovernanceError(
                 ErrorCode.CHANGE_PLAN_STORAGE_ERROR,
                 details={"reason": "health_snapshot_superseded"},
             )
         if self.task_repository.generation != tasks:
             self._health_cache_key = None
+            if fence is not None:
+                fence.moved_category = "tasks"
             raise GovernanceError(
                 ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
                 details={"reason": "health_snapshot_superseded"},
@@ -14043,6 +14078,75 @@ _HEALTH_PHASE_ELAPSED_KEYS = {
     "projection": "projection_ms", "assembly": "assembly_ms",
     "overlay": "overlay_ms",
 }
+# Refusal warnings that may wait behind the one being written; more are
+# dropped and counted rather than queued.
+HEALTH_REFUSAL_WARNING_QUEUE_LIMIT = 4
+
+
+class _BestEffortWarningHandoff:
+    """Bounded, drop-on-full delivery of diagnostic warnings off the loop.
+
+    At most one worker thread, started on demand and gone when idle, and at
+    most ``limit`` warnings waiting behind the one it is writing. Submission
+    never waits on the sink: a full queue drops the warning and counts it.
+    A stalled sink therefore holds one thread and a bounded queue, never the
+    health response or the owner loop.
+    """
+
+    def __init__(self, limit: int = HEALTH_REFUSAL_WARNING_QUEUE_LIMIT):
+        self.limit = limit
+        self.dropped = 0
+        self._pending: deque[Callable[[], None]] = deque()
+        self._condition = threading.Condition()
+        self._worker: threading.Thread | None = None
+
+    def submit(self, emit: Callable[[], None]) -> bool:
+        with self._condition:
+            if len(self._pending) >= self.limit:
+                self.dropped += 1
+                return False
+            self._pending.append(emit)
+            if self._worker is None:
+                worker = threading.Thread(
+                    target=self._run, name="governance-health-warning", daemon=True)
+                try:
+                    worker.start()
+                except RuntimeError:
+                    self._pending.pop()
+                    self.dropped += 1
+                    return False
+                self._worker = worker
+        return True
+
+    def _run(self) -> None:
+        current = threading.current_thread()
+        try:
+            while True:
+                with self._condition:
+                    if not self._pending:
+                        # Retire in the same critical section that saw the
+                        # queue empty, so a later submit starts a new worker.
+                        self._worker = None
+                        self._condition.notify_all()
+                        return
+                    emit = self._pending.popleft()
+                try:
+                    emit()
+                except Exception:
+                    # Best effort: a failing sink loses only this warning.
+                    pass
+        finally:
+            # Only an abnormal exit still finds this worker recorded.
+            with self._condition:
+                if self._worker is current:
+                    self._worker = None
+                    self._condition.notify_all()
+
+    def wait_idle(self, timeout: float) -> bool:
+        """Test and shutdown aid; the health path never waits on delivery."""
+        with self._condition:
+            return self._condition.wait_for(
+                lambda: self._worker is None and not self._pending, timeout)
 
 
 def _require_safe_persisted_plan(

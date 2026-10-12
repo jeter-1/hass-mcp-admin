@@ -27,6 +27,7 @@ class HealthScanFence:
         *,
         categories: tuple[str, ...] | None = None,
         roots: tuple[tuple[Path, str], ...] = (),
+        acquire: bool = True,
     ):
         self.sources = sources
         # Bounded diagnostic labels only: which fenced source moved or failed.
@@ -37,12 +38,22 @@ class HealthScanFence:
             sorted(roots, key=lambda item: len(item[0].parts), reverse=True))
         self.moved_category: str | None = None
         self.failed_category: str | None = None
-        self.tokens = tuple(
-            self._read_source(code, read, category)
-            for (code, read), category in zip(sources, self.categories, strict=True))
+        self.tokens: tuple[Any, ...] | None = None
         self.files: dict[Path, tuple[int, int, int, int] | None] = {}
         self.file_codes: dict[Path, ErrorCode] = {}
         self.file_categories: dict[Path, str] = {}
+        if acquire:
+            self.acquire()
+
+    def acquire(self) -> None:
+        """Read the initial tokens.
+
+        A caller that constructs with ``acquire=False`` holds the fence before
+        this read, so an initial read failure keeps its ``failed_category``.
+        """
+        self.tokens = tuple(
+            self._read_source(code, read, category)
+            for (code, read), category in zip(self.sources, self.categories, strict=True))
 
     @staticmethod
     def stamp(path: Path) -> tuple[int, int, int, int] | None:
@@ -87,6 +98,9 @@ class HealthScanFence:
         If the fence itself is unavailable, the caller must still attribute
         and propagate its original storage failure. Cancellation is untouched.
         """
+        if self.tokens is None:
+            # No initial tokens were read, so no movement can be proven.
+            return
         # A swallowed re-read failure must not claim the original's category.
         original_category = self.failed_category
         try:

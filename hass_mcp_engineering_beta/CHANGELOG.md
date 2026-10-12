@@ -8,7 +8,9 @@
 - Keep every real recovery, child, lock, task and plan write superseding the
   scan; the public error code and message are unchanged.
 - Emit a rate-limited, redacted `governance_health_refused` warning with the
-  moved or failed source category, phase and bounded timings.
+  provenance-attributed source category (`unknown` when not provable), phase
+  and bounded timings, delivered off the event loop through a bounded,
+  drop-on-full handoff that never delays the refusal.
 - Preserve tools, schemas, routing, admission, registries, durable formats,
   workflows and stable v1.
 

@@ -26,12 +26,22 @@ to `reason` (`health_snapshot_superseded` or `storage_failure`), `error_code`,
 `source_category` (`plans`, `tasks`, `f3_children`, `f3_locks` or `unknown`),
 `phase`, `elapsed_ms`, rounded `phase_elapsed_ms`, `plan_count`, `task_count`
 and, for real failures, `error_type` (exception class name only). It contains
-no path, identifier, record content or exception text. The fence now records
-which fenced source moved or failed; refusals the fence cannot attribute
-(generation-only supersession, a failure while the fence is built, or an F3
-storage error) fall back to the error's own family. F3 storage errors
-still propagate unconverted. The F3 storage classes stay behind the
+no path, identifier, record content or exception text. The category comes
+from provenance, never from the shared error code: the fence records which
+fenced source moved or failed (including a failure of its own initial read),
+a generation check records which repository advanced, a plan or task storage
+error is attributed to the repository or scan stage that raised it, and an F3
+storage error to its class. Anything else reports `unknown`. F3 storage
+errors still propagate unconverted. The F3 storage classes stay behind the
 reviewed `f3_runtime` import boundary.
+
+The warning is delivered best-effort off the event loop: the refusal hands it
+to one on-demand daemon worker through a queue of at most four warnings and
+drops (and counts) any warning that does not fit. The health call returns its
+original refusal and releases the fence without waiting for the log sink, so a
+slow or stalled log handler cannot delay the refusal, the recovery heartbeat
+or later health calls. A warning dropped while the sink is stalled is not
+retried.
 
 The public error code and message are unchanged
 (`execution_task_storage_error`, "Execution-task storage is unavailable.").
