@@ -4,15 +4,17 @@ import importlib.util
 import json
 from pathlib import Path
 import sys
+import os
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT / 'scripts'), str(ROOT / 'hass_mcp_engineering_beta')]
 import automation_baseline_contract_acceptance as lane
 from test_automation_baseline_capture import Client, Core, fixture, export
-from test_alarmo_interval_observer import receipt
+from test_alarmo_interval_observer import CORE, NOT_SLOTS, NOT_STRINGS, OTHER_CORE, SLOT_VERSIONS, receipt
 from ha_mcp_engineering.audit_baseline import capture_contracts as c, compare_baselines, load_baseline
 from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider
 from ha_mcp_engineering.audit_baseline.capture_service import BaselineCaptureService
@@ -50,9 +52,9 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
             for path, baseline in zip(paths, (before, after)):
                 path.write_bytes(c.canonical(baseline))
             counts = compare_baselines(*(load_baseline(p) for p in paths)).counts
-        observations = [receipt(lane.EXPECTED_COMMANDS) for _ in range(2)]
+        observations = [receipt(lane.EXPECTED_COMMANDS, CORE) for _ in range(2)]
         for item in observations: item['kind'] = 'control'
-        self.value = {'result':'PASS','core':'2026.9.4','production_authority':False,
+        self.value = {'result':'PASS','core':CORE,'production_authority':False,
             'fixture_cleanup':True,'authority_transition':[20,21], 'continuation_reads':0,
             'nonadmin_refusal':'access_denied','missing_authority_reads':0,
             'predecessor_admission':{'acquired':False,'ha_requests':0,'reason':'authority_unavailable'},
@@ -64,7 +66,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
         end_request(self.token)
 
     async def test_reconstructs_actual_export_and_all_five_classifications(self):
-        result = lane.verify_result(self.value)
+        result = lane.verify_result(self.value, core_version=CORE)
         self.assertEqual(result['records_before'], 122)
         self.assertEqual(result['comparison_counts'], {'ADDED':1,'REMOVED':1,'CHANGED':1,'UNCHANGED':119,'UNKNOWN':1,'TOTAL':123})
 
@@ -88,7 +90,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
         ):
             value=copy.deepcopy(self.value);mutate(value)
             with self.assertRaises((AssertionError, ValueError, KeyError)):
-                lane.verify_result(value)
+                lane.verify_result(value, core_version=CORE)
 
     async def test_command_service_storage_and_coverage_fail_closed(self):
         for mutate in (
@@ -101,8 +103,35 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
         ):
             value=copy.deepcopy(self.value);mutate(value)
             with self.assertRaises((AssertionError, ValueError)):
-                lane.verify_result(value)
+                lane.verify_result(value, core_version=CORE)
 
+
+    async def test_receipt_is_bound_to_the_caller_supplied_slot_core(self):
+        for other in [v for v in SLOT_VERSIONS.values() if v != CORE] + list(NOT_SLOTS):
+            with self.subTest(other=other), self.assertRaises((AssertionError, ValueError)):
+                lane.verify_result(copy.deepcopy(self.value), core_version=other)
+        for wrong in NOT_STRINGS:
+            value = copy.deepcopy(self.value)
+            value['core'] = wrong
+            with self.subTest(core_version=wrong), self.assertRaises((AssertionError, ValueError)):
+                lane.verify_result(value, core_version=wrong)
+        with self.assertRaises(TypeError):
+            lane.verify_result(copy.deepcopy(self.value))
+        for mutate in (lambda v: v.update(core=OTHER_CORE), lambda v: v.pop('core'),
+                       lambda v: v['observations'][0].update(core_version=OTHER_CORE),
+                       lambda v: v['observations'][1].update(core_version=OTHER_CORE)):
+            value = copy.deepcopy(self.value); mutate(value)
+            with self.subTest(value=value.get('core')), self.assertRaises((AssertionError, ValueError, KeyError)):
+                lane.verify_result(value, core_version=CORE)
+
+    async def test_receipt_follows_every_alarmo_slot(self):
+        for version in SLOT_VERSIONS.values():
+            value = copy.deepcopy(self.value)
+            value['core'] = version
+            value['observations'] = [receipt(lane.EXPECTED_COMMANDS, version) for _ in range(2)]
+            for item in value['observations']: item['kind'] = 'control'
+            with self.subTest(version=version):
+                self.assertEqual(lane.verify_result(value, core_version=version)['result'], 'PASS')
 
 class FailureDiagnosticTests(unittest.IsolatedAsyncioTestCase):
     async def test_predecessor_uses_real_acquisition_and_rejects_permissive_admission(self):
@@ -144,13 +173,41 @@ class FailureDiagnosticTests(unittest.IsolatedAsyncioTestCase):
         private = "synthetic-do-not-retain"
         with patch.object(lane, "_run_disposable", side_effect=AssertionError(private)):
             with self.assertRaises(AssertionError) as found:
-                await lane.run_disposable(private, expected_image=private)
+                await lane.run_disposable(private, expected_image=private, core_version=private)
         self.assertEqual(found.exception.contract_missing_key, "automation_baseline")
         diagnostic = found.exception.contract_diagnostic
         self.assertTrue(diagnostic["baseline_source_lines"])
         self.assertTrue(all(type(line) is int for line in diagnostic["baseline_source_lines"]))
         self.assertNotIn(private, json.dumps(diagnostic))
 
+
+    async def test_lane_refuses_unknown_core_wrong_lane_image_or_remote_host_before_reads(self):
+        from alarmo_inspection_contract_acceptance import slot_binding
+        binding = slot_binding(CORE)
+        local = SimpleNamespace(ha_url='http://127.0.0.1:8123')
+        cases = [
+            (local, binding['image'], OTHER_CORE, binding['lane']),
+            (local, binding['image'], CORE, slot_binding(OTHER_CORE)['lane']),
+            (local, binding['image'], CORE, None),
+            (local, slot_binding(OTHER_CORE)['image'], CORE, binding['lane']),
+            (local, binding['image'].split('@')[0], CORE, binding['lane']),
+            (SimpleNamespace(ha_url='http://homeassistant.local:8123'), binding['image'], CORE, binding['lane']),
+        ]
+        for configured, image, version, lane_name in cases:
+            environ = {k: v for k, v in os.environ.items() if k not in ('HA_CONTRACT_LANE', 'REAL_HA_ALARMO_IMAGE_RESULT')}
+            if lane_name is not None:
+                environ['HA_CONTRACT_LANE'] = lane_name
+            with self.subTest(image=image, version=version, lane=lane_name, url=configured.ha_url), \
+                    patch.dict(os.environ, environ, clear=True), \
+                    self.assertRaisesRegex(ValueError, 'Exact owned disposable baseline lane required'):
+                # No image receipt is configured, so passing the guard would raise KeyError instead.
+                await lane._run_disposable(configured, expected_image=image, core_version=version)
+        for unknown in [*NOT_SLOTS, *NOT_STRINGS]:
+            environ = {k: v for k, v in os.environ.items() if k != 'REAL_HA_ALARMO_IMAGE_RESULT'}
+            environ['HA_CONTRACT_LANE'] = binding['lane']
+            with self.subTest(unknown=unknown), patch.dict(os.environ, environ, clear=True), \
+                    self.assertRaisesRegex(ValueError, 'exact support-window Core slot'):
+                await lane._run_disposable(local, expected_image=binding['image'], core_version=unknown)
 
 class FixtureTests(unittest.TestCase):
     def test_fixture_is_inert_and_changes_only_three_selected_ids(self):

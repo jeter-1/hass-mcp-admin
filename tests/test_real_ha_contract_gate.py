@@ -1574,7 +1574,8 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             child_source,
         )
         self.assertIn("schema=_expected_device_registry_schema()", child_source)
-        # Alarmo and automation-baseline acceptance stay exact to Core 2026.9.4.
+        # Alarmo and automation-baseline acceptance follow every support-window
+        # Core slot (HAMCP-159); there is no literal Core version gate.
         alarmo_guards = [
             ast.unparse(node.test)
             for node in ast.walk(child)
@@ -1586,7 +1587,33 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 for inner in ast.walk(node)
             )
         ]
-        self.assertEqual(alarmo_guards, ["EXPECTED_HA_VERSION == '2026.9.4'"])
+        self.assertEqual(alarmo_guards, ["_alarmo_slot_required(EXPECTED_HA_VERSION)"])
+        alarmo_block = next(node for node in ast.walk(child) if isinstance(node, ast.If)
+                            and ast.unparse(node.test) == "_alarmo_slot_required(EXPECTED_HA_VERSION)")
+        disposable_calls = [ast.unparse(node) for node in ast.walk(alarmo_block)
+                            if isinstance(node, ast.Call) and ast.unparse(node.func) in {"run_disposable", "run_baseline"}]
+        self.assertEqual(len(disposable_calls), 2)
+        for call in disposable_calls:
+            self.assertIn("core_version=EXPECTED_HA_VERSION", call)
+        self.assertNotIn("2026.9.4", ast.get_source_segment(self.source, alarmo_block) or "")
+        self.assertNotIn("2026.9.4", ast.get_source_segment(self.source, self.functions["_alarmo_slot_required"]) or "")
+
+    def test_alarmo_requirement_follows_exact_support_window_core_slots(self):
+        from support.support_window_matrix import support_window as loaded_support_window
+
+        support_window = loaded_support_window()
+        window = support_window.load(ROOT)
+        versions = [window["core"][slot]["version"]
+                    for slot in support_window.core_slots(window, support_window.ALARMO_SLOTS)]
+        self.assertEqual(versions, ["2026.10.0", "2026.10.1", "2026.9.4"])
+        with patch.object(sys, "path", list(sys.path)), patch.dict(sys.modules):
+            for version in versions:
+                with self.subTest(version=version):
+                    self.assertIs(self.contract._alarmo_slot_required(version), True)
+            for version in ("2026.9.3", "2026.9.2", "2026.7.2", "2026.11.0", "2026.10", "2026.10.*",
+                            "2026.9", "", " 2026.10.0", "2026.10.0\n", "ha-2026-10-0", None):
+                with self.subTest(version=version):
+                    self.assertIs(self.contract._alarmo_slot_required(version), False)
 
     def test_composite_device_contract_evidence_is_bounded_and_structural(self):
         project = self.contract._bounded_device_lookup_shape

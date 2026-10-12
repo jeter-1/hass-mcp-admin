@@ -140,21 +140,51 @@ class CommittedWindowTests(SupportWindowFixture):
         with self.assertRaises(KeyError):
             self.sw.real_ha_matrix(self.window, "nightly")
 
-    def test_alarmo_bound_core_stays_in_window_until_explicitly_rotated(self):
-        # Alarmo acceptance is bound to one Core by its own evidence model and
-        # ci.yml gates its steps on that exact version. Rotating that Core out
-        # of the window must fail here rather than silently drop the lane.
-        ci = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        gated = set(re.findall(r"matrix\.ha_version == '([0-9.]+)'", ci))
-        self.assertEqual(gated, {"2026.9.4"})
-        acceptance = (ROOT / "scripts/alarmo_inspection_contract_acceptance.py").read_text(encoding="utf-8")
-        self.assertIn('core_version"] == "2026.9.4"', acceptance)
-        in_window = {self.window["core"][slot]["version"] for slot in self.sw.SLOTS}
-        self.assertTrue(gated <= in_window, "Alarmo-bound Core left the window; re-bind or retire Alarmo explicitly")
+    def test_alarmo_follows_every_core_slot_with_its_provenance(self):
+        # HAMCP-159: Alarmo is a property of each Core slot, not of one pinned
+        # Core. Every derived row runs it, bound to that slot's committed source.
+        for tier in ("pr", "full"):
+            for row in self.sw.real_ha_matrix(self.window, tier)["include"]:
+                fixture = ROOT / "tests" / "fixtures" / (
+                    "core_" + row["ha_version"].replace(".", "_") + "_lane_provenance.json")
+                provenance = json.loads(fixture.read_text(encoding="utf-8"))
+                with self.subTest(tier=tier, slot=row["support_slot"]):
+                    self.assertIs(row["alarmo"], True)
+                    self.assertEqual(row["ha_version"], self.window["core"][row["support_slot"]]["version"])
+                    self.assertEqual(row["core_source_commit"], provenance["source_commit"])
+                    self.assertEqual(row["core_source_sha256"], provenance["source_archive_sha256"])
+                    self.assertRegex(row["core_source_commit"], r"^[0-9a-f]{40}$")
+                    self.assertRegex(row["core_source_sha256"], r"^[0-9a-f]{64}$")
+                    self.assertIn("@" + provenance["image_index_digest"], row["ha_image"])
+
+    def test_alarmo_slot_binds_exactly_each_window_core(self):
+        self.assertEqual(self.sw.ALARMO_SLOTS, self.sw.SLOTS)
+        for slot in self.sw.SLOTS:
+            core = self.window["core"][slot]
+            provenance = json.loads((ROOT / "tests" / "fixtures" / (
+                "core_" + core["version"].replace(".", "_") + "_lane_provenance.json")).read_text(encoding="utf-8"))
+            with self.subTest(slot=slot):
+                self.assertEqual(self.sw.alarmo_slot(core["version"], ROOT), {
+                    "slot": slot, "version": core["version"], "lane": "ha-" + core["version"].replace(".", "-"),
+                    "image": f"ghcr.io/home-assistant/home-assistant:{core['version']}@{core['image_index_digest']}",
+                    "image_index_digest": core["image_index_digest"],
+                    "source_commit": provenance["source_commit"],
+                    "source_archive_sha256": provenance["source_archive_sha256"],
+                    "provenance": provenance})
+
+    def test_alarmo_slot_refuses_unknown_prefix_family_and_non_string(self):
+        # 2026.9.2 and 2026.9.3 have committed provenance but are not window slots.
+        for version in ("2026.9.3", "2026.9.2", "2026.11.0", "2026.10", "2026.10.", "2026.10.*", "2026.9",
+                        "2026.9.*", "2026", "", " 2026.10.0", "2026.10.0 ", "2026.10.0\n", "v2026.10.0",
+                        "2026.10.00", "ha-2026-10-0", None, 2026.9, 2026, b"2026.10.0", ["2026.10.0"],
+                        {"version": "2026.10.0"}):
+            with self.subTest(version=version), self.assertRaisesRegex(self.sw.Refusal,
+                                                                       "^alarmo_core_not_in_window_slot$"):
+                self.sw.alarmo_slot(version, ROOT)
 
 
-class RefusalTests(SupportWindowFixture):
-    """Every malformed window refuses; ``load(root)`` reads a temp repo copy."""
+class TempRootFixture(SupportWindowFixture):
+    """``load(root)`` reads a temp copy of the window and Core provenance fixtures."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -184,6 +214,11 @@ class RefusalTests(SupportWindowFixture):
         self.write(window)
         return window
 
+
+
+class RefusalTests(TempRootFixture):
+    """Every malformed window refuses."""
+
     def test_unchanged_copy_loads(self):
         self.assertEqual(self.sw.load(self.root), self.window)
 
@@ -209,8 +244,21 @@ class RefusalTests(SupportWindowFixture):
         self.assertRefuses("core_slots")
         self.mutate(lambda w: w["ha_mcp"].pop("candidate"))
         self.assertRefuses("ha_mcp_slots")
-        self.mutate(lambda w: w["core"].update(candidate=None))
-        self.assertRefuses("core_candidate_keys")
+        # Only the Core candidate may be empty; see EmptyCandidateTests.
+        self.mutate(lambda w: w["ha_mcp"].update(candidate=None))
+        self.assertRefuses("ha_mcp_candidate_keys")
+        for slot in ("current", "rollback"):
+            with self.subTest(slot=slot):
+                self.mutate(lambda w: w["core"].update({slot: None}))
+                self.assertRefuses("core_" + slot + "_keys")
+                self.mutate(lambda w: w["ha_mcp"].update({slot: None}))
+                self.assertRefuses("ha_mcp_" + slot + "_keys")
+        self.mutate(lambda w: w["core"].pop("candidate"))
+        self.assertRefuses("core_slots")
+        for value in ({}, [], "", "null", False):
+            with self.subTest(candidate=value):
+                self.mutate(lambda w: w["core"].update(candidate=value))
+                self.assertRefuses("core_candidate_keys")
         self.mutate(lambda w: w["core"]["current"].update(tag="latest"))
         self.assertRefuses("core_current_keys")
 
@@ -319,6 +367,131 @@ class RefusalTests(SupportWindowFixture):
         path = self.root / "github-output"
         with self.assertRaisesRegex(self.sw.Refusal, "^output_newline$"):
             self.sw.write_outputs(path, {"tier": "pr\nmatrix={}"})
+
+
+    def test_alarmo_provenance_digest_mismatch_refuses(self):
+        # A provenance fixture that disagrees with the window can never bind Alarmo.
+        current = self.base["core"]["current"]["version"]
+        fixture = self.root / "tests" / "fixtures" / ("core_" + current.replace(".", "_") + "_lane_provenance.json")
+        entry = json.loads(fixture.read_text(encoding="utf-8"))
+        self.assertEqual(self.sw.alarmo_slot(current, self.root)["provenance"], entry)
+        for field, value in (("image_index_digest", "sha256:" + "0" * 64), ("version", "2026.10.9")):
+            with self.subTest(field=field):
+                fixture.write_text(json.dumps({**entry, field: value}), encoding="utf-8")
+                self.assertRefuses("core_current_provenance_mismatch")
+                with self.assertRaisesRegex(self.sw.Refusal, "^core_current_provenance_mismatch$"):
+                    self.sw.alarmo_slot(current, self.root)
+        loaded_window = copy.deepcopy(self.base)
+        for field, value in (("source_commit", "main"), ("source_commit", "0" * 39),
+                             ("source_archive_sha256", "A" * 64), ("source_archive_sha256", None)):
+            with self.subTest(field=field, value=value):
+                fixture.write_text(json.dumps({**entry, field: value}), encoding="utf-8")
+                with self.assertRaisesRegex(self.sw.Refusal, "^core_current_provenance_mismatch$"):
+                    self.sw.alarmo_slot(current, self.root)
+                with self.assertRaisesRegex(self.sw.Refusal, "^core_current_provenance_mismatch$"):
+                    self.sw.real_ha_matrix(loaded_window, "pr", self.root)
+
+
+class RotationTests(TempRootFixture):
+    """A rotation edits only the window and adds one provenance fixture."""
+
+    NEW = {"version": "2026.10.2", "image_index_digest": "sha256:" + "c" * 64}
+    NEW_PROVENANCE = {"version": "2026.10.2", "image_index_digest": "sha256:" + "c" * 64,
+                      "source_commit": "d" * 40, "source_archive_sha256": "e" * 64,
+                      "provenance": "synthetic offline rotation fixture; not a real Core"}
+
+    def rotate(self):
+        core = self.base["core"]
+        window = self.mutate(lambda w: w["core"].update(
+            rollback=dict(core["current"]), current=dict(core["candidate"]), candidate=dict(self.NEW)))
+        (self.root / "tests" / "fixtures" / "core_2026_10_2_lane_provenance.json").write_text(
+            json.dumps(self.NEW_PROVENANCE), encoding="utf-8")
+        return window
+
+    def test_rotation_moves_real_ha_rows_and_alarmo_bindings_with_the_slots(self):
+        old = {slot: self.base["core"][slot]["version"] for slot in self.sw.SLOTS}
+        self.rotate()
+        window = self.sw.load(self.root)
+        expected = {"current": old["candidate"], "candidate": "2026.10.2", "rollback": old["current"]}
+        self.assertEqual({slot: window["core"][slot]["version"] for slot in self.sw.SLOTS}, expected)
+        for tier, slots in (("pr", ("current", "candidate")), ("full", ("current", "candidate", "rollback"))):
+            rows = self.sw.real_ha_matrix(window, tier, self.root)["include"]
+            with self.subTest(tier=tier):
+                self.assertEqual([(r["support_slot"], r["ha_version"]) for r in rows],
+                                 [(slot, expected[slot]) for slot in slots])
+                self.assertTrue(all(r["alarmo"] is True for r in rows))
+        candidate = self.sw.real_ha_matrix(window, "pr", self.root)["include"][1]
+        self.assertEqual((candidate["core_source_commit"], candidate["core_source_sha256"], candidate["lane"]),
+                         ("d" * 40, "e" * 64, "ha-2026-10-2"))
+        for slot, version in expected.items():
+            with self.subTest(slot=slot):
+                binding = self.sw.alarmo_slot(version, self.root)
+                self.assertEqual((binding["slot"], binding["version"]), (slot, version))
+        self.assertEqual(self.sw.alarmo_slot("2026.10.2", self.root)["provenance"], self.NEW_PROVENANCE)
+        # The former rollback Core has left the window, so Alarmo refuses it.
+        self.assertEqual(old["rollback"], "2026.9.4")
+        with self.assertRaisesRegex(self.sw.Refusal, "^alarmo_core_not_in_window_slot$"):
+            self.sw.alarmo_slot("2026.9.4", self.root)
+        # The committed repository is unaffected by the temp-root rotation.
+        self.assertEqual(self.sw.alarmo_slot("2026.9.4", ROOT)["slot"], "rollback")
+
+    def test_rotation_without_new_provenance_fixture_refuses(self):
+        self.rotate()
+        (self.root / "tests" / "fixtures" / "core_2026_10_2_lane_provenance.json").unlink()
+        self.assertRefuses("core_candidate_lane_provenance_missing")
+        with self.assertRaisesRegex(self.sw.Refusal, "^core_candidate_lane_provenance_missing$"):
+            self.sw.alarmo_slot("2026.10.1", self.root)
+
+    def test_rotation_with_mismatched_new_provenance_refuses(self):
+        self.rotate()
+        (self.root / "tests" / "fixtures" / "core_2026_10_2_lane_provenance.json").write_text(
+            json.dumps({**self.NEW_PROVENANCE, "image_index_digest": "sha256:" + "f" * 64}), encoding="utf-8")
+        self.assertRefuses("core_candidate_provenance_mismatch")
+        with self.assertRaisesRegex(self.sw.Refusal, "^core_candidate_provenance_mismatch$"):
+            self.sw.alarmo_slot("2026.10.2", self.root)
+
+
+class EmptyCandidateTests(TempRootFixture):
+    """``core.candidate: null`` removes the candidate Core lane and nothing else."""
+
+    def test_null_core_candidate_loads_and_drops_only_the_candidate_lane(self):
+        former = self.base["core"]["candidate"]["version"]
+        self.mutate(lambda w: w["core"].update(candidate=None))
+        # The candidate's provenance is no longer required either.
+        (self.root / "tests" / "fixtures" / ("core_" + former.replace(".", "_") + "_lane_provenance.json")).unlink()
+        window = self.sw.load(self.root)
+        self.assertIsNone(window["core"]["candidate"])
+        self.assertEqual(self.sw.core_slots(window, self.sw.SLOTS), ("current", "rollback"))
+        pr = self.sw.real_ha_matrix(window, "pr", self.root)["include"]
+        full = self.sw.real_ha_matrix(window, "full", self.root)["include"]
+        self.assertEqual([(r["support_slot"], r["ha_version"]) for r in pr],
+                         [("current", self.base["core"]["current"]["version"])])
+        self.assertEqual([(r["support_slot"], r["ha_version"]) for r in full],
+                         [("current", self.base["core"]["current"]["version"]),
+                          ("rollback", self.base["core"]["rollback"]["version"])])
+        self.assertTrue(all(r["alarmo"] is True for r in full))
+        with self.assertRaisesRegex(self.sw.Refusal, "^alarmo_core_not_in_window_slot$"):
+            self.sw.alarmo_slot(former, self.root)
+        for slot in ("current", "rollback"):
+            version = self.base["core"][slot]["version"]
+            with self.subTest(slot=slot):
+                self.assertEqual(self.sw.alarmo_slot(version, self.root)["slot"], slot)
+        # ha-mcp slots, gateway rows and add-on rows are unaffected.
+        self.assertEqual(self.sw.gateway_matrix(window, "pr", self.registry), self.sw.gateway_matrix(
+            self.window, "pr", self.registry))
+        self.assertEqual(self.sw.addon_matrix(window, "full"), self.sw.addon_matrix(self.window, "full"))
+
+    def test_only_the_core_candidate_may_be_empty(self):
+        self.mutate(lambda w: w["ha_mcp"].update(candidate=None))
+        self.assertRefuses("ha_mcp_candidate_keys")
+        for slot in ("current", "rollback"):
+            with self.subTest(slot=slot):
+                self.mutate(lambda w: w["core"].update(candidate=None, **{slot: None}))
+                self.assertRefuses("core_" + slot + "_keys")
+        self.mutate(lambda w: w["core"].pop("candidate"))
+        self.assertRefuses("core_slots")
+        self.mutate(lambda w: w["core"].update(candidate=None, extra=None))
+        self.assertRefuses("core_slots")
 
 
 class CommandLineTests(unittest.TestCase):
