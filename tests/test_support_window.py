@@ -35,6 +35,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 from support.support_window_matrix import registry_matrix, support_window  # noqa: E402
 import core_lane_bindings  # noqa: E402
+from support import core_bindings  # noqa: E402
 
 SCRIPT = ROOT / "scripts" / "support_window.py"
 WINDOW = ROOT / "ci" / "support-window.yaml"
@@ -361,11 +362,13 @@ class RefusalTests(TempRootFixture):
 
     def test_core_version_without_reviewed_binding_or_provenance_refuses(self):
         digest = self.base["core"]["current"]["image_index_digest"]
-        self.mutate(lambda w: w["core"]["current"].update(version="2026.11.0"))
+        # Generated to be absent from the reviewed list (HAMCP-159 R2).
+        unreviewed = core_bindings.unreviewed_version("2026.11.0")
+        self.mutate(lambda w: w["core"]["current"].update(version=unreviewed))
         self.assertRefuses("core_current_binding_unreviewed")
         # A reviewed binding still needs the committed lane provenance fixture.
         binding = core_lane_bindings.CoreBinding(digest, core_lane_bindings.CHILD_DEVICE_NAME_PARTS, True, "8.5.0")
-        with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {"2026.11.0": binding}):
+        with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {unreviewed: binding}):
             self.assertRefuses("core_current_lane_provenance_missing")
         # A binding without a disposable lane can never occupy a window slot.
         for version in ("2026.9.0", "2026.9.1"):
@@ -451,12 +454,20 @@ class RotationTests(TempRootFixture):
     """Contract amendment (Josh, 2026-10-11): rotation among reviewed Cores edits
     only the window; a brand-new Core needs one reviewed binding first."""
 
-    NEW = {"version": "2026.10.2", "image_index_digest": "sha256:" + "c" * 64}
-    NEW_PROVENANCE = {"version": "2026.10.2", "image_index_digest": "sha256:" + "c" * 64,
-                      "source_commit": "d" * 40, "source_archive_sha256": "e" * 64,
-                      "provenance": "synthetic offline rotation fixture; not a real Core"}
     NEW_BINDING = core_lane_bindings.CoreBinding(
         "sha256:" + "c" * 64, core_lane_bindings.CHILD_DEVICE_NAME_PARTS, True, "8.5.0")
+
+    def setUp(self):
+        super().setUp()
+        # The synthetic brand-new Core is 2026.10.2 while that release has no
+        # reviewed binding, otherwise the next patch without one, computed per
+        # test so a later real binding never collides with it (HAMCP-159 R2).
+        self.new_version = core_bindings.unreviewed_version("2026.10.2")
+        self.NEW = {"version": self.new_version, "image_index_digest": "sha256:" + "c" * 64}
+        self.NEW_PROVENANCE = {"version": self.new_version, "image_index_digest": "sha256:" + "c" * 64,
+                               "source_commit": "d" * 40, "source_archive_sha256": "e" * 64,
+                               "provenance": "synthetic offline rotation fixture; not a real Core"}
+        self.new_fixture = self.root / "tests" / "fixtures" / core_lane_bindings.provenance_name(self.new_version)
 
     def rotate_existing(self):
         # (a) candidate -> current, current -> rollback, rollback dropped, no new candidate.
@@ -466,8 +477,7 @@ class RotationTests(TempRootFixture):
     def add_new_candidate(self):
         window = self.mutate(lambda w: w["core"].update(
             current=reviewed_core("2026.10.0"), candidate=dict(self.NEW), rollback=reviewed_core("2026.9.4")))
-        (self.root / "tests" / "fixtures" / "core_2026_10_2_lane_provenance.json").write_text(
-            json.dumps(self.NEW_PROVENANCE), encoding="utf-8")
+        self.new_fixture.write_text(json.dumps(self.NEW_PROVENANCE), encoding="utf-8")
         return window
 
     def test_a_rotation_among_reviewed_cores_needs_only_the_window(self):
@@ -498,10 +508,10 @@ class RotationTests(TempRootFixture):
 
     def test_b_unreviewed_new_core_is_refused_before_any_matrix(self):
         self.add_new_candidate()
-        self.assertIsNone(core_lane_bindings.reviewed_core_binding("2026.10.2"))
+        self.assertIsNone(core_lane_bindings.reviewed_core_binding(self.new_version))
         # A committed provenance fixture does not vouch for an unreviewed Core.
         self.assertRefuses("core_candidate_binding_unreviewed")
-        for version in ("2026.10.2", "2026.10.0", "2026.9.4"):
+        for version in (self.new_version, "2026.10.0", "2026.9.4"):
             with self.subTest(version=version), self.assertRaisesRegex(
                     self.sw.Refusal, "^core_candidate_binding_unreviewed$"):
                 self.sw.alarmo_slot(version, self.root)
@@ -525,9 +535,9 @@ class RotationTests(TempRootFixture):
 
     def test_c_new_core_passes_once_its_binding_is_in_the_reviewed_list(self):
         self.add_new_candidate()
-        with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {"2026.10.2": self.NEW_BINDING}):
+        with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {self.new_version: self.NEW_BINDING}):
             window = self.sw.load(self.root)
-            expected = {"current": "2026.10.0", "candidate": "2026.10.2", "rollback": "2026.9.4"}
+            expected = {"current": "2026.10.0", "candidate": self.new_version, "rollback": "2026.9.4"}
             for tier, slots in (("pr", ("current", "candidate")), ("full", self.sw.SLOTS)):
                 rows = self.sw.real_ha_matrix(window, tier, self.root)["include"]
                 with self.subTest(tier=tier):
@@ -536,24 +546,24 @@ class RotationTests(TempRootFixture):
                     self.assertTrue(all(r["alarmo"] is True for r in rows))
             candidate = self.sw.real_ha_matrix(window, "pr", self.root)["include"][1]
             self.assertEqual((candidate["core_source_commit"], candidate["core_source_sha256"], candidate["lane"]),
-                             ("d" * 40, "e" * 64, "ha-2026-10-2"))
-            self.assertEqual(self.sw.alarmo_slot("2026.10.2", self.root)["provenance"], self.NEW_PROVENANCE)
+                             ("d" * 40, "e" * 64, "ha-" + self.new_version.replace(".", "-")))
+            self.assertEqual(self.sw.alarmo_slot(self.new_version, self.root)["provenance"], self.NEW_PROVENANCE)
             # A binding that disagrees with the window digest is refused.
             other = dataclasses.replace(self.NEW_BINDING, image_index_digest="sha256:" + "f" * 64)
-            with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {"2026.10.2": other}):
+            with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {self.new_version: other}):
                 self.assertRefuses("core_candidate_binding_mismatch")
         # Removing the binding again restores the refusal: the list, not the window, decides.
         self.assertRefuses("core_candidate_binding_unreviewed")
 
     def test_c_reviewed_new_core_still_needs_matching_provenance(self):
         self.add_new_candidate()
-        path = self.root / "tests" / "fixtures" / "core_2026_10_2_lane_provenance.json"
-        with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {"2026.10.2": self.NEW_BINDING}):
+        path = self.new_fixture
+        with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {self.new_version: self.NEW_BINDING}):
             path.write_text(json.dumps({**self.NEW_PROVENANCE, "image_index_digest": "sha256:" + "f" * 64}),
                             encoding="utf-8")
             self.assertRefuses("core_candidate_provenance_mismatch")
             with self.assertRaisesRegex(self.sw.Refusal, "^core_candidate_provenance_mismatch$"):
-                self.sw.alarmo_slot("2026.10.2", self.root)
+                self.sw.alarmo_slot(self.new_version, self.root)
             path.unlink()
             self.assertRefuses("core_candidate_lane_provenance_missing")
             with self.assertRaisesRegex(self.sw.Refusal, "^core_candidate_lane_provenance_missing$"):

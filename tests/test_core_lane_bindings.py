@@ -35,6 +35,9 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 import core_lane_bindings  # noqa: E402
 import support_window  # noqa: E402
+if str(ROOT / "tests") not in sys.path:
+    sys.path.append(str(ROOT / "tests"))
+from support import core_bindings  # noqa: E402
 import core_registry_contract_lane as lane  # noqa: E402
 import alarmo_inspection_contract_acceptance as alarmo  # noqa: E402
 import automation_baseline_contract_acceptance as baseline  # noqa: E402
@@ -48,10 +51,13 @@ contract = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(contract)
 
 COMMITTED = support_window.load(ROOT)
-NEW_VERSION = "2026.10.2"
+# A synthetic brand-new Core: 2026.10.2 while that release has no reviewed
+# binding, otherwise the next patch release without one, so a later real
+# binding never turns this control into a reviewed Core (HAMCP-159 R2).
+NEW_VERSION = core_bindings.unreviewed_version("2026.10.2")
 NEW_DIGEST = "sha256:" + "c" * 64
 # Synthetic, offline, same exact shape as a committed lane provenance fixture.
-NEW_PROVENANCE = {"entry_id": "disposable-core-2026.10.2-cccccccc", "server_name": "home-assistant-core",
+NEW_PROVENANCE = {"entry_id": "disposable-core-" + NEW_VERSION + "-cccccccc", "server_name": "home-assistant-core",
                   "version": NEW_VERSION, "source_commit": "d" * 40, "source_tree": "f" * 40,
                   "source_archive_sha256": "e" * 64, "image_index_digest": NEW_DIGEST,
                   "architecture_manifests": {"linux/amd64": "sha256:" + "1" * 64,
@@ -162,8 +168,10 @@ class ConsolidatedListTests(unittest.TestCase):
         self.assertIs(contract._core_lane_bindings(), core_lane_bindings)
 
     def test_every_lane_binding_matches_its_committed_provenance(self):
+        # Read where the lane helper reads (``lane.ROOT``), so a reviewed binding
+        # and its provenance record qualify together.
         for version, binding in core_lane_bindings.REVIEWED_CORE_BINDINGS.items():
-            fixture = ROOT / "tests" / "fixtures" / core_lane_bindings.provenance_name(version)
+            fixture = lane.ROOT / "tests" / "fixtures" / core_lane_bindings.provenance_name(version)
             with self.subTest(version=version):
                 self.assertIs(core_lane_bindings.reviewed_core_binding(version), binding)
                 if not binding.lane:
@@ -343,6 +351,124 @@ class ExecutablePathTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(core_lane_bindings.reviewed_core_binding(NEW_VERSION))
 
 
+def required_qualification_suite():
+    """Every required test module that held a Core version list or fixed
+    unknown-version control before HAMCP-159 R2, now derived from the reviewed list."""
+
+    import test_core_update_continuity
+    import test_real_ha_contract_gate
+    import test_support_window
+
+    loader = unittest.TestLoader()
+    return unittest.TestSuite([loader.loadTestsFromModule(test_real_ha_contract_gate),
+                               loader.loadTestsFromModule(test_support_window),
+                               loader.loadTestsFromModule(test_core_update_continuity),
+                               loader.loadTestsFromTestCase(ConsolidatedListTests)])
+
+
+def with_reviewed_entry(source, version, binding):
+    """``core_lane_bindings.py`` source with exactly one more reviewed entry."""
+
+    anchor = "REVIEWED_CORE_BINDINGS = {\n"
+    assert source.count(anchor) == 1
+    entry = (f'    "{version}": CoreBinding("{binding.image_index_digest}",\n'
+             f'                             {binding.device_registry.upper()}, {binding.typed_operations},'
+             f' "{binding.child_consumer}"),\n')
+    return source.replace(anchor, anchor + entry)
+
+
+class ReviewedBindingAdditionTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-159 R2: one reviewed binding is the only edit a brand-new Core needs.
+
+    Its lane provenance record (the data ``lane_entry`` reads by name, written by
+    the lane provenance process) accompanies it; no test, script or other list
+    changes. Removing the entry again refuses before any coverage or dispatch.
+    """
+
+    def run_required_suite(self):
+        result = unittest.TestResult()
+        suite = required_qualification_suite()
+        expected = suite.countTestCases()
+        suite.run(result)
+        failures = [(str(test), trace.splitlines()[-1]) for test, trace in result.failures + result.errors]
+        self.assertEqual(failures, [])
+        self.assertEqual((result.testsRun, len(result.skipped)), (expected, 0))
+        self.assertGreater(expected, 0)
+
+    def test_required_gate_tests_pass_with_one_added_binding_and_refuse_once_removed(self):
+        self.assertNotIn(NEW_VERSION, core_bindings.reviewed_versions())
+        # Added: the committed window is unchanged; the binding is only reviewed.
+        with window(COMMITTED["core"]), patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS,
+                                                   {NEW_VERSION: NEW_BINDING}):
+            self.assertIn(NEW_VERSION, core_bindings.reviewed_versions())
+            self.assertIn(NEW_VERSION, core_bindings.lane_versions())
+            self.assertNotIn(NEW_VERSION, core_bindings.unreviewed_versions())
+            self.run_required_suite()
+            self.assertEqual(lane.lane_entry(NEW_VERSION)["image_index_digest"], NEW_DIGEST)
+            self.assertEqual(contract._device_contract_phase(NEW_VERSION), contract.CHILD_CONTRACT_PHASE)
+        # Removed: the version is back to an unknown-version control (the same
+        # suite runs unpatched in the ordinary discovery).
+        self.assertIsNone(core_lane_bindings.reviewed_core_binding(NEW_VERSION))
+        self.assertNotIn(NEW_VERSION, core_bindings.reviewed_versions())
+        self.assertIn(NEW_VERSION, core_bindings.unreviewed_versions())
+        self.assertEqual(contract._device_contract_phase(NEW_VERSION), contract.MIGRATION_CONTRACT_PHASE)
+
+    async def test_added_binding_qualifies_and_dispatches_then_removal_refuses_first(self):
+        with window(WITH_NEW):
+            with patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {NEW_VERSION: NEW_BINDING}):
+                loaded = support_window.load()
+                rows = support_window.real_ha_matrix(loaded, "pr")["include"]
+                self.assertEqual([(r["support_slot"], r["ha_version"], r["alarmo"]) for r in rows],
+                                 [("current", "2026.10.0", True), ("candidate", NEW_VERSION, True)])
+                self.assertEqual(alarmo.slot_binding(NEW_VERSION)["slot"], "candidate")
+                self.assertEqual(await dispatch(NEW_VERSION), contract.CHILD_CONTRACT_PHASE)
+                self.assertEqual(dispatch.calls, (1, 0))
+            # The same window after the entry is removed: refused at window
+            # validation, so no matrix (coverage) and no dispatch exist.
+            self.assertIsNone(core_lane_bindings.reviewed_core_binding(NEW_VERSION))
+            for refused in (support_window.load, lambda: contract._device_contract_phase(NEW_VERSION),
+                            lambda: alarmo.slot_binding(NEW_VERSION)):
+                with self.subTest(refused=refused), self.assertRaises((support_window.Refusal, ValueError)) as caught:
+                    refused()
+                if isinstance(caught.exception, support_window.Refusal):
+                    self.assertEqual(str(caught.exception), "core_candidate_binding_unreviewed")
+            with self.assertRaisesRegex(support_window.Refusal, "^core_candidate_binding_unreviewed$"):
+                await dispatch(NEW_VERSION)
+            self.assertEqual(dispatch.calls, (0, 0))
+            with self.assertRaisesRegex(ValueError, "^unknown disposable Core release$"):
+                lane.lane_entry(NEW_VERSION)
+
+    def test_ci_matrix_command_follows_one_file_entry_both_ways(self):
+        source = (ROOT / "scripts" / "core_lane_bindings.py").read_text(encoding="utf-8")
+        with window(WITH_NEW) as root:
+            shutil.copytree(ROOT / "scripts", root / "scripts", ignore=shutil.ignore_patterns("__pycache__"))
+            bindings = root / "scripts" / "core_lane_bindings.py"
+
+            def command(name):
+                output = root / ("github-output-" + name)
+                result = subprocess.run([sys.executable, str(root / "scripts" / "support_window.py"),
+                                         "--event", "pull_request", "--github-output", str(output)],
+                                        cwd=root, capture_output=True, text=True, timeout=120)
+                return result, output
+
+            # Added: one reviewed entry is the only source change.
+            bindings.write_text(with_reviewed_entry(source, NEW_VERSION, NEW_BINDING), encoding="utf-8")
+            result, output = command("added")
+            self.assertEqual((result.returncode, result.stderr), (0, ""))
+            outputs = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
+            rows = json.loads(outputs["real_ha"])["include"]
+            self.assertEqual([(r["support_slot"], r["ha_version"], r["alarmo"]) for r in rows],
+                             [("current", "2026.10.0", True), ("candidate", NEW_VERSION, True)])
+            self.assertEqual(rows[1]["ha_image"], "ghcr.io/home-assistant/home-assistant:" + NEW_VERSION + "@" + NEW_DIGEST)
+            # Removed: the committed list again; refused before any output.
+            bindings.write_text(source, encoding="utf-8")
+            result, output = command("removed")
+            self.assertEqual((result.returncode, result.stdout),
+                             (1, ""))
+            self.assertEqual(result.stderr, "Support window refused: core_candidate_binding_unreviewed\n")
+            self.assertFalse(output.exists())
+
+
 class DispatcherTests(unittest.IsolatedAsyncioTestCase):
     """The dispatcher cannot route an Alarmo-advertising slot around Alarmo."""
 
@@ -379,7 +505,7 @@ class DispatcherTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(contract._device_contract_phase("2099.1.0"), contract.MIGRATION_CONTRACT_PHASE)
         # Versions outside the window and the list (e.g. the latest-stable early
         # warning) keep the pre-existing migration route.
-        for version in ("2026.7.2", "2026.8.1", "2026.11.0", NEW_VERSION):
+        for version in ("2026.7.2", "2026.8.1", *core_bindings.unreviewed_versions(), NEW_VERSION):
             with self.subTest(version=version):
                 self.assertEqual(contract._device_contract_phase(version), contract.MIGRATION_CONTRACT_PHASE)
 

@@ -20,6 +20,7 @@ CI_PATH = ROOT / ".github" / "workflows" / "ci.yml"
 if str(ROOT / "tests") not in sys.path:
     sys.path.append(str(ROOT / "tests"))
 from support.support_window_matrix import rows as support_rows  # noqa: E402
+from support import core_bindings  # noqa: E402
 PUBLISH_PATH = ROOT / ".github" / "workflows" / "publish-rc-image.yml"
 DEVICE_FIXTURE_ROOT = (
     ROOT
@@ -1515,14 +1516,15 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                     adapter_id,
                 )
 
-        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.0"))
-        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.1"))
-        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.2"))
-        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.3"))
-        self.assertIsNone(expected_adapter(home_assistant_version="2026.9.4"))
-        self.assertIsNone(expected_adapter(home_assistant_version="2026.10.0"))
-        self.assertIsNone(expected_adapter(home_assistant_version="2026.10.1"))
-        for version in ("2026.9.5", "2026.10.2"):
+        # Every reviewed child-contract Core (the one reviewed binding list,
+        # scripts/core_lane_bindings.py) has no migration response adapter.
+        reviewed = core_bindings.reviewed_versions()
+        self.assertFalse(reviewed & set(adapter_ids))
+        for version in sorted(reviewed):
+            with self.subTest(version=version):
+                self.assertIsNone(expected_adapter(home_assistant_version=version))
+        # Controls: generated to be absent from the reviewed list.
+        for version in core_bindings.unreviewed_versions():
             with self.subTest(version=version), self.assertRaises(ValueError):
                 expected_adapter(home_assistant_version=version)
 
@@ -1535,27 +1537,41 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                         "CORE_TEST_AUTHORITY_VERSIONS", "CORE_UPSTREAM_850_VERSIONS"):
             self.assertFalse(hasattr(contract, retired), retired)
         self.assertIs(contract._core_lane_bindings(), core_lane_bindings)
-        child_versions = {"2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3", "2026.9.4",
-                          "2026.10.0", "2026.10.1"}
-        self.assertEqual(set(core_lane_bindings.REVIEWED_CORE_BINDINGS), child_versions)
-        for version in child_versions:
+        self.assertIs(core_bindings.core_lane_bindings, core_lane_bindings)
+
+        # The set of qualified Cores is the reviewed binding list itself
+        # (HAMCP-159 R2): no duplicated version list here, so one new reviewed
+        # entry qualifies without a test edit.
+        child_versions = core_bindings.reviewed_versions()
+        schema = contract.DeviceRegistrySchema
+        expected = contract._expected_device_registry_schema
+        for version in sorted(child_versions):
             with self.subTest(version=version):
                 binding = contract._core_binding(version)
                 self.assertIs(binding, core_lane_bindings.reviewed_core_binding(version))
                 self.assertEqual(contract._device_contract_phase(version), contract.CHILD_CONTRACT_PHASE)
                 self.assertIs(contract._core_test_authority(version), binding.lane)
-                self.assertEqual(binding.child_consumer,
-                                 "8.4.3" if version in {"2026.9.0", "2026.9.1", "2026.9.2"} else "8.5.0")
+                self.assertIs(expected(version), schema.CHILD_DEVICE_NAME_PARTS
+                              if binding.device_registry == core_lane_bindings.CHILD_DEVICE_NAME_PARTS
+                              else schema.CHILD_DEVICES)
         self.assertEqual({v for v in child_versions if contract._core_test_authority(v)},
-                         {"2026.9.2", "2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"})
-        for version in ("2026.10.2", "2026.11.0", "2026.8.1", "2026.7.2"):
+                         core_bindings.lane_versions())
+        # Controls: versions generated to be absent from the reviewed list, plus
+        # the historical migration-contract Cores, keep the migration route.
+        for version in (*core_bindings.unreviewed_versions(), "2026.8.1", "2026.7.2"):
             with self.subTest(version=version):
                 self.assertIsNone(contract._core_binding(version))
                 self.assertIs(contract._core_test_authority(version), False)
                 self.assertEqual(contract._device_contract_phase(version), contract.MIGRATION_CONTRACT_PHASE)
 
-        schema = contract.DeviceRegistrySchema
-        expected = contract._expected_device_registry_schema
+        # Historical semantics of named Cores (stay explicit; unaffected by a
+        # new reviewed binding).
+        for version in ("2026.9.0", "2026.9.1", "2026.9.2"):
+            self.assertEqual(contract._core_binding(version).child_consumer, "8.4.3")
+        for version in ("2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"):
+            self.assertEqual(contract._core_binding(version).child_consumer, "8.5.0")
+        for version in ("2026.9.0", "2026.9.1"):
+            self.assertIs(contract._core_test_authority(version), False)
         for version in ("2026.10.0", "2026.10.1"):
             self.assertIs(expected(version), schema.CHILD_DEVICE_NAME_PARTS)
         for version in ("2026.9.2", "2026.9.3", "2026.9.4"):
@@ -1612,8 +1628,13 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             for version in versions:
                 with self.subTest(version=version):
                     self.assertIs(self.contract._alarmo_slot_required(version), True)
-            for version in ("2026.9.3", "2026.9.2", "2026.7.2", "2026.11.0", "2026.10", "2026.10.*",
-                            "2026.9", "", " 2026.10.0", "2026.10.0\n", "ha-2026-10-0", None):
+            # Controls: reviewed Cores outside the window, versions generated to
+            # be absent from the reviewed list, and malformed values.
+            outside = sorted(core_bindings.reviewed_versions() - set(versions))
+            current = window["core"]["current"]["version"]
+            for version in (*outside, *core_bindings.unreviewed_versions(), "2026.7.2",
+                            current.rsplit(".", 1)[0], current.rsplit(".", 1)[0] + ".*", "",
+                            " " + current, current + "\n", "ha-" + current.replace(".", "-"), None):
                 with self.subTest(version=version):
                     self.assertIs(self.contract._alarmo_slot_required(version), False)
 
