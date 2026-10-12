@@ -24,6 +24,9 @@ ROOT = Path(__file__).resolve().parent.parent
 WINDOW = "ci/support-window.yaml"
 SLOTS = ("current", "candidate", "rollback")
 TIERS = {"pr": ("current", "candidate"), "full": SLOTS}
+# Alarmo acceptance follows these Core slots (HAMCP-159): current on every run,
+# rollback in the full tier. The candidate is evaluated without Alarmo evidence.
+ALARMO_SLOTS = ("current", "rollback")
 RUNNERS = {"amd64": "ubuntu-latest", "arm64": "ubuntu-24.04-arm"}
 CORE_IMAGE = "ghcr.io/home-assistant/home-assistant"
 HA_MCP_IMAGE = "ghcr.io/homeassistant-ai/ha-mcp"
@@ -128,11 +131,48 @@ def tier_for(event):
     return "pr" if event == "pull_request" else "full"
 
 
-def real_ha_matrix(window, tier):
+def core_lane_provenance(window, slot, root=ROOT):
+    """The slot's committed lane provenance; ``load`` already bound it to the pin."""
+
+    version = window["core"][slot]["version"]
+    path = Path(root, "tests/fixtures", "core_" + version.replace(".", "_") + "_lane_provenance.json")
+    entry = json.loads(path.read_text(encoding="utf-8"))
+    require(entry.get("version") == version
+            and entry.get("image_index_digest") == window["core"][slot]["image_index_digest"]
+            and isinstance(entry.get("source_commit"), str) and COMMIT.fullmatch(entry["source_commit"])
+            and isinstance(entry.get("source_archive_sha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", entry["source_archive_sha256"]),
+            "core_" + slot + "_provenance_mismatch")
+    return entry
+
+
+def alarmo_slot(version, root=ROOT):
+    """Return the exact Alarmo-bearing Core slot for ``version``, or refuse.
+
+    Exact string match against the window; no prefix, family or wildcard.
+    """
+
+    window = load(root)
+    for slot in ALARMO_SLOTS:
+        core = window["core"][slot]
+        if version == core["version"]:
+            entry = core_lane_provenance(window, slot, root)
+            return {"slot": slot, "version": version,
+                    "lane": "ha-" + version.replace(".", "-"),
+                    "image": f"{CORE_IMAGE}:{version}@{core['image_index_digest']}",
+                    "image_index_digest": core["image_index_digest"],
+                    "source_commit": entry["source_commit"],
+                    "source_archive_sha256": entry["source_archive_sha256"],
+                    "provenance": entry}
+    raise Refusal("alarmo_core_not_in_window_slot")
+
+
+def real_ha_matrix(window, tier, root=ROOT):
     upstream = window["ha_mcp"]["current"]
     rows = []
     for slot in TIERS[tier]:
         core = window["core"][slot]
+        provenance = core_lane_provenance(window, slot, root)
         rows.append({
             "lane": "ha-" + core["version"].replace(".", "-"),
             "support_slot": slot,
@@ -142,6 +182,9 @@ def real_ha_matrix(window, tier):
             "ha_mcp_image": f"{HA_MCP_IMAGE}:{upstream['version']}@{upstream['image_index_digest']}",
             "ha_mcp_source_commit": upstream["source_commit"],
             "ha_mcp_source_sha256": upstream["source_archive_sha256"],
+            "core_source_commit": provenance["source_commit"],
+            "core_source_sha256": provenance["source_archive_sha256"],
+            "alarmo": slot in ALARMO_SLOTS,
         })
     return {"include": rows}
 

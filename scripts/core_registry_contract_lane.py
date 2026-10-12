@@ -36,6 +36,14 @@ CORE_NAME_PARTS_VERSIONS = frozenset({"2026.10.0", "2026.10.1"})
 CORE_TYPED_VERSIONS = frozenset({"2026.9.3", "2026.9.4", *CORE_NAME_PARTS_VERSIONS})
 
 
+def probe_profile_for(core_version):
+    """The reviewed device-registry probe profile for one exact disposable Core."""
+    if core_version not in CORE_FIXTURES:
+        raise ValueError("unknown disposable Core release")
+    return (CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE if core_version in CORE_NAME_PARTS_VERSIONS
+            else CHILD_DEVICE_PROBE_PROFILE)
+
+
 def lane_entry(version):
     """Closed disposable fixtures, never runtime admission or caller image input."""
     if version not in CORE_FIXTURES:
@@ -57,8 +65,7 @@ async def configure_with_test_authority(runtime, configured, *, cache_path, expe
     evidence = b"Disposable test authority only; actual contract result follows."
     typed = core_version in CORE_TYPED_VERSIONS
     profiles = CORE_CAPABILITY_PROFILES + (CORE_TYPED_OPERATION_PROFILES if typed else ())
-    probe = (CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE if core_version in CORE_NAME_PARTS_VERSIONS
-             else CHILD_DEVICE_PROBE_PROFILE)
+    probe = probe_profile_for(core_version)
     entry.update({
         "evidence_sha256": hashlib.sha256(evidence).hexdigest(),
         "probe_profile_id": probe.profile_id,

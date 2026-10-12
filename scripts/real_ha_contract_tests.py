@@ -3430,6 +3430,17 @@ def _expected_device_registry_schema(
     return DeviceRegistrySchema.CHILD_DEVICES
 
 
+def _alarmo_slot_required(version: str) -> bool:
+    """Alarmo follows the support window's current and rollback Core slots (HAMCP-159)."""
+
+    if str(ROOT / "scripts") not in sys.path:
+        sys.path.insert(0, str(ROOT / "scripts"))
+    import support_window
+
+    window = support_window.load()
+    return any(window["core"][slot]["version"] == version for slot in support_window.ALARMO_SLOTS)
+
+
 async def _run_core_2026_9_child_contract(
     websocket: HomeAssistantWebSocketClient,
     token: str,
@@ -3542,18 +3553,18 @@ async def _run_core_2026_9_child_contract(
         else:
             core_runtime.configure(configured)
             await core_runtime.reconcile_once("startup")
-        if EXPECTED_HA_VERSION == "2026.9.4":
+        if _alarmo_slot_required(EXPECTED_HA_VERSION):
             alarmo_receipt = _environment_path("REAL_HA_ALARMO_FIXTURE_RECEIPT")
             if alarmo_receipt is None:
                 raise RuntimeError("Required Alarmo disposable fixture missing")
             from alarmo_inspection_contract_acceptance import run_disposable
             alarmo_result = await run_disposable(configured, core_runtime, fixture_receipt=alarmo_receipt,
-                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
+                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
             if alarmo_result.get("result") != "PASS":
                 raise RuntimeError("Required Alarmo disposable scenario did not pass")
             from automation_baseline_contract_acceptance import run_disposable as run_baseline
             baseline_result = await run_baseline(configured,
-                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""))
+                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
             if baseline_result.get("result") != "PASS":
                 raise RuntimeError("Required baseline disposable scenario did not pass")
             # The existing required artifact carries both clearly named proofs.
