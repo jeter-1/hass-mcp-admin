@@ -1,4 +1,8 @@
-"""Test-only observation of exact Core 2026.9.4; never a shipped component.
+"""Test-only observation of one exact disposable Core; never a shipped component.
+
+CI binds the observer to the support-window Core slot under test by writing
+``alarmo_interval_observer: {core_version: <exact version>}``; any other Core
+or a missing, partial or extra configuration refuses setup (HAMCP-159).
 
 Hooks observe commands, flow entry/continuation/abort, services and Store save,
 queue/write/remove. They never retain command arguments or store contents.
@@ -129,7 +133,7 @@ def store_hashes(config_directory):
     return result
 
 
-async def async_setup(hass, _config):
+async def async_setup(hass, config):
     import voluptuous as vol
     from homeassistant.const import __version__, EVENT_HOMEASSISTANT_STOP
     from homeassistant.core import CoreState, ServiceRegistry, callback
@@ -139,7 +143,7 @@ async def async_setup(hass, _config):
     from homeassistant.components import websocket_api
     from homeassistant.components.websocket_api.connection import ActiveConnection
 
-    if __version__ != "2026.9.4" or DOMAIN in hass.data:
+    if config.get(DOMAIN) != {"core_version": __version__} or DOMAIN in hass.data:
         raise ValueError("observer requires its exact disposable Core revision")
     ledger = Ledger()
     hass.data[DOMAIN] = ledger

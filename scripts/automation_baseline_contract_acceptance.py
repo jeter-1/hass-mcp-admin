@@ -1,6 +1,7 @@
 """Assembled exact-Core baseline read lane with owned synthetic fixture setup.
 
-Called only by the existing disposable .4 harness. No standalone/live CLI.
+Called only by the disposable Alarmo-slot harness (HAMCP-159: every non-empty
+support-window Core slot). No standalone/live CLI.
 Source/schema/public-tool code is the candidate itself; setup is outside reads.
 """
 import base64
@@ -39,12 +40,18 @@ def verify_predecessor(response, requests, acquired):
     return {'acquired': acquired, 'ha_requests': requests, 'reason': 'authority_unavailable'}
 
 
-def verify_result(result):
-    """Offline receipt reconstruction; does not substitute for execution."""
+def verify_result(result, *, core_version, support_slot):
+    """Offline receipt reconstruction; does not substitute for execution.
+
+    The receipt must name the exact Core and the exact support-window slot the
+    caller bound that Core to (HAMCP-159); a missing or other slot refuses.
+    """
     from ha_mcp_engineering.audit_baseline import load_baseline, compare_baselines
     from ha_mcp_engineering.audit_baseline.capture_contracts import digest, canonical
     from alarmo_inspection_contract_acceptance import verify_interval
-    assert result['result'] == 'PASS' and result['core'] == '2026.9.4'
+    assert type(core_version) is str and result['result'] == 'PASS' and result['core'] == core_version
+    assert type(support_slot) is str and type(result.get('support_slot')) is str
+    assert result['support_slot'] == support_slot
     assert result['production_authority'] is False and result['fixture_cleanup'] is True
     assert result['authority_transition'] == [20, 21]
     assert result['continuation_reads'] == 0 and result['nonadmin_refusal'] == 'access_denied'
@@ -69,16 +76,16 @@ def verify_result(result):
     assert len(result['observations']) == 2
     for observation in result['observations']:
         verify_interval(observation, observation['interval_id'],
-            EXPECTED_COMMANDS, kind='control')
+            EXPECTED_COMMANDS, kind='control', core_version=core_version)
     return {'result': 'PASS', 'records_before': len(values[0]['records']),
             'records_after': len(values[1]['records']), 'comparison_counts': report.counts,
             'continuation_reads': 0, 'fixture_cleanup': True}
 
 
-async def run_disposable(configured, *, expected_image):
+async def run_disposable(configured, *, expected_image, core_version):
     """Preserve a bounded source location on failure, never exception values."""
     try:
-        return await _run_disposable(configured, expected_image=expected_image)
+        return await _run_disposable(configured, expected_image=expected_image, core_version=core_version)
     except Exception as exc:
         cursor = exc.__traceback__
         lines = []
@@ -93,11 +100,11 @@ async def run_disposable(configured, *, expected_image):
         raise
 
 
-async def _run_disposable(configured, *, expected_image):
+async def _run_disposable(configured, *, expected_image, core_version):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from core_registry_contract_lane import lane_entry
+    from core_registry_contract_lane import lane_entry, probe_profile_for
     from prepare_core_release_registry import prepare_candidate, sign_candidate
-    from alarmo_inspection_contract_acceptance import wait_disposable_setup, close_disposable_authority
+    from alarmo_inspection_contract_acceptance import slot_binding, wait_disposable_setup, close_disposable_authority
     from ha_mcp_engineering.clients import HomeAssistantWebSocketClient
     from ha_mcp_engineering.clients.audit_baseline import BaselineReadClient
     from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider
@@ -109,16 +116,19 @@ async def _run_disposable(configured, *, expected_image):
     from ha_mcp_engineering.ha_core_readmission import CoreRuntime
     from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
     from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
-    from ha_mcp_engineering.ha_core_readmission.probe_profiles import CHILD_DEVICE_PROBE_PROFILE
     from ha_mcp_engineering.signed_registry import canonical_json
 
-    entry = lane_entry('2026.9.4')
+    binding = slot_binding(core_version)
+    entry = lane_entry(core_version)
     if (urlsplit(configured.ha_url).hostname not in {'127.0.0.1','localhost','::1'}
-            or os.environ.get('HA_CONTRACT_LANE') != 'ha-2026-9-4'
-            or expected_image != 'ghcr.io/home-assistant/home-assistant:2026.9.4@'+entry['image_index_digest']):
+            or os.environ.get('HA_CONTRACT_LANE') != binding['lane']
+            or expected_image != binding['image']
+            or entry['image_index_digest'] != binding['image_index_digest']):
         raise ValueError('Exact owned disposable baseline lane required')
+    probe_profile = probe_profile_for(core_version)
     image = json.loads(Path(os.environ['REAL_HA_ALARMO_IMAGE_RESULT']).read_text())
-    assert image['result']=='PASS' and image['index']==entry['image_index_digest']
+    assert (image['result']=='PASS' and image['index']==entry['image_index_digest']
+            and image['core_version']==core_version and image['support_slot']==binding['slot'])
     refs = [{k:p.to_mapping()[k] for k in ('capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
             for p in CORE_RUNTIME_CAPABILITY_PROFILES]
     old = [r for r in refs if r['capability_id'] != c.CAPABILITY]
@@ -126,8 +136,8 @@ async def _run_disposable(configured, *, expected_image):
     key=Ed25519PrivateKey.generate(); now=datetime.now(timezone.utc)
     evidence=b'Synthetic assembled Core baseline lane; no production applicability'
     entry.update(evidence_sha256=hashlib.sha256(evidence).hexdigest(),
-        probe_profile_id=CHILD_DEVICE_PROBE_PROFILE.profile_id,
-        probe_profile_sha256=CHILD_DEVICE_PROBE_PROFILE.contract_fingerprint)
+        probe_profile_id=probe_profile.profile_id,
+        probe_profile_sha256=probe_profile.contract_fingerprint)
     def signed(references):
         candidate=canonical_json(prepare_candidate(entry={**entry,'capabilities':references}, evidence=evidence,
             previous=None,public_key=key.public_key(),now=now))
@@ -218,7 +228,7 @@ async def _run_disposable(configured, *, expected_image):
             recreated,_,_=await request(runtime,service(runtime),{'limit':1})
             assert recreated['success']
             assert recreated['data']['baseline_header']['installation']['installation_id'] != before['installation']['installation_id']
-            result={'result':'PASS','core':'2026.9.4','authority_transition':[20,21],
+            result={'result':'PASS','core':core_version,'support_slot':binding['slot'],'authority_transition':[20,21],
                 'authority_instances':'separate_ephemeral_registries','production_authority':False,
                 'image_receipt_sha256':hashlib.sha256(Path(os.environ['REAL_HA_ALARMO_IMAGE_RESULT']).read_bytes()).hexdigest(),
                 'synthetic_hassio_metadata':True,'supervisor_setup_proven':False,
@@ -236,7 +246,7 @@ async def _run_disposable(configured, *, expected_image):
                 for runtime in runtimes: await close_disposable_authority(runtime)
         result['fixture_cleanup']=True
         try:
-            summary=verify_result(result)
+            summary=verify_result(result, core_version=core_version, support_slot=binding['slot'])
         except Exception:
             # Retain sanitized synthetic exports even when their final proof
             # fails; outer CI cleanup must continue to reject this receipt.

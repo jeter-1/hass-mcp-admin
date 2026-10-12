@@ -49,9 +49,11 @@ class StableResolutionTests(unittest.TestCase):
                     latest.stable_version(payload, "core")
 
     def test_classification_against_window(self):
-        self.assertEqual(latest.classify("2026.10.0", self.window["core"]), "current")
-        self.assertEqual(latest.classify("2026.10.1", self.window["core"]), "candidate")
-        self.assertEqual(latest.classify("2026.9.4", self.window["core"]), "rollback")
+        # Every non-empty slot classifies as itself; an empty candidate has none.
+        for slot in support_window.core_slots(self.window, support_window.SLOTS):
+            with self.subTest(slot=slot):
+                version = self.window["core"][slot]["version"]
+                self.assertEqual(latest.classify(version, self.window["core"]), slot)
         self.assertEqual(latest.classify("2026.11.0", self.window["core"]), "newer_than_window")
         self.assertEqual(latest.classify("2026.10.10", self.window["core"]), "newer_than_window")
         self.assertEqual(latest.classify("2026.9.3", self.window["core"]), "older_than_window")
@@ -67,7 +69,9 @@ class StableResolutionTests(unittest.TestCase):
         self.assertEqual(row["ha_mcp_version"], current["version"])
         self.assertEqual(row["ha_mcp_source_commit"], current["source_commit"])
         self.assertEqual(row["ha_mcp_source_sha256"], current["source_archive_sha256"])
-        self.assertTrue(latest.summary(self.window, "2026.10.1", "8.5.0", DIGEST, DIGEST)["inside_window"])
+        newest = max((self.window["core"][slot]["version"]
+                      for slot in support_window.core_slots(self.window, support_window.SLOTS)), key=latest.key)
+        self.assertTrue(latest.summary(self.window, newest, "8.5.0", DIGEST, DIGEST)["inside_window"])
 
     def test_unpinned_core_image_is_refused(self):
         for digest in (None, "", "sha256:abc", "latest"):

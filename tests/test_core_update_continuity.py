@@ -22,6 +22,7 @@ from ha_mcp_engineering.ha_mcp_readmission.registry import SignedReleaseRegistry
 from ha_mcp_engineering.signed_registry import canonical_json, RegistryValidationError
 from ha_mcp_engineering.signed_registry.canonical import sha256_digest
 from core_registry_fixtures import CoreSigner, ProjectedCoreSource, core_entry, core_revocation, NOW
+from support import core_bindings
 
 
 class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
@@ -171,7 +172,8 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
                                                        expected_image=image, core_version=version)
                 self.assert_admitted(runtime, 19)
                 self.assertIsNone(runtime.acquire(("core.integration_inspection_metadata_read",)))
-        for version in ("2026.9.5", "latest", "../core", None):
+        # Controls generated to be absent from the reviewed list (HAMCP-159 R2).
+        for version in (*core_bindings.unreviewed_versions(), "latest", "../core", None):
             with self.subTest(version=version), self.assertRaises(ValueError):
                 lane_entry(version)
 
@@ -232,8 +234,9 @@ class CoreContinuityTests(unittest.IsolatedAsyncioTestCase):
                         legacy, settings(), cache_path=self.cache.with_name(version + "-legacy.json"),
                         expected_image=image, core_version=version)
                 self.assertLess(legacy.health_snapshot()["compatible_count"], 19)
-        # A future or unreviewed 2026.10 patch has no disposable fixture.
-        for version in ("2026.10.2", "2026.10", "2026.11.0"):
+        # A Core without a reviewed binding has no disposable fixture; the
+        # versions are generated to be absent from the reviewed list.
+        for version in (*core_bindings.unreviewed_versions(), "2026.10"):
             with self.subTest(version=version), self.assertRaises(ValueError):
                 lane_entry(version)
 

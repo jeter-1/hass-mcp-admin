@@ -6,6 +6,13 @@ schedule, workflow_dispatch, and the reusable release/publication gate) also
 covers rollback. Nothing here reads or changes admission, registry or HOLD state:
 the reviewed ha-mcp registry is only cross-checked so a window pin can never
 select an image the registry does not already describe.
+
+Every Core slot must match its exact entry in the one reviewed binding list,
+``scripts/core_lane_bindings.py``; a slot without one is refused before any
+matrix is generated, so no row advertises coverage the executable path would
+not run (contract amendment, Josh 2026-10-11). The window never supplies a
+binding: rotating listed Cores edits only the window, and a brand-new Core is
+first added to that list as one deliberate review step.
 """
 
 from __future__ import annotations
@@ -21,9 +28,22 @@ import sys
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
+SCRIPTS = Path(__file__).resolve().parent
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+import core_lane_bindings  # noqa: E402  (the one reviewed Core binding list)
 WINDOW = "ci/support-window.yaml"
 SLOTS = ("current", "candidate", "rollback")
 TIERS = {"pr": ("current", "candidate"), "full": SLOTS}
+# Alarmo acceptance (and the automation-baseline proof bound to it) follows every
+# non-empty Core slot in the tier (HAMCP-159): current and candidate on pull
+# requests, plus rollback in the full tier. Each slot is its own matrix job, and
+# ``load`` has already refused any slot without a reviewed Core binding, so every
+# advertised slot reaches the real-HA child contract that runs Alarmo.
+ALARMO_SLOTS = SLOTS
+# Only the Core candidate may be explicitly empty (``candidate: null``): no
+# candidate Core lane, Alarmo job or provenance is then created or required.
+OPTIONAL_CORE_SLOTS = frozenset({"candidate"})
 RUNNERS = {"amd64": "ubuntu-latest", "arm64": "ubuntu-24.04-arm"}
 CORE_IMAGE = "ghcr.io/home-assistant/home-assistant"
 HA_MCP_IMAGE = "ghcr.io/homeassistant-ai/ha-mcp"
@@ -63,13 +83,20 @@ def acceptance_codes():
     """Reuse the add-on acceptance script's own pairing authority."""
 
     spec = importlib.util.spec_from_file_location("ha_mcp_850_container_acceptance",
-                                                  ROOT / "scripts/ha_mcp_850_container_acceptance.py")
+                                                  SCRIPTS / "ha_mcp_850_container_acceptance.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def load(root=ROOT):
+def _root(root):
+    """Resolve the repository root at call time (tests may point ROOT elsewhere)."""
+
+    return ROOT if root is None else root
+
+
+def load(root=None):
+    root = _root(root)
     path = Path(root, WINDOW)
     require(path.is_file() and not path.is_symlink(), "window_unavailable")
     window = yaml.load(path.read_text(encoding="utf-8"), Loader=UniqueKeyLoader)
@@ -81,6 +108,8 @@ def load(root=ROOT):
         versions = []
         for slot in SLOTS:
             entry = slots[slot]
+            if entry is None and component == "core" and slot in OPTIONAL_CORE_SLOTS:
+                continue
             require(isinstance(entry, dict) and keys <= set(entry) <= keys | {"source_archive_sha256"},
                     component + "_" + slot + "_keys")
             require(isinstance(entry["version"], str) and VERSION.fullmatch(entry["version"]),
@@ -111,14 +140,26 @@ def load(root=ROOT):
                             and re.fullmatch(r"/[a-z0-9-]{1,64}/mcp", str(lane["secret_path"])), "addon_live_lane")
         require(len(set(versions)) == len(versions), component + "_slot_versions_not_distinct")
     require("source_archive_sha256" in window["ha_mcp"]["current"], "ha_mcp_current_archive_required")
-    for slot in SLOTS:
+    for slot in core_slots(window, SLOTS):
         core = window["core"][slot]
-        fixture = Path(root, "tests/fixtures", "core_" + core["version"].replace(".", "_") + "_lane_provenance.json")
+        # The window never vouches for itself: every Core it names must already
+        # have an exact lane binding in the reviewed list, or nothing (no matrix,
+        # no Alarmo or baseline coverage) is generated for any slot.
+        binding = core_lane_bindings.reviewed_lane_binding(core["version"])
+        require(binding is not None, "core_" + slot + "_binding_unreviewed")
+        require(binding.image_index_digest == core["image_index_digest"], "core_" + slot + "_binding_mismatch")
+        fixture = Path(root, "tests/fixtures", core_lane_bindings.provenance_name(core["version"]))
         require(fixture.is_file(), "core_" + slot + "_lane_provenance_missing")
         entry = json.loads(fixture.read_text(encoding="utf-8"))
         require(entry.get("version") == core["version"]
                 and entry.get("image_index_digest") == core["image_index_digest"], "core_" + slot + "_provenance_mismatch")
     return window
+
+
+def core_slots(window, slots):
+    """The non-empty Core slots among ``slots``, in order."""
+
+    return tuple(slot for slot in slots if window["core"][slot] is not None)
 
 
 def tier_for(event):
@@ -128,11 +169,48 @@ def tier_for(event):
     return "pr" if event == "pull_request" else "full"
 
 
-def real_ha_matrix(window, tier):
+def core_lane_provenance(window, slot, root=None):
+    """The slot's committed lane provenance; ``load`` already bound it to the pin."""
+
+    version = window["core"][slot]["version"]
+    path = Path(_root(root), "tests/fixtures", core_lane_bindings.provenance_name(version))
+    entry = json.loads(path.read_text(encoding="utf-8"))
+    require(entry.get("version") == version
+            and entry.get("image_index_digest") == window["core"][slot]["image_index_digest"]
+            and isinstance(entry.get("source_commit"), str) and COMMIT.fullmatch(entry["source_commit"])
+            and isinstance(entry.get("source_archive_sha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", entry["source_archive_sha256"]),
+            "core_" + slot + "_provenance_mismatch")
+    return entry
+
+
+def alarmo_slot(version, root=None):
+    """Return the exact Alarmo-bearing Core slot for ``version``, or refuse.
+
+    Exact string match against the window; no prefix, family or wildcard.
+    """
+
+    window = load(root)
+    for slot in core_slots(window, ALARMO_SLOTS):
+        core = window["core"][slot]
+        if version == core["version"]:
+            entry = core_lane_provenance(window, slot, root)
+            return {"slot": slot, "version": version,
+                    "lane": "ha-" + version.replace(".", "-"),
+                    "image": f"{CORE_IMAGE}:{version}@{core['image_index_digest']}",
+                    "image_index_digest": core["image_index_digest"],
+                    "source_commit": entry["source_commit"],
+                    "source_archive_sha256": entry["source_archive_sha256"],
+                    "provenance": entry}
+    raise Refusal("alarmo_core_not_in_window_slot")
+
+
+def real_ha_matrix(window, tier, root=None):
     upstream = window["ha_mcp"]["current"]
     rows = []
-    for slot in TIERS[tier]:
+    for slot in core_slots(window, TIERS[tier]):
         core = window["core"][slot]
+        provenance = core_lane_provenance(window, slot, root)
         rows.append({
             "lane": "ha-" + core["version"].replace(".", "-"),
             "support_slot": slot,
@@ -142,6 +220,9 @@ def real_ha_matrix(window, tier):
             "ha_mcp_image": f"{HA_MCP_IMAGE}:{upstream['version']}@{upstream['image_index_digest']}",
             "ha_mcp_source_commit": upstream["source_commit"],
             "ha_mcp_source_sha256": upstream["source_archive_sha256"],
+            "core_source_commit": provenance["source_commit"],
+            "core_source_sha256": provenance["source_archive_sha256"],
+            "alarmo": slot in ALARMO_SLOTS,
         })
     return {"include": rows}
 
