@@ -359,12 +359,15 @@ class TypedCoreContinuityTests(unittest.IsolatedAsyncioTestCase):
 
     def test_original_seventeen_fingerprints_are_not_redefined(self):
         journal = json.loads((ROOT/'upstream-trust/ha-core-release-registry.json').read_text())
-        original_entries = [entry for entry in journal['envelopes'][-1]['entries']
-                            if entry['version'] == '2026.9.2']
-        self.assertEqual(len(original_entries), 1)
-        references = original_entries[0]['capabilities']
+        # 2026.9.2 may be revoked at the tip; its retained signed history still
+        # carries the original seventeen references.
+        original_entries = [entry for envelope in journal['envelopes']
+                            for entry in envelope['entries'] if entry['version'] == '2026.9.2']
+        self.assertTrue(original_entries)
         compiled = {p.capability_id:p.contract_fingerprint for p in CORE_CAPABILITY_PROFILES}
-        self.assertEqual({p['capability_id']:p['contract_fingerprint'] for p in references}, compiled)
+        for entry in original_entries:
+            self.assertEqual({p['capability_id']:p['contract_fingerprint']
+                              for p in entry['capabilities']}, compiled)
         self.assertEqual(len(CORE_TYPED_OPERATION_PROFILES), 2)
 
     def test_exact_beta3_writer_declarations_preserve_contract_hash_and_bytes(self):

@@ -1,0 +1,5 @@
+M	homeassistant/components/auth/indieauth.py
+M	homeassistant/components/auth/login_flow.py
+M	homeassistant/components/automation/trace.py
+M	homeassistant/components/trace/models.py
+M	homeassistant/helpers/template/extensions/devices.py

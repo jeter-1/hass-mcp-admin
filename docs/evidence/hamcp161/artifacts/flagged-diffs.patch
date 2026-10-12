@@ -1,0 +1,354 @@
+diff --git a/homeassistant/components/auth/indieauth.py b/homeassistant/components/auth/indieauth.py
+index e16e9eef..3ceba648 100644
+--- a/homeassistant/components/auth/indieauth.py
++++ b/homeassistant/components/auth/indieauth.py
+@@ -21,9 +21,13 @@ MAX_FETCH_BYTES = 10240
+ 
+ 
+ async def verify_redirect_uri(
+-    hass: HomeAssistant, client_id: str, redirect_uri: str
++    hass: HomeAssistant,
++    client_id: str,
++    redirect_uri: str,
++    *,
++    allow_loopback_port_change: bool = False,
+ ) -> bool:
+-    """Verify that the client and redirect uri match."""
++    """Verify the redirect URI, allowing loopback port changes only with PKCE."""
+     try:
+         client_id_parts = _parse_client_id(client_id)
+     except ValueError:
+@@ -63,6 +67,16 @@ async def verify_redirect_uri(
+     redirect_uris = await fetch_redirect_uris(hass, client_id)
+     if redirect_uri in redirect_uris:
+         return True
++    # RFC 8252 requires PKCE for native clients choosing a loopback callback port.
++    if (
++        allow_loopback_port_change
++        and (loopback_uri := _without_loopback_port(redirect_uri)) is not None
++        and any(
++            _without_loopback_port(registered_uri) == loopback_uri
++            for registered_uri in redirect_uris
++        )
++    ):
++        return True
+     _LOGGER.debug(
+         "redirect_uri %s is not among the advertised redirect uris %s for client_id %s",
+         redirect_uri,
+@@ -72,6 +86,36 @@ async def verify_redirect_uri(
+     return False
+ 
+ 
++def _without_loopback_port(uri: str) -> str | None:
++    """Remove only the port from an HTTP loopback redirect URI."""
++    try:
++        parts = urlparse(uri)
++        port = parts.port
++    except ValueError:
++        return None
++
++    if (
++        parts.scheme != "http"
++        or parts.hostname not in ("127.0.0.1", "::1", "localhost")
++        or parts.username is not None
++        or "#" in uri
++        or port == 0
++    ):
++        return None
++
++    # urlparse lowercases the scheme, but only the port may differ.
++    scheme = uri[: len(parts.scheme)]
++    prefix = f"{scheme}://{parts.netloc}"
++    if not uri.startswith(prefix):
++        return None
++    if port is None:
++        return uri
++
++    # Preserve the original spelling, path and query, including an empty query.
++    host = parts.netloc.rsplit(":", 1)[0]
++    return f"{scheme}://{host}{uri[len(prefix) :]}"
++
++
+ class LinkTagParser(HTMLParser):
+     """Parser to find link tags."""
+ 
+@@ -199,10 +243,7 @@ def _parse_link_tag_redirect_uris(url: str, body: bytes) -> list[str]:
+     parser = LinkTagParser("redirect_uri")
+     parser.feed(body.decode(errors="replace"))
+ 
+-    # Authorization endpoints verifying that a redirect_uri is allowed for use
+-    # by a client MUST look for an exact match of the given redirect_uri in the
+-    # request against the list of redirect_uris discovered after resolving any
+-    # relative URLs.
++    # Resolve relative URLs before comparing registered redirect URIs.
+     return [urljoin(url, found) for found in parser.found]
+ 
+ 
+@@ -214,10 +255,9 @@ def _parse_metadata_document_redirect_uris(
+     Per draft-ietf-oauth-client-id-metadata-document the document only counts
+     when the client_id URL is https with a path and no fragment, the response
+     was a direct 200 (not redirected), the document's client_id round-trips,
+-    and every redirect_uris entry is an absolute, fragment-free URI matched
+-    exactly. The url and its document are client-controlled and fetched
+-    unauthenticated, so rejections log at DEBUG (higher levels would be a
+-    log-flood vector).
++    and every redirect_uris entry is an absolute, fragment-free URI. The url
++    and its document are client-controlled and fetched unauthenticated, so
++    rejections log at DEBUG (higher levels would be a log-flood vector).
+     """
+     # A body at the read cap may be truncated; a truncated prefix must not be
+     # trusted even if it happens to be parseable.
+@@ -261,8 +301,7 @@ def _parse_metadata_document_redirect_uris(
+         )
+         return []
+ 
+-    # redirect_uris entries are returned unmodified for RFC 6749 exact matching
+-    # rather than resolving relative references.
++    # Return entries unmodified; redirect verification handles loopback ports.
+     redirect_uris = document.get("redirect_uris")
+     if not isinstance(redirect_uris, list) or not all(
+         isinstance(redirect_uri, str) and _is_valid_metadata_redirect_uri(redirect_uri)
+diff --git a/homeassistant/components/auth/login_flow.py b/homeassistant/components/auth/login_flow.py
+index b5134ce5..3f82756e 100644
+--- a/homeassistant/components/auth/login_flow.py
++++ b/homeassistant/components/auth/login_flow.py
+@@ -308,13 +308,18 @@ class LoginFlowBaseView(HomeAssistantView):
+ 
+         hass = request.app[KEY_HASS]
+ 
++        context = result["context"]
+         if not await indieauth.verify_redirect_uri(
+-            hass, client_id, result["context"]["redirect_uri"]
++            hass,
++            client_id,
++            context["redirect_uri"],
++            allow_loopback_port_change=bool(context.get("code_challenge"))
++            and context.get("code_challenge_method") == "S256",
+         ):
+             return self.json_message("Invalid redirect URI", HTTPStatus.FORBIDDEN)
+ 
+         result.pop("data")
+-        context = result.pop("context")
++        result.pop("context")
+ 
+         result_obj = result.pop("result")
+ 
+diff --git a/homeassistant/components/automation/trace.py b/homeassistant/components/automation/trace.py
+index c440624b..8e420280 100644
+--- a/homeassistant/components/automation/trace.py
++++ b/homeassistant/components/automation/trace.py
+@@ -64,7 +64,8 @@ def trace_automation(
+     trace = AutomationTrace(
+         automation_id, config, blueprint_inputs, context, not_triggered=not_triggered
+     )
+-    async_store_trace(hass, trace, trace_config[CONF_STORED_TRACES])
++    if automation_id:
++        async_store_trace(hass, trace, trace_config[CONF_STORED_TRACES])
+ 
+     try:
+         yield trace
+diff --git a/homeassistant/components/brands/__init__.py b/homeassistant/components/brands/__init__.py
+index 544c2440..f47587fd 100644
+--- a/homeassistant/components/brands/__init__.py
++++ b/homeassistant/components/brands/__init__.py
+@@ -266,21 +266,10 @@ class BrandsIntegrationView(_BrandsBaseView):
+         ) is not None:
+             return response
+ 
+-        # 2. Try the integration image. Direct paths are used instead of the
+-        # "_/" namespace so real 404s can be cached as markers.
+-        if (
+-            data := await self._get_image_data(
+-                cdn_path=f"{domain}/{image}",
+-                cache_subpath=f"integrations/{domain}/{image}",
+-            )
+-        ) is not None:
+-            return self._build_response(data)
+-
+-        # 3. Fall back to the brand image, which is cached separately so the
+-        # integration 404 marker is preserved.
++        # 2. Try cache / CDN (always use direct path for proper 404 caching)
+         return await self._serve_from_cache_or_cdn(
+             cdn_path=f"brands/{domain}/{image}",
+-            cache_subpath=f"brands/{domain}/{image}",
++            cache_subpath=f"integrations/{domain}/{image}",
+             fallback_placeholder=use_placeholder,
+         )
+ 
+diff --git a/homeassistant/components/frontend/manifest.json b/homeassistant/components/frontend/manifest.json
+index 035d6074..75c866a7 100644
+--- a/homeassistant/components/frontend/manifest.json
++++ b/homeassistant/components/frontend/manifest.json
+@@ -22,5 +22,5 @@
+   "integration_type": "system",
+   "preview_features": { "winter_mode": {} },
+   "quality_scale": "internal",
+-  "requirements": ["home-assistant-frontend==20260930.2"]
++  "requirements": ["home-assistant-frontend==20260930.3"]
+ }
+diff --git a/homeassistant/components/mcp/config_flow.py b/homeassistant/components/mcp/config_flow.py
+index 7a37ca89..007e2d18 100644
+--- a/homeassistant/components/mcp/config_flow.py
++++ b/homeassistant/components/mcp/config_flow.py
+@@ -214,6 +214,7 @@ class ModelContextProtocolConfigFlow(AbstractOAuth2FlowHandler, domain=DOMAIN):
+         self.data[CONF_URL] = url
+         self.data[CONF_SLUG] = discovery_info.slug
+         self.addon_name = discovery_info.name
++        self.context["title_placeholders"] = {"name": self.addon_name}
+         return await self.async_step_hassio_confirm()
+ 
+     async def async_step_hassio_confirm(
+diff --git a/homeassistant/components/mcp/strings.json b/homeassistant/components/mcp/strings.json
+index 3b844220..7b85fbe1 100644
+--- a/homeassistant/components/mcp/strings.json
++++ b/homeassistant/components/mcp/strings.json
+@@ -16,6 +16,7 @@
+       "timeout_connect": "[%key:common::config_flow::error::timeout_connect%]",
+       "unknown": "[%key:common::config_flow::error::unknown%]"
+     },
++    "flow_title": "{name}",
+     "step": {
+       "credentials_choice": {
+         "description": "You can either use existing credentials from another integration or set up new credentials.",
+@@ -30,7 +31,7 @@
+         "title": "Choose how to authenticate with the MCP server"
+       },
+       "hassio_confirm": {
+-        "description": "Do you want to configure Home Assistant to connect to the Model Context Protocol server provided by the app: {addon}?",
++        "description": "Do you want to configure Home Assistant to connect to the Model Context Protocol server provided by the app {addon}?",
+         "title": "Model Context Protocol server via Home Assistant app"
+       },
+       "pick_implementation": {
+diff --git a/homeassistant/components/trace/models.py b/homeassistant/components/trace/models.py
+index 89b2d2d3..d3a42ede 100644
+--- a/homeassistant/components/trace/models.py
++++ b/homeassistant/components/trace/models.py
+@@ -93,7 +93,8 @@ class ActionTrace(BaseTrace):
+         self.key = f"{self._domain}.{item_id}"
+         self._dict: dict[str, Any] | None = None
+         self._short_dict: dict[str, Any] | None = None
+-        if trace_id_get():
++        # An automation without an id stores no trace, so there is nothing to link
++        if item_id and trace_id_get():
+             trace_set_child_id(self.key, self.run_id)
+         trace_id_set((self.key, self.run_id))
+ 
+diff --git a/homeassistant/const.py b/homeassistant/const.py
+index 85c9b6f0..15550e25 100644
+--- a/homeassistant/const.py
++++ b/homeassistant/const.py
+@@ -23,7 +23,7 @@ if TYPE_CHECKING:
+ APPLICATION_NAME: Final = "HomeAssistant"
+ MAJOR_VERSION: Final = 2026
+ MINOR_VERSION: Final = 10
+-PATCH_VERSION: Final = "0"
++PATCH_VERSION: Final = "1"
+ __short_version__: Final = f"{MAJOR_VERSION}.{MINOR_VERSION}"
+ __version__: Final = f"{__short_version__}.{PATCH_VERSION}"
+ REQUIRED_PYTHON_VER: Final[tuple[int, int, int]] = (3, 14, 2)
+diff --git a/homeassistant/helpers/template/extensions/devices.py b/homeassistant/helpers/template/extensions/devices.py
+index 8d799836..a10a3374 100644
+--- a/homeassistant/helpers/template/extensions/devices.py
++++ b/homeassistant/helpers/template/extensions/devices.py
+@@ -1,7 +1,8 @@
+ """Device functions for Home Assistant templates."""
+ 
+-from collections.abc import Iterable
++from collections.abc import Callable, Iterable
+ from itertools import chain
++import logging
+ from typing import TYPE_CHECKING, Any
+ 
+ import probatio
+@@ -12,12 +13,38 @@ from homeassistant.helpers import (
+     device_registry as dr,
+     entity_registry as er,
+ )
++from homeassistant.util.hass_dict import HassKey
+ 
+ from .base import BaseTemplateExtension, TemplateFunction
+ 
+ if TYPE_CHECKING:
+     from homeassistant.helpers.template import TemplateEnvironment
+ 
++_LOGGER = logging.getLogger(__name__)
++
++# Shared by all template environments, a template entity with a custom log
++# function gets a fresh environment (and extension) of its own.
++_WARNED_DEPRECATED_ATTRS: HassKey[set[str]] = HassKey(
++    "template_device_attr_warned_deprecated"
++)
++
++# Deprecated device attributes, resolved from config_entry_id and
++# config_subentry_id, so reading them in a template does not raise.
++_DEPRECATED_DEVICE_ATTRS: dict[str, tuple[str, Callable[[dr.BaseDeviceEntry], Any]]] = {
++    "config_entries": (
++        "'config_entry_id'",
++        lambda device: {device.config_entry_id},
++    ),
++    "config_entries_subentries": (
++        "'config_entry_id' and 'config_subentry_id'",
++        lambda device: {device.config_entry_id: {device.config_subentry_id}},
++    ),
++    "primary_config_entry": (
++        "'config_entry_id'",
++        lambda device: device.config_entry_id,
++    ),
++}
++
+ 
+ class DeviceExtension(BaseTemplateExtension):
+     """Extension for device-related template functions."""
+@@ -127,7 +154,26 @@ class DeviceExtension(BaseTemplateExtension):
+             device = device_reg.async_get(_device_id)
+         elif "." not in device_or_entity_id:
+             device = device_reg.async_get(device_or_entity_id)
+-        if device is None or not hasattr(device, attr_name):
++        if device is None:
++            return None
++
++        if not device.is_composite_device and (
++            deprecated := _DEPRECATED_DEVICE_ATTRS.get(attr_name)
++        ):
++            replacement, resolve = deprecated
++            warned = self.hass.data.setdefault(_WARNED_DEPRECATED_ATTRS, set())
++            if attr_name not in warned:
++                warned.add(attr_name)
++                _LOGGER.warning(
++                    "A template reads device attribute '%s', which is deprecated "
++                    "and will stop working in Home Assistant 2027.10; use %s "
++                    "instead",
++                    attr_name,
++                    replacement,
++                )
++            return resolve(device)
++
++        if not hasattr(device, attr_name):
+             return None
+         return getattr(device, attr_name)
+ 
+diff --git a/homeassistant/package_constraints.txt b/homeassistant/package_constraints.txt
+index ad9d1fdc..2c44ba8f 100644
+--- a/homeassistant/package_constraints.txt
++++ b/homeassistant/package_constraints.txt
+@@ -40,7 +40,7 @@ habluetooth==7.1.2
+ hass-nabucasa==2.7.0
+ hassil==3.12.1
+ home-assistant-bluetooth==2.0.0
+-home-assistant-frontend==20260930.2
++home-assistant-frontend==20260930.3
+ home-assistant-intents==2026.10.6
+ httpx==0.28.1
+ ifaddr==0.2.0
+@@ -258,6 +258,11 @@ auth0-python<5.0
+ backoff==2.2.1
+ python-backoff<2.4.0
+ 
++# graphql-core 3.3 removed graphql_input_types, which apischema 0.19.0
++# (used by pydrawise) still imports
++# https://github.com/home-assistant/core/issues/184918
++graphql-core<3.3
++
+ # Pin dependencies with '.pth' files to exact versions, only update manually!
+ # https://github.com/Azure/azure-kusto-python/ -> '.pth' files removed with >=5.0.5
+ # https://github.com/xolox/python-coloredlogs -> unmaintained
