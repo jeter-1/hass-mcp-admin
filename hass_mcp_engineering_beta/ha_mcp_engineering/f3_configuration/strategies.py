@@ -7,6 +7,20 @@ from typing import Any
 
 from ha_mcp_engineering.f3.contracts import F3_ADAPTER_CONTRACT_MODEL
 
+from ..errors import AuthorizationError
+from ..governance.entity_metadata import (
+    ENTITY_METADATA_CAPABILITY_IDENTITY,
+    ENTITY_METADATA_PROVIDER,
+    ENTITY_METADATA_PROVIDER_CONTRACT,
+    ENTITY_METADATA_PROVIDER_OPERATION,
+    ENTITY_METADATA_RESOURCE_TYPE,
+    ENTITY_METADATA_UNAUTHORIZED_REASON,
+    MANAGED_FIELDS as ENTITY_METADATA_MANAGED_FIELDS,
+    normalize_entry as normalize_entity_metadata_entry,
+    update_command as entity_metadata_update_command,
+    update_command_argument_names as entity_metadata_argument_names,
+    update_fields as entity_metadata_update_fields,
+)
 from ..governance.normalize import stable_hash
 from ..governance.resources import (
     configuration_write_config,
@@ -35,6 +49,10 @@ CAPABILITY_IDENTITIES = {
     ("input_boolean", "update"): "update_input_boolean_configuration",
     ("input_number", "create"): "create_input_number_configuration",
     ("input_number", "update"): "update_input_number_configuration",
+    (
+        ENTITY_METADATA_RESOURCE_TYPE,
+        "update",
+    ): ENTITY_METADATA_CAPABILITY_IDENTITY,
 }
 
 
@@ -42,6 +60,9 @@ class ConfigurationStrategy(ABC):
     """One closed resource contract; never an arbitrary provider adapter."""
 
     resource_type: str
+    provider = "home_assistant_configuration_gateway"
+    provider_contract = CONFIGURATION_PROVIDER_CONTRACT
+    validation_contract = "existing_configuration_validation_v1"
 
     def __init__(self, action: str) -> None:
         if action not in SUPPORTED_ACTIONS:
@@ -67,10 +88,10 @@ class ConfigurationStrategy(ABC):
             capability_identity=self.capability_identity,
             resource_type=self.resource_type,
             action=self.action,
-            provider="home_assistant_configuration_gateway",
-            provider_contract=CONFIGURATION_PROVIDER_CONTRACT,
+            provider=self.provider,
+            provider_contract=self.provider_contract,
             argument_names=self.allowed_argument_names,
-            validation_contract="existing_configuration_validation_v1",
+            validation_contract=self.validation_contract,
             verification_contract=(
                 CONFIGURATION_VERIFICATION_CONTRACT_MODEL
             ),
@@ -141,11 +162,20 @@ class ConfigurationStrategy(ABC):
         self,
         target_id: str,
         proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
     ) -> ConfigurationProviderDescriptor:
+        """Describe the exact provider call.
+
+        ``current_config`` is used only by strategies whose payload is a
+        delta from the planned current state; full-replacement strategies
+        ignore it, so their descriptors and hashes are unchanged.
+        """
+
+        del current_config
         payload = self.provider_payload(target_id, proposed_config)
         return ConfigurationProviderDescriptor(
-            provider="home_assistant_configuration_gateway",
-            contract_model=CONFIGURATION_PROVIDER_CONTRACT,
+            provider=self.provider,
+            contract_model=self.provider_contract,
             transport=self.transport,
             operation=self.provider_operation(target_id),
             argument_names=self.argument_names(proposed_config),
@@ -153,11 +183,47 @@ class ConfigurationStrategy(ABC):
         )
 
     def dispatch_config(
-        self, proposed_config: dict[str, Any]
+        self,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return the exact bounded configuration sent to the provider."""
 
+        del current_config
         return dict(proposed_config)
+
+    # Optional preflight and outcome hooks.  The defaults preserve the
+    # shipped behaviour of every full-replacement configuration strategy.
+
+    def already_reached(
+        self,
+        observed: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> bool:
+        del observed, proposed_config
+        return False
+
+    async def preflight_evidence(
+        self,
+        gateway: Any,
+        target_id: str,
+        current_config: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> tuple[str, ...]:
+        del gateway, target_id, current_config, proposed_config
+        return ()
+
+    def read_error_code(self, exc: BaseException) -> str:
+        del exc
+        return "resource_read_unavailable"
+
+    def observe_error_code(self, exc: BaseException) -> str:
+        del exc
+        return "readback_unavailable"
+
+    def dispatch_error_codes(self, exc: BaseException) -> tuple[str, ...]:
+        del exc
+        return ()
 
     @property
     @abstractmethod
@@ -211,8 +277,11 @@ class _RestConfigurationStrategy(ConfigurationStrategy):
         }
 
     def dispatch_config(
-        self, proposed_config: dict[str, Any]
+        self,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        del current_config
         return configuration_write_config(
             self.resource_type, proposed_config
         )
@@ -291,11 +360,140 @@ class InputNumberConfigurationStrategy(_HelperConfigurationStrategy):
     )
 
 
+class EntityRegistryMetadataConfigurationStrategy(ConfigurationStrategy):
+    """Closed ``config/entity_registry/update`` for one exact entity.
+
+    The plan records the full final entry; only the touched managed fields
+    are sent, derived from the plan's own recorded current state.
+    """
+
+    resource_type = ENTITY_METADATA_RESOURCE_TYPE
+    provider = ENTITY_METADATA_PROVIDER
+    provider_contract = ENTITY_METADATA_PROVIDER_CONTRACT
+    validation_contract = "entity_registry_metadata_validation_v1"
+
+    def __init__(self, action: str) -> None:
+        if action != "update":
+            raise ValueError("entity registry metadata is update-only")
+        super().__init__(action)
+
+    @property
+    def transport(self) -> str:
+        return "home_assistant_websocket"
+
+    @property
+    def allowed_argument_names(self) -> tuple[str, ...]:
+        return tuple(
+            sorted(
+                {"type", "entity_id", *ENTITY_METADATA_MANAGED_FIELDS},
+                key=lambda item: item.encode("utf-8"),
+            )
+        )
+
+    def provider_operation(self, target_id: str) -> str:
+        del target_id
+        return ENTITY_METADATA_PROVIDER_OPERATION
+
+    def provider_descriptor(
+        self,
+        target_id: str,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> ConfigurationProviderDescriptor:
+        command = entity_metadata_update_command(
+            target_id, current_config, proposed_config
+        )
+        return ConfigurationProviderDescriptor(
+            provider=self.provider,
+            contract_model=self.provider_contract,
+            transport=self.transport,
+            operation=self.provider_operation(target_id),
+            argument_names=entity_metadata_argument_names(command),
+            arguments_hash=stable_hash(command),
+        )
+
+    def provider_payload(
+        self, target_id: str, proposed_config: dict[str, Any]
+    ) -> dict[str, Any]:
+        raise NotImplementedError(
+            "entity metadata payloads require the planned current state"
+        )
+
+    def argument_names(
+        self, proposed_config: dict[str, Any]
+    ) -> tuple[str, ...]:
+        raise NotImplementedError(
+            "entity metadata argument names require the planned current state"
+        )
+
+    def dispatch_config(
+        self,
+        proposed_config: dict[str, Any],
+        current_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return entity_metadata_update_fields(current_config, proposed_config)
+
+    def already_reached(
+        self,
+        observed: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> bool:
+        if observed is None:
+            return False
+        try:
+            return normalize_entity_metadata_entry(
+                observed
+            ) == normalize_entity_metadata_entry(proposed_config)
+        except (TypeError, ValueError):
+            return False
+
+    async def preflight_evidence(
+        self,
+        gateway: Any,
+        target_id: str,
+        current_config: dict[str, Any] | None,
+        proposed_config: dict[str, Any],
+    ) -> tuple[str, ...]:
+        check = getattr(gateway, "entity_metadata_preflight_evidence", None)
+        if check is None or current_config is None:
+            return ("dependency_evidence_unavailable",)
+        try:
+            return tuple(
+                await check(target_id, current_config, proposed_config)
+            )
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("reference_definitions_unavailable",)
+
+    def read_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "permission_failure"
+        return "resource_read_unavailable"
+
+    def observe_error_code(self, exc: BaseException) -> str:
+        if isinstance(exc, AuthorizationError):
+            return "readback_permission_failure"
+        return "readback_unavailable"
+
+    def dispatch_error_codes(self, exc: BaseException) -> tuple[str, ...]:
+        details = getattr(exc, "details", None)
+        if (
+            isinstance(details, dict)
+            and details.get("reason") == ENTITY_METADATA_UNAUTHORIZED_REASON
+        ):
+            return ("provider_permission_denied",)
+        return ()
+
+
 _STRATEGIES = {
     "automation": AutomationConfigurationStrategy,
     "script": ScriptConfigurationStrategy,
     "input_boolean": InputBooleanConfigurationStrategy,
     "input_number": InputNumberConfigurationStrategy,
+    ENTITY_METADATA_RESOURCE_TYPE: (
+        EntityRegistryMetadataConfigurationStrategy
+    ),
 }
 
 

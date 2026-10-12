@@ -96,6 +96,10 @@ from ..governance.helper_state import (
 from ..governance.normalize import stable_hash
 from ..governance import configuration_rollback_eligibility as inverse_eligibility
 from ..governance.policy import POLICY_VERSION
+from ..governance.entity_metadata import (
+    ENTITY_METADATA_CAPABILITY_IDENTITY,
+    ENTITY_METADATA_RESOURCE_TYPE,
+)
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
@@ -646,6 +650,13 @@ class _AuditedConfigurationGateway:
     async def create_target_absent(self, resource_type, target_id):
         return await self.delegate.create_target_absent(resource_type, target_id)
 
+    async def entity_metadata_preflight_evidence(
+        self, target_id, current, proposed
+    ):
+        return await self.delegate.entity_metadata_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(self, action, resource_type, target_id, proposed_config):
         self.auditor("provider_invocation_started")
         try:
@@ -897,6 +908,15 @@ class F3RuntimeIntegration:
             for resource in ("automation", "script", "input_boolean", "input_number")
             for action in ("create", "update")
         }
+        # HAMCP-069A-1: entity registry metadata is update-only.
+        configuration_adapters[
+            ENTITY_METADATA_CAPABILITY_IDENTITY
+        ] = ConfigurationOperationAdapter(
+            ENTITY_METADATA_RESOURCE_TYPE,
+            "update",
+            config_gateway,
+            now=service.now,
+        )
         self.evidence_reader = _OperationalEvidenceReader(self)
         captured_backup = (
             None

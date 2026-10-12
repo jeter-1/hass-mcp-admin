@@ -43,6 +43,15 @@ CONFIGURATION_REGISTRATIONS = (
     ("update_input_number_configuration", "input_number", "update"),
 )
 
+# HAMCP-069A-1: the direct, code-owned entity registry metadata update.  It is
+# a configuration child but is not admitted through the reviewed ha-mcp release
+# registry; its Core admission is the dormant entity-metadata profile.
+ENTITY_METADATA_REGISTRATION = (
+    "update_entity_registry_metadata_configuration",
+    "entity_registry_metadata",
+    "update",
+)
+
 OPERATIONAL_REGISTRATIONS = (
     ("create_full_home_assistant_backup", "create_full_backup", "backup"),
     (
@@ -115,6 +124,30 @@ class ClosedAdapterRegistry:
             )
             for capability, target, action in CONFIGURATION_REGISTRATIONS
         ]
+        capability, target, action = ENTITY_METADATA_REGISTRATION
+        entries.append(
+            AdapterRegistration(
+                capability_id=capability,
+                adapter_id="configuration_operation",
+                operation_family="configuration",
+                plan_operation="configuration_plan",
+                target_type=target,
+                action=action,
+                provider_model="direct-ha-exact-entity-registry-metadata-v1",
+                resource_lock_model="f3-configuration-lock-set-v1",
+                provider_dependency_lock_model=(
+                    "home_assistant_core_shared_dependency"
+                ),
+                provider_admission_model="code_owned_closed_contract",
+                verification_model="exact_registry_readback",
+                recovery_model="exact_configuration_readback",
+                rollback_declaration="governed_reverse_update_plan",
+                runtime_route="apply_change_plan",
+                historical_compatibility="new_plan_required",
+                required_releases=(),
+                required_protocol="direct-home-assistant-api-v1",
+            )
+        )
         entries.extend(
             AdapterRegistration(
                 capability_id=capability,
@@ -198,6 +231,7 @@ class ClosedAdapterRegistry:
                 *CONFIGURATION_REGISTRATIONS,
                 *OPERATIONAL_REGISTRATIONS,
                 HELPER_STATE_REGISTRATION,
+                ENTITY_METADATA_REGISTRATION,
                 DASHBOARD_REGISTRATION,
             )
         }
@@ -209,7 +243,10 @@ class ClosedAdapterRegistry:
         for entry in self._entries:
             if entry.contract_model != F3_ADAPTER_CONTRACT_MODEL:
                 raise AdapterRegistryError("F3 adapter model is unsupported")
-            direct_helper = entry.capability_id == HELPER_STATE_REGISTRATION[0]
+            direct_helper = entry.capability_id in {
+                HELPER_STATE_REGISTRATION[0],
+                ENTITY_METADATA_REGISTRATION[0],
+            }
             if (
                 (
                     direct_helper
@@ -240,7 +277,7 @@ class ClosedAdapterRegistry:
                 or entry.target_type not in {
                     "automation", "script", "input_boolean", "input_number",
                     "backup", "reload_domain", "addon", "home_assistant",
-                    "dashboard",
+                    "dashboard", "entity_registry_metadata",
                 }
             ):
                 raise AdapterRegistryError("F3 route admission binding is invalid")

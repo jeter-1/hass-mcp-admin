@@ -50,6 +50,18 @@ class ExistingConfigurationGatewayBridge:
             return True, "target_absent"
         return False, "target_entity_id_reserved"
 
+    async def entity_metadata_preflight_evidence(
+        self,
+        target_id: str,
+        current: dict[str, Any],
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck an entity plan's bound reference and consumer evidence."""
+
+        return await self._gateway.entity_metadata_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(
         self,
         action: str,

@@ -14,7 +14,7 @@ from typing import Any
 
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
-from ..errors import HomeAssistantApiError
+from ..errors import AuthorizationError, HomeAssistantApiError
 from ..sanitization import sanitize_untrusted_data
 from .normalize import (
     AUTOMATION_VERIFICATION_NORMALIZATION_VERSION,
@@ -28,11 +28,28 @@ from .validation import (
     READ_ONLY_REGISTRY_METADATA_WARNING,
     validate_automation,
 )
+from .entity_metadata import (
+    ENTITY_METADATA_BINDINGS_KEY,
+    ENTITY_METADATA_RESOURCE_TYPE,
+    MANAGED_FIELDS as ENTITY_METADATA_MANAGED_FIELDS,
+    EntityRegistryMetadataGateway,
+    bound_reference_ids,
+    normalize_entry as normalize_entity_metadata_entry,
+    proposed_errors as entity_metadata_proposed_errors,
+    update_command as entity_metadata_update_command,
+    validate_entity_id,
+)
 
 
 RESOURCE_NORMALIZATION_VERSION = 2
 SUPPORTED_RESOURCE_TYPES = frozenset(
-    {"automation", "script", "input_boolean", "input_number"}
+    {
+        "automation",
+        "script",
+        "input_boolean",
+        "input_number",
+        ENTITY_METADATA_RESOURCE_TYPE,
+    }
 )
 SUPPORTED_HELPER_TYPES = frozenset({"input_boolean", "input_number"})
 
@@ -141,6 +158,11 @@ def validate_resource(
         valid, errors, warnings = validate_automation(
             resource_id, proposed_config
         )
+    elif resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+        # The complete registry entry plus its plan bindings; the reviewed
+        # entry contract is owned by ``entity_metadata``.
+        errors = entity_metadata_proposed_errors(resource_id, proposed_config)
+        warnings = []
     else:
         errors = _validate_resource_id(resource_type, resource_id)
         warnings: list[str] = []
@@ -223,6 +245,8 @@ def normalize_resource_config(
         raise TypeError("resource configuration must be an object or null")
     if resource_type == "automation":
         return normalize_automation(config)
+    if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+        return normalize_entity_metadata_entry(config)
     normalized = {
         key: value
         for key, value in config.items()
@@ -388,6 +412,9 @@ def compare_resource_verification(
             "sequence",
             "step",
             "unit_of_measurement",
+            *ENTITY_METADATA_MANAGED_FIELDS,
+            "registry_guard",
+            "registry_id",
         }
         mismatch_categories = tuple(
             sorted(
@@ -498,6 +525,9 @@ def resource_identity_matches(
         return False
     if _validate_resource_id(resource_type, resource_id):
         return False
+    if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+        # The registry ``id`` is a UUID; identity is the exact entity_id.
+        return config.get("entity_id") == resource_id
     returned_id = config.get("id")
     if resource_type in SUPPORTED_HELPER_TYPES:
         _, object_id = _split_helper_entity_id(resource_type, resource_id)
@@ -515,6 +545,14 @@ class ConfigurationResourceGateway:
     ):
         self.rest_client = rest_client
         self.websocket_client = websocket_client
+        self.entity_metadata = EntityRegistryMetadataGateway(
+            rest_client, websocket_client
+        )
+        # Set by the governance runtime: an async callable
+        # ``(entity_id, current, final) -> fingerprint`` over the dependency
+        # index.  Absent means the evidence cannot be rechecked, which fails
+        # closed at preflight.
+        self.entity_metadata_consumer_evidence: Any = None
 
     async def get(
         self, resource_type: str, resource_id: str
@@ -522,6 +560,8 @@ class ConfigurationResourceGateway:
         """Read one exact supported resource."""
 
         self._require_valid_id(resource_type, resource_id)
+        if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+            return await self.entity_metadata.read_entry(resource_id)
         if resource_type in _CONFIG_ENDPOINTS:
             value = await self.rest_client.request(
                 "GET",
@@ -593,6 +633,8 @@ class ConfigurationResourceGateway:
     ) -> Any:
         """Create one resource using only its fixed Home Assistant operation."""
 
+        if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+            raise ValueError("entity registry metadata is update-only")
         self._require_valid(resource_type, resource_id, approved_config)
         create_identity_errors = validate_resource_create_identity(
             resource_type, resource_id, approved_config
@@ -706,6 +748,29 @@ class ConfigurationResourceGateway:
     ) -> Any:
         """Replace one resource with the exact approved configuration."""
 
+        if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+            # ``approved_config`` is the closed touched-field body produced by
+            # the entity strategy, never a full entry.  The provider re-checks
+            # the allowlist before sending.
+            validate_entity_id(resource_id)
+            if not isinstance(approved_config, dict) or not set(
+                approved_config
+            ) <= set(ENTITY_METADATA_MANAGED_FIELDS):
+                raise ConfigurationMutationNotDispatchedError(
+                    details={
+                        "operation": "entity_registry_metadata_update",
+                        "resource_id": resource_id,
+                        "reason": "closed_payload_violation",
+                    }
+                )
+            return await self.entity_metadata.update(
+                resource_id,
+                {
+                    "type": "config/entity_registry/update",
+                    "entity_id": resource_id,
+                    **approved_config,
+                },
+            )
         self._require_valid(resource_type, resource_id, approved_config)
         if resource_type in _CONFIG_ENDPOINTS:
             return await self._write_rest_configuration(
@@ -752,6 +817,45 @@ class ConfigurationResourceGateway:
                 resource_type, resource_id, approved_config
             )
         raise ValueError("action must be create or update")
+
+    async def entity_metadata_preflight_evidence(
+        self,
+        resource_id: str,
+        current: dict[str, Any],
+        proposed: dict[str, Any],
+    ) -> tuple[str, ...]:
+        """Recheck an entity plan's bound references and consumer evidence.
+
+        Returns bounded rejection codes; an empty tuple means the bound
+        evidence still holds.  Authorization failure is reported distinctly.
+        """
+
+        validate_entity_id(resource_id)
+        bindings = proposed.get(ENTITY_METADATA_BINDINGS_KEY)
+        if not isinstance(bindings, dict):
+            return ("plan_bindings_invalid",)
+        try:
+            definitions = await self.entity_metadata.reference_definitions(
+                bound_reference_ids(current, proposed)
+            )
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("reference_definitions_unavailable",)
+        if definitions != bindings.get("reference_definitions"):
+            return ("stale_reference_definition",)
+        evidence = self.entity_metadata_consumer_evidence
+        if evidence is None:
+            return ("dependency_evidence_unavailable",)
+        try:
+            fingerprint = await evidence(resource_id, current, proposed)
+        except AuthorizationError:
+            return ("permission_failure",)
+        except Exception:
+            return ("dependency_evidence_unavailable",)
+        if fingerprint != bindings.get("consumer_evidence_fingerprint"):
+            return ("dependency_evidence_changed",)
+        return ()
 
     async def validate(self) -> Any:
         """Run Home Assistant's bounded full configuration check."""
@@ -851,6 +955,12 @@ def _validate_resource_id(
         return [
             "resource_type is not supported for governed configuration writes"
         ]
+    if resource_type == ENTITY_METADATA_RESOURCE_TYPE:
+        try:
+            validate_entity_id(resource_id)
+        except ValueError:
+            return ["entity_registry_metadata resource_id must be an entity_id"]
+        return []
     if resource_type == "automation":
         valid, errors, _ = validate_automation(
             resource_id, {"trigger": [], "action": []}

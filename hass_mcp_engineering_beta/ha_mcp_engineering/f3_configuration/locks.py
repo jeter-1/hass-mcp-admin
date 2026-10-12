@@ -34,6 +34,8 @@ def resource_lock_key(resource_type: str, target_id: str) -> str:
         prefix = "script"
     elif resource_type in {"input_boolean", "input_number"}:
         prefix = "helper"
+    elif resource_type == "entity_registry_metadata":
+        prefix = "entity_registry"
     else:
         raise ValueError("configuration resource type has no lock identity")
     key = f"{prefix}:{target_id.lower()}"
@@ -171,6 +173,10 @@ def operation_lock_requests(
         "script": "reload:script",
         "input_boolean": "reload:input_boolean",
         "input_number": "reload:input_number",
+        # HAMCP-069A-1 (owner direction, deviation V6): a registry update
+        # needs no reload, but it keeps the uniform configuration lock graph
+        # rather than a special-case path.
+        "entity_registry_metadata": "reload:entity_registry_metadata",
     }.get(operation.resource_type)
     if reload_key is None:
         raise ValueError("configuration resource type has no reload lock")

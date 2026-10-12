@@ -140,7 +140,9 @@ class ConfigurationOperationAdapter:
         if proposal.rollback_available:
             raise ValueError("forward configuration rollback is unavailable")
 
-        provider = self.strategy.provider_descriptor(target_id, proposed)
+        provider = self.strategy.provider_descriptor(
+            target_id, proposed, current
+        )
         verification_payload = {
             "model": CONFIGURATION_VERIFICATION_CONTRACT_MODEL,
             "capability_identity": self.strategy.capability_identity,
@@ -344,6 +346,23 @@ class ConfigurationOperationAdapter:
         # executor consumes approval only after this preflight returns and
         # before it commits durable intent through ``before_dispatch``.
         state, state_code = await self._authoritative_state(operation)
+        if state_code == "desired_state_already_reached":
+            return self._preflight_already_reached(
+                operation, state, required_locks, validation_status
+            )
+        if state_code == "state_matches_plan":
+            evidence_codes = await self.strategy.preflight_evidence(
+                self.gateway,
+                operation.target.target_id,
+                operation.current_config(),
+                proposed,
+            )
+            if evidence_codes:
+                if "dependency_evidence_changed" in evidence_codes or (
+                    "stale_reference_definition" in evidence_codes
+                ):
+                    self._increment("stale_rejections")
+                return self._preflight_rejected(operation, evidence_codes)
         if state_code != "state_matches_plan":
             if state_code in {
                 "target_already_exists",
@@ -428,7 +447,9 @@ class ConfigurationOperationAdapter:
             )
 
         proposed_config = operation.proposed_config()
-        provider_config = self.strategy.dispatch_config(proposed_config)
+        provider_config = self.strategy.dispatch_config(
+            proposed_config, operation.current_config()
+        )
         try:
             await before_dispatch()
         except Exception:
@@ -474,6 +495,7 @@ class ConfigurationOperationAdapter:
                     "provider_rejected_mutation"
                     if response_received
                     else "provider_confirmed_no_mutation",
+                    *self.strategy.dispatch_error_codes(exc),
                 ),
                 provider_mutation_count=0,
             )
@@ -672,10 +694,14 @@ class ConfigurationOperationAdapter:
             if self.strategy.fingerprint(current) != (
                 operation.current_state_fingerprint
             ):
+                if self.strategy.already_reached(
+                    current, operation.proposed_config()
+                ):
+                    return current, "desired_state_already_reached"
                 return current, "stale_target_state"
             return current, "state_matches_plan"
-        except Exception:
-            return None, "resource_read_unavailable"
+        except Exception as exc:
+            return None, self.strategy.read_error_code(exc)
 
     async def _configuration_check_status(self) -> str:
         try:
@@ -696,12 +722,13 @@ class ConfigurationOperationAdapter:
             observed = await self.gateway.read(
                 operation.resource_type, operation.target.target_id
             )
-        except Exception:
+        except Exception as exc:
+            readback_code = self.strategy.observe_error_code(exc)
             self._emit(
                 "observation",
                 operation.target.target_id,
                 "observing",
-                ("readback_unavailable",),
+                (readback_code,),
             )
             return ConfigurationObservationResult(
                 outcome=NormalizedOperationOutcome.OBSERVING,
@@ -713,7 +740,7 @@ class ConfigurationOperationAdapter:
                 intended_result_observed=None,
                 mismatch_fields=(),
                 evidence_hash=None,
-                diagnostic_codes=("readback_unavailable",),
+                diagnostic_codes=(readback_code,),
                 identity_match=None,
                 resource_exists=None,
                 semantic_match=None,
@@ -816,6 +843,61 @@ class ConfigurationOperationAdapter:
             "verification",
             operation.target.target_id,
             outcome.value,
+            codes,
+        )
+        return result
+
+    def _preflight_already_reached(
+        self,
+        operation: PreparedConfigurationOperation,
+        state: dict[str, Any] | None,
+        required_locks,
+        validation_status: str,
+    ) -> ConfigurationPreflightResult:
+        """Verified success with zero dispatch; approval is not consumed.
+
+        Only a strategy that proves exact final-state equality reaches this
+        path.  The executor finishes the child as ``succeeded_verified``
+        without committing dispatch intent.
+        """
+
+        provider = operation.provider_descriptor
+        codes = bounded_codes(("desired_state_already_reached",))
+        observed_fingerprint = self.strategy.fingerprint(state)
+        result = ConfigurationPreflightResult(
+            eligible=False,
+            outcome=NormalizedOperationOutcome.SUCCEEDED_VERIFIED,
+            confirmed_target=operation.target,
+            observed_state_fingerprint=observed_fingerprint,
+            provider_contract=provider.contract_model,
+            provider_operation=provider.operation,
+            provider_arguments_hash=provider.arguments_hash,
+            evidence_hash=stable_hash(
+                {
+                    "capability_identity": operation.capability_identity,
+                    "target": {
+                        "target_type": operation.target.target_type,
+                        "target_id": operation.target.target_id,
+                    },
+                    "observed_state_fingerprint": observed_fingerprint,
+                    "expected_proposed_hash": (
+                        operation.normalized_proposed_hash
+                    ),
+                    "lock_set_hash": lock_set_hash(required_locks),
+                    "diagnostic_codes": list(codes),
+                }
+            ),
+            diagnostic_codes=codes,
+            mismatch_fields=(),
+            capability_identity=operation.capability_identity,
+            configuration_check_status=validation_status,
+            target_existence="present",
+            lock_set_hash=lock_set_hash(required_locks),
+        )
+        self._emit(
+            "preflight",
+            operation.target.target_id,
+            NormalizedOperationOutcome.SUCCEEDED_VERIFIED.value,
             codes,
         )
         return result
@@ -1025,7 +1107,7 @@ class ConfigurationOperationAdapter:
         if operation.rollback_available:
             raise ValueError("prepared forward rollback must be unavailable")
         provider = self.strategy.provider_descriptor(
-            canonical_target, proposed
+            canonical_target, proposed, current
         )
         if provider != operation.provider_descriptor:
             raise ValueError("prepared provider descriptor is inconsistent")

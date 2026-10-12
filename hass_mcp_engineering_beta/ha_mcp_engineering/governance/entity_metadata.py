@@ -23,7 +23,9 @@ from .normalize import stable_hash
 
 
 ENTITY_METADATA_RESOURCE_TYPE = "entity_registry_metadata"
-ENTITY_METADATA_CAPABILITY_IDENTITY = "update_entity_registry_metadata"
+ENTITY_METADATA_CAPABILITY_IDENTITY = (
+    "update_entity_registry_metadata_configuration"
+)
 ENTITY_METADATA_PROVIDER = "direct_home_assistant_entity_registry"
 ENTITY_METADATA_PROVIDER_CONTRACT = (
     "direct-ha-exact-entity-registry-metadata-v1"
@@ -31,6 +33,7 @@ ENTITY_METADATA_PROVIDER_CONTRACT = (
 ENTITY_METADATA_PROVIDER_OPERATION = "entity_registry_metadata_update"
 ENTITY_METADATA_NORMALIZATION_MODEL = "entity_registry_metadata_projection_v1"
 ENTITY_METADATA_BINDINGS_KEY = "plan_bindings"
+ENTITY_METADATA_UNAUTHORIZED_REASON = "entity_registry_update_unauthorized"
 
 # The complete reviewed metadata vocabulary, in Home Assistant field names.
 MANAGED_FIELDS = (
@@ -271,44 +274,112 @@ def touched_fields(
     return tuple(field for field in MANAGED_FIELDS if before.get(field) != after.get(field))
 
 
+def update_fields(
+    current: dict[str, Any] | None,
+    final: dict[str, Any],
+) -> dict[str, Any]:
+    """Return the closed update body: touched managed fields only.
+
+    Labels are sent as the complete final set (Home Assistant replaces the
+    set).  Categories merge per scope in Home Assistant, so only changed
+    scopes are sent, with ``null`` for a removed scope; the full final map is
+    what readback verifies.
+    """
+
+    if current is None:
+        return {}
+    before = normalize_entry(current) or {}
+    after = normalize_entry(final) or {}
+    body: dict[str, Any] = {}
+    for field in touched_fields(current, final):
+        if field == "categories":
+            old = before["categories"]
+            new = after["categories"]
+            body["categories"] = {
+                scope: new.get(scope)
+                for scope in sorted(set(old) | set(new))
+                if old.get(scope) != new.get(scope)
+            }
+        elif field in {"labels", "aliases"}:
+            body[field] = list(after[field])
+        else:
+            body[field] = after[field]
+    return body
+
+
 def update_command(
     entity_id: str,
     current: dict[str, Any] | None,
     final: dict[str, Any],
 ) -> dict[str, Any]:
-    """Build the sole websocket command from the closed allowlist.
-
-    Only touched fields are sent.  Labels are sent as the complete final set
-    (Home Assistant replaces the set).  Categories merge per scope in Home
-    Assistant, so only changed scopes are sent, with ``null`` for a removed
-    scope; the full final map is what readback verifies.
-    """
+    """Build the sole websocket command from the closed allowlist."""
 
     validate_entity_id(entity_id)
-    command: dict[str, Any] = {
+    return {
         "type": "config/entity_registry/update",
         "entity_id": entity_id,
+        **update_fields(current, final),
     }
-    if current is None:
-        return command
+
+
+def bound_reference_ids(
+    current: dict[str, Any], final: dict[str, Any]
+) -> dict[str, Any]:
+    """Return the label, area and category ids whose definitions are bound."""
+
     before = normalize_entry(current) or {}
     after = normalize_entry(final) or {}
-    for field in touched_fields(current, final):
-        if field == "categories":
-            old = before["categories"]
-            new = after["categories"]
-            command["categories"] = {
-                scope: new.get(scope)
-                for scope in sorted(set(old) | set(new))
-                if old.get(scope) != new.get(scope)
+    touched = set(touched_fields(current, final))
+    labels: list[str] = []
+    if "labels" in touched:
+        labels = sorted(set(before["labels"]) ^ set(after["labels"]))
+    areas: list[str] = []
+    if "area_id" in touched:
+        areas = sorted(
+            {
+                value
+                for value in (before["area_id"], after["area_id"])
+                if isinstance(value, str)
             }
-        elif field == "labels":
-            command["labels"] = list(after["labels"])
-        elif field == "aliases":
-            command["aliases"] = list(after["aliases"])
-        else:
-            command[field] = after[field]
-    return command
+        )
+    categories: dict[str, list[str]] = {}
+    if "categories" in touched:
+        old = before["categories"]
+        new = after["categories"]
+        for scope in sorted(set(old) | set(new)):
+            if old.get(scope) != new.get(scope):
+                categories[scope] = sorted(
+                    {
+                        value
+                        for value in (old.get(scope), new.get(scope))
+                        if isinstance(value, str)
+                    }
+                )
+    return {"labels": labels, "areas": areas, "categories": categories}
+
+
+def required_final_references(
+    current: dict[str, Any], final: dict[str, Any]
+) -> dict[str, Any]:
+    """Return references that must exist for the final state to be exact."""
+
+    before = normalize_entry(current) or {}
+    after = normalize_entry(final) or {}
+    touched = set(touched_fields(current, final))
+    return {
+        "labels": sorted(set(after["labels"]) - set(before["labels"]))
+        if "labels" in touched
+        else [],
+        "areas": [after["area_id"]]
+        if "area_id" in touched and isinstance(after["area_id"], str)
+        else [],
+        "categories": {
+            scope: category
+            for scope, category in after["categories"].items()
+            if "categories" in touched
+            and before["categories"].get(scope) != category
+        },
+    }
 
 
 def update_command_argument_names(command: dict[str, Any]) -> tuple[str, ...]:
@@ -451,6 +522,37 @@ class EntityRegistryMetadataGateway:
             }
         return result
 
+    async def reference_definitions(
+        self, ids: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Read the exact definitions of the bound references.
+
+        ``None`` records a reference that does not exist.  Registries are read
+        only when a reference of that kind is bound.
+        """
+
+        labels = ids.get("labels") or []
+        areas = ids.get("areas") or []
+        categories = ids.get("categories") or {}
+        result: dict[str, Any] = {"labels": {}, "areas": {}, "categories": {}}
+        if labels:
+            registry = await self.labels()
+            result["labels"] = {
+                label_id: registry.get(label_id) for label_id in sorted(labels)
+            }
+        if areas:
+            registry = await self.areas()
+            result["areas"] = {
+                area_id: registry.get(area_id) for area_id in sorted(areas)
+            }
+        for scope in sorted(categories):
+            registry = await self.categories(scope)
+            result["categories"][scope] = {
+                category_id: registry.get(category_id)
+                for category_id in sorted(categories[scope])
+            }
+        return result
+
     async def update(
         self,
         entity_id: str,
@@ -477,7 +579,23 @@ class EntityRegistryMetadataGateway:
             )
         try:
             result = await self.websocket_client.command(dict(command))
-        except (HomeAssistantApiError, AuthorizationError) as exc:
+        except AuthorizationError as exc:
+            # The websocket client raises this either while authenticating,
+            # before the command is sent, or for an ``unauthorized`` error
+            # result.  Neither applies the update, so it is a confirmed
+            # non-application with its own reason, never a generic failure.
+            details = exc.details if isinstance(exc.details, dict) else {}
+            raise ConfigurationMutationNotDispatchedError(
+                details={
+                    "operation": ENTITY_METADATA_PROVIDER_OPERATION,
+                    "resource_id": entity_id,
+                    "reason": ENTITY_METADATA_UNAUTHORIZED_REASON,
+                    "provider_response_received": (
+                        details.get("provider_response_received") is True
+                    ),
+                }
+            ) from exc
+        except HomeAssistantApiError as exc:
             details = exc.details if isinstance(exc.details, dict) else {}
             if details.get("provider_response_received") is True:
                 # Home Assistant answered with an error result.  Its registry

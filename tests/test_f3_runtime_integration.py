@@ -24,6 +24,7 @@ sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 from ha_mcp_engineering.f3_runtime.registry import (  # noqa: E402
     CONFIGURATION_REGISTRATIONS,
     DASHBOARD_REGISTRATION,
+    ENTITY_METADATA_REGISTRATION,
     HELPER_STATE_REGISTRATION,
     OPERATIONAL_REGISTRATIONS,
 )
@@ -1028,11 +1029,12 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
                     *CONFIGURATION_REGISTRATIONS,
                     *OPERATIONAL_REGISTRATIONS,
                     HELPER_STATE_REGISTRATION,
+                    ENTITY_METADATA_REGISTRATION,
                     DASHBOARD_REGISTRATION,
                 )
             },
         )
-        self.assertEqual(len(identities), 14)
+        self.assertEqual(len(identities), 15)
         self.assertEqual(
             [item for item in identities if "dashboard" in item],
             ["update_existing_dashboard"],
@@ -1042,7 +1044,7 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         health = self.runtime.health()
         self.assertEqual(health["status"], "ready")
         self.assertTrue(health["execution_ready"])
-        self.assertEqual(health["activated_capability_count"], 14)
+        self.assertEqual(health["activated_capability_count"], 15)
         self.assertEqual(health["dashboard_capability_count"], 1)
         self.assertEqual(health["fallback_count"], 0)
         self.assertEqual(health["recovery_cadence_seconds"], 30)
