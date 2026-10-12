@@ -24,9 +24,13 @@ ROOT = Path(__file__).resolve().parent.parent
 WINDOW = "ci/support-window.yaml"
 SLOTS = ("current", "candidate", "rollback")
 TIERS = {"pr": ("current", "candidate"), "full": SLOTS}
-# Alarmo acceptance follows these Core slots (HAMCP-159): current on every run,
-# rollback in the full tier. The candidate is evaluated without Alarmo evidence.
-ALARMO_SLOTS = ("current", "rollback")
+# Alarmo acceptance (and the automation-baseline proof bound to it) follows every
+# non-empty Core slot in the tier (HAMCP-159): current and candidate on pull
+# requests, plus rollback in the full tier. Each slot is its own matrix job.
+ALARMO_SLOTS = SLOTS
+# Only the Core candidate may be explicitly empty (``candidate: null``): no
+# candidate Core lane, Alarmo job or provenance is then created or required.
+OPTIONAL_CORE_SLOTS = frozenset({"candidate"})
 RUNNERS = {"amd64": "ubuntu-latest", "arm64": "ubuntu-24.04-arm"}
 CORE_IMAGE = "ghcr.io/home-assistant/home-assistant"
 HA_MCP_IMAGE = "ghcr.io/homeassistant-ai/ha-mcp"
@@ -84,6 +88,8 @@ def load(root=ROOT):
         versions = []
         for slot in SLOTS:
             entry = slots[slot]
+            if entry is None and component == "core" and slot in OPTIONAL_CORE_SLOTS:
+                continue
             require(isinstance(entry, dict) and keys <= set(entry) <= keys | {"source_archive_sha256"},
                     component + "_" + slot + "_keys")
             require(isinstance(entry["version"], str) and VERSION.fullmatch(entry["version"]),
@@ -114,7 +120,7 @@ def load(root=ROOT):
                             and re.fullmatch(r"/[a-z0-9-]{1,64}/mcp", str(lane["secret_path"])), "addon_live_lane")
         require(len(set(versions)) == len(versions), component + "_slot_versions_not_distinct")
     require("source_archive_sha256" in window["ha_mcp"]["current"], "ha_mcp_current_archive_required")
-    for slot in SLOTS:
+    for slot in core_slots(window, SLOTS):
         core = window["core"][slot]
         fixture = Path(root, "tests/fixtures", "core_" + core["version"].replace(".", "_") + "_lane_provenance.json")
         require(fixture.is_file(), "core_" + slot + "_lane_provenance_missing")
@@ -122,6 +128,12 @@ def load(root=ROOT):
         require(entry.get("version") == core["version"]
                 and entry.get("image_index_digest") == core["image_index_digest"], "core_" + slot + "_provenance_mismatch")
     return window
+
+
+def core_slots(window, slots):
+    """The non-empty Core slots among ``slots``, in order."""
+
+    return tuple(slot for slot in slots if window["core"][slot] is not None)
 
 
 def tier_for(event):
@@ -153,7 +165,7 @@ def alarmo_slot(version, root=ROOT):
     """
 
     window = load(root)
-    for slot in ALARMO_SLOTS:
+    for slot in core_slots(window, ALARMO_SLOTS):
         core = window["core"][slot]
         if version == core["version"]:
             entry = core_lane_provenance(window, slot, root)
@@ -170,7 +182,7 @@ def alarmo_slot(version, root=ROOT):
 def real_ha_matrix(window, tier, root=ROOT):
     upstream = window["ha_mcp"]["current"]
     rows = []
-    for slot in TIERS[tier]:
+    for slot in core_slots(window, TIERS[tier]):
         core = window["core"][slot]
         provenance = core_lane_provenance(window, slot, root)
         rows.append({

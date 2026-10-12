@@ -3431,14 +3431,15 @@ def _expected_device_registry_schema(
 
 
 def _alarmo_slot_required(version: str) -> bool:
-    """Alarmo follows the support window's current and rollback Core slots (HAMCP-159)."""
+    """Alarmo follows every non-empty support-window Core slot (HAMCP-159)."""
 
     if str(ROOT / "scripts") not in sys.path:
         sys.path.insert(0, str(ROOT / "scripts"))
     import support_window
 
     window = support_window.load()
-    return any(window["core"][slot]["version"] == version for slot in support_window.ALARMO_SLOTS)
+    return any(window["core"][slot]["version"] == version
+               for slot in support_window.core_slots(window, support_window.ALARMO_SLOTS))
 
 
 async def _run_core_2026_9_child_contract(

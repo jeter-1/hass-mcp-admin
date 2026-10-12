@@ -21,14 +21,17 @@
 # Rotation (the only file to edit for the window itself): when a candidate is
 # deployed, move current to rollback, candidate to current, and put the next
 # evaluation target in candidate. All three slots are required and must be
-# distinct; scripts/support_window.py refuses a missing, null or repeated slot.
+# distinct; scripts/support_window.py refuses a missing, null or repeated slot,
+# except that core.candidate may be explicitly null (no Core under evaluation):
+# then no candidate Core lane, Alarmo job or lane provenance is created or required.
 # Every pin must be an immutable digest copied from reviewed evidence. A Core slot
 # also needs tests/fixtures/core_<version>_lane_provenance.json, and the contract
 # scripts must already support the new pairing: for example the add-on acceptance
 # script must accept each ha-mcp version with the new current Core, or the window
-# refuses (addon_<slot>_pair_unsupported). Alarmo acceptance is bound to Core
-# 2026.9.4 by its own evidence model; tests/test_support_window.py fails when that
-# Core leaves the window, so re-binding or retiring Alarmo is an explicit decision.
+# refuses (addon_<slot>_pair_unsupported). Alarmo acceptance and the automation
+# baseline proof follow every non-empty Core slot in the tier (HAMCP-159), bound to
+# the slot's exact version, digest and lane provenance, so rotation needs no
+# Alarmo evidence edits; a Core outside the window refuses.
 # The 2026.7.2 migration-fixture writer image in ci.yml is a deliberate constant
 # (it writes the persisted fixture), not a window slot.
 schema_version: 1

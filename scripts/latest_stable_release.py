@@ -63,10 +63,11 @@ def key(version):
 def classify(version, slots):
     """Name the window slot holding ``version``, else whether it is newer or older."""
 
-    for slot in ("current", "candidate", "rollback"):
+    filled = [slot for slot in ("current", "candidate", "rollback") if slots[slot] is not None]
+    for slot in filled:
         if slots[slot]["version"] == version:
             return slot
-    newest = max(key(slots[slot]["version"]) for slot in slots)
+    newest = max(key(slots[slot]["version"]) for slot in filled)
     return "newer_than_window" if key(version) > newest else "older_than_window"
 
 

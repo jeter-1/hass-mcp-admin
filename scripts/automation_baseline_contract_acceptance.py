@@ -1,7 +1,7 @@
 """Assembled exact-Core baseline read lane with owned synthetic fixture setup.
 
-Called only by the disposable Alarmo-slot harness (HAMCP-159: the support
-window's current and rollback Core slots). No standalone/live CLI.
+Called only by the disposable Alarmo-slot harness (HAMCP-159: every non-empty
+support-window Core slot). No standalone/live CLI.
 Source/schema/public-tool code is the candidate itself; setup is outside reads.
 """
 import base64
