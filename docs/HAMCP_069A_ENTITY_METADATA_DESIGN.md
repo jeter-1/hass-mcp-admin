@@ -1087,18 +1087,32 @@ owner direction. V9 is approved with the condition recorded under it.
   with `CoreCapabilityUnavailable` on every call. No other static tool
   requires a mutation-capable profile. The fix adds `static_tool_target`
   (`ha_core_readmission/routes.py`): for `create_entity_metadata_plan` with a
-  non-empty string `entity_id`, the target is `{"target_type":
+  valid `entity_id`, the target is `{"target_type":
   "entity_registry_metadata", "target_id": <entity_id>}`, the same identity
   and fingerprint the F3 apply identity binds. The gateway passes `target=`
   only when a target exists, so every other tool's acquisition call is
-  unchanged. A missing or malformed `entity_id` gets no target and is refused
-  before the MCP application. Admission policy, profiles, fingerprints and the
-  signed registry are unchanged. Proven by
+  unchanged. Admission policy, profiles, fingerprints and the signed registry
+  are unchanged.
+  *R1 correction (independent review, Medium).* The first fix accepted any
+  non-empty string, so after a signed admission a malformed string (for
+  example `LIGHT.PORCH` or `light.porch/other`) obtained a lease and reached
+  the MCP application; the planner then refused it before any provider
+  access. Now `static_tool_target` calls the same `validate_entity_id`
+  (`ha_mcp_engineering/entity_ids.py`, the §1.1 rule) that the planner calls.
+  There is one rule, and the advertised input schema's `pattern` and
+  `maxLength` are derived from it. A missing, non-string, empty, padded,
+  uppercase, slash-containing, dot-less or over-255-character `entity_id` is
+  refused by the gateway with `INVALID_REQUEST` (error
+  `InvalidStaticToolTarget`, reason code
+  `entity_metadata_invalid_entity_id`) before any Core acquisition and before
+  the MCP application. Proven by
   `tests/test_hamcp069a_entity_metadata_readmission.py`: refused while
   unadmitted; admitted through an exact signed reference with the bound
   target (lease consume and revalidate, gateway reaches the application);
-  refused without a target; and a guard that every mutation-capable static
-  route has a target. A mutation that drops the target makes the admitted
+  refused without a target, with zero acquisitions and zero application calls
+  for every malformed value (and 255 accepted, 256 refused); one case table
+  giving the same decision for admission and the planner; and a guard that
+  every mutation-capable static route has a target. A mutation that drops the target makes the admitted
   test fail.
 
 Further precision found during the 069A-1 tests. None of these changes an

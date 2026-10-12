@@ -6,6 +6,7 @@ from pydantic import ConfigDict, Field
 from mcp.server.fastmcp.tools.base import Tool
 from mcp.types import ToolAnnotations
 
+from ..entity_ids import ENTITY_ID_PATTERN, MAX_ENTITY_ID_LENGTH
 from ..request_context import current_telemetry
 
 from ..governance import GOVERNANCE
@@ -557,8 +558,8 @@ ENTITY_METADATA_INPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "entity_id": {
             "type": "string",
-            "maxLength": 255,
-            "pattern": r"^[a-z0-9_]+\.[a-z0-9_]+$",
+            "maxLength": MAX_ENTITY_ID_LENGTH,
+            "pattern": ENTITY_ID_PATTERN.pattern,
         },
         "name": _ENTITY_METADATA_TEXT,
         "icon": {

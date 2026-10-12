@@ -47,7 +47,10 @@ registry gateway:
   forward plan;
 - fail-closed `CoreCapabilityUnavailable` with zero transport while the profile
   is unadmitted, admission only through an exact owner-signed reference with
-  the planner's lease bound to its exact entity target (design §15 V11), and
+  the planner's lease bound to its exact entity target (design §15 V11), a
+  malformed `entity_id` refused at admission with `INVALID_REQUEST`
+  (`entity_metadata_invalid_entity_id`) before any lease or application call,
+  and
   that upstream `ha_set_entity` is never invoked.
 
 ## 2. Publication and recovery preparation

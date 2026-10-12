@@ -15,11 +15,9 @@ from typing import Any, Awaitable, Callable
 
 from ..errors import AuthorizationError
 from .entity_metadata import (
-    ENTITY_ID_PATTERN,
     ENTITY_METADATA_BINDINGS_KEY,
     ENTITY_METADATA_PROVIDER,
     ICON_PATTERN,
-    MAX_ENTITY_ID_LENGTH,
     MAX_REFERENCE_ID_LENGTH,
     SLUG_PATTERN,
     area_requires_own_name,
@@ -30,6 +28,7 @@ from .entity_metadata import (
     normalize_entry,
     required_final_references,
     touched_fields,
+    validate_entity_id,
 )
 from .entity_metadata_disclosure import (
     EntityMetadataEvidenceUnavailable,
@@ -146,13 +145,12 @@ def validate_request(arguments: Any) -> EntityMetadataRequest:
         # multi-entity targets, create_labels and unknown keys are refused as
         # a whole; nothing is partially accepted.
         raise EntityMetadataRefusal(FIELD_NOT_SUPPORTED, fields=unsupported[:16])
-    entity_id = arguments.get("entity_id")
-    if (
-        not isinstance(entity_id, str)
-        or len(entity_id) > MAX_ENTITY_ID_LENGTH
-        or not ENTITY_ID_PATTERN.fullmatch(entity_id)
-    ):
-        raise EntityMetadataRefusal("entity_metadata_invalid_value", field="entity_id")
+    try:
+        entity_id = validate_entity_id(arguments.get("entity_id"))
+    except ValueError:
+        raise EntityMetadataRefusal(
+            "entity_metadata_invalid_value", field="entity_id"
+        ) from None
     expiration = arguments.get("expiration_minutes", 120)
     if type(expiration) is not int or not 5 <= expiration <= 1440:
         raise EntityMetadataRefusal("entity_metadata_invalid_value", field="expiration_minutes")

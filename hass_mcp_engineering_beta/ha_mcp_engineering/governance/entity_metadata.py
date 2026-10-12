@@ -18,6 +18,7 @@ import json
 import re
 from typing import Any
 
+from ..entity_ids import validate_entity_id
 from ..errors import AuthorizationError, HomeAssistantApiError
 from .normalize import stable_hash
 
@@ -61,10 +62,8 @@ MANAGED_FIELDS = (
 _UNBOUND_FIELDS = frozenset({"modified_at", "next_name_part"})
 _IDENTITY_FIELDS = frozenset({"entity_id", "id"})
 
-ENTITY_ID_PATTERN = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 ICON_PATTERN = re.compile(r"^[a-z0-9-]+:[a-z0-9-]+$")
 SLUG_PATTERN = re.compile(r"^[a-z0-9_]+$")
-MAX_ENTITY_ID_LENGTH = 255
 MAX_REFERENCE_ID_LENGTH = 255
 MAX_TEXT_LENGTH = 255
 # Bounds on the state read from Home Assistant.  An entry beyond them is not
@@ -117,16 +116,6 @@ def entity_metadata_provider_evidence() -> dict[str, Any]:
         "fallback": "none",
         "fallback_occurred": False,
     }
-
-
-def validate_entity_id(entity_id: Any) -> str:
-    if (
-        not isinstance(entity_id, str)
-        or len(entity_id) > MAX_ENTITY_ID_LENGTH
-        or not ENTITY_ID_PATTERN.fullmatch(entity_id)
-    ):
-        raise ValueError("entity_id is invalid")
-    return entity_id
 
 
 def _optional_text(value: Any, field: str, errors: list[str]) -> None:

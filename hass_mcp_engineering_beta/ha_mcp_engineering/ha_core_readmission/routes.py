@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..entity_ids import validate_entity_id
 from .probe_profiles import (
     CoreProbeProfile, compiled_probe_profile, CHILD_DEVICE_PROBE_PROFILE,
     CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
@@ -245,6 +246,18 @@ def static_tool_requirements(
     return tuple(sorted(set(requirements)))
 
 
+STATIC_TARGET_INVALID_ENTITY_ID = "entity_metadata_invalid_entity_id"
+
+
+class StaticToolTargetRefused(ValueError):
+    """A targeted static route's arguments name no valid exact target."""
+
+    def __init__(self, reason_code: str, field: str) -> None:
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+        self.field = field
+
+
 def static_tool_target(
     tool_name: str,
     arguments: Any = None,
@@ -253,14 +266,20 @@ def static_tool_target(
 
     A mutation-capable Core profile issues a lease only for one exact target.
     The entity metadata planner binds the same target identity its F3 apply
-    identity binds; every other static tool has no target.
+    identity binds; every other static tool has no target.  An entity_id that
+    fails the planner's own validator raises ``StaticToolTargetRefused``, so
+    it never reaches Core acquisition or the MCP application.
     """
 
-    if tool_name != "create_entity_metadata_plan" or not isinstance(arguments, dict):
+    if tool_name != "create_entity_metadata_plan":
         return None
-    entity_id = arguments.get("entity_id")
-    if not isinstance(entity_id, str) or not entity_id:
-        return None
+    entity_id = arguments.get("entity_id") if isinstance(arguments, dict) else None
+    try:
+        validate_entity_id(entity_id)
+    except ValueError:
+        raise StaticToolTargetRefused(
+            STATIC_TARGET_INVALID_ENTITY_ID, "entity_id"
+        ) from None
     return {"target_type": "entity_registry_metadata", "target_id": entity_id}
 
 
@@ -309,6 +328,8 @@ __all__ = [
     "delegated_requirements",
     "delegated_provider_compatibility",
     "f3_requirements",
+    "STATIC_TARGET_INVALID_ENTITY_ID",
+    "StaticToolTargetRefused",
     "static_tool_requirements",
     "static_tool_target",
 ]

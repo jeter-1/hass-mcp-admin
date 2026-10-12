@@ -21,7 +21,16 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
 
+from ha_mcp_engineering import entity_ids  # noqa: E402
 from ha_mcp_engineering.audit import AuditLogger  # noqa: E402
+from ha_mcp_engineering.governance import (  # noqa: E402
+    entity_metadata,
+    entity_metadata_planning,
+)
+from ha_mcp_engineering.governance.entity_metadata_planning import (  # noqa: E402
+    EntityMetadataRefusal,
+    validate_request,
+)
 from ha_mcp_engineering.governance.service import (  # noqa: E402
     ChangeGovernanceService,
 )
@@ -40,8 +49,12 @@ from ha_mcp_engineering.ha_core_readmission.profiles import (  # noqa: E402
     SUPPORTED_CORE_RELEASES,
     compiled_exact_authority,
 )
+from ha_mcp_engineering.ha_core_readmission import routes  # noqa: E402
+from ha_mcp_engineering.ha_core_readmission.runtime import CoreRuntime  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
+    STATIC_TARGET_INVALID_ENTITY_ID,
     STATIC_TOOL_CORE_REQUIREMENTS,
+    StaticToolTargetRefused,
     f3_requirements,
     static_tool_requirements,
     static_tool_target,
@@ -54,7 +67,11 @@ from ha_mcp_engineering.providers.upstream_dashboard import (  # noqa: E402
     ALLOWED_UPSTREAM_TOOLS,
     PROHIBITED_UPSTREAM_TOOLS,
 )
+from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration  # noqa: E402
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
+from ha_mcp_engineering.tools.governance import (  # noqa: E402
+    ENTITY_METADATA_INPUT_SCHEMA,
+)
 from ha_mcp_engineering.tools.registry import (  # noqa: E402
     ENGINEERING_STATIC_TOOL_NAMES,
 )
@@ -64,6 +81,7 @@ import tests.test_core_2026_10_device_registry as october  # noqa: E402
 import tests.test_ha_core_2026_9_integration as core9  # noqa: E402
 from tests.hamcp069a_entity_fixtures import (  # noqa: E402
     EntityMetadataServiceTestCase,
+    _provider_identity,
 )
 from tests.test_ha_core_capability_auto_readmission import (  # noqa: E402
     _evidence,
@@ -79,6 +97,64 @@ F3_IDENTITY = "update_entity_registry_metadata_configuration"
 ENGINE = ROOT / "hass_mcp_engineering_beta" / "ha_mcp_engineering"
 TARGET = {"target_type": "entity_registry_metadata", "target_id": "light.porch"}
 ARGUMENTS = {"entity_id": "light.porch", "name": "x"}
+MISSING = object()
+AT_LIMIT = "light." + "a" * (255 - len("light."))
+OVER_LIMIT = AT_LIMIT + "a"
+
+# One case table for both callers of the shared validator (R1).  Each value
+# is either accepted by admission and the planner or refused by both.
+ENTITY_ID_CASES = (
+    ("valid", "light.porch", True),
+    ("valid_digits_underscores", "sensor.porch_temp_2", True),
+    ("exactly_255", AT_LIMIT, True),
+    ("missing", MISSING, False),
+    ("null", None, False),
+    ("number", 3, False),
+    ("float", 3.5, False),
+    ("bool", True, False),
+    ("list", ["light.porch"], False),
+    ("object", {"entity_id": "light.porch"}, False),
+    ("empty", "", False),
+    ("not_an_entity", "not-an-entity", False),
+    ("slash", "light.porch/other", False),
+    ("uppercase", "LIGHT.PORCH", False),
+    ("leading_space", " light.porch", False),
+    ("trailing_space", "light.porch ", False),
+    ("trailing_newline", "light.porch\n", False),
+    ("missing_dot", "lightporch", False),
+    ("two_dots", "light.porch.other", False),
+    ("wildcard", "light.*", False),
+    ("overlength", "light." + "a" * 256, False),
+    ("exactly_256", OVER_LIMIT, False),
+)
+INVALID_ENTITY_ID_CASES = tuple(case for case in ENTITY_ID_CASES if not case[2])
+
+
+def entity_arguments(value) -> dict:
+    arguments = {"name": "x"}
+    if value is not MISSING:
+        arguments["entity_id"] = value
+    return arguments
+
+
+class RecordingCore:
+    """Wraps a real Core runtime and records every gateway acquisition."""
+
+    def __init__(self, core):
+        self.core = core
+        self.acquired: list[tuple[tuple, dict]] = []
+        self.consumed = 0
+
+    def acquire(self, *args, **kwargs):
+        self.acquired.append((args, kwargs))
+        return self.core.acquire(*args, **kwargs)
+
+    def consume(self, authority):
+        self.consumed += 1
+        return self.core.consume(authority)
+
+    def __getattr__(self, name):
+        return getattr(self.core, name)
 
 # Static tools whose static route acquires no Core authority, reviewed at
 # 069A-1.  ``server_info`` and ``get_server_health`` are conditional (only
@@ -301,9 +377,56 @@ class SignedOctoberAdmissionTests(unittest.IsolatedAsyncioTestCase):
         for arguments in ({}, {"entity_id": ""}, {"entity_id": ["light.porch"]}):
             with self.subTest(arguments=arguments):
                 refused = await call(gateway, "create_entity_metadata_plan", arguments)
-                self.assertIn(b"CoreCapabilityUnavailable", refused)
+                self.assertIn(b"InvalidStaticToolTarget", refused)
         self.assertEqual(len(app.calls), 1)
         self.assertEqual(self.core.health_snapshot()["fallback_count"], 0)
+
+    async def test_invalid_entity_id_is_refused_before_authority_and_app(self):
+        """R1: with the profile admitted, no malformed target obtains a lease."""
+
+        await self.publish()
+        for label, value, _accepted in INVALID_ENTITY_ID_CASES:
+            with self.subTest(case=label):
+                recording = RecordingCore(self.core)
+                gateway, app = gateway_for(recording)
+                body = await call(
+                    gateway, "create_entity_metadata_plan", entity_arguments(value)
+                )
+                self.assertIn(b"InvalidStaticToolTarget", body)
+                self.assertIn(STATIC_TARGET_INVALID_ENTITY_ID.encode(), body)
+                self.assertIn(b"INVALID_REQUEST", body.upper())
+                self.assertNotIn(b"CoreCapabilityUnavailable", body)
+                # Zero Core acquisitions and commits, and zero application
+                # calls: the application owns every provider interaction.
+                self.assertEqual(recording.acquired, [])
+                self.assertEqual(recording.consumed, 0)
+                self.assertEqual(app.calls, [])
+        # Valid control on the same admitted runtime: one targeted lease and
+        # one application call.
+        recording = RecordingCore(self.core)
+        gateway, app = gateway_for(recording)
+        body = await call(gateway, "create_entity_metadata_plan", ARGUMENTS)
+        self.assertNotIn(b"InvalidStaticToolTarget", body)
+        self.assertNotIn(b"CoreCapabilityUnavailable", body)
+        self.assertEqual(
+            recording.acquired,
+            [((static_tool_requirements("create_entity_metadata_plan", ARGUMENTS),),
+              {"target": TARGET})],
+        )
+        self.assertEqual(len(app.calls), 1)
+        self.assertEqual(self.core.health_snapshot()["fallback_count"], 0)
+
+    async def test_entity_id_at_the_length_boundary(self):
+        await self.publish()
+        for entity_id, admitted in ((AT_LIMIT, True), (OVER_LIMIT, False)):
+            with self.subTest(length=len(entity_id)):
+                gateway, app = gateway_for(self.core)
+                body = await call(
+                    gateway, "create_entity_metadata_plan", entity_arguments(entity_id)
+                )
+                self.assertEqual(b"InvalidStaticToolTarget" in body, not admitted)
+                self.assertNotIn(b"CoreCapabilityUnavailable", body)
+                self.assertEqual(len(app.calls), 1 if admitted else 0)
 
     async def test_signed_entry_without_the_profile_keeps_it_withheld(self):
         entry = dict(self.entry)
@@ -398,13 +521,228 @@ class StaticToolCompletenessTests(unittest.TestCase):
         # Without a target such a route could never acquire a lease.
         self.assertEqual(targeted, {"create_entity_metadata_plan"})
         self.assertEqual(static_tool_target("create_entity_metadata_plan", ARGUMENTS), TARGET)
-        for arguments in (None, {}, {"entity_id": ""}, {"entity_id": 3}):
+        for arguments in (None, [], {}, {"entity_id": ""}, {"entity_id": 3}):
             with self.subTest(arguments=arguments):
-                self.assertIsNone(static_tool_target("create_entity_metadata_plan", arguments))
+                with self.assertRaises(StaticToolTargetRefused) as raised:
+                    static_tool_target("create_entity_metadata_plan", arguments)
+                self.assertEqual(raised.exception.reason_code, STATIC_TARGET_INVALID_ENTITY_ID)
+                self.assertEqual(raised.exception.field, "entity_id")
+        # Every other tool keeps the base behaviour: no target, never a
+        # refusal, whatever entity_id it is given.
+        shapes = [None, {}] + [entity_arguments(value) for _l, value, _a in ENTITY_ID_CASES]
         for name in ENGINEERING_STATIC_TOOL_NAMES:
             if name != "create_entity_metadata_plan":
-                with self.subTest(tool=name):
-                    self.assertIsNone(static_tool_target(name, {"entity_id": "light.porch"}))
+                for arguments in shapes:
+                    with self.subTest(tool=name, arguments=repr(arguments)[:40]):
+                        self.assertIsNone(static_tool_target(name, arguments))
+
+
+class SharedEntityIdValidatorTests(unittest.TestCase):
+    """R1: admission and the planner apply one entity_id rule."""
+
+    def test_admission_and_planner_call_the_same_function(self):
+        shared = entity_ids.validate_entity_id
+        self.assertIs(routes.validate_entity_id, shared)
+        self.assertIs(entity_metadata.validate_entity_id, shared)
+        self.assertIs(entity_metadata_planning.validate_entity_id, shared)
+        # No module on the entity metadata path keeps its own copy of the
+        # rule; the advertised input schema is derived from the same source.
+        rule = r"[a-z0-9_]+\.[a-z0-9_]+"
+        for relative in (
+            "entity_ids.py",
+            "governance/entity_metadata.py",
+            "governance/entity_metadata_planning.py",
+            "governance/service.py",
+            "ha_core_readmission/routes.py",
+            "routing.py",
+            "tools/governance.py",
+        ):
+            with self.subTest(module=relative):
+                self.assertEqual(
+                    rule in (ENGINE / relative).read_text(), relative == "entity_ids.py"
+                )
+        schema = ENTITY_METADATA_INPUT_SCHEMA["properties"]["entity_id"]
+        self.assertEqual(schema["pattern"], r"^[a-z0-9_]+\.[a-z0-9_]+$")
+        self.assertEqual(schema["pattern"], entity_ids.ENTITY_ID_PATTERN.pattern)
+        self.assertEqual(schema["maxLength"], 255)
+        self.assertEqual(schema["maxLength"], entity_ids.MAX_ENTITY_ID_LENGTH)
+
+    def test_shared_case_table_gives_the_same_decision_on_both_paths(self):
+        for label, value, accepted in ENTITY_ID_CASES:
+            with self.subTest(case=label):
+                arguments = entity_arguments(value)
+                try:
+                    target = static_tool_target("create_entity_metadata_plan", arguments)
+                except StaticToolTargetRefused:
+                    admission = False
+                else:
+                    admission = True
+                    self.assertEqual(
+                        target,
+                        {"target_type": "entity_registry_metadata", "target_id": value},
+                    )
+                try:
+                    request = validate_request(arguments)
+                except EntityMetadataRefusal as refusal:
+                    planner = False
+                    self.assertEqual(refusal.reason_code, "entity_metadata_invalid_value")
+                    self.assertEqual(refusal.details, {"field": "entity_id"})
+                else:
+                    planner = True
+                    self.assertEqual(request.entity_id, value)
+                self.assertEqual(admission, accepted)
+                self.assertEqual(planner, accepted)
+
+    def test_length_boundary(self):
+        self.assertEqual(len(AT_LIMIT), 255)
+        self.assertEqual(len(OVER_LIMIT), 256)
+        self.assertEqual(entity_ids.validate_entity_id(AT_LIMIT), AT_LIMIT)
+        with self.assertRaises(ValueError):
+            entity_ids.validate_entity_id(OVER_LIMIT)
+
+
+class OtherToolGatewayCallShapeTests(unittest.IsolatedAsyncioTestCase):
+    """R1 leaves every other tool's Core acquisition call shape unchanged."""
+
+    async def test_other_tools_acquire_without_a_target(self):
+        class RefusingCore:
+            def __init__(self):
+                self.acquired = []
+
+            def acquire(self, *args, **kwargs):
+                self.acquired.append((args, kwargs))
+                return None
+
+        reached = 0
+        for name in sorted(ENGINEERING_STATIC_TOOL_NAMES):
+            if name == "create_entity_metadata_plan":
+                continue
+            for arguments in ({}, {"entity_id": "LIGHT.PORCH"}, {"entity_id": "light.porch"}):
+                requirements = static_tool_requirements(name, arguments)
+                if not requirements:
+                    continue
+                with self.subTest(tool=name, arguments=arguments):
+                    core = RefusingCore()
+                    gateway, app = gateway_for(core)
+                    body = await call(gateway, name, arguments)
+                    self.assertNotIn(b"InvalidStaticToolTarget", body)
+                    self.assertEqual(app.calls, [])
+                    if core.acquired:
+                        reached += 1
+                        self.assertEqual(core.acquired, [((requirements,), {})])
+        # Tools refused by their own earlier argument validation never reach
+        # acquisition at base either; the rest must all have been driven.
+        self.assertGreater(reached, 3 * 20)
+
+
+class UnknownCoreRefusalTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncTearDown(self):
+        from ha_mcp_engineering.capabilities import replace_dynamic_upstream_capabilities
+
+        replace_dynamic_upstream_capabilities((), {})
+
+    async def test_unknown_cores_refuse_valid_and_invalid_targets_before_app(self):
+        for version in ("2026.11.0", "2099.1.0"):
+            runtime, _source = await core9.Core20269RuntimeTests()._runtime(
+                _snapshot(version, evidence=_evidence())
+            )
+            for label, value, accepted in (
+                ("valid", "light.porch", True),
+                *INVALID_ENTITY_ID_CASES,
+            ):
+                with self.subTest(version=version, case=label):
+                    gateway, app = gateway_for(runtime)
+                    body = await call(
+                        gateway, "create_entity_metadata_plan", entity_arguments(value)
+                    )
+                    self.assertIn(
+                        b"CoreCapabilityUnavailable" if accepted else b"InvalidStaticToolTarget",
+                        body,
+                    )
+                    self.assertEqual(app.calls, [])
+            self.assertIsNone(runtime.acquire_f3(
+                Prepared(F3_IDENTITY, target=SimpleNamespace(**TARGET))
+            ))
+
+
+class _RecordingF3Core:
+    def __init__(self, admit: bool):
+        self.admit = admit
+        self.seen: list[tuple] = []
+
+    async def reconcile_once(self, reason):
+        return None
+
+    def acquire_f3(self, prepared, plan_created_at=None):
+        self.seen.append(
+            (
+                f3_requirements(prepared),
+                CoreRuntime.target_fingerprint(prepared.target),
+                prepared.target.target_type,
+                prepared.target.target_id,
+            )
+        )
+        return object() if self.admit else None
+
+    def consume(self, authority):
+        return ("commit",)
+
+    def revalidate(self, authority, commits):
+        return True
+
+    def release(self, authority):
+        return True
+
+    def finish(self, commits):
+        return True
+
+
+class RealPreparedTargetBindingTests(EntityMetadataServiceTestCase):
+    """A real prepared F3 operation binds the planner's lease target."""
+
+    admit = True
+
+    async def restart_runtime(self):
+        self.core = _RecordingF3Core(self.admit)
+        self.runtime = F3RuntimeIntegration(
+            service=self.service,
+            storage_root=str(self.root / "plans"),
+            configuration_gateway=self.resource_gateway,
+            backup_gateway=None,
+            lifecycle_gateway=None,
+            provider_identity_reader=_provider_identity,
+            retention_days=90,
+            core_runtime=self.core,
+        )
+        self.service.f3_runtime = self.runtime
+        await self.runtime.recover_once("startup")
+
+    async def test_apply_target_matches_planner_lease(self):
+        self.add_entity("light.porch", name="Old porch")
+        created = await self.create(entity_id="light.porch", name="Porch")
+        await self.approve(created)
+        result = await self.apply(created)
+        planner = CoreRuntime.target_fingerprint(
+            static_tool_target("create_entity_metadata_plan", {"entity_id": "light.porch"})
+        )
+        if self.admit:
+            self.assertEqual(result["status"], "applied", result)
+            self.assertEqual(
+                self.ws.updates(),
+                [{"type": "config/entity_registry/update", "entity_id": "light.porch",
+                  "name": "Porch"}],
+            )
+        else:
+            self.assertEqual(self.ws.updates(), [])
+        self.assertTrue(self.core.seen)
+        for requirements, fingerprint, target_type, target_id in self.core.seen:
+            self.assertEqual(fingerprint, planner)
+            self.assertEqual((target_type, target_id), ("entity_registry_metadata", "light.porch"))
+            self.assertEqual(requirements, (ENTITY_METADATA, VERIFICATION))
+
+
+class RefusedPreparedTargetBindingTests(RealPreparedTargetBindingTests):
+    admit = False
 
 
 class UpstreamEntityWriteTests(EntityMetadataServiceTestCase):
