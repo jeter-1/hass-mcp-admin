@@ -19,7 +19,7 @@ design approval"). The decisions:
 | D4 | **Amended.** Name changes are standard, with disclosure. Alias changes are **elevated** on `lock`, `alarm_control_panel`, and `cover` entities whose device class is `garage`, `gate` or `door`. Alias changes on other entities are standard, with disclosure. |
 | D5 | The protected release-metadata path is authorized for the next beta materialization. If PR #242 merges with no runtime change and no bump, 069A takes `2.4.1-beta.4`; otherwise the runtime PR that merges second takes the next beta. PR #242 is not modified. |
 | D6 | `hidden: false` on an integration-hidden entity is refused. |
-| D7 | **Split.** 069A-1 (PR #243) is the entity metadata update: `name`, `icon`, `aliases`, `area_id`, `hidden`, `labels` (existing labels only) and `categories`, with rollback, policy, consumer disclosure, the readmission profile and mappings, the strict closed schema (F8), the F6 static-tool completeness test (test-only) and the F12 downgrade test. `create_labels` is refused by the input schema as an explicit rejection, not ignored. 069A-2 (HAMCP-166, a later PR) is label creation: `create_label_registry_entry` and the label-then-update ordering. |
+| D7 | **Split.** 069A-1 (PR #243) is the entity metadata update: `name`, `icon`, `aliases`, `area_id`, `hidden`, `labels` (existing labels only) and `categories`, with rollback, policy, consumer disclosure, the readmission profile and mappings, the strict closed schema (F8), the F6 static-tool completeness test (test-only) and the F12 downgrade test. `create_labels` is refused by the input schema as an explicit rejection, not ignored. 069A-2 (HAMCP-165, a later PR; HAMCP-166 was a duplicate and is Superseded) is label creation: `create_label_registry_entry` and the label-then-update ordering. |
 
 Findings: F1–F3 and F5 are handled as designed. F6 is a test-only check, and
 the gateway's empty-mapping behaviour is not changed. F10 is disclosed in the
@@ -934,9 +934,13 @@ PR deviation list.
   the configuration operation's own hashed fields: the current-state
   fingerprint, the raw and normalized proposed-state hashes, and the
   semantic-projection hash. All of these are part of `plan_hash`. The
-  referenced label, area and category definitions are carried in the proposed
-  state's `reference_definitions` member. That member is part of the raw
-  proposed hash and is never sent to Home Assistant.
+  referenced label, area and category definitions and the consumer-evidence
+  fingerprint are carried in the proposed state's reserved `plan_bindings`
+  member (`reference_definitions`, `consumer_evidence_fingerprint`).
+  Normalization ignores that member, so it is not part of the compared
+  registry state, but it is part of the raw proposed hash and therefore of
+  `plan_hash`. It is never sent to Home Assistant: the dispatch payload is
+  derived only from the touched managed fields.
 - **V2 — The entry fingerprint excludes `modified_at` and `next_name_part`.**
   §3.2 says the registry-entry fingerprint includes `modified_at`. Home
   Assistant changes `modified_at` only when a field value changes, so excluding
@@ -949,3 +953,45 @@ PR deviation list.
   `create_label_registry_entry` identity is not registered. A signed contract
   must not attest an adapter that has not been implemented. 069A-2 extends the
   profile, which changes its contract fingerprint before any signing.
+- **V4 — `hidden: true` on an integration-hidden entity (owner direction
+  2026-10-12).** The entity is already hidden, but by the integration, not by
+  the user. Converting `hidden_by` from `integration` to `user` would be a real
+  registry change, and reporting the request as already done would be
+  misleading. The planner treats it as a no-op and refuses it under the §3.4
+  no-op shape: `status: no_change`, `plan_created: false`, outcome
+  `refused_no_op`, `verified: false`, reason code
+  `entity_metadata_already_hidden_by_integration`, and the reason "already
+  hidden by the integration (hidden_by=integration)". It is not listed in
+  `already_satisfied`. `hidden: false` on an integration-hidden entity remains
+  the §2.3 refusal `entity_metadata_integration_hidden`.
+- **V5 — Capability identity.** The F3 runtime derives configuration
+  capability identities as `{action}_{resource_type}_configuration`. The
+  identity is therefore `update_entity_registry_metadata_configuration`, not
+  the design's `update_entity_registry_metadata`. Owner-approved 2026-10-12.
+- **V6 — Locks.** The entity metadata update reuses the configuration-plan lock
+  set unchanged, including the per-resource-type reload lock
+  (`reload:entity_registry_metadata`), even though the registry update does not
+  reload anything. This is conservative and avoids a special-case path in the
+  shared lock builder (owner direction 2026-10-12).
+- **V7 — Distinct authorization outcomes.** An `AuthorizationError` from Home
+  Assistant is reported as a distinct, truthful outcome at each stage, never as
+  an unhandled exception or a generic provider error. Planning read:
+  `authorization_failure` with reason `entity_registry_permission_failure`.
+  Preflight: `preflight_rejected` with `permission_failure`. Dispatch: a
+  confirmed not-dispatched failure with `provider_permission_denied`. Readback:
+  the task stays observing with `readback_permission_failure`. The codes are
+  emitted through strategy hooks, so the existing configuration strategies keep
+  their current diagnostics. The earlier `AuthorizationError` check inside
+  `except HomeAssistantApiError` could never fire (the two exception types are
+  unrelated), so removing it changed no behaviour; the new handler is a
+  separate `except AuthorizationError` clause.
+- **V8 — `check_config` preflight.** The shared configuration preflight still
+  runs Home Assistant's configuration check before an entity metadata update,
+  although a registry update does not read YAML. Kept for consistency with the
+  other configuration children (conservative).
+- **V9 — Verified no-dispatch detection.** At preflight, if the entry no
+  longer matches the plan's current-state fingerprint but its normalized state
+  already equals the plan's final state, the step completes as verified with
+  no dispatch (`desired_state_already_reached`). Any other mismatch is the
+  normal stale refusal. A matching fingerprint always proceeds to the
+  reference-definition and consumer-evidence recheck.
