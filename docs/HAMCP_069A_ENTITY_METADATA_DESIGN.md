@@ -1,9 +1,37 @@
 # HAMCP-069A governed entity metadata administration — design
 
-Status: **design proposal for owner review. No runtime code is changed by this
-document.** Part 2 (implementation) begins only after Josh approves this design
-in writing, with any amendments. Nothing here authorizes deployment, live Home
-Assistant access, registry signing, or a release.
+Status: **approved by Josh on 2026-10-11, with the amendments in
+[§0](#0-owner-approval-record).** Where §0 and the body disagree, §0 wins.
+Implementation deviations are listed in [§15](#15-implementation-deviations-069a-1).
+Nothing here authorizes deployment, live Home Assistant access, registry
+signing, or a release.
+
+## 0. Owner approval record
+
+Josh approved the design at `53954b9` on 2026-10-11 ("HAMCP-069A — Owner
+design approval"). The decisions:
+
+| # | Decision |
+|---|---|
+| D1 | Configuration plan family (contract v2). |
+| D2 | New profile `core.entity_registry_metadata_operation`. Dormancy is accepted: every supported Core fails closed with `CoreCapabilityUnavailable` until a separate owner-signed Core registry PR. It is **not** mapped onto `core.governed_configuration_operation`. The §9 evidence-package plan goes in the PR body; the container evidence run happens later, from `main`, in the full tier. |
+| D3 | Elevated approval for label and area changes under E1/E2 (§5). Other label and area changes are standard. |
+| D4 | **Amended.** Name changes are standard, with disclosure. Alias changes are **elevated** on `lock`, `alarm_control_panel`, and `cover` entities whose device class is `garage`, `gate` or `door`. Alias changes on other entities are standard, with disclosure. |
+| D5 | The protected release-metadata path is authorized for the next beta materialization. If PR #242 merges with no runtime change and no bump, 069A takes `2.4.1-beta.4`; otherwise the runtime PR that merges second takes the next beta. PR #242 is not modified. |
+| D6 | `hidden: false` on an integration-hidden entity is refused. |
+| D7 | **Split.** 069A-1 (PR #243) is the entity metadata update: `name`, `icon`, `aliases`, `area_id`, `hidden`, `labels` (existing labels only) and `categories`, with rollback, policy, consumer disclosure, the readmission profile and mappings, the strict closed schema (F8), the F6 static-tool completeness test (test-only) and the F12 downgrade test. `create_labels` is refused by the input schema as an explicit rejection, not ignored. 069A-2 (HAMCP-166, a later PR) is label creation: `create_label_registry_entry` and the label-then-update ordering. |
+
+Findings: F1–F3 and F5 are handled as designed. F6 is a test-only check, and
+the gateway's empty-mapping behaviour is not changed. F10 is disclosed in the
+tool description. For F11, rollback refuses after a later edit, and both the
+replace semantics and the refusal are disclosed. For F12, the beta.3 load-path
+test is added, or its result is reported.
+
+Consequences of D7 for this document: §6 (label creation), the
+`create_labels` input, the `label_registry:create` lock, the label-namespace
+fingerprint, the `create_label_registry_entry` identity, and the
+label-then-update rows in §7.3 and §11.2 move to 069A-2. In 069A-1,
+`add_labels` accepts existing label ids only.
 
 - Register: HAMCP-069 (this increment recorded as 069A).
 - Base: `main` at `77a547cef032cf26ba7bb3631e19a3b0ece97d62`.
@@ -893,3 +921,31 @@ admission, HOLD, merge-gate or shard-runner changes. There was no live Home
 Assistant access, no manual or full-tier dispatch, and no release, tag or
 deployment. Upstream `ha_set_entity` was not touched. PR #242 and its branch
 were not touched.
+
+## 15. Implementation deviations (069A-1)
+
+Each item below is an implementation detail found during Part 2. None of them
+changes an approved decision. Each is also recorded in the register and in the
+PR deviation list.
+
+- **V1 — Freshness binding in the configuration family.** §3.2 says
+  fingerprints are bound into `baseline`. `baseline` belongs to the
+  operational family (contract v3). Under D1, the same evidence is bound through
+  the configuration operation's own hashed fields: the current-state
+  fingerprint, the raw and normalized proposed-state hashes, and the
+  semantic-projection hash. All of these are part of `plan_hash`. The
+  referenced label, area and category definitions are carried in the proposed
+  state's `reference_definitions` member. That member is part of the raw
+  proposed hash and is never sent to Home Assistant.
+- **V2 — The entry fingerprint excludes `modified_at` and `next_name_part`.**
+  §3.2 says the registry-entry fingerprint includes `modified_at`. Home
+  Assistant changes `modified_at` only when a field value changes, so excluding
+  it does not hide any field change. `next_name_part` (2026.10 and later) is
+  derived from `area_id` and `device_id`; it is excluded so the same plan
+  fingerprints identically on 2026.9.4 and 2026.10.x. Every other
+  `extended_dict` field is bound.
+- **V3 — 069A-1 profile scope.** Under D7, the `core.entity_registry_metadata_operation`
+  profile in 069A-1 does not list `websocket_label_registry_create`, and the
+  `create_label_registry_entry` identity is not registered. A signed contract
+  must not attest an adapter that has not been implemented. 069A-2 extends the
+  profile, which changes its contract fingerprint before any signing.
