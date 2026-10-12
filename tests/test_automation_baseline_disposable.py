@@ -283,6 +283,8 @@ class FixtureTests(unittest.TestCase):
 
     def test_existing_alarmo_predecessor_stays_nineteen_plus_one(self):
         from ha_mcp_engineering.ha_core_readmission.profiles import CORE_RUNTIME_CAPABILITY_PROFILES
-        refs=[p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES if p.capability_id!=c.CAPABILITY]
+        # HAMCP-069A: the dormant entity metadata profile is outside both lanes.
+        refs=[p.capability_id for p in CORE_RUNTIME_CAPABILITY_PROFILES
+              if p.capability_id not in {c.CAPABILITY,'core.entity_registry_metadata_operation'}]
         self.assertEqual(len(refs),20)
         self.assertEqual(len([r for r in refs if r!='core.integration_inspection_metadata_read']),19)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..entity_ids import validate_entity_id
 from .probe_profiles import (
     CoreProbeProfile, compiled_probe_profile, CHILD_DEVICE_PROBE_PROFILE,
     CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE,
@@ -58,6 +59,15 @@ _F3_GOVERNED_CONFIGURATION_OPERATIONS = frozenset(
         ),
         ("restart_installed_home_assistant_addon", "restart_addon"),
         ("restart_home_assistant_core", "restart_home_assistant"),
+    }
+)
+
+_F3_ENTITY_METADATA_OPERATIONS = frozenset(
+    {
+        (
+            "update_entity_registry_metadata_configuration",
+            "update_entity_registry_metadata_configuration",
+        )
     }
 )
 
@@ -127,6 +137,10 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "create_helper_state_plan": ("core.dependency_helper_planning",),
     "create_change_plan": ("core.dependency_helper_planning",),
     "create_configuration_plan": ("core.dependency_helper_planning",),
+    "create_entity_metadata_plan": (
+        "core.dependency_helper_planning",
+        "core.entity_registry_metadata_operation",
+    ),
     "create_dashboard_update_plan": ("core.dashboard_configuration_read",),
     "create_backup_plan": ("core.basic_websocket_read",),
     "create_reload_plan": (
@@ -232,6 +246,43 @@ def static_tool_requirements(
     return tuple(sorted(set(requirements)))
 
 
+STATIC_TARGET_INVALID_ENTITY_ID = "entity_metadata_invalid_entity_id"
+
+
+class StaticToolTargetRefused(ValueError):
+    """A targeted static route's arguments name no valid exact target."""
+
+    def __init__(self, reason_code: str, field: str) -> None:
+        super().__init__(reason_code)
+        self.reason_code = reason_code
+        self.field = field
+
+
+def static_tool_target(
+    tool_name: str,
+    arguments: Any = None,
+) -> dict[str, str] | None:
+    """Return the exact target a mutation-capable static route must bind.
+
+    A mutation-capable Core profile issues a lease only for one exact target.
+    The entity metadata planner binds the same target identity its F3 apply
+    identity binds; every other static tool has no target.  An entity_id that
+    fails the planner's own validator raises ``StaticToolTargetRefused``, so
+    it never reaches Core acquisition or the MCP application.
+    """
+
+    if tool_name != "create_entity_metadata_plan":
+        return None
+    entity_id = arguments.get("entity_id") if isinstance(arguments, dict) else None
+    try:
+        validate_entity_id(entity_id)
+    except ValueError:
+        raise StaticToolTargetRefused(
+            STATIC_TARGET_INVALID_ENTITY_ID, "entity_id"
+        ) from None
+    return {"target_type": "entity_registry_metadata", "target_id": entity_id}
+
+
 def f3_requirements(prepared: Any) -> tuple[str, ...]:
     """Map an existing typed F3 operation to its complete Core authority set."""
 
@@ -257,6 +308,10 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
         values.add("core.typed_helper_operation")
     elif identity in _F3_GOVERNED_CONFIGURATION_OPERATIONS:
         values.add("core.governed_configuration_operation")
+    elif identity in _F3_ENTITY_METADATA_OPERATIONS:
+        # Never the signed governed_configuration_operation contract: that
+        # evidence did not cover the entity registry write adapter.
+        values.add("core.entity_registry_metadata_operation")
     else:
         # There is deliberately no profile for this requirement. Unknown or
         # conflicting identities therefore cannot acquire a Core route lease.
@@ -273,5 +328,8 @@ __all__ = [
     "delegated_requirements",
     "delegated_provider_compatibility",
     "f3_requirements",
+    "STATIC_TARGET_INVALID_ENTITY_ID",
+    "StaticToolTargetRefused",
     "static_tool_requirements",
+    "static_tool_target",
 ]

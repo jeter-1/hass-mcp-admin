@@ -25,7 +25,11 @@ from .inbound_security import bounded_request_id, compile_policy
 from .errors import ErrorCode, error_definition
 from .fan.audit import request_summary as _fan_request_summary
 from .power.service import request_summary as _power_request_summary
-from .ha_core_readmission.routes import static_tool_requirements
+from .ha_core_readmission.routes import (
+    StaticToolTargetRefused,
+    static_tool_requirements,
+    static_tool_target,
+)
 from .logging_config import get_logger, log_event
 from .models import FailureResponse, Timing
 from .observability import METRICS
@@ -710,8 +714,52 @@ class AuthenticatedMcpGateway:
                 else ()
             )
             if self._core_runtime is not None and core_requirements:
-                core_authority = self._core_runtime.acquire(
-                    core_requirements
+                try:
+                    core_target = (
+                        static_tool_target(tool_name, parameters)
+                        if isinstance(tool_name, str)
+                        else None
+                    )
+                except StaticToolTargetRefused as refusal:
+                    # No Core authority is acquired and the application is
+                    # never invoked for a target that fails validation.
+                    telemetry.error_code = ErrorCode.INVALID_REQUEST.value
+                    telemetry.result_status = "failure"
+                    telemetry.completeness = "failed"
+                    telemetry.response_status = 200
+                    failure = FailureResponse(
+                        operation=tool_name,
+                        error="InvalidStaticToolTarget",
+                        error_code=telemetry.error_code,
+                        message="The request does not name a valid exact target.",
+                        details={
+                            "reason": refusal.reason_code,
+                            "reason_code": refusal.reason_code,
+                            "field": refusal.field,
+                            "plan_created": False,
+                            "provider_dispatch_occurred": False,
+                        },
+                        retryable=False,
+                        timing=Timing(
+                            total_ms=telemetry.total_duration_ms
+                        ),
+                        request_id=request_id,
+                    )
+                    await self._respond_mcp_tool_result(
+                        send,
+                        rpc_id=rpc.get("id"),
+                        rendered=failure.to_json(
+                            self.settings.response_size_limit
+                        ),
+                        request_id=request_id,
+                    )
+                    return
+                core_authority = (
+                    self._core_runtime.acquire(core_requirements)
+                    if core_target is None
+                    else self._core_runtime.acquire(
+                        core_requirements, target=core_target
+                    )
                 )
                 if core_authority is None:
                     definition = error_definition(

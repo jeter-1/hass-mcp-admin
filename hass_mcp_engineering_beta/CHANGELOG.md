@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.4.1-beta.4 - Governed entity-registry metadata administration (dormant)
+
+- Add `create_entity_metadata_plan` for one entity's registry name, icon,
+  aliases, area, user-hidden flag, existing labels and categories, approved and
+  applied through the existing governed plan tools with exact readback.
+- Require the new Core profile `core.entity_registry_metadata_operation`; no
+  signed registry entry selects it, so every supported Core fails closed with
+  no Home Assistant request until a separate owner-signed admission.
+- Refuse unsupported fields and undeclared arguments before any read; dispatch
+  only a closed registry update; skip the YAML configuration check for this
+  registry-only write.
+- Report an already-present final state as not dispatched and keep that plan
+  terminal across replay, state reversion, restart and rollback attempts.
+- Preserve the 21 existing Core contracts, probe fingerprints, signed
+  registries, beta.3 public descriptors, stable v1, durable formats and
+  workflow permissions. Label creation, enable/disable and exposure remain
+  later work.
+
 ## 2.4.1-beta.3 - Exact ha-mcp 8.6 pairing, cooperative health and diagnostics
 
 - Add exact 8.6 reference/component catalogs, closed read adapters and skill-guide

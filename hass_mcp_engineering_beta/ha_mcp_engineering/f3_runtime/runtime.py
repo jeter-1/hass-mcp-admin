@@ -96,6 +96,18 @@ from ..governance.helper_state import (
 from ..governance.normalize import stable_hash
 from ..governance import configuration_rollback_eligibility as inverse_eligibility
 from ..governance.policy import POLICY_VERSION
+from ..governance.entity_metadata import (
+    ENTITY_METADATA_CAPABILITY_IDENTITY,
+    ENTITY_METADATA_NOT_DISPATCHED_EVENT,
+    ENTITY_METADATA_NOT_DISPATCHED_OUTCOME,
+    ENTITY_METADATA_NOT_DISPATCHED_TEXT,
+    ENTITY_METADATA_BINDINGS_KEY,
+    ENTITY_METADATA_RESOURCE_TYPE,
+    MANAGED_FIELDS as ENTITY_METADATA_MANAGED_FIELDS,
+    entry_errors as entity_metadata_entry_errors,
+    entry_fingerprint as entity_metadata_entry_fingerprint,
+)
+from ..governance import entity_metadata_planning
 from ..governance.resources import resource_fingerprint
 from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
@@ -646,6 +658,13 @@ class _AuditedConfigurationGateway:
     async def create_target_absent(self, resource_type, target_id):
         return await self.delegate.create_target_absent(resource_type, target_id)
 
+    async def entity_metadata_preflight_evidence(
+        self, target_id, current, proposed
+    ):
+        return await self.delegate.entity_metadata_preflight_evidence(
+            target_id, current, proposed
+        )
+
     async def write(self, action, resource_type, target_id, proposed_config):
         self.auditor("provider_invocation_started")
         try:
@@ -897,6 +916,15 @@ class F3RuntimeIntegration:
             for resource in ("automation", "script", "input_boolean", "input_number")
             for action in ("create", "update")
         }
+        # HAMCP-069A-1: entity registry metadata is update-only.
+        configuration_adapters[
+            ENTITY_METADATA_CAPABILITY_IDENTITY
+        ] = ConfigurationOperationAdapter(
+            ENTITY_METADATA_RESOURCE_TYPE,
+            "update",
+            config_gateway,
+            now=service.now,
+        )
         self.evidence_reader = _OperationalEvidenceReader(self)
         captured_backup = (
             None
@@ -2351,6 +2379,28 @@ class F3RuntimeIntegration:
             changes=changes,
         )
 
+    @staticmethod
+    def _entity_metadata_not_dispatched(
+        declarations: Any, records: Any
+    ) -> bool:
+        """Whether an entity metadata sequence was verified with no dispatch.
+
+        Scoped to entity metadata (V9); other verified no-dispatch children
+        keep their shipped ``succeeded_verified`` projection.
+        """
+
+        return bool(declarations) and all(
+            declaration["capability_id"] == ENTITY_METADATA_CAPABILITY_IDENTITY
+            and record is not None
+            and record.dispatch_intent is None
+            and record.dispatch_count == 0
+            and any(
+                event.get("event_type") == "preflight_noop_verified"
+                for event in record.events
+            )
+            for declaration, record in zip(declarations, records, strict=True)
+        )
+
     def _project(self, plan: Any, task: Any) -> None:
         with self.children.public_projection_transaction():
             current = self.service._load_task(task.task_id)
@@ -2441,6 +2491,23 @@ class F3RuntimeIntegration:
             "children": child_projection,
         }
         if all(outcome == "succeeded_verified" for outcome in outcomes):
+            not_dispatched = self._entity_metadata_not_dispatched(
+                declarations, records
+            )
+            terminal_outcome = (
+                ENTITY_METADATA_NOT_DISPATCHED_OUTCOME
+                if not_dispatched
+                else "succeeded_verified"
+            )
+            verified_summary = {**summary, "status": "verified"}
+            if not_dispatched:
+                verified_summary.update(
+                    {
+                        "outcome_code": terminal_outcome,
+                        "dispatch_performed": False,
+                        "result_text": ENTITY_METADATA_NOT_DISPATCHED_TEXT,
+                    }
+                )
             if task.state == ExecutionTaskState.DISPATCHING:
                 self.service._record_task_event(
                     task, "observation_completed", new_state=ExecutionTaskState.OBSERVING,
@@ -2454,19 +2521,23 @@ class F3RuntimeIntegration:
                 )
                 task = self.service._load_task(task.task_id)
             terminal_event(
-                "task_completed",
+                (
+                    ENTITY_METADATA_NOT_DISPATCHED_EVENT
+                    if not_dispatched
+                    else "task_completed"
+                ),
                 new_state=ExecutionTaskState.SUCCEEDED_VERIFIED,
                 changes={
                     "completed_at": self.service._timestamp(),
-                    "terminal_outcome": "succeeded_verified",
-                    "verification_summary": {**summary, "status": "verified"},
+                    "terminal_outcome": terminal_outcome,
+                    "verification_summary": verified_summary,
                 },
             )
             plan.status = PlanStatus.APPLIED
             plan.applied_at = (
                 task.completed_at if terminal_recovery else self.service._timestamp()
             )
-            plan.execution_outcome = "succeeded_verified"
+            plan.execution_outcome = terminal_outcome
         else:
             active = next(
                 (item for item in records if item is not None and not item.terminal), None
@@ -2665,7 +2736,7 @@ class F3RuntimeIntegration:
             self.service._active_task_ids_by_plan.pop(plan.plan_id, None)
         task = self.service._load_task(task.task_id)
         plan = self.service._load(plan.plan_id)
-        return {
+        result = {
             "status": "applied" if task.state == ExecutionTaskState.SUCCEEDED_VERIFIED else "accepted",
             "task_id": task.task_id,
             "task_state": task.state.value,
@@ -2675,6 +2746,17 @@ class F3RuntimeIntegration:
             "execution_task": self.service._public_task(task),
             "plan": self.service._public(plan, include_configs=False),
         }
+        if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME:
+            result.update(
+                {
+                    "status": "already_present",
+                    "outcome_code": ENTITY_METADATA_NOT_DISPATCHED_OUTCOME,
+                    "dispatch_performed": False,
+                    "changed_by_engineering": False,
+                    "result_text": ENTITY_METADATA_NOT_DISPATCHED_TEXT,
+                }
+            )
+        return result
 
     def _operational_authority(self, operation: Any) -> OperationalAuthoritySnapshot:
         declaration = self.children.declaration(operation.child_execution_id)
@@ -3186,6 +3268,11 @@ class F3RuntimeIntegration:
                     "plan_hash": self.service.plan_hash(existing),
                 }
         task = self.service.task_repository.get_for_plan(source_plan.plan_id)
+        if source_plan.contract_version == 2 and any(
+            operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE
+            for operation in source_plan.operations
+        ):
+            return await self._create_entity_metadata_rollback(source_plan, task)
         if task is None or task.state not in {
             ExecutionTaskState.SUCCEEDED_VERIFIED,
             ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
@@ -3307,6 +3394,145 @@ class F3RuntimeIntegration:
             "plan_hash": self.service.plan_hash(rollback_plan),
             "operations_to_restore": [item["operation_id"] for item in operations],
             "operations_excluded": excluded,
+            "provider_dispatch_occurred": False,
+        }
+
+    async def _create_entity_metadata_rollback(
+        self, source_plan: Any, task: Any
+    ) -> dict[str, Any]:
+        """Plan the reverse of one verified entity metadata update (§8).
+
+        The reverse plan restores the forward plan's prior value of every
+        touched field.  It is refused unless the forward child dispatched once
+        and was exactly verified, its prior entry is persisted, and the live
+        entry still matches the forward result.  Nothing is dispatched here.
+        """
+
+        def refuse(reason: str) -> GovernanceError:
+            return GovernanceError(
+                ErrorCode.ROLLBACK_NOT_AVAILABLE,
+                details={
+                    "resource_id": source_plan.plan_id,
+                    "reason": reason,
+                    "provider_dispatch_occurred": False,
+                },
+            )
+
+        if len(source_plan.operations) != 1:
+            raise refuse("forward_not_verified")
+        operation = source_plan.operations[0]
+        if (
+            task is None
+            or task.state != ExecutionTaskState.SUCCEEDED_VERIFIED
+            or task.terminal_outcome != "succeeded_verified"
+        ):
+            # A forward that ended "desired state already present; not
+            # dispatched" made no change, so there is nothing to reverse.
+            raise refuse(
+                "forward_not_dispatched"
+                if task is not None
+                and task.terminal_outcome
+                == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME
+                else "forward_not_verified"
+            )
+        record = next(
+            (
+                self.children.get(item["child_id"])
+                for item in self.children.declarations_for_task(task.task_id)
+                if item["operation_id"] == operation.operation_id
+            ),
+            None,
+        )
+        if (
+            record is None
+            or not record.terminal
+            or record.normalized_outcome != "succeeded_verified"
+        ):
+            raise refuse("forward_not_verified")
+        if record.dispatch_intent is None or record.dispatch_count != 1:
+            raise refuse("forward_not_dispatched")
+        prior = operation.current_config
+        forward_final = operation.proposed_config
+        if (
+            not isinstance(prior, dict)
+            or not isinstance(forward_final, dict)
+            or entity_metadata_entry_errors(operation.target_id, prior)
+        ):
+            raise refuse("prior_state_missing")
+        forward_result = {
+            key: value
+            for key, value in forward_final.items()
+            if key != ENTITY_METADATA_BINDINGS_KEY
+        }
+        if record.evidence.get(
+            "resulting_state_fingerprint"
+        ) != entity_metadata_entry_fingerprint(forward_result):
+            raise refuse("forward_not_verified")
+        restore = deepcopy(forward_result)
+        for name in ENTITY_METADATA_MANAGED_FIELDS:
+            if name in prior:
+                restore[name] = deepcopy(prior[name])
+            else:
+                restore.pop(name, None)
+        request = entity_metadata_planning.EntityMetadataRequest(
+            operation.target_id, {}, 120
+        )
+        try:
+            if self.service.entity_metadata_gateway is None:
+                raise entity_metadata_planning.EntityMetadataRefusal(
+                    "entity_metadata_provider_unavailable", kind="unavailable"
+                )
+            prepared = await entity_metadata_planning.prepare(
+                self.service.entity_metadata_gateway,
+                self.service.entity_metadata_snapshot_reader,
+                request,
+                current_override=forward_result,
+                final_override=restore,
+            )
+        except entity_metadata_planning.EntityMetadataRefusal as exc:
+            raise self.service._entity_metadata_refusal_error(
+                exc, {"entity_id": operation.target_id}
+            ) from None
+        if prepared.no_change is not None:
+            raise refuse("forward_not_verified")
+        created = await self.service._create_configuration_plan(
+            title=f"Rollback governed change {source_plan.plan_id}"[:160],
+            description=entity_metadata_planning.ROLLBACK_DISCLOSURE.format(
+                plan_id=source_plan.plan_id
+            ),
+            operations=[
+                {
+                    "operation_id": "rollback_entity_metadata",
+                    "resource_type": ENTITY_METADATA_RESOURCE_TYPE,
+                    "action": "update",
+                    "target_id": operation.target_id,
+                    "proposed_config": prepared.final,
+                }
+            ],
+            caller_context={
+                "rollback_source_plan_id": source_plan.plan_id,
+                "rollback_model": "f3-governed-rollback-plan-v1",
+            },
+            _entity_metadata_context=prepared,
+        )
+        rollback_plan = self.service._load(created["plan_id"])
+        source_plan.rollback.available = True
+        source_plan.rollback.status = "governed_plan_created"
+        source_plan.rollback.requested_at = self.service._timestamp()
+        source_plan.rollback.request_id = rollback_plan.plan_id
+        self.service._record(source_plan, "rollback_plan_created", "success")
+        return {
+            "status": "rollback_plan_created",
+            "source_plan_id": source_plan.plan_id,
+            "rollback_plan_id": rollback_plan.plan_id,
+            "approval_required": True,
+            "plan_hash": self.service.plan_hash(rollback_plan),
+            "operations_to_restore": ["rollback_entity_metadata"],
+            "operations_excluded": [],
+            "restored_fields": list(prepared.touched),
+            "rollback_disclosure": entity_metadata_planning.ROLLBACK_DISCLOSURE.format(
+                plan_id=source_plan.plan_id
+            ),
             "provider_dispatch_occurred": False,
         }
 

@@ -166,6 +166,7 @@ TOOL_CAPABILITY_POLICY: dict[str, ProviderCapability] = {
         ProviderCapability.OPERATIONAL_ADMINISTRATION
     ),
     "create_helper_state_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
+    "create_entity_metadata_plan": ProviderCapability.OPERATIONAL_ADMINISTRATION,
     "get_change_plan": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "list_change_plans": ProviderCapability.GOVERNANCE_PERSISTENCE,
     "get_execution_task": ProviderCapability.GOVERNANCE_PERSISTENCE,

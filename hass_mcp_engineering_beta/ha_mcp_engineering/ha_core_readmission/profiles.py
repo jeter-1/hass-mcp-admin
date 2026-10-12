@@ -465,9 +465,41 @@ CORE_AUTOMATION_BASELINE_PROFILES = (
         predispatch=("core_identity", "existing_origin_principal", "generation", "current_authority"),
     ),
 )
+# HAMCP-069A-1: a separate mutation-capable contract.  It is never part of
+# CORE_CAPABILITY_PROFILES, so no signed probe fingerprint changes, and it is
+# dormant until an owner-signed registry reference selects it exactly.  Label
+# creation is deliberately absent until its adapter exists (069A-2).
+CORE_ENTITY_METADATA_PROFILES = (
+    _contract(
+        "core.entity_registry_metadata_operation",
+        CoreCapabilityClass.ENTITY_REGISTRY_METADATA_OPERATION,
+        "compiled-core-entity-registry-metadata-operation-v1",
+        (
+            "websocket_entity_registry_get",
+            "websocket_entity_registry_update_closed_fields",
+            "websocket_label_registry_list",
+            "websocket_area_registry_list",
+            "websocket_category_registry_list_scoped",
+            "entity_registry_readback_exact",
+        ),
+        provider_boundary="direct_ha_api",
+        response_contract={
+            "target": "one_exact_existing_entity_registry_entry",
+            "fields": [
+                "aliases", "area_id", "categories", "hidden_by", "icon",
+                "labels", "name",
+            ],
+            "dispatch": "at_most_once_entity_registry_update",
+            "readback": "authoritative_exact_entity_registry_entry",
+            "recovery": "read_only_no_redispatch",
+        },
+        predispatch=("core_identity", "capability_contract", "target_fingerprint",
+                     "session_fingerprint", "generation"),
+    ),
+)
 CORE_RUNTIME_CAPABILITY_PROFILES = (
     CORE_CAPABILITY_PROFILES + CORE_TYPED_OPERATION_PROFILES + CORE_INTEGRATION_INSPECTION_PROFILES
-    + CORE_AUTOMATION_BASELINE_PROFILES
+    + CORE_AUTOMATION_BASELINE_PROFILES + CORE_ENTITY_METADATA_PROFILES
 )
 
 
@@ -527,6 +559,7 @@ __all__ = [
     "CORE_2026_9_RELEASE_AUTHORITIES",
     "CORE_CAPABILITY_PROFILES",
     "CORE_TYPED_OPERATION_PROFILES",
+    "CORE_ENTITY_METADATA_PROFILES",
     "CORE_RUNTIME_CAPABILITY_PROFILES",
     "SUPPORTED_CORE_RELEASES",
     "compiled_exact_authority",

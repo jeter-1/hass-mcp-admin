@@ -6,6 +6,7 @@ from pydantic import ConfigDict, Field
 from mcp.server.fastmcp.tools.base import Tool
 from mcp.types import ToolAnnotations
 
+from ..entity_ids import ENTITY_ID_PATTERN, MAX_ENTITY_ID_LENGTH
 from ..request_context import current_telemetry
 
 from ..governance import GOVERNANCE
@@ -533,10 +534,174 @@ def registered_reverification_tool():
     return tool
 
 
+_ENTITY_METADATA_TEXT = {
+    "anyOf": [
+        {"type": "string", "minLength": 1, "maxLength": 100},
+        {"type": "null"},
+    ]
+}
+_ENTITY_METADATA_REFERENCE = {"type": "string", "minLength": 1, "maxLength": 255}
+_ENTITY_METADATA_REFERENCES = {
+    "type": "array",
+    "maxItems": 16,
+    "uniqueItems": True,
+    "items": _ENTITY_METADATA_REFERENCE,
+}
+#: The closed published input schema (HAMCP-069A-1 §1.1).  Nullable fields
+#: carry no default: ``null`` is a request to clear or revert, so a field
+#: that is not supplied must stay absent rather than become ``null``.
+ENTITY_METADATA_INPUT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "title": "create_entity_metadata_planArguments",
+    "additionalProperties": False,
+    "required": ["entity_id"],
+    "properties": {
+        "entity_id": {
+            "type": "string",
+            "maxLength": MAX_ENTITY_ID_LENGTH,
+            "pattern": ENTITY_ID_PATTERN.pattern,
+        },
+        "name": _ENTITY_METADATA_TEXT,
+        "icon": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": r"^[a-z0-9-]+:[a-z0-9-]+$",
+                },
+                {"type": "null"},
+            ]
+        },
+        "aliases": {
+            "type": "array",
+            "maxItems": 16,
+            "items": _ENTITY_METADATA_TEXT,
+        },
+        "area_id": {"anyOf": [_ENTITY_METADATA_REFERENCE, {"type": "null"}]},
+        "hidden": {"type": "boolean"},
+        "add_labels": _ENTITY_METADATA_REFERENCES,
+        "remove_labels": _ENTITY_METADATA_REFERENCES,
+        "categories": {
+            "type": "object",
+            "minProperties": 1,
+            "maxProperties": 8,
+            "propertyNames": {"pattern": "^[a-z0-9_]+$", "maxLength": 255},
+            "additionalProperties": {
+                "anyOf": [_ENTITY_METADATA_REFERENCE, {"type": "null"}]
+            },
+        },
+        "expiration_minutes": {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 1440,
+            "default": 120,
+        },
+    },
+}
+
+
+async def _entity_metadata_plan(arguments: Any) -> str:
+    return await run_structured(
+        "create_entity_metadata_plan",
+        "Created or resolved one governed entity registry metadata proposal "
+        "without dispatching it.",
+        lambda: GOVERNANCE.require().create_entity_metadata_plan(arguments),
+        metadata={
+            "resource_type": "entity_registry_metadata",
+            "operation": "update_entity_registry_metadata",
+            "provider": "direct_home_assistant_entity_registry",
+            "fallback": "none",
+        },
+        response_limit=SETTINGS.response_size_limit,
+    )
+
+
+async def create_entity_metadata_plan(
+    entity_id: str,
+    name: str | None = None,
+    icon: str | None = None,
+    aliases: list[str | None] | None = None,
+    area_id: str | None = None,
+    hidden: bool | None = None,
+    add_labels: list[str] | None = None,
+    remove_labels: list[str] | None = None,
+    categories: dict[str, str | None] | None = None,
+    expiration_minutes: int = 120,
+) -> str:
+    """Propose one governed entity registry metadata update without dispatch.
+
+    One exact entity_id. Supply only the fields to change: name, icon, the
+    complete aliases list, area_id, hidden, add_labels/remove_labels, and
+    per-scope categories. null clears name, icon, area_id or a category scope.
+    Renaming, enable/disable, exposure, options, device fields, label creation
+    and multi-entity targets are refused before any Home Assistant read. If
+    nothing would change, no plan is created. Otherwise external administrator
+    approval (plus the elevated acknowledgement when classified elevated) and
+    apply_change_plan are required. Rollback restores the prior values.
+    """
+    # The served tool passes the raw argument object, which preserves the
+    # difference between an absent field and an explicit null.  A direct call
+    # cannot express null, so only supplied values are forwarded.
+    supplied = {
+        key: value
+        for key, value in {
+            "name": name,
+            "icon": icon,
+            "aliases": aliases,
+            "area_id": area_id,
+            "hidden": hidden,
+            "add_labels": add_labels,
+            "remove_labels": remove_labels,
+            "categories": categories,
+        }.items()
+        if value is not None
+    }
+    return await _entity_metadata_plan(
+        {
+            "entity_id": entity_id,
+            **supplied,
+            "expiration_minutes": expiration_minutes,
+        }
+    )
+
+
+class EntityMetadataPlanTool(Tool):
+    """Pass the exact raw argument object to the closed planner validation.
+
+    SDK coercion is never applied: unknown keys are refused with
+    ``entity_metadata_field_not_supported`` and every value is type-exact,
+    before any Home Assistant read.
+    """
+
+    async def run(self, arguments, context=None, convert_result=False):
+        rendered = await _entity_metadata_plan(arguments)
+        return (
+            self.fn_metadata.convert_result(rendered)
+            if convert_result
+            else rendered
+        )
+
+
+def registered_entity_metadata_tool():
+    tool = EntityMetadataPlanTool.from_function(
+        create_entity_metadata_plan,
+        annotations=ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=False,
+            idempotentHint=False,
+            openWorldHint=False,
+        ),
+    )
+    tool.parameters = ENTITY_METADATA_INPUT_SCHEMA
+    return tool
+
+
 GOVERNANCE_TOOLS = (
     create_backup_plan,
     create_reload_plan,
     create_helper_state_plan,
+    create_entity_metadata_plan,
     create_addon_restart_plan,
     create_home_assistant_restart_plan,
     create_change_plan,

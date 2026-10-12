@@ -46,6 +46,7 @@ def proposal_from_configuration_operation(
         "script",
         "input_boolean",
         "input_number",
+        "entity_registry_metadata",
     }:
         raise ValueError("configuration resource type is not reviewed")
     if plan.policy_decision is None:

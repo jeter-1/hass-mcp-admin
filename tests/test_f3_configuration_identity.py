@@ -36,6 +36,17 @@ from ha_mcp_engineering.f3_configuration.strategies import (
 )
 from ha_mcp_engineering.governance.normalize import stable_hash
 
+# HAMCP-069A-1: the direct entity registry metadata update is a closed
+# configuration child with its own provider and synthetic coverage in
+# tests/test_hamcp069a_entity_metadata_*.py; the gateway-backed checks below
+# apply to the eight reviewed configuration identities only.
+ENTITY_METADATA_KEY = ("entity_registry_metadata", "update")
+GATEWAY_IDENTITIES = {
+    key: value
+    for key, value in CAPABILITY_IDENTITIES.items()
+    if key != ENTITY_METADATA_KEY
+}
+
 from tests.f3_configuration_fixtures import (
     SyntheticConfigurationGateway,
     adapter_for,
@@ -57,8 +68,12 @@ class CapabilityIdentityTests(unittest.IsolatedAsyncioTestCase):
             "create_input_number_configuration",
             "update_input_number_configuration",
         }
-        self.assertEqual(set(CAPABILITY_IDENTITIES.values()), expected)
-        for (resource_type, action), identity in CAPABILITY_IDENTITIES.items():
+        self.assertEqual(set(GATEWAY_IDENTITIES.values()), expected)
+        self.assertEqual(
+            set(CAPABILITY_IDENTITIES.values()),
+            expected | {"update_entity_registry_metadata_configuration"},
+        )
+        for (resource_type, action), identity in GATEWAY_IDENTITIES.items():
             with self.subTest(resource_type=resource_type, action=action):
                 strategy = strategy_for(resource_type, action)
                 descriptor = strategy.capabilities
@@ -145,7 +160,7 @@ class CapabilityIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(prepared, PreparedOperation)
 
     async def test_all_forward_operations_have_no_executable_rollback(self):
-        for resource_type, action in CAPABILITY_IDENTITIES:
+        for resource_type, action in GATEWAY_IDENTITIES:
             with self.subTest(resource_type=resource_type, action=action):
                 gateway = SyntheticConfigurationGateway()
                 adapter = adapter_for(resource_type, action, gateway)

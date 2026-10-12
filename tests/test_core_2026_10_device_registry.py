@@ -64,7 +64,7 @@ def probe_inputs(profile, records=None, version='2026.10.0'):
     data = fixture() if records is None else records
     return dict(version=version, probe_profile=profile,
         include_typed_operations=True, include_integration_inspection=True,
-        include_automation_baseline=True,
+        include_automation_baseline=True, include_entity_metadata=True,
         rest_config={'version':version}, websocket_config={'version':version},
         states=[{'entity_id':'sensor.synthetic','state':'ready','attributes':{}}],
         services=[{'domain':'input_boolean','services':{}}],
@@ -101,7 +101,7 @@ class OctoberDeviceShapeTests(unittest.TestCase):
         self.assertFalse(assess_device_registry(self.records).complete)
         self.assertFalse(assess_device_registry(self.records, schema=SEPTEMBER.device_registry_schema).complete)
         ids = {e['capability_id'] for e in capability_evidence_for_probes(**probe_inputs(SEPTEMBER))}
-        self.assertEqual(len(ids), 18)
+        self.assertEqual(len(ids), 19)
         self.assertTrue(DEVICE_CAPABILITIES.isdisjoint(ids))
 
     def test_october_profile_restores_all_required_probe_evidence(self):
@@ -255,7 +255,7 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
         before = await self.core.reconcile_once('synthetic_missing_authority')
         self.assertEqual(before['compatible_count'], 0)
         after = await self.publish()
-        self.assertEqual(after['compatible_count'], 21)
+        self.assertEqual(after['compatible_count'], 22)
         self.assertIs(self.registry.probe_profile_for('2026.10.0'), OCTOBER)
         self.assertEqual(after['fallback_count'], 0)
 
@@ -263,7 +263,7 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
         entry = deepcopy(self.entry)
         entry.update(probe_profile_id=SEPTEMBER.profile_id, probe_profile_sha256=SEPTEMBER.contract_fingerprint)
         health = await self.publish(entry)
-        self.assertEqual(health['compatible_count'], 18)
+        self.assertEqual(health['compatible_count'], 19)
         for capability in DEVICE_CAPABILITIES:
             self.assertIsNone(self.core.acquire((capability,)))
 
@@ -284,7 +284,7 @@ class OctoberSignedSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(health['compatible_count'], 0)
 
     async def test_expired_registry_withdraws_october(self):
-        self.assertEqual((await self.publish())['compatible_count'], 21)
+        self.assertEqual((await self.publish())['compatible_count'], 22)
         self.now = NOW + timedelta(days=400)
         self.assertIsNone(self.registry.probe_profile_for('2026.10.0'))
         self.assertEqual((await self.core.reconcile_once('synthetic_expired'))['compatible_count'], 0)

@@ -40,7 +40,9 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         baseline = json.loads((ROOT / "tests/fixtures/dashboard_analysis/native-c82-descriptors.json").read_text())
         current = {tool.name: tool.model_dump(by_alias=True, exclude_none=True)
                    for tool in await get_registered_server().list_tools()}
-        self.assertEqual(set(current) - set(baseline["descriptors"]), {"dashboard_integrity_analysis"})
+        # HAMCP-069A-1 adds exactly one further native tool after the c82 baseline.
+        self.assertEqual(set(current) - set(baseline["descriptors"]),
+                         {"dashboard_integrity_analysis", "create_entity_metadata_plan"})
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 
     async def test_old_delegated_descriptors_are_identical(self):
