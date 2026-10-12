@@ -200,7 +200,9 @@ class AsyncHealthTests(unittest.IsolatedAsyncioTestCase):
         state = {"status": "ready", "active_locks": 0}
         live = AsyncMock(side_effect=lambda **kwargs: dict(state))
         self.service.f3_runtime = SimpleNamespace(
-            async_health=live, _health_fence_sources=lambda: ())
+            async_health=live, _health_fence_sources=lambda: (),
+            _health_fence_roots=lambda: (), _enter_health_fence=lambda: None,
+            _exit_health_fence=lambda: None)
         with patch.object(service_module, "_validate_health_records", side_effect=self.validation):
             pending = asyncio.create_task(self.service.async_health_summary())
             await self.wait_for_worker()

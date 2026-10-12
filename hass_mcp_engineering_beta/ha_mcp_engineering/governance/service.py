@@ -109,7 +109,9 @@ from .resources import (
     validate_resource_create_identity,
     validate_resource,
 )
-from ..f3_runtime.health_scan import HealthScanFence
+from ..f3.locks import LockStorageError
+from ..f3.persistence import ExecutionStorageError
+from ..f3_runtime.health_scan import HEALTH_FENCE_CATEGORIES, HealthScanFence
 from .storage import (
     ChangePlanRepository,
     ChangePlanStorageError,
@@ -557,6 +559,9 @@ class ChangeGovernanceService:
         self._health_cache_rebuild_count = 0
         self._health_cache_hit_count = 0
         self._health_read_lock = asyncio.Lock()
+        # Diagnostic-only rate limit for refused deep-health scans, per reason.
+        self._health_refusal_clock = time.monotonic
+        self._health_refusal_warned_at: dict[str, float] = {}
         self._health_validation_job: asyncio.Task[float] | None = None
         self._health_cache = self._build_health_summary(
             include_provider_health=False
@@ -12489,15 +12494,38 @@ class ChangeGovernanceService:
             self._health_cache_key = None
             built_at = self.now()
             fence = None
+            phase = "snapshot"
             corruption_before = (self.repository.corruption_count, self.task_repository.corruption_count)
+            # While this scan holds its fence, F3 recovery defers (boundedly)
+            # only its idle historical-cursor write; real writes still move it.
+            fence_holder = self.f3_runtime
+
+            def refusal(code, *, superseded, exc=None):
+                # Diagnostic only: it must never replace the original refusal.
+                try:
+                    self._warn_health_refusal(
+                        code=code, superseded=superseded, exc=exc, fence=fence,
+                        phase=phase, requested_at=requested_at,
+                        phase_started=phase_started, phases=phases,
+                        plan_count=plan_metrics.get("record_count"),
+                        task_count=task_metrics.get("record_count"))
+                except Exception:
+                    pass
+
+            if fence_holder is not None:
+                fence_holder._enter_health_fence()
             try:
                 sources = [
                     (ErrorCode.CHANGE_PLAN_STORAGE_ERROR, self.repository._directory_token),
                     (ErrorCode.EXECUTION_TASK_STORAGE_ERROR, self.task_repository._directory_token),
                 ]
+                categories = list(HEALTH_FENCE_CATEGORIES[:2])
+                roots = ((self.repository.root, "plans"), (self.task_repository.root, "tasks"))
                 if self.f3_runtime is not None:
                     sources.extend(self.f3_runtime._health_fence_sources()[2:])
-                fence = HealthScanFence(tuple(sources))
+                    categories.extend(HEALTH_FENCE_CATEGORIES[2:len(sources)])
+                    roots = self.f3_runtime._health_fence_roots()
+                fence = HealthScanFence(tuple(sources), categories=tuple(categories), roots=roots)
                 try:
                     plans = await self.repository.collect_health(
                         checkpoint=fence.check,
@@ -12519,6 +12547,7 @@ class ChangeGovernanceService:
                 self._require_health_generations(plan_generation, task_generation)
                 phases["snapshot_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
+                phase = "validation"
                 job = asyncio.create_task(asyncio.to_thread(
                     _validate_health_records, plans, self.sensitive_values
                 ))
@@ -12535,6 +12564,7 @@ class ChangeGovernanceService:
                 # Detect in-place movement before the owner can persist expiry.
                 await fence.verify_files()
                 phase_started = time.monotonic()
+                phase = "projection"
                 resolved: list[ChangePlan] = []
                 failures: list[tuple[ChangePlan, ErrorCode]] = []
                 for plan in plans:
@@ -12562,6 +12592,7 @@ class ChangeGovernanceService:
                 self._require_health_generations(plan_generation, task_generation)
                 phases["projection_ms"] = (time.monotonic() - phase_started) * 1000.0
                 phase_started = time.monotonic()
+                phase = "assembly"
                 self._health_cache = self._build_health_summary(
                     include_provider_health=False,
                     resolved_history=(resolved, sorted(failures, key=lambda item: item[0].plan_id)),
@@ -12571,6 +12602,7 @@ class ChangeGovernanceService:
                 phases["assembly_ms"] = (time.monotonic() - phase_started) * 1000.0
                 self._health_cache_rebuild_count += 1
                 phase_started = time.monotonic()
+                phase = "overlay"
                 f3 = None
                 if self.f3_runtime is not None:
                     f3 = await self.f3_runtime.async_health(
@@ -12580,6 +12612,7 @@ class ChangeGovernanceService:
                 fence.check()
                 self._require_health_generations(plan_generation, task_generation)
                 phases["overlay_ms"] = (time.monotonic() - phase_started) * 1000.0
+                phase = "publication"
                 result = self._health_summary_overlay(
                     started=started, plan_metrics=plan_metrics, task_metrics=task_metrics,
                     cache_rebuilt=True,
@@ -12592,29 +12625,102 @@ class ChangeGovernanceService:
                 return result
             except (PlanHealthSnapshotSuperseded, TaskHealthSnapshotSuperseded) as exc:
                 self._health_cache_key = None
-                HealthScanFence.superseded(
+                code = (
                     ErrorCode.CHANGE_PLAN_STORAGE_ERROR
                     if isinstance(exc, PlanHealthSnapshotSuperseded)
                     else ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                refusal(code, superseded=True)
+                HealthScanFence.superseded(code)
             except (ChangePlanStorageError, ExecutionTaskStorageError) as exc:
                 self._health_cache_key = None
                 if fence is not None and corruption_before == (self.repository.corruption_count, self.task_repository.corruption_count):
-                    fence.check_after_failure()
+                    try:
+                        fence.check_after_failure()
+                    except GovernanceError as moved:
+                        refusal(moved.code, superseded=True)
+                        raise
                 if isinstance(exc, ExecutionTaskStorageError) and self.f3_runtime is not None:
                     self.f3_runtime._readiness_fault("health")
-                raise GovernanceError(
+                code = (
                     ErrorCode.CHANGE_PLAN_STORAGE_ERROR if isinstance(exc, ChangePlanStorageError)
-                    else ErrorCode.EXECUTION_TASK_STORAGE_ERROR) from exc
+                    else ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+                refusal(code, superseded=False, exc=exc)
+                raise GovernanceError(code) from exc
             except GovernanceError as exc:
                 self._health_cache_key = None
+                superseded = exc.details.get("reason") == "health_snapshot_superseded"
                 if (exc.code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR
-                        and exc.details.get("reason") != "health_snapshot_superseded"
+                        and not superseded
                         and self.f3_runtime is not None):
                     self.f3_runtime._readiness_fault("health")
+                if exc.code in _HEALTH_STORAGE_ERROR_CODES:
+                    refusal(exc.code, superseded=superseded, exc=None if superseded else exc)
+                raise
+            except (ExecutionStorageError, LockStorageError) as exc:
+                # F3 storage failures propagate unconverted, as before.
+                self._health_cache_key = None
+                refusal(None, superseded=False, exc=exc)
                 raise
             except BaseException:
                 self._health_cache_key = None
                 raise
+            finally:
+                if fence_holder is not None:
+                    fence_holder._exit_health_fence()
+
+    def _warn_health_refusal(
+        self, *, code: ErrorCode | None, superseded: bool,
+        exc: BaseException | None, fence: HealthScanFence | None, phase: str,
+        requested_at: float, phase_started: float, phases: dict[str, float],
+        plan_count: Any, task_count: Any,
+    ) -> None:
+        """One bounded WARNING per reason per window; never paths, IDs or text."""
+
+        reason = "health_snapshot_superseded" if superseded else "storage_failure"
+        now = self._health_refusal_clock()
+        last = self._health_refusal_warned_at.get(reason)
+        if last is not None and 0 <= now - last < HEALTH_REFUSAL_WARNING_INTERVAL_SECONDS:
+            return
+        self._health_refusal_warned_at[reason] = now
+        category = None
+        if fence is not None:
+            category = fence.moved_category if superseded else fence.failed_category
+        if category is None:
+            if isinstance(exc, LockStorageError):
+                category = "f3_locks"
+            elif isinstance(exc, ExecutionStorageError):
+                category = "f3_children"
+            elif code == ErrorCode.CHANGE_PLAN_STORAGE_ERROR:
+                category = "plans"
+            elif code == ErrorCode.EXECUTION_TASK_STORAGE_ERROR:
+                category = "tasks"
+            else:
+                category = "unknown"
+        elapsed = {name: round(value) for name, value in phases.items()}
+        in_progress = _HEALTH_PHASE_ELAPSED_KEYS.get(phase)
+        if in_progress is not None:
+            # Wall time of the observing phase so far, rounded to whole ms.
+            elapsed[in_progress] = max(
+                elapsed[in_progress], round((time.monotonic() - phase_started) * 1000.0))
+        error_type = None
+        if not superseded and exc is not None:
+            cause = exc.__cause__ if isinstance(exc, GovernanceError) else None
+            error_type = type(cause if cause is not None else exc).__name__
+        log_event(
+            self.logger, logging.WARNING, "governance_health_refused",
+            "Deep health scan was refused.",
+            context={
+                "reason": reason,
+                "error_code": None if code is None else code.value,
+                "source_category": category,
+                "phase": phase,
+                "elapsed_ms": round((time.monotonic() - requested_at) * 1000.0),
+                "phase_elapsed_ms": elapsed,
+                "plan_count": plan_count if isinstance(plan_count, int) else None,
+                "task_count": task_count if isinstance(task_count, int) else None,
+                "error_type": error_type,
+            },
+        )
 
     def _require_health_generations(self, plans: int, tasks: int) -> None:
         if self.repository.generation != plans:
@@ -13920,6 +14026,17 @@ def _automation_id_mismatch(
         and config.get("id") is not None
         and str(config["id"]) != expected_automation_id
     )
+
+
+HEALTH_REFUSAL_WARNING_INTERVAL_SECONDS = 60.0
+_HEALTH_STORAGE_ERROR_CODES = frozenset({
+    ErrorCode.CHANGE_PLAN_STORAGE_ERROR, ErrorCode.EXECUTION_TASK_STORAGE_ERROR,
+})
+_HEALTH_PHASE_ELAPSED_KEYS = {
+    "snapshot": "snapshot_ms", "validation": "validation_wait_ms",
+    "projection": "projection_ms", "assembly": "assembly_ms",
+    "overlay": "overlay_ms",
+}
 
 
 def _require_safe_persisted_plan(
