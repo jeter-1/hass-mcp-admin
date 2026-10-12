@@ -1970,8 +1970,13 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
         pr = support_rows("real_ha", "pr")
         # HAMCP-159: every non-empty Core slot is its own Alarmo matrix job,
         # bound to that slot's committed Core source provenance.
-        self.assertEqual([row["support_slot"] for row in matrix], ["current", "candidate", "rollback"])
-        self.assertEqual([row["support_slot"] for row in pr], ["current", "candidate"])
+        from support.support_window_matrix import support_window as loaded_support_window
+        window_module = loaded_support_window()
+        window = window_module.load(ROOT)
+        filled = window_module.core_slots(window, window_module.SLOTS)
+        self.assertTrue({"current", "rollback"}.issubset(filled))
+        self.assertEqual([row["support_slot"] for row in matrix], list(filled))
+        self.assertEqual([row["support_slot"] for row in pr], [s for s in filled if s != "rollback"])
         self.assertEqual(len({row["ha_version"] for row in matrix}), len(matrix))
         with patch.object(sys, "path", [str(ROOT / "scripts"), *sys.path]), patch.dict(sys.modules):
             from core_registry_contract_lane import lane_entry

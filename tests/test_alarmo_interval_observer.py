@@ -7,6 +7,7 @@ rollback slot explicitly. Rotations use a temporary repository root.
 import asyncio
 from contextlib import contextmanager
 import copy
+import dataclasses
 import hashlib
 import importlib
 import importlib.util
@@ -28,6 +29,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import alarmo_inspection_contract_acceptance as acceptance
+import core_lane_bindings
 import support_window
 
 spec = importlib.util.spec_from_file_location("synthetic_alarmo_observer", acceptance.OBSERVER)
@@ -38,6 +40,7 @@ WINDOW = support_window.load(ROOT)
 # Every Alarmo-bearing slot in the committed window, in window order.
 ALARMO_SLOTS = support_window.core_slots(WINDOW, support_window.ALARMO_SLOTS)
 SLOT_VERSIONS = {slot: WINDOW["core"][slot]["version"] for slot in ALARMO_SLOTS}
+SLOT_OF = {version: slot for slot, version in SLOT_VERSIONS.items()}
 # Single-slot checks use the rollback slot explicitly (Core 2026.9.4 today).
 CORE = WINDOW["core"]["rollback"]["version"]
 OTHER_CORE = WINDOW["core"]["current"]["version"]
@@ -348,7 +351,8 @@ class PublicationCleanupTests(unittest.TestCase):
             with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")), patch(
                     "automation_baseline_contract_acceptance.verify_result", return_value={"result": "PASS"}) as baseline:
                 self.assertEqual(acceptance.verify_disposable_cleanup(source, output, CORE)["result"], "PASS")
-                baseline.assert_called_once_with(value["automation_baseline"], core_version=CORE)
+                baseline.assert_called_once_with(value["automation_baseline"], core_version=CORE,
+                                                 support_slot=SLOT_OF[CORE])
             with patch("subprocess.run", return_value=SimpleNamespace(stdout=b"")), patch(
                     "automation_baseline_contract_acceptance.verify_result", side_effect=ValueError("missing baseline proof")), self.assertRaises(ValueError):
                 acceptance.verify_disposable_cleanup(source, output, CORE)
@@ -382,7 +386,7 @@ class PublicationCleanupTests(unittest.TestCase):
                     result = acceptance.verify_disposable_cleanup(source, output, version)
                 self.assertEqual((result["result"], result["core"], result["support_slot"]), ("PASS", version, slot))
                 self.assertEqual(json.loads(output.read_text()), result)
-                baseline.assert_called_once_with(value["automation_baseline"], core_version=version)
+                baseline.assert_called_once_with(value["automation_baseline"], core_version=version, support_slot=slot)
                 self.assertEqual(run.call_count, 2)
 
     def test_cleanup_refuses_wrong_unknown_or_tampered_slot_binding(self):
@@ -432,16 +436,20 @@ class PublicationCleanupTests(unittest.TestCase):
                      architecture_manifests={"linux/amd64": md, "linux/arm64": "sha256:" + "b" * 64})
         fixture.write_text(json.dumps(entry))
         edit_window(root, lambda w: w["core"][slot].update(image_index_digest=index_digest))
+        # The synthetic index stands in for a reviewed one, so the one reviewed
+        # binding list carries its digest for the duration of ``publish``.
+        binding = dataclasses.replace(core_lane_bindings.REVIEWED_CORE_BINDINGS[version], image_index_digest=index_digest)
         identity = b"synthetic-container sha256:" + b"a" * 64
         return SimpleNamespace(
-            version=version, slot=slot, archive=archive, hashes=hashes, entry=entry,
+            version=version, slot=slot, archive=archive, hashes=hashes, entry=entry, binding=binding,
             image=f"ghcr.io/home-assistant/home-assistant:{version}@{index_digest}",
             container="beta25-real-ha-ha-" + version.replace(".", "-"),
             outputs=[index + b"\n", manifest, identity, b"sha256:" + b"a" * 64 + b" linux/amd64", identity])
 
     def publish(self, root, case, outputs=None, *, image=None, container=None, version=UNSET, archive=None):
         output = Path(root) / "image.json"
-        with bound_window(root), patch("subprocess.run", side_effect=[
+        with bound_window(root), patch.dict(core_lane_bindings.REVIEWED_CORE_BINDINGS, {case.version: case.binding}), \
+                patch("subprocess.run", side_effect=[
                 SimpleNamespace(stdout=x) for x in (case.outputs if outputs is None else outputs)]) as run:
             try:
                 return acceptance.verify_disposable_publication(
@@ -564,7 +572,10 @@ class CoreReadSourceTests(unittest.TestCase):
 
 class SlotBindingTests(unittest.TestCase):
     def test_binding_follows_every_committed_alarmo_slot(self):
-        self.assertEqual(ALARMO_SLOTS, ("current", "candidate", "rollback"))
+        # Derived from the committed window's non-empty slots (an empty Core
+        # candidate has no binding and no Alarmo job).
+        self.assertEqual(ALARMO_SLOTS, support_window.core_slots(WINDOW, support_window.SLOTS))
+        self.assertEqual({"current", "rollback"} - set(ALARMO_SLOTS), set())
         self.assertIn(CORE, SLOT_VERSIONS.values())
         for slot, version in SLOT_VERSIONS.items():
             provenance = json.loads(provenance_path(ROOT, version).read_text(encoding="utf-8"))
@@ -589,17 +600,22 @@ class SlotBindingTests(unittest.TestCase):
     def test_binding_follows_a_rotated_window_without_code_edits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = window_root(directory)
-            current, candidate, rollback = (WINDOW["core"][s] for s in ("current", "candidate", "rollback"))
-            # Deploy the candidate: current -> rollback, candidate -> current, no new candidate.
-            edit_window(root, lambda w: w["core"].update(current=dict(candidate), rollback=dict(current), candidate=None))
+            # Rotation among reviewed Cores (amendment 2026-10-11): 2026.10.1 is
+            # deployed, 2026.10.0 becomes rollback, 2026.9.4 leaves the window and
+            # no candidate is under evaluation. Only the window changes.
+            pins = {version: {"version": version, "image_index_digest":
+                              core_lane_bindings.reviewed_lane_binding(version).image_index_digest}
+                    for version in ("2026.10.1", "2026.10.0")}
+            edit_window(root, lambda w: w["core"].update(current=pins["2026.10.1"], rollback=pins["2026.10.0"],
+                                                         candidate=None))
             with bound_window(root):
-                self.assertEqual(acceptance.slot_binding(candidate["version"])["slot"], "current")
-                self.assertEqual(acceptance.slot_binding(current["version"])["slot"], "rollback")
+                self.assertEqual(acceptance.slot_binding("2026.10.1")["slot"], "current")
+                self.assertEqual(acceptance.slot_binding("2026.10.0")["slot"], "rollback")
                 with self.assertRaisesRegex(ValueError, "exact support-window Core slot"):
-                    acceptance.slot_binding(rollback["version"])
+                    acceptance.slot_binding("2026.9.4")
                 with tempfile.TemporaryDirectory() as scratch, patch("subprocess.run") as run, self.assertRaises(ValueError):
                     acceptance.verify_disposable_cleanup(Path(scratch) / "result.json", Path(scratch) / "out.json",
-                                                         rollback["version"])
+                                                         "2026.9.4")
                 run.assert_not_called()
 
 

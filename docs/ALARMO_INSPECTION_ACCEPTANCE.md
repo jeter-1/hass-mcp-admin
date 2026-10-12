@@ -57,7 +57,10 @@ Required pairing (HAMCP-159): every non-empty Core slot in
 (`candidate: null`) creates and requires no candidate job. Each slot binds, by
 exact string with no prefix, family or wildcard:
 
-- the Core version and image index digest from the window;
+- the Core version and image index digest from the window, which must equal
+  that Core's exact entry in the one reviewed binding list,
+  `scripts/core_lane_bindings.py` (a window Core without one refuses with
+  `core_<slot>_binding_unreviewed` before any matrix row is generated);
 - the linux/amd64 descriptor, source commit and source-archive SHA-256 from
   `tests/fixtures/core_<version>_lane_provenance.json`;
 - the ha-mcp `current` slot; and
@@ -67,10 +70,19 @@ A version outside those slots refuses (`alarmo_core_not_in_window_slot`). The
 image receipt records `core_version`, `support_slot` and the SHA-256 of the three
 Core read handlers (`core_read_sources_sha256`), hashed from the digest-verified
 source archive. That receipt is the per-slot CI evidence. The automation-baseline
-proof travels with Alarmo to the same slot under the same rules (an owner-approved
+proof travels with Alarmo to the same slot under the same rules, and its retained
+result must carry the exact nested `support_slot` of the job (a missing or
+different nested slot refuses, as do a different Core or outer slot) (an owner-approved
 deviation recorded in the HAMCP-159 pull request). Lanes keep the 50-minute job
 bound and unchanged permissions/action pins. No ARM execution, production
 endpoint or key is implied.
+
+Rotation among Cores already in the window edits only `ci/support-window.yaml`;
+a brand-new Core first adds its exact binding to `scripts/core_lane_bindings.py`
+as one deliberate review step (contract amendment, Josh 2026-10-11). The
+real-HA runner routes every Core that a window slot advertises for Alarmo to the
+child-device contract that runs Alarmo and the baseline proof; there is no other
+route for such a Core.
 
 Failure triage per slot: harness breakage is fixed in the harness. A
 production-path difference on a slot, including the candidate, is not absorbed

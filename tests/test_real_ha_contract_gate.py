@@ -1205,11 +1205,18 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         matrix = support_rows("real_ha", "full")
         self.assertEqual(matrix[: len(pr_rows)], pr_rows)
         by_version = {item["ha_version"]: item for item in matrix}
+        # Rows follow the non-empty window slots (an empty candidate has none).
+        from support.support_window_matrix import support_window as loaded_support_window
+        window_module = loaded_support_window()
+        window = window_module.load(ROOT)
         self.assertEqual(
             [(item["support_slot"], item["ha_version"]) for item in matrix],
-            [("current", "2026.10.0"), ("candidate", "2026.10.1"), ("rollback", "2026.9.4")],
+            [(slot, window["core"][slot]["version"])
+             for slot in window_module.core_slots(window, window_module.SLOTS)],
         )
-        self.assertEqual([item["ha_version"] for item in pr_rows], ["2026.10.0", "2026.10.1"])
+        self.assertEqual([item["ha_version"] for item in pr_rows],
+                         [window["core"][slot]["version"]
+                          for slot in window_module.core_slots(window, ("current", "candidate"))])
         # Retired Core lanes are no longer derived or pinned in the workflow.
         ci_text = CI_PATH.read_text(encoding="utf-8")
         for retired, digest in (
@@ -1225,21 +1232,14 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
                 self.assertNotIn(digest, ci_text)
         # 2026.7.2 survives only as the pinned migration fixture writer.
         self.assertNotIn("2026.7.2", by_version)
-        self.assertEqual(
-            by_version["2026.10.0"]["ha_image"],
-            "ghcr.io/home-assistant/home-assistant:2026.10.0@"
-            "sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4",
-        )
-        self.assertEqual(
-            by_version["2026.10.1"]["ha_image"],
-            "ghcr.io/home-assistant/home-assistant:2026.10.1@"
-            "sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",
-        )
-        self.assertEqual(
-            by_version["2026.9.4"]["ha_image"],
-            "ghcr.io/home-assistant/home-assistant:2026.9.4@"
-            "sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76",
-        )
+        # Every row's image is the exact pin from the one reviewed binding list.
+        import core_lane_bindings
+        for version, item in by_version.items():
+            self.assertEqual(
+                item["ha_image"],
+                "ghcr.io/home-assistant/home-assistant:" + version + "@"
+                + core_lane_bindings.reviewed_lane_binding(version).image_index_digest,
+            )
         # Every Core slot is paired with ha_mcp.current only.
         for row in matrix:
             self.assertEqual(row["ha_mcp_version"], "8.5.0")
@@ -1528,29 +1528,31 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
 
     def test_core_2026_10_routes_to_child_contract_with_name_parts_and_850(self):
         contract = self.contract
-        self.assertEqual(contract.CORE_2026_10_VERSIONS, {"2026.10.0", "2026.10.1"})
-        self.assertEqual(
-            contract.CORE_CHILD_CONTRACT_VERSIONS,
-            {"2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3", "2026.9.4",
-             "2026.10.0", "2026.10.1"},
-        )
-        self.assertEqual(
-            contract.CORE_TEST_AUTHORITY_VERSIONS,
-            {"2026.9.2", "2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"},
-        )
-        self.assertEqual(
-            contract.CORE_UPSTREAM_850_VERSIONS,
-            {"2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"},
-        )
+        # Routing semantics come only from the one reviewed binding list
+        # (scripts/core_lane_bindings.py); the runner holds no version sets.
+        import core_lane_bindings
+        for retired in ("CORE_2026_10_VERSIONS", "CORE_CHILD_CONTRACT_VERSIONS",
+                        "CORE_TEST_AUTHORITY_VERSIONS", "CORE_UPSTREAM_850_VERSIONS"):
+            self.assertFalse(hasattr(contract, retired), retired)
+        self.assertIs(contract._core_lane_bindings(), core_lane_bindings)
+        child_versions = {"2026.9.0", "2026.9.1", "2026.9.2", "2026.9.3", "2026.9.4",
+                          "2026.10.0", "2026.10.1"}
+        self.assertEqual(set(core_lane_bindings.REVIEWED_CORE_BINDINGS), child_versions)
+        for version in child_versions:
+            with self.subTest(version=version):
+                binding = contract._core_binding(version)
+                self.assertIs(binding, core_lane_bindings.reviewed_core_binding(version))
+                self.assertEqual(contract._device_contract_phase(version), contract.CHILD_CONTRACT_PHASE)
+                self.assertIs(contract._core_test_authority(version), binding.lane)
+                self.assertEqual(binding.child_consumer,
+                                 "8.4.3" if version in {"2026.9.0", "2026.9.1", "2026.9.2"} else "8.5.0")
+        self.assertEqual({v for v in child_versions if contract._core_test_authority(v)},
+                         {"2026.9.2", "2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"})
         for version in ("2026.10.2", "2026.11.0", "2026.8.1", "2026.7.2"):
             with self.subTest(version=version):
-                self.assertNotIn(version, contract.CORE_CHILD_CONTRACT_VERSIONS)
-                self.assertNotIn(version, contract.CORE_TEST_AUTHORITY_VERSIONS)
-        # Every test-authority lane must have a closed disposable fixture.
-        import sys
-        sys.path.insert(0, str(ROOT / "scripts"))
-        from core_registry_contract_lane import CORE_FIXTURES
-        self.assertTrue(contract.CORE_TEST_AUTHORITY_VERSIONS.issubset(CORE_FIXTURES))
+                self.assertIsNone(contract._core_binding(version))
+                self.assertIs(contract._core_test_authority(version), False)
+                self.assertEqual(contract._device_contract_phase(version), contract.MIGRATION_CONTRACT_PHASE)
 
         schema = contract.DeviceRegistrySchema
         expected = contract._expected_device_registry_schema
@@ -1562,17 +1564,14 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         runner = self.functions["run_contracts"]
         runner_source = ast.get_source_segment(self.source, runner) or ""
         self.assertIn(
-            "if EXPECTED_HA_VERSION in CORE_CHILD_CONTRACT_VERSIONS:\n"
-            "            phase = 'core_2026_9_child_device_semantics'".replace("'", '"'),
+            "phase = _device_contract_phase(EXPECTED_HA_VERSION)\n"
+            "        if phase == CHILD_CONTRACT_PHASE:",
             runner_source,
         )
         child = self.functions["_run_core_2026_9_child_contract"]
         child_source = ast.get_source_segment(self.source, child) or ""
-        self.assertIn("EXPECTED_HA_VERSION in CORE_CHILD_CONTRACT_VERSIONS", child_source)
-        self.assertIn(
-            'UPSTREAM_VERSION == ("8.5.0" if EXPECTED_HA_VERSION in CORE_UPSTREAM_850_VERSIONS else "8.4.3")',
-            child_source,
-        )
+        self.assertIn("binding = _core_binding(EXPECTED_HA_VERSION)", child_source)
+        self.assertIn("UPSTREAM_VERSION == binding.child_consumer", child_source)
         self.assertIn("schema=_expected_device_registry_schema()", child_source)
         # Alarmo and automation-baseline acceptance follow every support-window
         # Core slot (HAMCP-159); there is no literal Core version gate.
@@ -1605,7 +1604,10 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
         window = support_window.load(ROOT)
         versions = [window["core"][slot]["version"]
                     for slot in support_window.core_slots(window, support_window.ALARMO_SLOTS)]
-        self.assertEqual(versions, ["2026.10.0", "2026.10.1", "2026.9.4"])
+        self.assertEqual(versions, [window["core"][slot]["version"]
+                                    for slot in support_window.core_slots(window, support_window.SLOTS)])
+        self.assertIn(window["core"]["current"]["version"], versions)
+        self.assertIn(window["core"]["rollback"]["version"], versions)
         with patch.object(sys, "path", list(sys.path)), patch.dict(sys.modules):
             for version in versions:
                 with self.subTest(version=version):

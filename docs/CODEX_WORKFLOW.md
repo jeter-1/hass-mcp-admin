@@ -380,11 +380,18 @@ refuses); add-on lanes run each ha-mcp slot's declared runtime lanes on the
 current Core, keeping amd64 and arm64 where declared. Lane pairing varies one
 component at a time from the deployment.
 
-Rotation edits only `ci/support-window.yaml`: after a candidate is deployed,
-move current to rollback, candidate to current, and put the next evaluation
-target in candidate, copying digests from reviewed evidence. A Core slot also
-needs its lane-provenance fixture and contract-script support; the derivation
-refuses otherwise rather than skipping a lane. The window never changes
+Rotation among Cores already in the window (candidate to current, current to
+rollback, rollback dropped) edits only `ci/support-window.yaml`, copying digests
+from reviewed evidence (contract amendment, Josh 2026-10-11). Adding a
+brand-new Core, normally as candidate, first adds its exact reviewed binding to
+the one consolidated list in `scripts/core_lane_bindings.py` as a single
+deliberate review step; the window never supplies or derives a binding. Window
+validation refuses a Core slot without a reviewed binding
+(`core_<slot>_binding_unreviewed`) or with a different digest
+(`core_<slot>_binding_mismatch`) before any matrix is generated, so no row
+advertises Alarmo or baseline coverage that the executable path would not run.
+A Core slot also needs its lane-provenance fixture and contract-script support;
+the derivation refuses otherwise rather than skipping a lane. The window never changes
 admission policy, the signed registries or any upstream HOLD.
 
 Alarmo acceptance, and the automation-baseline proof bound to it, runs in every
