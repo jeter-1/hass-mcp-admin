@@ -59,14 +59,30 @@ services and providers, using the pinned MCP client over a synthetic peer.
 
 **Admission refusal**
 
-Each of the following refuses before any task or write:
+Each of the following is an initial admission or preparation refusal. It
+refuses before the declaration is saved, with no task, no task pointer and no
+write:
 
 - drift of any reviewed component of a required tool
 - a missing or duplicated required tool
 - a version or protocol change
 - an incomplete catalog
 - a HOLD or revocation
-- authority retired between discovery and dispatch
+- provider, connector or Core authority retired during initial discovery
+
+Authority retired during the later same-session pre-dispatch revalidation is a
+different phase, because the declaration is already saved by then:
+
+- `ha_call_service` is never called and there are zero writes.
+- The saved task is kept and returns its truthful `task_id` pointer.
+- Provider or Core retirement ends `failed_pre_dispatch`. Connector retirement
+  ends `cancelled_pre_dispatch`. Both are terminal, record no dispatch intent
+  and hold no locks.
+- A session rotation detected at that point follows durable dispatch intent.
+  It stays uncertain, keeps the pointer and retains its locks for read-only
+  recovery.
+
+Already-recorded intent is never discarded.
 
 Two further cases must hold:
 
