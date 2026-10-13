@@ -11,7 +11,7 @@ from unittest.mock import patch
 import zipfile
 
 import yaml
-from test_ha_mcp_850_candidate_lane import lane, support_rows
+from test_ha_mcp_850_candidate_lane import lane, support_rows, window_power_lanes
 import test_upstream_8_6_compatibility as compatibility
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -181,14 +181,15 @@ class WorkflowTests(unittest.TestCase):
         job = workflow['jobs']['exact-addon-runtime-acceptance']
         self.assertEqual(job['strategy']['matrix'], '${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}')
         rows = [row for row in support_rows('addon', 'pr') if row['upstream_version'] == '8.6.0']
-        # 8.6.0 is the support-window candidate: it runs on every tier against
-        # core.current only. The retired 2026.9.4 pairing stays supported by the
-        # acceptance script (PairTests) but is no longer a CI lane.
+        # 8.6.0 runs only while a window slot declares it, against core.current.
+        # It is on production HOLD (#2695), so ha_mcp.candidate is empty and no
+        # 8.6.0 lane runs (HAMCP-173); its reviewed 2026.9.4/2026.10.0 pairings
+        # stay supported by the acceptance script (PairTests) but are not CI lanes.
         self.assertEqual(rows, [row for row in support_rows('addon', 'full') if row['upstream_version'] == '8.6.0'])
-        self.assertEqual({(row['architecture'], row['candidate_core_version'], row['candidate_profile']) for row in rows},
-                         {(arch, '2026.10.0', profile) for arch in ('amd64', 'arm64') for profile in ('reference', 'component')})
-        self.assertEqual({row['support_slot'] for row in rows}, {'candidate'})
-        self.assertEqual(len(rows), 4)
+        declared = [lane_row for lane_row in window_power_lanes('full') if lane_row[0] == '8.6.0']
+        self.assertEqual([(row['support_slot'], row['architecture'], row['candidate_core_version'],
+                           row['candidate_profile']) for row in rows],
+                         [(slot, arch, core, profile) for _, slot, arch, core, profile, _ in declared])
         self.assertEqual(workflow['permissions'], {'contents': 'read'})
         for step in job['steps']:
             if 'scripts/ha_mcp_850_container_acceptance.py' in step.get('run', ''):
@@ -214,6 +215,15 @@ class WorkflowTests(unittest.TestCase):
         for row in rows:
             identity = lane.execution_guard(GUARD_ENV, row['architecture'], '8.6.0', row['candidate_core_version'], row['candidate_profile'])
             self.assertTrue(identity.startswith('h' + row['candidate_resource_code'] + '-'))
+        # The reviewed 8.6.0 pairs still derive shape-valid resource codes that
+        # select exactly their guarded identity, whether or not a lane runs them.
+        for core in ('2026.9.4', '2026.10.0'):
+            for profile in ('reference', 'component'):
+                code = lane.version_code('8.6.0') + lane.core_code(core, '8.6.0') + lane.profile_code('8.6.0', profile)
+                self.assertRegex(code, shape)
+                for arch in ('amd64', 'arm64'):
+                    identity = lane.execution_guard(GUARD_ENV, arch, '8.6.0', core, profile)
+                    self.assertTrue(identity.startswith('h' + code + '-'))
 
 
 if __name__ == '__main__':

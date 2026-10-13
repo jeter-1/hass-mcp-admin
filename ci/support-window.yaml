@@ -28,9 +28,13 @@
 # differs from it (core_<slot>_binding_mismatch) before any matrix is generated,
 # so no row advertises Alarmo or baseline coverage the executable path would not
 # run. All three slots are required and must be distinct; a missing, null or
-# repeated slot refuses, except that core.candidate may be explicitly null (no
-# Core under evaluation): then no candidate Core lane, Alarmo job or lane
-# provenance is created or required.
+# repeated slot refuses, except that a candidate may be explicitly null (nothing
+# under evaluation). current and rollback are never optional, for either component.
+#   core.candidate: null   - no candidate Core lane, Alarmo job or lane provenance
+#                            is created or required.
+#   ha_mcp.candidate: null - no candidate exact-image gateway or add-on runtime
+#                            job is created or required (HAMCP-173).
+# Every non-empty ha-mcp slot still declares at least one addon_runtime lane.
 # Every pin must be an immutable digest copied from reviewed evidence. A Core slot
 # also needs tests/fixtures/core_<version>_lane_provenance.json, and the contract
 # scripts must already support the new pairing: for example the add-on acceptance
@@ -41,18 +45,22 @@
 # Alarmo evidence edits; a Core outside the window refuses.
 # The 2026.7.2 migration-fixture writer image in ci.yml is a deliberate constant
 # (it writes the persisted fixture), not a window slot.
+#
+# Current slots (HAMCP-173, Josh 2026-10-13): Core 2026.10.1 is current, 2026.10.0
+# is rollback and no Core candidate is under evaluation; 2026.9.4 left the window.
+# The ha-mcp candidate is empty: 8.6.0 is on production HOLD (upstream defect
+# #2695) and will not be adopted. 8.6.0 is unchanged in the compiled registry and
+# the runtime; it only stops running CI candidate lanes.
 schema_version: 1
 
 core:
   current:
-    version: "2026.10.0"
-    image_index_digest: sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4
-  candidate:
     version: "2026.10.1"
     image_index_digest: sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0
+  candidate: null
   rollback:
-    version: "2026.9.4"
-    image_index_digest: sha256:3e6710a7ab2a61311d9d899b719f6c3657791c63e8f4942cec4ebc42401d6b76
+    version: "2026.10.0"
+    image_index_digest: sha256:1b64d38f38d922bf9d59336451fd6453e1d614f934456af4ee3d2a51061be3a4
 
 ha_mcp:
   current:
@@ -64,17 +72,7 @@ ha_mcp:
       - kind: candidate_power
         profile: legacy
         architectures: [amd64, arm64]
-  candidate:
-    version: "8.6.0"
-    image_index_digest: sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc
-    source_commit: fc54437a804858732e4bc927add98e202d879a09
-    addon_runtime:
-      - kind: candidate_power
-        profile: reference
-        architectures: [amd64, arm64]
-      - kind: candidate_power
-        profile: component
-        architectures: [amd64, arm64]
+  candidate: null
   rollback:
     version: "8.4.3"
     image_index_digest: sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456

@@ -13,6 +13,11 @@ matrix is generated, so no row advertises coverage the executable path would
 not run (contract amendment, Josh 2026-10-11). The window never supplies a
 binding: rotating listed Cores edits only the window, and a brand-new Core is
 first added to that list as one deliberate review step.
+
+Only the candidate slot of either component may be empty (``candidate: null``);
+current and rollback are always required. An empty slot creates and requires
+nothing (no lane, job, provenance, registry cross-check or add-on row), and
+every non-empty ha-mcp slot still declares at least one add-on runtime lane.
 """
 
 from __future__ import annotations
@@ -41,9 +46,15 @@ TIERS = {"pr": ("current", "candidate"), "full": SLOTS}
 # ``load`` has already refused any slot without a reviewed Core binding, so every
 # advertised slot reaches the real-HA child contract that runs Alarmo.
 ALARMO_SLOTS = SLOTS
-# Only the Core candidate may be explicitly empty (``candidate: null``): no
-# candidate Core lane, Alarmo job or provenance is then created or required.
+# Of the Core slots only the candidate may be explicitly empty (``candidate:
+# null``): no candidate Core lane, Alarmo job or provenance is then created or
+# required.
 OPTIONAL_CORE_SLOTS = frozenset({"candidate"})
+# Likewise only the ha-mcp candidate may be empty (owner decision, Josh
+# 2026-10-13, HAMCP-173): no candidate exact-image gateway or add-on runtime row
+# is then created or required. Current and rollback are never optional.
+OPTIONAL_HA_MCP_SLOTS = frozenset({"candidate"})
+OPTIONAL_SLOTS = {"core": OPTIONAL_CORE_SLOTS, "ha_mcp": OPTIONAL_HA_MCP_SLOTS}
 RUNNERS = {"amd64": "ubuntu-latest", "arm64": "ubuntu-24.04-arm"}
 CORE_IMAGE = "ghcr.io/home-assistant/home-assistant"
 HA_MCP_IMAGE = "ghcr.io/homeassistant-ai/ha-mcp"
@@ -108,7 +119,7 @@ def load(root=None):
         versions = []
         for slot in SLOTS:
             entry = slots[slot]
-            if entry is None and component == "core" and slot in OPTIONAL_CORE_SLOTS:
+            if entry is None and slot in OPTIONAL_SLOTS[component]:
                 continue
             require(isinstance(entry, dict) and keys <= set(entry) <= keys | {"source_archive_sha256"},
                     component + "_" + slot + "_keys")
@@ -160,6 +171,12 @@ def core_slots(window, slots):
     """The non-empty Core slots among ``slots``, in order."""
 
     return tuple(slot for slot in slots if window["core"][slot] is not None)
+
+
+def ha_mcp_slots(window, slots):
+    """The non-empty ha-mcp slots among ``slots``, in order."""
+
+    return tuple(slot for slot in slots if window["ha_mcp"][slot] is not None)
 
 
 def tier_for(event):
@@ -235,7 +252,7 @@ def gateway_matrix(window, tier, registry_matrix):
         require(isinstance(row, dict) and row.get("upstream_version") not in by_version, "registry_matrix_duplicate")
         by_version[row["upstream_version"]] = row
     rows = []
-    for slot in TIERS[tier]:
+    for slot in ha_mcp_slots(window, TIERS[tier]):
         pin = window["ha_mcp"][slot]
         row = by_version.get(pin["version"])
         require(row is not None, "ha_mcp_" + slot + "_not_in_reviewed_registry")
@@ -249,7 +266,7 @@ def addon_matrix(window, tier, codes=None):
     codes = codes or acceptance_codes()
     core = window["core"]["current"]["version"]
     rows = []
-    for slot in TIERS[tier]:
+    for slot in ha_mcp_slots(window, TIERS[tier]):
         pin = window["ha_mcp"][slot]
         for lane in pin["addon_runtime"]:
             if lane["kind"] == "live_detail":

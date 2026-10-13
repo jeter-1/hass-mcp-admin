@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, patch
 
 import yaml
 from tests.test_ha_mcp_850_candidate_lane import lane, ROOT
-from tests.support.support_window_matrix import rows as support_rows, tier_for
+from tests.support.support_window_matrix import rows as support_rows, tier_for, window_power_lanes
 
 
 class PublicationCIContextTests(unittest.TestCase):
@@ -94,13 +94,13 @@ class PublicationCIContextTests(unittest.TestCase):
         for event in triggers:
             self.assertEqual(tier_for(event), "full")
         self.assertEqual(tier_for("pull_request"), "pr")
-        current = [row for row in self.rows if row["support_slot"] == "current"]
-        candidate = [row for row in self.rows if row["support_slot"] == "candidate"]
-        self.assertEqual({row["upstream_version"] for row in current}, {"8.5.0"})
-        self.assertEqual({row["upstream_version"] for row in candidate}, {"8.6.0"})
-        self.assertEqual(len(current), 2)
-        self.assertEqual(len(candidate), 4)
-        self.assertEqual(len(self.rows), 6)
+        # Publication reaches every power lane the window declares (an empty
+        # ha-mcp candidate declares none) and nothing else.
+        declared = window_power_lanes("full")
+        self.assertTrue(declared)
+        self.assertEqual([(row["upstream_version"], row["support_slot"], row["architecture"])
+                          for row in self.rows], [lane_row[:3] for lane_row in declared])
+        self.assertIn("current", {row["support_slot"] for row in self.rows})
         for event in (*triggers, "pull_request"):
             for row in self.power_rows(event):
                 with self.subTest(event=event, row=row), tempfile.TemporaryDirectory() as tmp:
