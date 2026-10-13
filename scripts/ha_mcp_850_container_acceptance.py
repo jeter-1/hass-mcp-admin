@@ -80,8 +80,10 @@ def core_code(core_version, version):
     require((core_version, version) in {
         ("2026.9.2", "8.4.3"), ("2026.9.2", "8.5.0"), ("2026.9.3", "8.5.0"),
         ("2026.9.4", "8.6.0"), ("2026.10.0", "8.5.0"), ("2026.10.0", "8.6.0"),
+        ("2026.10.1", "8.5.0"), ("2026.10.1", "8.6.0"),
     }, "core_pair_invalid")
-    return {"2026.9.2": "", "2026.9.3": "c3", "2026.9.4": "c4", "2026.10.0": "c10"}[core_version]
+    return {"2026.9.2": "", "2026.9.3": "c3", "2026.9.4": "c4", "2026.10.0": "c10",
+            "2026.10.1": "c1"}[core_version]
 
 
 def profile_code(version, profile):
@@ -92,7 +94,7 @@ def profile_code(version, profile):
 
 
 def typed_core(core_version):
-    return core_version in {"2026.9.3", "2026.9.4", "2026.10.0"}
+    return core_version in {"2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"}
 
 
 def candidate_pins(version, core_version, profile="legacy"):
@@ -194,7 +196,7 @@ def docker(*args, timeout=90, check=True):
 
 
 def resource_names(identity):
-    require(re.fullmatch(r"h(843|850|850c3|850c10|860c4[rc]|860c10[rc])-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
+    require(re.fullmatch(r"h(843|850|850c3|850c10|850c1|860c4[rc]|860c10[rc]|860c1[rc])-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
 
@@ -1075,7 +1077,7 @@ def main():
     parser.add_argument("--relay", action="store_true")
     parser.add_argument("--cleanup", action="store_true")
     parser.add_argument("--upstream-version", choices=("8.4.3", "8.5.0", "8.6.0"), default="8.5.0")
-    parser.add_argument("--core-version", choices=("2026.9.2", "2026.9.3", "2026.9.4", "2026.10.0"), default="2026.9.2")
+    parser.add_argument("--core-version", choices=("2026.9.2", "2026.9.3", "2026.9.4", "2026.10.0", "2026.10.1"), default="2026.9.2")
     parser.add_argument("--profile", choices=("legacy", "reference", "component"), default="legacy")
     parser.add_argument("--architecture", choices=("amd64", "arm64"))
     args = parser.parse_args()
