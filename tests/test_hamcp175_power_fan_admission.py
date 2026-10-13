@@ -646,8 +646,10 @@ class TruthfulRefusal(Harness):
                 peer.hang.add('ha_list_services')
                 before = self.telemetry.upstream_request_count
                 pending = asyncio.create_task(self.public_call(peer, service, request))
-                while 'tools/call' not in peer.events:
-                    await asyncio.sleep(0.01)
+                async with asyncio.timeout(10):
+                    while 'tools/call' not in peer.events and not pending.done():
+                        await asyncio.sleep(0.01)
+                self.assertFalse(pending.done())
                 pending.cancel()
                 with self.assertRaises(asyncio.CancelledError):
                     await pending
