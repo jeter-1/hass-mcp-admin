@@ -3,6 +3,7 @@
 Synthetic transports only. Every group runs for the exact 8.4.3, 8.5.0 and
 8.6.0 bindings; no live Home Assistant or deployed endpoint is contacted.
 """
+import asyncio
 from copy import deepcopy
 from dataclasses import replace
 import json
@@ -923,16 +924,134 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
                         dispatched=True, category="invalid_response")
                 self.assertEqual(t.sent, [precheck])
 
-    async def test_missing_or_null_stats(self):
-        g, t = await make_gateway("8.5.0")
-        t.respond = lambda tool, args: ok(apps_payload([app("a")]))
-        result = await call(g, APP, {"include_stats": True})
-        refused(self, result, dispatched=True, category="invalid_response")
-        t.respond = lambda tool, args: ok(apps_payload([app("a", stats=None) | {"stats": None}]))
-        result = await call(g, APP, {"include_stats": True})
-        self.assertTrue(result["success"], result)
-        self.assertIsNone(result["data"]["apps"][0]["stats"])
-        self.assertEqual(result["data"]["warnings"], ["stats_unavailable:a"])
+    async def test_stats_cap_snapshot_and_documented_race(self):
+        """Count the upstream per-app stats requests, not only the refusal.
+
+        The fake models upstream ``list_addons(include_stats=True)``: it
+        re-lists and starts one Supervisor stats request per started app.
+        Engineering checks its own stats-free snapshot before it dispatches
+        the stats call, so it never dispatches that call over the cap. It
+        cannot bound upstream's own re-list: an app started between the two
+        calls is still fanned out upstream before Engineering refuses. That
+        race is the disclosed limitation this test pins.
+        """
+
+        precheck = (APP, {"source": "installed", "include_stats": False})
+        stats = (APP, {"source": "installed", "include_stats": True})
+
+        class Upstream:
+            def __init__(self, started, after_precheck=0):
+                self.started = started
+                self.after_precheck = after_precheck
+                self.fan_out = []
+
+            def __call__(self, tool, args):
+                rows = [app(f"addon_{i:03d}", state="started" if i < self.started else "stopped",
+                            stats=args["include_stats"]) for i in range(48)]
+                if args["include_stats"]:
+                    self.fan_out.append(self.started)
+                else:
+                    self.started += self.after_precheck
+                return ok(apps_payload(rows))
+
+        for version in VERSIONS:
+            g, t = await make_gateway(version)
+            with self.subTest(version=version, case="exactly_32"):
+                t.sent.clear()
+                t.respond = upstream = Upstream(32)
+                result = await call(g, APP, {"include_stats": True})
+                self.assertTrue(result["success"], result)
+                self.assertEqual(t.sent, [precheck, stats])
+                self.assertEqual(upstream.fan_out, [32])
+            with self.subTest(version=version, case="33"):
+                t.sent.clear()
+                t.respond = upstream = Upstream(33)
+                refused(self, await call(g, APP, {"include_stats": True}),
+                        dispatched=True, category="response_too_large")
+                self.assertEqual(t.sent, [precheck])
+                self.assertEqual(upstream.fan_out, [])
+            with self.subTest(version=version, case="change_between_snapshot_and_dispatch"):
+                t.sent.clear()
+                t.respond = upstream = Upstream(32, after_precheck=1)
+                refused(self, await call(g, APP, {"include_stats": True}),
+                        dispatched=True, category="response_too_large")
+                self.assertEqual(t.sent, [precheck, stats])
+                # Documented limitation: upstream started 33 stats requests.
+                self.assertEqual(upstream.fan_out, [33])
+            with self.subTest(version=version, case="concurrent_count_changes_mid_collection"):
+                t.sent.clear()
+                t.respond = upstream = Upstream(30, after_precheck=1)
+                results = await asyncio.gather(*(call(g, APP, {"include_stats": True}) for _ in range(8)))
+                prechecks = [item for item in t.sent if item == precheck]
+                dispatched = [item for item in t.sent if item == stats]
+                self.assertEqual(len(prechecks), 8)
+                # Only the snapshots that saw at most 32 started apps (30, 31,
+                # 32) may dispatch; no call dispatches more than once.
+                self.assertEqual(len(dispatched), 3)
+                self.assertEqual(len(upstream.fan_out), 3)
+                self.assertTrue(all(count <= 30 + 8 for count in upstream.fan_out))
+                succeeded = [item for item in results if item.get("success")]
+                for item in results:
+                    if not item.get("success"):
+                        refused(self, item, dispatched=True, category="response_too_large")
+                self.assertEqual(len(succeeded), sum(1 for count in upstream.fan_out if count <= 32))
+                for item in succeeded:
+                    self.assertLessEqual(item["data"]["summary"]["running"], 32)
+
+    async def test_requested_stats_completeness(self):
+        def payload(states_stats):
+            apps = []
+            for slug, state, stats in states_stats:
+                item = app(slug, state=state, stats=stats is True)
+                if stats is None:
+                    item["stats"] = None
+                apps.append(item)
+            return ok(apps_payload(apps))
+
+        def expect(result, status, unavailable):
+            self.assertTrue(result["success"], result)
+            data = result["data"]
+            reasons = ["stats_unavailable"] if unavailable else []
+            self.assertEqual(data["completeness"], {"status": status, "reasons": reasons})
+            self.assertEqual(result["metadata"]["completeness"], status)
+            self.assertEqual(data["warnings"], [f"stats_unavailable:{slug}" for slug in unavailable])
+            for item in data["apps"]:
+                if item["slug"] in unavailable:
+                    self.assertIsNone(item["stats"])
+
+        # (slug, state, stats): True = available, None = upstream null,
+        # False = key absent. Stopped apps never carry stats upstream.
+        cases = {
+            "all_available": ([("a", "started", True), ("b", "started", True), ("c", "stopped", None)],
+                              "complete", []),
+            "one_null": ([("a", "started", True), ("b", "started", None), ("c", "stopped", None)],
+                         "partial", ["b"]),
+            "one_absent": ([("a", "started", True), ("b", "started", False), ("c", "stopped", False)],
+                           "partial", ["b"]),
+            "all_unavailable": ([("a", "started", None), ("b", "started", False)],
+                                "partial", ["a", "b"]),
+        }
+        for version in VERSIONS:
+            g, t = await make_gateway(version)
+            for name, (rows, status, unavailable) in cases.items():
+                with self.subTest(version=version, case=name):
+                    t.respond = lambda tool, args, rows=rows: payload(rows)
+                    expect(await call(g, APP, {"include_stats": True}), status, unavailable)
+            with self.subTest(version=version, case="slug_scoped"):
+                t.respond = lambda tool, args: payload([("a", "started", True), ("b", "started", None)])
+                expect(await call(g, APP, {"include_stats": True, "slug": "a"}), "complete", [])
+                expect(await call(g, APP, {"include_stats": True, "slug": "b"}), "partial", ["b"])
+            with self.subTest(version=version, case="not_requested"):
+                t.respond = lambda tool, args: payload([("a", "started", False), ("b", "stopped", False)])
+                t.sent.clear()
+                result = await call(g, APP, {})
+                expect(result, "complete", [])
+                self.assertTrue(all("stats" not in item for item in result["data"]["apps"]))
+                self.assertEqual(t.sent, [(APP, {"source": "installed", "include_stats": False})])
+            with self.subTest(version=version, case="invalid_stats_shape"):
+                t.respond = lambda tool, args: ok(apps_payload([app("a") | {"stats": "bad"}]))
+                refused(self, await call(g, APP, {"include_stats": True}),
+                        dispatched=True, category="invalid_response")
 
 
 
@@ -953,7 +1072,8 @@ FIXTURE_PUBLIC = {
 }
 FIXTURE_COMPLETENESS = {
     "apps_installed": ("partial", ["string_truncated"]),
-    "apps_installed_stats": ("partial", ["string_truncated"]),
+    # The captured Supervisor fake fails synthetic_beta's stats request.
+    "apps_installed_stats": ("partial", ["stats_unavailable", "string_truncated"]),
     "health_baseline": ("complete", []),
     "health_all_sections": ("complete", []),
     "health_sections_unavailable": ("partial", [f"section_unavailable:{name}" for name in sorted(platform.SECTIONS)]),
@@ -1008,6 +1128,8 @@ class FixtureReplayTests(unittest.IsolatedAsyncioTestCase):
                     status, reasons = FIXTURE_COMPLETENESS[case.split("@")[0]]
                     self.assertEqual(result["data"]["completeness"], {"status": status, "reasons": reasons})
                     data = result["data"]
+                    if case.split("@")[0] == "apps_installed_stats":
+                        self.assertEqual(data["warnings"], ["stats_unavailable:synthetic_beta"])
                     if fixture["tool"] == HEALTH:
                         for domain, keys in PLATFORM_KEYS.items():
                             self.assertLessEqual(set(data["platform"].get(domain, {})), keys)
@@ -1126,6 +1248,36 @@ class AdmissionTests(unittest.IsolatedAsyncioTestCase):
                     release, observed_server_name="ha-mcp", observed_upstream_version=version,
                     observed_protocol_version="2025-03-26", tools=capture(version)["tools"])
                 self.assertTrue(result.valid, result)
+
+    def test_signed_reuse_withholds_only_the_unbound_platform_wrappers(self):
+        registry = load_reviewed_upstream_release_registry()
+        for version in VERSIONS:
+            release = registry.by_version[version]
+            policy = release.policy
+            with self.subTest(version=version, bound=True):
+                view, withheld = platform.withhold_unbound_platform_reads(policy, version)
+                self.assertIs(view, policy)
+                self.assertEqual(withheld, ())
+            with self.subTest(version=version, bound=False):
+                view, withheld = platform.withhold_unbound_platform_reads(policy, "9.0.0")
+                self.assertEqual(withheld, tuple(sorted(TOOLS)))
+                self.assertEqual(len(view.tools), len(policy.tools))
+                for before, after in zip(policy.tools, view.tools, strict=True):
+                    if before.upstream_name in TOOLS:
+                        self.assertEqual(after, replace(before, argument_restrictions=()))
+                        self.assertEqual(after.classification, "mixed_or_requires_wrapper")
+                        self.assertFalse(after.is_read_route)
+                        self.assertIsNone(platform.binding(after))
+                    else:
+                        self.assertIs(after, before)
+                self.assertEqual(
+                    {e.upstream_name for e in view.tools if e.is_read_route},
+                    {e.upstream_name for e in policy.tools if e.is_read_route} - set(TOOLS))
+                self.assertEqual(view.classification_counts["automatic_read"],
+                                 policy.classification_counts["automatic_read"] - 3)
+                profile = readmission._profile_for_release(replace(release, policy=view))
+                self.assertFalse({c.capability_id for c in profile.capabilities} & set(TOOLS))
+                self.assertEqual(platform.PLATFORM_READ_BINDING_ABSENT, "platform_read_binding_absent")
 
     def test_readmission_profile_binds_the_adapter_tokens(self):
         registry = load_reviewed_upstream_release_registry()

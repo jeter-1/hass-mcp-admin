@@ -18,7 +18,12 @@ through a positive output allowlist before the existing sanitizer runs.
   The slug is filtered by Engineering and never sent upstream. The tool cannot
   reach the add-on store, `options`, `schema`, `network` or ingress
   data. `include_stats` is accepted only when at most 32 add-ons are started.
-  A stats-free listing checks that bound before the stats call is dispatched.
+  A stats-free listing checks that bound before Engineering dispatches the
+  stats call. The check is a sampled bound: upstream re-lists before its stats
+  fan-out, so an add-on started in between is still fanned out before the
+  over-cap response is refused. A started add-on whose stats are unavailable
+  makes the result `partial` (`stats_unavailable`, with the add-on's slug in
+  a warning).
 - **`ha_get_integration`** lists config entries, with an optional `query`,
   `domain`, `entry_id` or `state` filter and pagination. Engineering sends one
   fixed list request: at most 200 entries, `include_options=false`, and
@@ -29,8 +34,9 @@ through a positive output allowlist before the existing sanitizer runs.
   as `[email]` before output and filtering. Hostnames in titles are not
   masked.
 
-All lists and strings are capped. A capped, masked-only or missing-section
-result is reported through `completeness` (`partial` with fixed reason codes).
+All lists and strings are capped. A capped, missing-section or
+stats-unavailable result is reported through `completeness` (`partial` with
+fixed reason codes). Masking alone does not make a result partial.
 Upstream error text and warnings are never passed through.
 
 **Disclosed boundaries.**
@@ -42,11 +48,12 @@ Upstream error text and warnings are never passed through.
   callbacks (Cloud and Supervisor reachability) and ha-mcp's own update check.
 - `ha_get_integration` stays `openWorldHint: false`, as upstream declares.
 - Host CPU and RAM are not part of the platform projection.
-- The platform adapters are bound to exact ha-mcp releases, so a future
-  ha-mcp release can no longer reuse the 8.4.3 policy through an owner-signed
-  ha-mcp registry entry alone. It needs a compiled release, as 8.5.0 and 8.6.0
-  already did. A signed-only future release admits no delegated reads and
-  fails closed.
+- The platform adapters are bound to exact ha-mcp releases. A future ha-mcp
+  release admitted only through an owner-signed registry entry keeps the same
+  25 delegated reads as beta.5. The three new tools are withheld there with
+  reason `platform_read_binding_absent`, reported in the
+  `readmission_withheld_*` health fields, until a compiled release binds
+  them.
 
 **Admission.**
 - Each tool binds to its exact ha-mcp 8.4.3, 8.5.0 or 8.6.0 input-schema

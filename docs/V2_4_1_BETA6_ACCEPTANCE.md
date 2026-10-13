@@ -26,7 +26,8 @@ bounded independent review. The review needs a security section covering:
 - provider admission and adapter binding;
 - argument refusal before dispatch;
 - output allowlists and masking;
-- the stats fan-out bound;
+- the sampled stats bound and its disclosed race (design D11);
+- signed-only reuse withholding only the three platform wrappers (D8);
 - Core route leases;
 - zero write, fallback or forwarding reachability.
 
@@ -62,12 +63,17 @@ gateway, policy loader and Core readmission at 8.4.3, 8.5.0 and 8.6.0.
 
 **Refusal before dispatch.** Each of the following is refused with zero
 upstream calls:
-- `slug`, `domain`, `entry_id`, `include_options`, `include_schema`;
+- `include_options` and `include_schema`;
 - the `diagnostics`, `config_check` and `zha_network_full` sections;
 - `repository` and the `"available"` source;
 - unknown keys, and invalid types or values.
 
 This also holds when the published schema is replaced by an open one.
+
+`slug`, `domain` and `entry_id` are accepted public filters that Engineering
+applies itself. Their upstream modes are never sent: `ha_get_app` never sends
+`slug`, and `ha_get_integration` sends one fixed list request with
+`include_options=false`, using `domain` only as an upstream `query` prefilter.
 
 **Positive output allowlists.**
 - Every result field is listed.
@@ -80,7 +86,16 @@ This also holds when the published schema is replaced by an open one.
   output and before filtering.
 - Lists and strings are capped, and the result is reported `partial`.
 - A result beyond the size limit fails closed as `response_too_large`.
-- More than 32 started add-ons refuses `include_stats` before the stats call.
+- When Engineering's stats-free snapshot shows more than 32 started add-ons,
+  `include_stats` is refused as `response_too_large` and Engineering does not
+  dispatch the stats call. This is a sampled bound: an add-on started after
+  the snapshot is still fanned out upstream before the over-cap response is
+  refused (design D11).
+- Requested stats that upstream cannot supply for a started add-on make the
+  result `partial` with reason `stats_unavailable` and a
+  `stats_unavailable:<slug>` warning for each affected add-on. When every
+  requested stat is present, or stats are not requested, the result is
+  `complete`.
 
 **Admission.**
 - Upstream schema, description or annotation drift quarantines only the
@@ -90,9 +105,17 @@ This also holds when the published schema is replaced by an open one.
 - An unknown Core withholds all three tools without dispatch.
 - A missing WebSocket profile withholds exactly its consumers.
 - Admitted dispatches lease and release their Core commits.
+- A future ha-mcp release admitted only through an owner-signed entry exposes
+  the same 25 delegated reads as beta.5. The three platform wrappers are
+  withheld with reason `platform_read_binding_absent`, reported in
+  `readmission_withheld_*` health and audit fields. None of the 25 is
+  quarantined or removed. A compiled exact release exposes all 28.
 
-**Mutation checks.** Removing a key refusal, widening an allowlist or
-disabling masking each fails a test.
+**Mutation checks.** Each of the following fails a test:
+- removing a key refusal, widening an allowlist or disabling masking;
+- re-narrowing signed-only reuse;
+- moving the stats cap check after the stats dispatch;
+- reporting unavailable stats as complete.
 
 ## 2. Publication and recovery preparation
 
@@ -120,9 +143,11 @@ beta.5 needs no migration.
      Supervisor or Core error text, or unmasked e-mail addresses.
 
    A `partial` result with fixed reason codes is acceptable.
-4. Call `ha_get_app` with `include_stats=true`. It either returns stats or, if
-   more than 32 add-ons are started, refuses as `response_too_large` without
-   the stats call.
+4. Call `ha_get_app` with `include_stats=true`. It does one of the following:
+   - returns stats (`partial` with `stats_unavailable` if any started add-on
+     has none);
+   - if more than 32 add-ons are started, refuses as `response_too_large`
+     without Engineering dispatching the stats call.
 
 No push, CI trigger, signing, publication or installation is authorized by
 source completion.

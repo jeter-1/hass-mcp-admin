@@ -143,6 +143,16 @@ the stats-free listing call; if more than 32 add-ons are started it refuses with
 dispatches for one public call. The alternative, rejecting `include_stats` in
 the first release, is owner decision **O3**.
 
+The pre-check is a sampled bound, not a hard cap on the upstream fan-out.
+Engineering never dispatches the stats call when its own stats-free snapshot
+shows more than 32 started add-ons. Upstream `list_addons` then re-lists before
+it starts the stats requests, so an add-on started between the two calls is
+still fanned out upstream (33 or more requests) before Engineering refuses the
+over-cap response with `response_too_large`. No tool in the reviewed ha-mcp
+releases accepts a per-slug stats request or a slug set, so a hard bound at the
+fan-out boundary would need a new, separately reviewed provider contract (see
+§12, D11).
+
 ### 1.3 `ha_get_integration`
 
 Public input:
@@ -271,6 +281,9 @@ Sections:
 `update_available`, `repository`, `description` (max 200 characters), and,
 when requested, `stats` → `cpu_percent`, `memory_percent`, `memory_usage`,
 `memory_limit` (or `null` when upstream reports a per-add-on stats failure).
+A started add-on whose requested stats are `null` or absent makes the result
+`partial` with the `stats_unavailable` reason, and its slug is identified in
+`warnings`; stopped add-ons carry no stats and do not affect completeness.
 `summary` → `total_installed`, `running`, `stopped`, `updates_available`.
 `warnings` are reduced to fixed codes (`stats_unavailable:<slug>`); upstream
 text is dropped. Nothing from `/addons/{slug}/info` is ever requested, so
@@ -427,8 +440,12 @@ stays reviewable, exactly as the blueprint wrapper did. The production HOLD in
 
 `DELEGATED_CORE_REQUIREMENTS` (`ha_core_readmission/routes.py:74-102`) must
 gain all three tools. An unmapped delegated tool silently skips the Core gate
-(F6 from 069A, tested at
-`tests/test_hamcp069a_entity_metadata_readmission.py:490-525`).
+(F6 from 069A). The static 069A test
+(`tests/test_hamcp069a_entity_metadata_readmission.py:490-525`) does not cover
+these tools; their mapping is covered by the updated Core catalog test in
+`tests/test_ha_core_2026_9_integration.py` and the route tests in
+`tests/test_hamcp129_platform_reads.py` (`CatalogMetadataTests`,
+`CoreRouteTests`).
 
 | Tool | Core surfaces actually used | Proposed requirement |
 |---|---|---|
@@ -549,15 +566,20 @@ Each group runs for 8.4.3, 8.5.0 and 8.6.0:
    `zha_toolkit`), query substring, state filter, local pagination,
    `has_more` → partial, `entry_id` outside the window → `resource_not_found`
    with partial reason.
-8. **App slug filtering** and the stats cap (more than 32 started add-ons →
-   `response_too_large` with only the stats-free call dispatched), if O3 keeps
+8. **App slug filtering** and the stats cap (more than 32 started add-ons in
+   the stats-free snapshot → `response_too_large` with only that call
+   dispatched; exactly 32 → the stats call; growth between the two calls and
+   concurrent calls → the documented sampled-bound race, counted at the
+   synthetic upstream fan-out), and stats completeness (a started add-on
+   without stats → `partial`/`stats_unavailable`), if O3 keeps
    `include_stats`.
 9. **Admission and quarantine:** a binding fingerprint mismatch → the tool is
    not exposed and the other 27 reads remain. Description, annotation and output
    drift → only that tool is quarantined. An adapter token on the wrong version
    is refused at policy load.
-10. **Core mapping:** all three tools are in `DELEGATED_CORE_REQUIREMENTS` (and
-    the 069A F6 completeness test is extended). A missing or withheld basic
+10. **Core mapping:** all three tools are in `DELEGATED_CORE_REQUIREMENTS`
+    (covered by the updated Core catalog test and the new route tests; the
+    static 069A F6 test is not extended). A missing or withheld basic
     profile → `CoreCapabilityUnavailable` with no dispatch. Supported on
     2026.9.4, 2026.10.0 and 2026.10.1 through registry sequence 9; revoked
     2026.9.2/2026.9.3 → withheld.
@@ -596,6 +618,10 @@ must make at least one test fail:
 | M12 | Remove one tool from `DELEGATED_CORE_REQUIREMENTS` | 10 |
 | M13 | Set `additionalProperties: true` | 1, 3 |
 | M14 | Remove the stats-cap pre-check (if O3 keeps stats) | 8 |
+
+The executed author mutation set is in the PR evidence: 23 mutations in the
+first batch (M1-M10, A1-A7, E1-E4, B1-B2) plus the correction-batch mutations
+for D8, the stats cap and stats completeness.
 
 Local gate: the focused tests, then `scripts/check.ps1 -Tier Full` and
 `-Tier Evidence` where available (on Linux the script is not verified; the
@@ -724,7 +750,10 @@ None of the following changes an approved decision:
   with `include_options=false`) refuses the result. Section failures are
   reported with the fixed `section_unavailable` code; upstream error text and
   warnings are replaced with fixed codes (`baseline_unavailable`,
-  `upstream_warnings_withheld`, `stats_unavailable:<slug>`).
+  `upstream_warnings_withheld`, `stats_unavailable:<slug>`). A started add-on
+  with requested stats `null` or absent is `partial` (`stats_unavailable`);
+  this replaces the first batch's `invalid_response` for an absent `stats`
+  key and its `complete` result for `null` stats (review R3).
 - **D6 (output additions).** Lists carry `total_count` and `truncated`; the
   app summary is recomputed from the projected listing; not-found refusals
   carry completeness details; the Matter title is masked like integration
@@ -732,27 +761,63 @@ None of the following changes an approved decision:
 - **D7 (test harness).** The configured upstream endpoint host and path are
   redaction secrets in the sanitizer, so the test endpoint uses names that do
   not collide with the fixed reason codes.
-- **D8 (signed future-release reuse).** The existing rule in
-  `ha_mcp_readmission/ha_mcp.py` (`_select_signed_profile`, from `7cbc490`)
-  refuses signed reuse of any policy that contains a version-bound wrapper read
-  route for a different ha-mcp version. The 8.5.0 and 8.6.0 policies were
-  already non-reusable because of their blueprint adapters. The platform
-  adapters make 8.4.3 non-reusable too. A future ha-mcp release such as 8.4.4
-  therefore needs a compiled exact release, not just an owner-signed ha-mcp
-  registry entry. With only a signed entry it admits no delegated reads, fails
-  closed and makes no dispatch. Before this change it would have admitted 25.
-  `tests/test_beta58_ha_mcp_8_4_3_continuity.py` now asserts the refusal. The
-  policy hash change approved under O5 also stops any published signed ha-mcp
-  entry that binds the old 8.4.3, 8.5.0 or 8.6.0 policy hash from matching.
-  Whether any such entry is published cannot be determined from source
-  (`unknown`). The owner-run `scripts/prepare_ha_mcp_release_registry_update.py`
-  does not apply this runtime rule. It can still prepare a signed 8.4.4 entry
-  against the 8.4.3 profile, which the runtime then refuses; this was already
-  true for 8.5.x and 8.6.x. The script is unchanged here. Its exact-version
-  evidence now reports `matched_read_count` 28 for 8.4.3. This is fail-closed
-  and needs no signed-registry change, but it narrows signed-only continuity,
-  so it is listed for Josh.
+- **D8 (signed future-release reuse; owner decision 2026-10-13).** The
+  platform adapters are bound to exact ha-mcp source. Josh decided that
+  signed-only reuse must not be narrowed: a future ha-mcp release admitted
+  only through an owner-signed entry (no compiled exact release) keeps exactly
+  the base behaviour for the existing 25 delegated reads. Only the three
+  platform wrappers are withheld, because their per-version bindings are
+  absent. `HaMcpAuthoritySelector._select_signed_profile` derives a signed-reuse
+  policy view (`withhold_unbound_platform_reads`) in which the unbound wrappers
+  revert to their unwrapped `mixed_or_requires_wrapper` upstream entries, as
+  on base, so they are blocked and never exposed; every other entry is reused
+  unchanged, and the existing `7cbc490` rule is evaluated on that view (the
+  8.5.0 and 8.6.0 blueprint adapters still make those policies non-reusable,
+  as on base). The withholding is explicit: the selection carries
+  `withheld_capabilities`, and gateway health, the `automatic_readmission`
+  projection and the readmission audit report `readmission_withheld_read_count`,
+  `readmission_withheld_reason_counts` and `readmission_withheld_tools` with
+  the reason `platform_read_binding_absent`. Nothing is quarantined and the 25
+  reads are not removed. A compiled exact release withholds nothing and
+  exposes all 28. `tests/test_beta58_ha_mcp_8_4_3_continuity.py` asserts the
+  25 signed-only reads, the base classification accounting, the 24-read
+  blueprint transition and the 28 exact reads. It also dispatches an ordinary
+  read through the signed authority, shows that drift in one old read removes
+  only that read while the three wrappers stay withheld, and shows that an
+  expired signed registry still exposes nothing.
+  The policy hash change approved under O5 still stops any published signed
+  ha-mcp entry that binds the old 8.4.3, 8.5.0 or 8.6.0 policy hash from
+  matching; whether any such entry is published cannot be determined from
+  source (`unknown`). The owner-run
+  `scripts/prepare_ha_mcp_release_registry_update.py` is unchanged. For a
+  version other than the bound profile its `matched_reads` evidence can list
+  the three wrappers that the runtime then withholds with
+  `platform_read_binding_absent`; its exact-version evidence reports
+  `matched_read_count` 28 for 8.4.3.
 - **D9 (§6 file list).** `tests/test_ha_mcp_production_readmission.py`
   (pinned to 8.2.0) and `promotion_regression_manifest.yaml` (beta.39) did not
   need changes. The count assertions for the current versions changed in the
   test modules listed in the PR instead.
+- **D10 (CI fixture).** CI on `1b551c5` showed that the synthetic
+  `scripts/fake_ha_read_gateway_contract_server.py` used by the exact-image
+  read-gateway lane lacked the config-entry listing, `logger/log_info` and the
+  `system_health/info` stream. `d563f0c` adds synthetic read-only responses
+  for them. This is fixture-only and changes no runtime.
+- **D11 (stats bound is sampled; open for owner decision).** The independent
+  review asked for the 32-started-add-on cap to be enforced before any stats
+  request is dispatched, from one consistent snapshot, with no excess
+  dispatch. Engineering enforces it on its own side: when its stats-free
+  snapshot shows more than 32 started add-ons, it never dispatches the stats
+  call, so the stats requests it causes come from at most one upstream call.
+  It cannot enforce the cap at the fan-out boundary. Upstream `list_addons`
+  re-lists before its `asyncio.gather` over `/addons/{slug}/stats` (TA
+  8.5.0:1130-1151), and no reviewed ha-mcp release offers a per-slug or
+  slug-set stats tool. An add-on started between the two calls is therefore
+  still fanned out upstream before Engineering refuses the over-cap response
+  with `response_too_large`. `test_stats_cap_snapshot_and_documented_race`
+  records this window, including concurrent calls. A hard bound needs one of:
+  a separately reviewed provider contract, an Engineering-native stats path
+  (new direct-HA reachability), or withdrawing `include_stats`. Each needs
+  explicit scope, so this correction batch only states the limit accurately
+  and leaves the choice to Josh. The public schema description ("at most 32
+  started add-ons") describes the Engineering-side refusal and is unchanged.

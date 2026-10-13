@@ -534,7 +534,7 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "selected_provider": "upstream_platform_reads",
         "completeness": "projected_allowlist_partial_disclosed",
         "fallback_policy": "none",
-        "security_justification": "Engineering sends only source=installed and include_stats; slug is never sent, so add-on info and options are never requested. A stats-free pre-check refuses stats for more than 32 started add-ons. Supervisor is not attested by any Core profile.",
+        "security_justification": "Engineering sends only source=installed and include_stats; slug is never sent, so add-on info and options are never requested. A stats-free pre-check refuses stats for more than 32 started add-ons; it is a sampled bound, because upstream re-lists before its stats fan-out. Supervisor is not attested by any Core profile.",
         "trust_mode": "reviewed_argument_constrained",
         "trust_profile": _platform_read_profile("apps"),
         "core_applicability": "basic_websocket_profile_command_and_supervisor_unattested",

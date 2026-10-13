@@ -30,6 +30,10 @@ from .models import (
     evidence_fingerprint,
 )
 from .registry import ReleaseRegistryAuthority, SignedReleaseRegistry
+from ..providers.upstream_platform_reads import (
+    PLATFORM_READ_BINDING_ABSENT,
+    withhold_unbound_platform_reads,
+)
 from ..providers.upstream_search_8_6 import resolve_search_variant, search_capability_contract
 
 
@@ -170,6 +174,9 @@ class HaMcpAdmissionSelection:
     observed_version: str
     protocol_version: str
     signed_entry: ReviewedReleaseEntry | None = None
+    # Version-bound read routes the selected policy cannot carry to this
+    # observed release, as (tool, reason). Empty for compiled exact releases.
+    withheld_capabilities: tuple[tuple[str, str], ...] = ()
 
     @property
     def authority_token(self) -> str:
@@ -242,13 +249,13 @@ class HaMcpAuthoritySelector:
             compiled = None
         signed_entry = registry.entry_for(server_name, version)
         selected = (
-            (compiled, _profile_for_release(compiled))
+            (compiled, _profile_for_release(compiled), ())
             if compiled is not None
             else self._select_signed_profile(signed_entry)
         )
         if selected is None:
             raise HaMcpAuthorityError("positive_authority_missing")
-        binary_release, profile = selected
+        binary_release, profile, withheld = selected
         if (
             compiled is None
             and signed_entry is not None
@@ -392,21 +399,38 @@ class HaMcpAuthoritySelector:
                 if source is AuthoritySource.SIGNED_REGISTRY
                 else None
             ),
+            withheld_capabilities=tuple(
+                (name, PLATFORM_READ_BINDING_ABSENT) for name in withheld
+            ),
         )
 
     def _select_signed_profile(
         self,
         entry: ReviewedReleaseEntry | None,
-    ) -> tuple[ReviewedUpstreamRelease, CapabilityProfile] | None:
+    ) -> tuple[
+        ReviewedUpstreamRelease, CapabilityProfile, tuple[str, ...]
+    ] | None:
         if entry is None:
             return None
         selected = self._by_policy_binding.get((entry.policy_resource, entry.policy_sha256))
-        if selected is not None and any(
-            item.is_read_route and item.classification != "automatic_read"
-            for item in selected[0].policy.tools
-        ) and entry.version != selected[0].version:
+        if selected is None:
             return None
-        return selected
+        release, profile = selected
+        # Platform wrappers are bound to exact per-version source. Signed reuse
+        # withholds only those wrappers; every other reviewed read is reused
+        # exactly as the bound policy defines it.
+        view, withheld = withhold_unbound_platform_reads(
+            release.policy, entry.version
+        )
+        if withheld:
+            release = replace(release, policy=view)
+            profile = _profile_for_release(release)
+        if any(
+            item.is_read_route and item.classification != "automatic_read"
+            for item in release.policy.tools
+        ) and entry.version != release.version:
+            return None
+        return release, profile, withheld
 
 
 def signed_entry_to_expiry(

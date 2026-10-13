@@ -41,6 +41,7 @@ from ha_mcp_engineering.capabilities import (  # noqa: E402
 from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
     UpstreamReadGateway,
 )
+from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
 from ha_mcp_engineering.tools import ENGINEERING_STATIC_TOOL_COUNT  # noqa: E402
 from ha_mcp_engineering.upstream_tool_policy import (  # noqa: E402
     EXACT_RUNTIME_TOOL_ORDER_FINGERPRINTS,
@@ -87,6 +88,9 @@ EXACT_READS = frozenset(
         "ha_list_services",
         "ha_search",
     }
+)
+PLATFORM_READS = frozenset(
+    {"ha_get_app", "ha_get_integration", "ha_get_system_health"}
 )
 
 
@@ -237,6 +241,8 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 59)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 87)
         self.assertNotIn("ha_get_operation_status", registered)
+        self.assertEqual(snapshot["readmission_withheld_read_count"], 0)
+        self.assertEqual(snapshot["readmission_withheld_tools"], [])
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 
@@ -281,19 +287,104 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(public["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 
-    async def test_signed_future_release_cannot_reuse_version_bound_wrappers(self) -> None:
-        # HAMCP-129 binds the platform adapters to exact 8.4.3 source, so,
-        # as with the 8.5.0 and 8.6.0 blueprint adapters, a signed future
-        # entry cannot reuse this policy and nothing is admitted.
+    async def test_signed_future_release_reuses_only_exact_binary_contracts(self) -> None:
+        # Owner decision D8: signed-only reuse keeps exactly the base 25
+        # delegated reads; only the three version-bound platform wrappers are
+        # withheld, explicitly, and the other reads are never narrowed.
         entry = _signed_entry_for(self.release, version="8.4.4")
         gateway, transport, snapshot = await self._initialize(
             version="8.4.4", tools=self.capture["tools"], entry=entry
         )
-        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
-        self.assertIsNone(snapshot["readmission_authority_source"])
-        self.assertEqual(snapshot["admission_status"], "blocked_incompatible_upstream")
-        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        registered = set(gateway._registered_tool_registry.snapshot())
+        self.assertEqual(registered, EXACT_READS - PLATFORM_READS)
+        self.assertEqual(len(registered), 25)
+        self.assertEqual(snapshot["readmission_authority_source"], "signed_registry")
+        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["quarantined_automatic_read_count"], 0)
+        # Classification accounting is the base 8.4.3 view: the withheld
+        # wrappers revert to their unwrapped mixed upstream tools.
+        self.assertEqual(
+            snapshot["policy_classifications"],
+            {
+                "automatic_read": 25,
+                "held_for_canary": 1,
+                "mixed_or_requires_wrapper": 13,
+                "persistent_write": 33,
+                "physical_or_high_risk_action": 4,
+                "prohibited": 1,
+                "unsupported": 1,
+            },
+        )
+        self.assertTrue(snapshot["reviewed_tool_accounting_valid"])
+        self.assertEqual(snapshot["readmission_withheld_read_count"], 3)
+        self.assertEqual(
+            snapshot["readmission_withheld_reason_counts"],
+            {"platform_read_binding_absent": 3},
+        )
+        self.assertEqual(
+            snapshot["readmission_withheld_tools"],
+            [
+                {"tool": name, "reason": "platform_read_binding_absent"}
+                for name in sorted(PLATFORM_READS)
+            ],
+        )
+        public = gateway.health_projection()["automatic_readmission"]
+        self.assertEqual(public["readmission_withheld_read_count"], 3)
+        self.assertEqual(
+            public["readmission_withheld_reason_counts"],
+            {"platform_read_binding_absent": 3},
+        )
         self.assertEqual(snapshot["fallback_count"], 0)
+        self.assertEqual(transport.calls, 0)
+
+    async def test_signed_reuse_dispatches_drifts_and_expires_like_base(self) -> None:
+        entry = _signed_entry_for(self.release, version="8.4.4")
+        gateway, transport, _snapshot = await self._initialize(
+            version="8.4.4", tools=self.capture["tools"], entry=entry
+        )
+        telemetry, token = begin_request("beta58-signed-reuse")
+        try:
+            result = json.loads(
+                await gateway._registered_tool_registry.snapshot()[
+                    "ha_list_services"
+                ].run({})
+            )
+        finally:
+            end_request(token)
+        self.assertTrue(result["success"], result)
+        self.assertEqual(
+            telemetry.audit_context["upstream_version_evidence"],
+            "signed_registry",
+        )
+        self.assertEqual(transport.calls, 1)
+
+        tools = deepcopy(self.capture["tools"])
+        drifted = next(item for item in tools if item["name"] == "ha_get_state")
+        drifted["description"] += " synthetic drift"
+        gateway, transport, snapshot = await self._initialize(
+            version="8.4.4", tools=tools, entry=entry
+        )
+        self.assertEqual(
+            set(gateway._registered_tool_registry.snapshot()),
+            EXACT_READS - PLATFORM_READS - {"ha_get_state"},
+        )
+        self.assertEqual(snapshot["readmission_withheld_read_count"], 3)
+        self.assertEqual(transport.calls, 0)
+
+        registry = self._registry(entry)
+        self.now += timedelta(days=2)
+        transport = _GatewayTransport(self.capture["tools"], version="8.4.4")
+        gateway = UpstreamReadGateway()
+        gateway.configure(
+            _settings(self.signer.public_key_base64),
+            transport=transport,
+            release_registry=self.compiled,
+            signed_release_registry=registry,
+        )
+        snapshot = await gateway.initialize(FastMCP("beta58-8.4.4-expired"))
+        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertEqual(snapshot["readmission_withheld_read_count"], 0)
         self.assertEqual(transport.calls, 0)
 
     async def test_future_blueprint_transition_is_capability_scoped(self) -> None:
@@ -316,12 +407,13 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         gateway, transport, snapshot = await self._initialize(
             version="8.4.4", tools=tools, entry=entry
         )
-        # The version-bound platform adapters refuse signed reuse before the
-        # blueprint transition is considered; the mixed tool is never exposed.
         registered = set(gateway._registered_tool_registry.snapshot())
-        self.assertEqual(registered, set())
+        self.assertEqual(
+            registered, EXACT_READS - PLATFORM_READS - {"ha_get_blueprint"}
+        )
         self.assertNotIn("ha_manage_blueprints", registered)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertEqual(snapshot["readmission_withheld_read_count"], 3)
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 

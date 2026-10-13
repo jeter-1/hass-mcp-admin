@@ -9,6 +9,7 @@ key with the wrong JSON type fails the whole call.
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 import re
 from typing import Any
 
@@ -171,6 +172,32 @@ def adapter_token(entry) -> str:
     return entry.argument_restrictions[0]
 
 
+PLATFORM_READ_BINDING_ABSENT = "platform_read_binding_absent"
+
+
+def withhold_unbound_platform_reads(policy, version: str):
+    """Return the policy as reusable for ``version`` and the withheld wrappers.
+
+    The adapters are bound to exact upstream source. When ``version`` is not
+    the bound version (signed reuse of another release's policy), only those
+    entries revert to the unwrapped mixed upstream tool, which is never
+    exposed. Every other entry is returned unchanged.
+    """
+    withheld = tuple(sorted(
+        entry.upstream_name
+        for entry in policy.tools
+        if is_platform_adapter(entry) and binding(entry)[1] != version
+    ))
+    if not withheld:
+        return policy, ()
+    tools = tuple(
+        replace(entry, argument_restrictions=())
+        if entry.upstream_name in withheld else entry
+        for entry in policy.tools
+    )
+    return replace(policy, tools=tools), withheld
+
+
 def public_schema(entry, observed: dict) -> dict:
     return deepcopy(PUBLIC_SCHEMAS[entry.upstream_name] if is_platform_adapter(entry) else observed)
 
@@ -288,7 +315,11 @@ def _started_count(payload: Any) -> int:
 
 
 def check_stats_precheck(payload: Any) -> None:
-    """Refuse the stats call before it fans out over too many started apps."""
+    """Refuse the stats call when the stats-free snapshot is over the cap.
+
+    This is a sampled bound. Upstream re-lists before its stats fan-out, so it
+    cannot stop an app started after this snapshot from being fanned out.
+    """
 
     if _started_count(payload) > STATS_STARTED_CAP:
         raise StatsCapExceeded("platform_stats_started_cap_exceeded")
@@ -579,18 +610,19 @@ def _project_apps(payload: dict, values: dict) -> dict[str, Any]:
         # The listing changed between the pre-check and the stats call.
         raise StatsCapExceeded("platform_stats_started_cap_exceeded")
     apps = []
-    warnings = []
+    unavailable = set()
     for raw in addons:
         app = p.pick(raw, _APP, "app", required=("slug",))
         if not re.fullmatch(_SLUG, raw["slug"]):
             raise ValueError("platform_app_slug_invalid")
         if values["include_stats"]:
+            # Upstream collects stats only for started apps and reports a
+            # failed or timed-out collection as null. A started app without
+            # stats is requested data that is unavailable, never complete.
             stats = raw.get("stats")
-            if "stats" not in raw:
-                raise ValueError("platform_app_stats_missing")
             app["stats"] = None if stats is None else p.pick(stats, _STATS, "app.stats")
             if stats is None and raw.get("state") == "started":
-                warnings.append(f"stats_unavailable:{raw['slug']}")
+                unavailable.add(raw["slug"])
         apps.append(app)
     summary = {
         "total_installed": len(apps),
@@ -603,6 +635,13 @@ def _project_apps(payload: dict, values: dict) -> dict[str, Any]:
         if not apps:
             raise PlatformResourceNotFound({"completeness": "complete", "completeness_reasons": []})
     bounded = p.bounded(apps, CAPS["apps"], len(apps), "apps_truncated")
+    warnings = [
+        f"stats_unavailable:{app['slug']}"
+        for app in bounded["items"]
+        if app["slug"] in unavailable
+    ]
+    if warnings:
+        p.reasons.add("stats_unavailable")
     if payload.get("warnings") and not warnings:
         warnings.append("upstream_warnings_withheld")
     return {

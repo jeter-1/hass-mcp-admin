@@ -123,6 +123,24 @@ SUPPORTED_PROTOCOLS = frozenset({REVIEWED_PROTOCOL_VERSION})
 RECONCILIATION_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 COMPATIBILITY_REPROBE_INTERVAL_SECONDS = 900.0
 MAX_QUARANTINE_RECORDS = 32
+
+
+def _readmission_withheld_state(
+    withheld: tuple[tuple[str, str], ...],
+) -> dict[str, Any]:
+    """Project version-bound reads withheld from signed policy reuse."""
+
+    reasons: dict[str, int] = {}
+    for _tool, reason in withheld:
+        reasons[reason] = reasons.get(reason, 0) + 1
+    return {
+        "readmission_withheld_read_count": len(withheld),
+        "readmission_withheld_reason_counts": reasons,
+        "readmission_withheld_tools": [
+            {"tool": tool, "reason": reason}
+            for tool, reason in withheld[:MAX_QUARANTINE_RECORDS]
+        ],
+    }
 MAX_RUNTIME_CONTRACT_DIFF_FIELDS = 16
 MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
 MAX_HELD_READ_CANARY_BATCH_ITEMS = 64
@@ -689,6 +707,9 @@ class UpstreamReadGateway:
             "held_tools": [],
             "core_withheld_read_count": 0,
             "core_withheld_tools": [],
+            "readmission_withheld_read_count": 0,
+            "readmission_withheld_reason_counts": {},
+            "readmission_withheld_tools": [],
             "live_canary_required_tools": [],
             "static_review_completed": False,
             "reviewed_automatic_read_count": 0,
@@ -1087,6 +1108,12 @@ class UpstreamReadGateway:
                         "adapter_id": (
                             readmission_selection.profile.adapter_id
                         ),
+                        "withheld_capabilities": [
+                            {"tool": tool, "reason": reason}
+                            for tool, reason in (
+                                readmission_selection.withheld_capabilities
+                            )
+                        ],
                     }
                 )
                 self._readmission_audit = (
@@ -1545,6 +1572,9 @@ class UpstreamReadGateway:
                     readmission_selection.profile.adapter_id
                 ),
                 "readmission_generation": generation,
+                **_readmission_withheld_state(
+                    readmission_selection.withheld_capabilities
+                ),
             }
             if readmission_selection is not None
             else {}
@@ -3274,8 +3304,9 @@ class UpstreamReadGateway:
                 # The main dispatch path refuses the same arguments.
                 stats_precheck = False
             if stats_precheck:
-                # O3: bound the upstream per-app stats fan-out with one
-                # stats-free listing before the stats call is allowed.
+                # O3: one stats-free listing gates the stats call. It is a
+                # sampled bound: upstream re-lists before its fan-out, so an
+                # add-on started in between is still fanned out (design D11).
                 mapping, precheck = await self._dispatch_current_route(
                     exposed_name=exposed_name,
                     arguments=arguments,
@@ -4333,6 +4364,7 @@ class UpstreamReadGateway:
                         "readmission_profile_id": None,
                         "readmission_adapter_id": None,
                         "readmission_generation": None,
+                        **_readmission_withheld_state(()),
                         "last_discovery_stable": False,
                         "compatibility_status": "reconciling",
                         "admission_status": "compatibility_reprobe_pending",
@@ -4750,6 +4782,7 @@ class UpstreamReadGateway:
                     self._state["readmission_profile_id"] = None
                     self._state["readmission_adapter_id"] = None
                     self._state["readmission_generation"] = None
+                    self._state.update(_readmission_withheld_state(()))
                 self._state["reviewed_source_commit"] = None
                 self._state["reviewed_image_index_digest"] = None
                 self._state["reviewed_architecture_image_digests"] = {}
@@ -4904,6 +4937,16 @@ class UpstreamReadGateway:
                 "adapter_id": value["readmission_adapter_id"],
                 "decision_generation": value[
                     "readmission_generation"
+                ],
+                "readmission_withheld_read_count": value[
+                    "readmission_withheld_read_count"
+                ],
+                "readmission_withheld_reason_counts": dict(
+                    value["readmission_withheld_reason_counts"]
+                ),
+                "readmission_withheld_tools": [
+                    dict(item)
+                    for item in value["readmission_withheld_tools"]
                 ],
                 "issued_lease_count": projection[
                     "issued_lease_count"
