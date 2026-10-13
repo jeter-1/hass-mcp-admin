@@ -279,9 +279,9 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.1.1": 25,
                 "8.2.0": 25,
                 "8.4.1": 25,
-                "8.4.3": 25,
-                "8.5.0": 25,
-                "8.6.0": 25,
+                "8.4.3": 28,
+                "8.5.0": 28,
+                "8.6.0": 28,
             }
             self.assertEqual(
                 release.policy.classification_counts["automatic_read"],
@@ -927,9 +927,9 @@ class ReviewedReleaseRegistryTests(unittest.TestCase):
                 "8.1.1": 25,
                 "8.2.0": 25,
                 "8.4.1": 25,
-                "8.4.3": 25,
-                "8.5.0": 25,
-                "8.6.0": 25,
+                "8.4.3": 28,
+                "8.5.0": 28,
+                "8.6.0": 28,
             }
             self.assertEqual(
                 len(automatic_names),

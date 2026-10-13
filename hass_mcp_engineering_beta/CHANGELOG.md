@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.4.1-beta.6 - Delegated platform health, add-on and integration reads (HAMCP-129)
+
+- Admit `ha_get_system_health`, `ha_get_app` and `ha_get_integration` at
+  ha-mcp 8.4.3, 8.5.0 and 8.6.0 through Engineering-owned wrappers bound to
+  each exact input-schema fingerprint and source commit.
+- Close the public schemas and build the only upstream arguments; refuse
+  `slug`, `domain`, `entry_id`, `include_options`, `include_schema`,
+  diagnostics, config checks, the full ZHA dump, the add-on store and
+  `repository` before dispatch.
+- Project every result through a positive output allowlist with list and
+  string caps; mask e-mail-like title substrings; withhold upstream error
+  text and warnings; bound `include_stats` to 32 started add-ons.
+- Catalog 84 to 87 tools (28 delegated reads); regenerate the compiled
+  ha-mcp release registry evidence identities for the new counts.
+- Preserve the owner-signed Core registry, HOLD, support window, durable
+  formats, workflows and stable v1.
+
 ## 2.4.1-beta.5 - Deep health survives the idle recovery sweep (HAMCP-168)
 
 - Defer only the idle historical recovery-cursor write while a deep-health

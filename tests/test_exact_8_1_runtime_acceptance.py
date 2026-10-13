@@ -57,7 +57,7 @@ class ExactAddonProfileTests(unittest.TestCase):
         from ha_mcp_engineering.upstream_tool_policy import load_reviewed_upstream_release_registry
         policy = load_reviewed_upstream_release_registry().by_version["8.5.0"].policy
         exposed = {entry.exposed_name for entry in policy.tools if entry.is_read_route}
-        self.assertEqual(len(exposed), 25)
+        self.assertEqual(len(exposed), 28)
         self.assertIn("ha_get_blueprint", exposed)
         self.assertNotIn("ha_manage_blueprints", exposed)
         self.assertNotIn("ha_call_service", exposed)
@@ -174,7 +174,7 @@ class ExactAddonProfileTests(unittest.TestCase):
         dashboard_authority_acceptance.select_exact_release("8.4.3")
         self.assertEqual(
             dashboard_authority_acceptance.EXPECTED_ATTESTATION_FINGERPRINT,
-            "6d9198ed97c239390c565a532cd76a25c7bb0ad80625a709b820449af2eb78be",
+            "f92c6824eb62f458f77969185a5d901131dcbc6b37c16814424b9b98967745ff",
         )
 
         addon_acceptance._select_exact_addon_profile("8.2.0")
@@ -336,7 +336,7 @@ class ExactAddonProfileTests(unittest.TestCase):
             ("8.1.1", 25),
             ("8.2.0", 25),
             ("8.4.1", 25),
-            ("8.4.3", 25),
+            ("8.4.3", 28),
         ):
             with self.subTest(version=version):
                 addon_acceptance._select_exact_addon_profile(version)

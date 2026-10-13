@@ -68,6 +68,7 @@ EXACT_READS = frozenset(
         "ha_config_list_groups",
         "ha_config_list_helpers",
         "ha_eval_template",
+        "ha_get_app",
         "ha_get_automation_traces",
         "ha_get_blueprint",
         "ha_get_device",
@@ -75,9 +76,11 @@ EXACT_READS = frozenset(
         "ha_get_entity_exposure",
         "ha_get_hacs_info",
         "ha_get_history",
+        "ha_get_integration",
         "ha_get_overview",
         "ha_get_skill_guide",
         "ha_get_state",
+        "ha_get_system_health",
         "ha_get_todo",
         "ha_get_zone",
         "ha_list_floors_areas",
@@ -221,18 +224,18 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
             EXACT_READS - {"ha_search"},
         )
         self.assertNotEqual(new["ha_search"], old["ha_search"])
-        self.assertEqual(len(EXACT_READS - {"ha_search"}), 24)
+        self.assertEqual(len(EXACT_READS - {"ha_search"}), 27)
         self.assertNotIn("8.4.3", {"8.0.0", "8.1.0", "8.1.1", "8.2.0", "8.4.1"})
 
-    async def test_exact_8_4_3_restores_25_reads_without_dispatch(self) -> None:
+    async def test_exact_8_4_3_restores_28_reads_without_dispatch(self) -> None:
         gateway, transport, snapshot = await self._initialize(
             version="8.4.3", tools=self.capture["tools"], entry=None
         )
         registered = set(gateway._registered_tool_registry.snapshot())
         self.assertEqual(registered, EXACT_READS)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 28)
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 59)
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 84)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(registered), 87)
         self.assertNotIn("ha_get_operation_status", registered)
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
@@ -274,20 +277,22 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
             public["catalog_name_projection_fingerprint"], r"^[0-9a-f]{64}$"
         )
         self.assertLess(len(json.dumps(public, indent=2)), 9_000)
-        self.assertEqual(public["dynamically_exposed_count"], 25)
+        self.assertEqual(public["dynamically_exposed_count"], 28)
         self.assertEqual(public["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 
-    async def test_signed_future_release_reuses_only_exact_binary_contracts(self) -> None:
+    async def test_signed_future_release_cannot_reuse_version_bound_wrappers(self) -> None:
+        # HAMCP-129 binds the platform adapters to exact 8.4.3 source, so,
+        # as with the 8.5.0 and 8.6.0 blueprint adapters, a signed future
+        # entry cannot reuse this policy and nothing is admitted.
         entry = _signed_entry_for(self.release, version="8.4.4")
         gateway, transport, snapshot = await self._initialize(
             version="8.4.4", tools=self.capture["tools"], entry=entry
         )
-        self.assertEqual(
-            set(gateway._registered_tool_registry.snapshot()), EXACT_READS
-        )
-        self.assertEqual(snapshot["readmission_authority_source"], "signed_registry")
-        self.assertEqual(snapshot["dynamically_exposed_count"], 25)
+        self.assertEqual(gateway._registered_tool_registry.snapshot(), {})
+        self.assertIsNone(snapshot["readmission_authority_source"])
+        self.assertEqual(snapshot["admission_status"], "blocked_incompatible_upstream")
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 
@@ -311,10 +316,12 @@ class Beta58HaMcp843ContinuityTests(unittest.IsolatedAsyncioTestCase):
         gateway, transport, snapshot = await self._initialize(
             version="8.4.4", tools=tools, entry=entry
         )
+        # The version-bound platform adapters refuse signed reuse before the
+        # blueprint transition is considered; the mixed tool is never exposed.
         registered = set(gateway._registered_tool_registry.snapshot())
-        self.assertEqual(registered, EXACT_READS - {"ha_get_blueprint"})
+        self.assertEqual(registered, set())
         self.assertNotIn("ha_manage_blueprints", registered)
-        self.assertEqual(snapshot["dynamically_exposed_count"], 24)
+        self.assertEqual(snapshot["dynamically_exposed_count"], 0)
         self.assertEqual(snapshot["fallback_count"], 0)
         self.assertEqual(transport.calls, 0)
 

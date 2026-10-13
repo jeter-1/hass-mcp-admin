@@ -416,7 +416,12 @@ class UpstreamToolPolicyEntry:
     @property
     def is_read_route(self) -> bool:
         from .providers.upstream_blueprint import is_blueprint_adapter
-        return self.classification == "automatic_read" or is_blueprint_adapter(self)
+        from .providers.upstream_platform_reads import is_platform_adapter
+        return (
+            self.classification == "automatic_read"
+            or is_blueprint_adapter(self)
+            or is_platform_adapter(self)
+        )
 
     @classmethod
     def from_mapping(cls, value: Any) -> "UpstreamToolPolicyEntry":
@@ -1260,6 +1265,9 @@ def load_upstream_tool_policy(
         raise UpstreamToolPolicyError("policy_tools_invalid")
     entries = tuple(UpstreamToolPolicyEntry.from_mapping(item) for item in value["tools"])
     from .providers.upstream_blueprint import ADAPTER_BINDINGS, is_blueprint_adapter
+    from .providers.upstream_platform_reads import (
+        ADAPTER_BINDINGS as PLATFORM_BINDINGS, is_platform_adapter,
+    )
     from .providers.upstream_reads_8_6 import ADAPTER as READ_ADAPTER, SOURCE as READ_SOURCE, is_adapter
     from .providers.upstream_search_8_6 import ADAPTER as SEARCH_ADAPTER, is_search_entry
     for entry in entries:
@@ -1274,6 +1282,12 @@ def load_upstream_tool_policy(
                 or expected_source_commit != source
             ):
                 raise UpstreamToolPolicyError("policy_uncompiled_blueprint_adapter")
+        for adapter, (_, version, source, _) in PLATFORM_BINDINGS.items():
+            if adapter in entry.argument_restrictions and (
+                not is_platform_adapter(entry) or expected_version != version
+                or expected_source_commit != source
+            ):
+                raise UpstreamToolPolicyError("policy_uncompiled_platform_adapter")
         if READ_ADAPTER in entry.argument_restrictions and (
             not is_adapter(entry) or expected_version != "8.6.0"
             or expected_source_commit != READ_SOURCE

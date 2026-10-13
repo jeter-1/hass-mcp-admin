@@ -89,6 +89,67 @@ def blueprint_read_projection_count(repo_root: Path, policy: dict[str, Any]) -> 
     )
 
 
+
+def platform_read_projection_count(repo_root: Path, policy: dict[str, Any]) -> int:
+    """Count HAMCP-129 platform read projections bound to this exact policy.
+
+    Like the blueprint count, this reads literal bindings only and never
+    executes adapter source; an absent or unparseable adapter counts nothing.
+    """
+    source = repo_root / "hass_mcp_engineering_beta/ha_mcp_engineering/providers/upstream_platform_reads.py"
+    try:
+        tree = ast.parse(read_text(source) or "")
+    except SyntaxError:
+        return 0
+    names = {name: python_literal(source, name) for name in ("HEALTH", "APP", "INTEGRATION")}
+    if not all(isinstance(value, str) and value for value in names.values()):
+        return 0
+
+    def resolve(node: ast.AST) -> Any:
+        if isinstance(node, ast.Name):
+            return names.get(node.id)
+        if isinstance(node, ast.Tuple):
+            return tuple(resolve(item) for item in node.elts)
+        try:
+            return ast.literal_eval(node)
+        except (TypeError, ValueError):
+            return None
+
+    literals: dict[str, dict[Any, Any]] = {}
+    for node in tree.body:
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or not isinstance(node.value, ast.Dict):
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            if isinstance(target, ast.Name) and target.id in {"_SOURCES", "_KINDS", "_FINGERPRINTS"}:
+                literals[target.id] = {
+                    resolve(key): resolve(value)
+                    for key, value in zip(node.value.keys, node.value.values)
+                }
+    sources, kinds, fingerprints = (literals.get(name) for name in ("_SOURCES", "_KINDS", "_FINGERPRINTS"))
+    version = policy.get("reviewed_upstream_version")
+    tools = policy.get("tools")
+    if (not sources or not kinds or not fingerprints or not isinstance(tools, list)
+            or sources.get(version) != policy.get("reviewed_source_commit")):
+        return 0
+    count = 0
+    for tool in names.values():
+        fingerprint, kind = fingerprints.get((tool, version)), kinds.get(tool)
+        if not isinstance(fingerprint, str) or not isinstance(kind, str):
+            continue
+        count += sum(
+            1 for item in tools if isinstance(item, dict)
+            and item.get("classification") == "mixed_or_requires_wrapper"
+            and item.get("upstream_name") == tool
+            and item.get("exposed_name") == tool
+            and item.get("input_schema_fingerprint") == fingerprint
+            and item.get("argument_restrictions") == [f"ha-mcp-{version}-{kind}-v1"]
+            and isinstance(item.get("reviewed_annotations"), dict)
+            and item["reviewed_annotations"].get("readOnlyHint") is True
+            and item["reviewed_annotations"].get("destructiveHint") is False
+        )
+    return count
+
 class ContextError(RuntimeError):
     """A required repository fact could not be determined."""
 
@@ -620,6 +681,7 @@ def build_context(repo_root_hint: Path) -> dict[str, Any]:
                 for item in tools
                 if isinstance(item, dict) and item.get("classification") == "automatic_read"
             ) + blueprint_read_projection_count(repo_root, policy)
+            + platform_read_projection_count(repo_root, policy)
             if isinstance(tools, list)
             else None
         )

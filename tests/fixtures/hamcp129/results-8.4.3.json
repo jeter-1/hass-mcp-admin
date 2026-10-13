@@ -1,0 +1,1517 @@
+{
+ "apps_installed": {
+  "arguments": {
+   "include_stats": false,
+   "source": "installed"
+  },
+  "mode": "addon",
+  "requests": [
+   {
+    "auth": "synthetic-supervisor-token",
+    "body": null,
+    "method": "GET",
+    "path": "/supervisor/addons",
+    "query": {},
+    "transport": "http"
+   }
+  ],
+  "result": {
+   "addons": [
+    {
+     "description": "Synthetic add-on alpha.",
+     "installed": true,
+     "name": "Synthetic Alpha",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_alpha",
+     "state": "started",
+     "update_available": true,
+     "version": "1.0.0"
+    },
+    {
+     "description": "Synthetic Beta is a fabricated add-on used only by HAMCP-129 fixtures. Its description is intentionally longer than two hundred characters so that any upstream or Engineering-side truncation of app descriptions can be observed deterministically in generated fixture output.",
+     "installed": true,
+     "name": "Synthetic Beta",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_beta",
+     "state": "started",
+     "update_available": false,
+     "version": "2.0.0"
+    },
+    {
+     "description": "Synthetic add-on gamma (stopped).",
+     "installed": true,
+     "name": "Synthetic Gamma",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_gamma",
+     "state": "stopped",
+     "update_available": false,
+     "version": "3.0.0"
+    }
+   ],
+   "success": true,
+   "summary": {
+    "running": 2,
+    "stopped": 1,
+    "total_installed": 3,
+    "updates_available": 1
+   }
+  },
+  "scenario": "ok",
+  "tool": "ha_get_app"
+ },
+ "apps_installed@core_ws_proxy": {
+  "arguments": {
+   "include_stats": false,
+   "source": "installed"
+  },
+  "mode": "core_ws_proxy",
+  "requests": [
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "endpoint": "/addons",
+     "method": "GET",
+     "type": "supervisor/api"
+    },
+    "transport": "ws"
+   }
+  ],
+  "result": {
+   "addons": [
+    {
+     "description": "Synthetic add-on alpha.",
+     "installed": true,
+     "name": "Synthetic Alpha",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_alpha",
+     "state": "started",
+     "update_available": true,
+     "version": "1.0.0"
+    },
+    {
+     "description": "Synthetic Beta is a fabricated add-on used only by HAMCP-129 fixtures. Its description is intentionally longer than two hundred characters so that any upstream or Engineering-side truncation of app descriptions can be observed deterministically in generated fixture output.",
+     "installed": true,
+     "name": "Synthetic Beta",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_beta",
+     "state": "started",
+     "update_available": false,
+     "version": "2.0.0"
+    },
+    {
+     "description": "Synthetic add-on gamma (stopped).",
+     "installed": true,
+     "name": "Synthetic Gamma",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_gamma",
+     "state": "stopped",
+     "update_available": false,
+     "version": "3.0.0"
+    }
+   ],
+   "success": true,
+   "summary": {
+    "running": 2,
+    "stopped": 1,
+    "total_installed": 3,
+    "updates_available": 1
+   }
+  },
+  "scenario": "ok",
+  "tool": "ha_get_app"
+ },
+ "apps_installed_stats": {
+  "arguments": {
+   "include_stats": true,
+   "source": "installed"
+  },
+  "mode": "addon",
+  "requests": [
+   {
+    "auth": "synthetic-supervisor-token",
+    "body": null,
+    "method": "GET",
+    "path": "/supervisor/addons",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "auth": "synthetic-supervisor-token",
+    "body": null,
+    "method": "GET",
+    "path": "/supervisor/addons/synthetic_alpha/stats",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "auth": "synthetic-supervisor-token",
+    "body": null,
+    "method": "GET",
+    "path": "/supervisor/addons/synthetic_beta/stats",
+    "query": {},
+    "transport": "http"
+   }
+  ],
+  "result": {
+   "addons": [
+    {
+     "description": "Synthetic add-on alpha.",
+     "installed": true,
+     "name": "Synthetic Alpha",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_alpha",
+     "state": "started",
+     "stats": {
+      "cpu_percent": 1.5,
+      "memory_limit": 2147483648,
+      "memory_percent": 4.88,
+      "memory_usage": 104857600
+     },
+     "update_available": true,
+     "version": "1.0.0"
+    },
+    {
+     "description": "Synthetic Beta is a fabricated add-on used only by HAMCP-129 fixtures. Its description is intentionally longer than two hundred characters so that any upstream or Engineering-side truncation of app descriptions can be observed deterministically in generated fixture output.",
+     "installed": true,
+     "name": "Synthetic Beta",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_beta",
+     "state": "started",
+     "stats": null,
+     "update_available": false,
+     "version": "2.0.0"
+    },
+    {
+     "description": "Synthetic add-on gamma (stopped).",
+     "installed": true,
+     "name": "Synthetic Gamma",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_gamma",
+     "state": "stopped",
+     "stats": null,
+     "update_available": false,
+     "version": "3.0.0"
+    }
+   ],
+   "success": true,
+   "summary": {
+    "running": 2,
+    "stopped": 1,
+    "total_installed": 3,
+    "updates_available": 1
+   },
+   "warnings": [
+    "Statistics unavailable for app 'synthetic_beta': {\n  \"success\": false,\n  \"error\": {\n    \"code\": \"SERVICE_CALL_FAILED\",\n    \"message\": \"Command failed: synthetic stats failure\",\n    \"suggestion\": \"Check the service parameters are correct\",\n    \"suggestions\": [\n      \"Check the service parameters are correct\",\n      \"Verify the target entity supports this service\",\n      \"Check Home Assistant logs for detailed error\"\n    ]\n  },\n  \"endpoint\": \"/addons/synthetic_beta/stats\",\n  \"operation\": \"Supervisor API /addons/synthetic_beta/stats\",\n  \"timeout_seconds\": 30.0\n}"
+   ]
+  },
+  "scenario": "stats_failure",
+  "tool": "ha_get_app"
+ },
+ "apps_installed_stats@core_ws_proxy": {
+  "arguments": {
+   "include_stats": true,
+   "source": "installed"
+  },
+  "mode": "core_ws_proxy",
+  "requests": [
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "endpoint": "/addons",
+     "method": "GET",
+     "type": "supervisor/api"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "endpoint": "/addons/synthetic_alpha/stats",
+     "method": "GET",
+     "type": "supervisor/api"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "endpoint": "/addons/synthetic_beta/stats",
+     "method": "GET",
+     "type": "supervisor/api"
+    },
+    "transport": "ws"
+   }
+  ],
+  "result": {
+   "addons": [
+    {
+     "description": "Synthetic add-on alpha.",
+     "installed": true,
+     "name": "Synthetic Alpha",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_alpha",
+     "state": "started",
+     "stats": {
+      "cpu_percent": 1.5,
+      "memory_limit": 2147483648,
+      "memory_percent": 4.88,
+      "memory_usage": 104857600
+     },
+     "update_available": true,
+     "version": "1.0.0"
+    },
+    {
+     "description": "Synthetic Beta is a fabricated add-on used only by HAMCP-129 fixtures. Its description is intentionally longer than two hundred characters so that any upstream or Engineering-side truncation of app descriptions can be observed deterministically in generated fixture output.",
+     "installed": true,
+     "name": "Synthetic Beta",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_beta",
+     "state": "started",
+     "stats": null,
+     "update_available": false,
+     "version": "2.0.0"
+    },
+    {
+     "description": "Synthetic add-on gamma (stopped).",
+     "installed": true,
+     "name": "Synthetic Gamma",
+     "repository": "synthetic_repository",
+     "slug": "synthetic_gamma",
+     "state": "stopped",
+     "stats": null,
+     "update_available": false,
+     "version": "3.0.0"
+    }
+   ],
+   "success": true,
+   "summary": {
+    "running": 2,
+    "stopped": 1,
+    "total_installed": 3,
+    "updates_available": 1
+   },
+   "warnings": [
+    "Statistics unavailable for app 'synthetic_beta': {\n  \"success\": false,\n  \"error\": {\n    \"code\": \"SERVICE_CALL_FAILED\",\n    \"message\": \"Command failed: synthetic stats failure\",\n    \"suggestion\": \"Check the service parameters are correct\",\n    \"suggestions\": [\n      \"Check the service parameters are correct\",\n      \"Verify the target entity supports this service\",\n      \"Check Home Assistant logs for detailed error\"\n    ]\n  },\n  \"endpoint\": \"/addons/synthetic_beta/stats\",\n  \"operation\": \"Supervisor API /addons/synthetic_beta/stats\",\n  \"timeout_seconds\": 30.0\n}"
+   ]
+  },
+  "scenario": "stats_failure",
+  "tool": "ha_get_app"
+ },
+ "health_all_sections": {
+  "arguments": {
+   "include": "dead_entities,matter_network,repairs,themes,thread_network,zha_network,zwave_network",
+   "include_dismissed_repairs": true
+  },
+  "mode": "addon",
+  "requests": [
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/api/states",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "auth": "synthetic-supervisor-token",
+    "body": null,
+    "method": "GET",
+    "path": "/supervisor/addons/self/info",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "entry_id": "01SYNTHZWAVEJS000000000000",
+     "type": "zwave_js/network_status"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config/entity_registry/list"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config_entries/get"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config_entries/get"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config_entries/get"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "frontend/get_themes"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "ha_mcp_tools/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "otbr/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "repairs/list_issues"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "system_health/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "zha/devices"
+    },
+    "transport": "ws"
+   }
+  ],
+  "result": {
+   "component_count": 2,
+   "dead_entities": {
+    "config_entries_checked": true,
+    "config_entry_orphans": {
+     "count": 1,
+     "items": [
+      {
+       "config_entry_id": "01SYNTHREMOVEDENTRY0000000X",
+       "disabled_by": null,
+       "entity_id": "sensor.synthetic_orphan",
+       "has_state": true,
+       "platform": "synthetic_platform"
+      }
+     ],
+     "total_count": 1
+    },
+    "note": "Excludes 'unknown'-state entities and merely-offline devices (bare 'unavailable' without 'restored'). Entries can appear under stale_restored transiently right after a restart; re-run if HA restarted recently. Remove a confirmed-dead entity with ha_remove_entity(entity_id).",
+    "stale_restored": {
+     "count": 1,
+     "items": [
+      {
+       "config_entry_id": "01SYNTHZHA00000000000000000",
+       "entity_id": "sensor.synthetic_stale",
+       "platform": "synthetic_platform"
+      }
+     ],
+     "total_count": 1
+    },
+    "summary": {
+     "candidate_total": 2,
+     "registry_total": 6
+    }
+   },
+   "ha_mcp_update": {
+    "current": "8.4.3",
+    "latest": "8.4.3",
+    "update_available": false
+   },
+   "health_info": {
+    "data": {
+     "cloud": {
+      "info": {
+       "alexa_enabled": false,
+       "can_reach_cert_server": "ok",
+       "can_reach_cloud": "ok",
+       "can_reach_cloud_auth": "ok",
+       "certificate_fingerprint": "53:59:4E:54:48:45:54:49:43",
+       "certificate_status": "ready",
+       "cloud_ice_servers_enabled": true,
+       "google_enabled": false,
+       "instance_id": "synthetic-instance-id-0000",
+       "logged_in": true,
+       "relayer_connected": true,
+       "relayer_region": "synthetic-region",
+       "remote_connected": true,
+       "remote_enabled": true,
+       "remote_server": "synthetic-remote.example.invalid",
+       "subscription_expiration": "2027-01-01T00:00:00+00:00"
+      }
+     },
+     "hassio": {
+      "info": {
+       "agent_version": "1.7.2",
+       "board": "ova",
+       "disk_total": "30.8 GB",
+       "disk_used": "9.1 GB",
+       "docker_version": "28.3.3",
+       "healthy": true,
+       "host_connectivity": {
+        "type": "pending"
+       },
+       "host_os": "Home Assistant OS 16.0",
+       "installed_addons": "Synthetic Alpha (1.0.0), Synthetic Beta (2.0.0), Synthetic Gamma (3.0.0)",
+       "nameservers": "192.0.2.53, 198.51.100.53",
+       "ntp_synchronized": true,
+       "supervisor_api": "ok",
+       "supervisor_connectivity": true,
+       "supervisor_version": "supervisor-2026.10.0",
+       "supported": true,
+       "update_channel": "stable",
+       "version_api": {
+        "error": "synthetic-error",
+        "type": "failed"
+       },
+       "virtualization": "kvm"
+      },
+      "manage_url": "/hassio/system"
+     },
+     "homeassistant": {
+      "info": {
+       "arch": "x86_64",
+       "config_dir": "/synthetic/config-dir",
+       "dev": false,
+       "docker": true,
+       "hassio": true,
+       "installation_type": "Home Assistant OS",
+       "os_name": "Linux",
+       "os_version": "6.12.0-synthetic",
+       "python_version": "3.13.7",
+       "run_as_root": true,
+       "timezone": "Synthetic/Canary_Zone",
+       "user": "synthetic-user",
+       "version": "2026.10.0",
+       "virtualenv": false
+      }
+     },
+     "synthetic_domain": {
+      "info": {
+       "synthetic_key": "synthetic-value"
+      }
+     }
+    },
+    "type": "initial"
+   },
+   "matter_network": {
+    "config_entry_id": "01SYNTHMATTER0000000000000",
+    "state": "loaded",
+    "title": "Matter Server for synthetic.user@example.invalid"
+   },
+   "message": "Retrieved health info for 2 components",
+   "repairs": {
+    "count": 2,
+    "issues": [
+     {
+      "breaks_in_ha_version": "2026.12.0",
+      "created": "2026-01-01T00:00:00+00:00",
+      "data": {
+       "synthetic_issue_data": "synthetic-canary-issue-data"
+      },
+      "dismissed_version": null,
+      "domain": "synthetic_account",
+      "ignored": false,
+      "is_fixable": true,
+      "issue_domain": null,
+      "issue_id": "synthetic_active_issue",
+      "learn_more_url": "https://synthetic-docs.example.invalid/learn-more",
+      "severity": "warning",
+      "translation_key": "synthetic_active_issue",
+      "translation_placeholders": {
+       "host": "synthetic-host.example.invalid",
+       "url": "https://synthetic-host.example.invalid/admin"
+      }
+     },
+     {
+      "breaks_in_ha_version": null,
+      "created": "2026-01-01T00:00:00+00:00",
+      "data": {
+       "synthetic_issue_data": "synthetic-canary-dismissed-data"
+      },
+      "dismissed_version": "2026.9.0",
+      "domain": "zha",
+      "ignored": true,
+      "is_fixable": false,
+      "issue_domain": null,
+      "issue_id": "synthetic_dismissed_issue",
+      "learn_more_url": null,
+      "severity": "error",
+      "translation_key": "synthetic_dismissed_issue",
+      "translation_placeholders": {
+       "host": "192.0.2.10"
+      }
+     }
+    ]
+   },
+   "success": true,
+   "themes": {
+    "count": 2,
+    "default_dark_theme": "synthetic_dark",
+    "default_theme": "default",
+    "themes": [
+     "synthetic_dark",
+     "synthetic_light"
+    ]
+   },
+   "thread_network": {
+    "border_routers": [
+     {
+      "border_agent_id": "53594e544845544943424f5244455200",
+      "channel": 15,
+      "extended_address": "a1b2c3d4e5f60718",
+      "extended_pan_id": "53594e5448455449"
+     }
+    ],
+    "count": 1
+   },
+   "zha_network": {
+    "count": 2,
+    "devices": [
+     {
+      "available": true,
+      "ieee": "00:11:22:33:44:55:66:77",
+      "lqi": 255,
+      "manufacturer": "Synthetic Radios",
+      "model": "SYN-COORD",
+      "name": "Synthetic Radios SYN-COORD",
+      "rssi": null
+     },
+     {
+      "available": false,
+      "ieee": "00:11:22:33:44:55:66:88",
+      "lqi": 120,
+      "manufacturer": "Synthetic Sensors",
+      "model": "SYN-TEMP",
+      "name": "Synthetic Hallway Sensor",
+      "rssi": -71
+     }
+    ],
+    "total_count": 2
+   },
+   "zwave_network": {
+    "controller": {
+     "firmware_version": "7.22.1",
+     "home_id": 3735928559,
+     "inclusion_state": 0,
+     "is_primary": true,
+     "is_rebuilding_routes": false,
+     "is_sis_present": true,
+     "is_suc": true,
+     "is_using_home_id_from_other_network": false,
+     "manufacturer_id": 134,
+     "node_type": 0,
+     "nodes": [
+      {
+       "has_firmware_update_cc": false,
+       "highest_security_class": null,
+       "is_controller_node": true,
+       "is_routing": true,
+       "is_secure": false,
+       "node_id": 1,
+       "ready": true,
+       "status": 4,
+       "synthetic_node_extra": "synthetic-canary-zwave-node-1",
+       "zwave_plus_version": null
+      },
+      {
+       "has_firmware_update_cc": true,
+       "highest_security_class": 1,
+       "is_controller_node": false,
+       "is_routing": true,
+       "is_secure": true,
+       "node_id": 7,
+       "ready": true,
+       "status": 3,
+       "synthetic_node_extra": "synthetic-canary-zwave-node-7",
+       "zwave_plus_version": 2
+      }
+     ],
+     "own_node_id": 1,
+     "product_id": 90,
+     "product_type": 1,
+     "rf_region": 1,
+     "sdk_version": "7.22.1",
+     "status": 0,
+     "suc_node_id": 1,
+     "supported_function_types": [
+      2,
+      3,
+      4
+     ],
+     "supports_long_range": true,
+     "supports_timers": false,
+     "synthetic_controller_extra": "synthetic-canary-zwave-controller",
+     "type": 1,
+     "was_real_primary": true
+    },
+    "count": 2,
+    "nodes": [
+     {
+      "is_controller_node": true,
+      "is_routing": true,
+      "is_secure": false,
+      "node_id": 1,
+      "status": 4,
+      "zwave_plus_version": null
+     },
+     {
+      "is_controller_node": false,
+      "is_routing": true,
+      "is_secure": true,
+      "node_id": 7,
+      "status": 3,
+      "zwave_plus_version": 2
+     }
+    ],
+    "total_count": 2
+   }
+  },
+  "scenario": "ok",
+  "tool": "ha_get_system_health"
+ },
+ "health_baseline": {
+  "arguments": {},
+  "mode": "addon",
+  "requests": [
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "auth": "synthetic-supervisor-token",
+    "body": null,
+    "method": "GET",
+    "path": "/supervisor/addons/self/info",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "system_health/info"
+    },
+    "transport": "ws"
+   }
+  ],
+  "result": {
+   "component_count": 2,
+   "ha_mcp_update": {
+    "current": "8.4.3",
+    "latest": "8.4.3",
+    "update_available": false
+   },
+   "health_info": {
+    "data": {
+     "cloud": {
+      "info": {
+       "alexa_enabled": false,
+       "can_reach_cert_server": "ok",
+       "can_reach_cloud": "ok",
+       "can_reach_cloud_auth": "ok",
+       "certificate_fingerprint": "53:59:4E:54:48:45:54:49:43",
+       "certificate_status": "ready",
+       "cloud_ice_servers_enabled": true,
+       "google_enabled": false,
+       "instance_id": "synthetic-instance-id-0000",
+       "logged_in": true,
+       "relayer_connected": true,
+       "relayer_region": "synthetic-region",
+       "remote_connected": true,
+       "remote_enabled": true,
+       "remote_server": "synthetic-remote.example.invalid",
+       "subscription_expiration": "2027-01-01T00:00:00+00:00"
+      }
+     },
+     "hassio": {
+      "info": {
+       "agent_version": "1.7.2",
+       "board": "ova",
+       "disk_total": "30.8 GB",
+       "disk_used": "9.1 GB",
+       "docker_version": "28.3.3",
+       "healthy": true,
+       "host_connectivity": {
+        "type": "pending"
+       },
+       "host_os": "Home Assistant OS 16.0",
+       "installed_addons": "Synthetic Alpha (1.0.0), Synthetic Beta (2.0.0), Synthetic Gamma (3.0.0)",
+       "nameservers": "192.0.2.53, 198.51.100.53",
+       "ntp_synchronized": true,
+       "supervisor_api": "ok",
+       "supervisor_connectivity": true,
+       "supervisor_version": "supervisor-2026.10.0",
+       "supported": true,
+       "update_channel": "stable",
+       "version_api": {
+        "error": "synthetic-error",
+        "type": "failed"
+       },
+       "virtualization": "kvm"
+      },
+      "manage_url": "/hassio/system"
+     },
+     "homeassistant": {
+      "info": {
+       "arch": "x86_64",
+       "config_dir": "/synthetic/config-dir",
+       "dev": false,
+       "docker": true,
+       "hassio": true,
+       "installation_type": "Home Assistant OS",
+       "os_name": "Linux",
+       "os_version": "6.12.0-synthetic",
+       "python_version": "3.13.7",
+       "run_as_root": true,
+       "timezone": "Synthetic/Canary_Zone",
+       "user": "synthetic-user",
+       "version": "2026.10.0",
+       "virtualenv": false
+      }
+     },
+     "synthetic_domain": {
+      "info": {
+       "synthetic_key": "synthetic-value"
+      }
+     }
+    },
+    "type": "initial"
+   },
+   "message": "Retrieved health info for 2 components",
+   "success": true
+  },
+  "scenario": "ok",
+  "tool": "ha_get_system_health"
+ },
+ "health_baseline_unavailable": {
+  "arguments": {
+   "include": "dead_entities"
+  },
+  "mode": "addon",
+  "requests": [
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/api/states",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "auth": "synthetic-supervisor-token",
+    "body": null,
+    "method": "GET",
+    "path": "/supervisor/addons/self/info",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config/entity_registry/list"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config_entries/get"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "ha_mcp_tools/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "system_health/info"
+    },
+    "transport": "ws"
+   }
+  ],
+  "result": {
+   "baseline_available": false,
+   "component_count": 0,
+   "dead_entities": {
+    "config_entries_checked": true,
+    "config_entry_orphans": {
+     "count": 1,
+     "items": [
+      {
+       "config_entry_id": "01SYNTHREMOVEDENTRY0000000X",
+       "disabled_by": null,
+       "entity_id": "sensor.synthetic_orphan",
+       "has_state": true,
+       "platform": "synthetic_platform"
+      }
+     ],
+     "total_count": 1
+    },
+    "note": "Excludes 'unknown'-state entities and merely-offline devices (bare 'unavailable' without 'restored'). Entries can appear under stale_restored transiently right after a restart; re-run if HA restarted recently. Remove a confirmed-dead entity with ha_remove_entity(entity_id).",
+    "stale_restored": {
+     "count": 1,
+     "items": [
+      {
+       "config_entry_id": "01SYNTHZHA00000000000000000",
+       "entity_id": "sensor.synthetic_stale",
+       "platform": "synthetic_platform"
+      }
+     ],
+     "total_count": 1
+    },
+    "summary": {
+     "candidate_total": 2,
+     "registry_total": 6
+    }
+   },
+   "ha_mcp_update": {
+    "current": "8.4.3",
+    "latest": "8.4.3",
+    "update_available": false
+   },
+   "health_info": {},
+   "message": "System health baseline unavailable.",
+   "success": true,
+   "warnings": [
+    "system_health baseline unavailable; returning REST-based sections only."
+   ]
+  },
+  "scenario": "baseline_unavailable",
+  "tool": "ha_get_system_health"
+ },
+ "health_sections_unavailable": {
+  "arguments": {
+   "include": "dead_entities,matter_network,repairs,themes,thread_network,zha_network,zwave_network",
+   "include_dismissed_repairs": true
+  },
+  "mode": "addon",
+  "requests": [
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/api/states",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "auth": "synthetic-supervisor-token",
+    "body": null,
+    "method": "GET",
+    "path": "/supervisor/addons/self/info",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config/entity_registry/list"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config_entries/get"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config_entries/get"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "config_entries/get"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "frontend/get_themes"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "ha_mcp_tools/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "otbr/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "repairs/list_issues"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "system_health/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "zha/devices"
+    },
+    "transport": "ws"
+   }
+  ],
+  "result": {
+   "component_count": 2,
+   "dead_entities": {
+    "config_entry_orphans": {
+     "count": 0,
+     "items": [],
+     "total_count": 0
+    },
+    "error": "Could not fetch entity registry (config/entity_registry/list: Command failed: synthetic entity registry failure)",
+    "stale_restored": {
+     "count": 0,
+     "items": [],
+     "total_count": 0
+    },
+    "summary": {
+     "candidate_total": 0,
+     "registry_total": 0
+    }
+   },
+   "ha_mcp_update": {
+    "current": "8.4.3",
+    "latest": "8.4.3",
+    "update_available": false
+   },
+   "health_info": {
+    "data": {
+     "cloud": {
+      "info": {
+       "alexa_enabled": false,
+       "can_reach_cert_server": "ok",
+       "can_reach_cloud": "ok",
+       "can_reach_cloud_auth": "ok",
+       "certificate_fingerprint": "53:59:4E:54:48:45:54:49:43",
+       "certificate_status": "ready",
+       "cloud_ice_servers_enabled": true,
+       "google_enabled": false,
+       "instance_id": "synthetic-instance-id-0000",
+       "logged_in": true,
+       "relayer_connected": true,
+       "relayer_region": "synthetic-region",
+       "remote_connected": true,
+       "remote_enabled": true,
+       "remote_server": "synthetic-remote.example.invalid",
+       "subscription_expiration": "2027-01-01T00:00:00+00:00"
+      }
+     },
+     "hassio": {
+      "info": {
+       "agent_version": "1.7.2",
+       "board": "ova",
+       "disk_total": "30.8 GB",
+       "disk_used": "9.1 GB",
+       "docker_version": "28.3.3",
+       "healthy": true,
+       "host_connectivity": {
+        "type": "pending"
+       },
+       "host_os": "Home Assistant OS 16.0",
+       "installed_addons": "Synthetic Alpha (1.0.0), Synthetic Beta (2.0.0), Synthetic Gamma (3.0.0)",
+       "nameservers": "192.0.2.53, 198.51.100.53",
+       "ntp_synchronized": true,
+       "supervisor_api": "ok",
+       "supervisor_connectivity": true,
+       "supervisor_version": "supervisor-2026.10.0",
+       "supported": true,
+       "update_channel": "stable",
+       "version_api": {
+        "error": "synthetic-error",
+        "type": "failed"
+       },
+       "virtualization": "kvm"
+      },
+      "manage_url": "/hassio/system"
+     },
+     "homeassistant": {
+      "info": {
+       "arch": "x86_64",
+       "config_dir": "/synthetic/config-dir",
+       "dev": false,
+       "docker": true,
+       "hassio": true,
+       "installation_type": "Home Assistant OS",
+       "os_name": "Linux",
+       "os_version": "6.12.0-synthetic",
+       "python_version": "3.13.7",
+       "run_as_root": true,
+       "timezone": "Synthetic/Canary_Zone",
+       "user": "synthetic-user",
+       "version": "2026.10.0",
+       "virtualenv": false
+      }
+     },
+     "synthetic_domain": {
+      "info": {
+       "synthetic_key": "synthetic-value"
+      }
+     }
+    },
+    "type": "initial"
+   },
+   "matter_network": {
+    "error": "Matter integration not available or error: Command failed: synthetic config entries failure"
+   },
+   "message": "Retrieved health info for 2 components",
+   "repairs": {
+    "count": 0,
+    "error": "Repairs data not available: Command failed: synthetic repairs failure",
+    "issues": []
+   },
+   "success": true,
+   "themes": {
+    "count": 0,
+    "default_dark_theme": null,
+    "default_theme": null,
+    "error": "Themes data not available: Command failed: synthetic themes failure",
+    "themes": []
+   },
+   "thread_network": {
+    "border_routers": [],
+    "count": 0,
+    "error": "Thread/OTBR integration not available or error: Command failed: synthetic otbr failure"
+   },
+   "zha_network": {
+    "count": 0,
+    "devices": [],
+    "error": "ZHA integration not available or error: Command failed: synthetic zha failure",
+    "total_count": 0
+   },
+   "zwave_network": {
+    "controller": {},
+    "count": 0,
+    "error": "Z-Wave JS integration not available or error: Command failed: synthetic config entries failure",
+    "nodes": [],
+    "total_count": 0
+   }
+  },
+  "scenario": "sections_unavailable",
+  "tool": "ha_get_system_health"
+ },
+ "integrations_list": {
+  "arguments": {
+   "exact_match": true,
+   "include_options": false,
+   "limit": 200,
+   "offset": 0
+  },
+  "mode": "addon",
+  "requests": [
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/api/config/config_entries/entry",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "ha_mcp_tools/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "logger/log_info"
+    },
+    "transport": "ws"
+   }
+  ],
+  "result": {
+   "count": 7,
+   "entries": [
+    {
+     "disabled_by": null,
+     "domain": "zha",
+     "entry_id": "01SYNTHZHA00000000000000000",
+     "log_level": "DEBUG",
+     "log_level_raw": 10,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "loaded",
+     "supports_options": true,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Synthetic ZHA Coordinator"
+    },
+    {
+     "disabled_by": null,
+     "domain": "zha_toolkit",
+     "entry_id": "01SYNTHZHATOOLKIT0000000000",
+     "log_level": "DEFAULT",
+     "log_level_raw": null,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "setup_retry",
+     "supports_options": false,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Synthetic ZHA Toolkit"
+    },
+    {
+     "disabled_by": null,
+     "domain": "zwave_js",
+     "entry_id": "01SYNTHZWAVEJS000000000000",
+     "log_level": "INFO",
+     "log_level_raw": 20,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "loaded",
+     "supports_options": true,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Synthetic Z-Wave JS"
+    },
+    {
+     "disabled_by": null,
+     "domain": "matter",
+     "entry_id": "01SYNTHMATTER0000000000000",
+     "log_level": "DEFAULT",
+     "log_level_raw": null,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "loaded",
+     "supports_options": true,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Matter Server for synthetic.user@example.invalid"
+    },
+    {
+     "disabled_by": null,
+     "domain": "otbr",
+     "entry_id": "01SYNTHOTBR000000000000000",
+     "log_level": "DEFAULT",
+     "log_level_raw": null,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "loaded",
+     "supports_options": true,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Synthetic OpenThread Border Router"
+    },
+    {
+     "disabled_by": null,
+     "domain": "synthetic_account",
+     "entry_id": "01SYNTHCLOUDACCOUNT0000000",
+     "log_level": "LEVEL_15",
+     "log_level_raw": 15,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "loaded",
+     "supports_options": true,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Account synthetic.user@example.invalid"
+    },
+    {
+     "disabled_by": "user",
+     "domain": "synthetic_long_title",
+     "entry_id": "01SYNTHLONGTITLE0000000000",
+     "log_level": "DEFAULT",
+     "log_level_raw": null,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "not_loaded",
+     "supports_options": false,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Synthetic integration with a deliberately long title that exceeds one hundred and twenty characters so truncation behaviour can be observed end to end"
+    }
+   ],
+   "has_more": false,
+   "limit": 200,
+   "next_offset": null,
+   "offset": 0,
+   "query": null,
+   "state_summary": {
+    "loaded": 5,
+    "not_loaded": 1,
+    "setup_retry": 1
+   },
+   "success": true,
+   "total_count": 7
+  },
+  "scenario": "ok",
+  "tool": "ha_get_integration"
+ },
+ "integrations_query": {
+  "arguments": {
+   "exact_match": true,
+   "include_options": false,
+   "limit": 200,
+   "offset": 0,
+   "query": "zha"
+  },
+  "mode": "addon",
+  "requests": [
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/api/config/config_entries/entry",
+    "query": {},
+    "transport": "http"
+   },
+   {
+    "auth": "synthetic-core-token",
+    "body": null,
+    "method": "GET",
+    "path": "/core/websocket",
+    "query": {},
+    "transport": "http",
+    "upgrade": "websocket"
+   },
+   {
+    "message": {
+     "access_token": "synthetic-core-token",
+     "type": "auth"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "ha_mcp_tools/info"
+    },
+    "transport": "ws"
+   },
+   {
+    "message": {
+     "type": "logger/log_info"
+    },
+    "transport": "ws"
+   }
+  ],
+  "result": {
+   "count": 2,
+   "entries": [
+    {
+     "disabled_by": null,
+     "domain": "zha",
+     "entry_id": "01SYNTHZHA00000000000000000",
+     "log_level": "DEBUG",
+     "log_level_raw": 10,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "loaded",
+     "supports_options": true,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Synthetic ZHA Coordinator"
+    },
+    {
+     "disabled_by": null,
+     "domain": "zha_toolkit",
+     "entry_id": "01SYNTHZHATOOLKIT0000000000",
+     "log_level": "DEFAULT",
+     "log_level_raw": null,
+     "pref_disable_new_entities": false,
+     "pref_disable_polling": false,
+     "source": "user",
+     "state": "setup_retry",
+     "supports_options": false,
+     "supports_reconfigure": false,
+     "supports_unload": true,
+     "title": "Synthetic ZHA Toolkit"
+    }
+   ],
+   "has_more": false,
+   "limit": 200,
+   "next_offset": null,
+   "offset": 0,
+   "query": "zha",
+   "state_summary": {
+    "loaded": 1,
+    "setup_retry": 1
+   },
+   "success": true,
+   "total_count": 2
+  },
+  "scenario": "ok",
+  "tool": "ha_get_integration"
+ }
+}

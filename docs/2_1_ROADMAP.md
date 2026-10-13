@@ -71,10 +71,11 @@ register mappings before changing their status; do not invent duplicate IDs.
   settings. Do not substitute defaults for observed effective settings or expose
   `db_url` credentials. This needs provider/compatibility discovery, not a claim
   that an existing generic diagnostic read already supplies it.
-- **HAMCP-129 — platform, App and integration diagnostics:** later allowlisted
-  projections for supported parts of `ha_get_system_health`, `ha_get_app` and
-  `ha_get_integration`. The shipped Alarmo inspector is a bounded precedent,
-  not blanket admission of these mixed upstream tools or their internal fallbacks.
+- **HAMCP-129 — platform, App and integration diagnostics:** implemented in
+  2.4.1-beta.6 as allowlisted projections of `ha_get_system_health`, `ha_get_app`
+  and `ha_get_integration` behind closed Engineering wrappers (see
+  [the design](HAMCP_129_PLATFORM_READS_DESIGN.md)). The mixed upstream tools
+  and their internal fallbacks are still not admitted generically.
 - **HAMCP-132 — flow/template-helper visibility:** retain as a separate later
   compatibility/read slice for `helper_type=all` and `template`. Do not combine
   it with helper actions or configuration writes.

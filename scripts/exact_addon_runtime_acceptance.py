@@ -109,7 +109,7 @@ ACCEPTANCE_TIMEOUT_SECONDS = 180
 EXACT_ADDON_PROFILES = {
     # Reuse the existing synthetic Supervisor detail fixture, not installed data.
     "8.6.0": {'addon_detail_profile': 'live-8.4.3',
- 'automatic_read_count': 25,
+ 'automatic_read_count': 28,
  'dashboard_runtime_fingerprint': '3c37bd1eb5b0c6076dd268dfd2cc4bf512a61b5ea94dbabf1e312c747cf242c5',
  'dashboard_status': 'reviewed',
  'entry_id': 'ha-mcp-v8.6.0-7426fb16',
@@ -215,7 +215,7 @@ EXACT_ADDON_PROFILES = {
             "51f919d34d8766ac93d663e5937c9db1b8cdb5275de9ad5f367b22d81821a01b"
         ),
         "addon_detail_profile": "live-8.4.3",
-        "automatic_read_count": 25,
+        "automatic_read_count": 28,
         "held_tools": {"ha_get_operation_status"},
         "dashboard_status": "reviewed",
         "operational_planning_supported": False,

@@ -2917,7 +2917,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         policy = registry.by_version["8.4.3"].policy
         counts = policy.classification_counts
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT, 59)
-        self.assertEqual(counts["automatic_read"], 25)
+        self.assertEqual(counts["automatic_read"], 28)
         self.assertEqual(counts["held_for_canary"], 1)
         self.assertEqual(
             {
@@ -2927,13 +2927,13 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             },
             {"ha_get_operation_status"},
         )
-        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 84)
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 27)
+        self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 87)
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
         self.assertEqual(
             {
                 item.upstream_name
                 for item in policy.tools
-                if item.classification in {"automatic_read", "held_for_canary"}
+                if item.is_read_route or item.classification == "held_for_canary"
             },
             set(DELEGATED_CORE_REQUIREMENTS) - {"ha_manage_blueprints"},
         )
@@ -2987,8 +2987,8 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         counts = json.loads(result.stdout)["tool_counts"]
         self.assertEqual(counts["reviewed_upstream_version"], "8.6.0")
         self.assertEqual(counts["reviewed_stock_catalog"], 77)
-        self.assertEqual(counts["expected_delegated_reads"], 25)
-        self.assertEqual(counts["expected_connector_total"], 84)
+        self.assertEqual(counts["expected_delegated_reads"], 28)
+        self.assertEqual(counts["expected_connector_total"], 87)
 
     async def test_missing_dashboard_evidence_withholds_only_dashboard_resources(self):
         evidence = [
@@ -3021,7 +3021,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             len(registered_tools(server)),
-            24,
+            27,
             msg=json.dumps(health, sort_keys=True),
         )
         self.assertIsNone(
@@ -3101,7 +3101,7 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(registered_tools(server).get("ha_get_device"))
         self.assertEqual(
-            gateway.health_snapshot()["dynamically_exposed_count"], 25
+            gateway.health_snapshot()["dynamically_exposed_count"], 28
         )
         self.assertGreater(gateway._admission_generation, upstream_generation)
         counters = runtime.health_snapshot()["counters"]

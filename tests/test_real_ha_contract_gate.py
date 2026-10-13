@@ -1489,7 +1489,7 @@ class RealHomeAssistantWorkflowGateTests(unittest.TestCase):
             self.assertIn(f'"{tool_name}"', source)
         self.assertIn('"config/device_registry/update"', source)
         self.assertIn('"config/area_registry/delete"', source)
-        self.assertIn('len(tools) == 25', source)
+        self.assertIn('len(tools) == 28', source)
         self.assertIn('"ha_get_operation_status" not in tools', source)
         self.assertIn('metadata.get("fallback") == "none"', source)
         self.assertIn('"lovelace/config/save"', source)

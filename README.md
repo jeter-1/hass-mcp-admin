@@ -1,17 +1,19 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.5** keeps an idle deep-health scan from being
-superseded by the periodic F3 recovery sweep (HAMCP-168). Real recovery,
-child, lock, task and plan writes still refuse the scan with the unchanged
-storage error; a refusal diagnostic is deferred to a logging-isolation task. It builds on beta.4's dormant governed entity-registry metadata
-administration (`create_entity_metadata_plan`) and beta.3's exact
+Engineering **2.4.1-beta.6** adds three delegated platform reads (HAMCP-129):
+`ha_get_system_health`, `ha_get_app` (installed add-ons) and
+`ha_get_integration` (config entries). Each is an Engineering-owned wrapper with
+a closed schema, Engineering-built upstream arguments and a positive output
+allowlist; add-on options, diagnostics, config checks and options flows stay
+unreachable. It builds on beta.5's deep-health fix, beta.4's dormant governed
+entity-registry metadata administration and beta.3's exact
 **ha-mcp 8.6.0** and **Core 2026.10.0** support.
-The healthy catalog is **84 tools: 59 native and 25 admitted delegated
+The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA5_RELEASE_NOTES.md),
-[acceptance contract](docs/V2_4_1_BETA5_ACCEPTANCE.md), and
-[entity metadata design](docs/HAMCP_069A_ENTITY_METADATA_DESIGN.md).
+See the [release notes](docs/V2_4_1_BETA6_RELEASE_NOTES.md),
+[acceptance contract](docs/V2_4_1_BETA6_ACCEPTANCE.md), and
+[platform reads design](docs/HAMCP_129_PLATFORM_READS_DESIGN.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -95,14 +97,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.5 release notes](docs/V2_4_1_BETA5_RELEASE_NOTES.md) and
-[2.4.1-beta.5 acceptance contract](docs/V2_4_1_BETA5_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.6 release notes](docs/V2_4_1_BETA6_RELEASE_NOTES.md) and
+[2.4.1-beta.6 acceptance contract](docs/V2_4_1_BETA6_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.5 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.6 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -145,7 +147,7 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**59 static tools plus 25 delegated reads, 84 total**. The Core inventory represents
+**59 static tools plus 28 delegated reads, 87 total**. The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

@@ -105,13 +105,13 @@ class AuthorityHelperTests(unittest.TestCase):
         health.update(admission_status='admitted_exact', selected_compatibility_entry_id='ha-mcp-v8.6.0-7426fb16',
                       observed_protocol_version='2025-03-26', observed_advertised_tool_count=77,
                       reviewed_accounted_tool_count=77, reviewed_tool_accounting_valid=True,
-                      exact_matched_automatic_read_count=25, dynamically_exposed_count=25, held_read_count=1)
+                      exact_matched_automatic_read_count=28, dynamically_exposed_count=28, held_read_count=1)
         observation = dict(success=True, provider='upstream_read_gateway', upstream_version='8.6.0',
-                           fallback='none', fallback_occurred=False, engineering_tool_count=helper.EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT + 25,
+                           fallback='none', fallback_occurred=False, engineering_tool_count=helper.EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT + 28,
                            engineering_local_tool_count=helper.EXPECTED_ENGINEERING_LOCAL_TOOL_COUNT,
                            gateway_health=health, held_tools_absent=True)
         self.assertTrue(helper.exact_readmission_observed(observation, expected_upstream_version='8.6.0'))
-        for field, value in [('reviewed_accounted_tool_count', 78), ('dynamically_exposed_count', 24),
+        for field, value in [('reviewed_accounted_tool_count', 78), ('dynamically_exposed_count', 27),
                              ('fallback_count', 1), ('held_read_count', 0),
                              ('selected_compatibility_entry_id', 'ha-mcp-v8.5.0-e1538bcd')]:
             with self.subTest(field=field):

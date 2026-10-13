@@ -1,11 +1,10 @@
 # HAMCP-129 delegated platform health, installed apps and integration status — design
 
-Status: **design proposal, awaiting Josh's approval.** This is Part 1 of
-HAMCP-129. It contains no production code. Part 2 (implementation) starts only
-after Josh approves this design **and** PR #246 (HAMCP-168, which takes
-`2.4.1-beta.5`) merges. Nothing here authorizes deployment, live Home Assistant
-or Engineering access, registry signing, HOLD or support-window changes, or a
-release.
+Status: **approved by Josh on 2026-10-12 (O1-O9 as recorded in §10) and
+implemented in HAMCP-129 Part 2 as Engineering `2.4.1-beta.6`.** The text below
+is the approved Part 1 design; implementation deviations are listed in §12.
+Nothing here authorizes deployment, live Home Assistant or Engineering
+access, registry signing, HOLD or support-window changes, or a release.
 
 - Register: HAMCP-129.
 - Base: `main` at `c3097c9d68c1608b35b22c136d64b84ffe2c8310` (Engineering
@@ -688,3 +687,72 @@ protected `config.yaml` and `.release/` paths and needs explicit authorization
 - No manual or full-tier CI dispatch.
 - No change to PR #246 or its files (`governance/service.py`, `f3_runtime/*`).
 - Draft PR only; not marked Ready, not merged, not released or deployed.
+
+## 12. Part 2 implementation record and deviations
+
+Implemented in `providers/upstream_platform_reads.py` with gateway, policy,
+Core-route and capability hooks, and tested in
+`tests/test_hamcp129_platform_reads.py`. Exact upstream outputs were generated
+offline by running the pinned ha-mcp releases against synthetic Core and
+Supervisor fakes (`tests/fixtures/hamcp129/`, see `provenance.json`); the
+replay tests project them through the shipped gateway.
+
+None of the following changes an approved decision:
+
+- **D1 (F11 resolved).** Core 2026.10.1 (`abe1fdd7cd6b4de1715c87b6fd87d92699514ef9`)
+  adds one `connection.send_result(msg[ID])` to `zha/devices/reconfigure`
+  (`zha/websocket_api.py:516`). The health section uses only `zha/devices`; no
+  effect.
+- **D2 (evidence identities, O5).** The reviewed contract-review evidence
+  `classification_counts` change (automatic reads 25 to 28, wrapper-required
+  13 to 10 at each version), so the compiled registry's
+  `artifact_evidence_sha256` and the derived dashboard
+  `attestation_fingerprint` are regenerated, together with the constants that
+  pin them (`upstream_dashboard_builtin_attestations.json`,
+  `tests/fixtures/ha_core_2026_9_authority.json`,
+  `scripts/exact_8_4_1_dashboard_quarantine_acceptance.py`,
+  `tests/test_exact_8_1_runtime_acceptance.py`). Precedent `9a143b2`. The
+  owner-signed Core registry is unchanged.
+- **D3 (binding mismatch).** A policy entry whose adapter token does not match
+  its exact tool, version, source commit and schema fingerprint refuses the
+  whole policy load (the blueprint-adapter precedent), while runtime upstream
+  drift still quarantines only the affected tool.
+- **D4 (size backstop).** Adversarial maximum-length strings in every capped
+  list can exceed the response limit; such results fail closed as
+  `response_too_large` instead of being silently truncated further.
+- **D5 (fail-closed shapes).** A config entry carrying `options` (impossible
+  with `include_options=false`) refuses the result. Section failures are
+  reported with the fixed `section_unavailable` code; upstream error text and
+  warnings are replaced with fixed codes (`baseline_unavailable`,
+  `upstream_warnings_withheld`, `stats_unavailable:<slug>`).
+- **D6 (output additions).** Lists carry `total_count` and `truncated`; the
+  app summary is recomputed from the projected listing; not-found refusals
+  carry completeness details; the Matter title is masked like integration
+  titles; `query` is trimmed and lower-cased before matching.
+- **D7 (test harness).** The configured upstream endpoint host and path are
+  redaction secrets in the sanitizer, so the test endpoint uses names that do
+  not collide with the fixed reason codes.
+- **D8 (signed future-release reuse).** The existing rule in
+  `ha_mcp_readmission/ha_mcp.py` (`_select_signed_profile`, from `7cbc490`)
+  refuses signed reuse of any policy that contains a version-bound wrapper read
+  route for a different ha-mcp version. The 8.5.0 and 8.6.0 policies were
+  already non-reusable because of their blueprint adapters. The platform
+  adapters make 8.4.3 non-reusable too. A future ha-mcp release such as 8.4.4
+  therefore needs a compiled exact release, not just an owner-signed ha-mcp
+  registry entry. With only a signed entry it admits no delegated reads, fails
+  closed and makes no dispatch. Before this change it would have admitted 25.
+  `tests/test_beta58_ha_mcp_8_4_3_continuity.py` now asserts the refusal. The
+  policy hash change approved under O5 also stops any published signed ha-mcp
+  entry that binds the old 8.4.3, 8.5.0 or 8.6.0 policy hash from matching.
+  Whether any such entry is published cannot be determined from source
+  (`unknown`). The owner-run `scripts/prepare_ha_mcp_release_registry_update.py`
+  does not apply this runtime rule. It can still prepare a signed 8.4.4 entry
+  against the 8.4.3 profile, which the runtime then refuses; this was already
+  true for 8.5.x and 8.6.x. The script is unchanged here. Its exact-version
+  evidence now reports `matched_read_count` 28 for 8.4.3. This is fail-closed
+  and needs no signed-registry change, but it narrows signed-only continuity,
+  so it is listed for Josh.
+- **D9 (§6 file list).** `tests/test_ha_mcp_production_readmission.py`
+  (pinned to 8.2.0) and `promotion_regression_manifest.yaml` (beta.39) did not
+  need changes. The count assertions for the current versions changed in the
+  test modules listed in the PR instead.

@@ -93,6 +93,11 @@ DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_get_operation_status": ("core.basic_websocket_read",),
     "ha_get_overview": ("core.delegated_device_effective_area",),
     "ha_get_skill_guide": ("core.basic_rest_read",),
+    # HAMCP-129 (O1): the basic profiles attest neither these exact commands
+    # nor Supervisor; Engineering's allowlist projection fails closed on drift.
+    "ha_get_system_health": ("core.basic_websocket_read", "core.basic_rest_read"),
+    "ha_get_app": ("core.basic_websocket_read",),
+    "ha_get_integration": ("core.basic_websocket_read", "core.basic_rest_read"),
     "ha_get_state": ("core.direct_entity_state_read",),
     "ha_get_todo": ("core.basic_websocket_read",),
     "ha_get_zone": ("core.basic_rest_read",),

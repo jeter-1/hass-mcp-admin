@@ -3636,7 +3636,7 @@ async def _run_core_2026_9_child_contract(
             if not str(item["disposition"]).startswith("admitted")
         ]
         _assert_device_contract(
-            len(tools) == 25,
+            len(tools) == 28,
             "child_consumer_catalog",
             missing_key="delegated_tool_count",
             diagnostic={
