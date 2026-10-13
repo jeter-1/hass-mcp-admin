@@ -6,7 +6,7 @@ import json
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
-from ..errors import InvalidRequestError
+from ..errors import ErrorCode, InvalidRequestError
 
 CORE_VERSION = "2026.9.2"
 CORE_SOURCE = "33c3e0cca60e73a8c4970ee677d75b8bc6464cdf"
@@ -37,6 +37,12 @@ def digest(value: object) -> str:
                              ensure_ascii=True, allow_nan=False).encode()).hexdigest()
 
 
+# Provider admission failures, raised before any upstream tools/call.
+ADMISSION_REFUSALS = frozenset({
+    "provider_identity_unavailable", "provider_contract_mismatch", "provider_admission_failed",
+})
+
+
 class FanRefusal(InvalidRequestError, ValueError):
     """Only fixed local categories, never upstream text, leave this boundary."""
 
@@ -44,6 +50,10 @@ class FanRefusal(InvalidRequestError, ValueError):
         import re
         if not isinstance(category, str) or not re.fullmatch(r"[a-z_]{1,64}", category):
             category = "fan_internal_refusal"
+        if category.partition("_")[2] in ADMISSION_REFUSALS:
+            # The reviewed provider was not admitted; the request was not at
+            # fault. A same-input retry cannot succeed until the provider does.
+            self.code = ErrorCode.PROVIDER_UNAVAILABLE
         super().__init__(category, details={"category": category, "fallback": "none"})
 
 

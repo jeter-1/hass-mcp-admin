@@ -143,7 +143,11 @@ class AuditProbe(unittest.TestCase):
             entries = [json.loads(line) for line in Path(settings.audit_path).read_text().splitlines()]
             rows = [x for x in entries if x.get('tool_name') == 'control_fan']
             self.assertEqual(len(rows), 2)
-            self.assertEqual(rows[1]['analysis_summary']['fan_outcome'], 'request_failed_reconcile_task')
+            # HAMCP-175 F4: refused during preparation, before any saved task.
+            self.assertEqual(rows[1]['analysis_summary']['fan_outcome'], 'preparation_failed_no_task')
+            self.assertNotIn('task_id', rows[1]['analysis_summary'])
+            self.assertNotIn('task_id', refused.text)
+            self.assertIn('no_task', refused.text)
             self.assertEqual(rows[1]['analysis_summary']['provider'], 'upstream_typed_fan')
             self.assertEqual(rows[1]['analysis_summary']['operation_id'], refused_args['operation_id'])
             self.assertIn('upstream_typed_fan', json.dumps(rows[0]))

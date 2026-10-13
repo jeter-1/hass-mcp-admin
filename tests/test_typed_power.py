@@ -426,7 +426,11 @@ class PowerGatewayTests(unittest.TestCase):
             successful = [r for r in rows if r.get('analysis_summary',{}).get('power_outcome')=='succeeded_verified']
             self.assertEqual(len(successful), 2)
             self.assertTrue(all(r['analysis_summary']['provider']=='upstream_typed_power' for r in successful))
-            self.assertTrue(any(r.get('analysis_summary',{}).get('power_outcome')=='request_failed_reconcile_task' for r in rows))
+            # HAMCP-175 F4: the Core refusal precedes any saved task.
+            failed = [r for r in rows if r.get('analysis_summary',{}).get('power_outcome')=='preparation_failed_no_task']
+            self.assertEqual(len(failed), 1)
+            self.assertNotIn('task_id', failed[0]['analysis_summary'])
+            self.assertFalse(any(r.get('analysis_summary',{}).get('power_outcome')=='request_failed_reconcile_task' for r in rows))
             self.assertTrue(any(r.get('operation_class')=='typed_power_lifecycle' and r.get('state')=='succeeded_verified' for r in rows))
             self.assertFalse(core.leases or core.commits)
             self.assertEqual(service.locks.records(), ())

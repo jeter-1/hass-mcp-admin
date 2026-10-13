@@ -3,7 +3,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from .compatibility import SETTINGS
-from ..power.contracts import PowerRequest, digest
+from ..power.contracts import PowerRequest
 from ..power.service import POWER_OPERATIONS
 from ..tool_framework import run_structured
 
@@ -19,9 +19,11 @@ async def control_power(
     plan or panel approval is needed. Resolve ambiguous targets before calling.
     Generate operation_id ONCE as current UTC epoch seconds + '-' + uuid4().hex;
     manage it automatically without asking the user to supply it. Retain it for
-    reconciliation. New IDs expire after five minutes. The same ID and arguments
-    only reconcile; changed arguments refuse. Read get_execution_task after a
-    timeout or partial response. Never create a fresh ID to retry uncertain work.
+    reconciliation. New IDs expire after five minutes. Once a task is saved, the
+    same ID and arguments only reconcile; changed arguments refuse. Read
+    get_execution_task after a timeout or partial response. Never create a fresh
+    ID to retry uncertain work. A failure reporting reconciliation "no_task"
+    saved no task and dispatched nothing; it returns no task pointer.
 
     Only light/switch turn_on/turn_off are supported. No toggle, brightness,
     color, extra data, bulk, area/device targets or other domains. Existing HA
@@ -32,12 +34,21 @@ async def control_power(
     attribute preservation. Inspect the task outcome, not outer response success.
     Restoration is a separate owner-requested action after reconciliation.
     """
+    metadata = {"provider": "upstream_typed_power", "fallback": "none", "operation_id": operation_id}
+
+    async def run():
+        service = POWER_OPERATIONS.require()
+        request = PowerRequest(entity_id=entity_id, action=action, operation_id=operation_id).checked()
+        try:
+            result = await service.control(request)
+        except Exception:
+            # Guidance follows durable state: no pointer before a saved task.
+            metadata.update(service.failure_guidance(request))
+            raise
+        metadata["task_id"] = request.task_id
+        return result
+
     return await run_structured(
         "control_power", "Returned the authoritative ordinary power operation receipt.",
-        lambda: POWER_OPERATIONS.require().control(PowerRequest(
-            entity_id=entity_id, action=action, operation_id=operation_id).checked()),
-        metadata={"provider": "upstream_typed_power", "fallback": "none",
-                  "task_id": digest({"power_operation_id": operation_id})[:32],
-                  "operation_id": operation_id},
-        response_limit=SETTINGS.response_size_limit,
+        run, metadata=metadata, response_limit=SETTINGS.response_size_limit,
     )

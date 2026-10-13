@@ -21,6 +21,7 @@ from .mcp import (
     MAX_TOOL_CATALOG_SIZE,
     DashboardTransportError,
     _classify_transport_exception,
+    _iter_exceptions,
 )
 
 
@@ -529,6 +530,15 @@ class McpReadGatewayTransport:
             ),
         ):
             return exc
+        if isinstance(exc, BaseExceptionGroup):
+            # The pinned SDK session task group wraps a body exception. A group
+            # whose sole leaf is a local wrapper (raised before tools/call)
+            # keeps it. Mixed or ambiguous groups keep transport semantics.
+            leaves = tuple(_iter_exceptions(exc))
+            if len(leaves) == 1 and isinstance(
+                leaves[0], (BeforeDispatchFailure, CatalogValidationFailure)
+            ):
+                return leaves[0]
         return DashboardTransportError(_classify_transport_exception(exc))
 
     def _operation_budget_seconds(

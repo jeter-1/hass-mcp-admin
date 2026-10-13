@@ -1213,6 +1213,80 @@ def validate_reviewed_release_catalog(
     )
 
 
+def validate_reviewed_release_dependencies(
+    release: ReviewedUpstreamRelease,
+    *,
+    observed_server_name: str,
+    observed_upstream_version: str,
+    observed_protocol_version: str,
+    tools: Sequence[Any],
+    required_tools: Sequence[str],
+) -> bool:
+    """Admit only a fixed caller's exact compiled dependencies.
+
+    Each required tool must appear exactly once and match every reviewed
+    contract component under the release's own runtime model. Other advertised
+    tools are not inspected for admission and receive no authority: the caller
+    dispatches only its own compiled names. Whole-catalog admission remains the
+    rule for every surface that exposes or routes advertised tools.
+    """
+
+    runtime_model = release.runtime_contract_fingerprint_model
+    required = tuple(required_tools)
+    if (
+        release.revoked
+        or not required
+        or len(set(required)) != len(required)
+        or observed_server_name != release.server_name
+        or observed_upstream_version != release.version
+        or observed_protocol_version not in release.allowed_protocol_versions
+        or runtime_model not in RUNTIME_CONTRACT_FINGERPRINT_MODELS
+    ):
+        return False
+    expected_contracts = release.tool_contracts_by_name
+    expected_policy = release.policy.by_name
+    descriptors: dict[str, list[dict[str, Any]]] = {
+        name: [] for name in required
+    }
+    for item in tools:
+        if not isinstance(item, dict):
+            return False
+        name = item.get("name")
+        if not isinstance(name, str) or not _TOOL_NAME.fullmatch(name):
+            return False
+        if name in descriptors:
+            descriptors[name].append(item)
+    for name in required:
+        contract = expected_contracts.get(name)
+        entry = expected_policy.get(name)
+        if (
+            contract is None
+            or entry is None
+            or entry.classification != contract.policy_classification
+            or len(descriptors[name]) != 1
+        ):
+            return False
+        try:
+            observed = _catalog_tool_component_fingerprints(
+                descriptors[name][0],
+                runtime_contract_fingerprint_model=runtime_model,
+            )
+        except (
+            TypeError,
+            ValueError,
+            OverflowError,
+            UnicodeError,
+            RecursionError,
+        ):
+            return False
+        if any(
+            value != getattr(contract, component)
+            for component, value in observed.items()
+        ):
+            return False
+    return True
+
+
 def load_upstream_tool_policy(
     path: Path = POLICY_PATH,
     *,

@@ -20,6 +20,7 @@ def request_summary(telemetry, *, kind="fan", provider=PROVIDER):
         "created", "preflight", "dispatching", "observing", "succeeded_verified",
         "failed_pre_dispatch", "failed_post_dispatch", "manual_review_required",
         "cancelled_pre_dispatch", "request_failed_reconcile_task",
+        "preparation_failed_no_task",
     }:
         safe[kind + "_outcome"] = outcome
     for name in ("dispatch_intent_recorded", "provider_response_received", "terminal"):
