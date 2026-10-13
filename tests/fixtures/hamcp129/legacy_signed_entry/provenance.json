@@ -1,0 +1,16 @@
+{
+ "entry": {
+  "path": "tests/fixtures/hamcp129/legacy_signed_entry/base_5ea3118_signed_entry_8_4_4.json",
+  "policy_resource": "upstream_tool_policy_8_4_3.json",
+  "policy_sha256": "sha256:dc61eeb287de20a30c78504efb21352d7a4d4cf9f248dcb4e6c823b64deb0cbe",
+  "sha256": "8f53e71b90a243b9bf745f4cda11b1bf35bfb20df4daa2ba67b092a81f0251d8"
+ },
+ "generator": {
+  "path": "tests/fixtures/hamcp129/legacy_signed_entry/generate.py",
+  "sha256": "ad369299f52eead5301da120a30bbb677b46edaf1bf7e4cf63b9b5d0655c95ca"
+ },
+ "process": "Clean detached checkout of source_commit; that checkout's _signed_entry_for(load_reviewed_upstream_release_registry().by_version['8.4.3'], version='8.4.4') written with json.dumps(indent=2). Not hand-edited.",
+ "source_commit": "5ea311895e1fcb52758235298ac21c670dc8c756",
+ "statement": "Synthetic entry derived only from committed compiled release data; no production registry, signing key, live Home Assistant or deployed endpoint was used.",
+ "task": "HAMCP-129"
+}

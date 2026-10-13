@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import hashlib
+from pathlib import Path
 from typing import Any, Sequence
 
 from ..signed_registry import ReviewedReleaseEntry
@@ -12,6 +14,7 @@ from ..upstream_tool_policy import (
     ReviewedUpstreamRelease,
     ReviewedUpstreamReleaseRegistry,
     UpstreamToolPolicy,
+    load_upstream_tool_policy,
     runtime_contract_fingerprint,
     runtime_description_fingerprint,
     schema_fingerprint,
@@ -32,6 +35,7 @@ from .models import (
 from .registry import ReleaseRegistryAuthority, SignedReleaseRegistry
 from ..providers.upstream_platform_reads import (
     PLATFORM_READ_BINDING_ABSENT,
+    is_platform_adapter,
     withhold_unbound_platform_reads,
 )
 from ..providers.upstream_search_8_6 import resolve_search_variant, search_capability_contract
@@ -41,6 +45,21 @@ PROFILE_VERSION = 1
 PROFILE_ID_PREFIX = "ha_mcp_binary_read_profile_"
 ADAPTER_ID_PREFIX = "ha_mcp_read_gateway_adapter_"
 CONTRACT_MODEL = "ha-mcp-binary-capability-contract-v1"
+
+# Exact compiled policy bindings that an earlier binary offered for signed
+# reuse and that HAMCP-129 replaced. A signed entry accepted by that binary
+# names one of these (resource, digest) pairs; it keeps exactly that binary's
+# policy and profile, and the platform wrappers are withheld. Only these
+# enumerated digests are recognized: any other digest must equal a current
+# compiled binding. The 8.5.0 and 8.6.0 policies are not listed because their
+# blueprint adapters already made them non-reusable for any other version.
+_LEGACY_SIGNED_POLICY_BINDINGS = {
+    (
+        "upstream_tool_policy_8_4_3.json",
+        "sha256:dc61eeb287de20a30c78504efb21352d7a4d4cf9f248dcb4e6c823b64deb0cbe",
+    ): "legacy_signed_upstream_tool_policy_8_4_3.json",
+}
+_LEGACY_POLICY_ROOT = Path(__file__).resolve().parent
 
 
 @dataclass(frozen=True)
@@ -223,6 +242,37 @@ class HaMcpAuthoritySelector:
                     "binary_profile_binding_duplicate"
                 )
             self._by_policy_binding[key] = (release, profile)
+        self._by_legacy_policy_binding: dict[
+            tuple[str, str],
+            tuple[ReviewedUpstreamRelease, CapabilityProfile, tuple[str, ...]],
+        ] = {}
+        for (resource, digest), legacy_resource in (
+            _LEGACY_SIGNED_POLICY_BINDINGS.items()
+        ):
+            current = next(
+                (
+                    item
+                    for item, _ in self._by_policy_binding.values()
+                    if item.policy_resource == resource
+                ),
+                None,
+            )
+            if current is None:
+                continue
+            if (resource, digest) in self._by_policy_binding:
+                raise HaMcpAuthorityError("binary_profile_binding_duplicate")
+            legacy = _legacy_release(current, digest, legacy_resource)
+            self._by_legacy_policy_binding[(resource, digest)] = (
+                legacy,
+                _profile_for_release(legacy),
+                tuple(
+                    sorted(
+                        entry.upstream_name
+                        for entry in current.policy.tools
+                        if is_platform_adapter(entry)
+                    )
+                ),
+            )
 
     @property
     def signed_registry(self) -> SignedReleaseRegistry:
@@ -412,25 +462,71 @@ class HaMcpAuthoritySelector:
     ] | None:
         if entry is None:
             return None
-        selected = self._by_policy_binding.get((entry.policy_resource, entry.policy_sha256))
-        if selected is None:
-            return None
-        release, profile = selected
-        # Platform wrappers are bound to exact per-version source. Signed reuse
-        # withholds only those wrappers; every other reviewed read is reused
-        # exactly as the bound policy defines it.
-        view, withheld = withhold_unbound_platform_reads(
-            release.policy, entry.version
-        )
-        if withheld:
-            release = replace(release, policy=view)
-            profile = _profile_for_release(release)
+        key = (entry.policy_resource, entry.policy_sha256)
+        legacy = self._by_legacy_policy_binding.get(key)
+        if legacy is not None:
+            # The earlier binary's exact policy never carried the wrappers.
+            release, profile, withheld = legacy
+        else:
+            selected = self._by_policy_binding.get(key)
+            if selected is None:
+                return None
+            release, profile = selected
+            # Platform wrappers are bound to exact per-version source. Signed
+            # reuse withholds only those wrappers; every other reviewed read
+            # is reused exactly as the bound policy defines it.
+            view, withheld = withhold_unbound_platform_reads(
+                release.policy, entry.version
+            )
+            if withheld:
+                release = replace(release, policy=view)
+                profile = _profile_for_release(release)
         if any(
             item.is_read_route and item.classification != "automatic_read"
             for item in release.policy.tools
         ) and entry.version != release.version:
             return None
         return release, profile, withheld
+
+
+def _legacy_release(
+    current: ReviewedUpstreamRelease,
+    digest: str,
+    resource: str,
+) -> ReviewedUpstreamRelease:
+    """Bind one enumerated earlier policy to the current compiled release.
+
+    The packaged bytes must hash to the enumerated digest and load under the
+    current release's exact version, source and contracts; anything else is a
+    binary defect and fails closed.
+    """
+
+    path = _LEGACY_POLICY_ROOT / resource
+    if "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest() != digest:
+        raise HaMcpAuthorityError("legacy_policy_binding_digest_mismatch")
+    policy = load_upstream_tool_policy(
+        path,
+        expected_version=current.version,
+        expected_source_tag=current.release_tag,
+        expected_source_commit=current.source_commit,
+    )
+    contracts = current.tool_contracts_by_name
+    if (
+        policy.reviewed_stock_catalog_tool_count
+        != current.policy.reviewed_stock_catalog_tool_count
+        or policy.reviewed_stock_catalog_fingerprint
+        != current.policy.reviewed_stock_catalog_fingerprint
+        or set(policy.by_name) != set(contracts)
+        or any(
+            contracts[name].input_schema_fingerprint
+            != item.input_schema_fingerprint
+            or contracts[name].policy_classification != item.classification
+            or is_platform_adapter(item)
+            for name, item in policy.by_name.items()
+        )
+    ):
+        raise HaMcpAuthorityError("legacy_policy_binding_contract_mismatch")
+    return replace(current, policy=policy, policy_sha256=digest)
 
 
 def signed_entry_to_expiry(
