@@ -1,19 +1,20 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.6** adds three delegated platform reads (HAMCP-129):
-`ha_get_system_health`, `ha_get_app` (installed add-ons) and
-`ha_get_integration` (config entries). Each is an Engineering-owned wrapper with
-a closed schema, Engineering-built upstream arguments and a positive output
-allowlist; add-on options, diagnostics, config checks and options flows stay
-unreachable. It builds on beta.5's deep-health fix, beta.4's dormant governed
-entity-registry metadata administration and beta.3's exact
-**ha-mcp 8.6.0** and **Core 2026.10.0** support.
-The healthy catalog is **87 tools: 59 native and 28 admitted delegated
+Engineering **2.4.1-beta.6** repairs typed power and fan control (HAMCP-175):
+admission now checks only the three upstream tools they call, so unrelated
+ha-mcp catalog additions no longer refuse them. Refusals surface as bounded
+`provider_unavailable`, exchange telemetry is accurate, and a failure before a
+task is saved returns no task pointer. ha-mcp's filesystem tools stay disabled
+until dashboard-write admission (HAMCP-177) ships. It builds on beta.5's deep-health
+correction, beta.4's dormant governed entity-registry metadata administration
+(`create_entity_metadata_plan`) and beta.3's exact **ha-mcp 8.6.0** and
+**Core 2026.10.0** support.
+The healthy catalog is **84 tools: 59 native and 25 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
 See the [release notes](docs/V2_4_1_BETA6_RELEASE_NOTES.md),
 [acceptance contract](docs/V2_4_1_BETA6_ACCEPTANCE.md), and
-[platform reads design](docs/HAMCP_129_PLATFORM_READS_DESIGN.md).
+[entity metadata design](docs/HAMCP_069A_ENTITY_METADATA_DESIGN.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -147,7 +148,7 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**59 static tools plus 28 delegated reads, 87 total**. The Core inventory represents
+**59 static tools plus 25 delegated reads, 84 total**. The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

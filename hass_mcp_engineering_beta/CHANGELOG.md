@@ -1,26 +1,18 @@
 # Changelog
 
-## 2.4.1-beta.6 - Delegated platform health, add-on and integration reads (HAMCP-129)
+## 2.4.1-beta.6 - Typed power and fan admission repair (HAMCP-175)
 
-- Admit `ha_get_system_health`, `ha_get_app` and `ha_get_integration` at
-  ha-mcp 8.4.3, 8.5.0 and 8.6.0 through Engineering-owned wrappers bound to
-  each exact input-schema fingerprint and source commit.
-- Close the public schemas and build the only upstream arguments; apply
-  `slug`, `domain` and `entry_id` as Engineering-side filters without sending
-  their upstream modes; refuse `include_options`, `include_schema`,
-  diagnostics, config checks, the full ZHA dump, the add-on store and
-  `repository` before dispatch.
-- Project every result through a positive output allowlist with list and
-  string caps; mask e-mail-like title substrings; withhold upstream error
-  text and warnings; refuse `include_stats` when a stats-free snapshot shows
-  more than 32 started add-ons (a sampled bound); report unavailable stats as
-  `partial` with `stats_unavailable`.
-- Keep signed-only ha-mcp reuse at the 25 base delegated reads and withhold
-  only the three unbound platform wrappers, reported as
-  `platform_read_binding_absent`.
-- Catalog 84 to 87 tools (28 delegated reads); regenerate the compiled
-  ha-mcp release registry evidence identities for the new counts.
-- Preserve the owner-signed Core registry, HOLD, support window, durable
+- Admit typed power and fan sessions on their three required upstream tools
+  (each matched against every reviewed contract component) instead of the
+  whole catalog, so unrelated ha-mcp additions no longer refuse them; any
+  other tool name is refused and the generic read gateway is unchanged.
+- Surface pre-dispatch admission refusals as bounded, non-retryable
+  `provider_unavailable` across MCP SDK exception groups.
+- Count and finish every provider exchange so `upstream_attempted` is truthful.
+- Return no task pointer when a failure or cancellation happens before the
+  declaration is saved; keep it once a declaration exists or its state is
+  unknown.
+- Preserve tools, public descriptions, schemas, routing, registries, durable
   formats, workflows and stable v1.
 
 ## 2.4.1-beta.5 - Deep health survives the idle recovery sweep (HAMCP-168)
