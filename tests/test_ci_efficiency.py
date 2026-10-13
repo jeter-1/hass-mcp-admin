@@ -286,15 +286,43 @@ class CIEfficiencyTests(unittest.TestCase):
 
 
 # HAMCP-178: every runner label is an explicit image, so a GitHub move of a
-# floating label (ubuntu-latest -> Ubuntu 26 from 2026-10-19) cannot change
-# the OS, Python or tooling under CI or publication without a reviewed change.
+# floating label (ubuntu-latest -> Ubuntu 26 from 2026-10-19) cannot move CI or
+# publication to another OS release without a reviewed change. GitHub still
+# updates the preinstalled software within a pinned image on its own schedule.
 PINNED_RUNNER = re.compile(r"^(ubuntu|windows|macos)-[0-9]+(\.[0-9]+)?(-arm|-arm64)?$")
 EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.S)
 LITERAL = re.compile(r"'((?:[^']|'')*)'")
 MATRIX_KEY = re.compile(r"^matrix\.([A-Za-z_][A-Za-z0-9_-]*)$")
 # Runner values supplied at run time by a fromJSON matrix, keyed by the
-# (workflow, job) that consumes them; each maps to the source of its labels.
-DYNAMIC_RUNNER_SOURCES = {("ci.yml", "exact-addon-runtime-acceptance"): "support_window.RUNNERS"}
+# (workflow, job) that consumes them and bound to the exact reviewed matrix
+# expression; each draws its labels from support_window.RUNNERS.
+DYNAMIC_RUNNER_SOURCES = {
+    ("ci.yml", "exact-addon-runtime-acceptance"):
+        "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}",
+}
+
+
+def matrix_labels(workflow_name, job_name, job, key, dynamic_sources):
+    """Return every label ``matrix.<key>`` can supply, or raise ValueError."""
+    matrix = job.get("strategy", {}).get("matrix")
+    if isinstance(matrix, dict):
+        values = matrix.get(key, [])
+        values = list(values) if isinstance(values, list) else [values]
+        include = matrix.get("include", [])
+        if not isinstance(include, list) or not all(isinstance(row, dict) for row in include):
+            raise ValueError(f"unresolvable matrix include for {key!r}")
+        values += [row[key] for row in include if key in row]
+        for value in values:
+            if not isinstance(value, str) or EXPRESSION.search(value):
+                raise ValueError(f"unresolvable matrix value {value!r} for {key!r}")
+        return values
+    source = dynamic_sources.get((workflow_name, job_name))
+    if source is None:
+        raise ValueError(f"unreviewed dynamic runner source for matrix.{key}")
+    expression, labels = source
+    if matrix != expression:
+        raise ValueError(f"dynamic matrix {matrix!r} is not the reviewed source {expression!r}")
+    return list(labels)
 
 
 def runner_labels(workflow_name, job_name, job, dynamic_sources):
@@ -302,11 +330,17 @@ def runner_labels(workflow_name, job_name, job, dynamic_sources):
 
     Expressions are accepted only as ``matrix.<key>`` references with quoted
     literal fallbacks; a matrix key resolves from the static matrix or from a
-    reviewed dynamic source. Anything else is unresolvable and refused.
+    reviewed dynamic source bound to its exact matrix expression. Runner groups
+    are refused because no reviewed group-to-image contract exists. Anything
+    that resolves to no label, or cannot be resolved, is refused.
     """
+    if "runs-on" not in job:
+        raise ValueError("job has neither runs-on nor a reusable workflow")
     runs_on = job["runs-on"]
     if isinstance(runs_on, dict):
-        runs_on = runs_on.get("labels", [])
+        if set(runs_on) != {"labels"}:
+            raise ValueError(f"runner group or unsupported runs-on mapping {runs_on!r}")
+        runs_on = runs_on["labels"]
     values = runs_on if isinstance(runs_on, list) else [runs_on]
     labels = []
     for value in values:
@@ -319,7 +353,7 @@ def runner_labels(workflow_name, job_name, job, dynamic_sources):
         if EXPRESSION.sub("", value).strip():
             raise ValueError(f"runs-on mixes text and expressions: {value!r}")
         for expression in expressions:
-            labels += [literal.replace("''", "'") for literal in LITERAL.findall(expression)]
+            resolved = [literal.replace("''", "'") for literal in LITERAL.findall(expression)]
             for term in re.split(r"\|\|", LITERAL.sub("", expression)):
                 term = term.strip()
                 if not term:
@@ -327,16 +361,12 @@ def runner_labels(workflow_name, job_name, job, dynamic_sources):
                 key = MATRIX_KEY.match(term)
                 if key is None:
                     raise ValueError(f"unresolvable runs-on term {term!r}")
-                matrix = job.get("strategy", {}).get("matrix")
-                if isinstance(matrix, dict):
-                    static = matrix.get(key.group(1), [])
-                    labels += static if isinstance(static, list) else [static]
-                    labels += [row[key.group(1)] for row in matrix.get("include", [])
-                               if key.group(1) in row]
-                elif (workflow_name, job_name) in dynamic_sources:
-                    labels += list(dynamic_sources[(workflow_name, job_name)])
-                else:
-                    raise ValueError(f"unreviewed dynamic runner source for {term!r}")
+                resolved += matrix_labels(workflow_name, job_name, job, key.group(1), dynamic_sources)
+            if not resolved:
+                raise ValueError(f"runs-on expression resolves to no label: {value!r}")
+            labels += resolved
+    if not labels:
+        raise ValueError(f"runs-on resolves to no label: {job['runs-on']!r}")
     return labels
 
 
@@ -358,8 +388,8 @@ class RunnerImagePinningTests(unittest.TestCase):
         if str(ROOT / "tests") not in sys.path:
             sys.path.append(str(ROOT / "tests"))
         from support.support_window_matrix import support_window
-        cls.dynamic_sources = {key: support_window().RUNNERS.values()
-                               for key in DYNAMIC_RUNNER_SOURCES}
+        cls.dynamic_sources = {key: (expression, support_window().RUNNERS.values())
+                               for key, expression in DYNAMIC_RUNNER_SOURCES.items()}
         directory = ROOT / ".github/workflows"
         cls.paths = sorted([*directory.glob("*.yml"), *directory.glob("*.yaml")])
         cls.workflows = {path.name: yaml.safe_load(path.read_text()) for path in cls.paths}
@@ -386,9 +416,9 @@ class RunnerImagePinningTests(unittest.TestCase):
         from support.support_window_matrix import support_window
         runners = support_window().RUNNERS
         self.assertEqual(runners, {"amd64": "ubuntu-24.04", "arm64": "ubuntu-24.04-arm"})
-        for workflow_name, job_name in DYNAMIC_RUNNER_SOURCES:
+        for (workflow_name, job_name), expression in DYNAMIC_RUNNER_SOURCES.items():
             job = self.workflows[workflow_name]["jobs"][job_name]
-            self.assertIsInstance(job["strategy"]["matrix"], str)
+            self.assertEqual(job["strategy"]["matrix"], expression)
             self.assertEqual(job["runs-on"], "${{ matrix.runner || 'ubuntu-24.04' }}")
 
     def test_guard_refuses_floating_and_unresolvable_runner_labels(self):
@@ -398,12 +428,13 @@ class RunnerImagePinningTests(unittest.TestCase):
                 body["strategy"] = {"matrix": matrix}
             return {"jobs": {"lane": body}}
 
+        reviewed = "${{ fromJSON(needs.a.outputs.m) }}"
         floating = {
             "plain": job("ubuntu-latest"),
             "windows": job("windows-latest"),
             "macos": job("macos-latest"),
             "list": job(["self-hosted", "ubuntu-latest"]),
-            "group labels": job({"group": "g", "labels": ["ubuntu-latest"]}),
+            "labels mapping": job({"labels": ["ubuntu-latest"]}),
             "fallback": job("${{ matrix.runner || 'ubuntu-latest' }}", {"runner": ["ubuntu-24.04"]}),
             "static matrix": job("${{ matrix.os }}", {"os": ["ubuntu-24.04", "ubuntu-latest"]}),
             "matrix include": job("${{ matrix.os }}", {"include": [{"os": "ubuntu-latest"}]}),
@@ -412,10 +443,30 @@ class RunnerImagePinningTests(unittest.TestCase):
         for case, workflow in floating.items():
             with self.subTest(case=case):
                 self.assertTrue(floating_runner_labels("x.yml", workflow, {}))
-        dynamic = job("${{ matrix.runner || 'ubuntu-24.04' }}", "${{ fromJSON(needs.a.outputs.m) }}")
-        self.assertTrue(floating_runner_labels("x.yml", dynamic, {("x.yml", "lane"): ["ubuntu-latest"]}))
+        dynamic = job("${{ matrix.runner || 'ubuntu-24.04' }}", reviewed)
+        self.assertTrue(floating_runner_labels("x.yml", dynamic, {("x.yml", "lane"): (reviewed, ["ubuntu-latest"])}))
         unresolvable = {
+            # Runner groups choose the machine; no reviewed group-to-image contract exists.
+            "group only": job({"group": "arbitrary-runners"}),
+            "group with empty labels": job({"group": "g", "labels": []}),
+            "group with pinned labels": job({"group": "g", "labels": ["ubuntu-24.04"]}),
+            "group with floating labels": job({"group": "g", "labels": ["ubuntu-latest"]}),
+            "empty labels mapping": job({"labels": []}),
+            "unknown mapping key": job({"labels": ["ubuntu-24.04"], "pool": "p"}),
+            "empty list": job([]),
+            "non-string label": job([None]),
+            "no runs-on or uses": {"jobs": {"lane": {"steps": []}}},
             "variable": job("${{ vars.RUNNER }}"),
+            "variable fallback": job("${{ vars.RUNNER || 'ubuntu-24.04' }}"),
+            "function": job("${{ format('ubuntu-{0}', matrix.v) }}", {"v": ["24.04"]}),
+            "conditional": job("${{ matrix.big && 'ubuntu-24.04' || 'ubuntu-22.04' }}", {"big": ["x"]}),
+            "empty expression": job("${{ }}"),
+            "missing matrix key": job("${{ matrix.os }}", {"arch": ["amd64"]}),
+            "missing matrix key in list": job(["ubuntu-24.04", "${{ matrix.os }}"], {"arch": ["amd64"]}),
+            "no matrix": job("${{ matrix.os }}"),
+            "expression matrix value": job("${{ matrix.os }}", {"os": "${{ fromJSON(vars.OS) }}"}),
+            "expression matrix include": job("${{ matrix.os || 'ubuntu-24.04' }}",
+                                             {"include": "${{ fromJSON(vars.ROWS) }}"}),
             "unreviewed dynamic matrix": dynamic,
             "mixed text": job("ubuntu-${{ matrix.v }}", {"v": ["24.04"]}),
         }
@@ -423,20 +474,33 @@ class RunnerImagePinningTests(unittest.TestCase):
             with self.subTest(case=case):
                 with self.assertRaises(ValueError):
                     floating_runner_labels("x.yml", workflow, {})
+        # A registered job whose matrix is redirected away from its reviewed
+        # source is refused, even though its runner expression is unchanged.
+        redirected = job("${{ matrix.runner || 'ubuntu-24.04' }}", "${{ fromJSON(vars.RUNNER_MATRIX) }}")
+        with self.assertRaises(ValueError):
+            floating_runner_labels("x.yml", redirected, {("x.yml", "lane"): (reviewed, ["ubuntu-24.04"])})
 
     def test_guard_accepts_explicit_runner_images(self):
+        reviewed = "${{ fromJSON(needs.a.outputs.m) }}"
         workflow = {"jobs": {
             "amd64": {"runs-on": "ubuntu-24.04"},
             "arm64": {"runs-on": ["ubuntu-24.04-arm"]},
+            "labels mapping": {"runs-on": {"labels": ["ubuntu-24.04"]}},
+            "literal expression": {"runs-on": "${{ 'ubuntu-24.04' }}"},
             "matrix": {"runs-on": "${{ matrix.os }}",
                        "strategy": {"matrix": {"os": ["ubuntu-24.04"], "include": [{"os": "ubuntu-24.04-arm"}]}}},
+            "matrix fallback": {"runs-on": "${{ matrix.os || 'ubuntu-24.04' }}",
+                                "strategy": {"matrix": {"arch": ["amd64"]}}},
             "dynamic": {"runs-on": "${{ matrix.runner || 'ubuntu-24.04' }}",
-                        "strategy": {"matrix": "${{ fromJSON(needs.a.outputs.m) }}"}},
+                        "strategy": {"matrix": reviewed}},
             "reusable": {"uses": "./.github/workflows/ci.yml"},
         }}
         self.assertEqual(floating_runner_labels(
-            "x.yml", workflow, {("x.yml", "dynamic"): ["ubuntu-24.04", "ubuntu-24.04-arm"]}), [])
-
+            "x.yml", workflow, {("x.yml", "dynamic"): (reviewed, ["ubuntu-24.04", "ubuntu-24.04-arm"])}), [])
+        static = {"os": ["ubuntu-24.04"]}
+        floating_runner_labels("x.yml", {"jobs": {"m": {"runs-on": "${{ matrix.os }}",
+                                                        "strategy": {"matrix": static}}}}, {})
+        self.assertEqual(static, {"os": ["ubuntu-24.04"]})
 
 if __name__ == "__main__":
     unittest.main()
