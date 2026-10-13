@@ -245,9 +245,14 @@ class PowerCatalogReproduction(unittest.IsolatedAsyncioTestCase):
 
     async def test_read_subset_still_exposes_25_and_does_not_admit_extras_or_writes(self):
         from mcp.server.fastmcp import FastMCP
+        from ha_mcp_engineering import capabilities
         from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
         from test_ha_mcp_production_readmission import _settings
         from test_upstream_8_5_compatibility import GatewayTransport
+        # Admission publishes process-wide metadata as well as the local server.
+        # Preserve the caller's snapshot so later tests see their own catalog.
+        for name in ('_DYNAMIC_UPSTREAM_CAPABILITIES', '_UPSTREAM_READ_GATEWAY_SUMMARY'):
+            self.enterContext(patch.object(capabilities, name, deepcopy(getattr(capabilities, name))))
         gateway = UpstreamReadGateway()
         transport = GatewayTransport(catalog(EXTRAS).tools)
         gateway.configure(replace(_settings('synthetic-no-key'), ha_mcp_release_registry_enabled=False),
