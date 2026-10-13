@@ -132,6 +132,10 @@ PRODUCTION_LOCK_TIMING = LockTiming(120, 20, 0, 0.05)
 RECOVERY_CADENCE_SECONDS = 30
 RECOVERY_BATCH_SIZE = ACTIVE_RECOVERY_CHECKPOINT_LIMIT
 RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
+# An idle historical-cursor write may wait for an active deep-health fence at
+# most this many consecutive fenced sweeps; the next sweep advances it
+# regardless. Any unfenced sweep restores the full allowance.
+RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT = 3
 ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_DECLARATION_PAGE_SIZE
 ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
 ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
@@ -995,6 +999,10 @@ class F3RuntimeIntegration:
         self._next_sweep_at: str | None = None
         self._sweep_collisions = 0
         self._sweep_failures = 0
+        # Owner-loop only: deep-health scans currently holding a fence, and
+        # consecutive idle historical-cursor writes deferred on their behalf.
+        self._health_fence_holders = 0
+        self._recovery_cursor_deferrals = 0
         self._approval_consumption_failures = 0
         self._fallback_count = 0
         self._recovery_monotonic = time.monotonic
@@ -3990,8 +3998,23 @@ class F3RuntimeIntegration:
     def _health_fence(self) -> HealthScanFence:
         return HealthScanFence(self._health_fence_sources())
 
+    def _enter_health_fence(self) -> None:
+        self._health_fence_holders += 1
+
+    def _exit_health_fence(self) -> None:
+        self._health_fence_holders = max(0, self._health_fence_holders - 1)
+
     async def async_health(self, *, tasks=None, plans=None, fence=None) -> dict[str, Any]:
         """Owner-loop deep diagnostic; the collection is discarded after use."""
+        if fence is not None:
+            return await self._async_health(tasks=tasks, plans=plans, fence=fence)
+        self._enter_health_fence()
+        try:
+            return await self._async_health(tasks=tasks, plans=plans, fence=None)
+        finally:
+            self._exit_health_fence()
+
+    async def _async_health(self, *, tasks, plans, fence) -> dict[str, Any]:
         parent_repository = self.service.task_repository
         corruption_before = parent_repository.corruption_count
         try:
@@ -5577,11 +5600,28 @@ class F3RuntimeIntegration:
                 stale_release_decisions, now=now
             )
 
+        if not self._health_fence_holders:
+            # The bound covers one continuous stretch of fenced sweeps.
+            self._recovery_cursor_deferrals = 0
         if orphaned["next_cursor"] != page["cursor"]:
-            self.children.advance_recovery_cursor(
-                expected=page["cursor"],
-                next_cursor=orphaned["next_cursor"],
-            )
+            # An idle cursor move is navigation only, yet it writes the fenced
+            # children namespace and would supersede an in-flight deep-health
+            # scan. Defer only that write, and only for a bounded number of
+            # consecutive fenced sweeps. Any real recovery write above still
+            # moves the fence; re-examining the same page is idempotent.
+            if (
+                self._health_fence_holders
+                and orphaned["processed"] == 0
+                and self._recovery_cursor_deferrals
+                < RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT
+            ):
+                self._recovery_cursor_deferrals += 1
+            else:
+                self.children.advance_recovery_cursor(
+                    expected=page["cursor"],
+                    next_cursor=orphaned["next_cursor"],
+                )
+                self._recovery_cursor_deferrals = 0
         safely_navigated_ids = {
             *settled_ids,
             *priority_recovery["dismissed_child_ids"],

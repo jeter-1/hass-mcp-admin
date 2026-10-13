@@ -1,15 +1,16 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.4** adds governed entity-registry metadata
-administration (`create_entity_metadata_plan`) on top of beta.3's exact
-**ha-mcp 8.6.0** and **Core 2026.10.0** support. The capability is dormant:
-its new Core profile is not selected by any signed registry entry, so it fails
-closed with no Home Assistant request until a separate owner-signed admission.
+Engineering **2.4.1-beta.5** keeps an idle deep-health scan from being
+superseded by the periodic F3 recovery sweep (HAMCP-168). Real recovery,
+child, lock, task and plan writes still refuse the scan with the unchanged
+storage error; a refusal diagnostic is deferred to a logging-isolation task. It builds on beta.4's dormant governed entity-registry metadata
+administration (`create_entity_metadata_plan`) and beta.3's exact
+**ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **84 tools: 59 native and 25 admitted delegated
-reads**. The 21 existing Core profiles, probe and signed fingerprints, storage
+reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA4_RELEASE_NOTES.md),
-[acceptance contract](docs/V2_4_1_BETA4_ACCEPTANCE.md), and
+See the [release notes](docs/V2_4_1_BETA5_RELEASE_NOTES.md),
+[acceptance contract](docs/V2_4_1_BETA5_ACCEPTANCE.md), and
 [entity metadata design](docs/HAMCP_069A_ENTITY_METADATA_DESIGN.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
@@ -94,14 +95,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.4 release notes](docs/V2_4_1_BETA4_RELEASE_NOTES.md) and
-[2.4.1-beta.4 acceptance contract](docs/V2_4_1_BETA4_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.5 release notes](docs/V2_4_1_BETA5_RELEASE_NOTES.md) and
+[2.4.1-beta.5 acceptance contract](docs/V2_4_1_BETA5_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.4 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.5 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

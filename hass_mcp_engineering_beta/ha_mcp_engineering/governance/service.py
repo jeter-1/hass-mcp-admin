@@ -12490,6 +12490,11 @@ class ChangeGovernanceService:
             built_at = self.now()
             fence = None
             corruption_before = (self.repository.corruption_count, self.task_repository.corruption_count)
+            # While this scan holds its fence, F3 recovery defers (boundedly)
+            # only its idle historical-cursor write; real writes still move it.
+            fence_holder = self.f3_runtime
+            if fence_holder is not None:
+                fence_holder._enter_health_fence()
             try:
                 sources = [
                     (ErrorCode.CHANGE_PLAN_STORAGE_ERROR, self.repository._directory_token),
@@ -12615,6 +12620,9 @@ class ChangeGovernanceService:
             except BaseException:
                 self._health_cache_key = None
                 raise
+            finally:
+                if fence_holder is not None:
+                    fence_holder._exit_health_fence()
 
     def _require_health_generations(self, plans: int, tasks: int) -> None:
         if self.repository.generation != plans:
