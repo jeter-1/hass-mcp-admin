@@ -18,10 +18,8 @@ async def control_fan(
     The assistant generates operation_id ONCE as current UTC Unix seconds, a
     hyphen, and 32 lowercase UUID hex digits. Retain it automatically: never ask
     the owner to manage IDs. Reuse this exact ID/arguments after uncertainty;
-    once a task is saved, that only reconciles, and get_execution_task
-    retrieves/reconciles it. Never issue a replacement ID to retry an uncertain
-    mutation. New IDs expire after five minutes. A failure reporting
-    reconciliation "no_task" saved no task and dispatched nothing.
+    get_execution_task retrieves/reconciles its task. Never issue a replacement
+    ID to retry an uncertain mutation. New IDs expire after five minutes.
 
     turn_on optionally includes percentage in ONE call; set_percentage requires
     an integer 0..100; zero requests OFF. turn_off forbids percentage. No generic

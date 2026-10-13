@@ -19,11 +19,9 @@ async def control_power(
     plan or panel approval is needed. Resolve ambiguous targets before calling.
     Generate operation_id ONCE as current UTC epoch seconds + '-' + uuid4().hex;
     manage it automatically without asking the user to supply it. Retain it for
-    reconciliation. New IDs expire after five minutes. Once a task is saved, the
-    same ID and arguments only reconcile; changed arguments refuse. Read
-    get_execution_task after a timeout or partial response. Never create a fresh
-    ID to retry uncertain work. A failure reporting reconciliation "no_task"
-    saved no task and dispatched nothing; it returns no task pointer.
+    reconciliation. New IDs expire after five minutes. The same ID and arguments
+    only reconcile; changed arguments refuse. Read get_execution_task after a
+    timeout or partial response. Never create a fresh ID to retry uncertain work.
 
     Only light/switch turn_on/turn_off are supported. No toggle, brightness,
     color, extra data, bulk, area/device targets or other domains. Existing HA
