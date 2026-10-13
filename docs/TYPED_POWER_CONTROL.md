@@ -16,8 +16,12 @@ and does not create a plan, notification or panel approval.
 The assistant resolves ambiguous names before dispatch and manages the operation
 ID automatically: current UTC epoch seconds, a hyphen and 32 lowercase UUID hex
 digits. Generate it once for the requested action and retain it. New IDs expire
-after five minutes, with 30 seconds of future-clock tolerance. Repeating the same
-ID and arguments reconciles its receipt; changing arguments under that ID refuses.
+after five minutes, with 30 seconds of future-clock tolerance. Once a declaration
+exists, repeating the same ID and arguments is reconciliation-only: it reads its
+receipt and never authorizes another mutation; changing arguments under that ID
+refuses. A failure before any declaration was saved returns no task pointer and
+reports `stage: preparation_failed` with `dispatch: no_dispatch`; nothing was
+saved and no rejection is persisted for that ID.
 After uncertainty, use `get_execution_task` or repeat the exact original request.
 Never generate a replacement ID merely to retry an uncertain mutation.
 
@@ -45,7 +49,10 @@ exact-candidate validation and separately authorized installed acceptance remain
 distinct gates. They do not widen generic read admission or treat an advertised
 mixed tool as a write grant.
 
-The provider independently validates the complete reviewed catalog, release
+The provider independently validates the three tools it names
+(`ha_list_services`, `ha_get_state`, `ha_call_service`) against every reviewed
+contract component; each must appear exactly once, and other advertised tools
+grant nothing and are never called. It also validates release
 identity, protocol `2025-03-26`, source reference and current deny-aware authority.
 Each receipt identifies its selected `core-2026.9.2-ha-mcp-<version>-single-power-v1`
 contract. The existing signed Core state-read, service-discovery and F3-verification

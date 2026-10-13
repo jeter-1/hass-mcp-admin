@@ -7,10 +7,10 @@ household target or filesystem path is supplied: the real pinned MCP
 ClientSession runs over in-memory streams against a synthetic peer.
 """
 import asyncio
-from datetime import timedelta
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import replace
+from datetime import timedelta
 from hashlib import sha256
 import json
 from pathlib import Path
