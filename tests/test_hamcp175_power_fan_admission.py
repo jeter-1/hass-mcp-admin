@@ -33,12 +33,14 @@ from ha_mcp_engineering.clients import upstream_read
 from ha_mcp_engineering.clients.mcp import DashboardTransportError
 from ha_mcp_engineering.errors import ErrorCode, map_exception
 from ha_mcp_engineering.fan.authority import FanCoreAuthority
+from ha_mcp_engineering.fan.audit import request_summary as fan_audit_summary
 from ha_mcp_engineering.fan.contracts import FanRefusal, FanRequest
 from ha_mcp_engineering.fan.service import FanService, FAN_OPERATIONS
 from ha_mcp_engineering.ha_core_readmission.registry import CoreReleaseRegistry
 from ha_mcp_engineering.ha_core_readmission.runtime import CoreRuntime
 from ha_mcp_engineering.power.contracts import PowerRequest, PowerRefusal, digest
 from ha_mcp_engineering.power.service import PowerService, PowerCoreAuthority, POWER_OPERATIONS
+from ha_mcp_engineering.power.service import request_summary as power_audit_summary
 from ha_mcp_engineering.providers import upstream_fan
 from ha_mcp_engineering.providers.upstream_fan import FanProvider, REQUIRED_TOOLS
 from ha_mcp_engineering.providers.upstream_power import PowerProvider
@@ -639,24 +641,90 @@ class TruthfulRefusal(Harness):
                 self.assertIsNone(service.load(request.task_id))
                 self.balanced()
 
+    def audit_summary(self, kind):
+        """The exact typed projections routing's audit finalizer emits."""
+        return (power_audit_summary if kind == 'power' else fan_audit_summary)(self.telemetry)
+
+    async def cancel_pre_save(self, kind):
+        self.telemetry.audit_context.clear()
+        peer, service, request = self.operation(kind, EXTRAS)
+        peer.hang.add('ha_list_services')
+        before = self.telemetry.upstream_request_count
+        pending = asyncio.create_task(self.public_call(peer, service, request))
+        async with asyncio.timeout(10):
+            while 'tools/call' not in peer.events and not pending.done():
+                await asyncio.sleep(0.01)
+        self.assertFalse(pending.done())
+        pending.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await pending
+        self.assertEqual(self.telemetry.upstream_request_count, before + 1)
+        return peer, service, request
+
     async def test_cancellation_propagates_without_a_task_or_refusal(self):
         for kind in KINDS:
             with self.subTest(kind=kind):
-                peer, service, request = self.operation(kind, EXTRAS)
-                peer.hang.add('ha_list_services')
-                before = self.telemetry.upstream_request_count
-                pending = asyncio.create_task(self.public_call(peer, service, request))
-                async with asyncio.timeout(10):
-                    while 'tools/call' not in peer.events and not pending.done():
-                        await asyncio.sleep(0.01)
-                self.assertFalse(pending.done())
-                pending.cancel()
-                with self.assertRaises(asyncio.CancelledError):
-                    await pending
-                self.assertEqual(self.telemetry.upstream_request_count, before + 1)
+                peer, service, request = await self.cancel_pre_save(kind)
                 self.balanced()
                 self.assertIsNone(service.load(request.task_id))
+                self.assertEqual(service.locks.records(), ())
                 self.assertEqual(peer.writes, 0)
+                self.assertNotIn('ha_call_service', [name for name, _ in peer.calls])
+                # Durable-state cleanup ran before the cancellation propagated.
+                summary = self.audit_summary(kind)
+                self.assertNotIn('task_id', summary)
+                self.assertEqual(summary[KINDS[kind][8]], 'preparation_failed_no_task')
+                self.assertEqual(summary['operation_id'], request.operation_id)
+                self.assertNotIn('task_id', self.telemetry.audit_context)
+                # No retry authority: the same unsaved ID stays a fresh request.
+                self.assertIsNone(self.telemetry.error_code)
+
+    async def test_cancelled_pre_save_audit_has_no_phantom_pointer(self):
+        # Reviewer probe (PR #250 R1 at 5f12e1e), retained as a regression.
+        for kind in KINDS:
+            with self.subTest(kind=kind):
+                peer, service, request = await self.cancel_pre_save(kind)
+                self.assertEqual(peer.writes, 0)
+                self.assertIsNone(service.load(request.task_id))
+                self.assertNotIn('task_id', self.audit_summary(kind))
+
+    async def test_cancellation_after_declaration_save_keeps_the_truthful_pointer(self):
+        for kind in KINDS:
+            with self.subTest(kind=kind):
+                self.telemetry.audit_context.clear()
+                peer, service, request = self.operation(kind, EXTRAS)
+                release = asyncio.Event()
+                async def hold(count):
+                    await release.wait()
+                peer.hooks['ha_call_service'] = hold
+                # The execution outlives the request, so its readback must
+                # still reach the synthetic peer after the call is cancelled.
+                with patch.object(upstream_read, 'streamablehttp_client', peer.connect):
+                    pending = asyncio.create_task(self.public_call(peer, service, request))
+                    async with asyncio.timeout(10):
+                        while ('ha_call_service' not in [name for name, _ in peer.calls]
+                               and not pending.done()):
+                            await asyncio.sleep(0.01)
+                    self.assertFalse(pending.done())
+                    self.assertIsNotNone(service.load(request.task_id))
+                    pending.cancel()
+                    with self.assertRaises(asyncio.CancelledError):
+                        await pending
+                    summary = self.audit_summary(kind)
+                    self.assertEqual(summary['task_id'], request.task_id)
+                    self.assertEqual(summary[KINDS[kind][8]], 'request_failed_reconcile_task')
+                    release.set()
+                    async with asyncio.timeout(10):
+                        while request.task_id in service.active:
+                            await asyncio.sleep(0.01)
+                    read = await self.read_task(service, request.task_id)
+                    self.assertEqual(read['data']['task_id'], request.task_id, read)
+                    self.assertEqual(read['data']['state'], 'succeeded_verified', read)
+                    replay = await self.public_call(peer, service, request)
+                    self.assertEqual(replay['metadata']['task_id'], request.task_id)
+                self.assertEqual(peer.writes, 1)
+                self.assertEqual(service.locks.records(), ())
+                self.balanced()
 
     async def test_before_dispatch_persistence_failure_never_writes(self):
         for kind in KINDS:

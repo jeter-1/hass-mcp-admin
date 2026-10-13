@@ -168,7 +168,9 @@ class FanService:
             telemetry.audit_context.update(task_id=request.task_id, operation_id=request.operation_id)
         try:
             result = await self._control(request)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
+            # Cancellation gets the same durable-state audit cleanup, then
+            # propagates unchanged; it never becomes a response or retry.
             if telemetry:
                 if "task_id" in self.failure_guidance(request):
                     telemetry.audit_context[self.outcome_key] = "request_failed_reconcile_task"
