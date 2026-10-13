@@ -803,7 +803,7 @@ None of the following changes an approved decision:
   read-gateway lane lacked the config-entry listing, `logger/log_info` and the
   `system_health/info` stream. `d563f0c` adds synthetic read-only responses
   for them. This is fixture-only and changes no runtime.
-- **D11 (stats bound is sampled; open for owner decision).** The independent
+- **D11 (stats bound is sampled; owner decision 2026-10-13).** The independent
   review asked for the 32-started-add-on cap to be enforced before any stats
   request is dispatched, from one consistent snapshot, with no excess
   dispatch. Engineering enforces it on its own side: when its stats-free
@@ -818,6 +818,7 @@ None of the following changes an approved decision:
   records this window, including concurrent calls. A hard bound needs one of:
   a separately reviewed provider contract, an Engineering-native stats path
   (new direct-HA reachability), or withdrawing `include_stats`. Each needs
-  explicit scope, so this correction batch only states the limit accurately
-  and leaves the choice to Josh. The public schema description ("at most 32
-  started add-ons") describes the Engineering-side refusal and is unchanged.
+  explicit scope, so this correction batch only states the limit accurately.
+  The public schema description ("at most 32 started add-ons") describes the
+  Engineering-side refusal and is unchanged. Josh accepted the sampled bound
+  as disclosed (option a, 2026-10-13); no runtime change follows from it.
