@@ -380,6 +380,21 @@ refuses); add-on lanes run each ha-mcp slot's declared runtime lanes on the
 current Core, keeping amd64 and arm64 where declared. Lane pairing varies one
 component at a time from the deployment.
 
+Only a candidate slot may be explicitly `null`; current and rollback are always
+required for both components, and every non-empty ha-mcp slot declares at least
+one add-on runtime lane. `core.candidate: null` creates and requires no candidate
+Core lane, Alarmo job or lane provenance; `ha_mcp.candidate: null` creates and
+requires no candidate exact-image gateway or add-on runtime job.
+
+Current window (HAMCP-173, Josh 2026-10-13): Core current 2026.10.1, rollback
+2026.10.0, no Core candidate (2026.9.4 left the window); ha-mcp current 8.5.0,
+rollback 8.4.3, no ha-mcp candidate. 8.6.0 is on production HOLD (upstream defect
+#2695) and will not be adopted, so it no longer runs CI candidate lanes; it is
+unchanged in the compiled registry and the runtime, and the add-on acceptance
+script keeps its reviewed 2026.9.4 and 2026.10.0 pairings. The signed Core
+registry still admits 2026.9.4, which is now outside the window; retiring it is
+a follow-up for the next signing session.
+
 Rotation among Cores already in the window (candidate to current, current to
 rollback, rollback dropped) edits only `ci/support-window.yaml`, copying digests
 from reviewed evidence (contract amendment, Josh 2026-10-11). Adding a
@@ -397,9 +412,10 @@ admission policy, the signed registries or any upstream HOLD.
 Alarmo acceptance, and the automation-baseline proof bound to it, runs in every
 real-HA lane whose Core slot is non-empty (HAMCP-159). Pull requests cover
 current and candidate; the full tier adds rollback. Each slot binds its exact
-version, digest and lane provenance, and a Core outside the window refuses. Only
-`core.candidate` may be explicitly `null`, which creates and requires no
-candidate lane. A candidate Alarmo failure caused by a production-path difference
+version, digest and lane provenance, and a Core outside the window refuses. An
+explicitly `null` `core.candidate` creates and requires no candidate lane; an
+empty `ha_mcp.candidate` does not change Alarmo, which always pairs with the
+current ha-mcp. A candidate Alarmo failure caused by a production-path difference
 stays failing as a candidate-blocking compatibility finding; it is never fixed by
 adjusting fixtures.
 

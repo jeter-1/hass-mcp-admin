@@ -62,7 +62,11 @@ class StableResolutionTests(unittest.TestCase):
     def test_summary_pins_newest_core_with_current_reviewed_ha_mcp(self):
         result = latest.summary(self.window, "2026.11.0", "8.6.0", DIGEST, DIGEST)
         self.assertFalse(result["inside_window"])
-        self.assertEqual(result["ha_mcp"]["window_slot"], "candidate")
+        # 8.6.0 holds a window slot only while one declares it; with an empty
+        # ha-mcp candidate (HOLD #2695, HAMCP-173) it is newer than the window.
+        held = [slot for slot in support_window.ha_mcp_slots(self.window, support_window.SLOTS)
+                if self.window["ha_mcp"][slot]["version"] == "8.6.0"]
+        self.assertEqual(result["ha_mcp"]["window_slot"], held[0] if held else "newer_than_window")
         [row] = result["real_ha"]["include"]
         current = self.window["ha_mcp"]["current"]
         self.assertEqual(row["ha_image"], "ghcr.io/home-assistant/home-assistant:2026.11.0@" + DIGEST)
