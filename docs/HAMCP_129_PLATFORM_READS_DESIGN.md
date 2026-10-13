@@ -1,7 +1,7 @@
 # HAMCP-129 delegated platform health, installed apps and integration status — design
 
 Status: **approved by Josh on 2026-10-12 (O1-O9 as recorded in §10) and
-implemented in HAMCP-129 Part 2 as Engineering `2.4.1-beta.6`.** The text below
+implemented in HAMCP-129 Part 2 as Engineering `2.4.1-beta.7`.** The text below
 is the approved Part 1 design; implementation deviations are listed in §12.
 Nothing here authorizes deployment, live Home Assistant or Engineering
 access, registry signing, HOLD or support-window changes, or a release.
@@ -668,7 +668,9 @@ and count churn (total 86, then 87). Owner decision **O7**.
 
 **Release metadata:** HAMCP-168 / PR #246 takes `2.4.1-beta.5`. HAMCP-129
 implementation follows it and would take the next beta (`2.4.1-beta.6`, or
-whatever follows the last merged runtime PR), materialized in its own PR with
+whatever follows the last merged runtime PR; by Josh's 2026-10-13 order,
+HAMCP-175 / PR #250 took `2.4.1-beta.6` and this change takes
+`2.4.1-beta.7`), materialized in its own PR with
 `scripts/promote_next_release.py --apply` before Ready. That touches the
 protected `config.yaml` and `.release/` paths and needs explicit authorization
 (part of **O6**). Part 1 makes no release-metadata change.

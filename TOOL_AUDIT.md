@@ -10,7 +10,7 @@ fallback. Eight closed command variants permit nine sequential reads. The
 source catalog on the beta.10 baseline is 56 static + 25 delegated = 81; previous descriptors are
 unchanged. Existing signed authority withholds the added metadata read profile.
 At that release, `ha_get_integration` remained mixed/requires-wrapper and
-unexposed. Since 2.4.1-beta.6 (HAMCP-129) it is exposed only through the closed
+unexposed. Since 2.4.1-beta.7 (HAMCP-129) it is exposed only through the closed
 Engineering platform wrapper: list mode, `include_options=false`, no options
 flow, and a positive output allowlist. The Alarmo inspector does not use it.
 This adds no plans, approval or physical execution. See [contract](docs/INTEGRATION_INSPECTION.md).

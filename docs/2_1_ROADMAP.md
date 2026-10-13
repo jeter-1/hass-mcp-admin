@@ -72,7 +72,7 @@ register mappings before changing their status; do not invent duplicate IDs.
   `db_url` credentials. This needs provider/compatibility discovery, not a claim
   that an existing generic diagnostic read already supplies it.
 - **HAMCP-129 — platform, App and integration diagnostics:** implemented in
-  2.4.1-beta.6 as allowlisted projections of `ha_get_system_health`, `ha_get_app`
+  2.4.1-beta.7 as allowlisted projections of `ha_get_system_health`, `ha_get_app`
   and `ha_get_integration` behind closed Engineering wrappers (see
   [the design](HAMCP_129_PLATFORM_READS_DESIGN.md)). The mixed upstream tools
   and their internal fallbacks are still not admitted generically.
