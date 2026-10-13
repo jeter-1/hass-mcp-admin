@@ -14,7 +14,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "tests") not in sys.path:
     sys.path.append(str(ROOT / "tests"))
-from support.support_window_matrix import rows as support_rows  # noqa: E402
+from support.support_window_matrix import rows as support_rows, window_power_lanes  # noqa: E402
 spec = importlib.util.spec_from_file_location("assessment850", ROOT / "scripts/ha_mcp_850_container_acceptance.py")
 lane = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(lane)
@@ -477,18 +477,16 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual({x["support_slot"] for x in rows[len(pr_rows):]}, {"rollback"})
         lanes = [x for x in rows if x.get("candidate_power")]
         self.assertEqual(lanes, [x for x in pr_rows if x.get("candidate_power")])
-        self.assertEqual(len(lanes), 6)
-        self.assertEqual({(x["upstream_version"], x["architecture"], x["candidate_core_version"],
-                           x["candidate_profile"]) for x in lanes},
-                         {("8.5.0", a, "2026.10.0", "legacy") for a in ("amd64", "arm64")}
-                         | {("8.6.0", a, "2026.10.0", p) for a in ("amd64", "arm64")
-                            for p in ("reference", "component")})
+        # Power lanes are exactly those the window's non-empty ha-mcp slots
+        # declare, on core.current; an empty ha-mcp candidate declares none.
+        declared = window_power_lanes("full")
+        self.assertEqual(declared, window_power_lanes("pr"))
+        self.assertTrue(declared)
+        self.assertEqual([(x["upstream_version"], x["support_slot"], x["architecture"], x["candidate_core_version"],
+                           x["candidate_profile"], x["candidate_source"]) for x in lanes], declared)
+        pin_paths = {"8.5.0": lane.PINS, "8.6.0": ROOT / "tests/fixtures/ha_mcp_860_candidate.json"}
         for row in lanes:
-            pin_path = (lane.PINS if row["upstream_version"] == "8.5.0" else
-                        ROOT / "tests/fixtures/ha_mcp_843_power_candidate.json")
-            if row["upstream_version"] == "8.6.0":
-                pin_path = ROOT / "tests/fixtures/ha_mcp_860_candidate.json"
-            pins = json.loads(pin_path.read_bytes())
+            pins = json.loads(pin_paths[row["upstream_version"]].read_bytes())
             self.assertEqual(row["candidate_source"], pins["upstream_source"])
             self.assertEqual(row["runner"], "ubuntu-latest" if row["architecture"] == "amd64" else "ubuntu-24.04-arm")
         historical = [x for x in rows if not x.get("candidate_power")]
@@ -510,7 +508,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(execution["if"], "matrix.candidate_power == true")
         self.assertIn('--upstream-version "$UPSTREAM_VERSION"', execution["run"])
         self.assertIn('--core-version "$ASSESSMENT_CORE"', execution["run"])
-        self.assertEqual(len({(x["candidate_resource_code"], x["architecture"]) for x in lanes}), 6)
+        self.assertEqual(len({(x["candidate_resource_code"], x["architecture"]) for x in lanes}), len(lanes))
         planning = next(s for s in job["steps"] if s.get("name", "").startswith("Run planning-only"))
         self.assertEqual(planning["if"], "matrix.candidate_power != true")
         self.assertNotIn("secrets.", json.dumps(workflow))

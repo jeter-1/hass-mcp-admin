@@ -65,3 +65,21 @@ def rows(kind, tier):
 
 def tier_for(event):
     return support_window().tier_for(event)
+
+
+def window_power_lanes(tier):
+    """Each add-on candidate_power lane the window declares for ``tier``.
+
+    Read straight from the window's non-empty ha-mcp slots (an empty candidate
+    declares none), as (upstream_version, support_slot, architecture,
+    core.current version, profile, source_commit) tuples in matrix order.
+    """
+
+    module = support_window()
+    window = module.load(ROOT)
+    core = window["core"]["current"]["version"]
+    return [(pin["version"], slot, architecture, core, lane["profile"], pin["source_commit"])
+            for slot in module.ha_mcp_slots(window, module.TIERS[tier])
+            for pin in (window["ha_mcp"][slot],)
+            for lane in pin["addon_runtime"] if lane["kind"] == "candidate_power"
+            for architecture in lane["architectures"]]

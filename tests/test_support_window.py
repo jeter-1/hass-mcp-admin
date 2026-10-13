@@ -43,6 +43,36 @@ CORE_IMAGE = re.compile(
     r"^ghcr\.io/home-assistant/home-assistant:[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,3}@sha256:[0-9a-f]{64}$"
 )
 HA_MCP_IMAGE = re.compile(r"^ghcr\.io/homeassistant-ai/ha-mcp:8\.5\.0@sha256:[0-9a-f]{64}$")
+# 8.6.0 stays in the reviewed registry while on production HOLD (#2695); tests
+# that need a populated ha-mcp candidate copy its exact pin from that registry.
+HELD_HA_MCP = "8.6.0"
+
+
+def held_ha_mcp_candidate(registry, **fields):
+    """A populated ha-mcp candidate pin copied from the reviewed registry (test-only)."""
+
+    row = next(r for r in registry["include"] if r["upstream_version"] == HELD_HA_MCP)
+    return {"version": row["upstream_version"], "image_index_digest": row["image_index_digest"],
+            "source_commit": row["source_commit"],
+            "addon_runtime": [{"kind": "candidate_power", "profile": "reference", "architectures": ["amd64", "arm64"]}],
+            **fields}
+
+
+def expected_addon_rows(sw, window, tier, codes):
+    """Add-on rows from the window's non-empty ha-mcp slots and the acceptance script's pairs."""
+
+    core = window["core"]["current"]["version"]
+    rows = []
+    for slot in sw.ha_mcp_slots(window, sw.TIERS[tier]):
+        pin = window["ha_mcp"][slot]
+        for lane in pin["addon_runtime"]:
+            if lane["kind"] != "candidate_power":
+                continue
+            resource = (codes.version_code(pin["version"]) + codes.core_code(core, pin["version"])
+                        + codes.profile_code(pin["version"], lane["profile"]))
+            rows += [(pin["version"], slot, architecture, lane["profile"], core, resource, sw.RUNNERS[architecture])
+                     for architecture in lane["architectures"]]
+    return rows
 
 
 class SupportWindowFixture(unittest.TestCase):
@@ -78,8 +108,17 @@ class CommittedWindowTests(SupportWindowFixture):
             with self.subTest(slot=slot):
                 self.assertIsNotNone(binding)
                 self.assertEqual(binding.image_index_digest, core["image_index_digest"])
-        ha_mcp = [self.window["ha_mcp"][slot]["version"] for slot in self.sw.SLOTS]
-        self.assertEqual(len(set(ha_mcp)), 3)
+        # The same holds for ha-mcp: current and rollback are always present and
+        # only the candidate may be empty (HAMCP-173).
+        ha_mcp_slots = self.sw.ha_mcp_slots(self.window, self.sw.SLOTS)
+        self.assertIn("current", ha_mcp_slots)
+        self.assertIn("rollback", ha_mcp_slots)
+        self.assertLessEqual(set(self.sw.SLOTS) - set(ha_mcp_slots), {"candidate"})
+        ha_mcp = [self.window["ha_mcp"][slot]["version"] for slot in ha_mcp_slots]
+        self.assertEqual(len(set(ha_mcp)), len(ha_mcp))
+        for slot in ha_mcp_slots:
+            with self.subTest(slot=slot):
+                self.assertTrue(self.window["ha_mcp"][slot]["addon_runtime"])
 
     def test_window_header_documents_rotation(self):
         header = WINDOW.read_text(encoding="utf-8").split("schema_version:", 1)[0]
@@ -103,26 +142,24 @@ class CommittedWindowTests(SupportWindowFixture):
             [(slot, self.window["core"][slot]["version"], ha_mcp)
              for slot in self.sw.core_slots(self.window, ("current", "candidate"))],
         )
-        # Add-on rows pair ha-mcp slots with core.current through the add-on
-        # acceptance script's own pairing authority; an empty Core candidate
-        # changes none of them.
-        current = self.window["core"]["current"]["version"]
+        # Add-on rows pair the non-empty ha-mcp slots with core.current through
+        # the add-on acceptance script's own pairing authority; an empty Core or
+        # ha-mcp candidate adds no row.
         self.assertEqual(
             [(r["upstream_version"], r["support_slot"], r["architecture"], r["candidate_profile"],
               r["candidate_core_version"], r["candidate_resource_code"], r["runner"]) for r in rows["addon"]],
-            [
-                ("8.5.0", "current", "amd64", "legacy", current, "850c10", "ubuntu-latest"),
-                ("8.5.0", "current", "arm64", "legacy", current, "850c10", "ubuntu-24.04-arm"),
-                ("8.6.0", "candidate", "amd64", "reference", current, "860c10r", "ubuntu-latest"),
-                ("8.6.0", "candidate", "arm64", "reference", current, "860c10r", "ubuntu-24.04-arm"),
-                ("8.6.0", "candidate", "amd64", "component", current, "860c10c", "ubuntu-latest"),
-                ("8.6.0", "candidate", "arm64", "component", current, "860c10c", "ubuntu-24.04-arm"),
-            ],
+            expected_addon_rows(self.sw, self.window, "pr", self.sw.acceptance_codes()),
         )
+        self.assertTrue(rows["addon"])
         self.assertTrue(all(r["candidate_power"] is True for r in rows["addon"]))
         by_version = {r["upstream_version"]: r for r in self.registry["include"]}
         self.assertEqual([(r["upstream_version"], r["support_slot"]) for r in rows["gateway"]],
-                         [("8.5.0", "current"), ("8.6.0", "candidate")])
+                         [(self.window["ha_mcp"][slot]["version"], slot)
+                          for slot in self.sw.ha_mcp_slots(self.window, ("current", "candidate"))])
+        if self.window["ha_mcp"]["candidate"] is None:
+            for kind in ("addon", "gateway"):
+                with self.subTest(kind=kind):
+                    self.assertNotIn("candidate", {r["support_slot"] for r in rows[kind]})
         for row in rows["gateway"]:
             # Gateway rows are the reviewed registry rows verbatim, plus the slot.
             self.assertEqual({k: v for k, v in row.items() if k != "support_slot"},
@@ -267,9 +304,7 @@ class RefusalTests(TempRootFixture):
         self.assertRefuses("core_slots")
         self.mutate(lambda w: w["ha_mcp"].pop("candidate"))
         self.assertRefuses("ha_mcp_slots")
-        # Only the Core candidate may be empty; see EmptyCandidateTests.
-        self.mutate(lambda w: w["ha_mcp"].update(candidate=None))
-        self.assertRefuses("ha_mcp_candidate_keys")
+        # Only candidates may be empty (explicit null); see EmptyCandidateTests.
         for slot in ("current", "rollback"):
             with self.subTest(slot=slot):
                 self.mutate(lambda w: w["core"].update({slot: None}))
@@ -282,6 +317,8 @@ class RefusalTests(TempRootFixture):
             with self.subTest(candidate=value):
                 self.mutate(lambda w: w["core"].update(candidate=value))
                 self.assertRefuses("core_candidate_keys")
+                self.mutate(lambda w: w["ha_mcp"].update(candidate=value))
+                self.assertRefuses("ha_mcp_candidate_keys")
         self.mutate(lambda w: w["core"]["current"].update(tag="latest"))
         self.assertRefuses("core_current_keys")
 
@@ -292,7 +329,8 @@ class RefusalTests(TempRootFixture):
             with self.subTest(digest=digest):
                 self.mutate(lambda w: w["core"]["rollback"].update(image_index_digest=digest))
                 self.assertRefuses("core_rollback_digest")
-                self.mutate(lambda w: w["ha_mcp"]["candidate"].update(image_index_digest=digest))
+                self.mutate(lambda w: w["ha_mcp"].update(
+                    candidate=held_ha_mcp_candidate(self.registry, image_index_digest=digest)))
                 self.assertRefuses("ha_mcp_candidate_digest")
         self.mutate(lambda w: w["ha_mcp"]["current"].update(source_commit="main"))
         self.assertRefuses("ha_mcp_current_source")
@@ -306,8 +344,11 @@ class RefusalTests(TempRootFixture):
             with self.subTest(slot=slot):
                 self.mutate(lambda w: w["core"].update({slot: dict(w["core"]["current"])}))
                 self.assertRefuses("core_slot_versions_not_distinct")
-        self.mutate(lambda w: w["ha_mcp"]["candidate"].update(version="8.5.0"))
-        self.assertRefuses("ha_mcp_slot_versions_not_distinct")
+        for slot in ("candidate", "rollback"):
+            with self.subTest(slot=slot):
+                self.mutate(lambda w: w["ha_mcp"].update(
+                    {slot: held_ha_mcp_candidate(self.registry, version=w["ha_mcp"]["current"]["version"])}))
+                self.assertRefuses("ha_mcp_slot_versions_not_distinct")
 
     def test_addon_runtime_lanes_refuse_when_malformed(self):
         def power(**fields):
@@ -386,12 +427,20 @@ class RefusalTests(TempRootFixture):
         duplicated = {"include": self.registry["include"] + self.registry["include"][:1]}
         with self.assertRaisesRegex(self.sw.Refusal, "^registry_matrix_duplicate$"):
             self.sw.gateway_matrix(window, "pr", duplicated)
-        absent = {"include": [r for r in self.registry["include"] if r["upstream_version"] != "8.6.0"]}
+        # A populated candidate is cross-checked like any other slot.
+        held = copy.deepcopy(window)
+        held["ha_mcp"]["candidate"] = held_ha_mcp_candidate(self.registry)
+        absent = {"include": [r for r in self.registry["include"] if r["upstream_version"] != HELD_HA_MCP]}
         with self.assertRaisesRegex(self.sw.Refusal, "^ha_mcp_candidate_not_in_reviewed_registry$"):
-            self.sw.gateway_matrix(window, "pr", absent)
+            self.sw.gateway_matrix(held, "pr", absent)
+        held["ha_mcp"]["candidate"]["source_commit"] = "0" * 40
+        with self.assertRaisesRegex(self.sw.Refusal, "^ha_mcp_candidate_registry_mismatch$"):
+            self.sw.gateway_matrix(held, "pr", self.registry)
         # Rollback is only cross-checked on the tier that runs it.
-        no_rollback = {"include": [r for r in self.registry["include"] if r["upstream_version"] != "8.4.3"]}
-        self.assertEqual(len(self.sw.gateway_matrix(window, "pr", no_rollback)["include"]), 2)
+        rollback = window["ha_mcp"]["rollback"]["version"]
+        no_rollback = {"include": [r for r in self.registry["include"] if r["upstream_version"] != rollback]}
+        self.assertEqual(len(self.sw.gateway_matrix(window, "pr", no_rollback)["include"]),
+                         len(self.sw.ha_mcp_slots(window, ("current", "candidate"))))
         with self.assertRaisesRegex(self.sw.Refusal, "^ha_mcp_rollback_not_in_reviewed_registry$"):
             self.sw.gateway_matrix(window, "full", no_rollback)
         for field, value in (("image_index_digest", "sha256:" + "0" * 64), ("source_commit", "0" * 40)):
@@ -407,12 +456,26 @@ class RefusalTests(TempRootFixture):
         self.assertTrue((self.root / "tests" / "fixtures" / "core_2026_9_2_lane_provenance.json").is_file())
         provenance = json.loads(
             (ROOT / "tests" / "fixtures" / "core_2026_9_2_lane_provenance.json").read_text(encoding="utf-8"))
-        window = self.mutate(lambda w: w["core"]["current"].update(
-            version="2026.9.2", image_index_digest=provenance["image_index_digest"]))
+        window = self.mutate(lambda w: w.update(
+            core={**w["core"], "current": {"version": "2026.9.2",
+                                           "image_index_digest": provenance["image_index_digest"]}},
+            ha_mcp={**w["ha_mcp"], "candidate": held_ha_mcp_candidate(self.registry)}))
         loaded = self.sw.load(self.root)
         self.assertEqual(loaded["core"]["current"], window["core"]["current"])
         with self.assertRaisesRegex(self.sw.Refusal, "^addon_candidate_pair_unsupported$"):
             self.sw.addon_matrix(loaded, "pr")
+
+    def test_held_ha_mcp_on_committed_current_core_is_not_a_reviewed_pair(self):
+        # HAMCP-173: the acceptance script has no (core.current, 8.6.0) pair, so
+        # re-populating the candidate with the held 8.6.0 refuses instead of
+        # advertising add-on lanes the runtime gate does not admit.
+        self.mutate(lambda w: w["ha_mcp"].update(candidate=held_ha_mcp_candidate(self.registry)))
+        loaded = self.sw.load(self.root)
+        with self.assertRaisesRegex(self.sw.Refusal, "^addon_candidate_pair_unsupported$"):
+            self.sw.addon_matrix(loaded, "pr")
+        codes = self.sw.acceptance_codes()
+        with self.assertRaisesRegex(codes.Refusal, "^core_pair_invalid$"):
+            codes.core_code(self.base["core"]["current"]["version"], HELD_HA_MCP)
 
     def test_output_newline_refuses(self):
         path = self.root / "github-output"
@@ -500,11 +563,20 @@ class RotationTests(TempRootFixture):
         # The dropped rollback Core has left the window, so Alarmo refuses it.
         with self.assertRaisesRegex(self.sw.Refusal, "^alarmo_core_not_in_window_slot$"):
             self.sw.alarmo_slot("2026.9.4", self.root)
-        # Known limitation (pre-existing, outside HAMCP-159): the add-on acceptance
-        # pairing authority has no 2026.10.1 Core pair, so add-on rows refuse
-        # rather than advertise an unsupported pairing.
-        with self.assertRaisesRegex(self.sw.Refusal, "^addon_current_pair_unsupported$"):
-            self.sw.addon_matrix(window, "pr")
+        # HAMCP-173: the add-on acceptance pairing authority now lists each
+        # non-empty ha-mcp slot with the rotated current Core, so add-on rows
+        # derive on it without any other edit.
+        codes = self.sw.acceptance_codes()
+        for tier in ("pr", "full"):
+            rows = self.sw.addon_matrix(window, tier)["include"]
+            with self.subTest(tier=tier):
+                self.assertEqual(
+                    [(r["upstream_version"], r["support_slot"], r["architecture"], r["candidate_profile"],
+                      r["candidate_core_version"], r["candidate_resource_code"], r["runner"])
+                     for r in rows if r.get("candidate_power")],
+                    expected_addon_rows(self.sw, window, tier, codes))
+                self.assertTrue(all(r["candidate_core_version"] == expected["current"]
+                                    for r in rows if r.get("candidate_power")))
 
     def test_b_unreviewed_new_core_is_refused_before_any_matrix(self):
         self.add_new_candidate()
@@ -602,17 +674,105 @@ class EmptyCandidateTests(TempRootFixture):
             self.window, "pr", self.registry))
         self.assertEqual(self.sw.addon_matrix(window, "full"), self.sw.addon_matrix(self.window, "full"))
 
-    def test_only_the_core_candidate_may_be_empty(self):
+    def test_only_candidates_may_be_empty(self):
+        # current and rollback are never optional, for either component, even
+        # when both candidates are empty.
+        for component in ("core", "ha_mcp"):
+            for slot in ("current", "rollback"):
+                with self.subTest(component=component, slot=slot):
+                    self.mutate(lambda w: (w["core"].update(candidate=None), w["ha_mcp"].update(candidate=None),
+                                           w[component].update({slot: None})))
+                    self.assertRefuses(component + "_" + slot + "_keys")
+            with self.subTest(component=component, missing="candidate"):
+                self.mutate(lambda w: w[component].pop("candidate"))
+                self.assertRefuses(component + "_slots")
+                self.mutate(lambda w: w[component].update(candidate=None, extra=None))
+                self.assertRefuses(component + "_slots")
+
+
+class EmptyHaMcpCandidateTests(TempRootFixture):
+    """``ha_mcp.candidate: null`` (owner decision, Josh 2026-10-13, HAMCP-173)
+    removes every candidate gateway and add-on job and requires nothing for it."""
+
+    def populated(self):
+        window = copy.deepcopy(self.base)
+        window["ha_mcp"]["candidate"] = held_ha_mcp_candidate(self.registry)
+        return window
+
+    def test_null_ha_mcp_candidate_loads_and_creates_no_candidate_jobs(self):
         self.mutate(lambda w: w["ha_mcp"].update(candidate=None))
-        self.assertRefuses("ha_mcp_candidate_keys")
-        for slot in ("current", "rollback"):
-            with self.subTest(slot=slot):
-                self.mutate(lambda w: w["core"].update(candidate=None, **{slot: None}))
-                self.assertRefuses("core_" + slot + "_keys")
-        self.mutate(lambda w: w["core"].pop("candidate"))
-        self.assertRefuses("core_slots")
-        self.mutate(lambda w: w["core"].update(candidate=None, extra=None))
-        self.assertRefuses("core_slots")
+        window = self.sw.load(self.root)
+        self.assertIsNone(window["ha_mcp"]["candidate"])
+        self.assertEqual(self.sw.ha_mcp_slots(window, self.sw.SLOTS), ("current", "rollback"))
+        for tier, slots in (("pr", ("current",)), ("full", ("current", "rollback"))):
+            gateway = self.sw.gateway_matrix(window, tier, self.registry)["include"]
+            addon = self.sw.addon_matrix(window, tier)["include"]
+            with self.subTest(tier=tier):
+                self.assertEqual([(r["support_slot"], r["upstream_version"]) for r in gateway],
+                                 [(slot, window["ha_mcp"][slot]["version"]) for slot in slots])
+                self.assertEqual({r["support_slot"] for r in addon}, set(slots))
+                self.assertNotIn(HELD_HA_MCP, {r["upstream_version"] for r in gateway + addon})
+                # Every non-empty slot in the tier still runs at least one add-on lane.
+                for slot in slots:
+                    self.assertTrue(any(r["support_slot"] == slot for r in addon))
+                # Real-HA lanes always pair with ha_mcp.current and are unaffected.
+                self.assertEqual(self.sw.real_ha_matrix(window, tier, self.root),
+                                 self.sw.real_ha_matrix(self.base, tier, self.root))
+
+    def test_emptying_a_populated_candidate_drops_only_its_rows(self):
+        populated = self.populated()
+        empty = copy.deepcopy(populated)
+        empty["ha_mcp"]["candidate"] = None
+        for tier in ("pr", "full"):
+            with self.subTest(tier=tier):
+                before = self.sw.gateway_matrix(populated, tier, self.registry)["include"]
+                after = self.sw.gateway_matrix(empty, tier, self.registry)["include"]
+                self.assertEqual(after, [r for r in before if r["support_slot"] != "candidate"])
+                self.assertIn("candidate", {r["support_slot"] for r in before})
+
+    def test_null_ha_mcp_candidate_requires_no_registry_row_or_reviewed_pair(self):
+        self.mutate(lambda w: w["ha_mcp"].update(candidate=None))
+        window = self.sw.load(self.root)
+        absent = {"include": [r for r in self.registry["include"] if r["upstream_version"] != HELD_HA_MCP]}
+        self.assertEqual(self.sw.gateway_matrix(window, "full", absent),
+                         self.sw.gateway_matrix(window, "full", self.registry))
+        codes = self.sw.acceptance_codes()
+        calls = []
+
+        class Recording:
+            Refusal = codes.Refusal
+
+            @staticmethod
+            def version_code(version):
+                calls.append(version)
+                return codes.version_code(version)
+
+            core_code = staticmethod(codes.core_code)
+            profile_code = staticmethod(codes.profile_code)
+
+        self.sw.addon_matrix(window, "full", Recording)
+        self.assertEqual(sorted(set(calls)), sorted({window["ha_mcp"][slot]["version"]
+                                                     for slot in ("current", "rollback")
+                                                     if any(l["kind"] == "candidate_power"
+                                                            for l in window["ha_mcp"][slot]["addon_runtime"])}))
+
+    def test_every_non_empty_ha_mcp_slot_still_needs_an_addon_lane(self):
+        for slot in self.sw.SLOTS:
+            for change, category in ((lambda e: e.update(addon_runtime=[]), "ha_mcp_" + slot + "_addon_runtime"),
+                                     (lambda e: e.pop("addon_runtime"), "ha_mcp_" + slot + "_keys")):
+                with self.subTest(slot=slot, category=category):
+                    window = self.populated()
+                    change(window["ha_mcp"][slot])
+                    self.write(window)
+                    self.assertRefuses(category)
+        self.write(self.populated())
+        self.assertEqual(self.sw.ha_mcp_slots(self.sw.load(self.root), self.sw.SLOTS), self.sw.SLOTS)
+
+    def test_both_candidates_empty_loads(self):
+        self.mutate(lambda w: (w["core"].update(candidate=None), w["ha_mcp"].update(candidate=None)))
+        window = self.sw.load(self.root)
+        self.assertEqual(self.sw.core_slots(window, self.sw.SLOTS), ("current", "rollback"))
+        self.assertEqual(self.sw.ha_mcp_slots(window, self.sw.SLOTS), ("current", "rollback"))
 
 
 class CommandLineTests(unittest.TestCase):
@@ -632,8 +792,9 @@ class CommandLineTests(unittest.TestCase):
         for key in ("real_ha", "addon"):
             parsed = json.loads(values[key])
             self.assertEqual(values[key], json.dumps(parsed, sort_keys=True, separators=(",", ":")))
-            expected = (support_window().core_slots(support_window().load(ROOT), ("current", "candidate"))
-                        if key == "real_ha" else ("current", "candidate"))
+            window = support_window().load(ROOT)
+            expected = (support_window().core_slots(window, ("current", "candidate"))
+                        if key == "real_ha" else support_window().ha_mcp_slots(window, ("current", "candidate")))
             self.assertEqual({row["support_slot"] for row in parsed["include"]}, set(expected))
 
     def test_registry_matrix_adds_gateway_output(self):
@@ -646,8 +807,10 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             values = dict(line.split("=", 1) for line in output.read_text(encoding="utf-8").splitlines())
         self.assertEqual(values["tier"], "full")
+        window = support_window().load(ROOT)
         self.assertEqual([row["upstream_version"] for row in json.loads(values["gateway"])["include"]],
-                         ["8.5.0", "8.6.0", "8.4.3"])
+                         [window["ha_mcp"][slot]["version"]
+                          for slot in support_window().ha_mcp_slots(window, support_window().SLOTS)])
 
     def test_refusals_exit_one_without_writing_outputs(self):
         with tempfile.TemporaryDirectory() as tmp:

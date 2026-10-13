@@ -54,8 +54,13 @@ Required pairing (HAMCP-159): every non-empty Core slot in
 `core.current` and, when one exists, `core.candidate`; the full tier adds
 `core.rollback`. Each slot is its own parallel Real HA matrix job, flagged by
 `alarmo: true` from `scripts/support_window.py`. An explicitly empty candidate
-(`candidate: null`) creates and requires no candidate job. Each slot binds, by
-exact string with no prefix, family or wildcard:
+(`candidate: null`) creates and requires no candidate job. The current window
+(HAMCP-173, Josh 2026-10-13) runs Alarmo on Core 2026.10.1 (current) in pull
+requests and adds 2026.10.0 (rollback) in the full tier; there is no Core
+candidate, and 2026.9.4 has left the window. The ha-mcp candidate is also empty
+because 8.6.0 is on production HOLD (upstream defect #2695); Alarmo is
+unaffected, since it always pairs with the ha-mcp `current` slot (8.5.0). Each
+slot binds, by exact string with no prefix, family or wildcard:
 
 - the Core version and image index digest from the window, which must equal
   that Core's exact entry in the one reviewed binding list,

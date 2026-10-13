@@ -80,7 +80,7 @@ def core_code(core_version, version):
     require((core_version, version) in {
         ("2026.9.2", "8.4.3"), ("2026.9.2", "8.5.0"), ("2026.9.3", "8.5.0"),
         ("2026.9.4", "8.6.0"), ("2026.10.0", "8.5.0"), ("2026.10.0", "8.6.0"),
-        ("2026.10.1", "8.5.0"), ("2026.10.1", "8.6.0"),
+        ("2026.10.1", "8.5.0"),
     }, "core_pair_invalid")
     return {"2026.9.2": "", "2026.9.3": "c3", "2026.9.4": "c4", "2026.10.0": "c10",
             "2026.10.1": "c1"}[core_version]
@@ -196,7 +196,7 @@ def docker(*args, timeout=90, check=True):
 
 
 def resource_names(identity):
-    require(re.fullmatch(r"h(843|850|850c3|850c10|850c1|860c4[rc]|860c10[rc]|860c1[rc])-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
+    require(re.fullmatch(r"h(843|850|850c3|850c10|850c1|860c4[rc]|860c10[rc])-[0-9]{1,16}-[0-9]{1,16}-(amd64|arm64)", identity) is not None,
             "cleanup_identity_invalid")
     return [identity + "-" + role for role in ("standalone", "addon", "relay", "core")]
 
