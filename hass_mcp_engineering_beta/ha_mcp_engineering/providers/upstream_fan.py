@@ -2,20 +2,26 @@
 
 This does not admit ha_call_service into the generic read gateway. In particular,
 wait=False excludes the component fallback in ha-mcp's waited service path.
+Admission covers exactly REQUIRED_TOOLS, each against every reviewed contract
+component of the selected release; extra advertised tools grant nothing.
 """
 from __future__ import annotations
 
 import asyncio
 import json
-from ..clients.upstream_read import McpReadGatewayTransport
+import time
+from ..clients.upstream_read import BeforeDispatchFailure, CatalogValidationFailure, McpReadGatewayTransport
 from ..configuration import parse_upstream_dashboard_endpoint
 from ..fan.contracts import FanRequest, FanRefusal, FAN_RELEASES, FAN_SEMANTIC_CONTRACTS, checked_state, digest
 from ..request_context import current_telemetry
-from ..upstream_tool_policy import load_reviewed_upstream_release_registry, validate_reviewed_release_catalog
+from ..upstream_tool_policy import load_reviewed_upstream_release_registry, validate_reviewed_release_dependencies
 from ..version import SERVER_VERSION
 
 ENTRY = "ha-mcp-v8.4.3-d5cea47a"
 SOURCE = "eac7a3aa7063432e9af17e7d7726040e909c7b8f"
+# The only upstream tools this wrapper ever names. Admission is scoped to them:
+# other advertised tools are neither inspected for admission nor reachable.
+REQUIRED_TOOLS = ("ha_list_services", "ha_get_state", "ha_call_service")
 
 
 class FanProvider:
@@ -51,12 +57,12 @@ class FanProvider:
                 or (expected_contract is not None and expected_contract not in (selected[2], semantic))
                 or release.provider_disposition("read_gateway") != "admitted"):
             raise self.refusal("fan_provider_identity_unavailable")
-        result = validate_reviewed_release_catalog(
+        if not validate_reviewed_release_dependencies(
             release, observed_server_name=catalog.server_name,
             observed_upstream_version=catalog.server_version,
             observed_protocol_version=catalog.protocol_version, tools=catalog.tools,
-        )
-        if not result.valid:
+            required_tools=REQUIRED_TOOLS,
+        ):
             raise self.refusal("fan_provider_contract_mismatch")
         contract = expected_contract or (semantic if signed_core else selected[2])
         return (catalog.server_version, contract, self._authority(catalog.server_version))
@@ -91,14 +97,34 @@ class FanProvider:
             await before()
             if self._authority(token[0]) != token[2]:
                 raise self.refusal("fan_provider_authority_retired")
-        async with asyncio.timeout(20):
-            value = await self.transport.execute_read(
-                tool, args, timeout_seconds=15,
-                catalog_validator=validate, before_dispatch=dispatch,
-            )
+        if tool not in REQUIRED_TOOLS:
+            raise self.refusal("fan_provider_tool_unreviewed")
+        telemetry = current_telemetry()
+        # One count is one provider exchange (an MCP session: discovery and at
+        # most one tools/call), not an HTTP request. Action facts are separate.
+        started = time.perf_counter()
+        if telemetry:
+            telemetry.begin_upstream_attempt(started)
+        try:
+            async with asyncio.timeout(20):
+                value = await self.transport.execute_read(
+                    tool, args, timeout_seconds=15,
+                    catalog_validator=validate, before_dispatch=dispatch,
+                )
+        except (CatalogValidationFailure, BeforeDispatchFailure) as failure:
+            # Both are raised strictly before tools/call. Keep this provider's
+            # bounded refusal; never surface another exception's text.
+            if isinstance(failure.cause, self.refusal):
+                raise failure.cause from None
+            raise self.refusal(
+                "fan_provider_admission_failed" if isinstance(failure, CatalogValidationFailure)
+                else "fan_provider_precondition_failed") from None
+        finally:
+            if telemetry:
+                finished = time.perf_counter()
+                telemetry.finish_upstream_attempt(finished, (finished - started) * 1000)
         if token is None or self._authority(token[0]) != token[2]:
             raise self.refusal("fan_provider_authority_retired")
-        telemetry = current_telemetry()
         if telemetry:
             telemetry.audit_context.update(provider=self.provider_name, fallback="none")
             telemetry.record_provider_outcome("complete")

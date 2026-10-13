@@ -9,9 +9,13 @@ WebSocket commands and fallback remain unavailable.
 The assistant generates and retains an operation ID once, in the form
 `<10-digit UTC Unix seconds>-<32 lowercase UUID hex digits>`. The owner does not
 manage IDs. New IDs are accepted within five minutes, with 30 seconds of future
-clock tolerance. Reuse the same ID and exact arguments to reconcile, or retrieve
-its task with `get_execution_task`. A repeated call never authorizes another
-mutation, including after a timeout. A changed action requires a different ID;
+clock tolerance. Once a declaration exists, reusing the same ID and exact
+arguments is reconciliation-only: it reads the saved receipt and never authorizes
+another mutation, including after a timeout. Failures after a declaration return
+its `task_id` for `get_execution_task`. A failure before any declaration was
+saved returns no task pointer, reports `stage: preparation_failed` and
+`dispatch: no_dispatch`, keeps the operation ID, and records nothing to read back;
+no rejection is persisted for that ID. A changed action requires a different ID;
 uncertainty must be reconciled before considering a new action.
 
 Supported actions are `turn_on`, `turn_off`, and `set_percentage`. Percentage is
@@ -35,7 +39,12 @@ for an exact restoration action if needed.
 
 Only ha-mcp 8.4.3 (`ha-mcp-v8.4.3-d5cea47a`) or exact 8.5.0
 (`ha-mcp-v8.5.0-e1538bcd`), protocol 2025-03-26, and the corresponding
-complete reviewed descriptor contract may serve this wrapper. The capability
+reviewed descriptor contract may serve this wrapper. Admission is scoped to the
+three tools the wrapper names (`ha_list_services`, `ha_get_state`,
+`ha_call_service`): each must appear exactly once and match every reviewed
+contract component. Other advertised tools grant nothing and are never called;
+release identity, protocol, holds, revocation and Core authority still apply.
+Admission refusal is a non-retryable `provider_unavailable` outcome. The capability
 catalog describes the compiled family; each receipt identifies the selected
 exact contract. Historical receipts keep their original contract and hash. The fixed
 `ha_call_service` arguments contain `domain=fan`, one entity, the typed action,

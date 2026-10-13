@@ -168,9 +168,15 @@ class FanService:
             telemetry.audit_context.update(task_id=request.task_id, operation_id=request.operation_id)
         try:
             result = await self._control(request)
-        except Exception:
+        except (Exception, asyncio.CancelledError):
+            # Cancellation gets the same durable-state audit cleanup, then
+            # propagates unchanged; it never becomes a response or retry.
             if telemetry:
-                telemetry.audit_context[self.outcome_key] = "request_failed_reconcile_task"
+                if "task_id" in self.failure_guidance(request):
+                    telemetry.audit_context[self.outcome_key] = "request_failed_reconcile_task"
+                else:
+                    telemetry.audit_context.pop("task_id", None)
+                    telemetry.audit_context[self.outcome_key] = "preparation_failed_no_task"
             raise
         if telemetry:
             telemetry.audit_context.update({key: result[key] for key in (
@@ -179,6 +185,21 @@ class FanService:
             telemetry.audit_context[self.outcome_key] = result["state"]
         return result
 
+    def failure_guidance(self, request):
+        """Point to a task only when durable state says one exists.
+
+        Execution starts only after the declaration is saved, so its absence
+        proves no dispatch. No rejection record is written: the same ID becomes
+        reconciliation-only once a declaration exists, and not before.
+        """
+        try:
+            saved = self._path(request.task_id).exists()
+        except Exception:
+            saved = True  # Unknown durable state keeps the conservative pointer.
+        if saved:
+            return {"task_id": request.task_id, "reconciliation": "get_execution_task"}
+        return {"stage": "preparation_failed", "dispatch": "no_dispatch", "reconciliation": "no_task"}
+
     async def _control(self, request):
         request = self.request_type.model_validate(request.model_dump()).checked()
         check = self._authorization(request)
@@ -186,7 +207,8 @@ class FanService:
         if prior is not None:
             if prior.request != request:
                 raise self.refusal("fan_operation_id_rebound")
-            # A repeated call is reconciliation only, even before durable intent.
+            # Once declared, a repeated call is reconciliation only, even
+            # before durable intent.
             return await self.reconcile(request.task_id)
         check()
         if len(self.active) + self.preparing >= MAX_ACTIVE:

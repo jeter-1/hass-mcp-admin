@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.4.1-beta.6 - Typed power and fan admission repair (HAMCP-175)
+
+- Admit typed power and fan sessions on their three required upstream tools
+  (each matched against every reviewed contract component) instead of the
+  whole catalog, so unrelated ha-mcp additions no longer refuse them; any
+  other tool name is refused and the generic read gateway is unchanged.
+- Surface pre-dispatch admission refusals as bounded, non-retryable
+  `provider_unavailable` across MCP SDK exception groups.
+- Count and finish every provider exchange so `upstream_attempted` is truthful.
+- Return no task pointer when a failure or cancellation happens before the
+  declaration is saved; keep it once a declaration exists or its state is
+  unknown.
+- Preserve tools, public descriptions, schemas, routing, registries, durable
+  formats, workflows and stable v1.
+
 ## 2.4.1-beta.5 - Deep health survives the idle recovery sweep (HAMCP-168)
 
 - Defer only the idle historical recovery-cursor write while a deep-health
