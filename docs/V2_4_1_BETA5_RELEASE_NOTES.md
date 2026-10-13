@@ -19,37 +19,20 @@ orphan terminalization, active-recovery checkpoints, lock recovery, child
 updates, lock races and in-place file movement still supersede the scan and
 fail closed exactly as before.
 
-**A-3, diagnostic warning.** Every superseded refusal and every real
-health-storage failure now emits a WARNING `governance_health_refused` log
-event, rate-limited to one per 60 seconds per reason. Its context is bounded
-to `reason` (`health_snapshot_superseded` or `storage_failure`), `error_code`,
-`source_category` (`plans`, `tasks`, `f3_children`, `f3_locks` or `unknown`),
-`phase`, `elapsed_ms`, rounded `phase_elapsed_ms`, `plan_count`, `task_count`
-and, for real failures, `error_type` (exception class name only). It contains
-no path, identifier, record content or exception text. The category comes
-from provenance, never from the shared error code: the fence records which
-fenced source moved or failed (including a failure of its own initial read),
-a generation check records which repository advanced, a plan or task storage
-error is attributed to the repository or scan stage that raised it, and an F3
-storage error to its class. Anything else reports `unknown`. F3 storage
-errors still propagate unconverted. The F3 storage classes stay behind the
-reviewed `f3_runtime` import boundary.
+**Refusal diagnostics are deferred.** A refused scan still emits no
+dedicated warning in this release. Engineering logging is synchronous on the
+shared handler, so a refusal warning that cannot stall the event loop or
+process shutdown needs a logging-isolation change first; the diagnostic will
+return in that separate task.
 
-The warning is delivered best-effort off the event loop: the refusal hands it
-to one on-demand daemon worker through a queue of at most four warnings and
-drops (and counts) any warning that does not fit. The health call returns its
-original refusal and releases the fence without waiting for the log sink, so a
-slow or stalled log handler cannot delay the refusal, the recovery heartbeat
-or later health calls. A warning dropped while the sink is stalled is not
-retried.
-
-The public error code and message are unchanged
+The public error code, message, details and cause are unchanged
 (`execution_task_storage_error`, "Execution-task storage is unavailable.").
-No tool, schema, routing, admission, registry, persisted format, workflow or
+No logging change and no tool, schema, routing, admission, registry, persisted format, workflow or
 stable-v1 change is included. The healthy catalog remains **84 tools: 59
 native and 25 delegated reads**.
 
-Not included: skipping no-information cursor writes (A-2), the long-phase
+Not included: the refusal warning (A-3, deferred to a logging-isolation
+task), skipping no-information cursor writes (A-2), the long-phase
 latency itself (the validation worker re-sanitizes every plan on every scan;
 see the HAMCP-168 pull request for measurements and proposals), and the
 delegated-read concurrency observation (defect B).

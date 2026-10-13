@@ -1,10 +1,9 @@
 # HA MCP Engineering Server
 
 Engineering **2.4.1-beta.5** keeps an idle deep-health scan from being
-superseded by the periodic F3 recovery sweep (HAMCP-168) and adds a
-rate-limited, redacted `governance_health_refused` warning. Real recovery,
+superseded by the periodic F3 recovery sweep (HAMCP-168). Real recovery,
 child, lock, task and plan writes still refuse the scan with the unchanged
-storage error. It builds on beta.4's dormant governed entity-registry metadata
+storage error; a refusal diagnostic is deferred to a logging-isolation task. It builds on beta.4's dormant governed entity-registry metadata
 administration (`create_entity_metadata_plan`) and beta.3's exact
 **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **84 tools: 59 native and 25 admitted delegated

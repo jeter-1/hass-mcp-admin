@@ -6,11 +6,9 @@
   scan holds its fence, for at most three consecutive fenced sweeps, so an idle
   scan longer than the 30-second cadence no longer fails as superseded.
 - Keep every real recovery, child, lock, task and plan write superseding the
-  scan; the public error code and message are unchanged.
-- Emit a rate-limited, redacted `governance_health_refused` warning with the
-  provenance-attributed source category (`unknown` when not provable), phase
-  and bounded timings, delivered off the event loop through a bounded,
-  drop-on-full handoff that never delays the refusal.
+  scan; the public error code, message, details and cause are unchanged.
+- Defer the refusal diagnostic warning to a separate logging-isolation task;
+  no logging change is included.
 - Preserve tools, schemas, routing, admission, registries, durable formats,
   workflows and stable v1.
 

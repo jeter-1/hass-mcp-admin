@@ -15,7 +15,7 @@ import uuid
 from typing import Any, Awaitable, Callable
 
 from ..errors import ErrorCode, GovernanceError
-from .health_scan import HEALTH_FENCE_CATEGORIES, HealthScanFence
+from .health_scan import HealthScanFence
 from ..governance.task_storage import TaskHealthSnapshotSuperseded
 from ..f3.executor import PreIntentRetryRequired, SharedOperationExecutor
 from ..f3.contracts import (
@@ -136,12 +136,6 @@ RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
 # most this many consecutive fenced sweeps; the next sweep advances it
 # regardless. Any unfenced sweep restores the full allowance.
 RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT = 3
-# F3 storage failures a deep-health scan propagates unconverted, with the
-# bounded source category its refusal warning reports (most specific first).
-HEALTH_STORAGE_ERROR_CATEGORIES = (
-    (LockStorageError, "f3_locks"),
-    (ExecutionStorageError, "f3_children"),
-)
 ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_DECLARATION_PAGE_SIZE
 ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
 ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
@@ -4001,20 +3995,8 @@ class F3RuntimeIntegration:
                 HealthScanFence.stamp(self.locks.root), HealthScanFence.stamp(self.locks.state_path))),
         )
 
-    def _health_fence_roots(self) -> tuple[tuple[Any, str], ...]:
-        return (
-            (self.service.repository.root, "plans"),
-            (self.service.task_repository.root, "tasks"),
-            (self.children.root, "f3_children"),
-            (self.locks.root, "f3_locks"),
-        )
-
     def _health_fence(self) -> HealthScanFence:
-        return HealthScanFence(
-            self._health_fence_sources(), categories=HEALTH_FENCE_CATEGORIES,
-            roots=self._health_fence_roots())
-
-    health_storage_error_categories = HEALTH_STORAGE_ERROR_CATEGORIES
+        return HealthScanFence(self._health_fence_sources())
 
     def _enter_health_fence(self) -> None:
         self._health_fence_holders += 1
@@ -4058,7 +4040,6 @@ class F3RuntimeIntegration:
                 await asyncio.sleep(0)
                 fence.check()
                 if parent_repository.generation != task_generation:
-                    fence.moved_category = "tasks"
                     fence.superseded()
                 try:
                     next(steps)
@@ -4067,7 +4048,6 @@ class F3RuntimeIntegration:
                     break
             await fence.verify_files()
             if parent_repository.generation != task_generation:
-                fence.moved_category = "tasks"
                 fence.superseded()
             records = [record for record in data["records"].values() if record is not None]
             data["materialized"] = records
