@@ -184,6 +184,7 @@ Rejected:
 | `domain` (upstream) | `if domain is not None: include_opts = True` (TI 8.5.0:830-832; 8.4.3:812-813). On the legacy path this starts and aborts an options flow for every `supports_options` entry through an unbounded gather (TI 8.5.0 ~1568-1585). |
 | `entry_id` (upstream detail mode) | The legacy path always probes the options flow when `supports_options` (TI 8.6.0:1077-1078); the component path probes when `redaction_enabled()` (TI 8.6.0:1154). The `redact_secrets` setting is UNKNOWN, so detail mode is not provably flow-free. |
 | `include_options` | Options are configuration and can carry secrets; also forces the probes above. Forced `false`. |
+| `include_schema` | Detail-only; returns the options-flow schema by starting an options flow when `supports_options` (TI 8.5.0:1064, 1200; 8.4.3:1045, 1181; 8.6.0:1031, 1163). |
 | `include_subentries` | Ignored in list mode (TI 8.5.0:986-987); detail-only. |
 | `subentry_type`, `subentry_id` | Used only to start the subentry-schema flow. |
 | `show_advanced_options` | Only affects flow schemas; does nothing on HA 2026.6+. |
@@ -245,9 +246,12 @@ envelope keys and is always 2), `message`, `ha_mcp_update`.
 | `cloud` | `logged_in`, `relayer_connected`, `remote_enabled`, `remote_connected`, `alexa_enabled`, `google_enabled`, `certificate_status`, `iot_state`, `can_reach_cert_server`, `can_reach_cloud_auth`, `can_reach_cloud` | `instance_id`, `remote_server`, `relayer_region`, `certificate_fingerprint`, `certificate_alternative_names`, `certificate_expire_date`, `subscription_expiration`, `iot_last_disconnect_reason`, any other |
 | any other domain | none; the domain name is listed in `platform.other_domains` (sorted, max 64) | all values |
 
-Allowed values are scalars. A reachability value is reduced to one of `ok`,
-`pending` or `failed` (Core's `{"type": "pending"}` and
-`{"type": "failed", "error": …}` shapes; the error text is dropped).
+Allowed values are scalars. Any value in Core's typed shape
+(`{"type": "pending"}`, `{"type": "failed", "error": …}`, used for the
+reachability checks and also for `healthy` and `supported` when Supervisor
+reports unhealthy or unsupported; Core 2026.10.0
+`hassio/system_health.py:56-70`) is reduced to one of `ok`, `pending` or
+`failed`. The error text is dropped.
 
 Sections:
 
@@ -528,7 +532,7 @@ Each group runs for 8.4.3, 8.5.0 and 8.6.0:
    calls). Covers `diagnostics`, `config_check`, `zha_network_full`, unknown
    section strings, comma injection in `sections`, `include_options`,
    `subentry_*`, `device_id`, every `diagnostics_*`, `source="available"`,
-   `query` for apps, `exact_match: false`, out-of-range `limit` and `offset`,
+   `query` for apps, `include_schema`, `exact_match: false`, out-of-range `limit` and `offset`,
    bad patterns, and `entry_id` combined with other filters.
 4. **Projection canaries:** fixture payloads seeded with `options`, `schema`,
    `network`, `ip_address`, `hostname`, `nameservers`, `instance_id`,
@@ -648,7 +652,7 @@ protected `config.yaml` and `.release/` paths and needs explicit authorization
 | F2 | `source="installed"` does not constrain `slug`; a slug returns raw `/addons/{slug}/info`, including add-on options. `query` does nothing for installed apps. | TA 8.5.0:2469-2479 | `slug` is never sent upstream; Engineering filters (§1.2). |
 | F3 | Open-world behaviour cannot be removed with an `include` allowlist; the baseline always runs Core `system_health/info`, which starts outbound reachability probes, and upstream always computes `ha_mcp_update`. | Core 2026.10.0 `system_health/__init__.py:179-200`; `cloud/system_health.py:53-62`; `hassio/system_health.py:107-115`; `update_check.py:52-53` | Disclosed; `openWorldHint` stays true (O2). |
 | F4 | `domain` forces options reads, which start real options flows on the legacy path; `entry_id` detail mode can also start options flows. | TI 8.5.0:830-832, ~1568; TI 8.6.0:1077-1078, 1154, 1608 | List mode only; filtering in Engineering (§1.3). |
-| F5 | There are upstream parameters beyond the brief's list (`device_id` and six `diagnostics_*` on both system health and integration); `include_subentries` is detail-only; unknown `include` names are silently ignored. | TS/TI at all three versions | All rejected (§1). |
+| F5 | There are upstream parameters beyond the brief's list (`include_schema`, `device_id` and six `diagnostics_*` on integration; `device_id` and the `diagnostics_*` set on system health); `include_subentries` is detail-only; unknown `include` names are silently ignored. | TS/TI at all three versions | All rejected (§1). |
 | F6 | The existing sanitizer is a key denylist and misses compound and network keys. | `sanitization.py:14-75,152-173` | New positive allowlist projection before sanitization (§2). |
 | F7 | Part 2 cannot avoid editing the compiled ha-mcp release registry's `policy_sha256` for 8.4.3/8.5.0/8.6.0. This is not the signed registry, HOLD or support window. | `upstream_release_registry.json`; precedents `7cbc490`, `28378a5` | Flagged for confirmation (O5). |
 | F8 | `MAX_QUARANTINE_RECORDS = 26` is below the new read-route count (28), and `core_withheld_tools` has no truncation flag. | `upstream_read_gateway.py:113, 1739` | Raise to 32 and add the flag (§4.4). |
@@ -659,6 +663,8 @@ protected `config.yaml` and `.release/` paths and needs explicit authorization
 | F13 | The compiled registry records `advertised_tool_count` 77 for 8.5.0, while the architect observed 80 tools live. The difference is probably the custom component's tools (the File & YAML entry is installed), but this was not verified. | `upstream_release_registry.json` | Not a blocker for this design; flagged for the architect. |
 | F14 | The `thread_network` and `matter_network` sections give border-router radio parameters and Matter config-entry state only, with no per-node Thread or Matter health. For HAHE-F021, the useful evidence is the combination: OTBR and Matter Server app state and version (`ha_get_app`), the `thread`, `otbr` and `matter` config-entry states (`ha_get_integration`), and border routers plus repairs (`ha_get_system_health`). | TS 8.5.0 thread/matter sections | Disclosed in the descriptions; per-node health is out of scope. |
 | F15 | Upstream `component_count` counts the event envelope (always 2), not components. | TS 8.5.0:1216-1217 with Core `initial` event | Dropped from the projection. |
+| F16 | The architect's 2026-10-11 register proposal included `config_check` in the system-health sections and integration **detail** mode. Source review shows `config_check` is a POST to Core's check-config action and detail mode can start options flows (F4), so this design excludes both. | Register HAMCP-129 notes; §1.1, §1.3 | Narrower than proposed; recorded for Josh rather than silently dropped. |
+| F17 | The register outcome asks for CPU, RAM and HA-disk measurements. These three tools provide host disk (`disk_total`, `disk_used`, `disk_life_time`, as Supervisor-formatted strings) and per-add-on CPU/memory (`include_stats`), but **no host or Core CPU/RAM**. The upstream values also carry no observation timestamp; Engineering stamps the response time only. | Core 2026.10.0 `hassio/system_health.py:82-103`; TA 8.5.0:1130-1151 | Host CPU/RAM remains a gap after HAMCP-129; a separate source (for example Supervisor `/host/info` or `/core/stats`) would need its own review. |
 
 ## 10. Owner decisions requested
 
@@ -672,6 +678,7 @@ protected `config.yaml` and `.release/` paths and needs explicit authorization
 | O6 | Authorize the protected paths for Part 2 (§8), including release metadata for the beta after beta.5 | Authorize after #246 merges |
 | O7 | One PR or the A/B split | One PR |
 | O8 | Repairs: drop `translation_placeholders` entirely, or keep them with a key allowlist | Drop in the first release |
+| O9 | Accept the narrowing against the 2026-10-11 proposal (no `config_check`, no integration detail mode; F16) and the remaining host CPU/RAM gap (F17) | Accept; track host CPU/RAM separately |
 
 ## 11. Non-actions in Part 1
 
