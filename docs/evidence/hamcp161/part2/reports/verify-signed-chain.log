@@ -1,0 +1,15 @@
+== positive
+Predecessor sequence 6 SHA256 1d3530345c0d923bda17951c28ddf913e5c8e07d6fa69ca2d258302b418bbf4a; final sequence 9 SHA256 ecaccd79ff79582f633e1406546a844ee4b38920703e4192e6463162dd4a4402
+Final entries ['2026.10.0', '2026.10.1', '2026.9.4']; revoked ['2026.9.2', '2026.9.3']; 2026.10.1 references 21; expires_at 2027-01-10T21:12:05Z
+Registry code: CORE_IDENTITY='home-assistant-core'; root /home/josh/repos/hass-mcp-admin/.claude/worktrees/bridge-cse_014c98dy1HEXGCFiGhDwAYXA
+OK
+== neg: journal-2 as final
+FAILED: final sequence
+== neg: journal-1 as predecessor
+FAILED: predecessor is not the sequence-6 journal main serves
+== neg: R0 candidate
+FAILED: candidate 1 is not the cleared candidate
+== neg: expired clock
+FAILED: registry code refused the journal
+== neg: one-byte mutation of seq-9 revocation reason
+FAILED: registry code refused the journal
