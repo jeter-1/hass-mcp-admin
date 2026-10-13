@@ -11,5 +11,7 @@ conflicts. Workflow changes alter repository authority and require explicit scop
 - Separate validation, signing, publication, promotion, and deployment authorities.
 - Do not add hidden merge, tag, package, release, or deployment side effects.
 - Disposable resources require bounded timeouts and `always()` cleanup.
+- Use explicit runner images (for example `ubuntu-24.04`), never floating
+  `-latest` labels, including matrix-supplied runners; change images deliberately.
 - Review the workflow permission diff and every external action/image reference
   before completion.

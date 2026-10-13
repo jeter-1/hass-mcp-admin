@@ -55,7 +55,7 @@ jobs:
   detect-release:
     name: Detect Engineering release transition
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       actions: read
@@ -271,7 +271,7 @@ jobs:
     needs:
       - detect-release
     if: needs.detect-release.outputs.release_action == 'publish'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       actions: read
       contents: read
@@ -330,7 +330,7 @@ jobs:
       - detect-release
       - recovery-source
     if: needs.detect-release.outputs.release_action == 'publish'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
       contents: write

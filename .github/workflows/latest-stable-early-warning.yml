@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   resolve_latest_stable:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       real_ha: ${{ steps.resolve.outputs.real_ha }}
@@ -47,7 +47,7 @@ jobs:
   latest-stable-real-ha:
     name: Latest stable Real HA ${{ matrix.lane }}
     needs: resolve_latest_stable
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 50
     strategy:
       fail-fast: false
@@ -176,7 +176,7 @@ jobs:
     needs:
       - resolve_latest_stable
       - latest-stable-real-ha
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Report window position and contract outcome

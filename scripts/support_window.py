@@ -55,7 +55,7 @@ OPTIONAL_CORE_SLOTS = frozenset({"candidate"})
 # is then created or required. Current and rollback are never optional.
 OPTIONAL_HA_MCP_SLOTS = frozenset({"candidate"})
 OPTIONAL_SLOTS = {"core": OPTIONAL_CORE_SLOTS, "ha_mcp": OPTIONAL_HA_MCP_SLOTS}
-RUNNERS = {"amd64": "ubuntu-latest", "arm64": "ubuntu-24.04-arm"}
+RUNNERS = {"amd64": "ubuntu-24.04", "arm64": "ubuntu-24.04-arm"}
 CORE_IMAGE = "ghcr.io/home-assistant/home-assistant"
 HA_MCP_IMAGE = "ghcr.io/homeassistant-ai/ha-mcp"
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")

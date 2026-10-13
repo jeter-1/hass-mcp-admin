@@ -488,7 +488,7 @@ class WorkflowTests(unittest.TestCase):
         for row in lanes:
             pins = json.loads(pin_paths[row["upstream_version"]].read_bytes())
             self.assertEqual(row["candidate_source"], pins["upstream_source"])
-            self.assertEqual(row["runner"], "ubuntu-latest" if row["architecture"] == "amd64" else "ubuntu-24.04-arm")
+            self.assertEqual(row["runner"], "ubuntu-24.04" if row["architecture"] == "amd64" else "ubuntu-24.04-arm")
         historical = [x for x in rows if not x.get("candidate_power")]
         self.assertEqual([(x["upstream_version"], x["support_slot"]) for x in historical],
                          [("8.4.3", "rollback")])

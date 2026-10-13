@@ -46,7 +46,7 @@ jobs:
       - exact-image-read-gateway
       - exact-addon-runtime-acceptance
       - dashboard-disposable
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Require every CI job family to succeed
@@ -93,7 +93,7 @@ jobs:
           sys.exit("Required CI refused: workflow was cancelled.")
 
   validate_prerequisites:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -194,7 +194,7 @@ jobs:
 
   unit_test_shards:
     name: unit tests shard ${{ matrix.shard }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -236,7 +236,7 @@ jobs:
     needs:
       - validate_prerequisites
       - unit_test_shards
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     outputs:
       source_validation: ${{ steps.source_receipt.outputs.source_validation }}
@@ -270,7 +270,7 @@ jobs:
 
   validate_packaging:
     needs: validate_prerequisites
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -340,7 +340,7 @@ jobs:
   real-ha-contract-tests:
     name: Real HA ${{ matrix.lane }} (${{ matrix.support_slot }})
     needs: prepare_exact_image_matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 50
     strategy:
       fail-fast: false
@@ -560,7 +560,7 @@ jobs:
           retention-days: 14
 
   prepare_exact_image_matrix:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       tier: ${{ steps.support-window.outputs.tier }}
@@ -590,7 +590,7 @@ jobs:
 
   exact-image-read-gateway:
     needs: prepare_exact_image_matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     strategy:
       fail-fast: false
@@ -872,7 +872,7 @@ jobs:
   exact-addon-runtime-acceptance:
     name: Exact ha-mcp ${{ matrix.upstream_version }} add-on runtime acceptance ${{ matrix.architecture }} (${{ matrix.support_slot }})
     needs: prepare_exact_image_matrix
-    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.runner || 'ubuntu-24.04' }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -1181,7 +1181,7 @@ jobs:
   dashboard-disposable:
     name: dashboard-disposable
     needs: validate_prerequisites
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
       PYTHONDONTWRITEBYTECODE: "1"
