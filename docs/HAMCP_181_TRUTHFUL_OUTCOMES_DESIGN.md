@@ -18,6 +18,21 @@ Path prefix used below: `R/` = `hass_mcp_engineering_beta/ha_mcp_engineering/`.
 Line numbers are at the base SHA. Citations marked *(subagent)* came from a
 read-only inventory pass and were spot-checked but not line-by-line verified.
 
+**Revision 2 (corrections after independent design review).** The Codex
+design review of head `38b06c1` (verdict: sound after corrections, no
+Critical/High) raised four Medium and two Low findings. This revision applies
+them:
+
+| Finding | Correction | Where |
+| --- | --- | --- |
+| M1 (Codex R1) | "Sent but rejected by the provider" is now separate from "proven never sent" in the taxonomy, producer list and audit plan. Only a positive local pre-send proof may claim no dispatch. | §0, §1.3, §2.1–§2.3, §3, §5.1, §5.2 |
+| M2 (Codex R2) | Producer ownership is corrected (b2–b9), and each PR lists every file it must touch, including tests and fixtures. | §1.3, §1.5, §6 |
+| M3 (Codex R3) | Root cause of the successful fan/power `dispatched_at: null` is documented. The fix moves into PR1 with exact field semantics and tests. | §1.5, §2.4.2, §6 |
+| M4 (Codex R4) | The downgrade guarantee is narrowed to the exact tested revision and terminal-only state, with an explicit list of what is not guaranteed. | §4.3 |
+| L1 (Codex R5) | Rollback claims are corrected: contract-v2 no-call already refuses, and the concrete gap is the legacy automation branch. | §1.5 S19, §4.4, §7 |
+| L2 (Codex R6) | Per-child and parent counters are distinguished. "Byte-identical output" is replaced by an explicit compatibility rule. | §2.4.1, §2.4.3, §5, §6 |
+| §8 | The decision table shows the author's and the reviewer's positions side by side where they differ. | §8 |
+
 ---
 
 ## 0. Problem statement
@@ -34,13 +49,14 @@ That is indistinguishable from a dispatched success everywhere except entity
 metadata, which has the 069A V9 outcome
 `desired_state_already_present_not_dispatched`.
 
-The goal is one truthful vocabulary covering three cases:
+The goal is one truthful vocabulary covering four cases:
 
 | Case | Meaning | Proof required |
 | --- | --- | --- |
 | **(a)** already satisfied, no dispatch | Preflight proved the desired state was already present. No intent was saved and nothing was sent. | The F3 `VERIFIED_NO_DISPATCH` record class (no intent, `desired_state_already_reached`). |
-| **(b)** intent saved, proven no-call | The durable intent fence was committed, but local control flow proves the provider call was never sent. | A local, pre-I/O control-flow marker on the `dispatch_result_recorded` event. A remote or inferred signal is never enough. |
-| **(c)** intent saved, uncertain | The call may have been sent. | This is the default whenever (b) proof is absent. |
+| **(b)** intent saved, proven never sent | The durable intent fence was committed, but local control flow proves the provider call was never sent. | A **positive** local pre-send marker, emitted by the code that owns the send boundary, on the `dispatch_result_recorded` event. A remote signal, a missing response or an exception type is never enough. |
+| **(r)** sent, rejected, no mutation | The provider call was sent and the provider answered with a rejection that confirms nothing changed. | `dispatch_failed_confirmed` with `provider_response_received=true`. Configuration already records the diagnostic `provider_rejected_mutation` for exactly this case (`R/f3_configuration/adapter.py:478-497`). **This is a dispatched attempt.** It never claims no dispatch. |
+| **(c)** intent saved, uncertain | The call may have been sent. | This is the default whenever neither (b) nor a received response is proven. A lost response is (c), not (r). |
 
 ---
 
@@ -77,25 +93,36 @@ executor writes `terminalize_verified_no_dispatch`
 | Entity metadata | `R/f3_configuration/strategies.py:443-455`; `R/f3_configuration/adapter.py:863-912` | **Distinct (V9).** Task `SUCCEEDED_VERIFIED` with `terminal_outcome=desired_state_already_present_not_dispatched` and event `task_completed_without_dispatch`. `verification_summary` gains `outcome_code`, `dispatch_performed:false` and `result_text`. Apply sets `status:already_present` (`R/f3_runtime/runtime.py:2458-2478`, `:2568-2615`, `:2829`; `R/governance/service.py:7170-7179`). |
 | Helper state (`set_exact_input_boolean_state`) | `R/f3/operational_strategies.py:833-836` (`already_desired`) → `R/f3/operational_adapter.py:579-600` | `succeeded_verified`, **indistinguishable** from a dispatched success. |
 | Fan (`control_fan`) | `R/fan/adapter.py:94-105` (`no_op = fresh and self.desired(...)`) | Receipt `terminal_outcome=succeeded_verified`, `provider_attempt_count=0`, `dispatch_intent_recorded=false`. There is no distinct outcome (`R/fan/service.py:261-293`). The audit event is `fan_preflight_noop_verified` (`R/fan/audit.py:79-87`). |
-| Power (`control_power`) | Subclasses fan *(subagent)* | Same as fan. |
+| Power (`control_power`) | Subclasses fan: `PowerAdapter(FanAdapter)` (`R/power/adapter.py:41-64`); the service and audit are inherited (`R/power/service.py:17`, `:26`) | Same as fan. |
 | Configuration REST/helper (automation, script, input_*) | `R/f3_configuration/strategies.py:202-208`: the base `already_reached` returns `False` | **There is no (a) path.** If live state already equals the target, preflight refuses as `stale_target_state` / `target_already_exists` → `failed_pre_dispatch` (`R/f3_configuration/adapter.py:684-702`). |
 | Dashboard update | No preflight already-reached check | **There is no (a) path.** It gives a stale refusal → `failed_pre_dispatch`. |
 | Backup, reload, add-on restart, Core restart | Only input_boolean overrides `already_desired` (`operational_strategies.py:833-836`) | **There is no (a) path, by design.** These are actions, not state targets. |
 | Fan/power drift at dispatch time | `R/fan/adapter.py:107-132` re-reads and refuses on drift | `failed_pre_dispatch`, even when the drifted state *equals* the target. |
 
-### 1.3 Paths ending in (b): intent saved, proven no-call
+### 1.3 Paths ending in (b) or (r) after the intent commit
 
-| # | Path | Proof available | What happens today |
-| --- | --- | --- | --- |
-| b1 | Dashboard setter not sent (provider error with `upstream_dispatch_occurred is False`) | Local transport marker (`R/f3_dashboard/adapter.py:45-77`, `:528-542`) | `dispatch_failed_confirmed` + marker → task `failed_post_dispatch`. #253 adds the display fields `SETTER_NOT_SENT_FIELDS` on primary surfaces only (`R/f3_runtime/runtime.py:153-182`, `:2432-2455`, `:2824-2828`). |
-| b2 | Configuration/entity-metadata `ConfigurationMutationNotDispatchedError`, raised before send | Local raise sites `R/governance/resources.py:659`, `:667`, `:681`, `:692`, `:759`, `:890`; `R/governance/entity_metadata.py:573`, `:588`, `:605` | `dispatch_failed_confirmed` with diagnostic `provider_confirmed_no_mutation` → `failed_post_dispatch` **with no client-visible marker** (`R/f3_configuration/adapter.py:475-501`). The audit mislabels it as `provider_response_received` (`R/f3_runtime/runtime.py:705-722`: `mutation_dispatched is False` counts as "response received"). |
-| b3 | Dispatch authority retired between intent and revalidation | Executor raises before calling the adapter (`R/f3/executor.py:626-631`) | Any post-intent exception → `dispatch_indeterminate` with `provider_result_uncertain` → readback (`R/f3/executor.py:714-736`). **Proven no-call classed as uncertain.** |
-| b4 | Fault injection point `after_durable_intent_before_provider_invocation` | `R/f3/executor.py:620` (test seam) | Same as b3. |
-| b5 | A `before_dispatch` callback or auditor raises after the intent commit | Adapter control flow. Config: `R/f3_configuration/adapter.py:453-466` returns `FAILED_PRE_DISPATCH` with `intent=False`, which `_validate_dispatch` rejects after intent (`R/f3/executor.py:846-866`) → indeterminate. Dashboard: `before_dispatch` is outside the try (`R/f3_dashboard/adapter.py:512`). | Indeterminate → readback. |
-| b6 | MCP session rotation detected before the write is sent | `R/clients/upstream_read.py:442-447` → `_require_same_session` `:503-520` raises `DashboardTransportError("protocol_error")` | Indeterminate *(subagent: classed as uncertain)*. |
-| b7 | Core refusal at the local REST/WS client before the frame is written | *(subagent)* client-side gate | Indeterminate → readback. |
-| b8 | Fan/power provider authority re-check after `before_dispatch()` | `R/fan/adapter.py:107-132`: `dispatched=True` is set right after `await before_dispatch()`. Any later exception → `DISPATCH_INDETERMINATE` with `fan_response_uncertain`. | Indeterminate → readback. There is no not-sent marker. |
-| b9 | Backup and lifecycle providers | `R/providers/operational_backup.py:213-220` and `R/providers/operational_lifecycle.py:686-693` set `dispatched=True` once the intent callback returns. The operational adapter always returns `may_have_dispatched=True` and count 1 (`R/f3/operational_adapter.py:629-674`, `:719`). | Any failure after the callback is uncertain. The operational wrapper audits `provider_invocation_refused` while F3 records indeterminate *(subagent)*. |
+Each row names the module that **owns the send boundary**, because only that
+module can prove the call was not sent. An exception type, a remote signal or
+a missing response is never proof. Rows marked **(r)** were sent and are
+dispatched attempts, so they never claim no dispatch. Columns "Today emits"
+give the F3 outcome and diagnostic on `dispatch_result_recorded` and the
+gateway audit label. The emitted codes after the change are in §5.2.
+
+| # | Path | Owner of the send boundary (where proof must come from) | Case | Today emits |
+| --- | --- | --- | --- | --- |
+| b1 | Dashboard setter not sent (provider error with `upstream_dispatch_occurred is False`) | `R/clients/mcp.py` `McpDashboardTransport` (`:207`, `_run` `:322`). The Core gate at `:372-379` raises `connection_failed` with `tool_call_attempted=False` before `call_tool` at `:381-385`. The adapter projects it at `R/f3_dashboard/adapter.py:53` (`_provider_failure_projection`) and `:516-530`. | (b) | `dispatch_failed_confirmed` + `setter_call_not_sent` → task `failed_post_dispatch`. #253 adds the display fields `SETTER_NOT_SENT_FIELDS` on primary surfaces only (`R/f3_runtime/runtime.py:153-182`, `:2432-2455`, `:2824-2828`). Gateway audit: dashboard audited gateway `R/f3_runtime/runtime.py:600-623`. |
+| b2-L | Configuration/entity-metadata local refusal before the mutation is written | `R/governance/resources.py`: `:667` (`target_already_exists`) and `:692` (`target_entity_id_reserved`) fire before any write; `:759` (`closed_payload_violation`) is purely local; `:659` and `:681` fire after a failed preflight **read** (reads may have been sent, the write was not). `R/governance/entity_metadata.py:573` is a local closed-payload refusal. All raise `ConfigurationMutationNotDispatchedError` (`R/governance/resources.py:108-112`, `mutation_dispatched=False`) without `provider_response_received`. | (b) | `dispatch_failed_confirmed` + `provider_confirmed_no_mutation` (`R/f3_configuration/adapter.py:475-501`), with **no** positive pre-send marker. Gateway audit `provider_response_received`, which is wrong: `_AuditedConfigurationGateway` (`R/f3_runtime/runtime.py:678`, write `:702-721`) treats `mutation_dispatched is False` as "response received". |
+| b2-A | Entity-metadata websocket authorization failure **before** the command frame is sent | `R/clients/websocket.py`: `auth_ok` missing at `:246-251`, and the 401/403 handshake at `:288-292`. Both raise `AuthorizationError` (`R/errors.py:632`) without `provider_response_received`; the command frame at `:252` was never written. Surfaced through `R/governance/entity_metadata.py:588`. | (b), only with a not-sent attribute set by `R/clients/websocket.py` | Same as b2-L: `provider_confirmed_no_mutation`, audit `provider_response_received` (wrong). |
+| b2-R | Sent, provider answered with a rejection | `R/governance/resources.py:890` (REST POST sent, 4xx received); `R/governance/entity_metadata.py:588` when the command result was `unauthorized`/`forbidden` (`R/clients/websocket.py:262-269`, `provider_response_received=True`); `R/governance/entity_metadata.py:605` (rejection after send). | **(r)** | `dispatch_failed_confirmed` + `provider_rejected_mutation` (`R/f3_configuration/adapter.py:478-497`). Gateway audit `provider_response_received` (correct). Task `failed_post_dispatch`. |
+| b3 | Dispatch authority retired between the intent commit and revalidation | `R/f3/executor.py`. `before_dispatch` (`:565-631`) runs as a callback **inside** `adapter.dispatch` (`:640-642`); the revalidation raise is at `:621-631`. The adapter owns the send, so proof needs both the executor's raise and the adapter declaring that it had not sent when the callback failed (b5). | (b) | The adapter converts or propagates the callback failure. The result is `dispatch_indeterminate` + `provider_result_uncertain` (`R/f3/executor.py:678-735`, record at `:713-726`, readback at `:727-735`). **A proven no-call is classed as uncertain.** |
+| b4 | Fault injection point `after_durable_intent_before_provider_invocation` | `R/f3/executor.py:620` (test seam only). It is **not** a model of process loss: `SimulatedProcessLoss` is a `BaseException` (`:76`) re-raised at `:676-677`. | (b) in tests only | Same as b3. |
+| b5 | A `before_dispatch` callback or auditor raises after the intent commit | Each adapter that invokes the callback. Configuration: `R/f3_configuration/adapter.py:453-466` returns `FAILED_PRE_DISPATCH` with `intent=False`, which `_validate_dispatch` (`R/f3/executor.py:643`, `:846-866`) rejects after intent. Dashboard: `before_dispatch` at `R/f3_dashboard/adapter.py:498` is **outside** the `try` that starts at `:499`. Fan/power: `R/fan/adapter.py:109-119` (`once()` sets `dispatched=True` after `before_dispatch`). Operational: `R/f3/operational_adapter.py:677-724` and the providers' `persist_dispatch` (`R/providers/operational_backup.py:213-220`, `R/providers/operational_lifecycle.py:686-693`). | (b) | Configuration: contract violation → indeterminate. Dashboard: the exception escapes the adapter → executor general except → indeterminate. Fan/power/operational: indeterminate. |
+| b6 | MCP session rotation detected before the write is sent | `R/clients/upstream_read.py` `McpReadGatewayTransport` (`:84`, `_run_operation` `:365`): `before_dispatch` at `:430-441`, `_require_same_session` at `:442-447` (definition `:503-519`), then `call_tool` at `:452-456`. Users: fan (`R/providers/upstream_fan.py`), power (via `PowerProvider`, `R/providers/upstream_power.py:6`), backup (`R/providers/operational_backup.py:163`), lifecycle (`R/providers/operational_lifecycle.py:282`) and the read gateway (`R/providers/upstream_read_gateway.py:873`). **The dashboard does not use it.** | (b), only with a not-sent attribute set by `R/clients/upstream_read.py` | `DashboardTransportError("protocol_error")`. Backup/lifecycle keep `dispatched=True` for a post-dispatch transport error (`R/providers/operational_backup.py:244-245`, `:250-254`; lifecycle `:732-745`) → indeterminate. Fan/power → indeterminate. |
+| b7 | Core refusal at the local REST/WS client before the request is written | `R/clients/rest.py:77-84` and `R/clients/websocket.py:207-211` (`authorize_core_dispatch()` false → `HomeAssistantUnavailableError`). `HomeAssistantUnavailableError` is raised for other reasons too, so the type alone is **not** proof; the client must set an explicit not-sent attribute. | (b), only with that attribute | Indeterminate → readback. |
+| b8 | Fan/power provider authority re-check | `R/providers/upstream_fan.py`. The pre-send check is in `dispatch` at `:94-99` (authority check, `await before()`, recheck). The check at `:126-127` runs **after** the provider exchange and is not pre-send. The F3 wrapper `R/fan/adapter.py:107-132` sets `dispatched=True` after `before_dispatch` (`:109-119`) and maps any later exception to `DISPATCH_INDETERMINATE` + `fan_response_uncertain` (`:126-132`). Power inherits through `PowerAdapter(FanAdapter)` (`R/power/adapter.py:41-64`). | (b) for `:94-99` only; `:126-127` stays (c) | Indeterminate → readback. No not-sent marker. |
+| b9 | Backup and lifecycle providers | `R/providers/operational_backup.py` (`persist_dispatch` `:213-220`) and `R/providers/operational_lifecycle.py` (`:686-693`) set `dispatched=True` once the intent callback returns. `R/f3/operational_adapter.py:677-724` always returns `may_have_dispatched=True` (`:719`); strategies `R/f3/operational_strategies.py:239-264` (FullBackup) and the same pattern at `:386`, `:527`, `:657`, `:845`. | (b) only with per-provider proof | F3: indeterminate. Gateway audit (`R/f3_runtime/runtime.py:800-806` backup, `:838-844` lifecycle): `provider_response_lost` if `exc.dispatched`, otherwise `provider_invocation_refused`. The two records disagree when `exc.dispatched` is false. |
+
+A lost response (sent, then no answer) is (c) in every row.
 
 Consequence: for readback-capable capabilities (helper state, fan, power,
 configuration), a proven no-call can currently end as **`succeeded_verified`**
@@ -134,13 +161,13 @@ No path in (c) redispatches. This design keeps that true.
 | S10 | Duplicate replay | `R/governance/service.py:7127-7180`; `R/errors.py:479` ("already dispatched and will not be repeated") | The wording contradicts the no-call details (R2-7). |
 | S11 | Cancellation | `R/f3_runtime/runtime.py:2896-2906`; `R/errors.py:292-296` ("cannot be cancelled after dispatch") | No details, and the wording conflates intent with send (R2-7). |
 | S12 | Task-lifecycle audit | `R/governance/service.py:1720-1765` (`:1742` `provider_dispatch_occurred=bool(task.dispatched_at)`) | True on `dispatch_attempted`, `task_failed_post_dispatch` and `duplicate_apply_prevented` for b1 (R2-8). |
-| S13 | F3 child audit | `R/f3_runtime/runtime.py:1277-1414` | Correct for dashboard b1 (`:1338-1342`, `:1380-1395`) only. |
-| S14 | Config gateway audit | `R/f3_runtime/runtime.py:705-722` | Records `provider_response_received` for a pre-send no-call. |
-| S15 | Fan/power receipt and audit | `R/fan/service.py:261-293`; `R/fan/audit.py:79-99` | `provider_attempt_count=record.dispatch_count` (the intent reservation); `dispatched_at: None` always. No `provider_dispatch_occurred` and no outcome code. |
-| S16 | `plan.operational.dispatch` | Plan audit derives from `plan.operational.dispatch["dispatched"]` (`R/governance/service.py:2414-2426`) | No F3 writer updates it; strongly indicated **stale** for F3. |
+| S13 | F3 child audit | `R/f3_runtime/runtime.py:1277-1414` | Correct for dashboard b1 (`:1338-1342`, `:1380-1395`) only. It has no (r) qualifier. |
+| S14 | Provider gateway audits | Configuration: `_AuditedConfigurationGateway` `R/f3_runtime/runtime.py:678`, write `:702-721`. Dashboard: `:600-623`. Backup: `:800-806`. Lifecycle: `:838-844`. | Configuration records `provider_response_received` when `provider_response_received` is true **or** `mutation_dispatched is False`, so a b2-L/b2-A pre-send refusal is labelled as a received response. That label is correct only for b2-R (r). Backup/lifecycle label by `exc.dispatched` alone. |
+| S15 | Fan/power receipt, audit and task reads | Receipt `R/fan/service.py:261-291` (`dispatched_at` is the literal `None` at `:281`); outcome audit snapshot `R/fan/audit.py:88-99` (literal `None` at `:95`); request audit `R/fan/service.py:181-186` → `request_summary` whitelist `R/fan/audit.py:8-31` → `R/routing.py:1126-1130`; `get_execution_task` routing for fan/power task ids `R/tools/governance.py:336-345`. Power inherits all of these (`R/power/service.py:17`, `:26`). | `provider_attempt_count=record.dispatch_count` (the intent reservation); `dispatched_at: None` always, even for a sent and verified call (§2.4.2). No `provider_dispatch_occurred` and no outcome code. |
+| S16 | `plan.operational.dispatch` | Plan audit derives from `plan.operational.dispatch["dispatched"]` (`R/governance/service.py:2414-2426`) | No F3 writer updates it. **Stale for F3, executed proof:** the reviewer ran a successful synthetic F3 reload (one provider call, `succeeded_verified`) and `plan.operational.dispatch` stayed `dispatched:false`, attempt count 0, no response. |
 | S17 | Health counts | `R/governance/service.py:~13384-13400` (`failed_post_dispatch` at `:13392`); F3 health `R/f3_runtime/runtime.py:4164-4270` (`_is_terminal_zero_dispatch_parent`) | Counts by coarse state only. |
-| S18 | Reconciliation and admin page "Dispatch count" | `R/f3_runtime/runtime.py:3720-3815`; `R/governance/service.py:9060-9122` | Intent count shown as dispatch count. |
-| S19 | Rollback admission | Generic: `R/f3_runtime/runtime.py:3356-3360` admits `SUCCEEDED_VERIFIED`, `MANUAL_REVIEW_REQUIRED` and `FAILED_POST_DISPATCH`. Entity metadata: `:3500-3512` refuses `forward_not_dispatched` unless `terminal_outcome == "succeeded_verified"`. | The generic path would offer a rollback plan for a (b) forward that changed nothing. |
+| S18 | Reconciliation items and the admin F3 review page | Items: `R/f3_runtime/runtime.py:3720-3815`. Page: `R/approval_web.py` `f3_review` (`:522`, route `/f3/{child_id}` at `:358`) shows "Dispatch count" at `:585`. (`R/governance/service.py:9060-9122` is inside `reconcile_execution_tasks` (`:8986`), a reconciliation operation, not a display.) | Intent count shown as "Dispatch count". |
+| S19 | Rollback admission | Contract v3 refused at `R/f3_runtime/runtime.py:3335`. Entity metadata: `:3500-3512` refuses `forward_not_dispatched`. Contract-v2 configuration: per-child verified and fingerprint filter (`:3373-3408`). Legacy automation: `:3423-3436`, no per-child filter. | Only the **legacy automation** branch would offer a rollback plan for a (b) or (r) forward. Contract-v2 no-call already refuses (reviewer-executed). See §4.4. |
 | S20 | Nested historic counters | `provider_attempts`, `verification_summary` children, `lifecycle_events` | The durable counts are correct as intent counts but lose their qualifier when extracted or truncated (R2-9). |
 
 **Divergent "was it dispatched" predicates (11):**
@@ -177,17 +204,27 @@ by a single function (§5):
 | --- | --- | --- |
 | `not_dispatched_pre_intent` | pre-dispatch | No durable intent exists. Covers `created`, `preflight`, `failed_pre_dispatch` and cancelled-before-intent. |
 | `not_dispatched_already_present` | **(a)** | An F3 `VERIFIED_NO_DISPATCH` record exists for every child (or the V9 terminal outcome is present). |
-| `intent_recorded_not_sent` | **(b)** | Intent exists, the F3 outcome is `dispatch_failed_confirmed`, `provider_response_received` is false, and a proven-no-call marker is on the `dispatch_result_recorded` event. This must hold for *every* intent-bearing child. |
-| `intent_recorded_send_uncertain` | **(c)** | Intent exists and neither (b) nor `sent_response_received` is proven. **This is the default for any intent.** |
-| `sent_response_received` | sent | Intent exists and `provider_response_received` is true. |
+| `intent_recorded_not_sent` | **(b)** | Intent exists, the F3 outcome is `dispatch_failed_confirmed`, `provider_response_received` is false, and a positive pre-send marker (`provider_call_not_sent`, or the dashboard's existing `setter_call_not_sent`) is on the `dispatch_result_recorded` event. This must hold for *every* intent-bearing child. |
+| `sent_rejected_no_mutation` | **(r)** | Intent exists, the F3 outcome is `dispatch_failed_confirmed` and `provider_response_received` is **true**. The call was sent. Nothing changed. |
+| `intent_recorded_send_uncertain` | **(c)** | Intent exists and none of (b), (r) or `sent_response_received` is proven. **This is the default for any intent.** It includes a rejection whose response was lost. |
+| `sent_response_received` | sent | Intent exists, `provider_response_received` is true, and the outcome is not `dispatch_failed_confirmed`. |
 
-Mixed multi-child plans project the **most conservative** child phase, in this
-order:
+The rules are mutually exclusive. A record with `provider_response_received=true`
+can never be (b), even if a marker is present. Such a contradictory record
+projects as (c) and is flagged in diagnostics as an evidence conflict.
 
-`sent_response_received` > `intent_recorded_send_uncertain` > `intent_recorded_not_sent` > `not_dispatched_already_present` > `not_dispatched_pre_intent`
+Mixed multi-child plans project the **most conservative** child phase for
+"was anything sent", in this order:
 
-#253 already applies the same rule for the dashboard: every intent-bearing
-child must carry the marker.
+`sent_response_received` > `sent_rejected_no_mutation` > `intent_recorded_send_uncertain` > `intent_recorded_not_sent` > `not_dispatched_already_present` > `not_dispatched_pre_intent`
+
+Whether anything changed is aggregated separately. The parent
+`changed_by_engineering` is `false` only when every child is (a), (b) or (r).
+It is `null` (unknown) when any child is (c), and `true` when any child is
+sent and verified.
+
+#253 already applies the every-child rule for the dashboard: every
+intent-bearing child must carry the marker.
 
 ### 2.2 Names and client fields
 
@@ -195,6 +232,7 @@ child must carry the marker.
 | --- | --- | --- | --- |
 | (a) | `succeeded_verified` | `desired_state_already_present_not_dispatched` (V9 name, generalized) | `status:"already_present"`, `provider_dispatch_occurred:false`, `dispatch_performed:false`, `changed_by_engineering:false`, `intent_recorded:false`, `result_text`, `dispatch_phase` |
 | (b) | `failed_post_dispatch` under T2 (see §4); a new state only under T3 | `failed_after_intent_not_dispatched` (**owner naming decision OD-5**) | `provider_dispatch_occurred:false`, `dispatch_performed:false`, `changed_by_engineering:false`, `intent_recorded:true`, `provider_call_not_sent:true` (generic), `setter_call_not_sent:true` (**dashboard only, kept verbatim from #253**), `attempt_counts_basis`, `result_text`, `dispatch_phase`, `retryable:false` |
+| (r) | `failed_post_dispatch` (truthful: the call was sent) | unchanged (`failed_post_dispatch`). Projected `outcome_code:"provider_rejected_mutation"`, reusing the existing configuration diagnostic name. No new stored string. | `provider_dispatch_occurred:true`, `dispatch_performed:true`, `provider_response_received:true`, `changed_by_engineering:false`, `intent_recorded:true`, `attempt_counts_basis:"saved_dispatch_intent"`, `result_text`, `dispatch_phase:"sent_rejected_no_mutation"`. **Never** `provider_call_not_sent`. |
 | (c) | unchanged (`observing` / `succeeded_verified` / `failed_post_dispatch` / `manual_review_required`) | unchanged | Today's fields plus `dispatch_phase:"intent_recorded_send_uncertain"` and `attempt_counts_basis:"saved_dispatch_intent"`. `provider_dispatch_occurred` keeps its current conservative `true`. |
 | sent | unchanged | unchanged | Today's fields plus `dispatch_phase` and `attempt_counts_basis:"saved_dispatch_intent"`. |
 
@@ -203,9 +241,31 @@ child must carry the marker.
 - From 069A V9: `outcome_code`, `dispatch_performed`, `result_text`, `status:already_present`, and the outcome string.
 - From #253: `provider_dispatch_occurred`, `dispatch_performed`, `setter_call_not_sent`, `changed_by_engineering`, `intent_recorded`, `attempt_counts_basis`, and the value `saved_dispatch_intent_no_setter_call`.
 
-**New fields:** `dispatch_phase`, `provider_call_not_sent`, and the
-`attempt_counts_basis` values `saved_dispatch_intent`,
-`saved_dispatch_intent_no_provider_call` and `no_dispatch_intent`.
+**New fields:** `dispatch_phase`, `provider_call_not_sent`,
+`dispatch_intent_recorded_at`, `dispatched_at_basis`,
+`provider_response_recorded_at`, the projected `outcome_code` value
+`provider_rejected_mutation` (an existing diagnostic name), and the `attempt_counts_basis` values
+`saved_dispatch_intent`, `saved_dispatch_intent_no_provider_call` and
+`no_dispatch_intent`.
+
+**New F3 diagnostic code** (bounded free string, no format change):
+`provider_call_not_sent`. It is the only generic (b) marker. The existing
+codes keep their meanings and are **not** no-call markers:
+
+- `provider_rejected_mutation`: a response was received and confirmed no
+  mutation. This is (r).
+- `provider_confirmed_no_mutation`: the mutation was confirmed not applied,
+  but no response is recorded. Today it covers genuine local pre-send
+  refusals, a pre-command authentication failure, and any exception that
+  merely lacks a `provider_response_received` flag
+  (`R/f3_configuration/adapter.py:475-546`). The absence of a response flag
+  is not proof that nothing was sent, so this code alone projects as (c).
+
+After PR2, a refusal whose owning module positively proves the mutation call
+was not sent records `provider_call_not_sent` **alongside**
+`provider_confirmed_no_mutation`. The pair is required for (b).
+`provider_call_not_sent` together with `provider_rejected_mutation` or a
+received response is a contradiction and projects as (c).
 
 **Rejected names.**
 
@@ -218,40 +278,180 @@ child must carry the marker.
 
 ### 2.3 Per-capability matrix (target)
 
-| Capability | (a) | (b) producers in scope | (c) |
+| Capability | (a) | (b) producers in scope (proof owner) | (r) today | (c) |
+| --- | --- | --- | --- | --- |
+| Power, fan | Generic no-op → V9 outcome in the receipt (projection; no governance task exists) | b3, b4 (test seam), b5 (`R/fan/adapter.py`), b8 (`R/providers/upstream_fan.py:94-99` only). b6 optional (`R/clients/upstream_read.py`). | None: the fan/power provider has no confirmed-rejection result. | unchanged; includes the post-exchange check at `:126-127` |
+| Helper state | Generic no-op → V9 outcome | b3, b4, b5 (`R/f3/operational_adapter.py`). b7 optional (`R/clients/rest.py`). | None | unchanged |
+| Dashboard | No (a) path. See OD-9 (stale-equals-target). | b1 (exists, `R/clients/mcp.py`), b3, b5 (`before_dispatch` at `R/f3_dashboard/adapter.py:498`, outside the try). **Not b6**: the dashboard uses `McpDashboardTransport`, not `McpReadGatewayTransport`. | Only if the provider error carries a received response; today it is projected as (c). | unchanged |
+| Configuration plans (REST/helper) | No (a) path today. See OD-9. | b2-L (`R/governance/resources.py`), b3, b4, b5 (`R/f3_configuration/adapter.py:453-466`). b7 optional. | b2-R: `R/governance/resources.py:890` (`provider_rejected_mutation`) | unchanged |
+| Entity metadata | V9 (exists) | b2-L (`R/governance/entity_metadata.py:573`), b2-A (`R/clients/websocket.py` pre-command auth), b3, b4, b5 | b2-R: `R/governance/entity_metadata.py:588` post-command result, `:605` | unchanged |
+| Backup, reload, add-on restart, Core restart | **None, by design.** These are actions, not state targets. | b3, b4, b5. b6, b7 and b9 only with per-provider pre-write proof (OD-7). | None | unchanged |
+
+### 2.4 Counter and timestamp semantics
+
+#### 2.4.1 Counters: per-child versus parent
+
+There are two kinds of counter, and they must not be described the same way.
+
+| Counter | Scope | Range | Meaning |
 | --- | --- | --- | --- |
-| Power, fan | Generic no-op → V9 outcome in the receipt (projection; no governance task exists) | b3, b4, b8 (authority re-check before the service call) | unchanged |
-| Helper state | Generic no-op → V9 outcome | b3, b4, b5, b7 | unchanged |
-| Dashboard | No (a) path. See OD-9 (stale-equals-target). | b1 (exists), b5 (`before_dispatch` outside the try), b6 | unchanged |
-| Configuration plans (REST/helper) | No (a) path today. See OD-9. | b2 (add the marker), b3, b4, b5 | unchanged |
-| Entity metadata | V9 (exists) | b2, b3, b4, b5 | unchanged |
-| Backup, reload, add-on restart, Core restart | **None, by design.** These are actions, not state targets. | b3, b4, b7 when local (*b9 requires a provider-level proof marker; see OD-7*) | unchanged |
+| F3 record `dispatch_count`; `provider_attempts[].dispatch_count`; fan/power receipt `provider_attempt_count` | One F3 child (one execution record) | 0 or 1 | Durable dispatch-intent reservation for that child. A fence, not delivery proof (`persistence.py:587-590`). |
+| Governed task `provider_attempt_count` | Parent task | 0..N | `len(task.provider_attempts)` (`R/governance/service.py:1917`): the **sum** of child reservations. An ordered configuration plan can have several children. The executed integration suite includes a three-child plan. |
+| Health, reconciliation and admin counts | Many tasks | 0..N | Counts of tasks by coarse state. |
 
-### 2.4 Counter semantics
+Rules:
 
-- `dispatch_count`, `provider_attempt_count` and `provider_attempts[].dispatch_count`
-  keep their stored values. Each is redefined in documentation as **"durable
-  dispatch-intent reservations (0 or 1)"**. It is a fence, not delivery proof
-  (`persistence.py:587-590`).
-- Every surface that shows a counter also shows `attempt_counts_basis` in the
-  same object, so extraction cannot strip the qualifier (R2-9). The basis takes
-  one of these values:
-  - `no_dispatch_intent` for pre-intent and (a);
-  - `saved_dispatch_intent_no_setter_call` for dashboard (b), kept verbatim
-    from #253;
-  - `saved_dispatch_intent_no_provider_call` for other (b);
-  - `saved_dispatch_intent` for (c) and sent.
-- `dispatched_at` (**OD-6**). Recommended:
-  - Keep the stored value.
-  - Add the projected field `dispatch_intent_recorded_at` (always the intent
-    time).
-  - Project the public `dispatched_at` as `null` for (b).
-  - Keep the intent time for (c) and sent, with `attempt_counts_basis`.
-  - Leave fan/power `dispatched_at: None` unchanged.
+- Every stored and public numeric value keeps its current value. Nothing is
+  recomputed, reset or backfilled.
+- Every object that shows a counter also shows `attempt_counts_basis` in the
+  same object, so extraction cannot strip the qualifier (R2-9).
+  - On a **child** object the basis is that child's own basis:
+    - `no_dispatch_intent` for pre-intent and (a);
+    - `saved_dispatch_intent_no_setter_call` for dashboard (b), kept verbatim
+      from #253;
+    - `saved_dispatch_intent_no_provider_call` for other (b);
+    - `saved_dispatch_intent` for (r), (c) and sent.
+  - On a **parent** object the basis is `parent_sum_of_child_intents`, and the
+    parent also carries `child_dispatch_phases`: a bounded count by phase, for
+    example `{"sent_response_received": 2, "intent_recorded_not_sent": 1}`.
+    The parent's `dispatch_phase` is the conservative aggregate from §2.1.
+- **Historic event facts stay time-local.** A lifecycle event, an audit entry
+  or a `provider_attempts[]` element shows only what was known when it was
+  written. The final parent phase is **not** stamped onto earlier events.
+  `fan/audit.py:74-87` already follows this rule ("later state is not
+  backdated onto an earlier event"). The final facts appear only on the
+  current-state snapshot object.
 - Health and reconciliation keep their state counts and **add** outcome
-  sub-counts: `already_present_not_dispatched` and
-  `failed_after_intent_not_dispatched`. "Dispatch count" on the admin page is
-  relabelled "Dispatch intents" and gains a per-row phase.
+  sub-counts: `already_present_not_dispatched`,
+  `failed_after_intent_not_dispatched` and `sent_rejected_no_mutation`.
+  "Dispatch count" on the admin page (`R/approval_web.py:585`) is relabelled
+  "Dispatch intents" and gains a per-row phase.
+
+#### 2.4.2 Timestamps: `dispatched_at` (resolves Codex R3; OD-6)
+
+**Root cause of the successful fan/power `null`.** The fan receipt hard-codes
+`"dispatched_at": None` with the comment "persisted intent is not independent
+delivery proof" (`R/fan/service.py:281`). The fan snapshot audit hard-codes
+`"dispatched_at": None` (`R/fan/audit.py:95`). Power inherits both:
+`PowerService` subclasses the fan service (`R/power/service.py:26`) and
+`PowerExecutionRepository` subclasses the fan audit repository
+(`R/power/service.py:17`). The `null` is therefore produced by a literal for
+**every** fan/power outcome, including a successful send with a received
+response. It is not caused by a lost response, a missing intent or a canary
+timing issue. Governed tasks, by contrast, project
+`dispatched_at = dispatch_intent.committed_at` for every intent
+(`_project_dispatch`, `R/f3_runtime/runtime.py:2390-2430`). This is a display
+truthfulness defect with **no stored-format cause**. It is fixed in **PR1**.
+
+**Stored evidence available.** An F3 record stores two relevant times and no
+others:
+
+- `dispatch_intent.committed_at`: written by the intent commit
+  (`R/f3/persistence.py:578-597`), immediately before the executor enters
+  `adapter.dispatch` (`R/f3/executor.py:641`). Between the two there is only
+  in-process work (the revalidation callback, `before_dispatch`, provider
+  authority checks). There is no other durable step.
+- `occurred_at` of the `dispatch_result_recorded` event: written after the
+  provider call returned (`R/f3/persistence.py:602-640`).
+
+The exact wire-send instant is **not stored**. It lies between those two
+times.
+
+**Field semantics (PR1).** One function in `dispatch_facts` produces these
+fields for governed tasks, F3 children and fan/power receipts alike:
+
+| Field | Meaning | Value |
+| --- | --- | --- |
+| `dispatched_at` | The time Engineering dispatched the provider call. It is non-null **only** when the call is proven sent (`provider_response_received=true`: phases sent and (r)). | The intent commit time. This is the durable step that immediately precedes invoking the provider call; the wire send happened at or after it and at or before `provider_response_recorded_at`. |
+| `dispatched_at_basis` | How `dispatched_at` was established | `intent_commit_before_proven_send` when `dispatched_at` is set; `call_not_sent` for (b); `send_unproven` for (c); `no_dispatch_intent` for pre-intent and (a). |
+| `dispatch_intent_recorded_at` | When the durable intent was committed | `dispatch_intent.committed_at` whenever an intent exists; otherwise `null`. |
+| `provider_response_recorded_at` | When the provider's response was durably recorded | The `occurred_at` of `dispatch_result_recorded` when `provider_response_received=true`; otherwise `null`. |
+
+Resulting public values:
+
+| Phase | `dispatched_at` | `dispatch_intent_recorded_at` | `provider_response_recorded_at` |
+| --- | --- | --- | --- |
+| pre-intent, (a) | `null` | `null` | `null` |
+| (b) never sent | `null` | intent time | `null` |
+| (c) uncertain | `null` (**change for governed tasks**, which show the intent time today; see OD-6) | intent time | `null` |
+| (r) sent, rejected | intent time | intent time | result time |
+| sent | intent time (**change for fan/power**, which show `null` today) | intent time | result time |
+
+For a multi-child parent, each time field is the earliest non-null child
+value, or `null` when no child has one. The stored task `dispatched_at`
+(written by `_project_dispatch` from the first child's intent) is unchanged.
+Only its public projection follows the table.
+
+Every value comes from a stored record field. The projection never reads the
+clock, and it never uses the result-record time as `dispatched_at`. Records
+written by beta.8 and earlier project the same way, because both stored
+times already exist in them. No historical time is fabricated.
+
+**Reviewer position (Codex R3), shown for the decision.** The reviewer
+recommends that `dispatched_at` stay `null` unless an exact send time is
+stored, and that PR1 expose only `dispatch_intent_recorded_at` and
+`provider_response_recorded_at` with a basis. If an exact non-null send
+timestamp is required, the reviewer recommends a separately scoped PR2
+producer and persistence decision, with its own crash and downgrade proof.
+The author's design above follows Josh's direction to fix the field in PR1
+without a stored-format change. It does so by bounding the meaning through
+`dispatched_at_basis` and the two companion times, never by claiming an
+exact wire time. Josh decides between the two in OD-6.
+
+**Tests (PR1).** Each runs through the fan service and through the power
+service (to prove the inherited path), and checks the receipt, the snapshot
+audit and the ordinary request audit (`fan/service.py:181-186` →
+`fan/audit.py:8-31` → `routing.py:1126-1130`) for the same values:
+
+1. Successful send with a received response: `dispatched_at` equals the
+   stored intent `committed_at`, `provider_response_recorded_at` equals the
+   `dispatch_result_recorded` time, and `dispatched_at` ≤
+   `provider_response_recorded_at`.
+2. Response lost (indeterminate, then readback succeeds): `dispatched_at` is
+   `null`, basis `send_unproven`, and `dispatch_intent_recorded_at` is set.
+3. Preflight no-op (a): all three times `null`, basis `no_dispatch_intent`.
+4. Proven no-call (b): `dispatched_at` `null`, basis `call_not_sent`. In PR1
+   this uses a constructed record. The live producer test follows in PR2
+   with b8.
+5. Restart: a fresh service instance over the same store returns identical
+   values (no clock dependence).
+6. Historical record: a record written by the beta.8 writer (the fixture
+   from §4.3) projects without error, and its times equal its stored fields.
+7. Governed-task equivalents for each phase, including a three-child parent
+   whose children differ.
+
+Mutations that must be caught: restore the literal `None`; use the clock;
+use the result-record time as `dispatched_at`; set `dispatched_at` for (c).
+
+#### 2.4.3 Output compatibility rule (replaces "byte-identical")
+
+Revision 1 promised that the #253 and V9 outputs would stay byte-for-byte
+identical. That cannot be true, because the same PR adds fields and changes
+`dispatched_at`. The contract is instead:
+
+1. **Every existing field keeps its name, type and value** on every surface,
+   except the changes listed in item 3.
+2. **New fields are additive** inside existing result objects. No field is
+   removed or renamed. No tool registration changes.
+3. **Explicitly approved changes only** (each needs its owner decision):
+   - public `dispatched_at` per §2.4.2 (OD-6);
+   - `provider_dispatch_occurred:false` for non-dashboard (b), where it is
+     `true` today (OD-7);
+   - the S10/S11 error wording;
+   - under T2 (PR2), the stored `terminal_outcome` strings for (a) and (b)
+     (OD-1, OD-4, OD-5, OD-10).
+4. The #253 dashboard fields and the V9 entity-metadata fields are
+   **value-identical** for the records they already cover. That is the
+   regression test, not identical complete JSON.
+5. Under a compact or minimal budget, a counter is never emitted without its
+   `attempt_counts_basis`. When the budget forces truncation, the pair is
+   dropped together.
+
+Tests: zero-, one- and three-child receipts at full, compact (2,000
+characters) and minimal budgets, including a parent whose children are
+mixed (sent, (r) and (b)); each existing field is compared with its value
+from the base revision, and each new field is checked for presence or
+absence.
 
 ---
 
@@ -264,17 +464,42 @@ child must carry the marker.
 | **At-most-once dispatch** | Intent reservation `dispatch_count=1` before I/O; exactly one adapter call | Unchanged. The (b) producers only *label* a failure that already happened before the send. They never add a call path. | One test per (b) producer: zero transport calls. For (c) controls, at most one call. |
 | **Duplicate suppression** | Claim and locks; DUPLICATE_APPLY_ATTEMPT for terminal tasks (`service.py:7127-7180`) | Unchanged. Only the wording and details change (S10). `retryable:false` stays. | Concurrent duplicate apply for (a), (b) and (c): exactly one execution, and the replay carries the same phase. |
 | **Same-ID non-redispatch** | Terminal plan/task → replay result | Unchanged. The replay uses the shared projection. | Same-ID re-apply after (b) on restart: zero calls, phase `intent_recorded_not_sent`. |
-| **Proven vs uncertain** (only a PROVEN no-call may claim no dispatch) | #253 predicate requires capability, intent, `dispatch_failed_confirmed`, no response, marker on the right event, and every child | Generalized predicate with the same five conditions. The marker may be produced **only** by local control flow that runs strictly before the first byte is written to the write channel. Missing, conflicting or out-of-order evidence falls to `intent_recorded_send_uncertain` (fail-safe direction). The task `terminal_outcome` is a derived copy. If it disagrees with the F3 record, the F3 record wins and the conservative phase is shown. | Missing marker, marker on the wrong event, response received, mixed children, wrong outcome, and a marker emitted *after* a send-capable await: each gives (c), never false. Each producer has a mutation that moves the marker emission after the send; the test must catch it. |
-| **Display false is not retry authority** (#253 rule) | Display-only fields | The projection module has no import path into the eligibility, claim or rollback code. The architecture test asserts this. | Static import test plus behavioral re-apply test. |
+| **Proven vs uncertain** (only a PROVEN no-call may claim no dispatch) | #253 predicate requires capability, intent, `dispatch_failed_confirmed`, no response, marker on the right event, and every child | Generalized predicate with the same five conditions. The marker may be produced **only** by the code that owns the send boundary (the provider or transport for b6–b9; see §1.3), and only on a path that runs strictly before the first byte is written to the write channel. A received rejection is (r): it keeps response-received attribution and **never** gets the marker. An exception type, a refusal code or a missing response is never proof on its own. Missing, conflicting or out-of-order evidence falls to `intent_recorded_send_uncertain` (fail-safe direction). The task `terminal_outcome` is a derived copy. If it disagrees with the F3 record, the F3 record wins and the conservative phase is shown. | Missing marker, marker on the wrong event, response received (with or without a marker), mixed children, wrong outcome, and a marker emitted *after* a send-capable await: each gives (c) or (r), never (b). A REST 4xx, a WS unauthorized or error result, and a lost response each must **not** get the marker. A pre-send and a post-response authority retirement with the same refusal code must give different facts. Each producer has a mutation that moves the marker emission after the send; the test must catch it. |
+| **Display false is not retry authority** (#253 rule) | Display-only fields | Eligibility, claim, cancellation, replay and reconciliation call sites keep the stored-intent predicate (`_task_is_dispatched` is not replaced globally). Rollback may consult the facts only to refuse. | Behavioral tests at each eligibility call site (re-apply, cancel, replay, reconcile, rollback) for (a), (b), (r) and (c). A static check is supplementary only, because display and eligibility code share `runtime.py` and `service.py`. |
 | **Cancellation after intent stays refused** | `_cancel_locked` (`runtime.py:2896-2906`) | The refusal is unchanged. The wording becomes "after dispatch intent was recorded", with phase details. | Cancel after (b): refused, zero calls. |
 
-**Behavior change to disclose.** Promoting b3–b8 from indeterminate to
-`dispatch_failed_confirmed` removes the readback for those paths, because
-`dispatch_failed_confirmed` requires zero observations (`models.py:778-797`).
-A helper/fan/power/config operation that today can end `succeeded_verified`
-after a proven no-call (someone else reached the state) would instead end as
-(b), a failure. This is the truthful outcome, but it changes results
-(**OD-8**).
+**Behavior change to disclose.** Promoting a producer from indeterminate to
+`dispatch_failed_confirmed` removes the readback for that path, because
+`dispatch_failed_confirmed` returns before observation
+(`R/f3/executor.py:662-665`) and requires zero observations
+(`models.py:778-797`). A helper/fan/power/config operation that today can end
+`succeeded_verified` after a proven no-call (someone else reached the state)
+would instead end as (b), a failure. The reviewer's offline executor probe
+reproduced today's behavior: an ordinary post-intent pre-call exception gave
+zero mutation calls, one observation and `succeeded_verified`. This is the
+truthful outcome, but it changes results and lock/reconciliation work
+(**OD-8**). It applies only to producers with a positive pre-send proof.
+Everything else keeps its readback.
+
+**Process loss and cancellation are excluded.** `SimulatedProcessLoss` is a
+`BaseException` (`R/f3/executor.py:76`) that the executor re-raises
+(`:676-677`). It leaves durable intent for readback recovery, and the
+existing fault-injection test depends on that. A real process loss leaves no
+in-memory provenance. Restart recovery must **never** infer a (b) marker. It
+stays (c). Cancellation and other `BaseException`s keep their current
+behavior. Only a caught ordinary exception, while its pre-send provenance is
+still known in memory, may record (b).
+
+**Enforced at call sites, not by import rules alone.** `_task_is_dispatched`
+also controls cancellation, replay and reconciliation
+(`R/governance/service.py:1993`, `:7140`, `:7184`, `:7282`, `:9091`). It is
+**not** replaced globally by the display facts. Each display call site is
+changed individually. Eligibility call sites keep the stored-intent
+predicate. Missing or contradictory proof (legacy tasks without F3 children,
+incomplete manifests, mixed children) stays conservative. Tests guard the
+actual eligibility call sites and their behavior, because a module-import
+rule cannot tell display code from eligibility code when both live in
+`runtime.py` or `service.py`.
 
 ---
 
@@ -297,28 +522,81 @@ after a proven no-call (someone else reached the state) would instead end as
 
 ### 4.3 Downgrade / migration rule (OD-3)
 
-Recommended (with F-A + T2), mirroring 069A F12:
+Recommended (with F-A + T2). This guarantee is deliberately narrow: it
+covers exactly what the PR2 test will execute and nothing more.
 
-1. Downgrade from the release that ships T2 to beta.8 or earlier is permitted
-   **only after every execution task is terminal**.
-2. Never clear F3 journals, task files or locks.
-3. Records written by the new code are read by older code with their new
-   strings uninterpreted. Older surfaces then show the legacy (less truthful)
-   phrasing. This is a display regression, not a safety regression: it is
-   the same fail-safe direction as (c).
-4. No migration rewrites historical records. Old (b) records written by beta.8
-   (dashboard only) are projected as (b) by the new reader from their existing
-   `setter_call_not_sent` marker. Old (a) records are projected as (a) from
-   their `VERIFIED_NO_DISPATCH` class. There is **no backfill** of
+**Guaranteed (after PR2's test passes):**
+
+1. **Tested floor: exactly Engineering `2.4.1-beta.8`**, tag `v2.4.1-beta.8`
+   (annotated tag object `4913bfd64948442a7a08733db4a93196175d60d1`), commit
+   `7370ad25eb98e03347d73e152f38881895477d74`. The reader under test is
+   that commit's source, extracted with `git archive`. No other revision is
+   covered.
+2. **Tested state: terminal-only quiescence.** Downgrade from the release
+   that ships T2 to beta.8 is permitted only when **all** of the following
+   hold, checked across every execution namespace and owner, not only the
+   governance task list:
+   - every governance execution task is terminal;
+   - every F3 child record of every governed plan is terminal;
+   - every standalone fan record (namespace `ordinary-fan-v1`) and power
+     record (`ordinary-power-v1`) is terminal. These live outside the
+     governance task repository (`R/fan/service.py:34-58`, `:85-113`);
+   - no F3 record holds an unexpired claim (no in-flight owner), and no
+     execution is held in the service's active set.
+3. **Tested behavior, for those records under beta.8:**
+   - startup succeeds, and repository health reports `corruption_count: 0`
+     with nothing quarantined in any namespace;
+   - no `ExecutionRecordCorrupt` and no `storage_read` or `execution_storage`
+     readiness fault; F3 apply readiness stays intact;
+   - `get_change_plan`, `list_change_plans`, `get_execution_task`,
+     `list_execution_tasks` and the fan/power task reads return each record;
+   - a duplicate apply of each terminal plan is refused as a duplicate, and a
+     restart followed by the reconciliation pass makes **zero** provider calls
+     (call counters on fake transports).
+4. **Fixtures.** The records under test are written by the **exact PR2
+   candidate writer**. The fixture provenance names that candidate's commit
+   SHA and the generator command. Because PR2 is not yet shipped, this is the
+   candidate writer, not a shipped one; after release the fixtures are kept
+   with their provenance unchanged. Historical-format fixtures (beta.8-written
+   records, used by the §2.4.2 and PR1 projection tests) are generated by the
+   exact beta.8 writer at `7370ad2`, per AGENTS.md "Persisted Compatibility
+   Fixtures". The fixture set covers, at minimum: a preflight no-op (a)
+   child, a (b) child, an (r) child, a (c) child that ended verified by
+   readback, a sent-and-verified child, a dashboard (b) child, a V9 task, a
+   T2 (a) task, a T2 (b) task, a three-child mixed parent, and one fan and one
+   power record together with its prepared request declaration. No committed fixture with these shapes exists today. The
+   existing beta.5 lock-recovery fixture proves a different zero-dispatch
+   failure shape and is not reused as evidence.
+5. Never clear F3 journals, task files or locks.
+6. No migration rewrites historical records. Old (b) records written by
+   beta.8 (dashboard only) are projected as (b) by the new reader from their
+   existing `setter_call_not_sent` marker. Old (a) records are projected as
+   (a) from their `VERIFIED_NO_DISPATCH` class. There is **no backfill** of
    `terminal_outcome`.
-5. The proof is an executed downgrade test: beta.8 code at the published tag
-   (or exact shipped commit) loads task, plan and F3 records written by the
-   new writer. It must show zero quarantine, zero `ExecutionRecordCorrupt` and
-   apply readiness intact. The test uses committed fixtures generated by the
-   shipped writer, with provenance per AGENTS.md "Persisted Compatibility
-   Fixtures". No shipped-writer fixture exists today for a `preflight_noop`
-   child, a `dispatch_failed_confirmed` child, any dashboard child or a V9
-   task, so the fixtures must be generated.
+
+**Not guaranteed:**
+
+- Downgrade to any revision other than `7370ad2`, including beta.7, beta.3
+  or any earlier release. The reviewer's synthetic schema probes loaded T2
+  and F-A record shapes through beta.3 (`872685b`) and beta.7 (`ebd205d`)
+  source readers with zero quarantine. That is useful schema evidence, but
+  it is not a writer-to-reader test and is not a guarantee. Those releases
+  also have their own independent compatibility constraints (for example
+  069A F12: beta.3 refuses 069A plans with `policy_snapshot_mismatch`).
+- Downgrade while **any** record in any namespace is non-terminal. 069A F12
+  showed that an older reader can fault F3 readiness on a non-terminal task.
+  That state is not tested here and is not supported.
+- **Behavioral equivalence.** Beta.8 loads the records, but it shows its own
+  legacy phrasing: (a) as plain `succeeded_verified`, (b) as
+  `failed_post_dispatch` with `provider_dispatch_occurred:true` (except the
+  dashboard fields #253 already reads), no `dispatch_phase`, and fan/power
+  `dispatched_at: null`. Its `terminal_outcome` filter treats the T2 strings
+  as unknown values.
+- Rollback availability under beta.8 for plans executed by the new release.
+  Beta.8 applies its own rollback admission (§4.4).
+- Readback, reconciliation or cancellation of records that were non-terminal
+  at downgrade time.
+- Re-upgrade behavior beyond what the PR2 restart tests cover.
 
 If Josh selects T3 or F-B instead, the rule becomes either forward-only
 (downgrade is unsupported once a new record exists) or a two-release
@@ -334,12 +612,38 @@ expand/contract, and the PR split gains a reader-first PR.
 - **`plan.execution_outcome`** receives the new strings. It is a free string
   with a V9 precedent (`runtime.py:2615`). `historical_policy.py:443`, `:654`
   and `:736` compare only `None` / `not_started` / `not_applied`.
-- **Rollback (S19).** Entity metadata already refuses `forward_not_dispatched`
-  unless the outcome is `succeeded_verified`. The generic rollback
-  (`runtime.py:3356-3360`) would offer a rollback plan for a (b) forward. The
-  recommendation is to extend the `forward_not_dispatched` refusal to (a) and
-  (b) for every capability. This is a behavior change and needs a negative
-  test (**OD-11**).
+- **Rollback (S19).** Revision 1 said the generic rollback would offer a
+  rollback plan for any (b) forward because its initial state set
+  (`runtime.py:3355-3360`) admits `FAILED_POST_DISPATCH`. That was too broad.
+  The actual admission is per branch:
+  - **Contract v3:** refused before the state check (`runtime.py:3335`).
+  - **Contract-v2 entity metadata:** its own path (`:3350-3355`), which
+    already refuses `forward_not_dispatched` unless the outcome is
+    `succeeded_verified` (`:3500-3512`).
+  - **Contract-v2 configuration:** each child must be `succeeded_verified`
+    with a resulting fingerprint that still matches live state
+    (`:3373-3408`). A child that was never sent fails that filter, so a
+    wholly undispatched forward ends with no operations and
+    `ROLLBACK_NOT_AVAILABLE` (`:3437-3438`). The reviewer executed this: a
+    genuine configuration adapter pre-send refusal gave task
+    `failed_post_dispatch` and rollback `rollback_not_available`.
+  - **Legacy automation (contract v1):** `:3423-3436` builds
+    `rollback_legacy_automation` from `source_plan.current_config` for any
+    task in the admitted state set, with **no per-child or verified-outcome
+    filter**. This is the concrete gap: a legacy automation forward that
+    ended (b) or (r) would be offered a rollback plan for a change that never
+    happened.
+
+  Recommendation (**OD-11**): add a refusal-only check to the legacy branch
+  when the forward is **wholly unchanged** (every child (a), (b) or (r)).
+  Keep contract-v2 and entity-metadata behavior. In a mixed plan, keep
+  rollback of the verified prefix: only the unchanged children are excluded,
+  exactly as the contract-v2 filter already does. The check may only refuse;
+  it never admits anything that is refused today. Tests: legacy (b) and (r)
+  refuse; legacy sent-and-verified still creates a rollback plan; mixed
+  verified/no-call contract-v2 plan rolls back only the verified children
+  (existing mixed-sequence tests stay green); contract-v2 and entity-metadata
+  negative controls are unchanged.
 - **Public schemas.** Fields are additive inside existing result objects, and
   no tool registration changes. The catalog stays at 87 (59 registered + 28
   delegated). Error message wording (S10, S11) is client-visible text.
@@ -355,96 +659,279 @@ Proposed new module: `R/f3_runtime/dispatch_facts.py`.
   `dispatch_phase`, `provider_dispatch_occurred`, `dispatch_performed`,
   `changed_by_engineering`, `intent_recorded`, `provider_call_not_sent`,
   `setter_call_not_sent` (dashboard only), `attempt_counts_basis`,
-  `dispatch_intent_recorded_at`, `outcome_code` and `result_text`.
+  `dispatch_intent_recorded_at`, `dispatched_at`, `dispatched_at_basis`,
+  `provider_response_recorded_at`, `outcome_code` and `result_text`.
 - `dispatch_facts_for_record(record)` covers fan/power, which have no
   governance task.
 - `qualify_counters(obj, facts)` stamps `attempt_counts_basis` into every
   object that carries a counter (`provider_attempts[]`, `verification_summary`
   children, `lifecycle_events`).
 - The proof predicate generalizes `_setter_call_not_sent_recorded` and
-  `_entity_metadata_not_dispatched`. Both become thin wrappers so the #253 and
-  V9 outputs are byte-for-byte identical (regression-tested).
+  `_entity_metadata_not_dispatched`. Both become thin wrappers. The #253 and
+  V9 outputs keep every existing field at its existing value (value-identical
+  under §2.4.3); the new additive fields may appear alongside them.
+- (r) is decided only from `dispatch_failed_confirmed` plus
+  `provider_response_received=true`. A `provider_call_not_sent` marker on a
+  record whose response was received is a contradiction and projects as (c).
 
 **Consumers replaced (all 11 predicates in §1.5):**
 
 | Surface | Change |
 | --- | --- |
 | S1–S3 apply (top, `execution_task`, nested `plan.execution_task`) | One facts object applied to all three |
-| S4/S5 `get_change_plan`, `list_change_plans` | `_task_plan_projection` uses the facts instead of `_task_is_dispatched` |
+| S4/S5 `get_change_plan`, `list_change_plans` | `_task_plan_projection` uses the facts instead of `_task_is_dispatched`. `_task_is_dispatched` stays for the eligibility call sites (`R/governance/service.py:1993`, `:7140`, `:7184`, `:7282`, `:9091`). |
 | S6/S7 task readers | `list_execution_tasks` is decorated like `get_execution_task` |
 | S8 observability | The facts are added |
 | S9 receipts | Add `dispatch_phase`, `attempt_counts_basis`, the #253 fields, `outcome_code` and `result_text` to `_RECEIPT_FACTS`; include them in `_minimal_receipt`; protect nested counters by co-locating the basis |
 | S10 duplicate | Details carry the facts. The message reads "The operational apply already recorded its single dispatch intent and will not be repeated", in a phase-neutral variant. |
 | S11 cancel | Details carry the facts. The wording becomes "after dispatch intent was recorded". |
 | S12 lifecycle audit | New audit entries derive `provider_dispatch_occurred` from the facts and add `dispatch_phase`. Historical audit records are not rewritten. |
-| S13/S14 F3 child and gateway audit | The child audit uses the generic marker. The gateway audits `provider_call_not_sent` instead of `provider_response_received` when `mutation_dispatched is False`. |
-| S15 fan/power | The receipt and snapshot audit add the facts. The outcome code is V9 for (a). |
-| S16 `plan.operational.dispatch` | Stop using it for F3-backed plans' audit. Derive from the facts (to be confirmed during implementation that it is stale). |
-| S17/S18 health, reconciliation, admin | Outcome sub-counts and phase column |
-| S19 rollback | Admission reads `dispatch_phase` for refusal only. Refusal can only get stricter. |
+| S13 F3 child audit | Adds `dispatch_phase`. Uses the generic marker for (b) and the received-response flag for (r) (§5.1). |
+| S14 gateway audits | Per §5.1: the label follows the exception's proven facts, never `mutation_dispatched is False` alone. |
+| S15 fan/power | The receipt, the snapshot audit and the request audit add the facts and the §2.4.2 timestamps. The outcome code is V9 for (a). |
+| S16 `plan.operational.dispatch` | Stop using it for F3-backed plans' audit; derive from the facts. Staleness is confirmed by the reviewer's executed probe; PR1 adds its own regression test. |
+| S17/S18 health, reconciliation, admin | Outcome sub-counts, a phase column, and "Dispatch count" relabelled "Dispatch intents" (`R/approval_web.py:585`) |
+| S19 rollback | Admission reads `dispatch_phase` for refusal only, on the legacy automation branch (§4.4). Refusal can only get stricter. |
+
+### 5.1 Case → recorded codes and audit labels
+
+One row per case. "F3" is what the executor records on
+`dispatch_result_recorded`. "Gateway audit" is the provider-gateway audit
+written before the F3 record (S14). "Child audit" is the F3 child audit
+(S13). "Lifecycle audit" is the task-lifecycle audit (S12).
+
+| Case | F3 outcome + diagnostic codes | `provider_response_received` | Gateway audit label | Child audit | Lifecycle audit `provider_dispatch_occurred` |
+| --- | --- | --- | --- | --- | --- |
+| (a) | No intent. Event `preflight_noop_verified`, `desired_state_already_reached`, class `VERIFIED_NO_DISPATCH` | false | none (no provider write call) | `dispatch_phase: not_dispatched_already_present` | false |
+| (b) dashboard (b1) | `dispatch_failed_confirmed` + `setter_call_not_sent` (unchanged) | false | unchanged | unchanged #253 fields + `dispatch_phase: intent_recorded_not_sent` | false |
+| (b) other (PR2) | `dispatch_failed_confirmed` + `provider_call_not_sent` + `provider_confirmed_no_mutation` | false | PR1: `provider_result_uncertain` (no proof yet). PR2: `provider_call_not_sent`, passed **explicitly** by the producer with the exception, because the gateway audit is written before the F3 record and cannot read it. | `provider_call_not_sent: true`, `dispatch_performed: false`, `dispatch_phase: intent_recorded_not_sent` | false (OD-7) |
+| (r) | `dispatch_failed_confirmed` + `provider_rejected_mutation`. Never `provider_call_not_sent`. | **true** | `provider_response_received` (correct today) | `dispatch_phase: sent_rejected_no_mutation`, `provider_dispatch_occurred: true`, `changed_by_engineering: false` | true |
+| (c) | `dispatch_indeterminate` + the adapter's uncertainty code (`provider_result_uncertain`, `fan_response_uncertain`, …), or `dispatch_failed_confirmed` + `provider_confirmed_no_mutation` **without** the marker | false | `provider_result_uncertain` (configuration); `provider_response_lost` (backup/lifecycle when `exc.dispatched`) | `dispatch_phase: intent_recorded_send_uncertain` | true (conservative) |
+| sent | Existing outcomes (`succeeded_verified`, `verification_mismatch`, …) | true | `provider_response_received` | `dispatch_phase: sent_response_received` | true |
+
+PR1 gateway-audit rule (configuration, `R/f3_runtime/runtime.py:702-721`):
+label `provider_response_received` only when the exception carries
+`provider_response_received=True`; otherwise `provider_result_uncertain`. This
+removes the current mislabel without claiming (b). PR2 adds the
+`provider_call_not_sent` label only where a producer passes positive proof.
+Backup/lifecycle (`:800-806`, `:838-844`) label by `exc.dispatched` alone:
+`provider_response_lost` when true, `provider_invocation_refused` when false.
+"Refused" is correct when the failure precedes the intent commit, but it
+contradicts F3 when the intent callback committed and then failed (b5), which
+F3 records as indeterminate. PR1 leaves these two labels unchanged and records
+the contradiction as a known limitation. PR2 makes the provider pass whether
+the intent was committed: committed with b5/b9 proof → `provider_call_not_sent`;
+committed without proof → `provider_result_uncertain`; not committed →
+`provider_invocation_refused` (unchanged).
+
+### 5.2 Producer → emitted codes after PR2
+
+| Producer | Case | F3 diagnostic codes | Gateway audit | Proof source |
+| --- | --- | --- | --- | --- |
+| b1 | (b) | `setter_call_not_sent` (unchanged) | unchanged | `R/clients/mcp.py:372-379` |
+| b2-L | (b) | `provider_call_not_sent`, `provider_confirmed_no_mutation` | `provider_call_not_sent` | Raise site in `R/governance/resources.py` / `R/governance/entity_metadata.py:573` sets a `call_not_sent=True` attribute on `ConfigurationMutationNotDispatchedError` |
+| b2-A | (b) | same as b2-L | `provider_call_not_sent` | `R/clients/websocket.py` sets the attribute on `AuthorizationError` only at `:246-251` and `:288-292` |
+| b2-R | (r) | `provider_rejected_mutation` (unchanged) | `provider_response_received` (unchanged) | Received response |
+| b3 | (b) | `provider_call_not_sent`, `dispatch_authority_retired_before_send` | `provider_call_not_sent` | `R/f3/executor.py:621-631` raise, plus the adapter's b5 declaration |
+| b4 | (b), tests only | as b3 | as b3 | `R/f3/executor.py:620` |
+| b5 | (b) | `provider_call_not_sent`, `before_dispatch_failed` | `provider_call_not_sent` | Each adapter, at the point its callback raised |
+| b6 (optional) | (b) | `provider_call_not_sent`, `session_rotated_before_send` | `provider_call_not_sent` | `R/clients/upstream_read.py:442-447` attribute |
+| b7 (optional) | (b) | `provider_call_not_sent`, `core_dispatch_refused_locally` | `provider_call_not_sent` | `R/clients/rest.py:77-84`, `R/clients/websocket.py:207-211` attribute |
+| b8 | (b) | `provider_call_not_sent`, `fan_provider_authority_retired` | (no gateway audit; fan/power audit snapshot) | `R/providers/upstream_fan.py:94-99` only |
+| b9 (optional) | (b) | `provider_call_not_sent` | `provider_call_not_sent` | `R/providers/operational_backup.py`, `R/providers/operational_lifecycle.py` |
+| lost response, post-exchange checks, b6/b7/b9 without proof | (c) | unchanged | unchanged / `provider_result_uncertain` | none |
+
+All new codes match the existing pattern (`^[a-z][a-z0-9_]{0,95}$`) and the
+16-item bound, so beta.8 accepts them (§4.3).
 
 **Architecture guard.** A test asserts that the eligibility, claim, rollback
 admission (except the stricter refusal) and cancellation modules do not
 import `dispatch_facts` for permissive decisions. A grep test asserts that no
 remaining direct `bool(task.dispatched_at)` or `bool(task.provider_attempts)`
-appears in public projections.
+appears in public projections. `R/governance/service.py` and `R/routing.py`
+must not import `..f3` (`tests/test_f3_packaging_boundaries.py:325-350`), so
+`dispatch_facts.py` receives F3 records from `R/f3_runtime/` callers and is
+added to the approved import set (`:353-364`) only if it imports `..f3`.
 
 ---
 
 ## 6. Proposed PR split
 
 All implementation PRs touch the protected path
-`hass_mcp_engineering_beta/ha_mcp_engineering/` and therefore need explicit
-authorization for that surface. Each PR is a beta version transition
-materialized in its own PR via `python scripts/promote_next_release.py --apply`.
-That touches `hass_mcp_engineering_beta/config.yaml`, the Engineering
-`version.py`, `.release/` declarations, acceptance documents, release notes and
-`CHANGELOG`. Catalog count: unchanged.
+`hass_mcp_engineering_beta/ha_mcp_engineering/` and protected release
+metadata, and therefore need explicit authorization naming those surfaces.
+Each PR is a beta version transition materialized in its own PR via
+`python scripts/promote_next_release.py --apply`. Catalog count: unchanged.
+
+How the lists were derived: source files from the producer and surface
+inventory (§1.3, §1.5); existing test files from a search at the base SHA for
+assertions on values each PR changes; release files from the files the
+beta.8 materialization commit `373c6b0` touched. A file not listed here that
+the implementation turns out to need is a scope change and is reported before
+it is edited. Files that only need to keep passing unchanged are not listed.
+`hass_mcp_engineering_beta/Dockerfile` copies the whole package and is **not**
+edited; the frozen provenance hashes under `tests/fixtures/f3_lock_recovery/`
+and `tests/fixtures/configuration_reverification/` are **not** updated.
 
 ### PR1: shared dispatch-facts projection (display only, no stored change)
 
-- **Files.**
-  - New `R/f3_runtime/dispatch_facts.py`.
-  - `R/f3_runtime/runtime.py` (apply, decorate, child audit, gateway audit, cancel details, health).
-  - `R/governance/service.py` (plan projection, `list_execution_tasks`, lifecycle audit, duplicate details, observability, health counts).
-  - `R/models/responses.py` (receipt facts).
-  - `R/errors.py` (wording).
-  - `R/fan/service.py`, `R/fan/audit.py` (facts and V9 code for (a)).
-- **Scope.** Covers (a) for all generic no-op users as a *projection*, existing (b) (dashboard), and qualifiers for (c). No producer changes.
-- **Estimate.** About 500–800 source lines and about 1,000–1,500 test lines.
-- **Tests.**
-  - The Codex R2 probe, replayed through every public tool, at compact budgets and across a restart.
-  - The independent Core-retirement probe plus late-drift variants: zero true dispatch claims for no-call, zero additional setter calls, unchanged sent/uncertain controls.
-  - #253 and V9 byte-for-byte regression.
-  - Receipt budget tests at 2,000 characters and minimal size.
-- **Mutations.**
-  - Drop the basis from a nested counter.
-  - Revert one surface to its legacy predicate.
-  - Make (c) project false.
-  - Remove the every-child rule.
-  - Each must be caught.
-- **Release.** beta.9. No downgrade constraint beyond today's, since nothing new is stored.
+**Scope.** (a) for all generic no-op users as a *projection*; existing (b)
+(dashboard b1); (r) as a projection of existing records; qualifiers for (c);
+the fan/power `dispatched_at` fix (§2.4.2, OD-6); the configuration
+gateway-audit mislabel (§5.1); counter bases and "Dispatch intents"
+(§2.4.1). No producer changes and no new stored value.
+
+**Source (protected).**
+
+| File | Change |
+| --- | --- |
+| `R/f3_runtime/dispatch_facts.py` (new) | Shared projection (§5) |
+| `R/f3_runtime/runtime.py` | Apply (S1–S3), `_decorate_task`, child audit (S13), configuration gateway audit `:702-721` (S14), cancel details (S11), F3 health (S17), reconciliation items (S18) |
+| `R/governance/service.py` | `_task_plan_projection` (S4/S5), `list_execution_tasks` decoration (S6), lifecycle audit `:1742` (S12), duplicate details (S10), observability (S8), plan audit from `plan.operational.dispatch` (S16), health sub-counts (S17) |
+| `R/models/responses.py` | `_RECEIPT_FACTS`, `_minimal_receipt`, nested counter basis (S9) |
+| `R/errors.py` | Wording at `:292-296` and `:479` (S10/S11) |
+| `R/approval_web.py` | `:585` "Dispatch count" → "Dispatch intents"; phase row (S18) |
+| `R/fan/service.py` | Receipt `:261-291` (facts, `dispatched_at` per OD-6, basis and companion times); request audit context `:181-186` |
+| `R/fan/audit.py` | Snapshot `:88-99` (literal `None` at `:95`); `request_summary` whitelist `:8-31` for the new fields |
+
+Not edited, verified by test only: `R/power/service.py` and
+`R/power/adapter.py` (inherit from fan), `R/routing.py:1126-1130` (forwards
+the whitelisted summary unchanged), `R/tools/governance.py:336-345` (routes
+fan/power task reads to the fan/power service). If a test shows any of these
+needs an edit, that is reported as a scope change.
+
+**Tests: existing files edited** (they assert values PR1 changes):
+
+| File | Assertion that changes |
+| --- | --- |
+| `tests/test_typed_fan.py` | `:148` `dispatched_at` is `None` on a sent, verified call (only under OD-6 (i)/(iii)) |
+| `tests/test_typed_power.py` | `:115` same (only under OD-6 (i)/(iii)) |
+| `tests/test_typed_fan_review.py` | `:306` same (only under OD-6 (i)/(iii)); `:319` (response lost) stays `None` and is kept |
+| `tests/test_f3_runtime_integration.py` | Configuration gateway audit label for a pre-send `ConfigurationMutationNotDispatchedError` |
+| `tests/test_f3_packaging_boundaries.py` | `:353-364` approved import set, only if `dispatch_facts.py` imports `..f3` |
+
+**Tests: new files.**
+
+| File | Content |
+| --- | --- |
+| `tests/test_hamcp181_dispatch_facts.py` | Projection unit tests for every phase, the every-child rule, (r) versus (b) versus (c), the contradiction rule, `changed_by_engineering` aggregation, counter bases |
+| `tests/test_hamcp181_surface_consistency.py` | The Codex R2 probe replayed through every public tool (S1–S20) at full, compact (2,000) and minimal budgets and across a restart; the Core-retirement probe and late-drift variants; #253 and V9 value-identical regression (§2.4.3); 0-, 1- and 3-child receipts; S16 staleness regression |
+| `tests/test_hamcp181_fan_power_dispatched_at.py` | §2.4.2 tests 1–7 through fan **and** power, receipt plus snapshot audit plus request audit |
+| `tests/test_hamcp181_audit_labels.py` | §5.1 PR1 gateway rule: REST 4xx (r) keeps `provider_response_received`; local refusal gets `provider_result_uncertain`; lifecycle audit values per phase |
+| `tests/test_hamcp181_architecture_guard.py` | §5 guard: no permissive import of `dispatch_facts`; no direct legacy predicate in public projections |
+
+**Fixtures (new).** `tests/fixtures/f3_beta8_dispatch_phase/`: generator
+script, `README.md`, `provenance.json` (writer commit `7370ad2`, generator
+sha256, file sha256s, synthetic statement) and the records it writes, per
+AGENTS.md "Persisted Compatibility Fixtures". Shapes: a (a) child, a dashboard
+(b) child, an (r) configuration child, a (c) child verified by readback, a
+sent-and-verified child, a V9 task, a three-child mixed parent, and one fan
+and one power record with prepared request declarations.
+
+**Support.** `ci/unit-test-shards.json`: weights for the five new modules, if
+the shard balancer requires them.
+
+**Release (protected).** `.release/next-version` (created, then consumed by
+`--apply`), `docs/V2_4_1_BETA9_RELEASE_NOTES.md` (new),
+`docs/V2_4_1_BETA9_ACCEPTANCE.md` (new), `README.md`,
+`hass_mcp_engineering_beta/CHANGELOG.md`,
+`hass_mcp_engineering_beta/config.yaml`, `R/version.py`,
+`scripts/validate_addon_metadata.py`.
+
+**Estimate.** About 550–850 source lines and about 1,200–1,700 test lines.
+
+**Mutations that must be caught.** Drop the basis from a nested counter;
+revert one surface to its legacy predicate; make (c) project false; project
+(r) as (b); remove the every-child rule; restore the literal fan `None`; use
+the clock for `dispatched_at`; restore the `mutation_dispatched is False`
+audit branch.
+
+**Release.** beta.9. No downgrade constraint beyond today's, since nothing new
+is stored.
 
 ### PR2: durable outcome strings plus proven-no-call producers
 
-- **Files.**
-  - `R/f3/executor.py` (b3/b4: record `dispatch_failed_confirmed` with `provider_call_not_sent` when the failure provably precedes the adapter call).
-  - `R/f3_configuration/adapter.py` (b2 marker; b5 `before_dispatch` failure after intent).
-  - `R/f3_dashboard/adapter.py` (b5, b6).
-  - `R/fan/adapter.py` (b8: set `dispatched=True` only immediately before the service call).
-  - `R/f3/operational_adapter.py`, `R/providers/operational_*.py`, `R/clients/upstream_read.py` (b6/b7/b9 per OD-7).
-  - `R/f3_runtime/runtime.py` (`_project_locked`: T2 strings and `verification_summary` keys; rollback refusal).
-  - Shipped-writer fixtures and the executed beta.8 downgrade test.
-- **Estimate.** About 400–700 source lines and about 1,500–2,500 test lines (one phase-boundary proof per producer).
-- **Tests.**
-  - Per producer: zero transport calls plus phase (b). A mutation moving the marker after a send-capable await must be caught.
-  - Readback-capable controls stay (c) when the failure follows the send.
-  - The F12-style executed downgrade test (beta.8 reader).
-  - Rollback refusal for (a)/(b).
-  - `terminal_outcome` filter behavior.
-  - Restart and recovery of each (b) record.
-- **Security section.** Required (provider, persistence and dispatch-classification boundaries).
-- **Release.** beta.10, with the downgrade rule in the acceptance document.
+**Scope.** T2 stored strings and `verification_summary` keys; the
+`provider_call_not_sent` producers b2-L, b2-A, b3, b5, b8 (b4 as a test seam);
+the PR2 gateway-audit labels (§5.1); legacy-branch rollback refusal (§4.4,
+OD-11); the executed beta.8 downgrade test (§4.3). b6, b7 and b9 are
+**optional** and listed separately; each needs Josh's OD-7 selection.
+
+**Source (protected), required.**
+
+| File | Change |
+| --- | --- |
+| `R/f3/executor.py` | b3/b4: record `dispatch_failed_confirmed` + `provider_call_not_sent` when the adapter declares the callback failed before send |
+| `R/f3_configuration/adapter.py` | b2 marker from the exception attribute; b5 at `:453-466` |
+| `R/f3_dashboard/adapter.py` | b5: `before_dispatch` at `:498` handled with a not-sent declaration |
+| `R/fan/adapter.py` | b5 at `:109-119`; b8 not-sent declaration from the provider |
+| `R/providers/upstream_fan.py` | b8: not-sent attribute for the `:94-99` refusal only; `:126-127` unchanged |
+| `R/governance/resources.py` | b2-L: `call_not_sent=True` at `:659`, `:667`, `:681`, `:692`, `:759`; not at `:890` |
+| `R/governance/entity_metadata.py` | b2-L at `:573`; b2-A passes the client attribute through `:588`; not at `:605` |
+| `R/clients/websocket.py` | b2-A: not-sent attribute at `:246-251` and `:288-292` only |
+| `R/errors.py` | The `call_not_sent` attribute on `AuthorizationError` (`:632`). (`ConfigurationMutationNotDispatchedError` is defined in `R/governance/resources.py:108-112` and gains it there.) |
+| `R/f3/operational_adapter.py` | b5 for helper state and actions (`:677-724`) |
+| `R/f3_runtime/runtime.py` | `_project_locked`: T2 strings and keys; gateway audit labels (`:702-721`, `:800-806`, `:838-844`); legacy rollback refusal (`:3423-3436`) |
+| `R/f3_runtime/dispatch_facts.py` | Read the T2 strings |
+| `R/governance/service.py` | `terminal_outcome` filter (`:1966-1970`) accepts the T2 strings |
+
+**Source (protected), optional per OD-7.**
+
+| Producer | Files |
+| --- | --- |
+| b6 | `R/clients/upstream_read.py` (`:442-447`); `R/providers/upstream_fan.py`; `R/providers/operational_backup.py`; `R/providers/operational_lifecycle.py` |
+| b7 | `R/clients/rest.py` (`:77-84`); `R/clients/websocket.py` (`:207-211`) |
+| b9 | `R/providers/operational_backup.py` (`:213-220`, `:244-245`, `:250-254`); `R/providers/operational_lifecycle.py` (`:686-693`, `:732-745`); `R/f3/operational_strategies.py` (`:239-264`, `:386`, `:527`, `:657`, `:845`) |
+
+**Tests: existing files edited.**
+
+| File | Reason |
+| --- | --- |
+| `tests/test_dev14_resource_adapters.py` | Asserts `ConfigurationMutationNotDispatchedError` shape at the raise sites |
+| `tests/test_dev14_configuration_plans.py` | Asserts the configuration no-mutation outcome |
+| `tests/f3_configuration_fixtures.py` | Constructs the exception without the new attribute |
+| `tests/test_f3_runtime_integration.py` | Gateway labels, T2 strings |
+| `tests/test_hamcp135_governed_rollback.py` | Legacy-branch refusal for an unchanged forward |
+| `tests/test_f3_packaging_boundaries.py` | Only if a new cross-package import is introduced |
+
+Optional producers add: `tests/test_readonly_upstream_gateway.py` (b6),
+`tests/test_2_1a_operational_backup.py` and
+`tests/test_2_1a_beta2_operational_lifecycle.py` (b6/b9),
+`tests/test_f3_operational_adapter.py` (b9).
+
+**Tests: new files.**
+
+| File | Content |
+| --- | --- |
+| `tests/test_hamcp181_proven_no_call_producers.py` | Per producer: zero transport calls plus phase (b); REST 4xx, WS post-command unauthorized and lost response stay (r)/(r)/(c); pre-send versus post-exchange authority retirement (b8); fan **and** power |
+| `tests/test_hamcp181_terminal_outcome_t2.py` | T2 strings and keys; `terminal_outcome` filter; restart and recovery of each (b) record; no readback for (b) |
+| `tests/test_hamcp181_rollback_unchanged_forward.py` | OD-11 refusal-only on the legacy branch; mixed-plan verified prefix unchanged |
+| `tests/test_hamcp181_beta8_downgrade.py` | §4.3 executed downgrade: the `7370ad2` reader from `git archive` over the PR2-candidate fixtures |
+
+**Fixtures (new).** `tests/fixtures/f3_hamcp181_candidate/`: generator,
+`README.md`, `provenance.json` naming the exact PR2 candidate commit, and the
+§4.3 item 4 record set.
+
+**Support.** `ci/unit-test-shards.json` weights for the four new modules, if
+required.
+
+**Release (protected).** As PR1, for beta.10:
+`docs/V2_4_1_BETA10_RELEASE_NOTES.md` and `docs/V2_4_1_BETA10_ACCEPTANCE.md`
+(new; the acceptance document carries the §4.3 downgrade rule), plus the same
+six existing files.
+
+**Estimate.** About 450–750 source lines (required producers) and about
+1,500–2,500 test lines.
+
+**Mutations that must be caught.** Move a marker after a send-capable await;
+mark (r) as not sent; mark a lost response as not sent; set the attribute at
+`:890` or `:605`; treat `HomeAssistantUnavailableError` as proof without the
+attribute.
+
+**Security section.** Required (provider, persistence and
+dispatch-classification boundaries).
+
+**Release.** beta.10, with the downgrade rule in the acceptance document.
 
 ### PR3 (optional; only if OD-1 selects T3 or OD-2 selects F-B)
 
@@ -485,18 +972,29 @@ change preflight admission semantics, not just labels.
    - It requires producer changes in the executor and adapters, all on the
      protected runtime path.
 4. **Audit labels contradict F3.**
-   - The config gateway audits `provider_response_received` for a pre-send
-     no-call (`runtime.py:705-722`).
-   - The operational wrappers audit `provider_invocation_refused` while F3
-     records indeterminate *(subagent)*.
+   - The configuration gateway (`runtime.py:702-721`) audits
+     `provider_response_received` when the exception carries a received
+     response **or** `mutation_dispatched is False`. The first is correct
+     (r); the second mislabels a local pre-send refusal (b2-L/b2-A) as a
+     received response.
+   - The backup/lifecycle gateways (`runtime.py:800-806`, `:838-844`) label
+     by `exc.dispatched` alone: `provider_response_lost` when true,
+     `provider_invocation_refused` when false. "Refused" contradicts F3 only
+     when the intent callback committed and then failed (b5), which F3
+     records as indeterminate (§5.1).
 5. **`dispatched_at` has opposite semantics.** Governed tasks report the
    intent time and fan/power report `None`. `provider_attempt_count` counts
    intents everywhere.
-6. **`plan.operational.dispatch` appears stale for F3 plans.** No F3 writer
-   updates it, yet the plan audit reads it (`service.py:2414-2426`). This must
-   be confirmed with a test before it is relied on or removed.
-7. **Generic rollback admits `FAILED_POST_DISPATCH`.** It would offer a
-   rollback plan for a (b) forward that changed nothing (`runtime.py:3356-3360`).
+6. **`plan.operational.dispatch` is stale for F3 plans.** No F3 writer
+   updates it, yet the plan audit reads it (`service.py:2414-2426`). The
+   reviewer confirmed this with an executed probe (S16). PR1 still adds its
+   own regression test before the plan audit stops using it.
+7. **Rollback for an unchanged forward is a legacy-branch gap, not a generic
+   one.** Revision 1 overstated this. Contract v3 refuses, entity metadata
+   refuses `forward_not_dispatched`, and contract-v2 configuration excludes
+   any child that is not verified, so a contract-v2 no-call already gets
+   `rollback_not_available` (reviewer-executed). Only the legacy automation
+   branch (`runtime.py:3423-3436`) lacks a per-child filter (§4.4).
 8. **Codex R2-5 correction confirmed.** `list_execution_tasks` *omits*
    `provider_dispatch_occurred`; it does not report it as true.
 9. **No shipped-writer compatibility fixtures exist** for the record shapes a
@@ -506,21 +1004,27 @@ change preflight admission semantics, not just labels.
 
 ## 8. Owner decisions (Josh)
 
-| ID | Decision | Options | Recommendation |
-| --- | --- | --- | --- |
-| **OD-1** | Task-level representation of (a)/(b) | T1 projection only / **T2** stored `terminal_outcome` + `verification_summary` keys / T3 new task state | **T2** |
-| **OD-2** | F3 record format | **F-A** no change (proof as diagnostic marker) / F-B new outcome + schema v2 | **F-A** |
-| **OD-3** | Downgrade rule | **F12-style**: allowed only after all tasks are terminal, never clear journals/locks, proven by an executed beta.8-reader test / forward-only / expand-contract | **F12-style** (valid only with F-A + T2) |
-| **OD-4** | Generalize the V9 outcome to fan, power and helper state | Yes, with the same string and fields / a distinct per-capability string | **Yes, same string** |
-| **OD-5** | Name for (b) | `failed_after_intent_not_dispatched` / `intent_recorded_not_dispatched` / other | `failed_after_intent_not_dispatched` |
-| **OD-6** | Public `dispatched_at` for (b) | **null + new `dispatch_intent_recorded_at`** / keep the intent time + basis qualifier only | **null + new field** |
-| **OD-7** | Which proven-no-call producers to promote (b2–b9) | All local pre-send proofs / a subset (e.g. b2, b3, b4, b5 first; b6–b9 later) | **b2–b5 + b8 in PR2.** Include b6, b7 and b9 only where a pre-write proof point is demonstrable per provider; otherwise leave them (c). |
-| **OD-8** | Accept the outcome change for promoted producers: no readback, and a failure even if someone else reached the state | Accept / keep readback (requires F-B) | **Accept** |
-| **OD-9** | (a) for configuration REST/helper, dashboard and fan/power drift-equals-target | Out of scope / new item | **Out of scope; open a new register item if wanted** |
-| **OD-10** | Accept that the `terminal_outcome` filter no longer matches (a)/(b) under legacy strings | Accept + document / also match legacy strings | **Accept + document** |
-| **OD-11** | Rollback refuses `forward_not_dispatched` for (a)/(b) on every capability | Yes / keep current | **Yes** |
-| **OD-12** | PR split and versions | **PR1 (beta.9) → PR2 (beta.10)** / one combined PR | **Two PRs** |
-| **OD-13** | Authorization of the protected surfaces listed in §6 for each PR | Explicit per-PR authorization | Required before implementation |
+Columns: **Author** is this design's recommendation after revision 2.
+**Reviewer** is the Codex independent design review's per-decision position.
+**Differs?** marks where the two still differ, or where the reviewer's
+condition changed the author's text; in those rows Josh chooses.
+
+| ID | Decision | Options | Author (revision 2) | Reviewer (Codex) | Differs? |
+| --- | --- | --- | --- | --- | --- |
+| **OD-1** | Task-level representation of (a)/(b) | T1 projection only / **T2** stored `terminal_outcome` + `verification_summary` keys / T3 new task state | **T2**. (r) keeps `failed_post_dispatch` and gets no new stored string. | Agree: free-string outcomes plus existing nested summary fields are sufficient; no new enum. | No |
+| **OD-2** | F3 record format | **F-A** no change (proof as diagnostic marker) / F-B new outcome + schema v2 | **F-A**. The only new diagnostic is `provider_call_not_sent`. | Agree: existing bounded diagnostics carry proof without breaking the closed F3 shape. | No |
+| **OD-3** | Downgrade rule | **Narrow F12-style** (§4.3) / forward-only / expand-contract | **Narrow F12-style**: floor exactly beta.8 `7370ad2`; terminal-only across all namespaces and owners; executed PR2 candidate-writer → beta.8-reader test; explicit not-guaranteed list. | Agree only after R4. Revision 2 applies R4's conditions (named floor, all namespaces/owners, writer → old reader behavior and readiness, no blanket earlier-release guarantee). | No, after correction |
+| **OD-4** | Generalize the V9 outcome to fan, power and helper state | Yes, same string and fields / distinct per-capability string | **Yes, same string** | Agree: helper state, fan and power really have no-op paths; backup/reload/restart do not. | No |
+| **OD-5** | Name for (b) | `failed_after_intent_not_dispatched` / `intent_recorded_not_dispatched` / other | `failed_after_intent_not_dispatched` | Agree: distinguishes intent from send and does not imply retry. | No |
+| **OD-6** | Public timestamps (§2.4.2) | (i) **PR1**: `dispatched_at` = intent commit time only when the send is proven (sent, (r)); `null` for (a), (b), (c); plus `dispatched_at_basis`, `dispatch_intent_recorded_at`, `provider_response_recorded_at` / (ii) PR1 exposes only the companion times and basis; `dispatched_at` stays `null` on fan/power and is `null` for (b) on governed tasks; an exact send time needs a PR2 persistence decision / (iii) as (i), but governed (c) keeps today's intent time | **(i)**, following Josh's direction to fix successful fan/power `dispatched_at` in PR1 with no stored-format change. The value is bounded and labelled by its basis; it never claims an exact wire time. | **(ii)**: agree with `null` for (b); do not relabel intent time or result-record time as the send time; if a non-null exact send time is required, scope a PR2 producer/persistence change with crash and downgrade proof. | **Yes.** Josh chooses (i), (ii) or (iii). (i) and (iii) also change governed or fan/power `dispatched_at` values (§2.4.3 item 3). |
+| **OD-7** | Which proven-no-call producers to promote | All local pre-send proofs / a subset | **b2-L, b2-A, b3, b5 and b8 in PR2**, each with its proof at the owning module (§1.3): b2-L at the `R/governance/resources.py` / `R/governance/entity_metadata.py:573` raise sites, b2-A in `R/clients/websocket.py` (pre-command auth only), b8 in `R/providers/upstream_fan.py:94-99` only. b4 only as a test seam, never for process loss. b2-R stays (r); a lost response stays (c). b6, b7 and b9 only if Josh selects them, with the exact optional files in §6. | Conditional agreement: correct producer ownership; b2 must exclude sent rejections; b4 cannot relabel process loss; b8 requires provider/transport proof. Optional producers stay uncertain without positive proof. | No, after correction. Josh still selects the optional producers (b6, b7, b9). |
+| **OD-8** | Accept the outcome change for promoted producers: no readback, and a failure even if someone else reached the state | Accept / keep readback (requires F-B) | **Accept** | Agree: Engineering never invoked the mutation; another actor's state does not establish this operation's success. Preserve readback for uncertainty. | No |
+| **OD-9** | (a) for configuration REST/helper, dashboard and fan/power drift-equals-target | Out of scope / new item | **Out of scope; open a new register item if wanted** | Agree: it changes admission semantics, not outcome labelling. | No |
+| **OD-10** | Accept that the `terminal_outcome` filter no longer matches (a)/(b) under legacy strings | Accept + document / also match legacy strings | **Accept + document**, including that historical records keep their old raw outcomes (no backfill). | Agree with disclosure: state filters stay available; no backfill. | No |
+| **OD-11** | Rollback for a forward that changed nothing | Uniform refusal for a **wholly** unchanged forward (every child (a), (b) or (r)), preserving rollback of verified children in mixed plans / keep current | **Uniform refusal, narrowed** (§4.4): the concrete change is the legacy automation branch; contract-v2 and contract-v3 already refuse; mixed plans keep rollback of their verified prefix. | Agree, narrowed by R5: preserve verified-child recovery and identify the actual legacy gap. | No, after correction |
+| **OD-12** | PR split and versions | **PR1 (beta.9) → PR2 (beta.10)** / one combined PR | **Two PRs.** PR1 now also carries the gateway-audit correction and the fan/power timestamp fix. | Agree: separates projection consistency from changed producer outcomes and writer compatibility. Versions remain subject to actual release sequencing. | No |
+| **OD-13** | Authorization of the protected surfaces in §6 | Explicit per-PR authorization of the exact file lists | Required before implementation. The lists in §6 are now complete for the recommended options; optional files are listed separately and need their own approval. | Agree after file-map correction: approving the revision 1 lists would not have authorized all promised work. | No, after correction |
+| **OD-14** *(new)* | Representation of (r), sent but rejected | **Projection only** (`dispatch_phase:"sent_rejected_no_mutation"`, `outcome_code:"provider_rejected_mutation"`, no new stored string) / a stored T2 string | **Projection only**: the stored facts already identify (r) exactly, and the coarse state `failed_post_dispatch` is truthful for it. | Not separately addressed. R1 requires (r) to keep response-received attribution and never get the no-call marker, which both options satisfy. | Josh decides |
 
 ---
 
