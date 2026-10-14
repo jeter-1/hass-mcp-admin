@@ -63,4 +63,5 @@ def synthetic_receipt(core_version):
         "predecessor_admission": {"acquired": False, "ha_requests": 0, "ha_updates": 0,
                                   "reason": "authority_unavailable", "control_capability_acquired": True},
         "engineering_command_types": sorted(lane.REVIEWED_COMMANDS), "synthetic_labels": list(LABELS),
-        "scenarios": scenarios, "fixture_cleanup": True}
+        "scenarios": scenarios, "fixture_cleanup": True,
+        "fixture_absence": dict.fromkeys(lane.FIXTURE_ABSENCE, True)}

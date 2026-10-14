@@ -75,9 +75,22 @@ The predecessor/extension F3 runtime health must end with zero issued leases,
 active commits and fallbacks.
 
 Every synthetic area, label, category and `input_boolean` is created and deleted
-within the run, and their absence is verified (`fixture_cleanup: true`). The
-helper name is made unique per run because Core restores a deleted entity's
-registry metadata when the same `unique_id` returns.
+within the run. An acknowledged delete is not treated as absence. After the
+deletes, the lane reads each owned object back independently, with bounded
+re-reads:
+
+| `fixture_absence` key | Independent read-back |
+| --- | --- |
+| `area` | `config/area_registry/list` omits the area. |
+| `category` | `config/category_registry/list` (scope `helpers`) omits the category. |
+| `helper_config` | `input_boolean/list` omits the helper. |
+| `helper_entity` | `config/entity_registry/get` for the helper entity returns `not_found`. |
+| `labels` | `config/label_registry/list` omits both labels. |
+
+`fixture_cleanup: true` is written only when all five are `true`, and the
+verifier requires that exact map. The helper name is made unique per run because
+Core restores a deleted entity's registry metadata when the same `unique_id`
+returns.
 
 ## Receipt format and artifacts
 
@@ -90,10 +103,20 @@ registry metadata when the same `unique_id` returns.
 - the five reference keys plus `added_capability`;
 - `predecessor_capabilities_sha256`, `authority_transition: [21, 22]` and `production_authority: false`;
 - `predecessor_admission` and `engineering_command_types`;
-- `synthetic_labels`, the ordered `scenarios`, and `fixture_cleanup`.
+- `synthetic_labels`, the `scenarios` (exact key set), `fixture_cleanup` and
+  `fixture_absence`.
 
 The same receipt is also nested as `entity_metadata` in the existing required
 Alarmo result.
+
+Every load of this evidence goes through one strict JSON boundary,
+`entity_metadata_contract_acceptance.load_receipt`. That covers the lane's
+self-check, the retained result in `--verify-cleanup`, the offline file verifier
+and the tests. Ordinary decoding keeps only the last of repeated keys, so a
+`FAIL` beside a `PASS` for one scenario would vanish before validation. The
+strict loader refuses a repeated object key at any depth with
+`receipt_duplicate_key`, before any validation. The lane verifies its own
+serialized bytes through this loader, not its in-memory value.
 
 `alarmo_inspection_contract_acceptance.py --verify-cleanup` re-verifies the
 nested receipt offline against the window and current source. It requires the
@@ -118,7 +141,18 @@ For each Core version being extended, the session should:
    runtime tree:
    - 2026.10.1 from the PR or full tier;
    - 2026.10.0 from the full-tier dispatch Josh runs after merge.
-2. Run `verify_result` (or `--verify-cleanup`) offline at that head.
+2. Run the offline file verifier at that head. It parses both files strictly,
+   re-verifies the entity receipt, and requires the cleanup receipt to bind
+   its exact SHA-256:
+
+   ```sh
+   python -c "import sys; sys.path[:0] = ['scripts', 'hass_mcp_engineering_beta']; \
+   import entity_metadata_contract_acceptance as m; \
+   print(m.verify_receipt_files('entity-metadata-<lane>.json', 'alarmo-cleanup-<lane>.json', \
+   core_version='<core>', support_slot='<slot>'))"
+   ```
+
+   Never verify a receipt that was decoded with plain `json.loads`.
 3. Put into that version's `review_artifacts_sha256`:
    - the SHA-256 of the exact `entity-metadata-<lane>.json` bytes; and
    - the `alarmo-cleanup-<lane>.json` bytes, alongside other review artifacts.

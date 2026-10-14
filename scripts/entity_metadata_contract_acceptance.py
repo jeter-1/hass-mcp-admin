@@ -46,6 +46,34 @@ HUB_SWITCH = "switch.hub_switch"
 # lifecycle provider; the registry contract under test does not depend on it.
 SYNTHETIC_PROVIDER_IDENTITY = {"slug": "hamcp179_disposable_lane",
                                "evidence_hash": hashlib.sha256(b"HAMCP-179 synthetic provider lock").hexdigest()}
+# Every owned fixture type whose absence cleanup reads back independently.
+FIXTURE_ABSENCE = ("area", "category", "helper_config", "helper_entity", "labels")
+DUPLICATE_KEY = "receipt_duplicate_key"
+
+
+class DuplicateReceiptKey(ValueError):
+    reason_code = DUPLICATE_KEY
+
+    def __init__(self):
+        super().__init__(DUPLICATE_KEY + ": evidence JSON repeats an object key")
+
+
+def _unique_members(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise DuplicateReceiptKey()
+        value[key] = item
+    return value
+
+
+def load_receipt(raw):
+    """The one JSON boundary for retained, standalone and cleanup evidence.
+
+    Ordinary decoding keeps the last of repeated keys, so a FAIL beside a PASS
+    would vanish before validation. A repeated key at any depth refuses.
+    """
+    return json.loads(raw, object_pairs_hook=_unique_members)
 
 
 class RawRefusal(AssertionError):
@@ -227,6 +255,7 @@ def verify_result(result, *, core_version, support_slot):
     assert result["authority_transition"] == [21, 22]
     assert result["authority_instances"] == "separate_ephemeral_registries"
     assert result["production_authority"] is False and result["fixture_cleanup"] is True
+    assert result["fixture_absence"] == dict.fromkeys(FIXTURE_ABSENCE, True)
     assert result["provider_identity"] == "synthetic_disposable_lane"
     assert len(result["predecessor_capabilities_sha256"]) == 64
     assert result["predecessor_admission"] == {
@@ -249,6 +278,75 @@ def verify_result(result, *, core_version, support_slot):
 
 def receipt_bytes(result):
     return (json.dumps(result, sort_keys=True, indent=2) + "\n").encode()
+
+
+def verify_receipt_files(receipt_path, cleanup_path, *, core_version, support_slot):
+    """Offline signing-session check of one slot's two artifact files.
+
+    Both are parsed strictly. The entity receipt is re-verified against the
+    window and current source, and the cleanup receipt must bind its exact bytes.
+    """
+    raw = Path(receipt_path).read_bytes()
+    summary = verify_result(load_receipt(raw), core_version=core_version, support_slot=support_slot)
+    cleanup = load_receipt(Path(cleanup_path).read_bytes())
+    assert (cleanup["result"] == "PASS" and cleanup["core"] == core_version
+            and cleanup["support_slot"] == support_slot)
+    assert cleanup["owned_containers_remaining"] == 0 and cleanup["owned_network_remaining"] is False
+    expected = {**summary, "receipt_sha256": hashlib.sha256(raw).hexdigest()}
+    assert cleanup["required_entity_metadata"] == expected
+    return expected
+
+
+async def cleanup_fixtures(raw, owned, hub_before, *, attempts=50, delay=0.1):
+    """Delete every owned fixture, then read back each one's absence.
+
+    A delete Core acknowledged is not evidence of absence; only an independent
+    read-back is. Returns the per-type absence, or None when nothing was owned.
+    """
+    if hub_before is not None:
+        await raw.ok({"type": UPDATE, "entity_id": HUB_SWITCH,
+                      "area_id": hub_before.get("area_id"), "name": hub_before.get("name")})
+    if owned.get("helper"):
+        await raw.ok({"type": "input_boolean/delete", "input_boolean_id": owned["helper"]})
+    for label_id in owned.get("labels", []):
+        await raw.ok({"type": "config/label_registry/delete", "label_id": label_id})
+    if owned.get("category"):
+        await raw.ok({"type": "config/category_registry/delete", "scope": CATEGORY_SCOPE,
+                      "category_id": owned["category"]})
+    if owned.get("area"):
+        await raw.ok({"type": "config/area_registry/delete", "area_id": owned["area"]})
+    if not owned:
+        return None
+
+    async def ids(command, field, **arguments):
+        return {item[field] for item in await raw.ok({"type": command, **arguments})}
+
+    async def helper_entity_absent():
+        if not owned.get("helper"):
+            return True
+        found = await raw.call({"type": GET, "entity_id": "input_boolean." + owned["helper"]})
+        return found.get("success") is not True and (found.get("error") or {}).get("code") == "not_found"
+
+    checks = {
+        "area": lambda: ids("config/area_registry/list", "area_id"),
+        "category": lambda: ids("config/category_registry/list", "category_id", scope=CATEGORY_SCOPE),
+        "helper_config": lambda: ids("input_boolean/list", "id"),
+        "labels": lambda: ids("config/label_registry/list", "label_id"),
+    }
+    created = {"area": {owned.get("area")} - {None}, "category": {owned.get("category")} - {None},
+               "helper_config": {owned.get("helper")} - {None}, "labels": set(owned.get("labels", []))}
+    absence = {}
+    for name in FIXTURE_ABSENCE:
+        for _ in range(attempts):
+            if name == "helper_entity":
+                absent = await helper_entity_absent()
+            else:
+                absent = not created[name] & await checks[name]()
+            if absent:
+                break
+            await asyncio.sleep(delay)
+        absence[name] = absent
+    return absence
 
 
 async def run_disposable(configured, *, expected_image, core_version):
@@ -302,7 +400,7 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
             or entry["image_index_digest"] != binding["image_index_digest"]):
         raise ValueError("Exact owned disposable entity metadata lane required")
     image_path = Path(os.environ["REAL_HA_ALARMO_IMAGE_RESULT"])
-    image = json.loads(image_path.read_text())
+    image = load_receipt(image_path.read_bytes())
     assert (image["result"] == "PASS" and image["index"] == entry["image_index_digest"]
             and image["core_version"] == core_version and image["support_slot"] == binding["slot"])
     output = Path(os.environ["REAL_HA_ENTITY_METADATA_RESULT"])
@@ -642,24 +740,8 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
             stage[0] = "cleanup:" + stage[0]
             try:
                 try:
-                    if hub_before is not None:
-                        await raw.ok({"type": UPDATE, "entity_id": HUB_SWITCH,
-                                      "area_id": hub_before.get("area_id"), "name": hub_before.get("name")})
-                    if owned.get("helper"):
-                        await raw.ok({"type": "input_boolean/delete", "input_boolean_id": owned["helper"]})
-                    for label_id in owned.get("labels", []):
-                        await raw.ok({"type": "config/label_registry/delete", "label_id": label_id})
-                    if owned.get("category"):
-                        await raw.ok({"type": "config/category_registry/delete", "scope": CATEGORY_SCOPE,
-                                      "category_id": owned["category"]})
-                    if owned.get("area"):
-                        await raw.ok({"type": "config/area_registry/delete", "area_id": owned["area"]})
-                    if owned:
-                        remaining = {item["label_id"] for item in await raw.ok({"type": "config/label_registry/list"})}
-                        assert not remaining & set(owned.get("labels", []))
-                        areas = {item["area_id"] for item in await raw.ok({"type": "config/area_registry/list"})}
-                        assert owned.get("area") not in areas
-                        fixture_cleanup = True
+                    fixture_absence = await cleanup_fixtures(raw, owned, hub_before)
+                    fixture_cleanup = fixture_absence == dict.fromkeys(FIXTURE_ABSENCE, True)
                 finally:
                     await dependency_runtime.shutdown()
             finally:
@@ -667,9 +749,11 @@ async def _run_disposable(configured, *, expected_image, core_version, stage):
                     await close_disposable_authority(item)
         stage[0] = "verify"
         assert fixture_cleanup
-        result["fixture_cleanup"] = True
+        result.update(fixture_cleanup=True, fixture_absence=fixture_absence)
         try:
-            summary = verify_result(result, core_version=core_version, support_slot=binding["slot"])
+            # Verify the serialized evidence through the strict loader, not the in-memory value.
+            summary = verify_result(load_receipt(receipt_bytes(result)), core_version=core_version,
+                                    support_slot=binding["slot"])
         except Exception:
             # Retain the sanitized synthetic receipt; outer cleanup rejects it.
             output.write_bytes(receipt_bytes({**result, "result": "FAIL"}))

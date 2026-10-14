@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import alarmo_inspection_contract_acceptance as acceptance
 import core_lane_bindings
 import support_window
+from entity_metadata_contract_acceptance import load_receipt
 from entity_metadata_receipts import synthetic_receipt as synthetic_entity_metadata_receipt
 
 spec = importlib.util.spec_from_file_location("synthetic_alarmo_observer", acceptance.OBSERVER)
@@ -387,7 +388,7 @@ class PublicationCleanupTests(unittest.TestCase):
                         "automation_baseline_contract_acceptance.verify_result", return_value={"result": "PASS"}) as baseline:
                     result = acceptance.verify_disposable_cleanup(source, output, version)
                 self.assertEqual((result["result"], result["core"], result["support_slot"]), ("PASS", version, slot))
-                self.assertEqual(json.loads(output.read_text()), result)
+                self.assertEqual(load_receipt(output.read_bytes()), result)
                 baseline.assert_called_once_with(value["automation_baseline"], core_version=version, support_slot=slot)
                 self.assertEqual(run.call_count, 2)
 

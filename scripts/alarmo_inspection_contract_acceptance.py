@@ -594,7 +594,9 @@ def verify_disposable_cleanup(result_path, output, core_version, entity_metadata
         raise ValueError("Disposable containers remain")
     if "beta-rc2-contract-" + lane in names(["network", "ls", "--format", "{{.Name}}"]):
         raise ValueError("Disposable network remains")
-    value = json.loads(Path(result_path).read_text())
+    # HAMCP-179: one strict boundary; a repeated key at any depth refuses before validation.
+    from entity_metadata_contract_acceptance import load_receipt, receipt_bytes, verify_result as verify_entity_metadata
+    value = load_receipt(Path(result_path).read_bytes())
     if (value.get("result") != "PASS" or value.get("scenario") != "alarmo_inspection"
             or value.get("core") != core_version or value.get("support_slot") != binding["slot"]
             or value.get("core_image") != binding["image"] or value.get("runtime_monitor_closed") is not True):
@@ -609,10 +611,10 @@ def verify_disposable_cleanup(result_path, output, core_version, entity_metadata
     verify_interval(control, control["interval_id"], ["other"], kind="control", core_version=core_version)
     from automation_baseline_contract_acceptance import verify_result as verify_baseline
     baseline = verify_baseline(value["automation_baseline"], core_version=core_version, support_slot=binding["slot"])
-    from entity_metadata_contract_acceptance import receipt_bytes, verify_result as verify_entity_metadata
     entity_metadata = verify_entity_metadata(value["entity_metadata"], core_version=core_version,
                                              support_slot=binding["slot"])
     canonical = receipt_bytes(value["entity_metadata"])
+    # Byte equality with a canonical dump of the strictly loaded value admits no repeated key.
     if entity_metadata_receipt is not None and Path(entity_metadata_receipt).read_bytes() != canonical:
         raise ValueError("Standalone entity metadata receipt differs from the retained receipt")
     entity_metadata["receipt_sha256"] = hashlib.sha256(canonical).hexdigest()
