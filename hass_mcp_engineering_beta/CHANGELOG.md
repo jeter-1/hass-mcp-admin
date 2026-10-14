@@ -16,9 +16,12 @@ Builds on 2.4.1-beta.7's delegated platform reads.
 - Record a Core authority refusal immediately before the setter call as
   confirmed no dispatch instead of an uncertain outcome: failed after the
   saved-intent boundary (`failed_post_dispatch`); no setter message sent; no
-  change made; never redispatched. The evidence records
-  `setter_call_not_sent`; the truthful pre-send phase is HAMCP-181. Every
-  other transport error stays conservatively dispatched.
+  change made; never redispatched. The evidence, apply result, task read,
+  replay refusal and audit state `setter_call_not_sent` true,
+  `provider_dispatch_occurred` and `dispatch_performed` false,
+  `changed_by_engineering` false and `intent_recorded` true; the truthful
+  pre-send phase is HAMCP-181. Every other transport error stays
+  conservatively dispatched.
 - Preserve the whole-catalog validator for the read gateway, backups and
   lifecycle; the signed registries, HOLD, support window, durable formats,
   workflows and stable v1.

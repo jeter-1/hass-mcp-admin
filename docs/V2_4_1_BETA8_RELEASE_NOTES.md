@@ -62,7 +62,12 @@ The task failed after the saved-intent boundary (`failed_post_dispatch`): no
 setter message was sent, no change was made, and the task is never
 redispatched (same-ID apply is refused as a duplicate). The execution
 evidence records `setter_call_not_sent` and
-`provider_confirmed_no_mutation`. The phase stays post-intent because the
+`provider_confirmed_no_mutation`, and the apply result, task read, same-ID
+replay refusal and audit state it directly: `provider_dispatch_occurred`
+false, `dispatch_performed` false, `setter_call_not_sent` true,
+`changed_by_engineering` false and `intent_recorded` true, with
+`attempt_counts_basis` qualifying the unchanged stored attempt and dispatch
+counts as the saved intent. The phase stays post-intent because the
 shared F3 model does not let saved intent become pre-dispatch; a truthful
 pre-send phase is planned as HAMCP-181. A refusal raised before the call is
 the only error that may claim no dispatch; every other transport error stays

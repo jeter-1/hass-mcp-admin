@@ -87,7 +87,11 @@ retirement during the guide, after setter admission, is
 `dispatch_failed_confirmed`: the task failed after the saved-intent boundary
 (`failed_post_dispatch`); no setter message was sent; no change was made; it
 is never redispatched. The execution evidence records `setter_call_not_sent`
-and `provider_confirmed_no_mutation`; a sent or possibly sent setter never
+and `provider_confirmed_no_mutation`, and the apply result, task read,
+same-ID replay refusal and audit show `provider_dispatch_occurred` false,
+`dispatch_performed` false, `setter_call_not_sent` true,
+`changed_by_engineering` false and `intent_recorded` true (stored counts
+qualified by `attempt_counts_basis`); a sent or possibly sent setter never
 carries `setter_call_not_sent`. The truthful pre-send phase is HAMCP-181.
 
 **Truthful outcomes.**
