@@ -1,20 +1,20 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.7** adds three delegated platform reads (HAMCP-129):
-`ha_get_system_health`, `ha_get_app` (installed add-ons) and
-`ha_get_integration` (config entries). Each is an Engineering-owned wrapper with
-a closed schema, Engineering-built upstream arguments and a positive output
-allowlist; add-on options, diagnostics, config checks and options flows stay
-unreachable. It builds on beta.6's typed power and fan admission repair,
-beta.5's deep-health correction, beta.4's dormant governed entity-registry
-metadata administration (`create_entity_metadata_plan`) and beta.3's exact
-**ha-mcp 8.6.0** and **Core 2026.10.0** support.
+Engineering **2.4.1-beta.8** repairs governed dashboard writes (HAMCP-177):
+dashboard write authority is admitted only on the three upstream tools the
+write path uses (`ha_config_get_dashboard`, `ha_get_skill_guide` and
+`ha_config_set_dashboard`), so unrelated ha-mcp tools such as the filesystem
+tools no longer disable dashboard writes and gain no exposure or dispatch.
+It builds on beta.7's delegated platform reads (`ha_get_system_health`,
+`ha_get_app` and `ha_get_integration`), beta.6's typed power and fan admission
+repair, beta.5's deep-health correction, beta.4's dormant governed
+entity-registry metadata administration (`create_entity_metadata_plan`) and
+beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA7_RELEASE_NOTES.md),
-[acceptance contract](docs/V2_4_1_BETA7_ACCEPTANCE.md), and
-[platform reads design](docs/HAMCP_129_PLATFORM_READS_DESIGN.md).
+See the [release notes](docs/V2_4_1_BETA8_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA8_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -98,14 +98,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.7 release notes](docs/V2_4_1_BETA7_RELEASE_NOTES.md) and
-[2.4.1-beta.7 acceptance contract](docs/V2_4_1_BETA7_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.8 release notes](docs/V2_4_1_BETA8_RELEASE_NOTES.md) and
+[2.4.1-beta.8 acceptance contract](docs/V2_4_1_BETA8_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.7 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.8 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

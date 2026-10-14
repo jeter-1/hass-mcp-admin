@@ -144,6 +144,7 @@ class DashboardTransportError(RuntimeError):
         http_response_received: bool = False,
         failure_kind: str = "protocol_or_transport_failure",
         http_status_class: str | None = None,
+        tool_call_attempted: bool = True,
     ):
         super().__init__("The upstream dashboard MCP transport failed.")
         self.category = category
@@ -163,6 +164,9 @@ class DashboardTransportError(RuntimeError):
             if http_status_class in {"4xx", "5xx"}
             else None
         )
+        # Conservative by default: only a refusal raised before the session's
+        # single tools/call request may assert that no call was sent.
+        self.tool_call_attempted = tool_call_attempted is not False
 
     def evidence_details(self) -> dict[str, Any]:
         """Return only bounded classification evidence, never exception text."""
@@ -370,7 +374,9 @@ class McpDashboardTransport:
                         telemetry is not None
                         and not telemetry.authorize_core_dispatch()
                     ):
-                        raise DashboardTransportError("connection_failed")
+                        raise DashboardTransportError(
+                            "connection_failed", tool_call_attempted=False
+                        )
                     call_started = time.perf_counter()
                     call_result = await session.call_tool(
                         tool_name,
@@ -569,6 +575,14 @@ def _classified_transport_error(
                 selected.http_status_class
                 if selected is not None
                 else None
+            ),
+            # A not-attempted leaf is raised in the host task before the
+            # session's only call_tool, so SDK teardown errors grouped with it
+            # cannot mean the call was sent.
+            tool_call_attempted=not any(
+                isinstance(leaf, DashboardTransportError)
+                and not leaf.tool_call_attempted
+                for leaf in leaves
             ),
         )
     category = _classify_transport_exception(exc)

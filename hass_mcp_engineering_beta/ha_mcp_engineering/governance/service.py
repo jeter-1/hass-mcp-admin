@@ -22,6 +22,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from ..audit import AuditLogger
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..errors import (
+    DASHBOARD_ADMISSION_REFUSAL_CATEGORIES,
+    DashboardProviderError,
     EngineeringServerError,
     ErrorCode,
     GovernanceError,
@@ -40,7 +42,10 @@ from ..f3_dashboard.approval_projection import (
     validate_dashboard_approval_projection,
 )
 from ..f3_dashboard.artifact_store import DashboardArtifactStore
-from ..f3_dashboard.errors import DashboardFoundationError
+from ..f3_dashboard.errors import (
+    DashboardFoundationError,
+    ProviderAuthorityUnavailableError,
+)
 from ..f3_dashboard.planning import create_dashboard_update_plan as build_dashboard_update
 from ..f3_dashboard.serialization import public_proposal_projection
 from .historical_policy import (
@@ -4024,6 +4029,13 @@ class ChangeGovernanceService:
                 now=self.now(),
                 plan_id=self._new_id(),
             )
+        except ProviderAuthorityUnavailableError:
+            # The getter answered but the write dependencies were not
+            # admitted; this is not a property of the dashboard configuration.
+            raise GovernanceError(
+                ErrorCode.PROVIDER_UNAVAILABLE,
+                details={"reason": "dashboard_provider_not_admitted"},
+            ) from None
         except DashboardFoundationError as exc:
             details = {"reason": exc.code}
             if exc.constraint == "semantic_leaf_changes" and exc.stage == "compilation":
@@ -4034,6 +4046,20 @@ class ChangeGovernanceService:
             ) from None
         except GovernanceError:
             raise
+        except DashboardProviderError as exc:
+            if (
+                exc.details.get("failure_category")
+                in DASHBOARD_ADMISSION_REFUSAL_CATEGORIES
+            ):
+                # Not admitted: not a transient outage, so not retryable.
+                raise GovernanceError(
+                    ErrorCode.PROVIDER_UNAVAILABLE,
+                    details={"reason": "dashboard_provider_not_admitted"},
+                ) from None
+            raise GovernanceError(
+                ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE,
+                details={"reason": "dashboard_provider_identity_unavailable"},
+            ) from exc
         except Exception as exc:
             raise GovernanceError(
                 ErrorCode.OPERATIONAL_PROVIDER_UNAVAILABLE,
@@ -7107,6 +7133,20 @@ class ChangeGovernanceService:
             changes={},
         )
         if task.state != ExecutionTaskState.SUCCEEDED_VERIFIED:
+            details = {
+                "task_id": task.task_id,
+                "task_state": task.state.value,
+                "provider_dispatch_occurred": (
+                    self._task_is_dispatched(task)
+                ),
+            }
+            if (
+                self.f3_runtime is not None
+                and self.f3_runtime.dashboard_setter_not_sent(task)
+            ):
+                # HAMCP-177 R1 (display only): the saved intent keeps the
+                # post-intent phase; no dashboard setter call was ever sent.
+                details.update(self.f3_runtime.setter_not_sent_fields())
             raise GovernanceError(
                 (
                     ErrorCode.EXECUTION_TASK_INVALID_STATE
@@ -7114,13 +7154,7 @@ class ChangeGovernanceService:
                     == ExecutionTaskState.CANCELLED_PRE_DISPATCH
                     else ErrorCode.DUPLICATE_APPLY_ATTEMPT
                 ),
-                details={
-                    "task_id": task.task_id,
-                    "task_state": task.state.value,
-                    "provider_dispatch_occurred": (
-                        self._task_is_dispatched(task)
-                    ),
-                },
+                details=details,
             )
         result = {
             "status": "already_applied",
