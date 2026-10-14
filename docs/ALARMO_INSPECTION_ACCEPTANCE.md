@@ -188,8 +188,10 @@ fixed-shape diagnostic. Its fields are:
 - `phase` (`readiness` or `start`);
 - the window label and index;
 - `readiness_reads`;
-- `core_running`; and
-- the pending store classes.
+- `core_running`;
+- the pending store classes; and
+- `start_recovery`, which says how a failed `/start` was attributed, or `null`
+  outside that path.
 
 The fixed causes are:
 
@@ -204,8 +206,38 @@ The fixed causes are:
 
 The runtime websocket client does not keep error codes. The observer therefore
 keeps its last `/start` refusal, which `/ready` returns, and the client reads it
-back once after a failed start. Cancellation still propagates. No exception
-message, key or argument enters a diagnostic.
+back once after a failed start. Nothing is retried. Cancellation still
+propagates. No exception message, key or argument enters a diagnostic.
+
+Each `/start` carries a fresh test-owned `attempt_id` (32 lowercase hex). The
+observer schema requires it and records it with the refusal. Only a refusal
+recorded for the current attempt may name the cause. Otherwise the current
+failure (`start_timeout` or `start_transport_error`) stays the cause, and
+`start_recovery` records why:
+
+- `current_refusal`: the refusal belongs to this attempt and names the cause.
+- `stale_refusal_ignored`: the retained refusal belongs to another attempt.
+- `no_refusal`: the read-back is well formed and holds no refusal.
+- `ready_recovery_malformed`: the read-back is malformed in any field, including
+  when the hooks are not intact.
+- `recovery_unavailable`: the read-back itself failed.
+
+The attempt identifier never enters a diagnostic.
+
+Observer responses are read only through two total decoders, one for `/ready`
+and one for `/start`. They validate the whole envelope, including the class
+list and the retained refusal, before reading the hook bit. Any unexpected
+error while decoding becomes a fixed cause: `readiness_shape_invalid` while
+waiting, or `ready_recovery_malformed` on the `/start` read-back.
+
+A unit test walks the call closure of the setup functions. It rejects:
+
+- a raise in any helper they reach;
+- observer-data access outside a decoder's `except Exception` guard; and
+- a setup function that subscripts a response or calls a validator directly.
+
+That structural check does not enumerate implicit errors such as `TypeError`. A
+malformed-shape matrix covers those behaviourally.
 
 The diagnostic appears in the slot's `contract_diagnostic`. A baseline proof
 failure also retains it in the FAIL receipt. A setup failure happens before the

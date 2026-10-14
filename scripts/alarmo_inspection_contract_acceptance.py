@@ -226,8 +226,13 @@ SETUP_FAILURES = {
 }
 START_REFUSALS = ("setup_not_settled_late_start", "core_not_running", "hooks_not_intact",
                   "store_hash_unavailable", "interval_unavailable", "start_internal_error")
+# How a failed /start was attributed by its one /ready read-back (HAMCP-180).
+# Only a refusal recorded for this attempt's own identifier may name the cause.
+START_RECOVERY = ("recovery_unavailable", "ready_recovery_malformed", "no_refusal", "current_refusal",
+                  "stale_refusal_ignored")
+ATTEMPT_ID = r"[0-9a-f]{32}"
 SETUP_DIAGNOSTIC_KEYS = frozenset({"condition", "cause", "phase", "window", "window_index", "readiness_reads",
-                                   "core_running", "pending_store_classes"})
+                                   "core_running", "pending_store_classes", "start_recovery"})
 
 
 class ObservationError(ValueError):
@@ -363,13 +368,14 @@ def _window(window, window_index):
 
 
 def setup_failure(cause, phase, *, window=None, window_index=None, readiness_reads=0, core_running=None,
-                  pending_store_classes=None):
+                  pending_store_classes=None, start_recovery=None):
     """One setup/readiness/start failure as the fixed-shape diagnostic (HAMCP-180).
 
-    Only a known cause, phase, window, counts, a boolean and vocabulary classes;
-    never an exception message, key, argument or path.
+    Only a known cause, phase, window, counts, a boolean, vocabulary classes and
+    the start read-back's attribution token; never an exception message, key,
+    argument, attempt identifier or path.
     """
-    cause = cause if cause in SETUP_FAILURES else "start_internal_error"
+    cause = cause if type(cause) is str and cause in SETUP_FAILURES else "start_internal_error"
     classes = None
     if type(pending_store_classes) is list:
         classes = [_store_class(item) for item in pending_store_classes[:MAX_DIAGNOSTIC_ITEMS]]
@@ -378,7 +384,9 @@ def setup_failure(cause, phase, *, window=None, window_index=None, readiness_rea
                   **_window(window, window_index),
                   "readiness_reads": readiness_reads if type(readiness_reads) is int else None,
                   "core_running": core_running if type(core_running) is bool else None,
-                  "pending_store_classes": classes}
+                  "pending_store_classes": classes,
+                  "start_recovery": start_recovery if type(start_recovery) is str and start_recovery in START_RECOVERY
+                  else None}
     return ObservationError("Disposable setup observation failed", diagnostic)
 
 
@@ -396,27 +404,60 @@ def _class_list_problem(classes, pending):
 
 
 def _refusal_problem(refusal):
+    import re
     if refusal is None:
         return False
-    return (type(refusal) is not dict or set(refusal) != {"cause", "pending_store_classes"}
+    return (type(refusal) is not dict or set(refusal) != {"attempt_id", "cause", "pending_store_classes"}
+            or type(refusal["attempt_id"]) is not str or not re.fullmatch(ATTEMPT_ID, refusal["attempt_id"])
             or type(refusal["cause"]) is not str or refusal["cause"] not in START_REFUSALS
+            or type(refusal["pending_store_classes"]) is not list
             or _class_list_problem(refusal["pending_store_classes"], bool(refusal["pending_store_classes"])))
 
 
 def readiness_problem(value, *, store_classes=True):
-    """The fixed cause a readiness value fails with, or ``None``."""
+    """The fixed cause a readiness value fails with, or ``None``.
+
+    The whole envelope (shape, classes, retained refusal) is validated before
+    the hook bit is read, so ``readiness_hooks_not_intact`` implies a
+    well-formed value.
+    """
     booleans = ("core_running", "storage_pending", "hooks_intact")
     fields = {*booleans, "pending_store_classes", "last_start_refusal"} if store_classes else set(booleans)
     if type(value) is not dict or set(value) != fields or any(type(value[item]) is not bool for item in booleans):
         return "readiness_shape_invalid"
-    if not value["hooks_intact"]:
-        return "readiness_hooks_not_intact"
     if store_classes:
         if _class_list_problem(value["pending_store_classes"], value["storage_pending"]):
             return "store_class_list_malformed"
         if _refusal_problem(value["last_start_refusal"]):
             return "readiness_shape_invalid"
+    if not value["hooks_intact"]:
+        return "readiness_hooks_not_intact"
     return None
+
+
+def decode_readiness(value, *, store_classes=True):
+    """``(problem, state)`` for one ``/ready`` value; never raises on observer data.
+
+    ``state`` holds copies of validated fields only, and is ``None`` unless the
+    envelope is well formed (``problem`` is ``None`` or
+    ``readiness_hooks_not_intact``). Any unexpected error while decoding is the
+    fixed ``readiness_shape_invalid`` (HAMCP-180).
+    """
+    try:
+        problem = readiness_problem(value, store_classes=store_classes)
+        if problem not in (None, "readiness_hooks_not_intact"):
+            return problem, None
+        state = {"core_running": value["core_running"], "storage_pending": value["storage_pending"],
+                 "pending_store_classes": None, "refusal": None}
+        if store_classes:
+            refusal = value["last_start_refusal"]
+            state.update(pending_store_classes=list(value["pending_store_classes"]),
+                         refusal=None if refusal is None else {
+                             "attempt_id": refusal["attempt_id"], "cause": refusal["cause"],
+                             "pending_store_classes": list(refusal["pending_store_classes"])})
+        return problem, state
+    except Exception:
+        return "readiness_shape_invalid", None
 
 
 async def wait_disposable_setup(websocket, *, clock=None, sleep=None, store_classes=True,
@@ -449,15 +490,14 @@ async def wait_disposable_setup(websocket, *, clock=None, sleep=None, store_clas
         except Exception as exc:  # CancelledError is not an Exception and propagates
             raise failure("readiness_timeout" if _timed_out(exc) else "readiness_transport_error") from exc
         last["readiness_reads"] = attempt + 1
-        problem = readiness_problem(value, store_classes=store_classes)
+        problem, state = decode_readiness(value, store_classes=store_classes)
         if problem:
             raise failure(problem)
-        if store_classes:
-            last["pending_store_classes"] = list(value["pending_store_classes"])
-        last["core_running"] = value["core_running"]
+        last["pending_store_classes"] = state["pending_store_classes"]
+        last["core_running"] = state["core_running"]
         if clock() > deadline:
             break
-        if value["core_running"] and not value["storage_pending"]:
+        if state["core_running"] and not state["storage_pending"]:
             return {"result": "PASS", "readiness_reads": attempt + 1}
         remaining = deadline - clock()
         if remaining <= 0 or attempt == 40:
@@ -469,38 +509,69 @@ async def wait_disposable_setup(websocket, *, clock=None, sleep=None, store_clas
 async def start_interval(websocket, kind, *, window=None, window_index=None):
     """Open one observer interval or raise the fixed setup diagnostic (HAMCP-180).
 
-    A failed start is attributed by one bounded ``/ready`` read-back of the
-    observer's recorded refusal cause and classes. Nothing is retried.
+    Each start carries a fresh test-owned ``attempt_id``. A failed start is
+    attributed by one bounded ``/ready`` read-back, and only an observer refusal
+    recorded for that same attempt may name the cause. Nothing is retried.
     """
+    import uuid
+    attempt_id = uuid.uuid4().hex
+    try:
+        value = await websocket.command({"type": "alarmo_interval_observer/start", "kind": kind,
+                                         "attempt_id": attempt_id})
+    except Exception as exc:  # CancelledError is not an Exception and propagates
+        raise await _start_failure(websocket, exc, attempt_id, window=window, window_index=window_index) from exc
+    interval_id = _start_response(value)
+    if interval_id is None:
+        raise setup_failure("start_response_invalid", "start", window=window, window_index=window_index)
+    return interval_id
+
+
+def _start_response(value):
+    """The interval identifier from a ``/start`` result, or ``None``; never raises."""
     import re
     try:
-        value = await websocket.command({"type": "alarmo_interval_observer/start", "kind": kind})
-    except Exception as exc:  # CancelledError is not an Exception and propagates
-        raise await _start_failure(websocket, exc, window=window, window_index=window_index) from exc
-    if (type(value) is not dict or set(value) != {"model", "interval_id"} or value["model"] != OBSERVER_MODEL
-            or type(value["interval_id"]) is not str or not re.fullmatch(r"[0-9a-f]{32}", value["interval_id"])):
-        raise setup_failure("start_response_invalid", "start", window=window, window_index=window_index)
-    return value["interval_id"]
+        if (type(value) is dict and set(value) == {"model", "interval_id"} and value["model"] == OBSERVER_MODEL
+                and type(value["interval_id"]) is str and re.fullmatch(r"[0-9a-f]{32}", value["interval_id"])):
+            return value["interval_id"]
+    except Exception:
+        pass
+    return None
 
 
-async def _start_failure(websocket, error, *, window=None, window_index=None):
+async def _start_failure(websocket, error, attempt_id, *, window=None, window_index=None):
+    """The structured failure for one failed ``/start`` (HAMCP-180).
+
+    The current failure (``start_timeout`` or ``start_transport_error``) stays
+    the cause unless the read-back is well formed and its retained refusal
+    carries this attempt's identifier. A malformed or unavailable read-back, or
+    a refusal from another attempt, never replaces it; ``start_recovery`` says
+    which case applied.
+    """
     import asyncio
-    state = {"cause": "start_timeout" if _timed_out(error) else "start_transport_error",
-             "readiness_reads": 0, "core_running": None, "pending_store_classes": None}
+    cause = "start_timeout" if _timed_out(error) else "start_transport_error"
+    state = {"readiness_reads": 0, "core_running": None, "pending_store_classes": None,
+             "start_recovery": "recovery_unavailable"}
     try:
         async with asyncio.timeout(10):
             value = await websocket.command({"type": "alarmo_interval_observer/ready"})
     except Exception:  # CancelledError is not an Exception and propagates
-        value = None
+        pass
     else:
         state["readiness_reads"] = 1
-    # A well-formed read-back with broken hooks still carries the refusal cause.
-    if value is not None and readiness_problem(value) in (None, "readiness_hooks_not_intact"):
-        state.update(core_running=value["core_running"], pending_store_classes=list(value["pending_store_classes"]))
-        refusal = value["last_start_refusal"]
-        if refusal is not None:
-            state.update(cause=refusal["cause"], pending_store_classes=list(refusal["pending_store_classes"]))
-    return setup_failure(state.pop("cause"), "start", window=window, window_index=window_index, **state)
+        _problem, ready = decode_readiness(value)
+        if ready is None:
+            state["start_recovery"] = "ready_recovery_malformed"
+        else:
+            state.update(core_running=ready["core_running"], pending_store_classes=ready["pending_store_classes"])
+            refusal = ready["refusal"]
+            if refusal is None:
+                state["start_recovery"] = "no_refusal"
+            elif refusal["attempt_id"] == attempt_id:
+                cause = refusal["cause"]
+                state.update(pending_store_classes=refusal["pending_store_classes"], start_recovery="current_refusal")
+            else:
+                state["start_recovery"] = "stale_refusal_ignored"
+    return setup_failure(cause, "start", window=window, window_index=window_index, **state)
 
 
 async def close_disposable_authority(runtime):

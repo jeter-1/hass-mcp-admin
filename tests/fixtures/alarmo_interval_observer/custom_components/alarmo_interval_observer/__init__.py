@@ -15,7 +15,8 @@ sees. Only the two stores whose background bookkeeping intervals already
 tolerate are excluded. Unnamed stores are reported by a class from a fixed
 vocabulary (a known integration domain, a known ``core.<name>``, ``core`` or
 ``unclassified``), never the full key, an identifier suffix, a path or contents.
-A refused ``/start`` names one fixed cause and keeps it for ``/ready``.
+A refused ``/start`` names one fixed cause and keeps it for ``/ready`` with
+the client's ``attempt_id``, so the client attributes only its own attempt.
 """
 
 import asyncio
@@ -23,6 +24,7 @@ from contextvars import ContextVar
 from functools import wraps
 import hashlib
 from pathlib import Path
+import re
 from threading import Lock
 import time
 from uuid import uuid4
@@ -66,6 +68,8 @@ STORE_CLASSES = frozenset({"unclassified", "core", *STORE_KEYS, *("core." + name
 # Each refused /start names exactly one of these; no interval opens.
 START_REFUSALS = ("setup_not_settled_late_start", "core_not_running", "hooks_not_intact",
                   "store_hash_unavailable", "interval_unavailable", "start_internal_error")
+# A client-generated identifier for one /start attempt; random, never derived from Core.
+ATTEMPT_ID = r"[0-9a-f]{32}"
 REQUEST = ContextVar("alarmo_observer_request", default=None)
 
 
@@ -111,7 +115,7 @@ class Ledger:
         # Every Store seen, keyed by identity; weak so retired Stores drop out.
         self.stores = weakref.WeakValueDictionary()
         self.last_activity = None
-        # The most recent /start refusal, cleared by a started interval.
+        # The most recent /start refusal with its attempt, cleared by a started interval.
         self.last_start_refusal = None
 
     def track(self, store):
@@ -153,8 +157,10 @@ class Ledger:
     def pending_setup_storage(self):
         return bool(self.pending_store_classes())
 
-    def refuse_start(self, cause, classes):
-        refusal = {"cause": cause if cause in START_REFUSALS else "start_internal_error",
+    def refuse_start(self, cause, classes, attempt_id):
+        refusal = {"attempt_id": attempt_id if type(attempt_id) is str and re.fullmatch(ATTEMPT_ID, attempt_id)
+                   else "0" * 32,
+                   "cause": cause if cause in START_REFUSALS else "start_internal_error",
                    "pending_store_classes": list(classes)[:MAX_STORE_CLASSES]}
         with self.lock:
             self.last_start_refusal = refusal
@@ -299,12 +305,14 @@ async def async_setup(hass, config):
         })
 
     @websocket_api.websocket_command({vol.Required("type"): DOMAIN + "/start",
-                                     vol.Required("kind"): vol.In(["inspection", "control"])})
+                                     vol.Required("kind"): vol.In(["inspection", "control"]),
+                                     vol.Required("attempt_id"): vol.Match("^" + ATTEMPT_ID + r"\Z")})
     @websocket_api.require_admin
     @websocket_api.async_response
     async def start(_hass, connection, message):
         # Every refusal is one fixed cause, sent as the error code and kept for
-        # /ready with the classes pending at that moment (HAMCP-180).
+        # /ready with the classes pending at that moment and this request's
+        # attempt_id (HAMCP-180).
         classes = []
         try:
             deadline = time.monotonic() + 20
@@ -331,7 +339,7 @@ async def async_setup(hass, config):
         else:
             connection.send_result(message["id"], {"model": MODEL, "interval_id": identity})
             return
-        refused = ledger.refuse_start(cause, classes)
+        refused = ledger.refuse_start(cause, classes, message.get("attempt_id"))
         connection.send_error(message["id"], refused["cause"], "Observer refused interval")
 
     @websocket_api.websocket_command({vol.Required("type"): DOMAIN + "/finish",
