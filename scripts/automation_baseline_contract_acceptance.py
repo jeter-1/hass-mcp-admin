@@ -74,9 +74,10 @@ def verify_result(result, *, core_version, support_slot):
             raise ComparisonProofError(key, status, record)
     assert report.counts == result['comparison_counts']
     assert len(result['observations']) == 2
-    for observation in result['observations']:
+    for index, observation in enumerate(result['observations'], start=1):
         verify_interval(observation, observation['interval_id'],
-            EXPECTED_COMMANDS, kind='control', core_version=core_version)
+            EXPECTED_COMMANDS, kind='control', core_version=core_version,
+            window='baseline_export', window_index=index)
     return {'result': 'PASS', 'records_before': len(values[0]['records']),
             'records_after': len(values[1]['records']), 'comparison_counts': report.counts,
             'continuation_reads': 0, 'fixture_cleanup': True}
@@ -97,14 +98,36 @@ async def run_disposable(configured, *, expected_image, core_version):
         exc.contract_diagnostic = {"baseline_source_lines": lines[:12]}
         if isinstance(exc, ComparisonProofError):
             exc.contract_diagnostic["comparison_failure"] = exc.diagnostic
+        from alarmo_inspection_contract_acceptance import ObservationError
+        if isinstance(exc, ObservationError):
+            # HAMCP-180: which interval or settle condition failed, bounded tokens only.
+            exc.contract_diagnostic["observation_failure"] = exc.diagnostic
         raise
+
+
+def retain_failed_result(receipt_path, result, failure):
+    """Keep sanitized synthetic exports beside the failed proof in the Alarmo result.
+
+    The retained result is parsed through the shared strict loader (HAMCP-180),
+    so a repeated key refuses before anything is rewritten.
+    """
+    from alarmo_inspection_contract_acceptance import ObservationError
+    from entity_metadata_contract_acceptance import load_receipt
+    retained = load_receipt(Path(receipt_path).read_bytes())
+    failed = {**result, 'result': 'FAIL'}
+    if isinstance(failure, ObservationError):
+        failed['observation_failure'] = failure.diagnostic
+    retained['automation_baseline'] = failed
+    Path(receipt_path).write_text(json.dumps(retained, sort_keys=True, indent=2) + '\n')
 
 
 async def _run_disposable(configured, *, expected_image, core_version):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from core_registry_contract_lane import lane_entry, probe_profile_for
     from prepare_core_release_registry import prepare_candidate, sign_candidate
-    from alarmo_inspection_contract_acceptance import slot_binding, wait_disposable_setup, close_disposable_authority
+    from alarmo_inspection_contract_acceptance import (slot_binding, wait_disposable_setup, start_interval,
+        close_disposable_authority)
+    from entity_metadata_contract_acceptance import load_receipt
     from ha_mcp_engineering.clients import HomeAssistantWebSocketClient
     from ha_mcp_engineering.clients.audit_baseline import BaselineReadClient
     from ha_mcp_engineering.audit_baseline.capture_provider import BaselineCaptureProvider
@@ -126,7 +149,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
             or entry['image_index_digest'] != binding['image_index_digest']):
         raise ValueError('Exact owned disposable baseline lane required')
     probe_profile = probe_profile_for(core_version)
-    image = json.loads(Path(os.environ['REAL_HA_ALARMO_IMAGE_RESULT']).read_text())
+    image = load_receipt(Path(os.environ['REAL_HA_ALARMO_IMAGE_RESULT']).read_bytes())
     assert (image['result']=='PASS' and image['index']==entry['image_index_digest']
             and image['core_version']==core_version and image['support_slot']==binding['slot'])
     refs = [{k:p.to_mapping()[k] for k in ('capability_id','profile_id','profile_version','adapter_id','contract_fingerprint')}
@@ -174,8 +197,8 @@ async def _run_disposable(configured, *, expected_image, core_version):
             finally:
                 end_request(token)
                 if commits: assert runtime.finish(commits)
-        async def export(runtime,capture):
-            start=await websocket.command({'type':'alarmo_interval_observer/start','kind':'control'})
+        async def export(runtime,capture,index):
+            interval=await start_interval(websocket,'control',window='baseline_export',window_index=index)
             first, reads,_=await request(runtime,capture,{'limit':17})
             assert first['success'], 'Baseline public call refused'
             page=first['data'];baseline={**page['baseline_header'],'records':list(page['records'])}
@@ -186,7 +209,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
                 assert page['artifact_sha256']==artifact and page['pagination']['offset']==len(baseline['records'])
                 assert page['baseline_header']=={k:v for k,v in baseline.items() if k!='records'}
                 baseline['records'].extend(page['records'])
-            observed=await websocket.command({'type':'alarmo_interval_observer/finish','interval_id':start['interval_id']})
+            observed=await websocket.command({'type':'alarmo_interval_observer/finish','interval_id':interval})
             assert c.digest(baseline)==artifact and continuation_reads==0
             assert reads==len(baseline['records'])+11
             assert baseline['installation']['status']=='established'
@@ -205,15 +228,15 @@ async def _run_disposable(configured, *, expected_image, core_version):
             nonadmin=replace(configured, ha_token=seed.pop('nonadmin_token'))
             refused,_,_=await request(runtime,service(runtime,nonadmin),{})
             assert not refused['success'] and refused['details']['reason']=='access_denied'
-            await wait_disposable_setup(websocket)
+            await wait_disposable_setup(websocket,window='baseline_export',window_index=1)
             capture=service(runtime)
-            before,before_hash,obs1=await export(runtime,capture)
+            before,before_hash,obs1=await export(runtime,capture,1)
             native={r['configuration_id']:r for r in before['records'] if r['configuration_id'].startswith(PREFIX)}
             assert len(native)==122 and native[PREFIX+'000']['enabled_state']['state']=='off'
             assert native[PREFIX+'unknown']['configuration']['status']=='unreadable'
             assert before['inventory']['completeness']=='complete'
-            await fixture('change'); await wait_disposable_setup(websocket)
-            after,after_hash,obs2=await export(runtime,capture)
+            await fixture('change'); await wait_disposable_setup(websocket,window='baseline_export',window_index=2)
+            after,after_hash,obs2=await export(runtime,capture,2)
             # Run the unchanged public CLI, not a test-only comparison function.
             a,b=Path(directory)/'before.json',Path(directory)/'after.json'
             a.write_bytes(c.canonical(before));b.write_bytes(c.canonical(after))
@@ -222,11 +245,11 @@ async def _run_disposable(configured, *, expected_image, core_version):
                 [sys.executable,'-B',str(ROOT/'scripts/compare_automation_baselines.py'),str(a),str(b)],
                 capture_output=True,timeout=30,check=True)
             compared=json.loads(process.stdout)
-            await fixture('restore');await wait_disposable_setup(websocket)
+            await fixture('restore');await wait_disposable_setup(websocket,window='baseline_restore')
             restored,_,_=await request(runtime,service(runtime),{'limit':1})
             assert restored['success']
             assert restored['data']['baseline_header']['installation']['installation_id'] == before['installation']['installation_id']
-            await fixture('recreate');await wait_disposable_setup(websocket)
+            await fixture('recreate');await wait_disposable_setup(websocket,window='baseline_recreate')
             recreated,_,_=await request(runtime,service(runtime),{'limit':1})
             assert recreated['success']
             assert recreated['data']['baseline_header']['installation']['installation_id'] != before['installation']['installation_id']
@@ -249,13 +272,10 @@ async def _run_disposable(configured, *, expected_image, core_version):
         result['fixture_cleanup']=True
         try:
             summary=verify_result(result, core_version=core_version, support_slot=binding['slot'])
-        except Exception:
+        except Exception as failure:
             # Retain sanitized synthetic exports even when their final proof
             # fails; outer CI cleanup must continue to reject this receipt.
-            receipt_path = Path(os.environ['REAL_HA_ALARMO_RESULT'])
-            retained = json.loads(receipt_path.read_text())
-            retained['automation_baseline'] = {**result, 'result': 'FAIL'}
-            receipt_path.write_text(json.dumps(retained, sort_keys=True, indent=2) + '\n')
+            retain_failed_result(os.environ['REAL_HA_ALARMO_RESULT'], result, failure)
             raise
         print('Native automation baseline disposable contract: '+json.dumps(summary,sort_keys=True))
         return result

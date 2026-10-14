@@ -368,7 +368,7 @@ async def scenario(lane, core_url):
         class ObserverSetup:
             async def command(self, value):
                 return await ws.command(dict(value, type=value["type"].replace("alarmo_interval_observer/", OBSERVER + "/")))
-        async with asyncio.timeout(210): await wait_disposable_setup(ObserverSetup())
+        async with asyncio.timeout(210): await wait_disposable_setup(ObserverSetup(), store_classes=False)
         receipts = []
 
         async def call(name, arguments, expected, native_reads=0, upstream_read=0):

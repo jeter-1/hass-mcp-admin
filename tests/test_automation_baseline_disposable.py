@@ -96,6 +96,65 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises((AssertionError, ValueError, KeyError)):
                 lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
 
+    async def test_failed_control_window_names_its_index_and_condition(self):
+        # HAMCP-180: publish run 434's signature in the second baseline window.
+        event = {'kind': 'storage_delay_save', 'origin': 'background', 'store': 'other',
+                 'store_class': 'core'}
+        for index in (1, 2):
+            value = copy.deepcopy(self.value)
+            value['observations'][index - 1]['events'].append(event)
+            with self.subTest(index=index), self.assertRaises(alarmo.ObservationError) as found:
+                lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
+            diagnostic = found.exception.diagnostic
+            self.assertEqual((diagnostic['condition'], diagnostic['window'], diagnostic['window_index']),
+                             ('untolerated_store', 'baseline_export', index))
+            self.assertEqual(diagnostic['event'], event)
+        failure = alarmo.ObservationError('Disposable Core interval failed verification', diagnostic)
+        with patch.object(lane, '_run_disposable', side_effect=failure), \
+                self.assertRaises(alarmo.ObservationError) as found:
+            await lane.run_disposable(None, expected_image=None, core_version=CORE)
+        self.assertEqual(found.exception.contract_missing_key, 'automation_baseline')
+        self.assertEqual(found.exception.contract_diagnostic['observation_failure'], diagnostic)
+        self.assertTrue(found.exception.contract_diagnostic['baseline_source_lines'])
+        with patch.object(lane, '_run_disposable', side_effect=AssertionError('x')), \
+                self.assertRaises(AssertionError) as found:
+            await lane.run_disposable(None, expected_image=None, core_version=CORE)
+        self.assertNotIn('observation_failure', found.exception.contract_diagnostic)
+
+    async def test_setup_failures_reach_the_baseline_lane_diagnostic(self):
+        # HAMCP-180 R1: a failed settle or start before any result still names its cause.
+        for cause, phase, window, index in (
+                ('setup_not_settled_late_start', 'start', 'baseline_export', 2),
+                ('readiness_timeout', 'readiness', 'baseline_restore', None),
+                ('store_class_list_malformed', 'readiness', 'baseline_export', 1)):
+            failure = alarmo.setup_failure(cause, phase, window=window, window_index=index, readiness_reads=1,
+                                           core_running=True, pending_store_classes=['lovelace'])
+            with self.subTest(cause=cause), patch.object(lane, '_run_disposable', side_effect=failure), \
+                    self.assertRaises(alarmo.ObservationError) as found:
+                await lane.run_disposable(None, expected_image=None, core_version=CORE)
+            observed = found.exception.contract_diagnostic['observation_failure']
+            self.assertEqual(observed, failure.diagnostic)
+            self.assertEqual((observed['cause'], observed['window'], observed['window_index']), (cause, window, index))
+            self.assertTrue(found.exception.contract_diagnostic['baseline_source_lines'])
+
+    async def test_retained_failure_never_echoes_an_identifier_shaped_class(self):
+        # HAMCP-180 R2: a hostile class from the observer is ``invalid`` in the retained receipt.
+        import entity_metadata_contract_acceptance as entity
+        identifier = 'abcdef0123456789' * 2
+        value = copy.deepcopy(self.value)
+        value['observations'][0]['events'].append({'kind': 'storage_write', 'origin': 'background',
+                                                   'store': 'other', 'store_class': identifier})
+        with self.assertRaises(alarmo.ObservationError) as found:
+            lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
+        self.assertEqual(found.exception.diagnostic['event']['store_class'], 'invalid')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'alarmo.json'
+            path.write_text(json.dumps({'result': 'PASS', 'automation_baseline': None}))
+            lane.retain_failed_result(path, {'result': 'PASS', 'observations': []}, found.exception)
+            retained = entity.load_receipt(path.read_bytes())
+        self.assertEqual(retained['automation_baseline']['observation_failure'], found.exception.diagnostic)
+        self.assertNotIn(identifier, json.dumps(retained))
+
     async def test_command_service_storage_and_coverage_fail_closed(self):
         for mutate in (
             lambda v: v['observations'][0]['events'].append({'kind':'service','origin':'command'}),
@@ -237,6 +296,55 @@ class FailureDiagnosticTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(diagnostic["baseline_source_lines"])
         self.assertTrue(all(type(line) is int for line in diagnostic["baseline_source_lines"]))
         self.assertNotIn(private, json.dumps(diagnostic))
+
+    def test_retained_failure_carries_the_diagnostic_and_refuses_repeated_keys(self):
+        import entity_metadata_contract_acceptance as entity
+        result = {'result': 'PASS', 'observations': []}
+        failure = alarmo.ObservationError('Disposable Core interval failed verification',
+                                          {'condition': 'untolerated_store', 'window_index': 1})
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'alarmo.json'
+            for raised, expected in ((failure, {**result, 'result': 'FAIL', 'observation_failure': failure.diagnostic}),
+                                     (AssertionError('x'), {**result, 'result': 'FAIL'})):
+                path.write_text(json.dumps({'result': 'PASS', 'automation_baseline': None}))
+                lane.retain_failed_result(path, result, raised)
+                retained = entity.load_receipt(path.read_bytes())
+                self.assertEqual(retained, {'result': 'PASS', 'automation_baseline': expected})
+                self.assertEqual(path.read_text(), json.dumps(retained, sort_keys=True, indent=2) + '\n')
+            for raw in (b'{"result": "FAIL", "result": "PASS"}', b'{"a": [{"b": 1, "b": 2}]}'):
+                path.write_bytes(raw)
+                with self.subTest(raw=raw), self.assertRaisesRegex(ValueError, entity.DUPLICATE_KEY):
+                    lane.retain_failed_result(path, result, failure)
+                self.assertEqual(path.read_bytes(), raw)
+            # Mutation: ordinary decoding silently rewrites the probe as a single PASS.
+            with patch.object(entity, 'load_receipt', json.loads):
+                lane.retain_failed_result(path, result, failure)
+            self.assertNotEqual(path.read_bytes(), raw)
+
+    async def test_image_receipt_with_a_repeated_key_refuses_before_any_core_client(self):
+        import entity_metadata_contract_acceptance as entity
+        from alarmo_inspection_contract_acceptance import slot_binding
+        import ha_mcp_engineering.tools.audit_baseline  # noqa: F401 - its import builds a module client
+        binding = slot_binding(CORE)
+        local = SimpleNamespace(ha_url='http://127.0.0.1:8123')
+        unique = json.dumps({'result': 'PASS', 'index': binding['image_index_digest'],
+                             'core_version': CORE, 'support_slot': CORE_SLOT})
+        with tempfile.TemporaryDirectory() as directory:
+            image = Path(directory) / 'image.json'
+            environ = {**os.environ, 'HA_CONTRACT_LANE': binding['lane'], 'REAL_HA_ALARMO_IMAGE_RESULT': str(image)}
+            for raw, error in ((unique[:-1] + ', "result": "PASS"}', ValueError),
+                               (unique[:-1] + ', "result": "FAIL"}', ValueError), (unique, RuntimeError)):
+                image.write_text(raw)
+                with self.subTest(raw=raw), patch.dict(os.environ, environ, clear=True), patch(
+                        'ha_mcp_engineering.clients.HomeAssistantWebSocketClient',
+                        side_effect=RuntimeError('boundary')) as client:
+                    with self.assertRaises(error) as found:
+                        await lane._run_disposable(local, expected_image=binding['image'], core_version=CORE)
+                    if error is ValueError:
+                        self.assertEqual(found.exception.reason_code, entity.DUPLICATE_KEY)
+                        client.assert_not_called()
+                    else:
+                        client.assert_called_once_with(local)
 
 
     async def test_lane_refuses_unknown_core_wrong_lane_image_or_remote_host_before_reads(self):
