@@ -64,11 +64,13 @@ def _provider_failure_projection(
         failure_kind, "unclassified_provider_failure"
     )
     codes = [diagnostic]
-    codes.append(
-        "provider_confirmed_no_mutation"
-        if dispatch_confirmed_absent
-        else "readback_only_recovery"
-    )
+    if dispatch_confirmed_absent:
+        # The provider proved the setter tools/call was never sent (admission
+        # or Core refusal before the call). The F3 phase stays post-intent;
+        # this records that no setter request and no change occurred.
+        codes.extend(("setter_call_not_sent", "provider_confirmed_no_mutation"))
+    else:
+        codes.append("readback_only_recovery")
     codes.append("fallback_none")
     upstream_code: str | None = None
     candidate_code = details.get("upstream_error_code")

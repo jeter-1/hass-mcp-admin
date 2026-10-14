@@ -669,6 +669,34 @@ class GovernanceError(EngineeringServerError):
         super().__init__(message, details=details)
 
 
+# Dashboard-provider failure categories meaning the exact reviewed provider was
+# not admitted (contract, release identity or attestation), raised before any
+# upstream tools/call. A same-input retry cannot succeed until the provider
+# changes. Signed-registry availability categories keep their own mapping.
+DASHBOARD_ADMISSION_REFUSAL_CATEGORIES = frozenset({
+    "annotation_mismatch",
+    "input_schema_mismatch",
+    "output_contract_mismatch",
+    "required_tool_missing",
+    "reviewed_annotation_mismatch",
+    "reviewed_contract_mismatch",
+    "runtime_descriptor_semantic_drift",
+    "schema_incompatible",
+    "security_contract_mismatch",
+    "server_identity_mismatch",
+    "unsupported_protocol_version",
+    "unsupported_trust_profile",
+    "upstream_attestation_missing",
+    "upstream_attestation_revoked",
+    "upstream_contract_family_unknown",
+    "upstream_input_contract_mismatch",
+    "upstream_output_contract_mismatch",
+    "upstream_runtime_contract_mismatch",
+    "upstream_security_contract_mismatch",
+    "upstream_version_mismatch",
+})
+
+
 class DashboardProviderError(EngineeringServerError):
     """Safe dashboard-provider error with a stable public code."""
 

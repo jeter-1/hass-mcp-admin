@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..providers.upstream_dashboard import UpstreamDashboardProvider
-from .errors import RawEvidenceError
+from .errors import ProviderAuthorityUnavailableError, RawEvidenceError
 from .identity import (
     build_operational_identity,
     provider_authority_from_mapping,
@@ -40,11 +40,13 @@ class DashboardExecutionGateway:
         metadata = configuration.metadata
         inventory_authority_value = inventory.provider_authority
         configuration_authority_value = configuration.provider_authority
-        if (
-            not isinstance(inventory_authority_value, dict)
-            or not isinstance(configuration_authority_value, dict)
-            or inventory_authority_value != configuration_authority_value
+        if not isinstance(inventory_authority_value, dict) or not isinstance(
+            configuration_authority_value, dict
         ):
+            raise ProviderAuthorityUnavailableError(
+                "Dashboard getter and setter authority is unavailable or changed"
+            )
+        if inventory_authority_value != configuration_authority_value:
             raise RawEvidenceError(
                 "Dashboard getter and setter authority is unavailable or changed"
             )

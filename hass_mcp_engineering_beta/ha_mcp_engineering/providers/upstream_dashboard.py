@@ -41,7 +41,7 @@ from ..upstream_tool_policy import (
     runtime_contract_fingerprint,
     runtime_contract_mismatch_fields,
     runtime_policy_state_fingerprint_projection,
-    validate_reviewed_release_catalog,
+    validate_reviewed_release_dependencies,
 )
 from .upstream_contracts import (
     COMPILED_CONTRACT_FAMILIES,
@@ -91,6 +91,15 @@ REVIEWED_SAFETY_ANNOTATIONS = {
     "openWorldHint": False,
 }
 ALLOWED_UPSTREAM_TOOLS = frozenset({REQUIRED_DASHBOARD_TOOL})
+# The only upstream tools the governed write path ever names: the getter for
+# preread and readback, the strict-BPS guide, and the fixed setter. Write
+# authority is admitted against exactly these; other advertised tools are
+# neither inspected for that admission nor reachable from it.
+DASHBOARD_WRITE_DEPENDENCIES = (
+    REQUIRED_DASHBOARD_TOOL,
+    REQUIRED_BEST_PRACTICES_TOOL,
+    REQUIRED_DASHBOARD_WRITE_TOOL,
+)
 PROHIBITED_UPSTREAM_TOOLS = frozenset(
     {
         "ha_config_set_dashboard",
@@ -702,7 +711,7 @@ class UpstreamDashboardProvider:
         *,
         expected_provider_authority_evidence_hash: str | None = None,
     ) -> None:
-        """Require the complete exact catalog and two fixed write-path tools."""
+        """Require exact read admission and every write-path dependency."""
 
         self._validate_handshake(handshake)
         authority = self._dashboard_provider_authority(handshake)
@@ -715,31 +724,39 @@ class UpstreamDashboardProvider:
     def _dashboard_provider_authority(
         self, handshake: McpDashboardHandshake
     ) -> dict[str, Any]:
-        """Return exact binary-owned provider authority for this catalog."""
+        """Return exact binary-owned provider authority for this catalog.
+
+        Admission covers DASHBOARD_WRITE_DEPENDENCIES, each against every
+        reviewed contract component of the exact release. The authority's
+        catalog fingerprint names that reviewed release, not the observed
+        catalog, so unrelated advertised tools neither grant nor change it.
+        """
 
         release = load_reviewed_upstream_release_registry().by_version.get(
             handshake.server_version
         )
         if (
             release is None
+            or release.provider_disposition("dashboard") != "admitted"
             or release.dashboard_attestation_status != "reviewed"
             or not release.dashboard_attestation_entry_id
             or not release.dashboard_attestation_fingerprint
             or not release.dashboard_compiled_constraints_fingerprint
         ):
             raise DashboardTransportError("upstream_version_mismatch")
-        validation = validate_reviewed_release_catalog(
+        admitted = validate_reviewed_release_dependencies(
             release,
             observed_server_name=handshake.server_name,
             observed_upstream_version=handshake.server_version,
             observed_protocol_version=handshake.protocol_version,
             tools=handshake.tools,
+            required_tools=DASHBOARD_WRITE_DEPENDENCIES,
         )
         contracts = release.tool_contracts_by_name
         getter = contracts.get(REQUIRED_DASHBOARD_TOOL)
         setter = contracts.get(REQUIRED_DASHBOARD_WRITE_TOOL)
         if (
-            not validation.valid
+            not admitted
             or getter is None
             or setter is None
             or setter.policy_classification != "persistent_write"
@@ -990,13 +1007,16 @@ class UpstreamDashboardProvider:
             raise
         except DashboardTransportError as exc:
             category = _normalized_category(exc.category)
-            self._record_failure(category, dispatched=setter_admitted)
+            # Core authority is committed after admission and immediately
+            # before the setter call; its refusal proves the call was not sent.
+            dispatched = setter_admitted and exc.tool_call_attempted
+            self._record_failure(category, dispatched=dispatched)
             METRICS.record_provider_result(
-                PROVIDER_ID, "failed", dispatched=setter_admitted
+                PROVIDER_ID, "failed", dispatched=dispatched
             )
             self._raise(
                 category,
-                dispatched=setter_admitted,
+                dispatched=dispatched,
                 details=exc.evidence_details(),
             )
         finally:
