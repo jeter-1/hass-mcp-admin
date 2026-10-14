@@ -40,13 +40,26 @@ revision applies them:
 
 | Finding | Correction | Where |
 | --- | --- | --- |
-| D1 (M1 residual) | A confirmed failure with a received response is a **dispatched attempt** and does not by itself prove no mutation. (r) is split. `sent_rejected_no_mutation` requires one of three named, provider-specific proofs (P1–P3, configuration and entity metadata only). Every other confirmed failure with a response is `sent_failed_mutation_unproven` and never claims no change. That includes backup, reload, add-on restart, Core restart and helper state. The dashboard structured rejection stays a readback (sent) path. | §0, §1.3, §2.1–§2.3, §5.1, §5.2 |
+| D1 (M1 residual) | A confirmed failure with a received response is a **dispatched attempt** and does not by itself prove no mutation. (r) is split. `sent_rejected_no_mutation` requires one of three named, provider-specific proofs (P1–P3, configuration and entity metadata only; P2 withdrawn in revision 4). Every other confirmed failure with a response is `sent_failed_mutation_unproven` and never claims no change. That includes backup, reload, add-on restart, Core restart and helper state. The dashboard structured rejection stays a readback (sent) path. | §0, §1.3, §2.1–§2.3, §5.1, §5.2 |
 | D2 (M1/M2) | There is one (b) predicate. The required proof code is `setter_call_not_sent` (dashboard) or `provider_call_not_sent`; `provider_confirmed_no_mutation` and the stage reasons are optional. A new cross-reference table lists, for each producer: case, required proof code, and the emitting file:line. | §2.1, §2.2, §5.2, §5.3 |
 | D3 (M3) | The executor callback order is corrected. Under OD-6 (ii), the intent time is never described or published as a dispatch time. No new non-null `dispatched_at` value exists. The two companion times are named for what they are. | §1.5, §2.4.2, §2.4.3, §3, §6 |
 | D4 (L2) | The parent counter keeps the #253 `attempt_counts_basis` values. Parent aggregation gets its own separate qualifier, `attempt_count_scope`. §2.4.3 lists exactly which existing values stay unchanged and which change. | §2.4.1, §2.4.3 |
-| D5 (L2b) | One parent aggregation rule (a truth table) is used everywhere. A proven positive change wins. Otherwise uncertainty dominates every no-dispatch, no-change or already-present claim. | §2.1, §2.4.1, §5 |
+| D5 (L2b) | One parent aggregation rule (a truth table) is used everywhere. A proven positive change wins. Otherwise uncertainty dominates every no-dispatch, no-change or already-present claim. (Positive-wins superseded in revision 4 by full uncertainty dominance.) | §2.1, §2.4.1, §5 |
 | Audit label | The PR1 backup/lifecycle (and helper-state) gateway audit-label limitation is accepted per the reviewer. | §5.1 |
 | §8 | The architect/reviewer-aligned positions for OD-6, OD-7 and OD-14 are recorded, each **pending Josh's confirmation**. | §8 |
+
+**Revision 4 (corrections after the focused revision-3 review).** The Codex
+review of head `f5b6766` found items 2, 3, 6, 7 and 8 resolved, with one
+Medium and three Low findings (no Critical/High). Revision 3's D1 statement
+"P1–P3" and its D5 rule "a proven positive change wins" are **superseded**
+by this revision:
+
+| Finding | Correction | Where |
+| --- | --- | --- |
+| R3-1 (Medium) | **P2 is removed** (architect decision, pending Josh's confirmation). Codex reproduced, offline on both supported Core revisions (2026.10.0 and 2026.10.1), a registry change followed by an `unknown_error` result, so an entity-registry error result does not prove non-mutation. Every entity-registry error result other than the P3 `unauthorized`/`forbidden` result is now (r-unproven): "dispatched; failed; mutation not proven absent", with `changed_by_engineering:null`. Readback remains the way to learn the actual state. P1 and P3 are the **complete** set of non-mutation proofs. Any future proof requires a reproduced pre-mutation guarantee on every supported Core revision. The Codex probe becomes a required PR2 regression test. The unchanged runtime classification is disclosed (§7 item 11) and left to a new owner decision (OD-15). | §0, §1.3, §2.1–§2.3, §3, §4.3, §5–§8 |
+| R3-2 (Low) | One status preservation rule (§2.4.3 item 4) states exactly which `status` values are kept. Every other section refers to it. | §2.1, §2.2, §2.4.3, §6, §8 |
+| R3-3 (Low) | Parent aggregation now uses uncertainty dominance: an uncertain child outranks a verified positive. An aggregate (a) requires every child to be (a). Every restatement now refers to the single truth table in §2.1. | §2.1, §2.4.1, §2.4.3, §5 |
+| R3-4 (Low) | P1 is limited to the automation/script REST routes (`input_boolean`/`input_number` updates use WebSocket). The helper-state (`:765-769`), backup (`:801-805`) and lifecycle (`:839-843`) gateway audit anchors are corrected, including the swapped PR2 runtime row. | §1.3, §2.1, §2.3, §5.1, §6, §7 |
 
 ---
 
@@ -70,7 +83,7 @@ The goal is one truthful vocabulary covering four cases:
 | --- | --- | --- |
 | **(a)** already satisfied, no dispatch | Preflight proved the desired state was already present. No intent was saved and nothing was sent. | The F3 `VERIFIED_NO_DISPATCH` record class (no intent, `desired_state_already_reached`). |
 | **(b)** intent saved, proven never sent | The durable intent fence was committed, but local control flow proves the provider call was never sent. | The single (b) predicate (§2.1): a **positive** proof code (`setter_call_not_sent` or `provider_call_not_sent`) on the `dispatch_result_recorded` event, emitted by the code that owns the send boundary (§5.3). A remote signal, a missing response or an exception type is never enough. |
-| **(r)** sent, provider answered with a failure | The provider call was sent and the provider answered with a failure. **This is always a dispatched attempt.** It never claims no dispatch. | `dispatch_failed_confirmed` with `provider_response_received=true`. Two sub-cases: **(r-proven)** `sent_rejected_no_mutation` holds only with one of the named provider-specific non-mutation proofs P1–P3 (§2.1). **(r-unproven)** `sent_failed_mutation_unproven` covers every other case, e.g. backup `backup_failed` or lifecycle `operation_failed`: the attempt failed, but nothing proves the absence of a mutation, so it never claims no change. |
+| **(r)** sent, provider answered with a failure | The provider call was sent and the provider answered with a failure. **This is always a dispatched attempt.** It never claims no dispatch. | `dispatch_failed_confirmed` with `provider_response_received=true`. Two sub-cases: **(r-proven)** `sent_rejected_no_mutation` holds only with one of the two named provider-specific non-mutation proofs, P1 or P3 (§2.1). **(r-unproven)** `sent_failed_mutation_unproven` covers every other case, e.g. backup `backup_failed`, lifecycle `operation_failed` or an entity-registry error result: the attempt failed, but nothing proves the absence of a mutation, so it never claims no change. |
 | **(c)** intent saved, uncertain | The call may have been sent. | This is the default whenever neither (b) nor a received response is proven. A lost response is (c), not (r). |
 
 ---
@@ -120,8 +133,8 @@ Each row names the module that **owns the send boundary**, because only that
 module can prove the call was not sent. An exception type, a remote signal or
 a missing response is never proof. Rows marked **(r)** were sent and are
 dispatched attempts, so they never claim no dispatch. Only the b2-R row has a
-provider-specific non-mutation proof (P1–P3, §2.1). The rows **r-op** and
-**r-dash** are sent failures that have no such proof. Columns "Today emits"
+provider-specific non-mutation proof (P1 or P3, §2.1). The rows **r-reg**,
+**r-op** and **r-dash** are sent failures that have no such proof. Columns "Today emits"
 give the F3 outcome and diagnostic on `dispatch_result_recorded` and the
 gateway audit label. The emitted codes after the change are in §5.2.
 
@@ -130,7 +143,8 @@ gateway audit label. The emitted codes after the change are in §5.2.
 | b1 | Dashboard setter not sent (provider error with `upstream_dispatch_occurred is False`) | `R/clients/mcp.py` `McpDashboardTransport` (`:207`, `_run` `:322`). The Core gate at `:372-379` raises `connection_failed` with `tool_call_attempted=False` before `call_tool` at `:381-385`. The adapter projects it at `R/f3_dashboard/adapter.py:53` (`_provider_failure_projection`) and `:516-530`. | (b) | `dispatch_failed_confirmed` + `setter_call_not_sent` → task `failed_post_dispatch`. #253 adds the display fields `SETTER_NOT_SENT_FIELDS` on primary surfaces only (`R/f3_runtime/runtime.py:153-182`, `:2432-2455`, `:2824-2828`). Gateway audit: dashboard audited gateway `R/f3_runtime/runtime.py:600-623`. |
 | b2-L | Configuration/entity-metadata local refusal before the mutation is written | `R/governance/resources.py`: `:667` (`target_already_exists`) and `:692` (`target_entity_id_reserved`) fire before any write; `:759` (`closed_payload_violation`) is purely local; `:659` and `:681` fire after a failed preflight **read** (reads may have been sent, the write was not). `R/governance/entity_metadata.py:573` is a local closed-payload refusal. All raise `ConfigurationMutationNotDispatchedError` (`R/governance/resources.py:108-112`, `mutation_dispatched=False`) without `provider_response_received`. | (b) | `dispatch_failed_confirmed` + `provider_confirmed_no_mutation` (`R/f3_configuration/adapter.py:475-501`), with **no** positive pre-send proof code. Gateway audit `provider_response_received`, which is wrong: `_AuditedConfigurationGateway` (`R/f3_runtime/runtime.py:678`, write `:702-721`) treats `mutation_dispatched is False` as "response received". |
 | b2-A | Entity-metadata websocket authorization failure **before** the command frame is sent | `R/clients/websocket.py`: `auth_ok` missing at `:246-251`, and the 401/403 handshake at `:288-292`. Both raise `AuthorizationError` (`R/errors.py:632`) without `provider_response_received`; the command frame at `:252` was never written. Surfaced through `R/governance/entity_metadata.py:588`. | (b), only with a not-sent attribute set by `R/clients/websocket.py` | Same as b2-L: `provider_confirmed_no_mutation`, audit `provider_response_received` (wrong). |
-| b2-R | Sent, provider answered with a rejection | `R/governance/resources.py:890` (REST POST sent, 4xx received; proof P1); `R/governance/entity_metadata.py:588` when the command result was `unauthorized`/`forbidden` (`R/clients/websocket.py:262-269`, `provider_response_received=True`; proof P3); `R/governance/entity_metadata.py:605` (registry error result after send; proof P2). | **(r-proven)** | `dispatch_failed_confirmed` + `provider_rejected_mutation` (`R/f3_configuration/adapter.py:478-497`, code at `:494-496`). Gateway audit `provider_response_received` (correct). Task `failed_post_dispatch`. |
+| b2-R | Sent, provider answered with a rejection that has a named proof | `R/governance/resources.py:890` (automation/script REST POST sent, 4xx received; proof P1); `R/governance/entity_metadata.py:588` when the command result was `unauthorized`/`forbidden` (`R/clients/websocket.py:262-269`, `provider_response_received=True`; proof P3). | **(r-proven)** | `dispatch_failed_confirmed` + `provider_rejected_mutation` (`R/f3_configuration/adapter.py:478-497`, code at `:494-496`); P3 also carries `provider_permission_denied` (`R/f3_configuration/strategies.py:486-493`). Gateway audit `provider_response_received` (correct). Task `failed_post_dispatch`. |
+| r-reg | Entity-registry update answered with any other error result | `R/governance/entity_metadata.py:598-615` (`reason: entity_registry_update_rejected`). `R/clients/websocket.py:270-277` keeps `provider_response_received=True` but discards the Core error code (only `404`/`not_found` maps to a status). | **(r-unproven)** | Same codes as b2-R, `provider_rejected_mutation` **without** `provider_permission_denied`. Not a non-mutation proof: the Codex revision-3 probe showed exact Core 2026.10.0 and 2026.10.1 assigning the registry entry and then returning `unknown_error` (§2.1). Gateway audit `provider_response_received` (correct: it was sent). |
 | r-op | Operational and helper-state provider answered with a failure | Backup: `R/f3/operational_strategies.py:239-264` (`permission_failure`, `backup_rejected`, `backup_failed`; the provider maps `SERVICE_CALL_FAILED` to `backup_failed` at `R/providers/operational_backup.py:557-558`). Reload, add-on restart, Core restart: `:394-406`, `:535-547`, `:665-677` (`operation_rejected`, `operation_failed`). Helper state: `:845-866` (`provider_rejected`, raised at `R/governance/helper_state.py:160-166` for any error result). The adapter maps all of these to `DISPATCH_FAILED_CONFIRMED` (`R/f3/operational_adapter.py:707-723`). | **(r-unproven)** | `dispatch_failed_confirmed` + `provider_rejection_confirmed`, response received. **No non-mutation proof**: a failed backup or lifecycle operation, or a failed service call, may already have changed state. Today it is projected like any confirmed failure. |
 | r-dash | Dashboard structured provider rejection with a received response | `R/f3_dashboard/adapter.py:53-77`, `:516-530` | sent (readback) | `OBSERVING` + `structured_provider_rejection_received` + `readback_only_recovery`. This is **not** a confirmed failure. It stays a readback path (phase `sent_response_received`) and is never (r-proven). |
 | b3 | Dispatch authority retired between the intent commit and revalidation | `R/f3/executor.py`. `before_dispatch` (`:565-631`) runs as a callback **inside** `adapter.dispatch` (`:640-642`); the revalidation raise is at `:621-631`. The adapter owns the send, so proof needs both the executor's raise and the adapter declaring that it had not sent when the callback failed (b5). | (b) | The adapter converts or propagates the callback failure. The result is `dispatch_indeterminate` + `provider_result_uncertain` (`R/f3/executor.py:678-735`, record at `:713-726`, readback at `:727-735`). **A proven no-call is classed as uncertain.** |
@@ -139,7 +153,7 @@ gateway audit label. The emitted codes after the change are in §5.2.
 | b6 | MCP session rotation detected before the write is sent | `R/clients/upstream_read.py` `McpReadGatewayTransport` (`:84`, `_run_operation` `:365`): `before_dispatch` at `:430-441`, `_require_same_session` at `:442-447` (definition `:503-519`), then `call_tool` at `:452-456`. Users: fan (`R/providers/upstream_fan.py`), power (via `PowerProvider`, `R/providers/upstream_power.py:6`), backup (`R/providers/operational_backup.py:163`), lifecycle (`R/providers/operational_lifecycle.py:282`) and the read gateway (`R/providers/upstream_read_gateway.py:873`). **The dashboard does not use it.** | (b), only with a not-sent attribute set by `R/clients/upstream_read.py` | `DashboardTransportError("protocol_error")`. Backup/lifecycle keep `dispatched=True` for a post-dispatch transport error (`R/providers/operational_backup.py:244-245`, `:250-254`; lifecycle `:732-745`) → indeterminate. Fan/power → indeterminate. |
 | b7 | Core refusal at the local REST/WS client before the request is written | `R/clients/rest.py:77-84` and `R/clients/websocket.py:207-211` (`authorize_core_dispatch()` false → `HomeAssistantUnavailableError`). `HomeAssistantUnavailableError` is raised for other reasons too, so the type alone is **not** proof; the client must set an explicit not-sent attribute. | (b), only with that attribute | Indeterminate → readback. |
 | b8 | Fan/power provider authority re-check | `R/providers/upstream_fan.py`. The pre-send check is in `dispatch` at `:94-99` (authority check, `await before()`, recheck). The check at `:126-127` runs **after** the provider exchange and is not pre-send. The F3 wrapper `R/fan/adapter.py:107-132` sets `dispatched=True` after `before_dispatch` (`:109-119`) and maps any later exception to `DISPATCH_INDETERMINATE` + `fan_response_uncertain` (`:126-132`). Power inherits through `PowerAdapter(FanAdapter)` (`R/power/adapter.py:41-64`). | (b) for `:94-99` only; `:126-127` stays (c) | Indeterminate → readback. No not-sent proof code. |
-| b9 | Backup and lifecycle providers | `R/providers/operational_backup.py` (`persist_dispatch` `:213-220`) and `R/providers/operational_lifecycle.py` (`:686-693`) set `dispatched=True` once the intent callback returns. `R/f3/operational_adapter.py:677-724` always returns `may_have_dispatched=True` (`:719`); strategies `R/f3/operational_strategies.py:239-264` (FullBackup) and the same pattern at `:386`, `:527`, `:657`, `:845`. | (b) only with per-provider proof | F3: indeterminate. Gateway audit (`R/f3_runtime/runtime.py:800-806` backup, `:838-844` lifecycle): `provider_response_lost` if `exc.dispatched`, otherwise `provider_invocation_refused`. The two records disagree when `exc.dispatched` is false. |
+| b9 | Backup and lifecycle providers | `R/providers/operational_backup.py` (`persist_dispatch` `:213-220`) and `R/providers/operational_lifecycle.py` (`:686-693`) set `dispatched=True` once the intent callback returns. `R/f3/operational_adapter.py:677-724` always returns `may_have_dispatched=True` (`:719`); strategies `R/f3/operational_strategies.py:239-264` (FullBackup) and the same pattern at `:386`, `:527`, `:657`, `:845`. | (b) only with per-provider proof | F3: indeterminate. Gateway audit (`R/f3_runtime/runtime.py:801-805` backup, `:839-843` lifecycle): `provider_response_lost` if `exc.dispatched`, otherwise `provider_invocation_refused`. The two records disagree when `exc.dispatched` is false. |
 
 A lost response (sent, then no answer) is (c) in every row.
 
@@ -181,7 +195,7 @@ No path in (c) redispatches. This design keeps that true.
 | S11 | Cancellation | `R/f3_runtime/runtime.py:2896-2906`; `R/errors.py:292-296` ("cannot be cancelled after dispatch") | No details, and the wording conflates intent with send (R2-7). |
 | S12 | Task-lifecycle audit | `R/governance/service.py:1720-1765` (`:1742` `provider_dispatch_occurred=bool(task.dispatched_at)`) | True on `dispatch_attempted`, `task_failed_post_dispatch` and `duplicate_apply_prevented` for b1 (R2-8). |
 | S13 | F3 child audit | `R/f3_runtime/runtime.py:1277-1414` | Correct for dashboard b1 (`:1338-1342`, `:1380-1395`) only. It has no (r) qualifier. |
-| S14 | Provider gateway audits | Configuration: `_AuditedConfigurationGateway` `R/f3_runtime/runtime.py:678`, write `:702-721`. Dashboard: `:600-623`. Backup: `:800-806`. Lifecycle: `:838-844`. | Configuration records `provider_response_received` when `provider_response_received` is true **or** `mutation_dispatched is False`, so a b2-L/b2-A pre-send refusal is labelled as a received response. That label is correct only for b2-R (r). Backup/lifecycle label by `exc.dispatched` alone. |
+| S14 | Provider gateway audits | Configuration: `_AuditedConfigurationGateway` `R/f3_runtime/runtime.py:678`, write `:702-721`. Dashboard: `:600-623`. Helper state: `_AuditedHelperStateGateway` `:765-769`. Backup: `_EvidenceCapturingBackupGateway` `:801-805`. Lifecycle: `_EvidenceCapturingLifecycleGateway` `:839-843`. | Configuration records `provider_response_received` when `provider_response_received` is true **or** `mutation_dispatched is False`, so a b2-L/b2-A pre-send refusal is labelled as a received response. That label is correct only for b2-R (r). Helper state, backup and lifecycle label by `exc.dispatched` alone. |
 | S15 | Fan/power receipt, audit and task reads | Receipt `R/fan/service.py:261-291` (`dispatched_at` is the literal `None` at `:281`); outcome audit snapshot `R/fan/audit.py:88-99` (literal `None` at `:95`); request audit `R/fan/service.py:181-186` → `request_summary` whitelist `R/fan/audit.py:8-31` → `R/routing.py:1126-1130`; `get_execution_task` routing for fan/power task ids `R/tools/governance.py:336-345`. Power inherits all of these (`R/power/service.py:17`, `:26`). | `provider_attempt_count=record.dispatch_count` (the intent reservation); `dispatched_at: None` always, even for a sent and verified call (§2.4.2). No `provider_dispatch_occurred` and no outcome code. |
 | S16 | `plan.operational.dispatch` | Plan audit derives from `plan.operational.dispatch["dispatched"]` (`R/governance/service.py:2414-2426`) | No F3 writer updates it. **Stale for F3, executed proof:** the reviewer ran a successful synthetic F3 reload (one provider call, `succeeded_verified`) and `plan.operational.dispatch` stayed `dispatched:false`, attempt count 0, no response. |
 | S17 | Health counts | `R/governance/service.py:~13384-13400` (`failed_post_dispatch` at `:13392`); F3 health `R/f3_runtime/runtime.py:4164-4270` (`_is_terminal_zero_dispatch_parent`) | Counts by coarse state only. |
@@ -225,7 +239,7 @@ by a single function (§5). Child phases:
 | `not_dispatched_pre_intent` | pre-dispatch | No durable intent exists. Covers `created`, `preflight`, `failed_pre_dispatch` and cancelled-before-intent. |
 | `not_dispatched_already_present` | **(a)** | The child's F3 record is of class `VERIFIED_NO_DISPATCH` (or the V9 terminal outcome is present). |
 | `intent_recorded_not_sent` | **(b)** | The single (b) predicate below holds. |
-| `sent_rejected_no_mutation` | **(r-proven)** | The (r) predicate holds **and** one named non-mutation proof (P1–P3) holds. |
+| `sent_rejected_no_mutation` | **(r-proven)** | The (r) predicate holds **and** one named non-mutation proof (P1 or P3) holds. |
 | `sent_failed_mutation_unproven` | **(r-unproven)** | The (r) predicate holds and no named non-mutation proof holds. A dispatched attempt that failed; a mutation is **not** proven absent. |
 | `intent_recorded_send_uncertain` | **(c)** | Intent exists and none of (b), (r) or `sent_response_received` is proven. **This is the default for any intent.** It includes a lost response, a contradictory record, and a configuration `provider_confirmed_no_mutation` record without a proof code. |
 | `sent_response_received` | sent | Intent exists, `provider_response_received` is true, and the outcome is not `dispatch_failed_confirmed`. Includes the dashboard structured rejection (`OBSERVING`, readback). |
@@ -264,24 +278,49 @@ provider-specific non-mutation proofs holds; otherwise it is (r-unproven):
 
 | Proof | Provider and code path | Why it proves no mutation | Recorded evidence |
 | --- | --- | --- | --- |
-| **P1** | Configuration REST write (automation, script, `input_boolean`, `input_number`): `R/governance/resources.py:886-900`. A `HomeAssistantApiError` with an HTTP 4xx status from the configuration POST is raised as `ConfigurationMutationNotDispatchedError` (`mutation_dispatched=False`, `R/governance/resources.py:108-112`) with `provider_response_received:true`. | This is the reviewed resource adapter's existing classification: a 4xx rejection of the configuration write does not store the configuration. A 5xx status, a timeout or a lost response is **not** P1. | `provider_rejected_mutation` (`R/f3_configuration/adapter.py:494-496`) and the strategy's `dispatch_error_codes` |
-| **P2** | Entity metadata registry update error result: `R/governance/entity_metadata.py:598-615`. | Per the reviewed source comment there, Home Assistant's registry validation runs before storage, and `options_domain` is never sent, so an error result is a confirmed non-application. | `provider_rejected_mutation` (same emitter) |
-| **P3** | Entity metadata command answered `unauthorized`/`forbidden`: `R/governance/entity_metadata.py:582-596` when the client set `provider_response_received:true` (`R/clients/websocket.py:262-269`). | The authorization refusal is answered before the update is applied (same reviewed classification). The pre-command authentication failure is **not** P3; it is b2-A. | `provider_rejected_mutation` (same emitter) |
+| **P1** | Configuration REST write, **automation and script only**: the `_CONFIG_ENDPOINTS` routes (`R/governance/resources.py:95-98`), write at `:872-900`. A `HomeAssistantApiError` with an HTTP 4xx status from that POST is raised as `ConfigurationMutationNotDispatchedError` (`mutation_dispatched=False`, `R/governance/resources.py:108-112`) with `provider_response_received:true` (`:890-900`). `input_boolean`/`input_number` updates go through WebSocket (`:780-789`), not this route, and are **not** P1. | This is the reviewed resource adapter's existing classification: a 4xx rejection of the configuration write does not store the configuration. Codex's revision-3 check of exact Core source, on both supported revisions, found that the configuration view returns malformed-input 400 responses before `_write`. A 5xx status, a timeout or a lost response is **not** P1. | `provider_rejected_mutation` (`R/f3_configuration/adapter.py:494-496`) on a child whose F3 `target.target_type` is `automation` or `script` |
+| **P3** | Entity metadata command answered `unauthorized`/`forbidden`: `R/governance/entity_metadata.py:582-596` when the client set `provider_response_received:true` (`R/clients/websocket.py:262-269`). | The authorization refusal is answered before the update is applied (the reviewed classification). Codex's revision-3 check of exact Core source, on both supported revisions, found that `require_admin` checks authorization before it calls the entity-update handler. The pre-command authentication failure is **not** P3; it is b2-A. | `provider_rejected_mutation` **and** `provider_permission_denied` (`R/f3_configuration/strategies.py:486-493`) on the same event, on a child whose `target.target_type` is `entity_registry_metadata` |
 
-The projection decides (r-proven) only from the capability (configuration or
-entity metadata) **plus** `provider_rejected_mutation` on the
-`dispatch_result_recorded` event, with no conflicting `provider_call_not_sent`,
-`setter_call_not_sent` or `provider_completed_unexpectedly`. Only the
-configuration adapter emits that code, and only for P1–P3. P1–P3 restate the
-existing reviewed classifications in the cited source. They are not new
-Home Assistant claims. Under ADR-021, PR1's independent review re-checks
-P1–P3 against the pinned Home Assistant version before PR1 relies on them.
-Adding any further proof (a new provider, or a new code path) is a design
-change that needs its own named proof, tests and review.
+**P1 and P3 are the complete set of non-mutation proofs.** P2 (the former
+"any entity-registry error result" proof) is withdrawn (architect decision,
+pending Josh's confirmation). Codex reproduced, offline on both supported
+Core revisions (2026.10.0 `6a811d3`, 2026.10.1 `abe1fdd`), a registry entry
+assigned in memory, then a save-scheduling fault returned as `unknown_error`.
+Engineering's gateway maps that result to `ConfigurationMutationNotDispatchedError`
+with `mutation_dispatched=False`. An entity-registry error result therefore
+does **not** prove non-mutation, and the error is never used to infer it.
+Readback (a later read of the entity) remains the only way to learn the
+actual state.
+
+The projection decides (r-proven) only from:
+
+- the (r) predicate;
+- `provider_rejected_mutation` on the `dispatch_result_recorded` event, with
+  no conflicting `provider_call_not_sent`, `setter_call_not_sent` or
+  `provider_completed_unexpectedly`;
+- and either P1 (`target.target_type` is `automation` or `script`), or P3
+  (`target.target_type` is `entity_registry_metadata` **and**
+  `provider_permission_denied` is on the same event).
+
+An entity-metadata child with `provider_rejected_mutation` but without
+`provider_permission_denied` is (r-unproven). That covers every historical
+beta.8 entity-registry error record. A child whose target type cannot be read
+is (r-unproven).
+
+P1 and P3 restate classifications that Codex re-checked against exact Core
+source for both supported revisions. Under ADR-021, PR1's independent review
+re-checks them against the Core revisions supported at that time. **Adding
+any proof** (restoring a narrowed P2, a new provider, or a new code path)
+requires a reproduced pre-mutation guarantee on **every** supported Core
+revision, a bounded refusal identity that is persisted and reviewed, its own
+P-row, and its own tests and review. A comment or an exception class is not
+such a guarantee.
 
 Everything else that matches the (r) predicate is (r-unproven). This
 includes:
 
+- every entity-registry update error result other than P3
+  (`R/governance/entity_metadata.py:598-615`), whatever the Core error code;
 - backup `permission_failure`, `backup_rejected` and `backup_failed`
   (`R/f3/operational_strategies.py:246-263`; `R/providers/operational_backup.py:557-558`);
 - reload, add-on restart and Core restart `operation_rejected` and
@@ -299,49 +338,70 @@ projects as (c) and is flagged in diagnostics as an evidence conflict.
 
 **Parent aggregation: one rule, used everywhere.** A parent (a governed task,
 an apply result, or a plan's `execution_task`) aggregates its children with
-this rule and no other. Missing, unreadable, incomplete (`f3_sequence_incomplete`)
+this rule and no other. Rules 1–5 and the truth table below are the single
+statement of the rule. Every other section refers to them and does not
+restate them. **Uncertainty
+dominates**: an uncertain child outranks every other child, including a
+verified positive. Missing, unreadable, incomplete (`f3_sequence_incomplete`)
 or contradictory children count as (c). A parent whose child manifest cannot
 be established counts as a single (c) child.
 
-1. **Parent `dispatch_phase`.** This is the child phase that makes the
-   **weakest no-dispatch or no-change claim**. Phases are ordered from the
-   weakest claim to the strongest, and the first one present wins:
+1. **Parent `dispatch_phase`.** Phases are ranked from the most uncertain to
+   the least. The highest-ranked phase present wins:
 
-   `sent_response_received` > `sent_failed_mutation_unproven` >
-   `intent_recorded_send_uncertain` > `sent_rejected_no_mutation` >
-   `intent_recorded_not_sent` > `not_dispatched_already_present` >
-   `not_dispatched_pre_intent`
+   `intent_recorded_send_uncertain` > `sent_failed_mutation_unproven` >
+   `sent_response_received` > `sent_rejected_no_mutation` >
+   `intent_recorded_not_sent` > `not_dispatched_pre_intent` >
+   `not_dispatched_already_present`
 
-   Uncertainty therefore outranks every phase that claims no change
-   ((r-proven)) or no dispatch ((b), (a)).
+   An uncertain child therefore outranks every child that was sent, proven
+   unchanged, proven not sent, or already present. `not_dispatched_pre_intent`
+   ranks above (a), so a parent is (a) only when **every** child is (a).
 2. **Parent `provider_dispatch_occurred`** is `false` only when every child
    is pre-intent, (a) or (b). Otherwise it is `true`: either something was
    proven sent, or (c) keeps today's conservative `true`.
-3. **Parent `changed_by_engineering`**:
-   - `true` when any child was sent **and verified** (`succeeded_verified`
-     after a received response). A proven positive wins.
-   - Otherwise `false` only when every child is pre-intent, (a), (b) or
+3. **Parent `changed_by_engineering`**, evaluated in this order:
+   - `null` when any child is (c), (r-unproven), sent but not verified, or
+     missing/incomplete/contradictory. This holds even when another child was
+     sent and verified.
+   - Otherwise `true` when any child was sent **and verified**
+     (`succeeded_verified` after a received response).
+   - Otherwise `false`. Every child is then pre-intent, (a), (b) or
      (r-proven).
-   - Otherwise `null`. That covers any (c), (r-unproven), or
-     sent-but-not-verified child. Change is never inferred from a received
-     response alone.
-4. **No-dispatch strings and flags.** Parent `status:"already_present"`, the
-   (a) `terminal_outcome`/`outcome_code`, the (b) `terminal_outcome`,
-   `provider_call_not_sent:true`, `setter_call_not_sent:true` and
-   `dispatch_performed:false` appear only when the parent `dispatch_phase`
-   from rule 1 is (a) or (b) respectively. That means every child is (a)
-   (for (a)), or every intent-bearing child is (b) and every other child is
-   (a) or pre-intent (for (b)).
+
+   Change is never inferred from a received response alone. The fact that at
+   least one child changed is still visible: each child object carries its
+   own `changed_by_engineering`, and the parent carries `child_dispatch_phases`
+   (§2.4.1). The parent value answers "is the whole plan's effect known?";
+   the child values answer "did this child change?".
+4. **No-dispatch strings and flags** each require an explicit all-children
+   predicate. A max-phase selection alone is not enough, and the
+   implementation checks the predicate directly:
+   - **(a) predicate:** every child is (a). Only then may the parent carry
+     the (a) `terminal_outcome`/`outcome_code` and `dispatch_performed:false`.
+     `status` follows the status preservation rule (§2.4.3 item 4).
+   - **(b) predicate:** every intent-bearing child is (b), and every other
+     child is (a) or pre-intent. Only then may the parent carry the (b)
+     `terminal_outcome`, `provider_call_not_sent:true`,
+     `setter_call_not_sent:true` (dashboard only) and
+     `dispatch_performed:false`.
+   - A test asserts that each predicate agrees with the rule 1 phase for
+     every truth-table row.
 5. **Verified claims.** No new verified or `already_present` claim is
    projected when any child is (c), (r-unproven), incomplete or missing.
-   Stored task states are not recomputed.
+   Stored task states and transitions are not recomputed, and nothing here is
+   retry authority.
 
 Truth table (two-child examples, rule 1 / rule 2 / rule 3):
 
 | Children | `dispatch_phase` | `provider_dispatch_occurred` | `changed_by_engineering` |
 | --- | --- | --- | --- |
-| sent+verified, (c) | `sent_response_received` | true | true |
-| sent+verified, (r-unproven) | `sent_response_received` | true | true |
+| sent+verified, (c) | `intent_recorded_send_uncertain` | true | null |
+| sent+verified, (r-unproven) | `sent_failed_mutation_unproven` | true | null |
+| sent+verified, missing/incomplete child | `intent_recorded_send_uncertain` | true | null |
+| sent+verified, sent+verified | `sent_response_received` | true | true |
+| sent+verified, (r-proven) | `sent_response_received` | true | true |
+| sent+verified, (b) | `sent_response_received` | true | true |
 | sent not verified, (b) | `sent_response_received` | true | null |
 | (r-unproven), (b) | `sent_failed_mutation_unproven` | true | null |
 | (r-proven), (c) | `intent_recorded_send_uncertain` | true | null |
@@ -350,27 +410,33 @@ Truth table (two-child examples, rule 1 / rule 2 / rule 3):
 | (b), missing/incomplete child | `intent_recorded_send_uncertain` | true | null |
 | (b), (b) | `intent_recorded_not_sent` | false | false |
 | (a), (b) | `intent_recorded_not_sent` | false | false |
+| pre-intent, (b) | `intent_recorded_not_sent` | false | false |
 | (a), (a) | `not_dispatched_already_present` | false | false |
-| pre-intent, (a) | `not_dispatched_already_present` | false | false |
+| (a), failed-pre-dispatch | `not_dispatched_pre_intent` | false | false |
+| (a), created/unexecuted | `not_dispatched_pre_intent` | false | false |
+| (a), missing/incomplete child | `intent_recorded_send_uncertain` | true | null |
 | pre-intent, pre-intent | `not_dispatched_pre_intent` | false | false |
 
-#253 already applies rule 4 for the dashboard: every intent-bearing child
+The (a) strings appear only in the `(a), (a)` row. The (b) strings appear only
+in the three rows whose phase is `intent_recorded_not_sent`.
+
+#253 already applies the rule 4 (b) predicate for the dashboard: every intent-bearing child
 must carry the `setter_call_not_sent` proof code (`R/f3_runtime/runtime.py:2432-2455`).
 
 ### 2.2 Names and client fields
 
 | Case | Task state (unchanged enum) | `terminal_outcome` / `outcome_code` | Client fields |
 | --- | --- | --- | --- |
-| (a) | `succeeded_verified` | `desired_state_already_present_not_dispatched` (V9 name, generalized) | `status:"already_present"`, `provider_dispatch_occurred:false`, `dispatch_performed:false`, `changed_by_engineering:false`, `intent_recorded:false`, `result_text`, `dispatch_phase` |
+| (a) | `succeeded_verified` | `desired_state_already_present_not_dispatched` (V9 name, generalized) | `status` per the status preservation rule (§2.4.3 item 4): unchanged in PR1 (`applied` for generic (a), `already_present` for entity metadata); `provider_dispatch_occurred:false`, `dispatch_performed:false`, `changed_by_engineering:false`, `intent_recorded:false`, `result_text`, `dispatch_phase` |
 | (b) | `failed_post_dispatch` under T2 (see §4); a new state only under T3 | `failed_after_intent_not_dispatched` (**owner naming decision OD-5**) | `provider_dispatch_occurred:false`, `dispatch_performed:false`, `changed_by_engineering:false`, `intent_recorded:true`, `provider_call_not_sent:true` (generic), `setter_call_not_sent:true` (**dashboard only, kept verbatim from #253**), `attempt_counts_basis`, `result_text`, `dispatch_phase`, `retryable:false` |
-| (r-proven), P1–P3 only | `failed_post_dispatch` (truthful: the call was sent) | unchanged (`failed_post_dispatch`). Projected `outcome_code:"provider_rejected_mutation"`, reusing the existing configuration diagnostic name. No new stored string (OD-14). | `provider_dispatch_occurred:true`, `dispatch_performed:true`, `provider_response_received:true`, `changed_by_engineering:false`, `intent_recorded:true`, `attempt_counts_basis:"saved_dispatch_intent"`, `result_text` (names the proof: "Home Assistant rejected the request; the change was not applied"), `dispatch_phase:"sent_rejected_no_mutation"`. **Never** `provider_call_not_sent`. |
-| (r-unproven), every other (r) | `failed_post_dispatch` | unchanged. **No** projected `outcome_code`. | `provider_dispatch_occurred:true`, `dispatch_performed:true`, `provider_response_received:true`, `changed_by_engineering:null`, `intent_recorded:true`, `attempt_counts_basis:"saved_dispatch_intent"`, `result_text` ("the request was sent and failed; it is not proven that nothing changed"), `dispatch_phase:"sent_failed_mutation_unproven"`. Never `provider_call_not_sent`, never `changed_by_engineering:false`, never `outcome_code:"provider_rejected_mutation"`. |
+| (r-proven), P1 or P3 only | `failed_post_dispatch` (truthful: the call was sent) | unchanged (`failed_post_dispatch`). Projected `outcome_code:"provider_rejected_mutation"`, reusing the existing configuration diagnostic name. No new stored string (OD-14). | `provider_dispatch_occurred:true`, `dispatch_performed:true`, `provider_response_received:true`, `changed_by_engineering:false`, `intent_recorded:true`, `attempt_counts_basis:"saved_dispatch_intent"`, `result_text` (names the proof: "Home Assistant rejected the request; the change was not applied"), `dispatch_phase:"sent_rejected_no_mutation"`. **Never** `provider_call_not_sent`. |
+| (r-unproven), every other (r), including every entity-registry error result other than P3 | `failed_post_dispatch` | unchanged. **No** projected `outcome_code`. | `provider_dispatch_occurred:true`, `dispatch_performed:true`, `provider_response_received:true`, `changed_by_engineering:null`, `intent_recorded:true`, `attempt_counts_basis:"saved_dispatch_intent"`, `result_text` ("the request was sent and failed; it is not proven that nothing changed"), `dispatch_phase:"sent_failed_mutation_unproven"`. Never `provider_call_not_sent`, never `changed_by_engineering:false`, never `outcome_code:"provider_rejected_mutation"`. |
 | (c) | unchanged (`observing` / `succeeded_verified` / `failed_post_dispatch` / `manual_review_required`) | unchanged | Today's fields plus `dispatch_phase:"intent_recorded_send_uncertain"` and `attempt_counts_basis:"saved_dispatch_intent"`. `provider_dispatch_occurred` keeps its current conservative `true`. |
 | sent | unchanged | unchanged | Today's fields plus `dispatch_phase` and `attempt_counts_basis:"saved_dispatch_intent"`. |
 
 **Reuse.** These names are deliberately reused:
 
-- From 069A V9: `outcome_code`, `dispatch_performed`, `result_text`, `status:already_present`, and the outcome string.
+- From 069A V9: `outcome_code`, `dispatch_performed`, `result_text`, the outcome string, and `status:already_present` (only where the status preservation rule, §2.4.3 item 4, allows it).
 - From #253: `provider_dispatch_occurred`, `dispatch_performed`, `setter_call_not_sent`, `changed_by_engineering`, `intent_recorded`, `attempt_counts_basis`, and the value `saved_dispatch_intent_no_setter_call`.
 
 **New fields:** `dispatch_phase`, `provider_call_not_sent`,
@@ -387,8 +453,10 @@ and the `attempt_counts_basis` values `saved_dispatch_intent`,
 single (b) predicate (§2.1). The existing codes keep their meanings, and none
 of them is a (b) proof code:
 
-- `provider_rejected_mutation`: a response was received and one of P1–P3
-  applies. This is (r-proven), and it conflicts with (b).
+- `provider_rejected_mutation`: a response was received and the
+  configuration adapter classified it as a rejection. It is (r-proven) only
+  when P1 or P3 holds (§2.1). On an entity-registry error result without
+  `provider_permission_denied` it is (r-unproven). It conflicts with (b).
 - `provider_rejection_confirmed` (operational and helper-state strategies):
   a response was received and the attempt failed. This is (r-unproven), and
   it conflicts with (b).
@@ -433,8 +501,8 @@ proof point.
 | Power, fan | Generic no-op → V9 outcome in the receipt (projection; no governance task exists) | b3, b4 (test seam), b5 (`R/fan/adapter.py:109-119`), b8 (`R/providers/upstream_fan.py:94-99` only) | None | None: the fan/power provider has no confirmed-failure result | unchanged; includes the post-exchange check at `:126-127` and every b6 case |
 | Helper state | Generic no-op → V9 outcome | b3, b4, b5 (`R/governance/helper_state.py:157`) | None | `provider_rejected` (`R/f3/operational_strategies.py:855-866`) | unchanged; includes b7 |
 | Dashboard | No (a) path. See OD-9 (stale-equals-target). | b1 (exists, `R/clients/mcp.py`), b3, b5 (`before_dispatch` at `R/f3_dashboard/adapter.py:498`, outside the try). **Not b6**: the dashboard uses `McpDashboardTransport`, not `McpReadGatewayTransport`. | None. A structured received rejection stays `OBSERVING` with readback (`R/f3_dashboard/adapter.py:516-530`): phase `sent_response_received`. | None | unchanged |
-| Configuration plans (REST/helper) | No (a) path today. See OD-9. | b2-L (`R/governance/resources.py`), b3, b4, b5 (`R/f3_configuration/adapter.py:453-466`) | P1: `R/governance/resources.py:886-900` | None | unchanged; includes b7 |
-| Entity metadata | V9 (exists) | b2-L (`R/governance/entity_metadata.py:573`), b2-A (`R/clients/websocket.py` pre-command auth), b3, b4, b5 | P2 (`R/governance/entity_metadata.py:598-615`), P3 (`:582-596`, post-command result) | None | unchanged |
+| Configuration plans (REST/helper) | No (a) path today. See OD-9. | b2-L (`R/governance/resources.py`), b3, b4, b5 (`R/f3_configuration/adapter.py:453-466`) | P1: automation/script REST only (`R/governance/resources.py:95-98`, `:872-900`) | None. `input_boolean`/`input_number` WebSocket update errors reach the generic branch (`R/f3_configuration/adapter.py:516-546`) and are (c). | unchanged; includes b7 and the helper WebSocket errors |
+| Entity metadata | V9 (exists) | b2-L (`R/governance/entity_metadata.py:573`), b2-A (`R/clients/websocket.py` pre-command auth), b3, b4, b5 | P3 only (`R/governance/entity_metadata.py:582-596`, post-command result) | Every other registry error result (`R/governance/entity_metadata.py:598-615`; Codex revision-3 probe) | unchanged |
 | Backup, reload, add-on restart, Core restart | **None, by design.** These are actions, not state targets. | **None in PR2.** b3, b4 and b5 need the provider's not-sent declaration, because the callback runs inside the b9 provider files (`persist_dispatch`). b6, b7 and b9 are excluded (OD-7). | None | `backup_failed`, `backup_rejected`, `permission_failure`, `operation_rejected`, `operation_failed` | unchanged; includes b5, b6, b7, b9 |
 
 ### 2.4 Counter and timestamp semantics
@@ -661,9 +729,39 @@ have changed #253's `attempt_counts_basis` (D4). The contract is now:
      (OD-7);
    - the S10/S11 error wording;
    - under T2 (PR2), the stored `terminal_outcome` strings for (a) and (b)
-     (OD-1, OD-4, OD-5, OD-10).
+     (OD-1, OD-4, OD-5, OD-10);
+   - under T2 (PR2), the one `status` change the status preservation rule
+     (item 4) allows: a helper-state (a) apply whose task stores the V9
+     string reports `status:"already_present"` instead of `"applied"`
+     (OD-4, OD-10; pending Josh's confirmation).
 4. **Existing client-visible values that stay unchanged** (regression-tested
-   value by value against the base revision):
+   value by value against the base revision).
+
+   **Status preservation rule.** This is the single statement of which
+   `status` values are kept. Every other section refers to it.
+
+   - **PR1 changes no existing `status` value on any surface.** The apply
+     result keeps `"applied"` for `SUCCEEDED_VERIFIED` and `"accepted"`
+     otherwise (`R/f3_runtime/runtime.py:2814-2815`).
+   - `"already_present"` is emitted only where it is emitted today: the
+     entity-metadata V9 apply (`R/f3_runtime/runtime.py:2829-2838`) and its
+     duplicate replay (`R/governance/service.py:7170-7179`), both keyed on
+     `task.terminal_outcome == desired_state_already_present_not_dispatched`.
+   - Generic (a) (helper state) keeps `status:"applied"` in PR1. Its (a)
+     facts appear only in additive fields: `dispatch_phase`, `outcome_code`,
+     `dispatch_performed:false`, `provider_dispatch_occurred:false`,
+     `changed_by_engineering:false` and `result_text`.
+   - (b), (r-proven), (r-unproven), (c) and sent keep `"accepted"` or
+     `"applied"` exactly as today.
+   - Fan and power receipts have no `status` field and gain none
+     (`R/fan/service.py:261-291`).
+   - **PR2 (T2)** makes exactly one `status` change, listed in item 3: a
+     helper-state (a) task stores the V9 string, so the existing override
+     above reports `"already_present"`. It applies only when the (a)
+     all-children predicate (§2.1 rule 4) holds. No other status changes in
+     PR2.
+
+   Other values kept:
 
    | Object | Field | Value kept |
    | --- | --- | --- |
@@ -671,7 +769,8 @@ have changed #253's `attempt_counts_basis` (D4). The contract is now:
    | Entity-metadata (a) apply and task objects | the V9 fields | `status:"already_present"`, `outcome_code`, `dispatch_performed:false`, `result_text`, and `terminal_outcome:"desired_state_already_present_not_dispatched"` |
    | Every surface | numeric counters | `provider_attempt_count`, `provider_attempts[].dispatch_count`, F3 `dispatch_count`, and health/reconciliation state counts |
    | Every surface | `dispatched_at` | Unchanged everywhere except governed (b) (item 3). Fan/power stays `null` |
-   | Every surface | `status`, task `state`, `terminal_outcome` (PR1) | unchanged in PR1 |
+   | Every surface | `status` | per the status preservation rule above |
+   | Every surface | task `state`, `terminal_outcome` (PR1) | unchanged in PR1 |
 
 5. **Objects that gain qualifiers (additive only):**
    - every object with a counter gains `attempt_counts_basis` (§2.4.1) where
@@ -697,7 +796,12 @@ Tests:
 - a mixed multi-child parent (sent, (r-proven), (r-unproven), (b) and (c)):
   its aggregate fields follow the §2.1 truth table at every budget;
 - each existing field is compared with its value from the base revision, and
-  each new field is checked for presence or absence.
+  each new field is checked for presence or absence;
+- status preservation rule: a generic helper-state no-op apply (PR1
+  `status:"applied"`, PR2 `"already_present"`) next to an entity-metadata V9
+  no-op apply (`"already_present"` in both), each asserting `status`, the raw
+  task `state`/`terminal_outcome` and the additive fields independently, at
+  apply and at duplicate replay.
 
 ---
 
@@ -710,7 +814,7 @@ Tests:
 | **At-most-once dispatch** | Intent reservation `dispatch_count=1` before I/O; exactly one adapter call | Unchanged. The (b) producers only *label* a failure that already happened before the send. They never add a call path. | One test per (b) producer: zero transport calls. For (c) controls, at most one call. |
 | **Duplicate suppression** | Claim and locks; DUPLICATE_APPLY_ATTEMPT for terminal tasks (`service.py:7127-7180`) | Unchanged. Only the wording and details change (S10). `retryable:false` stays. | Concurrent duplicate apply for (a), (b) and (c): exactly one execution, and the replay carries the same phase. |
 | **Same-ID non-redispatch** | Terminal plan/task → replay result | Unchanged. The replay uses the shared projection. | Same-ID re-apply after (b) on restart: zero calls, phase `intent_recorded_not_sent`. |
-| **Proven vs uncertain** (only a PROVEN no-call may claim no dispatch) | #253 predicate requires capability, intent, `dispatch_failed_confirmed`, no response, `setter_call_not_sent` on the right event, and every child | The single (b) predicate of §2.1: the same conditions, a required proof code, no conflicting code, and every intent-bearing child. A proof code may be produced **only** by the code that owns the send boundary (§5.3) (the adapter, provider or transport named in §5.3; b6, b7 and b9 are excluded from PR2), and only on a path that runs strictly before the first byte is written to the write channel. A received failure is (r): it keeps response-received attribution and **never** gets a proof code. It claims no mutation only with a named proof P1–P3 (§2.1); otherwise it is (r-unproven). An exception type, a refusal code or a missing response is never proof on its own. Missing, conflicting or out-of-order evidence falls to `intent_recorded_send_uncertain` (fail-safe direction). The task `terminal_outcome` is a derived copy. If it disagrees with the F3 record, the F3 record wins and the conservative phase is shown. | Missing proof code, proof code on the wrong event, `provider_confirmed_no_mutation` or a stage reason without a proof code, a conflicting code, response received (with or without a proof code), mixed children, wrong outcome, and a proof code emitted *after* a send-capable await: each gives (c) or (r), never (b). Backup `backup_failed`, lifecycle `operation_failed`, helper-state `provider_rejected` and a dashboard structured rejection each give (r-unproven) or sent, never `changed_by_engineering:false`. A REST 4xx, a WS unauthorized or error result, and a lost response each must **not** get a proof code. A pre-send and a post-response authority retirement with the same refusal code must give different facts. Each producer has a mutation that moves the proof-code emission after the send; the test must catch it. |
+| **Proven vs uncertain** (only a PROVEN no-call may claim no dispatch) | #253 predicate requires capability, intent, `dispatch_failed_confirmed`, no response, `setter_call_not_sent` on the right event, and every child | The single (b) predicate of §2.1: the same conditions, a required proof code, no conflicting code, and every intent-bearing child. A proof code may be produced **only** by the code that owns the send boundary (§5.3) (the adapter, provider or transport named in §5.3; b6, b7 and b9 are excluded from PR2), and only on a path that runs strictly before the first byte is written to the write channel. A received failure is (r): it keeps response-received attribution and **never** gets a proof code. It claims no mutation only with a named proof, P1 or P3 (§2.1); otherwise it is (r-unproven). An entity-registry error result is (r-unproven). An exception type, a refusal code or a missing response is never proof on its own. Missing, conflicting or out-of-order evidence falls to `intent_recorded_send_uncertain` (fail-safe direction). The task `terminal_outcome` is a derived copy. If it disagrees with the F3 record, the F3 record wins and the conservative phase is shown. | Missing proof code, proof code on the wrong event, `provider_confirmed_no_mutation` or a stage reason without a proof code, a conflicting code, response received (with or without a proof code), mixed children, wrong outcome, and a proof code emitted *after* a send-capable await: each gives (c) or (r), never (b). Backup `backup_failed`, lifecycle `operation_failed`, helper-state `provider_rejected`, an entity-registry error result (including the Codex post-assignment `unknown_error` probe) and a dashboard structured rejection each give (r-unproven) or sent, never `changed_by_engineering:false`. A REST 4xx, a WS unauthorized or error result, and a lost response each must **not** get a proof code. A pre-send and a post-response authority retirement with the same refusal code must give different facts. Each producer has a mutation that moves the proof-code emission after the send; the test must catch it. |
 | **Display false is not retry authority** (#253 rule) | Display-only fields | Eligibility, claim, cancellation, replay and reconciliation call sites keep the stored-intent predicate (`_task_is_dispatched` is not replaced globally). Rollback may consult the facts only to refuse. | Behavioral tests at each eligibility call site (re-apply, cancel, replay, reconcile, rollback) for (a), (b), (r-proven), (r-unproven) and (c). A static check is supplementary only, because display and eligibility code share `runtime.py` and `service.py`. |
 | **Cancellation after intent stays refused** | `_cancel_locked` (`runtime.py:2896-2906`) | The refusal is unchanged. The wording becomes "after dispatch intent was recorded", with phase details. | Cancel after (b): refused, zero calls. |
 
@@ -808,7 +912,8 @@ covers exactly what the PR2 test will execute and nothing more.
    exact beta.8 writer at `7370ad2`, per AGENTS.md "Persisted Compatibility
    Fixtures". The fixture set covers, at minimum: a preflight no-op (a)
    child, a (b) child, an (r-proven) configuration child, an (r-unproven)
-   operational child, a (c) child that ended verified by
+   operational child, an (r-unproven) entity-metadata registry-error child
+   (`provider_rejected_mutation` without `provider_permission_denied`), a (c) child that ended verified by
    readback, a sent-and-verified child, a dashboard (b) child, a V9 task, a
    T2 (a) task, a T2 (b) task, a three-child mixed parent, and one fan and one
    power record together with its prepared request declaration. No committed fixture with these shapes exists today. The
@@ -818,7 +923,9 @@ covers exactly what the PR2 test will execute and nothing more.
 6. No migration rewrites historical records. Old (b) records written by
    beta.8 (dashboard only) are projected as (b) by the new reader from their
    existing `setter_call_not_sent` proof code. Old (a) records are projected as
-   (a) from their `VERIFIED_NO_DISPATCH` class. There is **no backfill** of
+   (a) from their `VERIFIED_NO_DISPATCH` class. Old entity-registry error
+   records (`provider_rejected_mutation` without `provider_permission_denied`)
+   are projected as (r-unproven), never (r-proven). There is **no backfill** of
    `terminal_outcome`.
 
 **Not guaranteed:**
@@ -922,10 +1029,10 @@ Proposed new module: `R/f3_runtime/dispatch_facts.py`.
   under §2.4.3); the new additive fields may appear alongside them.
 - (r) is decided only from `dispatch_failed_confirmed` plus
   `provider_response_received=true`, and (r-proven) additionally requires a
-  named proof P1–P3 (§2.1). A proof code on a record whose response was
+  named proof, P1 or P3 (§2.1). A proof code on a record whose response was
   received is a contradiction and projects as (c).
-- Parents use only the §2.1 aggregation rule. No surface has its own
-  aggregation.
+- Parents use only the §2.1 aggregation rule and truth table. No surface has
+  its own aggregation.
 
 **Consumers replaced (all 11 predicates in §1.5):**
 
@@ -939,7 +1046,7 @@ Proposed new module: `R/f3_runtime/dispatch_facts.py`.
 | S10 duplicate | Details carry the facts. The message reads "The operational apply already recorded its single dispatch intent and will not be repeated", in a phase-neutral variant. |
 | S11 cancel | Details carry the facts. The wording becomes "after dispatch intent was recorded". |
 | S12 lifecycle audit | New audit entries derive `provider_dispatch_occurred` from the facts and add `dispatch_phase`. Historical audit records are not rewritten. |
-| S13 F3 child audit | Adds `dispatch_phase`. Uses the (b) predicate for (b), and the (r) predicate plus P1–P3 for (r) (§5.1). |
+| S13 F3 child audit | Adds `dispatch_phase`. Uses the (b) predicate for (b), and the (r) predicate plus P1 or P3 for (r) (§5.1). |
 | S14 gateway audits | Per §5.1: the label follows the exception's proven facts, never `mutation_dispatched is False` alone. |
 | S15 fan/power | The receipt, the snapshot audit and the request audit add the facts and the §2.4.2 timestamps. The outcome code is V9 for (a). |
 | S16 `plan.operational.dispatch` | Stop using it for F3-backed plans' audit; derive from the facts. Staleness is confirmed by the reviewer's executed probe; PR1 adds its own regression test. |
@@ -958,8 +1065,8 @@ written before the F3 record (S14). "Child audit" is the F3 child audit
 | (a) | No intent. Event `preflight_noop_verified`, `desired_state_already_reached`, class `VERIFIED_NO_DISPATCH` | false | none (no provider write call) | `dispatch_phase: not_dispatched_already_present` | false |
 | (b) dashboard (b1) | `dispatch_failed_confirmed` + required `setter_call_not_sent` (unchanged; optional `provider_confirmed_no_mutation`) | false | unchanged | unchanged #253 fields + `dispatch_phase: intent_recorded_not_sent` | false |
 | (b) other (PR2) | `dispatch_failed_confirmed` + required `provider_call_not_sent`; optional `provider_confirmed_no_mutation` and a stage reason (§5.3) | false | PR1: `provider_result_uncertain` (no proof yet). PR2: `provider_call_not_sent`, passed **explicitly** by the producer with the exception, because the gateway audit is written before the F3 record and cannot read it. | `provider_call_not_sent: true`, `dispatch_performed: false`, `dispatch_phase: intent_recorded_not_sent` | false (OD-7) |
-| (r-proven) | `dispatch_failed_confirmed` + `provider_rejected_mutation` (P1–P3 only). Never a proof code. | **true** | `provider_response_received` (correct today) | `dispatch_phase: sent_rejected_no_mutation`, `provider_dispatch_occurred: true`, `changed_by_engineering: false` | true |
-| (r-unproven) | `dispatch_failed_confirmed` + `provider_rejection_confirmed` (backup, reload, add-on/Core restart, helper state), or any other confirmed failure with a response. Never a proof code. | **true** | unchanged. Today's operational and helper-state label is `provider_response_lost` when `exc.dispatched` (see the accepted limitation below). | `dispatch_phase: sent_failed_mutation_unproven`, `provider_dispatch_occurred: true`, `changed_by_engineering: null` | true |
+| (r-proven) | `dispatch_failed_confirmed` + `provider_rejected_mutation` (P1, or P3 with `provider_permission_denied`). Never a proof code. | **true** | `provider_response_received` (correct today) | `dispatch_phase: sent_rejected_no_mutation`, `provider_dispatch_occurred: true`, `changed_by_engineering: false` | true |
+| (r-unproven) | `dispatch_failed_confirmed` + `provider_rejection_confirmed` (backup, reload, add-on/Core restart, helper state); `provider_rejected_mutation` on an entity-registry error result without `provider_permission_denied` (r-reg); or any other confirmed failure with a response. Never a proof code. | **true** | r-reg: `provider_response_received` (correct). Operational/helper state: unchanged. Today's operational and helper-state label is `provider_response_lost` when `exc.dispatched` (see the accepted limitation below). | `dispatch_phase: sent_failed_mutation_unproven`, `provider_dispatch_occurred: true`, `changed_by_engineering: null` | true |
 | (c) | `dispatch_indeterminate` + the adapter's uncertainty code (`provider_result_uncertain`, `fan_response_uncertain`, `provider_response_indeterminate`, …), or `dispatch_failed_confirmed` + `provider_confirmed_no_mutation` **without** a proof code | false | `provider_result_uncertain` (configuration); `provider_response_lost` (operational/helper state when `exc.dispatched`) | `dispatch_phase: intent_recorded_send_uncertain` | true (conservative) |
 | sent | Existing outcomes (`succeeded_verified`, `verification_mismatch`, `observing` including the dashboard structured rejection, …) | true | `provider_response_received` | `dispatch_phase: sent_response_received` | true |
 
@@ -970,8 +1077,11 @@ removes the current mislabel without claiming (b). PR2 adds the
 `provider_call_not_sent` label only where a producer passes positive proof.
 
 **Accepted PR1 limitation: operational gateway audit labels.** The backup,
-lifecycle and helper-state gateways (`R/f3_runtime/runtime.py:765-769`,
-`:801-805`, `:839-843`) label by `exc.dispatched` alone:
+lifecycle and helper-state gateways (helper state
+`_AuditedHelperStateGateway` `R/f3_runtime/runtime.py:765-769`, backup
+`_EvidenceCapturingBackupGateway` `:801-805`, lifecycle
+`_EvidenceCapturingLifecycleGateway` `:839-843`) label by `exc.dispatched`
+alone:
 `provider_response_lost` when true and `provider_invocation_refused` when
 false. Two cases disagree with F3:
 
@@ -1014,7 +1124,8 @@ tests.
 | b1 | (b) | **`setter_call_not_sent`**, `provider_confirmed_no_mutation` (unchanged) | unchanged | `R/clients/mcp.py:372-379` |
 | b2-L | (b) | **`provider_call_not_sent`**, `provider_confirmed_no_mutation` | `provider_call_not_sent` | Raise site in `R/governance/resources.py` / `R/governance/entity_metadata.py:573` sets a `call_not_sent=True` attribute on `ConfigurationMutationNotDispatchedError` |
 | b2-A | (b) | **`provider_call_not_sent`**, `provider_confirmed_no_mutation` | `provider_call_not_sent` | `R/clients/websocket.py` sets the attribute on `AuthorizationError` only at `:246-251` and `:288-292` |
-| b2-R | (r-proven) | `provider_rejected_mutation` (unchanged) | `provider_response_received` (unchanged) | Received response plus P1–P3 |
+| b2-R | (r-proven) | `provider_rejected_mutation` (unchanged; P3 also `provider_permission_denied`) | `provider_response_received` (unchanged) | Received response plus P1 or P3 |
+| r-reg | (r-unproven) | `provider_rejected_mutation` (unchanged), without `provider_permission_denied` | `provider_response_received` (unchanged) | Received response; no non-mutation proof (P2 withdrawn) |
 | r-op | (r-unproven) | `provider_rejection_confirmed` (unchanged) | unchanged (accepted limitation, §5.1) | Received response; no non-mutation proof |
 | b3 | (b) | **`provider_call_not_sent`**, `dispatch_authority_retired_before_send` | `provider_call_not_sent` | `R/f3/executor.py:621-631` raise, plus the adapter's b5 not-sent declaration (configuration, dashboard, fan/power, helper state only) |
 | b4 | (b), tests only | as b3, with the stage reason `before_dispatch_failed` | as b3 | `R/f3/executor.py:620` |
@@ -1051,7 +1162,8 @@ the send-boundary owner establishes the proof.
 | b5 callback failure, fan/power | (b) | `provider_call_not_sent` | as b3 | `R/fan/adapter.py:110-119` (`once()`, `dispatched` still false) and `:126-128` | PR2 |
 | b5 callback failure, helper state | (b) | `provider_call_not_sent` | as b3 | `R/governance/helper_state.py:157` through `R/f3/operational_strategies.py:845-866` and `R/f3/operational_adapter.py:677-724` | PR2 |
 | b8 fan/power provider authority recheck | (b) | `provider_call_not_sent` | `R/fan/adapter.py:126-132` (exception branch after `dispatched=True`) | `R/providers/upstream_fan.py:98-99` | PR2 |
-| b2-R configuration/entity-metadata rejection | (r-proven) | none (P1–P3 via `provider_rejected_mutation`) | `R/f3_configuration/adapter.py:494-496` | `R/governance/resources.py:886-900`; `R/governance/entity_metadata.py:582-596`, `:598-615` | exists |
+| b2-R configuration/entity-metadata rejection | (r-proven) | none (P1 or P3 via `provider_rejected_mutation`; P3 also `provider_permission_denied` from `R/f3_configuration/strategies.py:486-493`) | `R/f3_configuration/adapter.py:494-496` | P1: `R/governance/resources.py:890-900` (automation/script routes `:95-98`); P3: `R/governance/entity_metadata.py:582-596` | exists |
+| r-reg entity-registry error result | (r-unproven) | none | `R/f3_configuration/adapter.py:494-496` | `R/governance/entity_metadata.py:598-615` (no non-mutation proof) | exists |
 | r-op operational/helper failure with response | (r-unproven) | none | `R/f3/operational_adapter.py:723` (`result.diagnostic_code`), from `R/f3/operational_strategies.py:260`, `:400`, `:541`, `:671`, `:863` | `R/f3/operational_strategies.py:246-263`, `:394-406`, `:535-547`, `:665-677`, `:855-866` | exists |
 | b6, b7, b9, backup/lifecycle b3/b4/b5 | (c) | none (excluded) | — | — | later, only with a demonstrated pre-write proof |
 
@@ -1066,13 +1178,15 @@ PR2 test obligations for this table (D1/D2):
   - proof code on the wrong event → (c);
   - proof code with each conflicting code → (c);
   - `setter_call_not_sent` on a non-dashboard capability → (c).
-- **(r-proven) positives:** a REST 4xx (P1); a WS registry error result
-  (P2); a WS post-command `unauthorized` (P3).
+- **(r-proven) positives:** an automation or script REST 4xx (P1); a WS
+  post-command `unauthorized` (P3). These are the only two.
 - **(r-proven) negatives** (each must be (r-unproven) or sent, never
   `changed_by_engineering:false`): backup `backup_failed`; lifecycle
   `operation_failed`; helper state `provider_rejected`; a dashboard
   structured rejection (`OBSERVING`, sent); an exception without a response
-  ((c)).
+  ((c)); an entity-registry error result, both a historical beta.8 record and
+  the Codex post-assignment `unknown_error` shape (r-unproven); an
+  `input_boolean`/`input_number` WebSocket update error ((c), never P1).
 
 **Architecture guard.** A test asserts that the eligibility, claim, rollback
 admission (except the stricter refusal) and cancellation modules do not
@@ -1107,8 +1221,8 @@ and `tests/fixtures/configuration_reverification/` are **not** updated.
 
 **Scope.** (a) for all generic no-op users as a *projection*; existing (b)
 (dashboard b1); (r-proven) and (r-unproven) as projections of existing
-records (§2.1); qualifiers for (c); the parent aggregation rule (§2.1); the
-OD-6(ii) timestamp fields (§2.4.2: `dispatched_at_basis` and the companion
+records (§2.1); qualifiers for (c); the parent aggregation rule (§2.1); the status
+preservation rule (§2.4.3 item 4); the OD-6(ii) timestamp fields (§2.4.2: `dispatched_at_basis` and the companion
 times; fan/power `dispatched_at` stays `null`, governed (b) `dispatched_at`
 becomes `null`); the configuration gateway-audit mislabel (§5.1); the
 accepted operational audit-label limitation and its regression test (§5.1);
@@ -1150,7 +1264,7 @@ needs an edit, that is reported as a scope change.
 
 | File | Content |
 | --- | --- |
-| `tests/test_hamcp181_dispatch_facts.py` | Projection unit tests for every phase; the single (b) predicate, table-driven over both proof codes, with the §5.3 controls (proof code missing, response received, wrong event, each conflicting code, `setter_call_not_sent` on a non-dashboard capability); (r-proven) positives REST 4xx (P1), WS registry error (P2), WS post-command `unauthorized` (P3); (r-proven) negatives `backup_failed`, `operation_failed`, helper `provider_rejected`, dashboard structured rejection, exception without a response; the contradiction rule; every row of the §2.1 parent truth table; counter bases including `attempt_count_scope` and `child_dispatch_phases` |
+| `tests/test_hamcp181_dispatch_facts.py` | Projection unit tests for every phase; the single (b) predicate, table-driven over both proof codes, with the §5.3 controls (proof code missing, response received, wrong event, each conflicting code, `setter_call_not_sent` on a non-dashboard capability); (r-proven) positives automation/script REST 4xx (P1) and WS post-command `unauthorized` (P3) only; (r-proven) negatives `backup_failed`, `operation_failed`, helper `provider_rejected`, entity-registry error result without `provider_permission_denied` (constructed historical shape), `input_*` WebSocket error, dashboard structured rejection, exception without a response; the contradiction rule; every row of the §2.1 parent truth table, including the revision-3 R3-3 permutations (verified + (c), verified + (r-unproven), (a) + failed pre-dispatch, (a) + created, all (a), missing children) and agreement of the (a)/(b) all-children predicates with the phase; counter bases including `attempt_count_scope` and `child_dispatch_phases` |
 | `tests/test_hamcp181_surface_consistency.py` | The Codex R2 probe replayed through every public tool (S1–S20) at full, compact (2,000) and minimal budgets and across a restart; the Core-retirement probe and late-drift variants; #253 and V9 value-identical regression (§2.4.3), including the dashboard all-b1 parent basis `saved_dispatch_intent_no_setter_call` at one and three children and at full, compact and minimal budgets; 0-, 1- and 3-child receipts; S16 staleness regression |
 | `tests/test_hamcp181_fan_power_dispatched_at.py` | §2.4.2 tests 1–8 through fan **and** power (including the delayed-send test: no field equals or is labelled as the send time), receipt plus snapshot audit plus request audit; governed (b) `dispatched_at` `null` |
 | `tests/test_hamcp181_audit_labels.py` | §5.1 PR1 gateway rule: REST 4xx (r-proven) keeps `provider_response_received`; local refusal gets `provider_result_uncertain`; lifecycle audit values per phase; the accepted operational/helper label limitation (pre-intent refusal, post-intent callback failure, confirmed failure with response, lost response), each next to its F3 phase |
@@ -1180,7 +1294,11 @@ the shard balancer requires them.
 **Mutations that must be caught.** Drop the basis from a nested counter;
 revert one surface to its legacy predicate; make (c) project false; project
 (r) as (b); project (r-unproven) as (r-proven) (claim `changed_by_engineering:
-false` without P1–P3); accept `provider_confirmed_no_mutation` alone as (b)
+false` without P1 or P3); project an entity-metadata
+`provider_rejected_mutation` record without `provider_permission_denied` as
+(r-proven); let a verified child outrank an uncertain or (r-unproven) child
+for parent `changed_by_engineering`; let a max-phase selection stand in for
+the (a) predicate; change a generic (a) `status` in PR1; accept `provider_confirmed_no_mutation` alone as (b)
 proof; let a parent claim "no dispatch" or "verified" over an uncertain
 child; set fan `dispatched_at` from the intent time; use the clock for
 `dispatched_at`; restore the `mutation_dispatched is False` audit branch.
@@ -1217,7 +1335,7 @@ own §5.3 row, files and tests.
 | `R/f3/operational_adapter.py` | b5 for helper state only (`:677-724`); backup/lifecycle unchanged |
 | `R/f3/operational_strategies.py` | Helper-state strategy `:845-866` passes the not-sent declaration through; backup/lifecycle strategies unchanged |
 | `R/governance/helper_state.py` | b5: not-sent declaration when `before_dispatch()` at `:157` raises, before the `:158` try |
-| `R/f3_runtime/runtime.py` | `_project_locked`: T2 strings and keys; configuration gateway label (`:702-721`) and helper-state gateway label (`:839-843`) for in-scope producers only; backup/lifecycle labels (`:765-769`, `:801-805`) unchanged; legacy rollback refusal (`:3423-3436`) |
+| `R/f3_runtime/runtime.py` | `_project_locked`: T2 strings and keys; configuration gateway label (`:702-721`) and helper-state gateway label (`_AuditedHelperStateGateway` `:765-769`) for in-scope producers only; backup (`_EvidenceCapturingBackupGateway` `:801-805`) and lifecycle (`_EvidenceCapturingLifecycleGateway` `:839-843`) labels unchanged and not authorized for edit; legacy rollback refusal (`:3423-3436`) |
 | `R/f3_runtime/dispatch_facts.py` | Read the T2 strings |
 | `R/governance/service.py` | `terminal_outcome` filter (`:1966-1970`) accepts the T2 strings |
 
@@ -1247,16 +1365,21 @@ edited.
 
 | File | Content |
 | --- | --- |
-| `tests/test_hamcp181_proven_no_call_producers.py` | Per §5.3 (b) row: zero transport calls, the required proof code on `dispatch_result_recorded`, phase (b); REST 4xx (P1), WS registry error (P2) and WS post-command `unauthorized` (P3) stay (r-proven); lost response stays (c); pre-send versus post-exchange authority retirement (b8); fan **and** power; backup/lifecycle b5 callback failure stays (c) (exclusion guard) |
+| `tests/test_hamcp181_proven_no_call_producers.py` | Per §5.3 (b) row: zero transport calls, the required proof code on `dispatch_result_recorded`, phase (b); automation/script REST 4xx (P1) and WS post-command `unauthorized` (P3) stay (r-proven); a WS registry error result stays (r-unproven) and gets no proof code; lost response stays (c); pre-send versus post-exchange authority retirement (b8); fan **and** power; backup/lifecycle b5 callback failure stays (c) (exclusion guard) |
 | `tests/test_hamcp181_terminal_outcome_t2.py` | T2 strings and keys; `terminal_outcome` filter; restart and recovery of each (b) record; no readback for (b) |
 | `tests/test_hamcp181_rollback_unchanged_forward.py` | OD-11 refusal-only on the legacy branch; mixed-plan verified prefix unchanged |
 | `tests/test_hamcp181_beta8_downgrade.py` | §4.3 executed downgrade: the `7370ad2` reader from `git archive` over the PR2-candidate fixtures |
+| `tests/test_hamcp181_entity_registry_error_unproven.py` | **Required regression for the withdrawn P2 (R3-1).** (1) Engineering end to end: a fake WebSocket whose registry entry changes and which then returns an `unknown_error` result, driven through the real entity-metadata gateway, configuration adapter, F3 executor and the PR1 projection. It asserts `dispatch_phase:"sent_failed_mutation_unproven"`, `changed_by_engineering:null`, `provider_dispatch_occurred:true`, no projected `outcome_code:"provider_rejected_mutation"` and no proof code, on the apply result, the task and every §5 surface. The error is never read as no-mutation. (2) The Codex revision-3 probe reproduced offline on **both** supported Core revisions (2026.10.0 `6a811d3359c7b2076dc9e1cf900843a129c044af`, 2026.10.1 `abe1fdd7cd6b4de1715c87b6fd87d92699514ef9`), from hash-pinned excerpts of `homeassistant/helpers/entity_registry.py` `_async_update_entity`, `homeassistant/components/config/entity_registry.py` `websocket_update_entity` and `homeassistant/components/websocket_api/connection.py` `async_handle_exception`: an update whose save scheduling raises leaves the registry changed and returns `unknown_error`. (3) Controls: post-assignment, save-scheduling, update-event and generic `unknown_error` failures are all (r-unproven); the P3 `unauthorized` result stays (r-proven); a historical beta.8 registry-error record without a reason projects (r-unproven). No test may assert non-mutation from an error result. |
 
 **Fixtures (new).** `tests/fixtures/f3_hamcp181_candidate/`: generator,
 `README.md`, `provenance.json` naming the exact PR2 candidate commit, and the
-§4.3 item 4 record set.
+§4.3 item 4 record set. `tests/fixtures/hamcp181_core_entity_registry_excerpts/`:
+the Core source excerpts for the required regression test, with
+`provenance.json` (both Core commit SHAs, source URLs and line ranges,
+SHA-256 of each excerpt) and `README.md`. The test runs offline and checks
+the hashes before use.
 
-**Support.** `ci/unit-test-shards.json` weights for the four new modules, if
+**Support.** `ci/unit-test-shards.json` weights for the five new modules, if
 required.
 
 **Release (protected).** As PR1, for beta.10:
@@ -1271,7 +1394,8 @@ six existing files.
 await; mark (r) as not sent; emit `provider_call_not_sent` for a backup or
 lifecycle callback failure; mark a lost response as not sent; set the attribute at
 `:890` or `:605`; treat `HomeAssistantUnavailableError` as proof without the
-attribute.
+attribute; treat an entity-registry error result as no-mutation (emit
+`changed_by_engineering:false`, a proof code or the (r-proven) phase for it).
 
 **Security section.** Required (provider, persistence and
 dispatch-classification boundaries).
@@ -1322,8 +1446,8 @@ change preflight admission semantics, not just labels.
      response **or** `mutation_dispatched is False`. The first is correct
      (r); the second mislabels a local pre-send refusal (b2-L/b2-A) as a
      received response.
-   - The backup, lifecycle and helper-state gateways (`runtime.py:765-769`,
-     `:801-805`, `:839-843`) label by `exc.dispatched` alone:
+   - The helper-state (`runtime.py:765-769`), backup (`:801-805`) and
+     lifecycle (`:839-843`) gateways label by `exc.dispatched` alone:
      `provider_response_lost` when true, `provider_invocation_refused` when
      false. "Refused" contradicts F3 when the intent callback committed and
      then failed (b5); "response lost" contradicts F3 for a confirmed
@@ -1341,8 +1465,22 @@ change preflight admission semantics, not just labels.
     received response (`operational_strategies.py:246-263`, `:394-406`,
     `:535-547`, `:665-677`, `:855-866`), but nothing in the code shows the
     provider made no change. Only the configuration/entity-metadata
-    rejections P1–P3 carry a provider-specific non-mutation proof (§2.1).
+    rejections P1 and P3 carry a provider-specific non-mutation proof
+    (§2.1). An entity-registry error result does not (item 11).
     The others are (r-unproven), and `changed_by_engineering` is `null`.
+11. **The runtime still classifies an entity-registry error result as
+    confirmed non-mutation.** `R/governance/entity_metadata.py:598-615`
+    raises `ConfigurationMutationNotDispatchedError` (reason
+    `entity_registry_update_rejected`) for any error result with a response,
+    with a comment that validation runs before storage. The adapter then
+    records `dispatch_failed_confirmed` with `provider_mutation_count=0`
+    (`R/f3_configuration/adapter.py:475-501`), so no F3 readback runs. The
+    Codex revision-3 probe shows Core can change the registry and then
+    return `unknown_error`. This design fixes only the projection: the
+    record is shown as (r-unproven) with `changed_by_engineering:null`, and
+    readback stays the way to learn the actual state. The stored
+    classification, the zero mutation count and the source comment are
+    unchanged by PR1 and PR2. Whether to change them is OD-15.
 6. **`plan.operational.dispatch` is stale for F3 plans.** No F3 writer
    updates it, yet the plan audit reads it (`service.py:2414-2426`). The
    reviewer confirmed this with an executed probe (S16). PR1 still adds its
@@ -1370,22 +1508,23 @@ Josh chooses. OD-6, OD-7 and OD-14 carry the positions the author and
 reviewer aligned on after the delta review. They are **pending Josh's
 confirmation** and are not decisions until he confirms them.
 
-| ID | Decision | Options | Author (revision 3) | Reviewer (Codex) | Differs? |
+| ID | Decision | Options | Author (revision 4) | Reviewer (Codex) | Differs? |
 | --- | --- | --- | --- | --- | --- |
 | **OD-1** | Task-level representation of (a)/(b) | T1 projection only / **T2** stored `terminal_outcome` + `verification_summary` keys / T3 new task state | **T2**. (r-proven) and (r-unproven) keep `failed_post_dispatch` and get no new stored string (OD-14). | Agree: free-string outcomes plus existing nested summary fields are sufficient; no new enum. | No |
 | **OD-2** | F3 record format | **F-A** no change (proof as diagnostic marker) / F-B new outcome + schema v2 | **F-A**. The only new **proof** code is `provider_call_not_sent`; PR2 also adds two optional informational stage reasons (`dispatch_authority_retired_before_send`, `before_dispatch_failed`). All fit the existing bounded diagnostic list. | Agree: existing bounded diagnostics carry proof without breaking the closed F3 shape. | No |
 | **OD-3** | Downgrade rule | **Narrow F12-style** (§4.3) / forward-only / expand-contract | **Narrow F12-style**: floor exactly beta.8 `7370ad2`; terminal-only across all namespaces and owners; executed PR2 candidate-writer → beta.8-reader test; explicit not-guaranteed list. | Agree only after R4. Revision 2 applies R4's conditions (named floor, all namespaces/owners, writer → old reader behavior and readiness, no blanket earlier-release guarantee). | No, after correction |
-| **OD-4** | Generalize the V9 outcome to fan, power and helper state | Yes, same string and fields / distinct per-capability string | **Yes, same string** | Agree: helper state, fan and power really have no-op paths; backup/reload/restart do not. | No |
+| **OD-4** | Generalize the V9 outcome to fan, power and helper state | Yes, same string and fields / distinct per-capability string | **Yes, same string.** Helper-state (a) then reports `status:"already_present"` in PR2, the only status change (status preservation rule, §2.4.3 item 4). Fan/power have no `status`. | Agree: helper state, fan and power really have no-op paths; backup/reload/restart do not. | No |
 | **OD-5** | Name for (b) | `failed_after_intent_not_dispatched` / `intent_recorded_not_dispatched` / other | `failed_after_intent_not_dispatched` | Agree: distinguishes intent from send and does not imply retry. | No |
 | **OD-6** | Public timestamps (§2.4.2) | (i) `dispatched_at` = intent commit time when the send is proven / **(ii)** companion fields only; no new non-null `dispatched_at` / (iii) as (i), but governed (c) keeps today's intent time | **(ii), aligned, pending Josh's confirmation.** Fan/power `dispatched_at` stays `null` until PR2 (or a later PR) stores an exact provider-send timestamp under a separately scoped producer/persistence decision. Governed tasks keep the stored value except (b), which becomes `null`. PR1 adds only `dispatched_at_basis`, `dispatch_intent_recorded_at` and `provider_response_recorded_at`, each named for what it is. No surface describes the intent time as a dispatch or send time. | **(ii)** (delta review): (i)/(iii) would need owner acceptance of a lower-bound proxy, not an actual send time. | **Aligned** (pending Josh's confirmation). Revision 2 recommended (i); this replaces it. |
-| **OD-7** | Which proven-no-call producers to promote | All local pre-send proofs / a subset | **Subset, aligned, pending Josh's confirmation:** b2-L, b2-A, b3, b5 and b8 in PR2 (b4 as a test seam only), for configuration, dashboard, fan/power and helper state, exactly per §5.3. **Excluded from PR2:** b6, b7, b9 and the backup/lifecycle b3/b4/b5 (their proof would sit inside the b9 provider). Each excluded producer stays (c) and is added later only with a demonstrated pre-write proof point. b2-R is (r-proven); a lost response stays (c). | Conditionally sound once the proof rules are consistent (delta review); D2 required §2.1 and §5.2 to agree, now enforced by §5.3. | **Aligned** (pending Josh's confirmation). |
+| **OD-7** | Which proven-no-call producers to promote | All local pre-send proofs / a subset | **Subset, aligned, pending Josh's confirmation:** b2-L, b2-A, b3, b5 and b8 in PR2 (b4 as a test seam only), for configuration, dashboard, fan/power and helper state, exactly per §5.3. **Excluded from PR2:** b6, b7, b9 and the backup/lifecycle b3/b4/b5 (their proof would sit inside the b9 provider). Each excluded producer stays (c) and is added later only with a demonstrated pre-write proof point. b2-R is (r-proven) only under P1 (automation/script REST) or P3; an entity-registry error result is (r-unproven); a lost response stays (c). | Conditionally sound once the proof rules are consistent (delta review); D2 required §2.1 and §5.2 to agree, now enforced by §5.3. | **Aligned** (pending Josh's confirmation). |
 | **OD-8** | Accept the outcome change for promoted producers: no readback, and a failure even if someone else reached the state | Accept / keep readback (requires F-B) | **Accept** | Agree: Engineering never invoked the mutation; another actor's state does not establish this operation's success. Preserve readback for uncertainty. | No |
 | **OD-9** | (a) for configuration REST/helper, dashboard and fan/power drift-equals-target | Out of scope / new item | **Out of scope; open a new register item if wanted** | Agree: it changes admission semantics, not outcome labelling. | No |
 | **OD-10** | Accept that the `terminal_outcome` filter no longer matches (a)/(b) under legacy strings | Accept + document / also match legacy strings | **Accept + document**, including that historical records keep their old raw outcomes (no backfill). | Agree with disclosure: state filters stay available; no backfill. | No |
-| **OD-11** | Rollback for a forward that changed nothing | Uniform refusal for a **wholly** unchanged forward (every child (a), (b) or (r)), preserving rollback of verified children in mixed plans / keep current | **Uniform refusal, narrowed** (§4.4): the concrete change is the legacy automation branch; contract-v2 and contract-v3 already refuse; mixed plans keep rollback of their verified prefix. | Agree, narrowed by R5: preserve verified-child recovery and identify the actual legacy gap. | No, after correction |
+| **OD-11** | Rollback for a forward that changed nothing | Uniform refusal for a **wholly** unchanged forward (every child (a), (b) or (r-proven); an (r-unproven) child may have changed and keeps today's behavior), preserving rollback of verified children in mixed plans / keep current | **Uniform refusal, narrowed** (§4.4): the concrete change is the legacy automation branch; contract-v2 and contract-v3 already refuse; mixed plans keep rollback of their verified prefix. | Agree, narrowed by R5: preserve verified-child recovery and identify the actual legacy gap. | No, after correction |
 | **OD-12** | PR split and versions | **PR1 (beta.9) → PR2 (beta.10)** / one combined PR | **Two PRs.** PR1 now also carries the gateway-audit correction and the fan/power timestamp fix. | Agree: separates projection consistency from changed producer outcomes and writer compatibility. Versions remain subject to actual release sequencing. | No |
 | **OD-13** | Authorization of the protected surfaces in §6 | Explicit per-PR authorization of the exact file lists | Required before implementation. The lists in §6 are now complete for the recommended options; optional files are listed separately and need their own approval. | Agree after file-map correction: approving the revision 1 lists would not have authorized all promised work. | No, after correction |
-| **OD-14** | Representation of (r), sent but failed | **Projection only** / a stored T2 string | **Projection only, aligned, pending Josh's confirmation.** No new stored string. The projection splits (r) by proof: (r-proven) `sent_rejected_no_mutation` with `changed_by_engineering:false` only for a named provider-specific non-mutation proof (P1–P3, §2.1, with provider and code path); every other dispatched confirmed failure is (r-unproven) `sent_failed_mutation_unproven`, "dispatched; failed; mutation not proven absent", `changed_by_engineering:null`. Adding a proof later needs its own P-row and tests. | Projection-only recommended, with capability-specific non-mutation proof (delta review D1). | **Aligned** (pending Josh's confirmation). |
+| **OD-14** | Representation of (r), sent but failed | **Projection only** / a stored T2 string | **Projection only, aligned, pending Josh's confirmation.** No new stored string. The projection splits (r) by proof: (r-proven) `sent_rejected_no_mutation` with `changed_by_engineering:false` only for a named provider-specific non-mutation proof (P1 or P3 only, §2.1, with provider and code path; P2 is withdrawn, architect decision pending Josh's confirmation); every other dispatched confirmed failure is (r-unproven) `sent_failed_mutation_unproven`, "dispatched; failed; mutation not proven absent", `changed_by_engineering:null`. Adding a proof later needs a reproduced pre-mutation guarantee on every supported Core revision, its own P-row and tests. | Projection-only recommended, with capability-specific non-mutation proof (delta review D1); P2 not accepted (revision-3 review R3-1). | **Aligned** (pending Josh's confirmation). |
+| **OD-15** | The runtime classification of an entity-registry error result (§7 item 11) | Keep the runtime as is and rely on projection-only truth / open a separate scoped item that records the result as indeterminate with readback and corrects the `entity_metadata.py:598-615` comment | **Keep as is in PR1 and PR2; the separate item is recommended.** The projection already reports the truth. A producer change is a runtime and persistence change that needs its own scope, tests and review, and is not part of this design. | Not yet reviewed (new in revision 4). | Pending Josh |
 
 ---
 
