@@ -243,6 +243,15 @@ class Harness(unittest.IsolatedAsyncioTestCase):
     def diagnostics(self, child):
         return {code for event in child['events'] for code in event['diagnostic_codes']}
 
+    async def reached(self, peer, task, name):
+        # Bounded: a refusal before the hung call must fail, not hang.
+        for _ in range(500):
+            if name in peer.names():
+                return
+            self.assertFalse(task.done(), task.done() and task.exception())
+            await asyncio.sleep(0.01)
+        self.fail(f'{name} was never called')
+
     def balanced(self):
         self.assertEqual(self.telemetry.upstream_active_requests, 0)
 
@@ -751,8 +760,7 @@ class TruthfulRefusal(Harness):
                     return await provider.best_practices_acknowledgement_key(
                         expected_provider_authority_evidence_hash=await self.authority(provider))
                 task = asyncio.ensure_future(run())
-                while stage not in peer.names():
-                    await asyncio.sleep(0.01)
+                await self.reached(peer, task, stage)
                 task.cancel()
                 with self.assertRaises(asyncio.CancelledError):
                     await task
@@ -763,8 +771,7 @@ class TruthfulRefusal(Harness):
         _p, service, runtime, created = await self.planned(peer)
         peer.hang.add(SETTER)
         task = asyncio.ensure_future(service.apply(created['plan_id'], created['plan_hash']))
-        while SETTER not in peer.names():
-            await asyncio.sleep(0.01)
+        await self.reached(peer, task, SETTER)
         task.cancel()
         with self.assertRaises(asyncio.CancelledError):
             await task
