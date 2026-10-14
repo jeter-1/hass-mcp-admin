@@ -28,7 +28,8 @@ reproducible builds or cryptographic image-attestation verification.
 
 ## Public compatibility and withheld behavior
 
-Engineering exposes the same 25 reads. Existing descriptions, annotations and
+Engineering exposes the same 25 reads. (Since 2.4.1-beta.7, HAMCP-129 adds
+three closed platform wrappers at 8.4.3, 8.5.0 and 8.6.0, for 28 in total.) Existing descriptions, annotations and
 input schemas are retained through explicit 8.6 projections, with one
 owner-approved migration: `ha_get_skill_guide` now accepts `file`, defaulting to
 `SKILL.md`, and returns the bundled document. The old `skill` selector and

@@ -342,7 +342,7 @@ class DependencyScopedAdmission(Harness):
             self.assertEqual(peer.events, [])
             self.assertEqual(self.telemetry.upstream_request_count, before)
 
-    async def test_read_subset_still_exposes_25_and_does_not_admit_extras_or_writes(self):
+    async def test_read_subset_still_exposes_28_and_does_not_admit_extras_or_writes(self):
         from mcp.server.fastmcp import FastMCP
         from ha_mcp_engineering import capabilities
         from ha_mcp_engineering.providers.upstream_read_gateway import UpstreamReadGateway
@@ -355,7 +355,9 @@ class DependencyScopedAdmission(Harness):
                           transport=GatewayTransport(catalog(EXTRAS).tools))
         await gateway.initialize(FastMCP('synthetic-investigation'))
         tools = gateway._registered_tool_registry.snapshot()
-        self.assertEqual(len(tools), 25)
+        # 25 base reads plus the three exact-bound 8.5.0 platform reads (HAMCP-129).
+        self.assertEqual(len(tools), 28)
+        self.assertLessEqual({'ha_get_system_health', 'ha_get_app', 'ha_get_integration'}, set(tools))
         self.assertFalse(set(EXTRAS).intersection(tools))
         self.assertNotIn('ha_call_service', tools)
         self.assertIsInstance(gateway.power_provider_authority_token('8.5.0'), str)

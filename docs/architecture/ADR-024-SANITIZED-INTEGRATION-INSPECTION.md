@@ -9,6 +9,14 @@ Engineering endpoint. Generic ha-mcp 8.5.0 `ha_get_integration` can initialize a
 options flow and internally fall back; its form values are not Alarmo's stored
 mode/sensor authority. It remains unexposed and unchanged.
 
+Amendment (2.4.1-beta.7, HAMCP-129): `ha_get_integration` is now exposed only
+through a closed Engineering wrapper. The wrapper sends a fixed list request
+with `include_options=false`, never sends `domain` or `entry_id` detail modes,
+so no options flow starts, and projects the result through a positive
+allowlist. This inspector's design and transport are unchanged. The wrapper
+is not a source of Alarmo mode or sensor authority. See
+[the HAMCP-129 design](../HAMCP_129_PLATFORM_READS_DESIGN.md).
+
 Use a fixed positive projection, isolated bounded transport, typed evidence and
 frozen private pagination. Add one separate Core metadata-read applicability
 reference without altering old profiles, compiled exact admission or signed

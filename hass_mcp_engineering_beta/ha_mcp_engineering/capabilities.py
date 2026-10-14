@@ -427,6 +427,13 @@ BETA_NATIVE_CAPABILITIES: tuple[dict[str, Any], ...] = (
     },
 )
 
+
+def _platform_read_profile(kind: str) -> str:
+    # Mirrors providers.upstream_platform_reads.ADAPTER_BINDINGS (test-bound);
+    # importing it here would be circular through providers/__init__.
+    return ", ".join(f"ha-mcp-{v}-platform-{kind}-v1" for v in ("8.4.3", "8.5.0", "8.6.0"))
+
+
 CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
     {
         "tool": "dashboard_integrity_analysis", "capability": "dashboard_integrity_analysis",
@@ -503,6 +510,48 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "trust_mode": "reviewed_argument_constrained",
         "trust_profile": ", ".join((*FAN_CONTRACTS, *FAN_SEMANTIC_CONTRACTS.values())),
         "core_applicability": "explicit_signed_core.typed_fan_operation_or_exact_legacy_core_2026.9.2",
+    },
+    {
+        "tool": "ha_get_system_health",
+        "capability": "platform_health",
+        "required_semantics": "Allowlisted platform baseline plus enum-selected repairs, radio-network, dead-entity and theme sections with fixed error codes.",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained",
+        "direct_ha_coverage": "not_used",
+        "selected_provider": "upstream_platform_reads",
+        "completeness": "projected_allowlist_partial_disclosed",
+        "fallback_policy": "none",
+        "security_justification": "Engineering builds include only from the section enum; diagnostics, config_check and zha_network_full are never sent. The baseline starts Core cloud/Supervisor reachability probes (open world, disclosed). Positive allowlist before sanitization.",
+        "trust_mode": "reviewed_argument_constrained",
+        "trust_profile": _platform_read_profile("health"),
+        "core_applicability": "basic_websocket_and_rest_profiles_commands_unattested",
+    },
+    {
+        "tool": "ha_get_app",
+        "capability": "installed_app_inventory",
+        "required_semantics": "Installed add-on listing with Engineering-side slug filtering and optional stats for at most 32 started add-ons.",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained",
+        "direct_ha_coverage": "not_used",
+        "selected_provider": "upstream_platform_reads",
+        "completeness": "projected_allowlist_partial_disclosed",
+        "fallback_policy": "none",
+        "security_justification": "Engineering sends only source=installed and include_stats; slug is never sent, so add-on info and options are never requested. A stats-free pre-check refuses stats for more than 32 started add-ons; it is a sampled bound, because upstream re-lists before its stats fan-out. Supervisor is not attested by any Core profile.",
+        "trust_mode": "reviewed_argument_constrained",
+        "trust_profile": _platform_read_profile("apps"),
+        "core_applicability": "basic_websocket_profile_command_and_supervisor_unattested",
+    },
+    {
+        "tool": "ha_get_integration",
+        "capability": "config_entry_status",
+        "required_semantics": "Config-entry list with Engineering-side domain, query, state and entry_id filtering over a 200-entry upstream window.",
+        "standard_ha_mcp_coverage": "reviewed_argument_constrained",
+        "direct_ha_coverage": "not_used",
+        "selected_provider": "upstream_platform_reads",
+        "completeness": "projected_allowlist_partial_disclosed",
+        "fallback_policy": "none",
+        "security_justification": "Engineering forces list mode with include_options=false and exact_match=true; domain, entry_id and detail mode are never sent, so no options flow starts. E-mail-like title text is masked; host names may remain.",
+        "trust_mode": "reviewed_argument_constrained",
+        "trust_profile": _platform_read_profile("integrations"),
+        "core_applicability": "basic_websocket_and_rest_profiles_commands_unattested",
     },
     {
         "tool": "list_dashboards",

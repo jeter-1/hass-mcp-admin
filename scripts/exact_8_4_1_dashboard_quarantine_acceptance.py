@@ -61,20 +61,20 @@ EXACT_RELEASES: dict[str, dict[str, str]] = {
             "sha256:d5cea47a0115e5d161c2b319ee637b1b0a5bcfafe1597cb490299bbbc6329456"
         ),
         "attestation_fingerprint": (
-            "6d9198ed97c239390c565a532cd76a25c7bb0ad80625a709b820449af2eb78be"
+            "f92c6824eb62f458f77969185a5d901131dcbc6b37c16814424b9b98967745ff"
         ),
     },
     "8.5.0": {
         "entry_id": "ha-mcp-v8.5.0-e1538bcd",
         "source_commit": "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
         "image_index_digest": "sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c",
-        "attestation_fingerprint": "d3680a234ee1857e414a611001151ceeec216fb9e948bb8e12d08a79f80d2a26",
+        "attestation_fingerprint": "ca05c23f208e33db9b33209b7b0e89a8b729632513b8e448b6d5fd3e21a26f93",
     },
     "8.6.0": {
         "entry_id": "ha-mcp-v8.6.0-7426fb16",
         "source_commit": "fc54437a804858732e4bc927add98e202d879a09",
         "image_index_digest": "sha256:7426fb169440aff789e4ee942012b03317ba0b68e1d463efa19c37088dddd8bc",
-        "attestation_fingerprint": "a8f65b877ca9c2266489f342789861221e2a64c07dbaf5e66fa21bbc53655990",
+        "attestation_fingerprint": "347e94ca4b57b6c12846ed9f374f839c0a4cfb85181a538477ea03733b8e8f13",
     },
 }
 EXPECTED_DASHBOARD_TOOLS = {

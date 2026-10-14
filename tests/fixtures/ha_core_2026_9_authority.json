@@ -89,7 +89,7 @@
     },
     "existing_evidence": {
       "contract_review": "docs/evidence/upstream-read-compatibility/ha-mcp-8.4.3-contract-review.json",
-      "contract_review_sha256": "109f59790c0e1a600a1d7146c8d5a1458e1898c63087ea08c2307bb1771a4172",
+      "contract_review_sha256": "3a845a4ea507a3e158a4142db70addfa784e3ca4f95c5ddd2e3bee6dbcb87223",
       "catalog_capture": "docs/evidence/upstream-read-compatibility/ha-mcp-8.4.3.json",
       "catalog_capture_sha256": "d18dc24d20581fc4a72d8ceba8918f78b97b332a24f9f37de5df4166ac925aad"
     }

@@ -67,21 +67,21 @@ EXPECTED_ACCOUNTING_BY_VERSION = {
         ),
     },
     "8.4.3": {
-        "delegated_read_count": 25,
+        "delegated_read_count": 28,
         "held_tools": {"ha_get_operation_status"},
         "engineering_total_tool_count": (
-            ENGINEERING_STATIC_TOOL_COUNT + 25
+            ENGINEERING_STATIC_TOOL_COUNT + 28
         ),
     },
     "8.5.0": {
-        "delegated_read_count": 25,
+        "delegated_read_count": 28,
         "held_tools": {"ha_get_operation_status"},
-        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 25,
+        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 28,
     },
     "8.6.0": {
-        "delegated_read_count": 25,
+        "delegated_read_count": 28,
         "held_tools": {"ha_get_operation_status"},
-        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 25,
+        "engineering_total_tool_count": ENGINEERING_STATIC_TOOL_COUNT + 28,
     },
 }
 ZERO_ADMISSION_COUNTERS = (

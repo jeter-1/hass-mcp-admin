@@ -127,7 +127,7 @@ class PrepareHaMcpReleaseRegistryUpdateTests(unittest.TestCase):
         evidence = json.loads(
             (self.evidence / "ha-mcp-8.4.3.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(evidence["matched_read_count"], 25)
+        self.assertEqual(evidence["matched_read_count"], 28)
         self.assertEqual(evidence["withheld_reviewed_reads"], [])
         self.assertEqual(evidence["upstream_write_dispatches"], 0)
         self.assertEqual(evidence["fallback"], "none")

@@ -733,10 +733,10 @@ class ToolParityTests(unittest.TestCase):
             Counter(item["status"] for item in catalog["tools"]),
             {"native": 8, "transitional": 14, "deprecated": 3},
         )
-        self.assertEqual(len(catalog["provider_matrix"]), 18)
+        self.assertEqual(len(catalog["provider_matrix"]), 21)
         self.assertEqual(
             {item["selected_provider"] for item in catalog["provider_matrix"]},
-            {"direct_ha_api", "supervisor_core_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power"},
+            {"direct_ha_api", "supervisor_core_logs", "engineering", "upstream_dashboard", "upstream_typed_fan", "upstream_typed_power", "upstream_platform_reads"},
         )
 
 

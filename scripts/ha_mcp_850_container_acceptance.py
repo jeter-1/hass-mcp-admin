@@ -685,7 +685,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
     health = await gateway.initialize(server)
     require(health["admission_status"] == "admitted_exact", "candidate_read_admission")
     tools = gateway._registered_tool_registry.snapshot()
-    require(len(tools) == 25 and "ha_get_blueprint" in tools
+    require(len(tools) == 28 and "ha_get_blueprint" in tools
             and "ha_manage_blueprints" not in tools and "ha_call_service" not in tools,
             "candidate_public_read_projection")
     telemetry, context = begin_request("synthetic-850-" + kind)
@@ -823,7 +823,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
                 and core_health["fallback_count"] == 0, "candidate_core_not_settled")
         save(output, kind + "-candidate-result.json", {
             "status": "PASS", "engineering_source": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
-            "read_count": 25, "blueprint_completeness": "partial" if profile == "reference" or profile == "legacy" and kind == "standalone" else "complete",
+            "read_count": 28, "blueprint_completeness": "partial" if profile == "reference" or profile == "legacy" and kind == "standalone" else "complete",
             "upstream_version": version, "core_version": core_version, "profile": profile,
             "fan_operations": 3, "fan_restored": "off", "dashboard_operations": 2,
             "typed_failure_contracts": typed_core(core_version),
@@ -916,7 +916,7 @@ async def search_checks(kind,configured,core,rest,websocket,output):
     records=[];raw_records=[]
     try:
         health=await g.initialize(FastMCP('synthetic-component-search'))
-        require(health['dynamically_exposed_count']==25,'component_read_count')
+        require(health['dynamically_exposed_count']==28,'component_read_count')
         transport=g._transport;original=transport.execute_read
         async def observed(*args,**kwargs):
             exchange=await original(*args,**kwargs)
@@ -1002,7 +1002,7 @@ async def power_only_candidate_contract(kind, configured, core, rest, output, pr
         health = await gateway.initialize(FastMCP("candidate-843-disposable"))
         require(health["admission_status"] == "admitted_exact", "candidate_read_admission")
         tools = gateway._registered_tool_registry.snapshot()
-        require(len(tools) == 25 and "ha_call_service" not in tools,
+        require(len(tools) == 28 and "ha_call_service" not in tools,
                 "candidate_public_read_projection")
         service = PowerService(str(work / "power"), PowerProvider.configured(configured, gateway),
                                PowerCoreAuthority(core),
@@ -1013,7 +1013,7 @@ async def power_only_candidate_contract(kind, configured, core, rest, output, pr
                 ("issued_lease_count", "active_commit_count", "fallback_count")), "candidate_core_not_settled")
         save(output, kind + "-candidate-result.json", {
             "status": "PASS", "engineering_source": subprocess.check_output(["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True).strip(),
-            "upstream_version": version, "read_count": 25, "power": summary,
+            "upstream_version": version, "read_count": 28, "power": summary,
             "core": {k: state[k] for k in
                 ("compatible_count", "issued_lease_count", "active_commit_count", "fallback_count")},
             "physical_feedback": False, "approval": "synthetic_authenticated_connector",

@@ -63,8 +63,12 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
             await gateway.initialize(server)
         descriptors = {x.name: x.model_dump(by_alias=True, exclude_none=True) for x in await server.list_tools()}
         baseline = json.loads((ROOT / "tests/fixtures/dashboard_analysis/delegated-c82-descriptors.json").read_text())
-        self.assertEqual(len(descriptors), 25)
-        self.assertEqual(descriptors, baseline["descriptors"])
+        # The c82 fixture predates HAMCP-129; every one of its descriptors is
+        # unchanged and the only additions are the three platform reads.
+        self.assertEqual(len(descriptors), 28)
+        self.assertEqual({name: descriptors[name] for name in baseline["descriptors"]}, baseline["descriptors"])
+        self.assertEqual(set(descriptors) - set(baseline["descriptors"]),
+                         {"ha_get_app", "ha_get_integration", "ha_get_system_health"})
 
     async def test_schema_arguments_and_read_only_no_fallback_policy(self):
         from ha_mcp_engineering.ha_core_readmission.routes import static_tool_requirements

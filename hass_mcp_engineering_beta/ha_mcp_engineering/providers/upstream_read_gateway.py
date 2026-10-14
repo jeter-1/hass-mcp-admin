@@ -98,6 +98,18 @@ from .upstream_blueprint import (
     validate_result as validate_blueprint_result,
     completeness as blueprint_completeness,
 )
+from .upstream_platform_reads import (
+    PlatformResourceNotFound,
+    StatsCapExceeded,
+    check_stats_precheck as check_platform_stats_precheck,
+    completeness as platform_completeness,
+    is_platform_adapter,
+    project_result as project_platform_result,
+    public_schema as platform_public_schema,
+    read_arguments as platform_read_arguments,
+    stats_precheck_required as platform_stats_precheck_required,
+    validate_result as validate_platform_result,
+)
 from .ha_2026_8_device_compatibility import (
     CompositeDeviceCompatibilityError,
     adapt_ha_get_device_composite_result,
@@ -110,7 +122,25 @@ REVIEWED_PROTOCOL_VERSION = "2025-03-26"
 SUPPORTED_PROTOCOLS = frozenset({REVIEWED_PROTOCOL_VERSION})
 RECONCILIATION_RETRY_DELAYS_SECONDS = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 COMPATIBILITY_REPROBE_INTERVAL_SECONDS = 900.0
-MAX_QUARANTINE_RECORDS = 26
+MAX_QUARANTINE_RECORDS = 32
+
+
+def _readmission_withheld_state(
+    withheld: tuple[tuple[str, str], ...],
+) -> dict[str, Any]:
+    """Project version-bound reads withheld from signed policy reuse."""
+
+    reasons: dict[str, int] = {}
+    for _tool, reason in withheld:
+        reasons[reason] = reasons.get(reason, 0) + 1
+    return {
+        "readmission_withheld_read_count": len(withheld),
+        "readmission_withheld_reason_counts": reasons,
+        "readmission_withheld_tools": [
+            {"tool": tool, "reason": reason}
+            for tool, reason in withheld[:MAX_QUARANTINE_RECORDS]
+        ],
+    }
 MAX_RUNTIME_CONTRACT_DIFF_FIELDS = 16
 MAX_STRUCTURED_UPSTREAM_ERROR_BYTES = 16_384
 MAX_HELD_READ_CANARY_BATCH_ITEMS = 64
@@ -284,6 +314,9 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ("ha_get_blueprint", "resource_not_found"): (
         "The requested blueprint was not found."
     ),
+    ("ha_get_app", "resource_not_found"): (
+        "The requested installed app was not found."
+    ),
     ("ha_get_device", "entity_not_found"): (
         "The requested entity was not found or has no associated device."
     ),
@@ -295,6 +328,9 @@ _UPSTREAM_DOMAIN_MESSAGES = {
     ),
     ("ha_get_hacs_info", "resource_not_found"): (
         "The requested HACS repository was not found."
+    ),
+    ("ha_get_integration", "resource_not_found"): (
+        "The requested config entry was not found in the reviewed listing."
     ),
     ("ha_get_operation_status", "resource_not_found"): (
         "The requested operation was not found or is no longer retained."
@@ -319,7 +355,10 @@ _EXPECTED_PROVIDER_OUTCOMES = {
 
 
 def _public_read_schema(entry, observed):
-    schema = public_schema_8_6(entry, blueprint_public_schema(entry, observed))
+    schema = public_schema_8_6(
+        entry,
+        platform_public_schema(entry, blueprint_public_schema(entry, observed)),
+    )
     # Preserve the shipped public descriptor. This exact upstream schema differs
     # only in one example; raw descriptor validation still binds all its bytes.
     if (entry.upstream_name == "ha_get_overview" and
@@ -668,6 +707,9 @@ class UpstreamReadGateway:
             "held_tools": [],
             "core_withheld_read_count": 0,
             "core_withheld_tools": [],
+            "readmission_withheld_read_count": 0,
+            "readmission_withheld_reason_counts": {},
+            "readmission_withheld_tools": [],
             "live_canary_required_tools": [],
             "static_review_completed": False,
             "reviewed_automatic_read_count": 0,
@@ -1066,6 +1108,12 @@ class UpstreamReadGateway:
                         "adapter_id": (
                             readmission_selection.profile.adapter_id
                         ),
+                        "withheld_capabilities": [
+                            {"tool": tool, "reason": reason}
+                            for tool, reason in (
+                                readmission_selection.withheld_capabilities
+                            )
+                        ],
                     }
                 )
                 self._readmission_audit = (
@@ -1524,6 +1572,9 @@ class UpstreamReadGateway:
                     readmission_selection.profile.adapter_id
                 ),
                 "readmission_generation": generation,
+                **_readmission_withheld_state(
+                    readmission_selection.withheld_capabilities
+                ),
             }
             if readmission_selection is not None
             else {}
@@ -1738,6 +1789,9 @@ class UpstreamReadGateway:
                     "core_withheld_tools": [
                         dict(item) for item in core_withheld[:MAX_QUARANTINE_RECORDS]
                     ],
+                    "core_withheld_truncated": (
+                        len(core_withheld) > MAX_QUARANTINE_RECORDS
+                    ),
                     "live_canary_required_tools": sorted(
                         entry.upstream_name
                         for entry in policy.tools
@@ -2655,6 +2709,7 @@ class UpstreamReadGateway:
         route_context: dict[str, Any],
         live_contract_failure: dict[str, Any],
         require_parent_authority: bool = False,
+        platform_stats_precheck: bool = False,
     ) -> tuple[_AdmittedRoute, Any]:
         """Bind one call to the current route and same-session target contract."""
 
@@ -2692,6 +2747,14 @@ class UpstreamReadGateway:
             dispatch_arguments = read_arguments_8_6(policy_entry, arguments)
             if is_blueprint_adapter(policy_entry):
                 dispatch_arguments = blueprint_read_arguments(arguments)
+            if is_platform_adapter(policy_entry):
+                dispatch_arguments = platform_read_arguments(
+                    policy_entry,
+                    arguments,
+                    stats_precheck=platform_stats_precheck,
+                )
+            elif platform_stats_precheck:
+                raise ValueError("platform_stats_precheck_unbound")
         except ValueError:
             raise _GatewayFailure("argument_validation", dispatched=False) from None
         if transport is None:
@@ -3233,6 +3296,59 @@ class UpstreamReadGateway:
         try:
             if require_unmodified_script and policy_entry.upstream_name != "ha_config_get_script":
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            try:
+                stats_precheck = platform_stats_precheck_required(
+                    policy_entry, arguments
+                )
+            except ValueError:
+                # The main dispatch path refuses the same arguments.
+                stats_precheck = False
+            if stats_precheck:
+                # O3: one stats-free listing gates the stats call. It is a
+                # sampled bound: upstream re-lists before its fan-out, so an
+                # add-on started in between is still fanned out (design D11).
+                mapping, precheck = await self._dispatch_current_route(
+                    exposed_name=exposed_name,
+                    arguments=arguments,
+                    reviewed_schema=reviewed_schema,
+                    policy_entry=policy_entry,
+                    admission_generation=admission_generation,
+                    contract_fingerprint=contract_fingerprint,
+                    telemetry=telemetry,
+                    route_context=route_context,
+                    live_contract_failure=live_contract_failure,
+                    platform_stats_precheck=True,
+                )
+                if precheck.call_result.get("isError") is True:
+                    raise _GatewayFailure(
+                        _classify_upstream_tool_error(
+                            policy_entry.upstream_name,
+                            precheck.call_result,
+                            arguments,
+                        ),
+                        dispatched=True,
+                    )
+                try:
+                    check_platform_stats_precheck(
+                        _normalize_upstream_payload(
+                            precheck.call_result,
+                            server_version=mapping.adapter_version,
+                            protocol_version=mapping.protocol_version,
+                            upstream_tool=policy_entry.upstream_name,
+                        )
+                    )
+                except StatsCapExceeded:
+                    raise _GatewayFailure(
+                        "response_too_large", dispatched=True
+                    ) from None
+                except ValueError:
+                    raise _GatewayFailure(
+                        "invalid_response", dispatched=True
+                    ) from None
+                lease = route_context.pop("lease", None)
+                self._finish_core_route_lease(
+                    lease if isinstance(lease, _RouteLease) else None
+                )
             mapping, exchange = await self._dispatch_current_route(
                 exposed_name=exposed_name,
                 arguments=arguments,
@@ -3266,6 +3382,27 @@ class UpstreamReadGateway:
                     validate_blueprint_result(payload, arguments)
                 except ValueError:
                     raise _GatewayFailure("invalid_response", dispatched=True) from None
+            if is_platform_adapter(policy_entry):
+                # Positive allowlist projection before the generic sanitizer.
+                try:
+                    validate_platform_result(policy_entry, payload)
+                    payload = project_platform_result(
+                        policy_entry, payload, arguments
+                    )
+                except StatsCapExceeded:
+                    raise _GatewayFailure(
+                        "response_too_large", dispatched=True
+                    ) from None
+                except PlatformResourceNotFound as exc:
+                    raise _GatewayFailure(
+                        "resource_not_found",
+                        dispatched=True,
+                        details=exc.details,
+                    ) from None
+                except ValueError:
+                    raise _GatewayFailure(
+                        "invalid_response", dispatched=True
+                    ) from None
             response_adapter = None
             if policy_entry.upstream_name == "ha_get_device":
                 if telemetry is None:
@@ -3510,7 +3647,7 @@ class UpstreamReadGateway:
                     category,
                     policy_entry.upstream_name,
                 ),
-                details={"failure_category": category},
+                details={"failure_category": category, **exc.details},
                 retryable=retryable,
                 metadata=failure_metadata,
                 timing=timing_since(started),
@@ -4227,6 +4364,7 @@ class UpstreamReadGateway:
                         "readmission_profile_id": None,
                         "readmission_adapter_id": None,
                         "readmission_generation": None,
+                        **_readmission_withheld_state(()),
                         "last_discovery_stable": False,
                         "compatibility_status": "reconciling",
                         "admission_status": "compatibility_reprobe_pending",
@@ -4644,6 +4782,7 @@ class UpstreamReadGateway:
                     self._state["readmission_profile_id"] = None
                     self._state["readmission_adapter_id"] = None
                     self._state["readmission_generation"] = None
+                    self._state.update(_readmission_withheld_state(()))
                 self._state["reviewed_source_commit"] = None
                 self._state["reviewed_image_index_digest"] = None
                 self._state["reviewed_architecture_image_digests"] = {}
@@ -4799,6 +4938,16 @@ class UpstreamReadGateway:
                 "decision_generation": value[
                     "readmission_generation"
                 ],
+                "readmission_withheld_read_count": value[
+                    "readmission_withheld_read_count"
+                ],
+                "readmission_withheld_reason_counts": dict(
+                    value["readmission_withheld_reason_counts"]
+                ),
+                "readmission_withheld_tools": [
+                    dict(item)
+                    for item in value["readmission_withheld_tools"]
+                ],
                 "issued_lease_count": projection[
                     "issued_lease_count"
                 ],
@@ -4953,10 +5102,18 @@ class UpstreamReadGateway:
 
 
 class _GatewayFailure(RuntimeError):
-    def __init__(self, category: str, *, dispatched: bool):
+    def __init__(
+        self,
+        category: str,
+        *,
+        dispatched: bool,
+        details: dict[str, Any] | None = None,
+    ):
         super().__init__("The reviewed upstream read operation failed.")
         self.category = category
         self.dispatched = dispatched
+        # Fixed, Engineering-authored keys only; never upstream text.
+        self.details = dict(details or {})
 
 
 def _safe_schema_component_fingerprint(value: Any) -> str | None:
@@ -5108,7 +5265,8 @@ def _compare_tool_contract(
     )
     behavior_adapter = (
         entry.argument_restrictions[0]
-        if is_blueprint_adapter(entry) else READ_ADAPTER_8_6
+        if is_blueprint_adapter(entry) or is_platform_adapter(entry)
+        else READ_ADAPTER_8_6
         if is_8_6_read_adapter(entry) else "ha_search_partial_v1"
         if entry.upstream_name == "ha_search"
         else "bounded_opaque_read_v1"
@@ -6027,6 +6185,8 @@ def _upstream_completeness(
 
     if is_blueprint_adapter(policy_entry):
         return blueprint_completeness(payload)
+    if is_platform_adapter(policy_entry):
+        return platform_completeness(payload)
     if policy_entry.upstream_name != "ha_search":
         return False, []
     if not isinstance(payload, dict) or not isinstance(payload.get("partial"), bool):

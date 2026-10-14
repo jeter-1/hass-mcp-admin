@@ -59,8 +59,10 @@ groups, exact-ID registry enrichment, and final manifest. The five Alarmo
 callbacks collect integration-wide collections; Engineering projects the
 selected area or master. Registry IDs are derived internally (513 maximum).
 No generic command, options flow, diagnostic dump, filesystem, user, action,
-readiness or subscription interface is exposed. `ha_get_integration` remains
-mixed/requires-wrapper and unexposed; no ha-mcp feature call or fallback occurs.
+readiness or subscription interface is exposed. The inspector makes no ha-mcp
+feature call and has no fallback. Since 2.4.1-beta.7, `ha_get_integration` is
+separately exposed as a closed list-only wrapper with no options flow (see
+[HAMCP-129](HAMCP_129_PLATFORM_READS_DESIGN.md)). The inspector does not use it.
 
 The response distinguishes complete selected fields, partial evidence,
 unavailable sources, empty membership, omitted records and stale identity.

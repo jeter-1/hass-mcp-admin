@@ -256,7 +256,56 @@ INSTALLED_ADDONS = [
         "repository": "abcdef12",
     }
 ]
-SELF_ADDON_SLUG = "df26dea6_hass_mcp_engineering_beta"
+# HAMCP-129 platform reads: Core's legacy config-entry listing shape and the
+# Core 2026.10 ``system_health/info`` stream (null result, initial, finish).
+CONFIG_ENTRIES = [
+    {
+        "created_at": 1784635200.0,
+        "disabled_by": None,
+        "domain": "sun",
+        "entry_id": "01READGATEWAYSUNENTRY000000",
+        "error_reason_translation_key": None,
+        "error_reason_translation_placeholders": None,
+        "modified_at": 1784635200.0,
+        "num_subentries": 0,
+        "pref_disable_new_entities": False,
+        "pref_disable_polling": False,
+        "reason": None,
+        "source": "import",
+        "state": "loaded",
+        "supported_subentry_types": {},
+        "supports_options": False,
+        "supports_reconfigure": False,
+        "supports_remove_device": False,
+        "supports_unload": True,
+        "title": "Sun",
+    }
+]
+LOGGER_INFO = [{"domain": "sun", "level": 20}]
+SYSTEM_HEALTH_INFO = {
+    "homeassistant": {
+        "info": {
+            "installation_type": "Home Assistant OS",
+            "version": "2026.7.2",
+            "dev": False,
+            "hassio": True,
+            "docker": True,
+            "arch": "x86_64",
+            "os_name": "Linux",
+        }
+    },
+    "hassio": {
+        "info": {
+            "host_os": "Home Assistant OS 16.0",
+            "update_channel": "stable",
+            "supervisor_version": "supervisor-2026.7.0",
+            "healthy": True,
+            "supported": True,
+            "supervisor_api": "ok",
+        }
+    },
+}
+SELF_ADDON_SLUG ="df26dea6_hass_mcp_engineering_beta"
 LIVE_SHAPED_SELF_ADDON_INFO_BYTES = 33_732
 SELF_ADDON_INFO_FRAGMENT_BYTES = 1024
 
@@ -613,6 +662,11 @@ async def api_check_config(_request: web.Request) -> web.Response:
     )
 
 
+async def api_config_entries(_request: web.Request) -> web.Response:
+    STATE.rest_reads["/api/config/config_entries/entry"] += 1
+    return web.json_response(CONFIG_ENTRIES)
+
+
 async def api_states(_request: web.Request) -> web.Response:
     STATE.rest_reads["/api/states"] += 1
     return web.json_response(STATES)
@@ -729,6 +783,8 @@ def _result_for(message_type: str, request_data: dict[str, Any]) -> Any:
             )
             return _addon_detail(addon) if addon is not None else None
         return None
+    if message_type == "logger/log_info":
+        return LOGGER_INFO
     if message_type == "get_states":
         return STATES
     if message_type == "get_services":
@@ -996,6 +1052,27 @@ async def websocket(request: web.Request) -> web.WebSocketResponse:
                 }
             )
             continue
+        if message_type == "system_health/info":
+            STATE.websocket_reads[message_type] += 1
+            await ws.send_json(
+                {
+                    "id": request_id,
+                    "type": "result",
+                    "success": True,
+                    "result": None,
+                }
+            )
+            await ws.send_json(
+                {
+                    "id": request_id,
+                    "type": "event",
+                    "event": {"type": "initial", "data": SYSTEM_HEALTH_INFO},
+                }
+            )
+            await ws.send_json(
+                {"id": request_id, "type": "event", "event": {"type": "finish"}}
+            )
+            continue
         if message_type == "backup/generate":
             generated = _generate_backup(request_data)
             if generated is None:
@@ -1117,6 +1194,9 @@ def main() -> None:
         "/api/config/core/check_config", api_check_config
     )
     application.router.add_get("/api/states", api_states)
+    application.router.add_get(
+        "/api/config/config_entries/entry", api_config_entries
+    )
     application.router.add_get("/api/states/{entity_id}", api_state)
     application.router.add_get("/api/history/period", api_history)
     application.router.add_get("/api/history/period/{entity_id}", api_history)
@@ -1143,6 +1223,9 @@ def main() -> None:
         "/core/api/config/core/check_config", api_check_config
     )
     application.router.add_get("/core/api/states", api_states)
+    application.router.add_get(
+        "/core/api/config/config_entries/entry", api_config_entries
+    )
     application.router.add_get(
         "/core/api/states/{entity_id}", api_state
     )
