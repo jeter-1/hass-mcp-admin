@@ -3601,10 +3601,17 @@ async def _run_core_2026_9_child_contract(
                 expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
             if baseline_result.get("result") != "PASS":
                 raise RuntimeError("Required baseline disposable scenario did not pass")
-            # The existing required artifact carries both clearly named proofs.
+            # HAMCP-179: dormant entity-registry metadata contract on the same slot.
+            from entity_metadata_contract_acceptance import run_disposable as run_entity_metadata
+            entity_metadata_result = await run_entity_metadata(configured,
+                expected_image=os.environ.get("HA_CONTRACT_IMAGE", ""), core_version=EXPECTED_HA_VERSION)
+            if entity_metadata_result.get("result") != "PASS":
+                raise RuntimeError("Required entity metadata disposable scenario did not pass")
+            # The existing required artifact carries every clearly named proof.
             receipt = Path(os.environ["REAL_HA_ALARMO_RESULT"])
             retained = json.loads(receipt.read_text())
             retained["automation_baseline"] = baseline_result
+            retained["entity_metadata"] = entity_metadata_result
             receipt.write_text(json.dumps(retained, sort_keys=True, indent=2) + "\n")
         # Native interval observations must finish before the independent
         # upstream client starts its background traffic. Unexpected commands

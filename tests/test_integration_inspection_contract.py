@@ -83,15 +83,19 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
                                       body=[block], decorator_list=[])
         import tempfile
         core = "2026.10.1"  # Any support-window slot; the gate itself is exercised in test_real_ha_contract_gate.
-        cases = ((None, "PASS", "PASS", True), (Path("synthetic.json"), "NOT_RUN", "PASS", True),
-                 (Path("synthetic.json"), "PASS", "NOT_RUN", True), (Path("synthetic.json"), "PASS", "PASS", True),
-                 (Path("synthetic.json"), "PASS", "PASS", False), (None, "PASS", "PASS", False))
-        for receipt, result, baseline_result, required in cases:
+        cases = ((None, "PASS", "PASS", "PASS", True), (Path("synthetic.json"), "NOT_RUN", "PASS", "PASS", True),
+                 (Path("synthetic.json"), "PASS", "NOT_RUN", "PASS", True),
+                 (Path("synthetic.json"), "PASS", "PASS", "NOT_RUN", True),
+                 (Path("synthetic.json"), "PASS", "PASS", "PASS", True),
+                 (Path("synthetic.json"), "PASS", "PASS", "PASS", False), (None, "PASS", "PASS", "PASS", False))
+        for receipt, result, baseline_result, entity_result, required in cases:
             gate = []
             module = ModuleType("alarmo_inspection_contract_acceptance")
             module.run_disposable = AsyncMock(return_value={"result": result})
             baseline = ModuleType("automation_baseline_contract_acceptance")
             baseline.run_disposable = AsyncMock(return_value={"result": baseline_result})
+            entity = ModuleType("entity_metadata_contract_acceptance")
+            entity.run_disposable = AsyncMock(return_value={"result": entity_result})
             configured, core_runtime = object(), object()
             context = dict(EXPECTED_HA_VERSION=core, configured=configured, core_runtime=core_runtime,
                            _alarmo_slot_required=lambda version, required=required, gate=gate:
@@ -101,18 +105,21 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
             with tempfile.TemporaryDirectory() as directory:
                 retained = Path(directory)/"combined.json"
                 retained.write_text(json.dumps({"result": result}))
-                with patch.dict(sys.modules, {module.__name__: module, baseline.__name__: baseline}), patch.dict(
+                with patch.dict(sys.modules, {module.__name__: module, baseline.__name__: baseline,
+                                             entity.__name__: entity}), patch.dict(
                         os.environ, {"REAL_HA_ALARMO_RESULT": str(retained), "HA_CONTRACT_IMAGE": "synthetic-image"}):
                     if not required:
                         await context["invoke"]()
                         self.assertEqual(json.loads(retained.read_text()), {"result": result})
-                    elif receipt is None or result != "PASS" or baseline_result != "PASS":
+                    elif receipt is None or "NOT_RUN" in (result, baseline_result, entity_result):
                         with self.assertRaises(RuntimeError):
                             await context["invoke"]()
                         self.assertNotIn("automation_baseline", json.loads(retained.read_text()))
+                        self.assertNotIn("entity_metadata", json.loads(retained.read_text()))
                     else:
                         await context["invoke"]()
                         self.assertEqual(json.loads(retained.read_text())["automation_baseline"], {"result": "PASS"})
+                        self.assertEqual(json.loads(retained.read_text())["entity_metadata"], {"result": "PASS"})
             self.assertEqual(gate, [core])
             self.assertEqual(module.run_disposable.await_count, int(required and receipt is not None))
             self.assertEqual(baseline.run_disposable.await_count,
@@ -123,6 +130,12 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
                     core_version=core)
             if baseline.run_disposable.await_count:
                 baseline.run_disposable.assert_awaited_once_with(
+                    configured, expected_image="synthetic-image", core_version=core)
+            # HAMCP-179: entity metadata runs only after the baseline passed.
+            self.assertEqual(entity.run_disposable.await_count,
+                             int(required and receipt is not None and result == "PASS" and baseline_result == "PASS"))
+            if entity.run_disposable.await_count:
+                entity.run_disposable.assert_awaited_once_with(
                     configured, expected_image="synthetic-image", core_version=core)
 
     def test_fixture_source_identity_and_archive_are_bound_without_installed_claim(self):

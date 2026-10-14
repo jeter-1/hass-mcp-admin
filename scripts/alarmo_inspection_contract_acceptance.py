@@ -575,8 +575,12 @@ def verify_disposable_publication(image, container, source_archive, output, core
     return receipt
 
 
-def verify_disposable_cleanup(result_path, output, core_version):
-    """After outer cleanup, fail on Docker errors, missing run or owned residue."""
+def verify_disposable_cleanup(result_path, output, core_version, entity_metadata_receipt=None):
+    """After outer cleanup, fail on Docker errors, missing run or owned residue.
+
+    The standalone entity-metadata artifact (HAMCP-179), when given, must be the
+    byte-identical canonical form of the retained, verified receipt.
+    """
     import subprocess
     binding = slot_binding(core_version)
     lane = binding["lane"]
@@ -605,9 +609,17 @@ def verify_disposable_cleanup(result_path, output, core_version):
     verify_interval(control, control["interval_id"], ["other"], kind="control", core_version=core_version)
     from automation_baseline_contract_acceptance import verify_result as verify_baseline
     baseline = verify_baseline(value["automation_baseline"], core_version=core_version, support_slot=binding["slot"])
+    from entity_metadata_contract_acceptance import receipt_bytes, verify_result as verify_entity_metadata
+    entity_metadata = verify_entity_metadata(value["entity_metadata"], core_version=core_version,
+                                             support_slot=binding["slot"])
+    canonical = receipt_bytes(value["entity_metadata"])
+    if entity_metadata_receipt is not None and Path(entity_metadata_receipt).read_bytes() != canonical:
+        raise ValueError("Standalone entity metadata receipt differs from the retained receipt")
+    entity_metadata["receipt_sha256"] = hashlib.sha256(canonical).hexdigest()
     receipt = {"result": "PASS", "core": core_version, "support_slot": binding["slot"],
                "owned_containers_remaining": 0, "owned_network_remaining": False,
                "required_alarmo_interval": "PASS", "required_automation_baseline": baseline,
+               "required_entity_metadata": entity_metadata,
                "integration_receipt_sha256": hashlib.sha256(Path(result_path).read_bytes()).hexdigest()}
     Path(output).write_text(json.dumps(receipt, sort_keys=True, indent=2) + "\n")
     return receipt
@@ -630,7 +642,8 @@ def main():
         return
     if arguments.verify_cleanup:
         print(json.dumps(verify_disposable_cleanup(os.environ["REAL_HA_ALARMO_RESULT"],
-            os.environ["REAL_HA_ALARMO_CLEANUP_RESULT"], os.environ["HA_CONTRACT_VERSION"]), sort_keys=True))
+            os.environ["REAL_HA_ALARMO_CLEANUP_RESULT"], os.environ["HA_CONTRACT_VERSION"],
+            os.environ["REAL_HA_ENTITY_METADATA_RESULT"]), sort_keys=True))
         return
     if arguments.prepare_archive and arguments.destination:
         print(json.dumps(prepare_disposable_fixture(arguments.prepare_archive, arguments.destination), sort_keys=True))

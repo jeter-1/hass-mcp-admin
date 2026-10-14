@@ -439,8 +439,9 @@ jobs:
           python scripts/real_ha_contract_tests.py --prepare-migration-fixture
           docker stop --time 30 "$HA_WRITER_CONTAINER"
           docker rm "$HA_WRITER_CONTAINER"
-      # Alarmo and the automation-baseline proof follow every non-empty Core slot
-      # (HAMCP-159); scripts/support_window.py sets matrix.alarmo and binds the
+      # Alarmo, the automation-baseline proof and the dormant entity-metadata
+      # contract (HAMCP-179) follow every non-empty Core slot (HAMCP-159);
+      # scripts/support_window.py sets matrix.alarmo and binds the
       # exact Core source commit and archive digest from the slot's provenance.
       - name: Stage exact Alarmo and independent interval observer for the Core slot
         if: matrix.alarmo
@@ -457,6 +458,7 @@ jobs:
             printf 'REAL_HA_ALARMO_RESULT=%s\n' "$RUNNER_TEMP/alarmo-integration-$HA_CONTRACT_LANE.json"
             printf 'REAL_HA_ALARMO_IMAGE_RESULT=%s\n' "$RUNNER_TEMP/alarmo-image-$HA_CONTRACT_LANE.json"
             printf 'REAL_HA_ALARMO_CLEANUP_RESULT=%s\n' "$RUNNER_TEMP/alarmo-cleanup-$HA_CONTRACT_LANE.json"
+            printf 'REAL_HA_ENTITY_METADATA_RESULT=%s\n' "$RUNNER_TEMP/entity-metadata-$HA_CONTRACT_LANE.json"
             printf 'REAL_HA_CORE_ARCHIVE=%s\n' "$core_archive"
           } >> "$GITHUB_ENV"
           curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
@@ -555,6 +557,16 @@ jobs:
           path: |
             ${{ runner.temp }}/alarmo-integration-${{ matrix.lane }}.json
             ${{ runner.temp }}/alarmo-image-${{ matrix.lane }}*.json
+            ${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload bounded entity metadata contract evidence
+        if: always() && matrix.alarmo
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: entity-metadata-core-${{ matrix.ha_version }}-${{ matrix.support_slot }}-amd64
+          path: |
+            ${{ runner.temp }}/entity-metadata-${{ matrix.lane }}.json
             ${{ runner.temp }}/alarmo-cleanup-${{ matrix.lane }}.json
           if-no-files-found: error
           retention-days: 14

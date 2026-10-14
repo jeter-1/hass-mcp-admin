@@ -31,6 +31,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import alarmo_inspection_contract_acceptance as acceptance
 import core_lane_bindings
 import support_window
+from entity_metadata_receipts import synthetic_receipt as synthetic_entity_metadata_receipt
 
 spec = importlib.util.spec_from_file_location("synthetic_alarmo_observer", acceptance.OBSERVER)
 observer = importlib.util.module_from_spec(spec)
@@ -122,6 +123,7 @@ def cleanup_value(core_version):
                 core_image=binding["image"], runtime_monitor_closed=True, interval_observation=observation,
                 missing_authority_observation=denial, negative_control_observation=control,
                 automation_baseline={"synthetic_receipt": True},
+                entity_metadata=synthetic_entity_metadata_receipt(core_version),
                 interval=acceptance.verify_interval(observation, observation["interval_id"], acceptance.EXPECTED_COMMANDS,
                                                     core_version=core_version),
                 missing_authority=acceptance.verify_interval(denial, denial["interval_id"], [], kind="control",
@@ -815,6 +817,7 @@ class WorkflowBindingTests(unittest.TestCase):
             "Bind the Core slot's disposable image and source": "matrix.alarmo",
             "Verify owned cleanup and required Alarmo interval": "always() && matrix.alarmo",
             "Upload bounded Alarmo interval and image evidence": "always() && matrix.alarmo",
+            "Upload bounded entity metadata contract evidence": "always() && matrix.alarmo",
         })
         for step in self.steps:
             text = json.dumps(step)
@@ -834,6 +837,7 @@ class WorkflowBindingTests(unittest.TestCase):
         cleanup = names.index("Verify owned cleanup and required Alarmo interval")
         self.assertLess(names.index("Persist migration fixture with exact Home Assistant 2026.7.2"), stage)
         self.assertTrue(stage < start < bind < run < sanitize < cleanup)
+        self.assertLess(cleanup, names.index("Upload bounded entity metadata contract evidence"))
         self.assertIn("--verify-publication", self.steps[bind]["run"])
         self.assertIn("--verify-cleanup", self.steps[cleanup]["run"])
 

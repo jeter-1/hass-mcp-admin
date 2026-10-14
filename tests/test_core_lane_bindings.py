@@ -41,6 +41,7 @@ from support import core_bindings  # noqa: E402
 import core_registry_contract_lane as lane  # noqa: E402
 import alarmo_inspection_contract_acceptance as alarmo  # noqa: E402
 import automation_baseline_contract_acceptance as baseline  # noqa: E402
+import entity_metadata_contract_acceptance as entity_metadata  # noqa: E402
 from ha_mcp_engineering.ha_core_readmission.probe_profiles import (  # noqa: E402
     CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE, CHILD_DEVICE_PROBE_PROFILE,
 )
@@ -151,7 +152,8 @@ async def dispatch(version):
 class ConsolidatedListTests(unittest.TestCase):
     def test_consumers_hold_no_local_core_version_list(self):
         for name in ("support_window.py", "real_ha_contract_tests.py", "core_registry_contract_lane.py",
-                     "alarmo_inspection_contract_acceptance.py", "automation_baseline_contract_acceptance.py"):
+                     "alarmo_inspection_contract_acceptance.py", "automation_baseline_contract_acceptance.py",
+                     "entity_metadata_contract_acceptance.py"):
             source = (ROOT / "scripts" / name).read_text(encoding="utf-8")
             literals = [node.value for node in ast.walk(ast.parse(source))
                         if isinstance(node, ast.Constant) and isinstance(node.value, str)
@@ -266,6 +268,21 @@ class ExecutablePathTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(AssertionError):
                     await baseline.run_disposable(local, expected_image=row["ha_image"], core_version=version)
                 client.assert_called_once()
+            # HAMCP-179 entity metadata acceptance also stops at its first Core client.
+            image.write_text(json.dumps({"result": "PASS", "index": binding.image_index_digest,
+                                         "core_version": version, "support_slot": slot}), encoding="utf-8")
+            environ["REAL_HA_ENTITY_METADATA_RESULT"] = str(directory / "entity-metadata.json")
+            with patch.dict(os.environ, environ, clear=True), \
+                    patch("ha_mcp_engineering.clients.HomeAssistantWebSocketClient", side_effect=Boundary) as client:
+                with self.assertRaises(Boundary):
+                    await entity_metadata.run_disposable(local, expected_image=row["ha_image"], core_version=version)
+                client.assert_called_once_with(local)
+                image.write_text(json.dumps({"result": "PASS", "index": binding.image_index_digest,
+                                             "core_version": version, "support_slot": other}), encoding="utf-8")
+                with self.assertRaises(AssertionError):
+                    await entity_metadata.run_disposable(local, expected_image=row["ha_image"], core_version=version)
+                client.assert_called_once()
+            self.assertFalse((directory / "entity-metadata.json").exists())
 
     async def assert_window_executes(self, slots):
         loaded = support_window.load()
