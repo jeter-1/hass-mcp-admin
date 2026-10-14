@@ -78,12 +78,17 @@ Drift in an unrequired tool grants and takes nothing. Each case is refused at
 planning as non-retryable `provider_unavailable`
 (`dashboard_provider_not_admitted`), and after planning as
 `failed_pre_dispatch`. Setter drift between the guide and the setter is
-`dispatch_failed_confirmed`. Extras appearing or vanishing between sessions
+`dispatch_failed_confirmed` after the saved intent (see Core authority
+below for the outcome). Extras appearing or vanishing between sessions
 still succeed.
 
 **Core authority.** Core retirement before the guide is pre-dispatch. Core
-retirement during the guide, after setter admission, is confirmed
-`failed_post_dispatch` with no write.
+retirement during the guide, after setter admission, is
+`dispatch_failed_confirmed`: the task failed after the saved-intent boundary
+(`failed_post_dispatch`); no setter message was sent; no change was made; it
+is never redispatched. The execution evidence records `setter_call_not_sent`
+and `provider_confirmed_no_mutation`; a sent or possibly sent setter never
+carries `setter_call_not_sent`. The truthful pre-send phase is HAMCP-181.
 
 **Truthful outcomes.**
 - Grouped and direct SDK admission refusals keep the typed, non-retryable

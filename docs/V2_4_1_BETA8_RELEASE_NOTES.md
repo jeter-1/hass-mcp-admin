@@ -44,8 +44,11 @@ lifecycle evidence.
   as retryable `operational_provider_unavailable`, and setter or guide drift
   as `configuration_validation_failed` (`invalid_raw_dashboard_evidence`).
   Other provider failures keep their earlier retryable outcome.
-- During apply, an admission refusal is still `failed_pre_dispatch` with no
-  dispatch intent.
+- During apply, the outcome depends on the phase. An admission refusal at
+  the apply preflight, before the saved dispatch intent, is still
+  `failed_pre_dispatch` with no dispatch intent. Setter drift found in the
+  setter session, after the guide, follows the saved intent: the task fails
+  after the saved-intent boundary, as described under F3 below.
 - Grouped and direct MCP SDK refusals keep their typed, non-retryable category.
 - Real transport loss, timeouts and cancellation keep their earlier
   semantics, including the uncertain outcome after a recorded dispatch intent.
@@ -54,9 +57,16 @@ lifecycle evidence.
 immediately before the setter's single `tools/call`. Before this release, a
 refusal at that point after the setter handshake was recorded as possibly
 dispatched, and the task waited in `observing`. It is now recorded as
-`dispatch_failed_confirmed`, and the task ends `failed_post_dispatch` without
-any write. A refusal raised before the call is the only error that may claim
-no dispatch; every other transport error stays conservatively dispatched.
+`dispatch_failed_confirmed`, the same outcome late setter drift already had.
+The task failed after the saved-intent boundary (`failed_post_dispatch`): no
+setter message was sent, no change was made, and the task is never
+redispatched (same-ID apply is refused as a duplicate). The execution
+evidence records `setter_call_not_sent` and
+`provider_confirmed_no_mutation`. The phase stays post-intent because the
+shared F3 model does not let saved intent become pre-dispatch; a truthful
+pre-send phase is planned as HAMCP-181. A refusal raised before the call is
+the only error that may claim no dispatch; every other transport error stays
+conservatively dispatched and never carries `setter_call_not_sent`.
 
 Telemetry and task pointers needed no change: dashboard write and
 best-practices exchanges were already counted and finished on every path, and
