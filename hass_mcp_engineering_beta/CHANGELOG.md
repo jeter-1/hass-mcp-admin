@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.4.1-beta.8 - Dashboard-write dependency-scoped admission (HAMCP-177)
+
+Builds on 2.4.1-beta.7's delegated platform reads.
+
+- Admit dashboard write authority on exactly `ha_config_get_dashboard`,
+  `ha_get_skill_guide` and `ha_config_set_dashboard`, each present once and
+  matching every reviewed contract component, with server identity, release,
+  protocol, attestation, revocation, HOLD, the `admitted` dashboard
+  disposition, Core authority and same-session revalidation preserved. Other
+  advertised tools grant nothing and stay unexposed and undispatchable; the
+  authority evidence is unchanged for the 77- and 80-tool catalogs.
+- Refuse `create_dashboard_update_plan` without admitted write dependencies as
+  non-retryable `provider_unavailable` (`dashboard_provider_not_admitted`).
+- Record a Core authority refusal immediately before the setter call as
+  confirmed no dispatch (`failed_post_dispatch`) instead of an uncertain
+  outcome; every other transport error stays conservatively dispatched.
+- Preserve the whole-catalog validator for the read gateway, backups and
+  lifecycle; the signed registries, HOLD, support window, durable formats,
+  workflows and stable v1.
+
 ## 2.4.1-beta.7 - Delegated platform health, add-on and integration reads (HAMCP-129)
 
 Builds on 2.4.1-beta.6's typed power and fan admission repair.
