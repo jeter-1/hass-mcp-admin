@@ -35,6 +35,9 @@ ENTITY_METADATA_PROVIDER_OPERATION = "entity_registry_metadata_update"
 ENTITY_METADATA_NORMALIZATION_MODEL = "entity_registry_metadata_projection_v1"
 ENTITY_METADATA_BINDINGS_KEY = "plan_bindings"
 ENTITY_METADATA_UNAUTHORIZED_REASON = "entity_registry_update_unauthorized"
+# OD-15 (HAMCP-183): any other error result to a sent update.  It is not a
+# non-mutation proof, so the dispatch stays uncertain and readback decides.
+ENTITY_METADATA_ERROR_RESULT_REASON = "entity_registry_update_error_result"
 # V9 (owner condition 2026-10-12): a plan whose final state was already
 # present at preflight is verified but was never dispatched.  It must not read
 # as a change Engineering made, in the outcome code, the text or the audit.
@@ -88,6 +91,18 @@ class EntityMetadataProviderError(RuntimeError):
     def __init__(self, category: str) -> None:
         super().__init__("The entity registry provider returned an invalid response.")
         self.category = category
+
+
+class EntityMetadataUpdateErrorResult(HomeAssistantApiError):
+    """Home Assistant answered a sent update with a non-authorization error.
+
+    The update was sent and a response was received, but the error result does
+    not prove that the registry is unchanged: Core assigns the new entry before
+    it schedules the save and fires the update event, and its WebSocket
+    dispatcher turns a later exception into an ``unknown_error`` result.  The
+    mutation is therefore unknown (neither ``mutation_dispatched`` flag is
+    asserted) and only an authoritative registry readback can settle it.
+    """
 
 
 def entity_metadata_provider_evidence() -> dict[str, Any]:
@@ -598,15 +613,20 @@ class EntityRegistryMetadataGateway:
         except HomeAssistantApiError as exc:
             details = exc.details if isinstance(exc.details, dict) else {}
             if details.get("provider_response_received") is True:
-                # Home Assistant answered with an error result.  Its registry
-                # validation (including the 2026.10 area/name rule) runs
-                # before storage, and ``options_domain`` is never sent, so an
-                # error result is a confirmed non-application.
-                raise ConfigurationMutationNotDispatchedError(
+                # Home Assistant answered the sent update with an error result
+                # other than ``unauthorized``/``forbidden``.  That proves only
+                # that the command was sent and answered.  It does not prove
+                # that nothing changed: Core can assign the registry entry and
+                # then return ``unknown_error`` (HAMCP-181 revision-3 probe,
+                # Core 2026.10.0 and 2026.10.1).  Engineering's own pre-send
+                # refusals (closed payload, unknown references, the 2026.10
+                # area/name rule) never reach this point.  The outcome stays
+                # uncertain so the F3 registry readback decides it.
+                raise EntityMetadataUpdateErrorResult(
                     details={
                         "operation": ENTITY_METADATA_PROVIDER_OPERATION,
                         "resource_id": entity_id,
-                        "reason": "entity_registry_update_rejected",
+                        "reason": ENTITY_METADATA_ERROR_RESULT_REASON,
                         "provider_response_received": True,
                         **(
                             {"provider_status": details["status"]}
