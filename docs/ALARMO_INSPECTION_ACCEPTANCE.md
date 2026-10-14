@@ -156,13 +156,19 @@ Readiness also waits 2 seconds after the last untolerated store activity. Only
 them as background bookkeeping. The interval allowlist is unchanged: a write to
 any other store inside a window still fails.
 
-An event for an unnamed store carries a bounded `store_class`:
+An event for an unnamed store carries a `store_class` from a fixed vocabulary
+that the observer and the client share:
 
-- the integration domain;
-- `core.<name>` for letter-only Core names; or
-- `unclassified`.
+- a known integration domain that creates Stores, when it is the whole key or
+  is followed by `.`, `_`, `-` or `/` (the rest of the key is dropped);
+- `core.<name>` for a known Core Store name, or bare `core` for any other
+  `core.` key; or
+- `unclassified` for everything else.
 
-It never carries the full key, an identifier suffix, a path or contents.
+The vocabulary is the Core Store names and Store-creating integration domains of
+the pinned Core source, plus Alarmo. A key is never classified by its shape, so
+an entity ID, UUID, hex hash, digit-bearing suffix, path or unknown name is
+never echoed. The client reports any class outside the vocabulary as `invalid`.
 
 A failed check raises `ObservationError` with a bounded diagnostic. The
 diagnostic contains:
@@ -173,9 +179,46 @@ diagnostic contains:
 - the offending event's summary; and
 - `changed_stores` or command counts where relevant.
 
-The diagnostic appears in the slot's `contract_diagnostic`. A baseline failure
-also retains it in the FAIL receipt. A setup that never settles reports
-`setup_not_settled` with the classes still pending.
+Every setup, readiness or `/start` failure raises `ObservationError` with one
+fixed-shape diagnostic. Its fields are:
+
+- `condition`: `setup_not_settled`, `setup_observation_unavailable` or
+  `interval_start_refused`;
+- `cause`, a fixed code, as listed below;
+- `phase` (`readiness` or `start`);
+- the window label and index;
+- `readiness_reads`;
+- `core_running`; and
+- the pending store classes.
+
+The fixed causes are:
+
+- **Readiness:** `readiness_budget_exhausted`, `readiness_timeout`,
+  `readiness_transport_error`, `readiness_shape_invalid`,
+  `readiness_hooks_not_intact` and `store_class_list_malformed`.
+- **Observer `/start` refusals:** `setup_not_settled_late_start`,
+  `core_not_running`, `hooks_not_intact`, `store_hash_unavailable`,
+  `interval_unavailable` and `start_internal_error`.
+- **Client-side start failures:** `start_timeout`, `start_transport_error` and
+  `start_response_invalid`.
+
+The runtime websocket client does not keep error codes. The observer therefore
+keeps its last `/start` refusal, which `/ready` returns, and the client reads it
+back once after a failed start. Cancellation still propagates. No exception
+message, key or argument enters a diagnostic.
+
+The diagnostic appears in the slot's `contract_diagnostic`. A baseline proof
+failure also retains it in the FAIL receipt. A setup failure happens before the
+lane has a result, so no FAIL receipt exists to retain it; the slot's
+`contract_diagnostic` carries it.
+
+The observer model is `alarmo-core-interval-v2`. The interval verifier refuses
+a v1 observation with `condition=observer_model`, so a v1 Alarmo interval or
+combined cleanup proof is not re-accepted. A standalone entity-metadata receipt
+and its cleanup receipt are checked by `verify_receipt_files`, which does not
+read the observer model. Pairs from v1 runs, such as main CI #1086, therefore
+still verify there. HAMCP-182 uses receipts regenerated on `main` after HAMCP-180
+merges, not those pairs.
 
 An unnamed-store burst that starts after the window opens cannot be prevented
 by setup readiness. It still fails, and the diagnostic now names its class for a

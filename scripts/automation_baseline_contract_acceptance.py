@@ -125,7 +125,8 @@ async def _run_disposable(configured, *, expected_image, core_version):
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from core_registry_contract_lane import lane_entry, probe_profile_for
     from prepare_core_release_registry import prepare_candidate, sign_candidate
-    from alarmo_inspection_contract_acceptance import slot_binding, wait_disposable_setup, close_disposable_authority
+    from alarmo_inspection_contract_acceptance import (slot_binding, wait_disposable_setup, start_interval,
+        close_disposable_authority)
     from entity_metadata_contract_acceptance import load_receipt
     from ha_mcp_engineering.clients import HomeAssistantWebSocketClient
     from ha_mcp_engineering.clients.audit_baseline import BaselineReadClient
@@ -196,8 +197,8 @@ async def _run_disposable(configured, *, expected_image, core_version):
             finally:
                 end_request(token)
                 if commits: assert runtime.finish(commits)
-        async def export(runtime,capture):
-            start=await websocket.command({'type':'alarmo_interval_observer/start','kind':'control'})
+        async def export(runtime,capture,index):
+            interval=await start_interval(websocket,'control',window='baseline_export',window_index=index)
             first, reads,_=await request(runtime,capture,{'limit':17})
             assert first['success'], 'Baseline public call refused'
             page=first['data'];baseline={**page['baseline_header'],'records':list(page['records'])}
@@ -208,7 +209,7 @@ async def _run_disposable(configured, *, expected_image, core_version):
                 assert page['artifact_sha256']==artifact and page['pagination']['offset']==len(baseline['records'])
                 assert page['baseline_header']=={k:v for k,v in baseline.items() if k!='records'}
                 baseline['records'].extend(page['records'])
-            observed=await websocket.command({'type':'alarmo_interval_observer/finish','interval_id':start['interval_id']})
+            observed=await websocket.command({'type':'alarmo_interval_observer/finish','interval_id':interval})
             assert c.digest(baseline)==artifact and continuation_reads==0
             assert reads==len(baseline['records'])+11
             assert baseline['installation']['status']=='established'
@@ -227,15 +228,15 @@ async def _run_disposable(configured, *, expected_image, core_version):
             nonadmin=replace(configured, ha_token=seed.pop('nonadmin_token'))
             refused,_,_=await request(runtime,service(runtime,nonadmin),{})
             assert not refused['success'] and refused['details']['reason']=='access_denied'
-            await wait_disposable_setup(websocket)
+            await wait_disposable_setup(websocket,window='baseline_export',window_index=1)
             capture=service(runtime)
-            before,before_hash,obs1=await export(runtime,capture)
+            before,before_hash,obs1=await export(runtime,capture,1)
             native={r['configuration_id']:r for r in before['records'] if r['configuration_id'].startswith(PREFIX)}
             assert len(native)==122 and native[PREFIX+'000']['enabled_state']['state']=='off'
             assert native[PREFIX+'unknown']['configuration']['status']=='unreadable'
             assert before['inventory']['completeness']=='complete'
-            await fixture('change'); await wait_disposable_setup(websocket)
-            after,after_hash,obs2=await export(runtime,capture)
+            await fixture('change'); await wait_disposable_setup(websocket,window='baseline_export',window_index=2)
+            after,after_hash,obs2=await export(runtime,capture,2)
             # Run the unchanged public CLI, not a test-only comparison function.
             a,b=Path(directory)/'before.json',Path(directory)/'after.json'
             a.write_bytes(c.canonical(before));b.write_bytes(c.canonical(after))
@@ -244,11 +245,11 @@ async def _run_disposable(configured, *, expected_image, core_version):
                 [sys.executable,'-B',str(ROOT/'scripts/compare_automation_baselines.py'),str(a),str(b)],
                 capture_output=True,timeout=30,check=True)
             compared=json.loads(process.stdout)
-            await fixture('restore');await wait_disposable_setup(websocket)
+            await fixture('restore');await wait_disposable_setup(websocket,window='baseline_restore')
             restored,_,_=await request(runtime,service(runtime),{'limit':1})
             assert restored['success']
             assert restored['data']['baseline_header']['installation']['installation_id'] == before['installation']['installation_id']
-            await fixture('recreate');await wait_disposable_setup(websocket)
+            await fixture('recreate');await wait_disposable_setup(websocket,window='baseline_recreate')
             recreated,_,_=await request(runtime,service(runtime),{'limit':1})
             assert recreated['success']
             assert recreated['data']['baseline_header']['installation']['installation_id'] != before['installation']['installation_id']

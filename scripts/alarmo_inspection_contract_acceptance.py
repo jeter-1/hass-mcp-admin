@@ -187,12 +187,47 @@ OBSERVER_COMMANDS = ("manifest/get", "config_entries/get", "config/entity_regist
 TOLERATED_STORES = ("auth", "core.restore_state")
 NAMED_STORES = ("alarmo.storage", "core.config_entries", "core.entity_registry", "core.device_registry",
                 *TOLERATED_STORES, "other")
-# Mirrors the observer's store_class: a named key, a domain token, a
-# letter-only ``core.<name>``, or ``unclassified``.
-STORE_CLASS = "|".join(["unclassified", "alarmo\\.storage", r"[a-z][a-z0-9_]{0,31}",
-                        r"core\.[a-z]{1,32}(?:_[a-z]{1,32}){0,3}"])
+# The observer's fixed store-class vocabulary, mirrored exactly (a test binds
+# the two). A class outside it is ``invalid``, never echoed (HAMCP-180).
+CORE_STORE_NAMES = ("analytics", "area_registry", "category_registry", "config", "config_entries",
+    "device_registry", "entity_registry", "floor_registry", "label_registry", "labs", "logger", "network",
+    "restore_state", "uuid")
+STORE_DOMAINS = ("ai_task", "alarmo", "alexa", "analytics", "application_credentials", "assist_pipeline",
+    "auth_module", "auth_provider", "backup", "bluetooth", "broadlink", "camera", "cloud", "counter", "emulated_hue",
+    "energy", "esphome", "evohome", "feedreader", "freebox", "frontend", "google", "google_assistant", "hassio",
+    "homeassistant", "homeassistant_hardware", "homekit", "homekit_controller", "http", "icloud", "image",
+    "image_upload", "input_boolean", "input_button", "input_datetime", "input_number", "input_select", "input_text",
+    "knx", "labs", "logger", "lovelace", "mobile_app", "nest", "network", "onboarding", "person", "reolink",
+    "repairs", "risco", "roborock", "schedule", "tag", "template", "thread", "timer", "trace", "unifi", "vizio",
+    "voip", "zone")
+STORE_CLASSES = frozenset({"unclassified", "core", *NAMED_STORES[:-1], *("core." + name for name in CORE_STORE_NAMES),
+                           *STORE_DOMAINS})
 WINDOW_LABEL = r"[a-z][a-z0-9_]{0,31}"
 MAX_DIAGNOSTIC_ITEMS = 16
+OBSERVER_MODEL = "alarmo-core-interval-v2"
+# Every setup, readiness or start failure names one fixed cause, mapped to its
+# condition family. Observer /start refusals use the same cause names.
+SETUP_FAILURES = {
+    "readiness_budget_exhausted": "setup_not_settled",
+    "setup_not_settled_late_start": "setup_not_settled",
+    "readiness_timeout": "setup_observation_unavailable",
+    "readiness_transport_error": "setup_observation_unavailable",
+    "readiness_shape_invalid": "setup_observation_unavailable",
+    "readiness_hooks_not_intact": "setup_observation_unavailable",
+    "store_class_list_malformed": "setup_observation_unavailable",
+    "start_timeout": "setup_observation_unavailable",
+    "start_transport_error": "setup_observation_unavailable",
+    "start_response_invalid": "setup_observation_unavailable",
+    "core_not_running": "interval_start_refused",
+    "hooks_not_intact": "interval_start_refused",
+    "store_hash_unavailable": "interval_start_refused",
+    "interval_unavailable": "interval_start_refused",
+    "start_internal_error": "interval_start_refused",
+}
+START_REFUSALS = ("setup_not_settled_late_start", "core_not_running", "hooks_not_intact",
+                  "store_hash_unavailable", "interval_unavailable", "start_internal_error")
+SETUP_DIAGNOSTIC_KEYS = frozenset({"condition", "cause", "phase", "window", "window_index", "readiness_reads",
+                                   "core_running", "pending_store_classes"})
 
 
 class ObservationError(ValueError):
@@ -213,8 +248,7 @@ def _token(value, allowed):
 
 
 def _store_class(value):
-    import re
-    return value if type(value) is str and re.fullmatch(STORE_CLASS, value) else "invalid"
+    return value if type(value) is str and value in STORE_CLASSES else "invalid"
 
 
 def _event_summary(event):
@@ -271,7 +305,7 @@ def verify_interval(value, identity, expected_commands, *, core_version, kind="i
             raise ObservationError("Disposable Core interval failed verification",
                                    {"condition": code, **context, **detail})
     require(type(value) is dict and set(value) == keys, "receipt_shape")
-    require(type(core_version) is str and value["model"] == "alarmo-core-interval-v2", "observer_model")
+    require(type(core_version) is str and value["model"] == OBSERVER_MODEL, "observer_model")
     require(value["core_version"] == core_version, "core_version")
     require(value["interval_id"] == identity and type(identity) is str and re.fullmatch(r"[0-9a-f]{32}", identity),
             "interval_identity")
@@ -322,47 +356,104 @@ def verify_interval(value, identity, expected_commands, *, core_version, kind="i
                            "Background auth/restore-state bookkeeping is reported separately."]}
 
 
-async def wait_disposable_setup(websocket, *, clock=None, sleep=None, store_classes=True):
+def _window(window, window_index):
+    import re
+    return {"window": window if type(window) is str and re.fullmatch(WINDOW_LABEL, window) else None,
+            "window_index": window_index if type(window_index) is int and 0 <= window_index < 64 else None}
+
+
+def setup_failure(cause, phase, *, window=None, window_index=None, readiness_reads=0, core_running=None,
+                  pending_store_classes=None):
+    """One setup/readiness/start failure as the fixed-shape diagnostic (HAMCP-180).
+
+    Only a known cause, phase, window, counts, a boolean and vocabulary classes;
+    never an exception message, key, argument or path.
+    """
+    cause = cause if cause in SETUP_FAILURES else "start_internal_error"
+    classes = None
+    if type(pending_store_classes) is list:
+        classes = [_store_class(item) for item in pending_store_classes[:MAX_DIAGNOSTIC_ITEMS]]
+    diagnostic = {"condition": SETUP_FAILURES[cause], "cause": cause,
+                  "phase": phase if phase in ("readiness", "start") else "invalid",
+                  **_window(window, window_index),
+                  "readiness_reads": readiness_reads if type(readiness_reads) is int else None,
+                  "core_running": core_running if type(core_running) is bool else None,
+                  "pending_store_classes": classes}
+    return ObservationError("Disposable setup observation failed", diagnostic)
+
+
+def _timed_out(error):
+    return isinstance(error, TimeoutError) or isinstance(error.__cause__, TimeoutError)
+
+
+def _class_list_problem(classes, pending):
+    """Element types are checked before anything hashes or sorts them."""
+    if type(classes) is not list or len(classes) > MAX_DIAGNOSTIC_ITEMS:
+        return True
+    if not all(type(item) is str for item in classes) or not all(item in STORE_CLASSES for item in classes):
+        return True
+    return classes != sorted(set(classes)) or bool(classes) != pending
+
+
+def _refusal_problem(refusal):
+    if refusal is None:
+        return False
+    return (type(refusal) is not dict or set(refusal) != {"cause", "pending_store_classes"}
+            or type(refusal["cause"]) is not str or refusal["cause"] not in START_REFUSALS
+            or _class_list_problem(refusal["pending_store_classes"], bool(refusal["pending_store_classes"])))
+
+
+def readiness_problem(value, *, store_classes=True):
+    """The fixed cause a readiness value fails with, or ``None``."""
+    booleans = ("core_running", "storage_pending", "hooks_intact")
+    fields = {*booleans, "pending_store_classes", "last_start_refusal"} if store_classes else set(booleans)
+    if type(value) is not dict or set(value) != fields or any(type(value[item]) is not bool for item in booleans):
+        return "readiness_shape_invalid"
+    if not value["hooks_intact"]:
+        return "readiness_hooks_not_intact"
+    if store_classes:
+        if _class_list_problem(value["pending_store_classes"], value["storage_pending"]):
+            return "store_class_list_malformed"
+        if _refusal_problem(value["last_start_refusal"]):
+            return "readiness_shape_invalid"
+    return None
+
+
+async def wait_disposable_setup(websocket, *, clock=None, sleep=None, store_classes=True,
+                                window=None, window_index=None):
     """Wait for Core's source-defined 180s startup saves, outside observation.
 
     At most 41 readiness reads in 200 seconds. Never flush or retry a feature
     command; interval/feature budgets remain 45/30 seconds respectively.
     The Alarmo observer's readiness covers every untolerated Core Store and
     names pending ones by bounded class (HAMCP-180); ``store_classes=False``
-    keeps the dashboard observer's three-field shape.
+    keeps the dashboard observer's three-field shape. Every failure raises
+    ``ObservationError`` with the fixed setup diagnostic; cancellation and the
+    causal error are preserved.
     """
     import asyncio
-    import re
     import time
     clock = clock or time.monotonic
     sleep = sleep or asyncio.sleep
-    fields = {"core_running", "storage_pending", "hooks_intact"}
-    if store_classes:
-        fields.add("pending_store_classes")
     deadline = clock() + 200
     last = {"readiness_reads": 0, "core_running": None, "pending_store_classes": None}
-    def unavailable():
-        return ObservationError("Disposable setup observation unavailable",
-                                {"condition": "setup_observation_unavailable", **last})
+    def failure(cause):
+        return setup_failure(cause, "readiness", window=window, window_index=window_index, **last)
     for attempt in range(41):
         remaining = deadline - clock()
         if remaining <= 0:
             break
-        async with asyncio.timeout(remaining):
-            value = await websocket.command({"type": "alarmo_interval_observer/ready"})
+        try:
+            async with asyncio.timeout(remaining):
+                value = await websocket.command({"type": "alarmo_interval_observer/ready"})
+        except Exception as exc:  # CancelledError is not an Exception and propagates
+            raise failure("readiness_timeout" if _timed_out(exc) else "readiness_transport_error") from exc
         last["readiness_reads"] = attempt + 1
-        if (type(value) is not dict or set(value) != fields
-                or any(type(value[item]) is not bool for item in fields - {"pending_store_classes"})
-                or not value["hooks_intact"]):
-            raise unavailable()
+        problem = readiness_problem(value, store_classes=store_classes)
+        if problem:
+            raise failure(problem)
         if store_classes:
-            classes = value["pending_store_classes"]
-            if (type(classes) is not list or len(classes) > MAX_DIAGNOSTIC_ITEMS or classes != sorted(set(classes))
-                    or not all(type(item) is str and re.fullmatch(STORE_CLASS, item) for item in classes)
-                    or (not classes and value["storage_pending"])
-                    or (classes and not value["storage_pending"])):
-                raise unavailable()
-            last["pending_store_classes"] = list(classes)
+            last["pending_store_classes"] = list(value["pending_store_classes"])
         last["core_running"] = value["core_running"]
         if clock() > deadline:
             break
@@ -372,8 +463,44 @@ async def wait_disposable_setup(websocket, *, clock=None, sleep=None, store_clas
         if remaining <= 0 or attempt == 40:
             break
         await sleep(min(5, remaining))
-    raise ObservationError("Disposable setup did not settle within its bound",
-                           {"condition": "setup_not_settled", **last})
+    raise failure("readiness_budget_exhausted")
+
+
+async def start_interval(websocket, kind, *, window=None, window_index=None):
+    """Open one observer interval or raise the fixed setup diagnostic (HAMCP-180).
+
+    A failed start is attributed by one bounded ``/ready`` read-back of the
+    observer's recorded refusal cause and classes. Nothing is retried.
+    """
+    import re
+    try:
+        value = await websocket.command({"type": "alarmo_interval_observer/start", "kind": kind})
+    except Exception as exc:  # CancelledError is not an Exception and propagates
+        raise await _start_failure(websocket, exc, window=window, window_index=window_index) from exc
+    if (type(value) is not dict or set(value) != {"model", "interval_id"} or value["model"] != OBSERVER_MODEL
+            or type(value["interval_id"]) is not str or not re.fullmatch(r"[0-9a-f]{32}", value["interval_id"])):
+        raise setup_failure("start_response_invalid", "start", window=window, window_index=window_index)
+    return value["interval_id"]
+
+
+async def _start_failure(websocket, error, *, window=None, window_index=None):
+    import asyncio
+    state = {"cause": "start_timeout" if _timed_out(error) else "start_transport_error",
+             "readiness_reads": 0, "core_running": None, "pending_store_classes": None}
+    try:
+        async with asyncio.timeout(10):
+            value = await websocket.command({"type": "alarmo_interval_observer/ready"})
+    except Exception:  # CancelledError is not an Exception and propagates
+        value = None
+    else:
+        state["readiness_reads"] = 1
+    # A well-formed read-back with broken hooks still carries the refusal cause.
+    if value is not None and readiness_problem(value) in (None, "readiness_hooks_not_intact"):
+        state.update(core_running=value["core_running"], pending_store_classes=list(value["pending_store_classes"]))
+        refusal = value["last_start_refusal"]
+        if refusal is not None:
+            state.update(cause=refusal["cause"], pending_store_classes=list(refusal["pending_store_classes"]))
+    return setup_failure(state.pop("cause"), "start", window=window, window_index=window_index, **state)
 
 
 async def close_disposable_authority(runtime):
@@ -460,15 +587,15 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
     entities = await websocket.command({"type": "alarmo/entities"})
     targets = [r["entity_id"] for r in entities if type(r.get("area_id")) is int and r["area_id"] == 0]
     assert len(targets) == 1 and len(entities) == 3 and len({row["entity_id"] for row in entities}) == 3
-    setup_readiness = await wait_disposable_setup(websocket)
+    setup_readiness = await wait_disposable_setup(websocket, window="negative_control")
 
-    async def start(kind):
-        return (await websocket.command({"type": "alarmo_interval_observer/start", "kind": kind}))["interval_id"]
+    async def start(kind, window):
+        return await start_interval(websocket, kind, window=window)
     async def finish(identity):
         return await websocket.command({"type": "alarmo_interval_observer/finish", "interval_id": identity})
     # A real harmless extra command proves the observer/verifier rejects an
     # unexpected request; a fabricated zero client counter cannot satisfy it.
-    control_id = await start("control")
+    control_id = await start("control", "negative_control")
     await websocket.command({"type": "get_states"})
     control = await finish(control_id)
     verify_interval(control, control_id, ["other"], kind="control", core_version=core_version,
@@ -508,7 +635,7 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
             assert runtime.health_snapshot()["compatible_count"] == 19
             assert runtime.acquire(c.CORE_REQUIREMENTS) is None
             service = IntegrationInspectionService(AlarmoProvider(websocket, runtime))
-            denied_id = await start("control")
+            denied_id = await start("control", "missing_authority")
             telemetry, token = begin_request()
             telemetry.caller_id = "synthetic_disposable_inspector"
             telemetry.core_dispatch_authorizer = lambda: False
@@ -540,7 +667,7 @@ async def _run_disposable(configured, existing_core, *, fixture_receipt, expecte
             assert authority is not None
             commits = runtime.consume(authority)
             assert commits
-            measured_id = await start("inspection")
+            measured_id = await start("inspection", "inspection")
             telemetry, token = begin_request()
             telemetry.caller_id = "synthetic_disposable_inspector"
             telemetry.core_dispatch_authorizer = lambda: runtime.revalidate(authority, commits)

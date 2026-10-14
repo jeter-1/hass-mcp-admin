@@ -12,9 +12,10 @@ writes that bypass Core's Store API. Fixed persisted-store hashes supplement it.
 Setup readiness covers every Core Store instance, not only the hashed ones
 (HAMCP-180): Stores alive when the hooks install and every Store a hook later
 sees. Only the two stores whose background bookkeeping intervals already
-tolerate are excluded. Unnamed stores are reported by a bounded class (the
-integration domain, or ``core.<name>`` for letter-only Core names), never the
-full key, a path or contents.
+tolerate are excluded. Unnamed stores are reported by a class from a fixed
+vocabulary (a known integration domain, a known ``core.<name>``, ``core`` or
+``unclassified``), never the full key, an identifier suffix, a path or contents.
+A refused ``/start`` names one fixed cause and keeps it for ``/ready``.
 """
 
 import asyncio
@@ -22,7 +23,6 @@ from contextvars import ContextVar
 from functools import wraps
 import hashlib
 from pathlib import Path
-import re
 from threading import Lock
 import time
 from uuid import uuid4
@@ -43,21 +43,58 @@ TOLERATED_KEYS = frozenset({"auth", "core.restore_state"})
 HASH_KEYS = tuple(sorted(STORE_KEYS - TOLERATED_KEYS))
 QUIET_SECONDS = 2
 MAX_STORE_CLASSES = 16
-DOMAIN_CLASS = re.compile(r"[a-z][a-z0-9_]{0,31}")
-CORE_NAME_CLASS = re.compile(r"[a-z]{1,32}(?:_[a-z]{1,32}){0,3}")
+# The fixed store-class vocabulary (HAMCP-180). Names are the ``core.<name>``
+# Store keys and the integration domains that create Stores in the pinned Core
+# source (commit abe1fdd7cd6b4de1715c87b6fd87d92699514ef9), plus this lane's Alarmo. A key is
+# classified only by an exact vocabulary match, never by its shape.
+CORE_STORE_NAMES = frozenset({
+    "analytics", "area_registry", "category_registry", "config", "config_entries", "device_registry",
+    "entity_registry", "floor_registry", "label_registry", "labs", "logger", "network", "restore_state", "uuid"})
+STORE_DOMAINS = frozenset({
+    "ai_task", "alarmo", "alexa", "analytics", "application_credentials", "assist_pipeline", "auth_module",
+    "auth_provider", "backup", "bluetooth", "broadlink", "camera", "cloud", "counter", "emulated_hue", "energy",
+    "esphome", "evohome", "feedreader", "freebox", "frontend", "google", "google_assistant", "hassio",
+    "homeassistant", "homeassistant_hardware", "homekit", "homekit_controller", "http", "icloud", "image",
+    "image_upload", "input_boolean", "input_button", "input_datetime", "input_number", "input_select",
+    "input_text", "knx", "labs", "logger", "lovelace", "mobile_app", "nest", "network", "onboarding", "person",
+    "reolink", "repairs", "risco", "roborock", "schedule", "tag", "template", "thread", "timer", "trace", "unifi",
+    "vizio", "voip", "zone"})
+# Longest first, so ``homekit_controller-entity-map`` is never ``homekit``.
+DOMAIN_ORDER = tuple(sorted(STORE_DOMAINS, key=lambda name: (-len(name), name)))
+STORE_CLASSES = frozenset({"unclassified", "core", *STORE_KEYS, *("core." + name for name in CORE_STORE_NAMES),
+                           *STORE_DOMAINS})
+# Each refused /start names exactly one of these; no interval opens.
+START_REFUSALS = ("setup_not_settled_late_start", "core_not_running", "hooks_not_intact",
+                  "store_hash_unavailable", "interval_unavailable", "start_internal_error")
 REQUEST = ContextVar("alarmo_observer_request", default=None)
 
 
 def store_class(key):
-    """Bounded diagnostic class of a Store key: no path, id-bearing suffix or data."""
+    """A Store key's class from the fixed vocabulary; never the key's own text.
+
+    ``core.<name>`` keeps a known name, else ``core``. A known domain counts only
+    as the whole key or before ``.``, ``_``, ``-`` or ``/``; its suffix is dropped.
+    Anything else, however domain-shaped, is ``unclassified``.
+    """
     if type(key) is not str:
         return "unclassified"
     if key in STORE_KEYS:
         return key
-    head, _dot, rest = key.partition(".")
-    if head == "core" and CORE_NAME_CLASS.fullmatch(rest):
-        return "core." + rest
-    return head if DOMAIN_CLASS.fullmatch(head) else "unclassified"
+    head, dot, rest = key.partition(".")
+    if head == "core" and dot:
+        return "core." + rest if rest in CORE_STORE_NAMES else "core"
+    for domain in DOMAIN_ORDER:
+        if key == domain or (key.startswith(domain) and key[len(domain)] in "._-/"):
+            return domain
+    return "unclassified"
+
+
+class Refusal(ValueError):
+    """A /start refusal with one fixed cause from ``START_REFUSALS``."""
+
+    def __init__(self, cause):
+        super().__init__(cause)
+        self.cause = cause
 
 
 def store_pending(store):
@@ -74,6 +111,8 @@ class Ledger:
         # Every Store seen, keyed by identity; weak so retired Stores drop out.
         self.stores = weakref.WeakValueDictionary()
         self.last_activity = None
+        # The most recent /start refusal, cleared by a started interval.
+        self.last_start_refusal = None
 
     def track(self, store):
         with self.lock:
@@ -114,6 +153,18 @@ class Ledger:
     def pending_setup_storage(self):
         return bool(self.pending_store_classes())
 
+    def refuse_start(self, cause, classes):
+        refusal = {"cause": cause if cause in START_REFUSALS else "start_internal_error",
+                   "pending_store_classes": list(classes)[:MAX_STORE_CLASSES]}
+        with self.lock:
+            self.last_start_refusal = refusal
+        return refusal
+
+    def start_refusal(self):
+        with self.lock:
+            value = self.last_start_refusal
+        return None if value is None else {**value, "pending_store_classes": list(value["pending_store_classes"])}
+
     def start(self, kind, hashes):
         with self.lock:
             if self.active is not None or kind not in {"inspection", "control"}:
@@ -121,6 +172,7 @@ class Ledger:
             self.active = {"interval_id": uuid4().hex, "kind": kind, "started": self.clock(),
                            "events": [], "overflow": False, "expired": False,
                            "baseline_store_hashes": hashes}
+            self.last_start_refusal = None
             return self.active["interval_id"]
 
     def finish(self, interval_id, hashes, coverage):
@@ -243,6 +295,7 @@ async def async_setup(hass, config):
             "storage_pending": bool(pending),
             "pending_store_classes": pending[:MAX_STORE_CLASSES],
             "hooks_intact": all(coverage().values()),
+            "last_start_refusal": ledger.start_refusal(),
         })
 
     @websocket_api.websocket_command({vol.Required("type"): DOMAIN + "/start",
@@ -250,19 +303,36 @@ async def async_setup(hass, config):
     @websocket_api.require_admin
     @websocket_api.async_response
     async def start(_hass, connection, message):
+        # Every refusal is one fixed cause, sent as the error code and kept for
+        # /ready with the classes pending at that moment (HAMCP-180).
+        classes = []
         try:
             deadline = time.monotonic() + 20
-            while ledger.pending_setup_storage():
+            while classes := ledger.pending_store_classes():
                 if time.monotonic() >= deadline:
-                    raise ValueError("disposable setup storage is not settled")
+                    raise Refusal("setup_not_settled_late_start")
                 await asyncio.sleep(0.1)
-            if hass.state is not CoreState.running or not all(coverage().values()):
-                raise ValueError("observer hooks changed")
-            hashes = await hass.async_add_executor_job(store_hashes, hass.config.config_dir)
-            identity = ledger.start(message["kind"], hashes)
+            if hass.state is not CoreState.running:
+                raise Refusal("core_not_running")
+            if not all(coverage().values()):
+                raise Refusal("hooks_not_intact")
+            try:
+                hashes = await hass.async_add_executor_job(store_hashes, hass.config.config_dir)
+            except ValueError:
+                raise Refusal("store_hash_unavailable") from None
+            try:
+                identity = ledger.start(message["kind"], hashes)
+            except ValueError:
+                raise Refusal("interval_unavailable") from None
+        except Refusal as refusal:
+            cause = refusal.cause
+        except Exception:  # cancellation is not an Exception and propagates
+            cause = "start_internal_error"
+        else:
             connection.send_result(message["id"], {"model": MODEL, "interval_id": identity})
-        except ValueError:
-            connection.send_error(message["id"], "observer_refused", "Observer refused interval")
+            return
+        refused = ledger.refuse_start(cause, classes)
+        connection.send_error(message["id"], refused["cause"], "Observer refused interval")
 
     @websocket_api.websocket_command({vol.Required("type"): DOMAIN + "/finish",
                                      vol.Required("interval_id"): vol.Match(r"^[0-9a-f]{32}$")})

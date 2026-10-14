@@ -99,7 +99,7 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_control_window_names_its_index_and_condition(self):
         # HAMCP-180: publish run 434's signature in the second baseline window.
         event = {'kind': 'storage_delay_save', 'origin': 'background', 'store': 'other',
-                 'store_class': 'core.synthetic_background'}
+                 'store_class': 'core'}
         for index in (1, 2):
             value = copy.deepcopy(self.value)
             value['observations'][index - 1]['events'].append(event)
@@ -120,6 +120,40 @@ class DisposableReceiptTests(unittest.IsolatedAsyncioTestCase):
                 self.assertRaises(AssertionError) as found:
             await lane.run_disposable(None, expected_image=None, core_version=CORE)
         self.assertNotIn('observation_failure', found.exception.contract_diagnostic)
+
+    async def test_setup_failures_reach_the_baseline_lane_diagnostic(self):
+        # HAMCP-180 R1: a failed settle or start before any result still names its cause.
+        for cause, phase, window, index in (
+                ('setup_not_settled_late_start', 'start', 'baseline_export', 2),
+                ('readiness_timeout', 'readiness', 'baseline_restore', None),
+                ('store_class_list_malformed', 'readiness', 'baseline_export', 1)):
+            failure = alarmo.setup_failure(cause, phase, window=window, window_index=index, readiness_reads=1,
+                                           core_running=True, pending_store_classes=['lovelace'])
+            with self.subTest(cause=cause), patch.object(lane, '_run_disposable', side_effect=failure), \
+                    self.assertRaises(alarmo.ObservationError) as found:
+                await lane.run_disposable(None, expected_image=None, core_version=CORE)
+            observed = found.exception.contract_diagnostic['observation_failure']
+            self.assertEqual(observed, failure.diagnostic)
+            self.assertEqual((observed['cause'], observed['window'], observed['window_index']), (cause, window, index))
+            self.assertTrue(found.exception.contract_diagnostic['baseline_source_lines'])
+
+    async def test_retained_failure_never_echoes_an_identifier_shaped_class(self):
+        # HAMCP-180 R2: a hostile class from the observer is ``invalid`` in the retained receipt.
+        import entity_metadata_contract_acceptance as entity
+        identifier = 'abcdef0123456789' * 2
+        value = copy.deepcopy(self.value)
+        value['observations'][0]['events'].append({'kind': 'storage_write', 'origin': 'background',
+                                                   'store': 'other', 'store_class': identifier})
+        with self.assertRaises(alarmo.ObservationError) as found:
+            lane.verify_result(value, core_version=CORE, support_slot=CORE_SLOT)
+        self.assertEqual(found.exception.diagnostic['event']['store_class'], 'invalid')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'alarmo.json'
+            path.write_text(json.dumps({'result': 'PASS', 'automation_baseline': None}))
+            lane.retain_failed_result(path, {'result': 'PASS', 'observations': []}, found.exception)
+            retained = entity.load_receipt(path.read_bytes())
+        self.assertEqual(retained['automation_baseline']['observation_failure'], found.exception.diagnostic)
+        self.assertNotIn(identifier, json.dumps(retained))
 
     async def test_command_service_storage_and_coverage_fail_closed(self):
         for mutate in (
