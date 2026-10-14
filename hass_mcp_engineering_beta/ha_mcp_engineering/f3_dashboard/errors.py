@@ -70,6 +70,10 @@ class RawEvidenceError(DashboardFoundationError):
     code = "invalid_raw_dashboard_evidence"
 
 
+class ProviderAuthorityUnavailableError(RawEvidenceError):
+    """Exact dashboard write authority was not admitted for the observed catalog."""
+
+
 class PatchValidationError(DashboardFoundationError):
     code = "invalid_dashboard_patch"
 
