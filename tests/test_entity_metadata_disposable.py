@@ -133,13 +133,13 @@ class ReceiptTests(unittest.TestCase):
         def drop(name):
             return lambda v: v["scenarios"].pop(name)
 
-        def reorder(value):
-            value["scenarios"] = dict(reversed(list(value["scenarios"].items())))
-
         def extra(value):
             value["scenarios"]["label_creation"] = {"result": "PASS"}
 
-        mutations = [drop(name) for name in names] + [reorder, extra] + [
+        def as_list(value):
+            value["scenarios"] = list(value["scenarios"].values())
+
+        mutations = [drop(name) for name in names] + [extra, as_list] + [
             scenario(name, result="FAIL") for name in names] + [
             scenario("closed_field_update", readback={**self.value["scenarios"]["closed_field_update"]["readback"],
                                                       "icon": "mdi:lamp"}),
@@ -181,6 +181,15 @@ class ReceiptTests(unittest.TestCase):
             mutate(value)
             with self.subTest(index=mutations.index(mutate)), self.assertRaises(REFUSED):
                 self.verify(value)
+
+    def test_serialized_receipt_verifies_after_sorted_round_trip(self):
+        # PR #252 CI: the retained result is written with sorted keys, so the
+        # verifier must bind the exact scenario set rather than insertion order.
+        for slot, version in SLOT_VERSIONS.items():
+            value = json.loads(lane.receipt_bytes(synthetic_receipt(version)))
+            self.assertNotEqual(list(value["scenarios"]), list(lane.SCENARIOS))
+            with self.subTest(slot=slot):
+                self.assertEqual(lane.verify_result(value, core_version=version, support_slot=slot)["result"], "PASS")
 
     def test_receipt_bytes_are_canonical(self):
         raw = lane.receipt_bytes(self.value)
@@ -241,7 +250,8 @@ class RetainedReceiptTests(unittest.TestCase):
     def cleanup(self, value, core=CORE, standalone=None):
         with tempfile.TemporaryDirectory() as directory:
             source, output = Path(directory) / "result.json", Path(directory) / "cleanup.json"
-            source.write_text(json.dumps(value))
+            # Mirror the harness: the retained result is written with sorted keys.
+            source.write_text(json.dumps(value, sort_keys=True, indent=2) + "\n")
             receipt = None
             if standalone is not None:
                 receipt = Path(directory) / "entity-metadata.json"

@@ -238,7 +238,8 @@ def verify_result(result, *, core_version, support_slot):
     assert type(labels) is list and len(labels) == 2 and labels == sorted(labels)
     assert UNKNOWN_LABEL not in labels
     scenarios = result["scenarios"]
-    assert list(scenarios) == list(SCENARIOS)
+    # Receipts are written with sorted keys, so the exact set is bound, not order.
+    assert type(scenarios) is dict and sorted(scenarios) == sorted(SCENARIOS)
     for name in SCENARIOS:
         _scenario_checks(name, scenarios[name], labels)
     return {"result": "PASS", "core": core_version, "support_slot": support_slot,
