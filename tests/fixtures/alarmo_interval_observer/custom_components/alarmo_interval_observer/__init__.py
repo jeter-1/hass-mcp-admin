@@ -8,6 +8,13 @@ Hooks observe commands, flow entry/continuation/abort, services and Store save,
 queue/write/remove. They never retain command arguments or store contents.
 This is an interval observation, not a proof about future arbitrary tasks or
 writes that bypass Core's Store API. Fixed persisted-store hashes supplement it.
+
+Setup readiness covers every Core Store instance, not only the hashed ones
+(HAMCP-180): Stores alive when the hooks install and every Store a hook later
+sees. Only the two stores whose background bookkeeping intervals already
+tolerate are excluded. Unnamed stores are reported by a bounded class (the
+integration domain, or ``core.<name>`` for letter-only Core names), never the
+full key, a path or contents.
 """
 
 import asyncio
@@ -15,12 +22,14 @@ from contextvars import ContextVar
 from functools import wraps
 import hashlib
 from pathlib import Path
+import re
 from threading import Lock
 import time
 from uuid import uuid4
+import weakref
 
 DOMAIN = "alarmo_interval_observer"
-MODEL = "alarmo-core-interval-v1"
+MODEL = "alarmo-core-interval-v2"
 MAX_EVENTS = 128
 MAX_SECONDS = 45
 COMMANDS = frozenset({"manifest/get", "config_entries/get", "config/entity_registry/get_entries",
@@ -29,8 +38,32 @@ COMMANDS = frozenset({"manifest/get", "config_entries/get", "config/entity_regis
 CONTROL_COMMANDS = frozenset({DOMAIN + "/ready", DOMAIN + "/start", DOMAIN + "/finish"})
 STORE_KEYS = frozenset({"alarmo.storage", "core.config_entries", "core.entity_registry",
                         "core.device_registry", "auth", "core.restore_state"})
-HASH_KEYS = tuple(sorted(STORE_KEYS - {"auth", "core.restore_state"}))
+# Background bookkeeping on Core's own timers that intervals report, not refuse.
+TOLERATED_KEYS = frozenset({"auth", "core.restore_state"})
+HASH_KEYS = tuple(sorted(STORE_KEYS - TOLERATED_KEYS))
+QUIET_SECONDS = 2
+MAX_STORE_CLASSES = 16
+DOMAIN_CLASS = re.compile(r"[a-z][a-z0-9_]{0,31}")
+CORE_NAME_CLASS = re.compile(r"[a-z]{1,32}(?:_[a-z]{1,32}){0,3}")
 REQUEST = ContextVar("alarmo_observer_request", default=None)
+
+
+def store_class(key):
+    """Bounded diagnostic class of a Store key: no path, id-bearing suffix or data."""
+    if type(key) is not str:
+        return "unclassified"
+    if key in STORE_KEYS:
+        return key
+    head, _dot, rest = key.partition(".")
+    if head == "core" and CORE_NAME_CLASS.fullmatch(rest):
+        return "core." + rest
+    return head if DOMAIN_CLASS.fullmatch(head) else "unclassified"
+
+
+def store_pending(store):
+    """Readiness bits only: a scheduled or in-progress Core write, never its data."""
+    return store._write_lock.locked() or (store._data is not None and (
+        store._delay_handle is not None or store._unsub_final_write_listener is not None))
 
 
 class Ledger:
@@ -38,12 +71,20 @@ class Ledger:
         self.clock = clock
         self.lock = Lock()
         self.active = None
-        self.stores = {}
+        # Every Store seen, keyed by identity; weak so retired Stores drop out.
+        self.stores = weakref.WeakValueDictionary()
+        self.last_activity = None
+
+    def track(self, store):
+        with self.lock:
+            self.stores[id(store)] = store
 
     def record(self, kind, *, command=None, store=None):
         with self.lock:
-            if store is not None and store.key in HASH_KEYS:
-                self.stores[store.key] = store
+            if store is not None:
+                self.stores[id(store)] = store
+                if store.key not in TOLERATED_KEYS:
+                    self.last_activity = (self.clock(), store_class(store.key))
             current = self.active
             if current is None:
                 return
@@ -57,13 +98,21 @@ class Ledger:
                 event["command"] = command if command in COMMANDS else "other"
             if store is not None:
                 event["store"] = store.key if store.key in STORE_KEYS else "other"
+                if event["store"] == "other":
+                    event["store_class"] = store_class(store.key)
             current["events"].append(event)
 
-    def pending_setup_storage(self):
-        # Only readiness bits; never inspect the pending data or callbacks.
+    def pending_store_classes(self):
+        """Sorted classes of untolerated stores with a pending or recent write."""
         with self.lock:
-            return any(store._data is not None or store._write_lock.locked()
-                       for store in self.stores.values())
+            classes = {store_class(store.key) for store in list(self.stores.values())
+                       if store.key not in TOLERATED_KEYS and store_pending(store)}
+            if self.last_activity is not None and self.clock() - self.last_activity[0] < QUIET_SECONDS:
+                classes.add(self.last_activity[1])
+        return sorted(classes)
+
+    def pending_setup_storage(self):
+        return bool(self.pending_store_classes())
 
     def start(self, kind, hashes):
         with self.lock:
@@ -134,6 +183,7 @@ def store_hashes(config_directory):
 
 
 async def async_setup(hass, config):
+    import gc
     import voluptuous as vol
     from homeassistant.const import __version__, EVENT_HOMEASSISTANT_STOP
     from homeassistant.core import CoreState, ServiceRegistry, callback
@@ -165,6 +215,10 @@ async def async_setup(hass, config):
         wrapper = (observe_async if asynchronous else observe_sync)(ledger, kind, original)
         setattr(cls, name, wrapper)
         hooks.append((cls, name, original, wrapper))
+    # Stores created before the hooks may already hold a scheduled write.
+    for candidate in gc.get_objects():
+        if issubclass(type(candidate), Store):
+            ledger.track(candidate)
 
     def coverage():
         return {cls.__name__ + "." + name: getattr(cls, name) is wrapper
@@ -181,10 +235,13 @@ async def async_setup(hass, config):
     @websocket_api.require_admin
     @callback
     def ready(_hass, connection, message):
-        # Setup only: fixed booleans, no forced save and no stored values.
+        # Setup only: fixed booleans and bounded store classes, no forced save
+        # and no stored values.
+        pending = ledger.pending_store_classes()
         connection.send_result(message["id"], {
             "core_running": hass.state is CoreState.running,
-            "storage_pending": ledger.pending_setup_storage(),
+            "storage_pending": bool(pending),
+            "pending_store_classes": pending[:MAX_STORE_CLASSES],
             "hooks_intact": all(coverage().values()),
         })
 

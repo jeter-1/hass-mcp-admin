@@ -114,9 +114,10 @@ outside the measured interval and waits for setup/storage settlement. Exact Core
 2026.9.4 `helpers/registry.py:13-14,74-79` schedules registry writes after 180
 seconds during startup (10 seconds while running). A setup-only readiness read
 therefore allows at most 41 polls over 200 seconds, requiring Core running,
-no queued or active fixed-store writes, and intact observer hooks. It does not
-force saves or retry feature reads. The 45-second observation and 30-second
-feature collection bounds are unchanged; missing settlement still fails. It then:
+no queued or active untolerated Core Store writes, and intact observer hooks. It
+does not force saves or retry feature reads. The 45-second observation and
+30-second feature collection bounds are unchanged; missing settlement still
+fails. It then:
 
 1. Captures an actual extra harmless `get_states` request as a negative observer
    control and proves that a zero-command expectation rejects it.
@@ -145,6 +146,40 @@ it is not a global zero-write claim. This finite interval cannot prove absence
 of future arbitrary tasks or writes bypassing Core Store. Hashes of the fixed
 Alarmo/config-entry/entity/device stores supplement the hooks without retaining
 store contents. The observer retains no arguments, config bodies or credentials.
+
+Setup readiness covers every Core Store, not only the four hashed ones
+(HAMCP-180). It tracks Stores alive when the hooks install, found by a scan, and
+every Store a hook later sees. A Store is pending while its write lock is held,
+or while it holds data with a scheduled delayed save or final-write listener.
+Readiness also waits 2 seconds after the last untolerated store activity. Only
+`auth` and `core.restore_state` are excluded, because intervals already report
+them as background bookkeeping. The interval allowlist is unchanged: a write to
+any other store inside a window still fails.
+
+An event for an unnamed store carries a bounded `store_class`:
+
+- the integration domain;
+- `core.<name>` for letter-only Core names; or
+- `unclassified`.
+
+It never carries the full key, an identifier suffix, a path or contents.
+
+A failed check raises `ObservationError` with a bounded diagnostic. The
+diagnostic contains:
+
+- the failed `condition`;
+- the window label and index;
+- the interval kind and event counts by bounded summary;
+- the offending event's summary; and
+- `changed_stores` or command counts where relevant.
+
+The diagnostic appears in the slot's `contract_diagnostic`. A baseline failure
+also retains it in the FAIL receipt. A setup that never settles reports
+`setup_not_settled` with the classes still pending.
+
+An unnamed-store burst that starts after the window opens cannot be prevented
+by setup readiness. It still fails, and the diagnostic now names its class for a
+reviewed decision.
 
 The required result marker is `Alarmo disposable inspection contract:`. Missing
 fixture receipt or a non-PASS result fails that slot's Real HA runner. The final

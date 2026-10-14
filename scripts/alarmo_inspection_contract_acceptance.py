@@ -179,46 +179,142 @@ OBSERVER_HOOKS = {"ActiveConnection.async_handle", "ConfigEntriesFlowManager.asy
 STORE_HASH_KEYS = {"alarmo.storage", "core.config_entries", "core.entity_registry", "core.device_registry"}
 
 
-def verify_interval(value, identity, expected_commands, *, core_version, kind="inspection"):
-    """Require independently observed Core activity, never client-side zero claims."""
+STORE_EVENT_KINDS = ("storage_save", "storage_delay_save", "storage_write", "storage_remove")
+EVENT_KINDS = ("command", "config_flow_init", "flow_init", "flow_configure", "flow_abort", "service", *STORE_EVENT_KINDS)
+OBSERVER_COMMANDS = ("manifest/get", "config_entries/get", "config/entity_registry/get_entries", "auth/current_user",
+    "config/device_registry/list", "config/entity_registry/list", "ping", "alarmo/config", "alarmo/areas",
+    "alarmo/sensors", "alarmo/entities", "alarmo/sensor_groups", "other")
+TOLERATED_STORES = ("auth", "core.restore_state")
+NAMED_STORES = ("alarmo.storage", "core.config_entries", "core.entity_registry", "core.device_registry",
+                *TOLERATED_STORES, "other")
+# Mirrors the observer's store_class: a named key, a domain token, a
+# letter-only ``core.<name>``, or ``unclassified``.
+STORE_CLASS = "|".join(["unclassified", "alarmo\\.storage", r"[a-z][a-z0-9_]{0,31}",
+                        r"core\.[a-z]{1,32}(?:_[a-z]{1,32}){0,3}"])
+WINDOW_LABEL = r"[a-z][a-z0-9_]{0,31}"
+MAX_DIAGNOSTIC_ITEMS = 16
+
+
+class ObservationError(ValueError):
+    """Observer refusal carrying a bounded diagnostic (HAMCP-180).
+
+    The message stays generic. ``diagnostic`` holds only fixed condition codes,
+    observer vocabulary tokens, bounded store classes, a window label/index and
+    counts, never paths, hashes, arguments or store contents.
+    """
+
+    def __init__(self, message, diagnostic):
+        super().__init__(message)
+        self.diagnostic = diagnostic
+
+
+def _token(value, allowed):
+    return value if type(value) is str and value in allowed else "invalid"
+
+
+def _store_class(value):
+    import re
+    return value if type(value) is str and re.fullmatch(STORE_CLASS, value) else "invalid"
+
+
+def _event_summary(event):
+    """One event as bounded tokens; anything outside the vocabulary is ``invalid``."""
+    if type(event) is not dict:
+        return {"kind": "invalid"}
+    summary = {"kind": _token(event.get("kind"), EVENT_KINDS),
+               "origin": _token(event.get("origin"), ("command", "background"))}
+    if "command" in event:
+        summary["command"] = _token(event["command"], OBSERVER_COMMANDS)
+    if "store" in event:
+        summary["store"] = _token(event["store"], NAMED_STORES)
+    if "store_class" in event:
+        summary["store_class"] = _store_class(event["store_class"])
+    unexpected = set(event) - {"kind", "origin", "command", "store", "store_class"}
+    if unexpected:
+        summary["unexpected_field_count"] = len(unexpected)
+    return summary
+
+
+def _event_counts(events):
+    counts = {}
+    for event in events if type(events) is list else ():
+        summary = _event_summary(event)
+        summary.pop("unexpected_field_count", None)
+        if summary.get("kind") == "command":
+            summary.pop("command", None)
+        key = tuple(sorted(summary.items()))
+        counts[key] = counts.get(key, 0) + 1
+    rows = [dict(key, count=count) for key, count in sorted(counts.items())]
+    return rows[:MAX_DIAGNOSTIC_ITEMS]
+
+
+def verify_interval(value, identity, expected_commands, *, core_version, kind="inspection",
+                    window=None, window_index=None):
+    """Require independently observed Core activity, never client-side zero claims.
+
+    A failure raises ``ObservationError`` naming the first failed condition
+    with its window, the offending event's bounded summary and the interval's
+    event counts. The checks themselves are unchanged.
+    """
     import math
     import re
     keys = {"interval_id", "kind", "events", "overflow", "expired", "baseline_store_hashes", "model",
             "elapsed_seconds", "final_store_hashes", "coverage", "core_version", "observer_sha256"}
-    def require(condition):
+    events = value.get("events") if type(value) is dict else None
+    context = {"window": window if type(window) is str and re.fullmatch(WINDOW_LABEL, window) else None,
+               "window_index": window_index if type(window_index) is int and 0 <= window_index < 64 else None,
+               "interval_kind": kind if kind in ("inspection", "control") else "invalid",
+               "event_count": len(events) if type(events) is list else None,
+               "event_counts": _event_counts(events)}
+    def require(condition, code, **detail):
         if not condition:
-            raise ValueError("Disposable Core interval failed verification")
-    require(type(value) is dict and set(value) == keys)
-    require(type(core_version) is str and value["model"] == "alarmo-core-interval-v1"
-            and value["core_version"] == core_version)
-    require(value["interval_id"] == identity and type(identity) is str and re.fullmatch(r"[0-9a-f]{32}", identity))
-    require(value["kind"] == kind and value["overflow"] is False and value["expired"] is False)
+            raise ObservationError("Disposable Core interval failed verification",
+                                   {"condition": code, **context, **detail})
+    require(type(value) is dict and set(value) == keys, "receipt_shape")
+    require(type(core_version) is str and value["model"] == "alarmo-core-interval-v2", "observer_model")
+    require(value["core_version"] == core_version, "core_version")
+    require(value["interval_id"] == identity and type(identity) is str and re.fullmatch(r"[0-9a-f]{32}", identity),
+            "interval_identity")
+    require(value["kind"] == kind, "interval_kind")
+    require(value["overflow"] is False, "event_overflow")
+    require(value["expired"] is False, "interval_expired")
     elapsed = value["elapsed_seconds"]
-    require(type(elapsed) in (int, float) and math.isfinite(elapsed) and 0 <= elapsed <= 45)
-    require(value["observer_sha256"] == hashlib.sha256(OBSERVER.read_bytes()).hexdigest())
+    require(type(elapsed) in (int, float) and math.isfinite(elapsed) and 0 <= elapsed <= 45, "elapsed_seconds")
+    require(value["observer_sha256"] == hashlib.sha256(OBSERVER.read_bytes()).hexdigest(), "observer_source")
     require(type(value["coverage"]) is dict and set(value["coverage"]) == OBSERVER_HOOKS
-            and all(item is True for item in value["coverage"].values()))
+            and all(item is True for item in value["coverage"].values()), "hook_coverage")
     for name in ("baseline_store_hashes", "final_store_hashes"):
         hashes = value[name]
-        require(type(hashes) is dict and set(hashes) == STORE_HASH_KEYS)
-        require(all(item is None or (type(item) is str and re.fullmatch(r"[0-9a-f]{64}", item)) for item in hashes.values()))
-    require(value["baseline_store_hashes"] == value["final_store_hashes"])
-    events = value["events"]
-    require(type(events) is list and len(events) <= 128)
+        require(type(hashes) is dict and set(hashes) == STORE_HASH_KEYS, "store_hash_shape")
+        require(all(item is None or (type(item) is str and re.fullmatch(r"[0-9a-f]{64}", item)) for item in hashes.values()),
+                "store_hash_shape")
+    changed = sorted(key for key in STORE_HASH_KEYS
+                     if value["baseline_store_hashes"][key] != value["final_store_hashes"][key])
+    require(not changed, "store_hash_changed", changed_stores=changed)
+    require(type(events) is list and len(events) <= 128, "events_shape")
     commands, background = [], []
-    for event in events:
-        require(type(event) is dict and event.get("origin") in ("command", "background"))
+    for index, event in enumerate(events):
+        detail = {"event_index": index, "event": _event_summary(event)}
+        require(type(event) is dict and event.get("origin") in ("command", "background"), "event_shape", **detail)
         if event.get("kind") == "command":
-            require(set(event) == {"kind", "origin", "command"} and type(event["command"]) is str)
+            require(set(event) == {"kind", "origin", "command"} and type(event["command"]) is str,
+                    "command_event_shape", **detail)
             commands.append(event["command"])
         else:
             # Auth token last-use and restore-state bookkeeping may occur on
             # Core's independent timers. Report it; do not call global writes zero.
-            require(set(event) == {"kind", "origin", "store"}
-                    and event["kind"] in ("storage_save", "storage_delay_save", "storage_write")
-                    and event["origin"] == "background" and event["store"] in ("auth", "core.restore_state"))
+            require(event.get("kind") in ("storage_save", "storage_delay_save", "storage_write"),
+                    "unexpected_event_kind", **detail)
+            require(event["origin"] == "background", "command_origin_storage", **detail)
+            fields = {"kind", "origin", "store", "store_class"} if event.get("store") == "other" else {
+                "kind", "origin", "store"}
+            require(set(event) == fields, "storage_event_shape", **detail)
+            require(event["store"] in TOLERATED_STORES, "untolerated_store", **detail)
             background.append(event)
-    require(commands == expected_commands)
+    require(commands == expected_commands, "commands_mismatch",
+            expected_command_count=len(expected_commands) if type(expected_commands) is list else None,
+            observed_command_count=len(commands),
+            observed_commands=[_token(item, OBSERVER_COMMANDS) for item in commands[:MAX_DIAGNOSTIC_ITEMS]])
     return {"result": "PASS", "commands": commands, "background_bookkeeping": background,
             "config_options_flow_events": 0, "service_events": 0, "command_origin_storage_events": 0,
             "fixed_persisted_stores_unchanged": True,
@@ -226,26 +322,48 @@ def verify_interval(value, identity, expected_commands, *, core_version, kind="i
                            "Background auth/restore-state bookkeeping is reported separately."]}
 
 
-async def wait_disposable_setup(websocket, *, clock=None, sleep=None):
+async def wait_disposable_setup(websocket, *, clock=None, sleep=None, store_classes=True):
     """Wait for Core's source-defined 180s startup saves, outside observation.
 
     At most 41 readiness reads in 200 seconds. Never flush or retry a feature
     command; interval/feature budgets remain 45/30 seconds respectively.
+    The Alarmo observer's readiness covers every untolerated Core Store and
+    names pending ones by bounded class (HAMCP-180); ``store_classes=False``
+    keeps the dashboard observer's three-field shape.
     """
     import asyncio
+    import re
     import time
     clock = clock or time.monotonic
     sleep = sleep or asyncio.sleep
+    fields = {"core_running", "storage_pending", "hooks_intact"}
+    if store_classes:
+        fields.add("pending_store_classes")
     deadline = clock() + 200
+    last = {"readiness_reads": 0, "core_running": None, "pending_store_classes": None}
+    def unavailable():
+        return ObservationError("Disposable setup observation unavailable",
+                                {"condition": "setup_observation_unavailable", **last})
     for attempt in range(41):
         remaining = deadline - clock()
         if remaining <= 0:
             break
         async with asyncio.timeout(remaining):
             value = await websocket.command({"type": "alarmo_interval_observer/ready"})
-        if (type(value) is not dict or set(value) != {"core_running", "storage_pending", "hooks_intact"}
-                or any(type(item) is not bool for item in value.values()) or not value["hooks_intact"]):
-            raise ValueError("Disposable setup observation unavailable")
+        last["readiness_reads"] = attempt + 1
+        if (type(value) is not dict or set(value) != fields
+                or any(type(value[item]) is not bool for item in fields - {"pending_store_classes"})
+                or not value["hooks_intact"]):
+            raise unavailable()
+        if store_classes:
+            classes = value["pending_store_classes"]
+            if (type(classes) is not list or len(classes) > MAX_DIAGNOSTIC_ITEMS or classes != sorted(set(classes))
+                    or not all(type(item) is str and re.fullmatch(STORE_CLASS, item) for item in classes)
+                    or (not classes and value["storage_pending"])
+                    or (classes and not value["storage_pending"])):
+                raise unavailable()
+            last["pending_store_classes"] = list(classes)
+        last["core_running"] = value["core_running"]
         if clock() > deadline:
             break
         if value["core_running"] and not value["storage_pending"]:
@@ -254,7 +372,8 @@ async def wait_disposable_setup(websocket, *, clock=None, sleep=None):
         if remaining <= 0 or attempt == 40:
             break
         await sleep(min(5, remaining))
-    raise ValueError("Disposable setup did not settle within its bound")
+    raise ObservationError("Disposable setup did not settle within its bound",
+                           {"condition": "setup_not_settled", **last})
 
 
 async def close_disposable_authority(runtime):
@@ -268,6 +387,17 @@ async def close_disposable_authority(runtime):
 
 
 async def run_disposable(configured, existing_core, *, fixture_receipt, expected_image, core_version):
+    """Attach the bounded observer diagnostic to an observation failure (HAMCP-180)."""
+    try:
+        return await _run_disposable(configured, existing_core, fixture_receipt=fixture_receipt,
+                                     expected_image=expected_image, core_version=core_version)
+    except ObservationError as exc:
+        exc.contract_missing_key = "alarmo_inspection"
+        exc.contract_diagnostic = {"observation_failure": exc.diagnostic}
+        raise
+
+
+async def _run_disposable(configured, existing_core, *, fixture_receipt, expected_image, core_version):
     """Required slot-Core integration using a real signed 19-to-20 extension.
 
     Setup is confined to an owned loopback disposable Core. Observer intervals
@@ -297,9 +427,11 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
     from ha_mcp_engineering.integration_inspection.runtime import INTEGRATION_INSPECTION
     from ha_mcp_engineering.tools.integration_inspection import registered_tool
     from ha_mcp_engineering.request_context import begin_request, end_request
+    from entity_metadata_contract_acceptance import load_receipt
     if urlsplit(configured.ha_url).hostname not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("Disposable inspector requires loopback Core")
-    receipt = json.loads(Path(fixture_receipt).read_text())
+    # HAMCP-180: the shared strict boundary refuses a repeated key before any binding check.
+    receipt = load_receipt(Path(fixture_receipt).read_bytes())
     profile = json.loads((FIXTURES / "alarmo_profile.json").read_text())
     if (receipt.get("fixture") != "synthetic-alarmo-inspection-v1" or receipt.get("alarmo_source") != COMMIT
             or receipt.get("archive_sha256") != profile["archive_sha256"]):
@@ -339,10 +471,11 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
     control_id = await start("control")
     await websocket.command({"type": "get_states"})
     control = await finish(control_id)
-    verify_interval(control, control_id, ["other"], kind="control", core_version=core_version)
+    verify_interval(control, control_id, ["other"], kind="control", core_version=core_version,
+                    window="negative_control")
     try:
         verify_interval(control, control_id, [], kind="control", core_version=core_version)
-    except ValueError:
+    except ObservationError:
         pass
     else:
         raise AssertionError("Observer negative control failed")
@@ -388,7 +521,7 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
                 end_request(token)
             denied_observation = await finish(denied_id)
             denial_proof = verify_interval(denied_observation, denied_id, [], kind="control",
-                                           core_version=core_version)
+                                           core_version=core_version, window="missing_authority")
             previous = signed
             extension = canonical_json({"model": EXTENSION_EVIDENCE_MODEL, "version": entry["version"],
                 "previous_entry_sha256": hashlib.sha256(canonical_json(entry)).hexdigest(),
@@ -432,7 +565,8 @@ async def run_disposable(configured, existing_core, *, fixture_receipt, expected
                 end_request(token)
                 assert runtime.finish(commits)
             observed = await finish(measured_id)
-            measured = verify_interval(observed, measured_id, EXPECTED_COMMANDS, core_version=core_version)
+            measured = verify_interval(observed, measured_id, EXPECTED_COMMANDS, core_version=core_version,
+                                       window="inspection")
             records = []
             for page in (first["data"], second["data"]):
                 Inspection.model_validate(page)
@@ -605,10 +739,11 @@ def verify_disposable_cleanup(result_path, output, core_version, entity_metadata
                 ("missing_authority_observation", "missing_authority", [], "control")):
         observation = value[key]
         if verify_interval(observation, observation["interval_id"], expected, kind=kind,
-                           core_version=core_version) != value[proof]:
+                           core_version=core_version, window=proof) != value[proof]:
             raise ValueError("Retained interval verification mismatch")
     control = value["negative_control_observation"]
-    verify_interval(control, control["interval_id"], ["other"], kind="control", core_version=core_version)
+    verify_interval(control, control["interval_id"], ["other"], kind="control", core_version=core_version,
+                    window="negative_control")
     from automation_baseline_contract_acceptance import verify_result as verify_baseline
     baseline = verify_baseline(value["automation_baseline"], core_version=core_version, support_slot=binding["slot"])
     entity_metadata = verify_entity_metadata(value["entity_metadata"], core_version=core_version,

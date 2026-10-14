@@ -118,6 +118,16 @@ strict loader refuses a repeated object key at any depth with
 `receipt_duplicate_key`, before any validation. The lane verifies its own
 serialized bytes through this loader, not its in-memory value.
 
+HAMCP-180 moved the four remaining Real HA receipt loads onto the same loader,
+with no copy of it:
+
+- the Alarmo fixture receipt;
+- the baseline lane's image receipt;
+- the baseline lane's retained FAIL rewrite; and
+- the Real HA retained-result merge.
+
+A repeated key in any of them refuses before any Core access or rewrite.
+
 `alarmo_inspection_contract_acceptance.py --verify-cleanup` re-verifies the
 nested receipt offline against the window and current source. It requires the
 standalone artifact to be byte-identical, then records

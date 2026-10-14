@@ -5,7 +5,7 @@ Slot-driven tests iterate the committed window; single-slot tests name the
 rollback slot explicitly. Rotations use a temporary repository root.
 """
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import copy
 import dataclasses
 import hashlib
@@ -66,6 +66,25 @@ def receipt(commands=(), core_version=CORE):
 
 def sha256(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+class FakeLock:
+    def __init__(self):
+        self.held = False
+
+    def locked(self):
+        return self.held
+
+
+class FakeStore:
+    """Only the readiness attributes Core's Store carries; weak-referenceable."""
+
+    def __init__(self, key, data=None, delay_handle=None, final_listener=None):
+        self.key = key
+        self._data = data
+        self._delay_handle = delay_handle
+        self._unsub_final_write_listener = final_listener
+        self._write_lock = FakeLock()
 
 
 def window_root(directory):
@@ -156,7 +175,9 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         now, calls = [0], []
         async def command(payload):
             calls.append(payload)
-            return {"core_running": now[0] >= 5, "storage_pending": now[0] < 180, "hooks_intact": True}
+            pending = now[0] < 180
+            return {"core_running": now[0] >= 5, "storage_pending": pending, "hooks_intact": True,
+                    "pending_store_classes": ["lovelace"] if pending else []}
         async def sleep(seconds):
             now[0] += seconds
         result = await acceptance.wait_disposable_setup(SimpleNamespace(command=command), clock=lambda: now[0], sleep=sleep)
@@ -166,11 +187,24 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("alarmo_interval_observer/ready", observer.CONTROL_COMMANDS)
 
     async def test_setup_wait_refuses_timeout_missing_hooks_bad_shape_and_request_failure(self):
+        ready = {"core_running": True, "storage_pending": False, "hooks_intact": True, "pending_store_classes": []}
         for value in (
-            {"core_running": True, "storage_pending": True, "hooks_intact": True},
-            {"core_running": False, "storage_pending": False, "hooks_intact": True},
-            {"core_running": True, "storage_pending": False, "hooks_intact": False},
-            {"core_running": True, "storage_pending": 0, "hooks_intact": True},
+            dict(ready, storage_pending=True, pending_store_classes=["lovelace"]),
+            dict(ready, core_running=False),
+            dict(ready, hooks_intact=False),
+            dict(ready, storage_pending=0),
+            # HAMCP-180: the class list is bounded, sorted, consistent and token-only.
+            {key: ready[key] for key in ("core_running", "storage_pending", "hooks_intact")},
+            dict(ready, extra=True),
+            dict(ready, pending_store_classes=None),
+            dict(ready, storage_pending=True),
+            dict(ready, pending_store_classes=["lovelace"]),
+            dict(ready, storage_pending=True, pending_store_classes=["person", "lovelace"]),
+            dict(ready, storage_pending=True, pending_store_classes=["lovelace", "lovelace"]),
+            dict(ready, storage_pending=True, pending_store_classes=["/config/.storage/lovelace"]),
+            dict(ready, storage_pending=True, pending_store_classes=["lovelace.dashboard_private"]),
+            dict(ready, storage_pending=True, pending_store_classes=[1]),
+            dict(ready, storage_pending=True, pending_store_classes=[f"d{i:02d}" for i in range(17)]),
             {},
         ):
             now, calls = [0], []
@@ -224,7 +258,7 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         identity = ledger.start("inspection", {})
         async def save(store, body):
             return body
-        store = SimpleNamespace(key="alarmo.storage", _data=None)
+        store = FakeStore("alarmo.storage")
         wrapped_save = observer.observe_async(ledger, "storage_save", save)
         tasks = []
         def handler(connection, message):
@@ -232,7 +266,7 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         observer.observe_sync(ledger, "command", handler)(None, {"type": "alarmo/config"})
         self.assertIsNone(observer.REQUEST.get())
         self.assertEqual(await tasks[0], "synthetic-private-value")
-        ledger.record("storage_write", store=SimpleNamespace(key="auth", _data=None))
+        ledger.record("storage_write", store=FakeStore("auth"))
         events = ledger.finish(identity, {}, {})["events"]
         self.assertEqual(events[1]["origin"], "command")
         self.assertEqual(events[2]["origin"], "background")
@@ -311,16 +345,24 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
             acceptance.verify_interval(value, value["interval_id"], [])
 
     def test_setup_readiness_hashes_symlinks_and_active_interval_refusal(self):
-        ledger = observer.Ledger()
-        write_lock = SimpleNamespace(locked=lambda: False)
-        store = SimpleNamespace(key="alarmo.storage", _data={"not-read": "private"}, _write_lock=write_lock)
-        ledger.record("storage_save", store=store)
+        now = [0]
+        ledger = observer.Ledger(lambda: now[0])
+        store = FakeStore("alarmo.storage", data={"not-read": "private"}, delay_handle=object())
+        ledger.record("storage_delay_save", store=store)
+        self.assertTrue(ledger.pending_setup_storage())
+        now[0] = 60
+        self.assertEqual(ledger.pending_store_classes(), ["alarmo.storage"])
+        store._delay_handle, store._unsub_final_write_listener = None, object()
         self.assertTrue(ledger.pending_setup_storage())
         store._data = None
         self.assertFalse(ledger.pending_setup_storage())
-        write_lock.locked = lambda: True
+        store._write_lock.held = True
         self.assertTrue(ledger.pending_setup_storage())
-        write_lock.locked = lambda: False
+        store._write_lock.held = False
+        # Core's async_remove clears the handle and listener but keeps _data: settled.
+        store._data, store._unsub_final_write_listener = {"not-read": "private"}, None
+        self.assertFalse(ledger.pending_setup_storage())
+        self.assertNotIn("private", json.dumps(ledger.pending_store_classes()))
         identity = ledger.start("inspection", {})
         with self.assertRaises(ValueError):
             ledger.start("control", {})
@@ -338,6 +380,341 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
             (storage / "core.config_entries").symlink_to(storage / "alarmo.storage")
             with self.assertRaises(ValueError):
                 observer.store_hashes(directory)
+
+
+BOUNDED_TOKEN = re.compile(r"[A-Za-z0-9_./]{0,64}")
+
+
+def assert_bounded(case, value):
+    """A diagnostic holds only short vocabulary tokens, ints, bools and None."""
+    if isinstance(value, dict):
+        case.assertLessEqual(len(value), 32)
+        for key, item in value.items():
+            case.assertRegex(key, r"\A[a-z_]{1,32}\Z")
+            assert_bounded(case, item)
+    elif isinstance(value, list):
+        case.assertLessEqual(len(value), acceptance.MAX_DIAGNOSTIC_ITEMS)
+        for item in value:
+            assert_bounded(case, item)
+    elif isinstance(value, str):
+        case.assertRegex(value, BOUNDED_TOKEN.pattern + r"\Z")
+        case.assertNotRegex(value, r"[0-9a-f]{32}")
+    else:
+        case.assertTrue(value is None or type(value) in (int, bool), value)
+
+
+def narrow_readiness(ledger):
+    """Mutation: the pre-HAMCP-180 readiness, only the four hashed named stores."""
+    with ledger.lock:
+        return sorted({observer.store_class(s.key) for s in list(ledger.stores.values())
+                       if s.key in observer.HASH_KEYS and (s._data is not None or s._write_lock.locked())})
+
+
+class IntervalQuiescenceTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-180: every untolerated Core Store settles before a window opens,
+    and a failed window names its condition with bounded tokens only."""
+
+    UNNAMED = "core.synthetic_background"
+
+    async def flake_signature(self):
+        """Publish run 434's signature on the real observer handlers and setup wait.
+
+        The named stores settle at t=1. An unnamed Core store is mid-burst of
+        background delayed saves: Core keeps the earliest handle, so the burst
+        stays scheduled until one flush at t=13. Five of its saves fall at t=6-10.
+        Returns the setup result and both 5 s window proofs.
+        """
+        modules, _registered, _originals = ha_stubs(CORE)
+        handlers = {}
+        modules["homeassistant.components.websocket_api"].async_register_command = (
+            lambda hass, handler: handlers.setdefault(handler.__name__, handler))
+        Store = modules["homeassistant.helpers.storage"].Store
+
+        def store(key):
+            value = Store()
+            value.key, value._data, value._delay_handle = key, None, None
+            value._unsub_final_write_listener, value._write_lock = None, FakeLock()
+            return value
+
+        def delay_save(target):
+            target._data = {"private": "DO_NOT_RECORD"}
+            target._delay_handle = target._delay_handle or object()
+            target.async_delay_save({"private": "DO_NOT_RECORD"})
+
+        def flush(target):
+            target._data = target._delay_handle = None
+
+        unnamed, named = store(self.UNNAMED), store("core.entity_registry")
+        now = [0]
+        schedule = [(0, delay_save, named), (1, flush, named), (3, delay_save, unnamed),
+                    *[(when, delay_save, unnamed) for when in (6, 7, 8, 9, 10)], (13, flush, unnamed)]
+
+        def advance(to):
+            while schedule and schedule[0][0] <= to:
+                now[0], action, target = schedule.pop(0)
+                action(target)
+            now[0] = to
+
+        hass = SimpleNamespace(data={}, bus=SimpleNamespace(async_listen_once=Mock()), state="running")
+        with patch.dict(sys.modules, modules):
+            self.assertIs(await observer.async_setup(hass, {observer.DOMAIN: {"core_version": CORE}}), True)
+        ledger = hass.data[observer.DOMAIN]
+        ledger.clock = lambda: now[0]
+        advance(0)
+
+        class Connection:
+            async def command(self, payload):
+                assert payload == {"type": "alarmo_interval_observer/ready"}
+                sent = []
+                handlers["ready"](hass, SimpleNamespace(send_result=lambda _id, value: sent.append(value)),
+                                  {"id": 1, **payload})
+                return sent[0]
+
+        async def sleep(seconds):
+            advance(now[0] + seconds)
+
+        setup = await acceptance.wait_disposable_setup(Connection(), clock=lambda: now[0], sleep=sleep)
+        hashes = {key: None for key in acceptance.STORE_HASH_KEYS}
+        proofs = []
+        for index in (1, 2):
+            self.assertFalse(ledger.pending_setup_storage())  # the /start gate
+            identity = ledger.start("control", dict(hashes))
+            advance(now[0] + 5)
+            value = ledger.finish(identity, dict(hashes), {key: True for key in acceptance.OBSERVER_HOOKS})
+            value.update(core_version=CORE, observer_sha256=sha256(acceptance.OBSERVER.read_bytes()))
+            self.assertNotIn("DO_NOT_RECORD", json.dumps(value))
+            proofs.append(acceptance.verify_interval(value, identity, [], kind="control", core_version=CORE,
+                                                     window="baseline_export", window_index=index))
+        return setup, proofs, now[0]
+
+    async def test_flake_signature_passes_after_every_store_settles(self):
+        setup, proofs, finished = await self.flake_signature()
+        # Readiness held through the unnamed burst (t=5, 10) and its quiet period.
+        self.assertEqual(setup, {"result": "PASS", "readiness_reads": 4})
+        self.assertEqual(finished, 25)
+        for proof in proofs:
+            self.assertEqual(proof["result"], "PASS")
+            self.assertEqual(proof["background_bookkeeping"], [])
+
+    async def test_mutation_named_store_readiness_reproduces_the_flake_with_its_cause(self):
+        with patch.object(observer.Ledger, "pending_store_classes", narrow_readiness), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await self.flake_signature()
+        diagnostic = found.exception.diagnostic
+        self.assertEqual(str(found.exception), "Disposable Core interval failed verification")
+        self.assertEqual({key: diagnostic[key] for key in (
+            "condition", "window", "window_index", "interval_kind", "event_count", "event_index", "event")}, {
+            "condition": "untolerated_store", "window": "baseline_export", "window_index": 1,
+            "interval_kind": "control", "event_count": 5, "event_index": 0,
+            "event": {"kind": "storage_delay_save", "origin": "background", "store": "other",
+                      "store_class": self.UNNAMED}})
+        self.assertEqual(diagnostic["event_counts"], [{"count": 5, "kind": "storage_delay_save",
+                                                       "origin": "background", "store": "other",
+                                                       "store_class": self.UNNAMED}])
+        assert_bounded(self, diagnostic)
+        self.assertNotIn("DO_NOT_RECORD", json.dumps(diagnostic))
+
+    async def test_mutation_tolerating_the_unnamed_store_in_readiness_reproduces_the_flake(self):
+        with patch.object(observer, "TOLERATED_KEYS", observer.TOLERATED_KEYS | {self.UNNAMED}), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await self.flake_signature()
+        self.assertEqual(found.exception.diagnostic["condition"], "untolerated_store")
+
+    def assert_untolerated_store_refused(self, event):
+        value = receipt()
+        value["events"].append(event)
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE)
+        self.assertEqual(found.exception.diagnostic["condition"], "untolerated_store")
+
+    def test_genuine_writes_to_unnamed_and_hashed_stores_still_fail(self):
+        events = (
+            {"kind": "storage_delay_save", "origin": "background", "store": "other", "store_class": self.UNNAMED},
+            {"kind": "storage_write", "origin": "background", "store": "other", "store_class": "lovelace"},
+            {"kind": "storage_save", "origin": "background", "store": "other", "store_class": "unclassified"},
+            {"kind": "storage_write", "origin": "background", "store": "alarmo.storage"},
+            {"kind": "storage_delay_save", "origin": "background", "store": "core.entity_registry"},
+        )
+        for event in events:
+            with self.subTest(event=event):
+                self.assert_untolerated_store_refused(event)
+
+    def test_mutation_widening_the_allowlist_blindly_admits_a_genuine_write(self):
+        event = {"kind": "storage_delay_save", "origin": "background", "store": "other", "store_class": self.UNNAMED}
+        with patch.object(acceptance, "TOLERATED_STORES", (*acceptance.TOLERATED_STORES, "other")), \
+                self.assertRaises(AssertionError):
+            self.assert_untolerated_store_refused(event)
+
+    async def test_stores_alive_before_the_hooks_are_found_by_the_scan(self):
+        for scan in (True, False):
+            modules, _registered, _originals = ha_stubs(CORE)
+            Store = modules["homeassistant.helpers.storage"].Store
+            early = Store()
+            early.key, early._data, early._delay_handle = "person", {"private": "DO_NOT_RECORD"}, object()
+            early._unsub_final_write_listener, early._write_lock = None, FakeLock()
+            hass = SimpleNamespace(data={}, bus=SimpleNamespace(async_listen_once=Mock()), state="running")
+            objects = None if scan else (lambda: [])  # mutation: no scan of pre-hook Stores
+            with self.subTest(scan=scan), patch.dict(sys.modules, modules), \
+                    patch("gc.get_objects", objects) if objects else nullcontext():
+                await observer.async_setup(hass, {observer.DOMAIN: {"core_version": CORE}})
+                self.assertEqual(hass.data[observer.DOMAIN].pending_store_classes(), ["person"] if scan else [])
+            del early
+
+    def test_quiet_period_follows_the_last_untolerated_activity_only(self):
+        now = [0]
+        ledger = observer.Ledger(lambda: now[0])
+        unnamed, auth = FakeStore("lovelace.dashboard_private"), FakeStore("auth", data={"x": 1}, delay_handle=object())
+        ledger.record("storage_write", store=unnamed)
+        self.assertEqual(ledger.pending_store_classes(), ["lovelace"])
+        now[0] = observer.QUIET_SECONDS
+        self.assertEqual(ledger.pending_store_classes(), [])
+        # Tolerated bookkeeping neither blocks readiness nor restarts the quiet period.
+        ledger.record("storage_delay_save", store=auth)
+        self.assertEqual(ledger.pending_store_classes(), [])
+
+    def test_store_class_is_bounded_and_never_a_path_or_identifier(self):
+        cases = {
+            "alarmo.storage": "alarmo.storage", "core.entity_registry": "core.entity_registry", "auth": "auth",
+            "core.analytics": "core.analytics", "core.restore_state_extra": "core.restore_state_extra",
+            "core.abc1": "core", "core.uuid": "core.uuid", "core.a_b_c_d_e": "core",
+            "frontend.user_data_0123456789abcdef": "frontend", "lovelace.dashboard_x": "lovelace",
+            "person": "person", "http.auth": "http", "Bad.key": "unclassified", "1x": "unclassified",
+            "": "unclassified", "../../etc/passwd": "unclassified", "a" * 33: "unclassified",
+            None: "unclassified", 7: "unclassified",
+        }
+        for key, expected in cases.items():
+            with self.subTest(key=key):
+                value = observer.store_class(key)
+                self.assertEqual(value, expected)
+                self.assertRegex(value, r"\A(?:" + acceptance.STORE_CLASS + r")\Z")
+                self.assertLessEqual(len(value), 64)
+
+    def test_genuine_violations_fail_with_their_named_condition(self):
+        cases = (
+            ({"kind": "service", "origin": "background"}, "unexpected_event_kind"),
+            ({"kind": "flow_init", "origin": "command"}, "unexpected_event_kind"),
+            ({"kind": "config_flow_init", "origin": "command"}, "unexpected_event_kind"),
+            ({"kind": "storage_remove", "origin": "background", "store": "auth"}, "unexpected_event_kind"),
+            ({"kind": "storage_save", "origin": "command", "store": "auth"}, "command_origin_storage"),
+            ({"kind": "storage_write", "origin": "background", "store": "other"}, "storage_event_shape"),
+            ({"kind": "storage_write", "origin": "background", "store": "auth", "store_class": "auth"},
+             "storage_event_shape"),
+            ({"kind": "command", "origin": "background", "command": "other", "args": "private"},
+             "command_event_shape"),
+            ({"kind": "storage_write", "origin": "elsewhere", "store": "auth"}, "event_shape"),
+        )
+        for event, condition in cases:
+            value = receipt()
+            value["events"].append(event)
+            with self.subTest(event=event), self.assertRaises(acceptance.ObservationError) as found:
+                acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE,
+                                           window="inspection", window_index=0)
+            diagnostic = found.exception.diagnostic
+            self.assertEqual((diagnostic["condition"], diagnostic["event_index"], diagnostic["window"]),
+                             (condition, 0, "inspection"))
+            assert_bounded(self, diagnostic)
+            self.assertNotIn("private", json.dumps(diagnostic))
+        value = receipt([*acceptance.EXPECTED_COMMANDS, "get_states"])
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], acceptance.EXPECTED_COMMANDS, core_version=CORE)
+        diagnostic = found.exception.diagnostic
+        self.assertEqual(diagnostic["condition"], "commands_mismatch")
+        self.assertEqual((diagnostic["expected_command_count"], diagnostic["observed_command_count"]),
+                         (len(acceptance.EXPECTED_COMMANDS), len(acceptance.EXPECTED_COMMANDS) + 1))
+        self.assertEqual(diagnostic["observed_commands"][-1], "other")
+        assert_bounded(self, diagnostic)
+        value = receipt()
+        changed = "f" * 64
+        value["final_store_hashes"]["alarmo.storage"] = changed
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE)
+        self.assertEqual((found.exception.diagnostic["condition"], found.exception.diagnostic["changed_stores"]),
+                         ("store_hash_changed", ["alarmo.storage"]))
+        self.assertNotIn(changed, json.dumps(found.exception.diagnostic))
+
+    def test_diagnostic_is_bounded_for_hostile_or_oversized_intervals(self):
+        value = receipt()
+        value["events"] = [{"kind": f"kind_{index}", "origin": "background", "store": "/config/.storage/x",
+                            "store_class": "/config/.storage/secret", "path": "/config/secret"}
+                           for index in range(128)]
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE,
+                                       window="/config/secret", window_index=10 ** 6)
+        diagnostic = found.exception.diagnostic
+        self.assertEqual((diagnostic["window"], diagnostic["window_index"], diagnostic["event_count"]),
+                         (None, None, 128))
+        self.assertEqual(diagnostic["event"], {"kind": "invalid", "origin": "background", "store": "invalid",
+                                               "store_class": "invalid", "unexpected_field_count": 1})
+        self.assertLessEqual(len(diagnostic["event_counts"]), acceptance.MAX_DIAGNOSTIC_ITEMS)
+        assert_bounded(self, diagnostic)
+        self.assertNotIn("/config", json.dumps(diagnostic))
+        for broken in (None, [], {"events": "x"}):
+            with self.subTest(broken=broken), self.assertRaises(acceptance.ObservationError) as found:
+                acceptance.verify_interval(broken, "0" * 32, [], core_version=CORE)
+            self.assertEqual(found.exception.diagnostic["condition"], "receipt_shape")
+            assert_bounded(self, found.exception.diagnostic)
+
+    async def test_setup_wait_names_the_pending_store_classes_it_gave_up_on(self):
+        now = [0]
+        async def command(payload):
+            return {"core_running": True, "storage_pending": True, "hooks_intact": True,
+                    "pending_store_classes": ["core.analytics", "lovelace"]}
+        async def sleep(seconds):
+            now[0] += seconds
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=command), clock=lambda: now[0], sleep=sleep)
+        self.assertEqual(found.exception.diagnostic, {
+            "condition": "setup_not_settled", "readiness_reads": 40, "core_running": True,
+            "pending_store_classes": ["core.analytics", "lovelace"]})
+        async def malformed(payload):
+            return {"core_running": True, "storage_pending": True, "hooks_intact": True,
+                    "pending_store_classes": ["/config/.storage/lovelace"]}
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=malformed))
+        self.assertEqual(found.exception.diagnostic, {
+            "condition": "setup_observation_unavailable", "readiness_reads": 1, "core_running": None,
+            "pending_store_classes": None})
+        # The dashboard observer keeps its three-field readiness explicitly.
+        async def dashboard(payload):
+            return {"core_running": True, "storage_pending": False, "hooks_intact": True}
+        self.assertEqual(await acceptance.wait_disposable_setup(SimpleNamespace(command=dashboard),
+                                                                store_classes=False),
+                         {"result": "PASS", "readiness_reads": 1})
+        async def classes(payload):
+            return {"core_running": True, "storage_pending": False, "hooks_intact": True, "pending_store_classes": []}
+        for observed, flag in ((dashboard, True), (classes, False)):
+            with self.subTest(flag=flag), self.assertRaises(acceptance.ObservationError):
+                await acceptance.wait_disposable_setup(SimpleNamespace(command=observed), store_classes=flag)
+
+    async def test_alarmo_lane_attaches_only_bounded_observation_diagnostics(self):
+        failure = acceptance.ObservationError("Disposable Core interval failed verification",
+                                              {"condition": "commands_mismatch", "window": "inspection"})
+        with patch.object(acceptance, "_run_disposable", side_effect=failure), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.run_disposable(None, None, fixture_receipt=None, expected_image=None, core_version=CORE)
+        self.assertEqual(found.exception.contract_missing_key, "alarmo_inspection")
+        self.assertEqual(found.exception.contract_diagnostic, {"observation_failure": failure.diagnostic})
+        with patch.object(acceptance, "_run_disposable", side_effect=ValueError("other")), \
+                self.assertRaises(ValueError) as found:
+            await acceptance.run_disposable(None, None, fixture_receipt=None, expected_image=None, core_version=CORE)
+        self.assertFalse(hasattr(found.exception, "contract_diagnostic"))
+
+    async def test_fixture_receipt_with_a_repeated_key_refuses_before_core_access(self):
+        profile = json.loads((acceptance.FIXTURES / "alarmo_profile.json").read_text(encoding="utf-8"))
+        unique = json.dumps({"fixture": "synthetic-alarmo-inspection-v1", "alarmo_source": acceptance.COMMIT,
+                             "archive_sha256": profile["archive_sha256"]})
+        duplicated = unique[:-1] + ', "fixture": "synthetic-alarmo-inspection-v1"}'
+        self.assertEqual(json.loads(duplicated), json.loads(unique))  # the hazard ordinary decoding hides
+        local = SimpleNamespace(ha_url="http://127.0.0.1:8123")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.json"
+            path.write_text(duplicated, encoding="utf-8")
+            existing = SimpleNamespace(current_observation=SimpleNamespace(version=CORE), acquire=Mock())
+            with self.assertRaisesRegex(ValueError, "receipt_duplicate_key"):
+                await acceptance.run_disposable(local, existing, fixture_receipt=path,
+                                                expected_image=acceptance.slot_binding(CORE)["image"],
+                                                core_version=CORE)
+            existing.acquire.assert_not_called()
 
 
 UNSET = object()
