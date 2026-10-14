@@ -31,6 +31,7 @@ from ha_mcp_engineering.clients.mcp import (
     DashboardTransportError, McpDashboardHandshake, McpDashboardTransport,
 )
 from ha_mcp_engineering.errors import DashboardProviderError, ErrorCode, GovernanceError
+from ha_mcp_engineering.f3_dashboard.adapter import _provider_failure_projection
 from ha_mcp_engineering.f3_dashboard.gateway import DashboardExecutionGateway
 from ha_mcp_engineering.f3_dashboard.json_codec import upstream_config_hash
 from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration
@@ -420,16 +421,37 @@ class GovernedFlowRefusals(Harness):
         self.balanced()
 
     def assert_confirmed_no_dispatch(self, peer, runtime, result):
+        # The refusal follows the saved dispatch intent, so the shared F3
+        # phase stays post-intent (failed_post_dispatch). The child evidence
+        # records that the setter tools/call was never sent and nothing
+        # changed; a truthful pre-send phase is HAMCP-181.
         self.assertEqual(result['task_state'], 'failed_post_dispatch', result)
         child = self.child(runtime, result['task_id'])
         self.assertEqual(child['normalized_outcome'], 'dispatch_failed_confirmed')
         self.assertTrue(child['terminal'])
+        self.assertIsNotNone(child['dispatch_intent'])
         diagnostics = self.diagnostics(child)
+        self.assertIn('setter_call_not_sent', diagnostics)
         self.assertIn('provider_confirmed_no_mutation', diagnostics)
+        self.assertNotIn('readback_only_recovery', diagnostics)
         self.assertNotIn('exact_readback_mismatch', diagnostics)
         self.assertNotIn(SETTER, peer.names())
         self.assertEqual(peer.configuration['title'], 'Before')
         self.balanced()
+
+    async def assert_never_redispatched(self, peer, service, runtime, created, result):
+        saved = self.child(runtime, result['task_id'])
+        with self.assertRaises(GovernanceError) as caught:
+            await service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(caught.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT)
+        self.assertNotIn(SETTER, peer.names())
+        self.assertEqual(peer.configuration['title'], 'Before')
+        stored = service.task_repository.get_for_plan(created['plan_id'])
+        self.assertEqual(stored.task_id, result['task_id'])
+        self.assertEqual(stored.state.value, 'failed_post_dispatch')
+        replayed = self.child(runtime, result['task_id'])
+        self.assertEqual(replayed['dispatch_intent'], saved['dispatch_intent'])
+        self.assertEqual(replayed['dispatch_count'], saved['dispatch_count'])
 
     async def test_required_drift_after_planning_refuses_before_dispatch(self):
         for name in DASHBOARD_WRITE_DEPENDENCIES:
@@ -487,9 +509,7 @@ class GovernedFlowRefusals(Harness):
                 peer.tools_after_guide = drifted(catalog(EXTRAS), SETTER, component)
                 result = await service.apply(created['plan_id'], created['plan_hash'])
                 self.assert_confirmed_no_dispatch(peer, runtime, result)
-                with self.assertRaises(GovernanceError):
-                    await service.apply(created['plan_id'], created['plan_hash'])
-                self.assertNotIn(SETTER, peer.names())
+                await self.assert_never_redispatched(peer, service, runtime, created, result)
 
     async def test_extras_appearing_or_vanishing_between_steps_grant_and_take_nothing(self):
         for before, after in (((), EXTRAS), (EXTRAS, ())):
@@ -516,6 +536,41 @@ class GovernedFlowRefusals(Harness):
         # The setter session was opened and admitted, but never called.
         self.assertEqual(peer.events.count('initialize'), peer.events.count('tools/list'))
         self.assertEqual(peer.names()[-1], GUIDE)
+        await self.assert_never_redispatched(peer, service, runtime, created, result)
+
+    async def test_core_refusal_after_intent_reports_no_setter_call_in_a_post_intent_phase(self):
+        # Reviewer probe for R1, kept under the owner's Option B semantics:
+        # Core retires while the guide read is in flight, so the setter
+        # session is admitted and the local Core gate refuses before
+        # tools/call. The saved intent keeps the shared F3 phase post-intent
+        # (failed_post_dispatch); the evidence says no setter request was
+        # sent and nothing changed. Moving the phase is HAMCP-181.
+        peer = DashboardPeer(catalog(EXTRAS))
+        provider, service, runtime, created = await self.planned(peer)
+        self.telemetry.core_dispatch_authorizer = self.authorizer
+
+        async def retire(count):
+            self.core_ok = False
+        peer.hooks[GUIDE] = retire
+        errors = []
+        original = provider._raise
+
+        def capture(category, **kwargs):
+            errors.append({'category': category, **kwargs})
+            return original(category, **kwargs)
+        with patch.object(provider, '_raise', capture):
+            result = await service.apply(created['plan_id'], created['plan_hash'])
+        child = self.child(runtime, result['task_id'])
+        self.assertEqual(peer.names().count(SETTER), 0)
+        self.assertEqual(peer.configuration['title'], 'Before')
+        self.assertFalse(errors[-1]['dispatched'])
+        self.assertFalse(errors[-1]['details']['provider_response_received'])
+        self.assertIsNotNone(child['dispatch_intent'])
+        self.balanced()
+        self.assertEqual(result['task_state'], 'failed_post_dispatch')
+        self.assertEqual(child['normalized_outcome'], 'dispatch_failed_confirmed')
+        self.assertIn('setter_call_not_sent', self.diagnostics(child))
+        await self.assert_never_redispatched(peer, service, runtime, created, result)
 
     async def test_core_retirement_before_the_guide_refuses_before_dispatch(self):
         peer = DashboardPeer(catalog(EXTRAS))
@@ -603,6 +658,11 @@ class ExistingSemanticsWith80Tools(Harness):
         result = await service.apply(created['plan_id'], created['plan_hash'])
         self.assertEqual(result['task_state'], 'succeeded_verified', result)
         self.assertEqual(peer.names().count(SETTER), 1)
+        # Control: a sent setter request never claims it was not sent.
+        diagnostics = self.diagnostics(self.child(runtime, result['task_id']))
+        self.assertIn('readback_only_recovery', diagnostics)
+        self.assertNotIn('setter_call_not_sent', diagnostics)
+        self.assertNotIn('provider_confirmed_no_mutation', diagnostics)
         try:
             await service.apply(created['plan_id'], created['plan_hash'])
         except GovernanceError:
@@ -618,6 +678,9 @@ class ExistingSemanticsWith80Tools(Harness):
         self.assertEqual(result['task_state'], 'failed_post_dispatch', result)
         self.assertEqual(peer.names().count(SETTER), 1)
         self.assertEqual(peer.configuration['title'], 'Before')
+        # Control: a sent-and-refused setter is not reported as unsent.
+        self.assertNotIn('setter_call_not_sent',
+                         self.diagnostics(self.child(runtime, result['task_id'])))
 
     async def test_each_exchange_counts_once_and_every_attempt_finishes(self):
         peer = DashboardPeer(catalog(EXTRAS))
@@ -707,6 +770,21 @@ class TruthfulRefusal(Harness):
         self.assertEqual(peer.calls, [])
         self.assertEqual(peer.events.count('tools/list'), 1)
         self.balanced()
+
+    def test_only_a_proven_unsent_setter_is_reported_as_not_sent(self):
+        for dispatched, expected in ((False, True), (True, False), (None, False)):
+            with self.subTest(upstream_dispatch_occurred=dispatched):
+                details = {'provider_failure_kind': 'protocol_or_transport_failure',
+                           'provider_response_received': False}
+                if dispatched is not None:
+                    details['upstream_dispatch_occurred'] = dispatched
+                _received, absent, codes, _hash = _provider_failure_projection(
+                    DashboardProviderError(ErrorCode.UPSTREAM_DASHBOARD_CONNECTION_FAILED,
+                                           details=details))
+                self.assertEqual(absent, expected)
+                self.assertEqual('setter_call_not_sent' in codes, expected)
+                self.assertEqual('provider_confirmed_no_mutation' in codes, expected)
+                self.assertEqual('readback_only_recovery' in codes, not expected)
 
     def test_not_attempted_marker_survives_grouping_and_never_leaks_from_other_errors(self):
         classify = mcp_client._classified_transport_error
