@@ -150,6 +150,36 @@ _RECOVERY_READINESS: ContextVar[tuple[object, int] | None] = ContextVar(
 _ACTIVE_F3_CHILD: ContextVar[str | None] = ContextVar(
     "f3_active_child", default=None
 )
+# HAMCP-177 R1 (display only): a dashboard refusal proven to precede the
+# setter tools/call keeps its post-intent F3 phase and stored counters; the
+# client results and audit state that no setter request was sent.
+SETTER_CALL_NOT_SENT = "setter_call_not_sent"
+SETTER_NOT_SENT_COUNTS_BASIS = "saved_dispatch_intent_no_setter_call"
+SETTER_NOT_SENT_FIELDS = {
+    "provider_dispatch_occurred": False,
+    "dispatch_performed": False,
+    SETTER_CALL_NOT_SENT: True,
+    "changed_by_engineering": False,
+    "intent_recorded": True,
+    "attempt_counts_basis": SETTER_NOT_SENT_COUNTS_BASIS,
+}
+
+
+def _setter_call_not_sent_recorded(declaration: Any, record: Any) -> bool:
+    """Whether a dashboard child's dispatch result proves no setter call."""
+
+    return (
+        declaration["capability_id"] == DASHBOARD_CAPABILITY_ID
+        and record is not None
+        and record.dispatch_intent is not None
+        and record.normalized_outcome == "dispatch_failed_confirmed"
+        and not record.provider_response_received
+        and any(
+            event.get("event_type") == "dispatch_result_recorded"
+            and SETTER_CALL_NOT_SENT in tuple(event.get("diagnostic_codes") or ())
+            for event in record.events
+        )
+    )
 
 
 class _CoreDispatchAuthorityGuard:
@@ -1305,6 +1335,11 @@ class F3RuntimeIntegration:
                 }
             },
             **({"diagnostic_codes": cleanup_codes} if cleanup_codes else {}),
+            **(
+                {SETTER_CALL_NOT_SENT: True, "dispatch_performed": False}
+                if event.get(SETTER_CALL_NOT_SENT) is True
+                else {}
+            ),
             "result_status": "error" if event_type == "lock_failure_cleanup" else "success",
             "fallback_occurred": False,
             "fallback": "none",
@@ -1342,6 +1377,10 @@ class F3RuntimeIntegration:
             audit_event_id = _persisted_audit_event_id(
                 declaration["child_id"], item
             )
+            not_sent = (
+                item.get("event_type") == "dispatch_result_recorded"
+                and _setter_call_not_sent_recorded(declaration, record)
+            )
             safe = self._f3_audit_entry(
                 {
                     "event_type": item["event_type"],
@@ -1349,7 +1388,10 @@ class F3RuntimeIntegration:
                     "audit_event_id": audit_event_id,
                     "phase": record.state,
                     **(
-                        {"reason_code": diagnostics[0]}
+                        {"reason_code": SETTER_CALL_NOT_SENT,
+                         SETTER_CALL_NOT_SENT: True}
+                        if not_sent
+                        else {"reason_code": diagnostics[0]}
                         if diagnostics
                         else {}
                     ),
@@ -2387,6 +2429,31 @@ class F3RuntimeIntegration:
             changes=changes,
         )
 
+    def dashboard_setter_not_sent(self, task: Any) -> bool:
+        """Whether every saved intent of this task provably sent no setter.
+
+        Display only: never dispatch, retry or state authority.
+        """
+
+        if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
+            return False
+        children = [
+            (declaration, self.children.get(declaration["child_id"]))
+            for declaration in self.children.declarations_for_task(task.task_id)
+        ]
+        intents = [
+            (declaration, record) for declaration, record in children
+            if record is not None and record.dispatch_intent is not None
+        ]
+        return bool(intents) and all(
+            _setter_call_not_sent_recorded(declaration, record)
+            for declaration, record in intents
+        )
+
+    @staticmethod
+    def setter_not_sent_fields() -> dict[str, Any]:
+        return dict(SETTER_NOT_SENT_FIELDS)
+
     @staticmethod
     def _entity_metadata_not_dispatched(
         declarations: Any, records: Any
@@ -2754,6 +2821,11 @@ class F3RuntimeIntegration:
             "execution_task": self.service._public_task(task),
             "plan": self.service._public(plan, include_configs=False),
         }
+        if self.dashboard_setter_not_sent(task):
+            result.update(SETTER_NOT_SENT_FIELDS)
+            result["execution_task"] = {
+                **result["execution_task"], **SETTER_NOT_SENT_FIELDS
+            }
         if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME:
             result.update(
                 {
@@ -3557,6 +3629,12 @@ class F3RuntimeIntegration:
             return value
         rows = self._public_child_projection(task)
         value["f3_children"] = [item["detail"] for item in rows]
+        if self.dashboard_setter_not_sent(task):
+            value.update(SETTER_NOT_SENT_FIELDS)
+            for detail in value["f3_children"]:
+                if detail["dispatch_count"]:
+                    detail[SETTER_CALL_NOT_SENT] = True
+                    detail["dispatch_count_basis"] = SETTER_NOT_SENT_COUNTS_BASIS
         if self._is_terminal_zero_dispatch_parent(task):
             # The schema-1 verification summary is historical durable
             # evidence. Normalize only its child rows from the same canonical

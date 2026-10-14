@@ -7133,6 +7133,20 @@ class ChangeGovernanceService:
             changes={},
         )
         if task.state != ExecutionTaskState.SUCCEEDED_VERIFIED:
+            details = {
+                "task_id": task.task_id,
+                "task_state": task.state.value,
+                "provider_dispatch_occurred": (
+                    self._task_is_dispatched(task)
+                ),
+            }
+            if (
+                self.f3_runtime is not None
+                and self.f3_runtime.dashboard_setter_not_sent(task)
+            ):
+                # HAMCP-177 R1 (display only): the saved intent keeps the
+                # post-intent phase; no dashboard setter call was ever sent.
+                details.update(self.f3_runtime.setter_not_sent_fields())
             raise GovernanceError(
                 (
                     ErrorCode.EXECUTION_TASK_INVALID_STATE
@@ -7140,13 +7154,7 @@ class ChangeGovernanceService:
                     == ExecutionTaskState.CANCELLED_PRE_DISPATCH
                     else ErrorCode.DUPLICATE_APPLY_ATTEMPT
                 ),
-                details={
-                    "task_id": task.task_id,
-                    "task_state": task.state.value,
-                    "provider_dispatch_occurred": (
-                        self._task_is_dispatched(task)
-                    ),
-                },
+                details=details,
             )
         result = {
             "status": "already_applied",

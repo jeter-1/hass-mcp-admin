@@ -182,6 +182,17 @@ class DashboardPeer:
                 group.cancel_scope.cancel()
 
 
+# HAMCP-177 R1 display fields for a proven unsent setter after saved intent.
+NO_CALL_FIELDS = {
+    'provider_dispatch_occurred': False,
+    'dispatch_performed': False,
+    'setter_call_not_sent': True,
+    'changed_by_engineering': False,
+    'intent_recorded': True,
+    'attempt_counts_basis': 'saved_dispatch_intent_no_setter_call',
+}
+
+
 class Harness(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -255,6 +266,29 @@ class Harness(unittest.IsolatedAsyncioTestCase):
 
     def balanced(self):
         self.assertEqual(self.telemetry.upstream_active_requests, 0)
+
+    def audit(self, name):
+        return [json.loads(line) for line in
+                (self.root / f'{name}-audit.jsonl').read_text().splitlines()]
+
+    def assert_no_call_fields_absent(self, service, result, name, replay=None):
+        # Control: whenever the setter call was sent (or nothing proves it was
+        # not), every existing field and value is unchanged.
+        stored = service.task_repository.get(result['task_id'])
+        sent = bool(stored.dispatched_at or stored.provider_attempts)
+        self.assertTrue(sent)
+        view = service.get_execution_task(result['task_id'])
+        surfaces = [result, result['execution_task'], view, *view['f3_children']]
+        if replay is not None:
+            surfaces.append(replay)
+        for surface in surfaces:
+            added = (set(NO_CALL_FIELDS) - {'provider_dispatch_occurred'}) | {'dispatch_count_basis'}
+            self.assertFalse(added & set(surface), surface)
+        for surface in (result, *([replay] if replay is not None else [])):
+            self.assertIs(surface['provider_dispatch_occurred'], sent)
+        for entry in self.audit(name):
+            self.assertNotIn('setter_call_not_sent', json.dumps(entry))
+            self.assertNotIn('dispatch_performed', entry)
 
 
 class DependencyScopedAdmission(Harness):
@@ -439,11 +473,41 @@ class GovernedFlowRefusals(Harness):
         self.assertEqual(peer.configuration['title'], 'Before')
         self.balanced()
 
+    def assert_no_call_reported(self, service, runtime, result, name):
+        # Client-visible truth: the phase stays post-intent, but the apply
+        # result, task read and audit state no setter call was sent.
+        self.assertEqual(result['task_state'], 'failed_post_dispatch')
+        for surface in (result, result['execution_task']):
+            self.assertEqual({key: surface.get(key) for key in NO_CALL_FIELDS}, NO_CALL_FIELDS)
+        self.assertFalse(result['redispatch_performed'])
+        view = service.get_execution_task(result['task_id'])
+        self.assertEqual(view['task_state'] if 'task_state' in view else view['state'],
+                         'failed_post_dispatch')
+        self.assertEqual({key: view.get(key) for key in NO_CALL_FIELDS}, NO_CALL_FIELDS)
+        # Stored counters are unchanged and qualified, never read as a send.
+        self.assertEqual(view['provider_attempt_count'], 1)
+        [row] = view['f3_children']
+        self.assertEqual(row['dispatch_count'], 1)
+        self.assertIs(row['setter_call_not_sent'], True)
+        self.assertEqual(row['dispatch_count_basis'], 'saved_dispatch_intent_no_setter_call')
+        child_id = row['child_execution_id']
+        entries = [entry for entry in self.audit(name)
+                   if entry.get('child_execution_id') == child_id
+                   and entry.get('outcome') == 'dispatch_result_recorded']
+        self.assertEqual(len(entries), 1, self.audit(name))
+        [entry] = entries
+        self.assertIs(entry['setter_call_not_sent'], True)
+        self.assertIs(entry['dispatch_performed'], False)
+        self.assertEqual(entry['evidence_references']['reason_code'], 'setter_call_not_sent')
+
     async def assert_never_redispatched(self, peer, service, runtime, created, result):
         saved = self.child(runtime, result['task_id'])
         with self.assertRaises(GovernanceError) as caught:
             await service.apply(created['plan_id'], created['plan_hash'])
         self.assertEqual(caught.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT)
+        details = caught.exception.details
+        self.assertEqual(details['task_state'], 'failed_post_dispatch')
+        self.assertEqual({key: details.get(key) for key in NO_CALL_FIELDS}, NO_CALL_FIELDS)
         self.assertNotIn(SETTER, peer.names())
         self.assertEqual(peer.configuration['title'], 'Before')
         stored = service.task_repository.get_for_plan(created['plan_id'])
@@ -509,6 +573,7 @@ class GovernedFlowRefusals(Harness):
                 peer.tools_after_guide = drifted(catalog(EXTRAS), SETTER, component)
                 result = await service.apply(created['plan_id'], created['plan_hash'])
                 self.assert_confirmed_no_dispatch(peer, runtime, result)
+                self.assert_no_call_reported(service, runtime, result, f'late-{component}')
                 await self.assert_never_redispatched(peer, service, runtime, created, result)
 
     async def test_extras_appearing_or_vanishing_between_steps_grant_and_take_nothing(self):
@@ -536,6 +601,7 @@ class GovernedFlowRefusals(Harness):
         # The setter session was opened and admitted, but never called.
         self.assertEqual(peer.events.count('initialize'), peer.events.count('tools/list'))
         self.assertEqual(peer.names()[-1], GUIDE)
+        self.assert_no_call_reported(service, runtime, result, 'plans')
         await self.assert_never_redispatched(peer, service, runtime, created, result)
 
     async def test_core_refusal_after_intent_reports_no_setter_call_in_a_post_intent_phase(self):
@@ -663,11 +729,13 @@ class ExistingSemanticsWith80Tools(Harness):
         self.assertIn('readback_only_recovery', diagnostics)
         self.assertNotIn('setter_call_not_sent', diagnostics)
         self.assertNotIn('provider_confirmed_no_mutation', diagnostics)
+        replay = None
         try:
             await service.apply(created['plan_id'], created['plan_hash'])
-        except GovernanceError:
-            pass
+        except GovernanceError as exc:
+            replay = exc.details
         self.assertEqual(peer.names().count(SETTER), 1)
+        self.assert_no_call_fields_absent(service, result, 'plans', replay)
         self.balanced()
 
     async def test_structured_rejection_with_unchanged_readback_is_not_a_mismatch(self):
@@ -681,6 +749,34 @@ class ExistingSemanticsWith80Tools(Harness):
         # Control: a sent-and-refused setter is not reported as unsent.
         self.assertNotIn('setter_call_not_sent',
                          self.diagnostics(self.child(runtime, result['task_id'])))
+        self.assertIs(result['provider_dispatch_occurred'], True)
+        with self.assertRaises(GovernanceError) as caught:
+            await service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(caught.exception.code, ErrorCode.DUPLICATE_APPLY_ATTEMPT)
+        self.assertEqual(peer.names().count(SETTER), 1)
+        self.assert_no_call_fields_absent(service, result, 'plans', caught.exception.details)
+
+    async def test_transport_failure_after_the_setter_call_keeps_existing_fields(self):
+        # Control: the setter request is sent and its exchange then fails;
+        # nothing proves it was not sent, so no no-call field appears.
+        peer = DashboardPeer(catalog(EXTRAS))
+        provider, service, runtime, created = await self.planned(peer)
+        provider._transport = McpDashboardTransport('', timeout_seconds=0.5,
+                                                    client_version='synthetic')
+        peer.hang.add(SETTER)
+        result = await service.apply(created['plan_id'], created['plan_hash'])
+        self.assertEqual(peer.names().count(SETTER), 1)
+        self.assertNotIn('setter_call_not_sent',
+                         self.diagnostics(self.child(runtime, result['task_id'])))
+        self.assertIs(result['provider_dispatch_occurred'], True)
+        replay = None
+        try:
+            await service.apply(created['plan_id'], created['plan_hash'])
+        except GovernanceError as exc:
+            replay = exc.details
+        self.assertEqual(peer.names().count(SETTER), 1)
+        self.assert_no_call_fields_absent(service, result, 'plans', replay)
+        self.balanced()
 
     async def test_each_exchange_counts_once_and_every_attempt_finishes(self):
         peer = DashboardPeer(catalog(EXTRAS))
