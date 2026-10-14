@@ -82,6 +82,8 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
         wrapper = ast.AsyncFunctionDef(name="invoke", args=ast.arguments(posonlyargs=[], args=[], kwonlyargs=[], kw_defaults=[], defaults=[]),
                                       body=[block], decorator_list=[])
         import tempfile
+        sys.path.insert(0, str(root / "scripts"))
+        from entity_metadata_contract_acceptance import load_receipt
         core = "2026.10.1"  # Any support-window slot; the gate itself is exercised in test_real_ha_contract_gate.
         cases = ((None, "PASS", "PASS", "PASS", True), (Path("synthetic.json"), "NOT_RUN", "PASS", "PASS", True),
                  (Path("synthetic.json"), "PASS", "NOT_RUN", "PASS", True),
@@ -96,6 +98,7 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
             baseline.run_disposable = AsyncMock(return_value={"result": baseline_result})
             entity = ModuleType("entity_metadata_contract_acceptance")
             entity.run_disposable = AsyncMock(return_value={"result": entity_result})
+            entity.load_receipt = load_receipt
             configured, core_runtime = object(), object()
             context = dict(EXPECTED_HA_VERSION=core, configured=configured, core_runtime=core_runtime,
                            _alarmo_slot_required=lambda version, required=required, gate=gate:
@@ -137,6 +140,41 @@ class InspectionContractTests(unittest.IsolatedAsyncioTestCase):
             if entity.run_disposable.await_count:
                 entity.run_disposable.assert_awaited_once_with(
                     configured, expected_image="synthetic-image", core_version=core)
+
+        # HAMCP-180: the retained merge goes through the shared strict loader; a
+        # repeated key refuses before the rewrite and leaves the file unchanged.
+        module = ModuleType("alarmo_inspection_contract_acceptance")
+        module.run_disposable = AsyncMock(return_value={"result": "PASS"})
+        baseline = ModuleType("automation_baseline_contract_acceptance")
+        baseline.run_disposable = AsyncMock(return_value={"result": "PASS"})
+        entity = ModuleType("entity_metadata_contract_acceptance")
+        entity.run_disposable = AsyncMock(return_value={"result": "PASS"})
+        entity.load_receipt = load_receipt
+        context = dict(EXPECTED_HA_VERSION=core, configured=object(), core_runtime=object(),
+                       _alarmo_slot_required=lambda version: True,
+                       _environment_path=lambda name: Path("synthetic.json"), os=os, Path=Path, json=json)
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[wrapper], type_ignores=[])), "bounded-ci-hook", "exec"), context)
+        for raw in (b'{"result": "FAIL", "result": "PASS"}', b'{"result": "PASS", "x": {"a": 1, "a": 2}}'):
+            with tempfile.TemporaryDirectory() as directory:
+                retained = Path(directory) / "combined.json"
+                retained.write_bytes(raw)
+                with self.subTest(raw=raw), patch.dict(sys.modules, {module.__name__: module, baseline.__name__: baseline,
+                                                                     entity.__name__: entity}), patch.dict(
+                        os.environ, {"REAL_HA_ALARMO_RESULT": str(retained), "HA_CONTRACT_IMAGE": "synthetic-image"}):
+                    with self.assertRaisesRegex(ValueError, "receipt_duplicate_key") as found:
+                        await context["invoke"]()
+                    self.assertEqual(found.exception.reason_code, "receipt_duplicate_key")
+                    self.assertEqual(retained.read_bytes(), raw)
+        # Mutation: the merge reverted to ordinary decoding admits and rewrites the probe.
+        entity.load_receipt = json.loads
+        with tempfile.TemporaryDirectory() as directory:
+            retained = Path(directory) / "combined.json"
+            retained.write_bytes(b'{"result": "FAIL", "result": "PASS"}')
+            with patch.dict(sys.modules, {module.__name__: module, baseline.__name__: baseline,
+                                          entity.__name__: entity}), patch.dict(
+                    os.environ, {"REAL_HA_ALARMO_RESULT": str(retained), "HA_CONTRACT_IMAGE": "synthetic-image"}):
+                await context["invoke"]()
+            self.assertEqual(json.loads(retained.read_text())["result"], "PASS")
 
     def test_fixture_source_identity_and_archive_are_bound_without_installed_claim(self):
         profile = fixture("alarmo_profile.json")

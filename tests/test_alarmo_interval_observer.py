@@ -5,7 +5,7 @@ Slot-driven tests iterate the committed window; single-slot tests name the
 rollback slot explicitly. Rotations use a temporary repository root.
 """
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import copy
 import dataclasses
 import hashlib
@@ -66,6 +66,25 @@ def receipt(commands=(), core_version=CORE):
 
 def sha256(raw):
     return hashlib.sha256(raw).hexdigest()
+
+
+class FakeLock:
+    def __init__(self):
+        self.held = False
+
+    def locked(self):
+        return self.held
+
+
+class FakeStore:
+    """Only the readiness attributes Core's Store carries; weak-referenceable."""
+
+    def __init__(self, key, data=None, delay_handle=None, final_listener=None):
+        self.key = key
+        self._data = data
+        self._delay_handle = delay_handle
+        self._unsub_final_write_listener = final_listener
+        self._write_lock = FakeLock()
 
 
 def window_root(directory):
@@ -156,7 +175,9 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         now, calls = [0], []
         async def command(payload):
             calls.append(payload)
-            return {"core_running": now[0] >= 5, "storage_pending": now[0] < 180, "hooks_intact": True}
+            pending = now[0] < 180
+            return {"core_running": now[0] >= 5, "storage_pending": pending, "hooks_intact": True,
+                    "pending_store_classes": ["lovelace"] if pending else [], "last_start_refusal": None}
         async def sleep(seconds):
             now[0] += seconds
         result = await acceptance.wait_disposable_setup(SimpleNamespace(command=command), clock=lambda: now[0], sleep=sleep)
@@ -166,11 +187,27 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("alarmo_interval_observer/ready", observer.CONTROL_COMMANDS)
 
     async def test_setup_wait_refuses_timeout_missing_hooks_bad_shape_and_request_failure(self):
+        ready = {"core_running": True, "storage_pending": False, "hooks_intact": True, "pending_store_classes": [],
+                 "last_start_refusal": None}
         for value in (
-            {"core_running": True, "storage_pending": True, "hooks_intact": True},
-            {"core_running": False, "storage_pending": False, "hooks_intact": True},
-            {"core_running": True, "storage_pending": False, "hooks_intact": False},
-            {"core_running": True, "storage_pending": 0, "hooks_intact": True},
+            dict(ready, storage_pending=True, pending_store_classes=["lovelace"]),
+            dict(ready, core_running=False),
+            dict(ready, hooks_intact=False),
+            dict(ready, storage_pending=0),
+            # HAMCP-180: the class list is bounded, sorted, consistent and token-only.
+            {key: ready[key] for key in ("core_running", "storage_pending", "hooks_intact")},
+            {key: ready[key] for key in ready if key != "last_start_refusal"},
+            dict(ready, last_start_refusal={"cause": "observer_refused", "pending_store_classes": []}),
+            dict(ready, extra=True),
+            dict(ready, pending_store_classes=None),
+            dict(ready, storage_pending=True),
+            dict(ready, pending_store_classes=["lovelace"]),
+            dict(ready, storage_pending=True, pending_store_classes=["person", "lovelace"]),
+            dict(ready, storage_pending=True, pending_store_classes=["lovelace", "lovelace"]),
+            dict(ready, storage_pending=True, pending_store_classes=["/config/.storage/lovelace"]),
+            dict(ready, storage_pending=True, pending_store_classes=["lovelace.dashboard_private"]),
+            dict(ready, storage_pending=True, pending_store_classes=[1]),
+            dict(ready, storage_pending=True, pending_store_classes=[f"d{i:02d}" for i in range(17)]),
             {},
         ):
             now, calls = [0], []
@@ -187,9 +224,11 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         async def failure(payload):
             calls.append(payload)
             raise RuntimeError("synthetic transport unavailable")
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(acceptance.ObservationError) as found:
             await acceptance.wait_disposable_setup(SimpleNamespace(command=failure))
         self.assertEqual(len(calls), 1)
+        self.assertEqual(found.exception.diagnostic["cause"], "readiness_transport_error")
+        self.assertIsInstance(found.exception.__cause__, RuntimeError)
 
     def test_empty_and_exact_command_intervals_are_useful_successes(self):
         for commands in ([], acceptance.EXPECTED_COMMANDS):
@@ -224,7 +263,7 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         identity = ledger.start("inspection", {})
         async def save(store, body):
             return body
-        store = SimpleNamespace(key="alarmo.storage", _data=None)
+        store = FakeStore("alarmo.storage")
         wrapped_save = observer.observe_async(ledger, "storage_save", save)
         tasks = []
         def handler(connection, message):
@@ -232,7 +271,7 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
         observer.observe_sync(ledger, "command", handler)(None, {"type": "alarmo/config"})
         self.assertIsNone(observer.REQUEST.get())
         self.assertEqual(await tasks[0], "synthetic-private-value")
-        ledger.record("storage_write", store=SimpleNamespace(key="auth", _data=None))
+        ledger.record("storage_write", store=FakeStore("auth"))
         events = ledger.finish(identity, {}, {})["events"]
         self.assertEqual(events[1]["origin"], "command")
         self.assertEqual(events[2]["origin"], "background")
@@ -311,16 +350,24 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
             acceptance.verify_interval(value, value["interval_id"], [])
 
     def test_setup_readiness_hashes_symlinks_and_active_interval_refusal(self):
-        ledger = observer.Ledger()
-        write_lock = SimpleNamespace(locked=lambda: False)
-        store = SimpleNamespace(key="alarmo.storage", _data={"not-read": "private"}, _write_lock=write_lock)
-        ledger.record("storage_save", store=store)
+        now = [0]
+        ledger = observer.Ledger(lambda: now[0])
+        store = FakeStore("alarmo.storage", data={"not-read": "private"}, delay_handle=object())
+        ledger.record("storage_delay_save", store=store)
+        self.assertTrue(ledger.pending_setup_storage())
+        now[0] = 60
+        self.assertEqual(ledger.pending_store_classes(), ["alarmo.storage"])
+        store._delay_handle, store._unsub_final_write_listener = None, object()
         self.assertTrue(ledger.pending_setup_storage())
         store._data = None
         self.assertFalse(ledger.pending_setup_storage())
-        write_lock.locked = lambda: True
+        store._write_lock.held = True
         self.assertTrue(ledger.pending_setup_storage())
-        write_lock.locked = lambda: False
+        store._write_lock.held = False
+        # Core's async_remove clears the handle and listener but keeps _data: settled.
+        store._data, store._unsub_final_write_listener = {"not-read": "private"}, None
+        self.assertFalse(ledger.pending_setup_storage())
+        self.assertNotIn("private", json.dumps(ledger.pending_store_classes()))
         identity = ledger.start("inspection", {})
         with self.assertRaises(ValueError):
             ledger.start("control", {})
@@ -338,6 +385,1364 @@ class ObserverTests(unittest.IsolatedAsyncioTestCase):
             (storage / "core.config_entries").symlink_to(storage / "alarmo.storage")
             with self.assertRaises(ValueError):
                 observer.store_hashes(directory)
+
+
+BOUNDED_TOKEN = re.compile(r"[A-Za-z0-9_./]{0,64}")
+
+
+def assert_bounded(case, value):
+    """A diagnostic holds only short vocabulary tokens, ints, bools and None."""
+    if isinstance(value, dict):
+        case.assertLessEqual(len(value), 32)
+        for key, item in value.items():
+            case.assertRegex(key, r"\A[a-z_]{1,32}\Z")
+            assert_bounded(case, item)
+    elif isinstance(value, list):
+        case.assertLessEqual(len(value), acceptance.MAX_DIAGNOSTIC_ITEMS)
+        for item in value:
+            assert_bounded(case, item)
+    elif isinstance(value, str):
+        case.assertRegex(value, BOUNDED_TOKEN.pattern + r"\Z")
+        case.assertNotRegex(value, r"[0-9a-f]{32}")
+    else:
+        case.assertTrue(value is None or type(value) in (int, bool), value)
+
+
+def narrow_readiness(ledger):
+    """Mutation: the pre-HAMCP-180 readiness, only the four hashed named stores."""
+    with ledger.lock:
+        return sorted({observer.store_class(s.key) for s in list(ledger.stores.values())
+                       if s.key in observer.HASH_KEYS and (s._data is not None or s._write_lock.locked())})
+
+
+class IntervalQuiescenceTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-180: every untolerated Core Store settles before a window opens,
+    and a failed window names its condition with bounded tokens only."""
+
+    UNNAMED = "core.synthetic_background"
+    UNNAMED_CLASS = "core"  # an unknown Core name keeps only the fixed ``core`` class
+
+    async def flake_signature(self):
+        """Publish run 434's signature on the real observer handlers and setup wait.
+
+        The named stores settle at t=1. An unnamed Core store is mid-burst of
+        background delayed saves: Core keeps the earliest handle, so the burst
+        stays scheduled until one flush at t=13. Five of its saves fall at t=6-10.
+        Returns the setup result and both 5 s window proofs.
+        """
+        modules, _registered, _originals = ha_stubs(CORE)
+        handlers = {}
+        modules["homeassistant.components.websocket_api"].async_register_command = (
+            lambda hass, handler: handlers.setdefault(handler.__name__, handler))
+        Store = modules["homeassistant.helpers.storage"].Store
+
+        def store(key):
+            value = Store()
+            value.key, value._data, value._delay_handle = key, None, None
+            value._unsub_final_write_listener, value._write_lock = None, FakeLock()
+            return value
+
+        def delay_save(target):
+            target._data = {"private": "DO_NOT_RECORD"}
+            target._delay_handle = target._delay_handle or object()
+            target.async_delay_save({"private": "DO_NOT_RECORD"})
+
+        def flush(target):
+            target._data = target._delay_handle = None
+
+        unnamed, named = store(self.UNNAMED), store("core.entity_registry")
+        now = [0]
+        schedule = [(0, delay_save, named), (1, flush, named), (3, delay_save, unnamed),
+                    *[(when, delay_save, unnamed) for when in (6, 7, 8, 9, 10)], (13, flush, unnamed)]
+
+        def advance(to):
+            while schedule and schedule[0][0] <= to:
+                now[0], action, target = schedule.pop(0)
+                action(target)
+            now[0] = to
+
+        hass = SimpleNamespace(data={}, bus=SimpleNamespace(async_listen_once=Mock()), state="running")
+        with patch.dict(sys.modules, modules):
+            self.assertIs(await observer.async_setup(hass, {observer.DOMAIN: {"core_version": CORE}}), True)
+        ledger = hass.data[observer.DOMAIN]
+        ledger.clock = lambda: now[0]
+        advance(0)
+
+        class Connection:
+            async def command(self, payload):
+                assert payload == {"type": "alarmo_interval_observer/ready"}
+                sent = []
+                handlers["ready"](hass, SimpleNamespace(send_result=lambda _id, value: sent.append(value)),
+                                  {"id": 1, **payload})
+                return sent[0]
+
+        async def sleep(seconds):
+            advance(now[0] + seconds)
+
+        setup = await acceptance.wait_disposable_setup(Connection(), clock=lambda: now[0], sleep=sleep)
+        hashes = {key: None for key in acceptance.STORE_HASH_KEYS}
+        proofs = []
+        for index in (1, 2):
+            self.assertFalse(ledger.pending_setup_storage())  # the /start gate
+            identity = ledger.start("control", dict(hashes))
+            advance(now[0] + 5)
+            value = ledger.finish(identity, dict(hashes), {key: True for key in acceptance.OBSERVER_HOOKS})
+            value.update(core_version=CORE, observer_sha256=sha256(acceptance.OBSERVER.read_bytes()))
+            self.assertNotIn("DO_NOT_RECORD", json.dumps(value))
+            proofs.append(acceptance.verify_interval(value, identity, [], kind="control", core_version=CORE,
+                                                     window="baseline_export", window_index=index))
+        return setup, proofs, now[0]
+
+    async def test_flake_signature_passes_after_every_store_settles(self):
+        setup, proofs, finished = await self.flake_signature()
+        # Readiness held through the unnamed burst (t=5, 10) and its quiet period.
+        self.assertEqual(setup, {"result": "PASS", "readiness_reads": 4})
+        self.assertEqual(finished, 25)
+        for proof in proofs:
+            self.assertEqual(proof["result"], "PASS")
+            self.assertEqual(proof["background_bookkeeping"], [])
+
+    async def test_mutation_named_store_readiness_reproduces_the_flake_with_its_cause(self):
+        with patch.object(observer.Ledger, "pending_store_classes", narrow_readiness), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await self.flake_signature()
+        diagnostic = found.exception.diagnostic
+        self.assertEqual(str(found.exception), "Disposable Core interval failed verification")
+        self.assertEqual({key: diagnostic[key] for key in (
+            "condition", "window", "window_index", "interval_kind", "event_count", "event_index", "event")}, {
+            "condition": "untolerated_store", "window": "baseline_export", "window_index": 1,
+            "interval_kind": "control", "event_count": 5, "event_index": 0,
+            "event": {"kind": "storage_delay_save", "origin": "background", "store": "other",
+                      "store_class": self.UNNAMED_CLASS}})
+        self.assertEqual(diagnostic["event_counts"], [{"count": 5, "kind": "storage_delay_save",
+                                                       "origin": "background", "store": "other",
+                                                       "store_class": self.UNNAMED_CLASS}])
+        assert_bounded(self, diagnostic)
+        self.assertNotIn("DO_NOT_RECORD", json.dumps(diagnostic))
+
+    async def test_mutation_tolerating_the_unnamed_store_in_readiness_reproduces_the_flake(self):
+        with patch.object(observer, "TOLERATED_KEYS", observer.TOLERATED_KEYS | {self.UNNAMED}), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await self.flake_signature()
+        self.assertEqual(found.exception.diagnostic["condition"], "untolerated_store")
+
+    def assert_untolerated_store_refused(self, event):
+        value = receipt()
+        value["events"].append(event)
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE)
+        self.assertEqual(found.exception.diagnostic["condition"], "untolerated_store")
+
+    def test_genuine_writes_to_unnamed_and_hashed_stores_still_fail(self):
+        events = (
+            {"kind": "storage_delay_save", "origin": "background", "store": "other", "store_class": self.UNNAMED_CLASS},
+            {"kind": "storage_write", "origin": "background", "store": "other", "store_class": "lovelace"},
+            {"kind": "storage_save", "origin": "background", "store": "other", "store_class": "unclassified"},
+            {"kind": "storage_write", "origin": "background", "store": "alarmo.storage"},
+            {"kind": "storage_delay_save", "origin": "background", "store": "core.entity_registry"},
+        )
+        for event in events:
+            with self.subTest(event=event):
+                self.assert_untolerated_store_refused(event)
+
+    def test_mutation_widening_the_allowlist_blindly_admits_a_genuine_write(self):
+        event = {"kind": "storage_delay_save", "origin": "background", "store": "other",
+                 "store_class": self.UNNAMED_CLASS}
+        with patch.object(acceptance, "TOLERATED_STORES", (*acceptance.TOLERATED_STORES, "other")), \
+                self.assertRaises(AssertionError):
+            self.assert_untolerated_store_refused(event)
+
+    async def test_stores_alive_before_the_hooks_are_found_by_the_scan(self):
+        for scan in (True, False):
+            modules, _registered, _originals = ha_stubs(CORE)
+            Store = modules["homeassistant.helpers.storage"].Store
+            early = Store()
+            early.key, early._data, early._delay_handle = "person", {"private": "DO_NOT_RECORD"}, object()
+            early._unsub_final_write_listener, early._write_lock = None, FakeLock()
+            hass = SimpleNamespace(data={}, bus=SimpleNamespace(async_listen_once=Mock()), state="running")
+            objects = None if scan else (lambda: [])  # mutation: no scan of pre-hook Stores
+            with self.subTest(scan=scan), patch.dict(sys.modules, modules), \
+                    patch("gc.get_objects", objects) if objects else nullcontext():
+                await observer.async_setup(hass, {observer.DOMAIN: {"core_version": CORE}})
+                self.assertEqual(hass.data[observer.DOMAIN].pending_store_classes(), ["person"] if scan else [])
+            del early
+
+    def test_quiet_period_follows_the_last_untolerated_activity_only(self):
+        now = [0]
+        ledger = observer.Ledger(lambda: now[0])
+        unnamed, auth = FakeStore("lovelace.dashboard_private"), FakeStore("auth", data={"x": 1}, delay_handle=object())
+        ledger.record("storage_write", store=unnamed)
+        self.assertEqual(ledger.pending_store_classes(), ["lovelace"])
+        now[0] = observer.QUIET_SECONDS
+        self.assertEqual(ledger.pending_store_classes(), [])
+        # Tolerated bookkeeping neither blocks readiness nor restarts the quiet period.
+        ledger.record("storage_delay_save", store=auth)
+        self.assertEqual(ledger.pending_store_classes(), [])
+
+    def test_store_class_is_bounded_and_never_a_path_or_identifier(self):
+        cases = {
+            "alarmo.storage": "alarmo.storage", "core.entity_registry": "core.entity_registry", "auth": "auth",
+            "core.analytics": "core.analytics", "core.restore_state_extra": "core",
+            "core.abc1": "core", "core.uuid": "core.uuid", "core.a_b_c_d_e": "core",
+            "frontend.user_data_0123456789abcdef": "frontend", "lovelace.dashboard_x": "lovelace",
+            "person": "person", "http.auth": "http", "Bad.key": "unclassified", "1x": "unclassified",
+            "": "unclassified", "../../etc/passwd": "unclassified", "a" * 33: "unclassified",
+            None: "unclassified", 7: "unclassified",
+        }
+        for key, expected in cases.items():
+            with self.subTest(key=key):
+                value = observer.store_class(key)
+                self.assertEqual(value, expected)
+                self.assertIn(value, acceptance.STORE_CLASSES)
+                self.assertLessEqual(len(value), 64)
+
+    def test_genuine_violations_fail_with_their_named_condition(self):
+        cases = (
+            ({"kind": "service", "origin": "background"}, "unexpected_event_kind"),
+            ({"kind": "flow_init", "origin": "command"}, "unexpected_event_kind"),
+            ({"kind": "config_flow_init", "origin": "command"}, "unexpected_event_kind"),
+            ({"kind": "storage_remove", "origin": "background", "store": "auth"}, "unexpected_event_kind"),
+            ({"kind": "storage_save", "origin": "command", "store": "auth"}, "command_origin_storage"),
+            ({"kind": "storage_write", "origin": "background", "store": "other"}, "storage_event_shape"),
+            ({"kind": "storage_write", "origin": "background", "store": "auth", "store_class": "auth"},
+             "storage_event_shape"),
+            ({"kind": "command", "origin": "background", "command": "other", "args": "private"},
+             "command_event_shape"),
+            ({"kind": "storage_write", "origin": "elsewhere", "store": "auth"}, "event_shape"),
+        )
+        for event, condition in cases:
+            value = receipt()
+            value["events"].append(event)
+            with self.subTest(event=event), self.assertRaises(acceptance.ObservationError) as found:
+                acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE,
+                                           window="inspection", window_index=0)
+            diagnostic = found.exception.diagnostic
+            self.assertEqual((diagnostic["condition"], diagnostic["event_index"], diagnostic["window"]),
+                             (condition, 0, "inspection"))
+            assert_bounded(self, diagnostic)
+            self.assertNotIn("private", json.dumps(diagnostic))
+        value = receipt([*acceptance.EXPECTED_COMMANDS, "get_states"])
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], acceptance.EXPECTED_COMMANDS, core_version=CORE)
+        diagnostic = found.exception.diagnostic
+        self.assertEqual(diagnostic["condition"], "commands_mismatch")
+        self.assertEqual((diagnostic["expected_command_count"], diagnostic["observed_command_count"]),
+                         (len(acceptance.EXPECTED_COMMANDS), len(acceptance.EXPECTED_COMMANDS) + 1))
+        self.assertEqual(diagnostic["observed_commands"][-1], "other")
+        assert_bounded(self, diagnostic)
+        value = receipt()
+        changed = "f" * 64
+        value["final_store_hashes"]["alarmo.storage"] = changed
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE)
+        self.assertEqual((found.exception.diagnostic["condition"], found.exception.diagnostic["changed_stores"]),
+                         ("store_hash_changed", ["alarmo.storage"]))
+        self.assertNotIn(changed, json.dumps(found.exception.diagnostic))
+
+    def test_diagnostic_is_bounded_for_hostile_or_oversized_intervals(self):
+        value = receipt()
+        value["events"] = [{"kind": f"kind_{index}", "origin": "background", "store": "/config/.storage/x",
+                            "store_class": "/config/.storage/secret", "path": "/config/secret"}
+                           for index in range(128)]
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE,
+                                       window="/config/secret", window_index=10 ** 6)
+        diagnostic = found.exception.diagnostic
+        self.assertEqual((diagnostic["window"], diagnostic["window_index"], diagnostic["event_count"]),
+                         (None, None, 128))
+        self.assertEqual(diagnostic["event"], {"kind": "invalid", "origin": "background", "store": "invalid",
+                                               "store_class": "invalid", "unexpected_field_count": 1})
+        self.assertLessEqual(len(diagnostic["event_counts"]), acceptance.MAX_DIAGNOSTIC_ITEMS)
+        assert_bounded(self, diagnostic)
+        self.assertNotIn("/config", json.dumps(diagnostic))
+        for broken in (None, [], {"events": "x"}):
+            with self.subTest(broken=broken), self.assertRaises(acceptance.ObservationError) as found:
+                acceptance.verify_interval(broken, "0" * 32, [], core_version=CORE)
+            self.assertEqual(found.exception.diagnostic["condition"], "receipt_shape")
+            assert_bounded(self, found.exception.diagnostic)
+
+    async def test_setup_wait_names_the_pending_store_classes_it_gave_up_on(self):
+        now = [0]
+        async def command(payload):
+            return {"core_running": True, "storage_pending": True, "hooks_intact": True,
+                    "pending_store_classes": ["core.analytics", "lovelace"], "last_start_refusal": None}
+        async def sleep(seconds):
+            now[0] += seconds
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=command), clock=lambda: now[0], sleep=sleep,
+                                                   window="baseline_export", window_index=2)
+        self.assertEqual(found.exception.diagnostic, {
+            "condition": "setup_not_settled", "cause": "readiness_budget_exhausted", "phase": "readiness",
+            "window": "baseline_export", "window_index": 2, "readiness_reads": 40, "core_running": True,
+            "pending_store_classes": ["core.analytics", "lovelace"], "start_recovery": None})
+        async def malformed(payload):
+            return {"core_running": True, "storage_pending": True, "hooks_intact": True,
+                    "pending_store_classes": ["/config/.storage/lovelace"], "last_start_refusal": None}
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=malformed))
+        self.assertEqual(found.exception.diagnostic, {
+            "condition": "setup_observation_unavailable", "cause": "store_class_list_malformed",
+            "phase": "readiness", "window": None, "window_index": None, "readiness_reads": 1,
+            "core_running": None, "pending_store_classes": None, "start_recovery": None})
+        # The dashboard observer keeps its three-field readiness explicitly.
+        async def dashboard(payload):
+            return {"core_running": True, "storage_pending": False, "hooks_intact": True}
+        self.assertEqual(await acceptance.wait_disposable_setup(SimpleNamespace(command=dashboard),
+                                                                store_classes=False),
+                         {"result": "PASS", "readiness_reads": 1})
+        async def classes(payload):
+            return {"core_running": True, "storage_pending": False, "hooks_intact": True, "pending_store_classes": [],
+                    "last_start_refusal": None}
+        for observed, flag in ((dashboard, True), (classes, False)):
+            with self.subTest(flag=flag), self.assertRaises(acceptance.ObservationError):
+                await acceptance.wait_disposable_setup(SimpleNamespace(command=observed), store_classes=flag)
+
+    async def test_alarmo_lane_attaches_only_bounded_observation_diagnostics(self):
+        failure = acceptance.ObservationError("Disposable Core interval failed verification",
+                                              {"condition": "commands_mismatch", "window": "inspection"})
+        with patch.object(acceptance, "_run_disposable", side_effect=failure), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.run_disposable(None, None, fixture_receipt=None, expected_image=None, core_version=CORE)
+        self.assertEqual(found.exception.contract_missing_key, "alarmo_inspection")
+        self.assertEqual(found.exception.contract_diagnostic, {"observation_failure": failure.diagnostic})
+        with patch.object(acceptance, "_run_disposable", side_effect=ValueError("other")), \
+                self.assertRaises(ValueError) as found:
+            await acceptance.run_disposable(None, None, fixture_receipt=None, expected_image=None, core_version=CORE)
+        self.assertFalse(hasattr(found.exception, "contract_diagnostic"))
+
+    async def test_fixture_receipt_with_a_repeated_key_refuses_before_core_access(self):
+        profile = json.loads((acceptance.FIXTURES / "alarmo_profile.json").read_text(encoding="utf-8"))
+        unique = json.dumps({"fixture": "synthetic-alarmo-inspection-v1", "alarmo_source": acceptance.COMMIT,
+                             "archive_sha256": profile["archive_sha256"]})
+        duplicated = unique[:-1] + ', "fixture": "synthetic-alarmo-inspection-v1"}'
+        self.assertEqual(json.loads(duplicated), json.loads(unique))  # the hazard ordinary decoding hides
+        local = SimpleNamespace(ha_url="http://127.0.0.1:8123")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "fixture.json"
+            path.write_text(duplicated, encoding="utf-8")
+            existing = SimpleNamespace(current_observation=SimpleNamespace(version=CORE), acquire=Mock())
+            with self.assertRaisesRegex(ValueError, "receipt_duplicate_key"):
+                await acceptance.run_disposable(local, existing, fixture_receipt=path,
+                                                expected_image=acceptance.slot_binding(CORE)["image"],
+                                                core_version=CORE)
+            existing.acquire.assert_not_called()
+
+
+SYNTHETIC_IDS = ("abcdef0123456789" * 2, "12345678-1234-5678-1234-567812345678", "0123abcd", "kitchen_42")
+
+
+async def observer_runtime(*, state="running", config_dir="/nonexistent-observer-config", hashes=None):
+    """The real observer ``async_setup`` and its three handlers on synthetic Core stubs."""
+    modules, _registered, _originals = ha_stubs(CORE)
+    handlers = {}
+    modules["homeassistant.components.websocket_api"].async_register_command = (
+        lambda hass, handler: handlers.setdefault(handler.__name__, handler))
+
+    async def executor(function, *args):
+        if hashes is not None:
+            return hashes(function, *args)
+        return {key: None for key in observer.HASH_KEYS}
+
+    hass = SimpleNamespace(data={}, bus=SimpleNamespace(async_listen_once=Mock()), state=state,
+                           config=SimpleNamespace(config_dir=config_dir), async_add_executor_job=executor)
+    with patch.dict(sys.modules, modules):
+        await observer.async_setup(hass, {observer.DOMAIN: {"core_version": CORE}})
+    return hass, hass.data[observer.DOMAIN], handlers, modules
+
+
+class Wire:
+    """The observer handlers behind a client that, like the runtime websocket
+    client, drops the error code and raises a generic request failure."""
+
+    def __init__(self, hass, handlers):
+        self.hass, self.handlers, self.sent, self.payloads = hass, handlers, [], []
+
+    async def command(self, payload):
+        self.payloads.append(dict(payload))
+        outcome = {}
+        connection = SimpleNamespace(send_result=lambda _id, value: outcome.update(result=value),
+                                     send_error=lambda _id, code, _message: outcome.update(error=code))
+        handled = self.handlers[payload["type"].split("/", 1)[1]](self.hass, connection, {"id": 1, **payload})
+        if asyncio.iscoroutine(handled):
+            await handled
+        self.sent.append(dict(outcome))
+        if "error" in outcome:
+            raise RuntimeError("Home Assistant request failed")
+        return outcome["result"]
+
+
+def pending_store(key):
+    return FakeStore(key, data={"private": "DO_NOT_RECORD"}, delay_handle=object())
+
+
+# Synthetic, test-owned /start attempt identifiers (32 lowercase hex).
+ATTEMPTS = ("a" * 32, "b" * 32, "c" * 32)
+
+
+def ready_value(**changes):
+    return {"core_running": True, "storage_pending": False, "hooks_intact": True, "pending_store_classes": [],
+            "last_start_refusal": None, **changes}
+
+
+# Total decoders: the only code that reads an observer response (HAMCP-180 R1).
+DECODERS = ("decode_readiness", "_start_response")
+# Validators that read raw observer data; only a decoder may call them.
+VALIDATORS = ("readiness_problem", "_class_list_problem", "_refusal_problem")
+
+
+def setup_helpers(source, functions):
+    """Every module function the named setup functions reach by direct call."""
+    import ast
+    tree = ast.parse(source)
+    defined = {node.name: node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    reached, queue = set(), [name for name in functions if name in defined]
+    while queue:
+        name = queue.pop()
+        if name in reached:
+            continue
+        reached.add(name)
+        queue += [node.func.id for node in ast.walk(defined[name])
+                  if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in defined]
+    return {name: defined[name] for name in sorted(reached - set(functions))}
+
+
+def boundary_sites(source, functions):
+    """Structural exception boundary of setup, readiness and start (HAMCP-180 R1).
+
+    A helper reached from the setup functions never raises; a decoder keeps all
+    observer-data access inside ``try``/``except Exception``; and a setup
+    function neither subscripts an observer response nor calls a validator
+    directly. Implicit errors are covered by the decoders' boundary and the
+    behavioral malformed-shape matrix, not by this enumeration alone.
+    """
+    import ast
+    tree = ast.parse(source)
+    problems = []
+    helpers = setup_helpers(source, functions)
+    for name in DECODERS:
+        if name not in helpers:
+            problems.append(f"decoder_unreached:{name}")
+    for name, function in helpers.items():
+        for node in ast.walk(function):
+            if isinstance(node, ast.Raise):
+                problems.append(f"helper_raise:{name}:{node.lineno}")
+        if name in DECODERS:
+            guarded = set()
+            for node in ast.walk(function):
+                if isinstance(node, ast.Try) and any(getattr(handler.type, "id", None) == "Exception"
+                                                     for handler in node.handlers):
+                    for statement in node.body:
+                        guarded |= {id(inner) for inner in ast.walk(statement)}
+            for node in ast.walk(function):
+                reads = isinstance(node, ast.Subscript) or (
+                    isinstance(node, ast.Call) and getattr(node.func, "id", None) in VALIDATORS)
+                if reads and id(node) not in guarded:
+                    problems.append(f"decoder_unguarded:{name}:{node.lineno}")
+    roots = {node.name: node for node in ast.walk(tree)
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in functions}
+    for name, function in roots.items():
+        for node in ast.walk(function):
+            if isinstance(node, ast.Subscript) and getattr(node.value, "id", None) == "value":
+                problems.append(f"response_subscript:{name}:{node.lineno}")
+            if isinstance(node, ast.Call) and getattr(node.func, "id", None) in VALIDATORS:
+                problems.append(f"validator_call:{name}:{node.lineno}")
+    return problems
+
+
+def raise_sites(source, functions):
+    """Each raise and return in the named setup/readiness/start functions that is
+    not the fixed structured setup failure (HAMCP-180), plus forbidden handlers
+    and every boundary problem in the helpers they reach (``boundary_sites``).
+    The count is of the named functions' explicit raises only."""
+    import ast
+    tree = ast.parse(source)
+    found = {node.name: node for node in ast.walk(tree)
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in functions}
+    problems = [f"missing:{name}" for name in functions if name not in found]
+    problems += boundary_sites(source, functions)
+
+    def structured(node):
+        if isinstance(node, ast.Await):
+            node = node.value
+            return isinstance(node, ast.Call) and getattr(node.func, "id", None) == "_start_failure"
+        return isinstance(node, ast.Call) and getattr(node.func, "id", None) in {"failure", "setup_failure"}
+
+    raises = 0
+    for name, function in found.items():
+        for node in ast.walk(function):
+            if isinstance(node, ast.Raise):
+                raises += 1
+                if node.exc is None or not structured(node.exc):
+                    problems.append(f"raise:{name}:{node.lineno}")
+            elif isinstance(node, ast.ExceptHandler):
+                caught = getattr(node.type, "id", None) or getattr(node.type, "attr", None)
+                if caught not in {"Exception"}:
+                    problems.append(f"handler:{name}:{node.lineno}")
+            elif isinstance(node, ast.Return) and name in {"_start_failure", "failure"}:
+                if not structured(node.value):
+                    problems.append(f"return:{name}:{node.lineno}")
+    return raises, problems
+
+
+def observer_start_sites(source):
+    """Each raise in the observer ``/start`` handler that is not one fixed refusal."""
+    import ast
+    start = next(node for node in ast.walk(ast.parse(source))
+                 if isinstance(node, ast.AsyncFunctionDef) and node.name == "start")
+    causes, problems = set(), []
+    for node in ast.walk(start):
+        if isinstance(node, ast.Raise):
+            call = node.exc
+            if (isinstance(call, ast.Call) and getattr(call.func, "id", None) == "Refusal" and len(call.args) == 1
+                    and isinstance(call.args[0], ast.Constant) and call.args[0].value in observer.START_REFUSALS):
+                causes.add(call.args[0].value)
+            else:
+                problems.append(f"raise:{node.lineno}")
+        elif isinstance(node, ast.ExceptHandler):
+            caught = getattr(node.type, "id", None)
+            if caught not in {"Refusal", "ValueError", "Exception"}:
+                problems.append(f"handler:{node.lineno}")
+        elif isinstance(node, ast.Assign) and any(getattr(target, "id", None) == "cause" for target in node.targets):
+            value = node.value
+            if isinstance(value, ast.Constant):
+                causes.add(value.value)
+    return causes, problems
+
+
+SETUP_FUNCTIONS = ("wait_disposable_setup", "failure", "start_interval", "_start_failure")
+
+
+class SetupFailureDiagnosticTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-180 R1: every setup, readiness and start failure carries one fixed
+    structured diagnostic; cancellation and the causal error are preserved."""
+
+    def assert_setup_diagnostic(self, error, cause, phase, **expected):
+        diagnostic = error.diagnostic
+        self.assertEqual(set(diagnostic), acceptance.SETUP_DIAGNOSTIC_KEYS)
+        self.assertEqual((diagnostic["condition"], diagnostic["cause"], diagnostic["phase"]),
+                         (acceptance.SETUP_FAILURES[cause], cause, phase))
+        for key, value in expected.items():
+            self.assertEqual(diagnostic[key], value, key)
+        assert_bounded(self, diagnostic)
+        text = json.dumps(diagnostic)
+        for secret in ("DO_NOT_RECORD", "synthetic read", "request failed", *SYNTHETIC_IDS):
+            self.assertNotIn(secret, text)
+        self.assertEqual(str(error), "Disposable setup observation failed")
+        return diagnostic
+
+    async def test_late_start_non_settlement_names_its_condition_and_classes(self):
+        # Codex probe made permanent: the real /start handler, two clock reads.
+        hass, ledger, handlers, _modules = await observer_runtime()
+        store = pending_store("lovelace.dashboard_" + SYNTHETIC_IDS[2])
+        ledger.track(store)
+        errors = []
+        connection = SimpleNamespace(send_error=lambda *args: errors.append(args),
+                                     send_result=lambda *args: self.fail("must not start"))
+        with patch.object(observer.time, "monotonic", side_effect=[0, 21]):
+            await handlers["start"](hass, connection, {"id": 1, "kind": "control", "attempt_id": ATTEMPTS[0]})
+        self.assertEqual(errors, [(1, "setup_not_settled_late_start", "Observer refused interval")])
+        self.assertIsNone(ledger.active)
+        self.assertEqual(ledger.start_refusal(), {"attempt_id": ATTEMPTS[0], "cause": "setup_not_settled_late_start",
+                                                  "pending_store_classes": ["lovelace"]})
+        # The runtime client drops the code; the bounded /ready read-back attributes it.
+        wire = Wire(hass, handlers)
+        # Only the observer's clock: the client's own read-back timer keeps real time.
+        with patch.object(observer, "time", SimpleNamespace(monotonic=Mock(side_effect=[0, 21]))), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.start_interval(wire, "control", window="baseline_export", window_index=1)
+        self.assert_setup_diagnostic(found.exception, "setup_not_settled_late_start", "start",
+                                     window="baseline_export", window_index=1, readiness_reads=1,
+                                     core_running=True, pending_store_classes=["lovelace"],
+                                     start_recovery="current_refusal")
+        self.assertIsInstance(found.exception.__cause__, RuntimeError)
+        self.assertEqual([list(item) for item in wire.sent], [["error"], ["result"]])
+        self.assertNotIn("DO_NOT_RECORD", json.dumps(wire.sent))
+        self.assertIsNone(ledger.active)
+        # Useful success: once the store settles the interval opens and the refusal clears.
+        store._data = store._delay_handle = None
+        identity = await acceptance.start_interval(wire, "control", window="baseline_export", window_index=1)
+        self.assertRegex(identity, r"\A[0-9a-f]{32}\Z")
+        self.assertEqual(ledger.active["interval_id"], identity)
+        self.assertIsNone(ledger.start_refusal())
+
+    async def test_every_observer_start_refusal_reaches_the_lane_with_its_fixed_cause(self):
+        def unavailable(function, *args):
+            raise ValueError("observer store symlink refused")
+
+        def broken(function, *args):
+            raise RuntimeError("synthetic read failed")
+
+        cases = (
+            ("core_not_running", {"state": "not_running"}, None),
+            ("hooks_not_intact", {}, "unhook"),
+            ("store_hash_unavailable", {"hashes": unavailable}, None),
+            ("interval_unavailable", {}, "occupied"),
+            ("start_internal_error", {"hashes": broken}, None),
+        )
+        for cause, options, prepare in cases:
+            with self.subTest(cause=cause):
+                hass, ledger, handlers, modules = await observer_runtime(**options)
+                occupied = None
+                if prepare == "unhook":
+                    Store = modules["homeassistant.helpers.storage"].Store
+                    Store.async_remove = lambda self: None
+                elif prepare == "occupied":
+                    occupied = ledger.start("control", {})
+                wire = Wire(hass, handlers)
+                with self.assertRaises(acceptance.ObservationError) as found:
+                    await acceptance.start_interval(wire, "inspection", window="inspection")
+                core_running = options.get("state", "running") == "running"
+                self.assert_setup_diagnostic(found.exception, cause, "start", window="inspection",
+                                             readiness_reads=1, core_running=core_running,
+                                             pending_store_classes=[], start_recovery="current_refusal")
+                attempt = wire.payloads[0]["attempt_id"]
+                self.assertRegex(attempt, r"\A[0-9a-f]{32}\Z")
+                self.assertEqual(ledger.start_refusal(), {"attempt_id": attempt, "cause": cause,
+                                                          "pending_store_classes": []})
+                self.assertEqual(None if ledger.active is None else ledger.active["interval_id"], occupied)
+
+    async def test_readiness_timeout_transport_and_malformed_values_are_structured(self):
+        # Codex probes made permanent, plus the class-list element types.
+        async def timed_out(_payload):
+            raise TimeoutError("synthetic read timed out")
+
+        async def runtime_timeout(_payload):
+            raise RuntimeError("Home Assistant request failed") from TimeoutError()
+
+        async def transport(_payload):
+            raise ConnectionError("synthetic read failed")
+
+        for command, cause, causal in ((timed_out, "readiness_timeout", TimeoutError),
+                                       (runtime_timeout, "readiness_timeout", RuntimeError),
+                                       (transport, "readiness_transport_error", ConnectionError)):
+            with self.subTest(cause=cause, causal=causal), self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.wait_disposable_setup(SimpleNamespace(command=command), window="negative_control")
+            self.assert_setup_diagnostic(found.exception, cause, "readiness", window="negative_control",
+                                         readiness_reads=0, core_running=None, pending_store_classes=None)
+            self.assertIsInstance(found.exception.__cause__, causal)
+
+        # The real deadline timer, not a synthetic TimeoutError.
+        async def hangs(_payload):
+            await asyncio.sleep(3600)
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=hangs),
+                                                   clock=Mock(side_effect=[0, 199.95, 199.95, 199.95]))
+        self.assert_setup_diagnostic(found.exception, "readiness_timeout", "readiness")
+
+        malformed = {
+            "store_class_list_malformed": (
+                [{}], [1], [None], [["lovelace"]], ["lovelace", "lovelace"], ["person", "lovelace"],
+                ["/config/.storage/lovelace"], [SYNTHETIC_IDS[0]], ["invalid"], ["lovelace"] * 17, "lovelace", None,
+                {"lovelace": True}),
+            "readiness_shape_invalid": (),
+        }
+        for classes in malformed["store_class_list_malformed"]:
+            async def command(_payload, classes=classes):
+                return ready_value(storage_pending=True, pending_store_classes=classes)
+            with self.subTest(classes=classes), self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.wait_disposable_setup(SimpleNamespace(command=command))
+            self.assert_setup_diagnostic(found.exception, "store_class_list_malformed", "readiness",
+                                         readiness_reads=1, pending_store_classes=None)
+        shapes = (
+            {"core_running": True, "storage_pending": True, "hooks_intact": True, "pending_store_classes": [{}]},
+            ready_value(extra=True), ready_value(core_running="yes"), [], None,
+            ready_value(last_start_refusal={"cause": "free text from a key", "pending_store_classes": []}),
+            ready_value(last_start_refusal={"cause": "core_not_running", "pending_store_classes": [{}]}),
+            ready_value(last_start_refusal={"cause": "core_not_running"}),
+        )
+        for value in shapes:
+            async def command(_payload, value=value):
+                return value
+            with self.subTest(value=value), self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.wait_disposable_setup(SimpleNamespace(command=command))
+            self.assert_setup_diagnostic(found.exception, "readiness_shape_invalid", "readiness", readiness_reads=1)
+        async def unhooked(_payload):
+            return ready_value(hooks_intact=False)
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=unhooked))
+        self.assert_setup_diagnostic(found.exception, "readiness_hooks_not_intact", "readiness")
+        # Storage pending must agree with its class list.
+        async def disagree(_payload):
+            return ready_value(storage_pending=False, pending_store_classes=["lovelace"])
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=disagree))
+        self.assert_setup_diagnostic(found.exception, "store_class_list_malformed", "readiness")
+
+    async def test_start_transport_timeout_and_invalid_responses_are_structured(self):
+        identity = "0" * 32
+
+        def wire(start, ready):
+            async def command(payload):
+                return await (start if payload["type"].endswith("/start") else ready)(payload)
+            return SimpleNamespace(command=command)
+
+        async def timeout(_payload):
+            raise RuntimeError("Home Assistant request failed") from TimeoutError()
+
+        async def failed(_payload):
+            raise RuntimeError("Home Assistant request failed")
+
+        async def settled(_payload):
+            return ready_value()
+
+        async def pending(_payload):
+            return ready_value(storage_pending=True, pending_store_classes=["frontend"])
+
+        async def malformed(_payload):
+            return ready_value(pending_store_classes=[{}])
+
+        async def hangs(_payload):
+            await asyncio.sleep(3600)
+
+        real_timeout = asyncio.timeout
+        cases = (
+            (timeout, settled, "start_timeout", 1, True, [], "no_refusal"),
+            (failed, pending, "start_transport_error", 1, True, ["frontend"], "no_refusal"),
+            (failed, failed, "start_transport_error", 0, None, None, "recovery_unavailable"),
+            (failed, malformed, "start_transport_error", 1, None, None, "ready_recovery_malformed"),
+            (failed, hangs, "start_transport_error", 0, None, None, "recovery_unavailable"),
+        )
+        for start, ready, cause, reads, running, classes, recovery in cases:
+            with self.subTest(start=start.__name__, ready=ready.__name__), \
+                    patch("asyncio.timeout", lambda seconds: real_timeout(min(seconds, 0.05))), \
+                    self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.start_interval(wire(start, ready), "control", window="baseline_export",
+                                                window_index=2)
+            self.assert_setup_diagnostic(found.exception, cause, "start", window="baseline_export", window_index=2,
+                                         readiness_reads=reads, core_running=running,
+                                         pending_store_classes=classes, start_recovery=recovery)
+            self.assertIsInstance(found.exception.__cause__, RuntimeError)
+        for value in ({"model": "alarmo-core-interval-v1", "interval_id": identity},
+                      {"model": acceptance.OBSERVER_MODEL, "interval_id": SYNTHETIC_IDS[1]},
+                      {"model": acceptance.OBSERVER_MODEL, "interval_id": identity, "extra": 1},
+                      {"model": acceptance.OBSERVER_MODEL}, [identity], None):
+            async def returns(_payload, value=value):
+                return value
+            with self.subTest(value=value), self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.start_interval(wire(returns, settled), "control")
+            self.assert_setup_diagnostic(found.exception, "start_response_invalid", "start", readiness_reads=0,
+                                         start_recovery=None)
+        async def started(_payload):
+            return {"model": acceptance.OBSERVER_MODEL, "interval_id": identity}
+        self.assertEqual(await acceptance.start_interval(wire(started, failed), "control"), identity)
+
+    async def test_cancellation_propagates_from_readiness_start_read_back_and_observer(self):
+        async def cancelled(_payload):
+            raise asyncio.CancelledError()
+
+        async def failed(_payload):
+            raise RuntimeError("Home Assistant request failed")
+
+        with self.assertRaises(asyncio.CancelledError):
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=cancelled))
+        with self.assertRaises(asyncio.CancelledError):
+            await acceptance.start_interval(SimpleNamespace(command=cancelled), "control")
+        async def start_fails_then_cancelled(payload):
+            return await (failed if payload["type"].endswith("/start") else cancelled)(payload)
+        with self.assertRaises(asyncio.CancelledError):
+            await acceptance.start_interval(SimpleNamespace(command=start_fails_then_cancelled), "control")
+
+        def cancel(function, *args):
+            raise asyncio.CancelledError()
+        hass, ledger, handlers, _modules = await observer_runtime(hashes=cancel)
+        connection = SimpleNamespace(send_error=Mock(), send_result=Mock())
+        with self.assertRaises(asyncio.CancelledError):
+            await handlers["start"](hass, connection, {"id": 1, "kind": "control", "attempt_id": ATTEMPTS[0]})
+        connection.send_error.assert_not_called()
+        connection.send_result.assert_not_called()
+        self.assertIsNone(ledger.active)
+        self.assertIsNone(ledger.start_refusal())
+
+    def test_every_setup_cause_maps_to_the_fixed_shape(self):
+        self.assertEqual(observer.START_REFUSALS, acceptance.START_REFUSALS)
+        self.assertLessEqual(set(acceptance.START_REFUSALS), set(acceptance.SETUP_FAILURES))
+        self.assertEqual(set(acceptance.SETUP_FAILURES.values()),
+                         {"setup_not_settled", "setup_observation_unavailable", "interval_start_refused"})
+        for cause, condition in acceptance.SETUP_FAILURES.items():
+            for phase in ("readiness", "start"):
+                with self.subTest(cause=cause, phase=phase):
+                    error = acceptance.setup_failure(cause, phase, window="inspection", window_index=0,
+                                                     readiness_reads=3, core_running=True,
+                                                     pending_store_classes=["lovelace", SYNTHETIC_IDS[0], {}])
+                    self.assertIsInstance(error, acceptance.ObservationError)
+                    diagnostic = self.assert_setup_diagnostic(error, cause, phase, window="inspection",
+                                                              window_index=0, readiness_reads=3)
+                    self.assertEqual(diagnostic["condition"], condition)
+                    self.assertEqual(diagnostic["pending_store_classes"], ["lovelace", "invalid", "invalid"])
+        # Unknown, hostile or oversized inputs never reach the diagnostic.
+        error = acceptance.setup_failure(SYNTHETIC_IDS[0], "/config", window="/config/secret", window_index=10 ** 6,
+                                         readiness_reads="x", core_running="yes",
+                                         pending_store_classes=["lovelace"] * 40)
+        diagnostic = self.assert_setup_diagnostic(error, "start_internal_error", "invalid", window=None,
+                                                  window_index=None, readiness_reads=None, core_running=None)
+        self.assertEqual(len(diagnostic["pending_store_classes"]), acceptance.MAX_DIAGNOSTIC_ITEMS)
+
+    def test_every_setup_raise_site_emits_the_structured_diagnostic(self):
+        """Enumerates every raise in setup, readiness and start, so a new path
+        cannot skip the diagnostic; the checker itself is mutation-tested."""
+        import ast
+        source = Path(acceptance.__file__).read_text(encoding="utf-8")
+        raises, problems = raise_sites(source, SETUP_FUNCTIONS)
+        self.assertEqual(problems, [])
+        # Pinned: a new raise site must be added here deliberately, and is checked above.
+        self.assertEqual(raises, 5)
+        # Every literal cause the client can emit is in the fixed vocabulary, and
+        # together with the observer's refusals it is the whole vocabulary.
+        literals = set()
+        for name in (*SETUP_FUNCTIONS, "readiness_problem"):
+            function = next(node for node in ast.walk(ast.parse(source))
+                            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name)
+            literals |= {node.value for node in ast.walk(function) if isinstance(node, ast.Constant)
+                         and type(node.value) is str and node.value in acceptance.SETUP_FAILURES}
+            literals |= {node.value for node in ast.walk(function) if isinstance(node, ast.Constant)
+                         and type(node.value) is str and re.fullmatch(r"(readiness|start)_[a-z_]+|store_class_[a-z_]+",
+                                                                      node.value)
+                         and node.value not in {"readiness_reads", "start_internal_error", "start_recovery"}}
+        self.assertLessEqual(literals, set(acceptance.SETUP_FAILURES))
+        self.assertEqual(literals | set(acceptance.START_REFUSALS), set(acceptance.SETUP_FAILURES))
+        observer_source = acceptance.OBSERVER.read_text(encoding="utf-8")
+        causes, problems = observer_start_sites(observer_source)
+        self.assertEqual(problems, [])
+        self.assertEqual(causes, set(observer.START_REFUSALS))
+        # Mutations: a plain raise, a swallowed BaseException, an unstructured
+        # read-back result or a free-text observer refusal are all caught.
+        mutations = (
+            ('    raise failure("readiness_budget_exhausted")', '    raise ValueError("setup did not settle")'),
+            ('        raise setup_failure("start_response_invalid"', '        raise RuntimeError("start_response_invalid"'),
+            ("    except Exception as exc:  # CancelledError is not an Exception and propagates\n"
+             "        raise await _start_failure(",
+             "    except BaseException as exc:\n        raise await _start_failure("),
+            ('    return setup_failure(cause, "start"', '    return ValueError(cause, "start"'),
+        )
+        for old, new in mutations:
+            with self.subTest(mutation=new):
+                self.assertEqual(source.count(old), 1)
+                self.assertNotEqual(raise_sites(source.replace(old, new), SETUP_FUNCTIONS)[1], [])
+        for old, new in (('raise Refusal("core_not_running")', 'raise ValueError("core not running")'),
+                         ('raise Refusal("hooks_not_intact")', 'raise Refusal("hooks broken for " + key)'),
+                         ("        except Exception:  # cancellation", "        except BaseException:  # cancellation")):
+            with self.subTest(mutation=new):
+                self.assertEqual(observer_source.count(old), 1)
+                causes, problems = observer_start_sites(observer_source.replace(old, new))
+                self.assertTrue(problems or causes != set(observer.START_REFUSALS))
+
+    async def test_setup_failures_reach_the_alarmo_lane_diagnostic(self):
+        for cause in ("setup_not_settled_late_start", "readiness_timeout", "store_class_list_malformed"):
+            failure = acceptance.setup_failure(cause, "start", window="inspection", readiness_reads=1,
+                                               core_running=True, pending_store_classes=["lovelace"])
+            with self.subTest(cause=cause), patch.object(acceptance, "_run_disposable", side_effect=failure), \
+                    self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.run_disposable(None, None, fixture_receipt=None, expected_image=None,
+                                                core_version=CORE)
+            self.assertEqual(found.exception.contract_missing_key, "alarmo_inspection")
+            self.assertEqual(found.exception.contract_diagnostic, {"observation_failure": failure.diagnostic})
+            self.assertEqual(found.exception.contract_diagnostic["observation_failure"]["cause"], cause)
+
+
+class _Exploding:
+    """Any use beyond identity raises: stands in for an unforeseen decoder error."""
+
+    def __iter__(self):
+        raise RuntimeError("synthetic decoder failure")
+
+    def __eq__(self, other):
+        raise RuntimeError("synthetic decoder failure")
+
+    __hash__ = None
+
+
+def mutated_acceptance(old, new):
+    """The client module with one exact source replacement, for mutation tests."""
+    source = Path(acceptance.__file__).read_text(encoding="utf-8")
+    assert source.count(old) == 1, old
+    module = ModuleType("mutated_alarmo_acceptance")
+    module.__file__ = acceptance.__file__
+    exec(compile(source.replace(old, new), acceptance.__file__, "exec"), module.__dict__)
+    return module
+
+
+class StartRecoveryTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-180 R1 residual and R4: the one ``/ready`` read-back after a failed
+    ``/start`` is fully validated before use, never escapes the structured
+    diagnostic, and only a refusal from the current attempt names the cause."""
+
+    assert_setup_diagnostic = SetupFailureDiagnosticTests.assert_setup_diagnostic
+
+    def recovery_wire(self, start_error, ready, calls):
+        async def command(payload):
+            calls.append(dict(payload))
+            if payload["type"].endswith("/start"):
+                raise start_error
+            return ready(payload) if callable(ready) else ready
+        return SimpleNamespace(command=command)
+
+    def assert_one_read_back(self, calls):
+        self.assertEqual([call["type"] for call in calls],
+                         ["alarmo_interval_observer/start", "alarmo_interval_observer/ready"])
+        self.assertRegex(calls[0]["attempt_id"], r"\A[0-9a-f]{32}\Z")
+        self.assertEqual(set(calls[0]), {"type", "kind", "attempt_id"})
+
+    async def test_codex_probe_broken_hooks_and_malformed_read_back_keep_the_current_cause(self):
+        # Codex delta probe made permanent: this raised TypeError at 3c255e5.
+        calls = []
+        wire = self.recovery_wire(TimeoutError("synthetic"), ready_value(
+            hooks_intact=False, pending_store_classes=None, last_start_refusal={}), calls)
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.start_interval(wire, "control")
+        self.assert_setup_diagnostic(found.exception, "start_timeout", "start", readiness_reads=1,
+                                     core_running=None, pending_store_classes=None,
+                                     start_recovery="ready_recovery_malformed")
+        self.assertIsInstance(found.exception.__cause__, TimeoutError)
+        self.assert_one_read_back(calls)
+
+    async def test_malformed_read_back_matrix_stays_structured_with_the_current_cause(self):
+        attempt = ATTEMPTS[0]
+        valid_refusal = {"attempt_id": attempt, "cause": "core_not_running", "pending_store_classes": []}
+        classes = (None, [{}], [None], [1], [["lovelace"]], "lovelace", {"lovelace": True},
+                   [SYNTHETIC_IDS[0]], ["lovelace"] * 17, ["person", "lovelace"], _Exploding())
+        refusals = (
+            {}, [], "core_not_running", 7, SYNTHETIC_IDS[0], _Exploding(),
+            {"cause": "core_not_running", "pending_store_classes": []},
+            {"attempt_id": attempt, "cause": "core_not_running"},
+            {**valid_refusal, "extra": True},
+            {**valid_refusal, "cause": 7}, {**valid_refusal, "cause": ["core_not_running"]},
+            {**valid_refusal, "cause": {"core_not_running": 1}}, {**valid_refusal, "cause": SYNTHETIC_IDS[0]},
+            {**valid_refusal, "cause": "observer_refused"},
+            {**valid_refusal, "attempt_id": 7}, {**valid_refusal, "attempt_id": None},
+            {**valid_refusal, "attempt_id": SYNTHETIC_IDS[1]}, {**valid_refusal, "attempt_id": attempt.upper()},
+            {**valid_refusal, "attempt_id": attempt + "\n"}, {**valid_refusal, "attempt_id": [attempt]},
+            {**valid_refusal, "pending_store_classes": None}, {**valid_refusal, "pending_store_classes": [{}]},
+            {**valid_refusal, "pending_store_classes": "lovelace"},
+            {**valid_refusal, "pending_store_classes": [SYNTHETIC_IDS[0]]},
+        )
+        values = [None, [], "ready", 7, _Exploding(), {}, ready_value(extra=True),
+                  {key: item for key, item in ready_value().items() if key != "last_start_refusal"},
+                  ready_value(core_running="yes"), ready_value(hooks_intact=None), ready_value(storage_pending=0)]
+        for hooks in (True, False):
+            values += [ready_value(hooks_intact=hooks, storage_pending=True, pending_store_classes=item)
+                       for item in classes]
+            values += [ready_value(hooks_intact=hooks, last_start_refusal=item) for item in refusals]
+            values += [ready_value(hooks_intact=hooks, storage_pending=False, pending_store_classes=["lovelace"])]
+        errors = ((TimeoutError("synthetic"), "start_timeout"),
+                  (RuntimeError("Home Assistant request failed"), "start_transport_error"))
+        for index, value in enumerate(values):
+            for error, cause in errors:
+                calls = []
+                with self.subTest(index=index, cause=cause), \
+                        patch("uuid.uuid4", return_value=SimpleNamespace(hex=attempt)), \
+                        self.assertRaises(acceptance.ObservationError) as found:
+                    await acceptance.start_interval(self.recovery_wire(error, value, calls), "control",
+                                                    window="baseline_export", window_index=3)
+                diagnostic = self.assert_setup_diagnostic(
+                    found.exception, cause, "start", window="baseline_export", window_index=3, readiness_reads=1,
+                    core_running=None, pending_store_classes=None, start_recovery="ready_recovery_malformed")
+                self.assertIs(found.exception.__cause__, error)
+                self.assert_one_read_back(calls)
+                self.assertNotIn(attempt, json.dumps(diagnostic))
+
+    async def test_a_well_formed_broken_hooks_read_back_still_attributes_the_current_refusal(self):
+        attempt = ATTEMPTS[1]
+        for refusal, cause, recovery, classes in (
+                ({"attempt_id": attempt, "cause": "hooks_not_intact", "pending_store_classes": ["lovelace"]},
+                 "hooks_not_intact", "current_refusal", ["lovelace"]),
+                (None, "start_transport_error", "no_refusal", []),
+                ({"attempt_id": ATTEMPTS[2], "cause": "hooks_not_intact", "pending_store_classes": []},
+                 "start_transport_error", "stale_refusal_ignored", [])):
+            calls = []
+            wire = self.recovery_wire(RuntimeError("Home Assistant request failed"),
+                                      ready_value(hooks_intact=False, last_start_refusal=refusal), calls)
+            with self.subTest(recovery=recovery), patch("uuid.uuid4", return_value=SimpleNamespace(hex=attempt)), \
+                    self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.start_interval(wire, "control")
+            self.assert_setup_diagnostic(found.exception, cause, "start", readiness_reads=1, core_running=True,
+                                         pending_store_classes=classes, start_recovery=recovery)
+            self.assert_one_read_back(calls)
+
+    async def test_readiness_wait_with_broken_hooks_and_malformed_fields_is_structured(self):
+        for hooks in (True, False):
+            for changes, cause in (
+                    ({"storage_pending": True, "pending_store_classes": None}, "store_class_list_malformed"),
+                    ({"storage_pending": True, "pending_store_classes": _Exploding()}, "store_class_list_malformed"),
+                    ({"last_start_refusal": {}}, "readiness_shape_invalid"),
+                    ({"last_start_refusal": _Exploding()}, "readiness_shape_invalid"),
+                    ({"last_start_refusal": {"attempt_id": 7, "cause": "core_not_running",
+                                             "pending_store_classes": []}}, "readiness_shape_invalid"),
+                    ({}, None if hooks else "readiness_hooks_not_intact")):
+                async def command(_payload, changes=changes):
+                    return ready_value(hooks_intact=hooks, **changes)
+                with self.subTest(hooks=hooks, cause=cause):
+                    if cause is None:
+                        self.assertEqual(await acceptance.wait_disposable_setup(SimpleNamespace(command=command)),
+                                         {"result": "PASS", "readiness_reads": 1})
+                        continue
+                    with self.assertRaises(acceptance.ObservationError) as found:
+                        await acceptance.wait_disposable_setup(SimpleNamespace(command=command))
+                    self.assert_setup_diagnostic(found.exception, cause, "readiness", readiness_reads=1,
+                                                 start_recovery=None)
+
+    async def test_an_unforeseen_decoder_error_is_a_fixed_cause_on_both_paths(self):
+        def broken(*_args, **_kwargs):
+            raise RuntimeError("synthetic decoder failure")
+
+        self.assertEqual(acceptance.decode_readiness(ready_value()), (None, {
+            "core_running": True, "storage_pending": False, "pending_store_classes": [], "refusal": None}))
+        with patch.object(acceptance, "readiness_problem", broken):
+            self.assertEqual(acceptance.decode_readiness(ready_value()), ("readiness_shape_invalid", None))
+            async def ready(_payload):
+                return ready_value()
+            with self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.wait_disposable_setup(SimpleNamespace(command=ready))
+            self.assert_setup_diagnostic(found.exception, "readiness_shape_invalid", "readiness", readiness_reads=1)
+            calls = []
+            with self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.start_interval(self.recovery_wire(TimeoutError(), ready_value(), calls), "control")
+            self.assert_setup_diagnostic(found.exception, "start_timeout", "start", readiness_reads=1,
+                                         start_recovery="ready_recovery_malformed")
+            self.assert_one_read_back(calls)
+        # The /start result is decoded by the same total boundary.
+        for value in (_Exploding(), {"model": _Exploding(), "interval_id": "0" * 32}):
+            async def returns(_payload, value=value):
+                return value
+            with self.subTest(value=type(value).__name__), self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.start_interval(SimpleNamespace(command=returns), "control")
+            self.assert_setup_diagnostic(found.exception, "start_response_invalid", "start", readiness_reads=0)
+
+    async def test_malformed_read_back_reaches_both_lane_diagnostics(self):
+        import automation_baseline_contract_acceptance as baseline
+        malformed = ready_value(hooks_intact=False, pending_store_classes=None, last_start_refusal={})
+
+        async def lane(*_args, **_kwargs):
+            await acceptance.start_interval(self.recovery_wire(TimeoutError(), malformed, []), "control",
+                                            window="baseline_export", window_index=1)
+
+        with patch.object(acceptance, "_run_disposable", lane), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.run_disposable(None, None, fixture_receipt=None, expected_image=None, core_version=CORE)
+        observed = found.exception.contract_diagnostic["observation_failure"]
+        self.assertEqual((observed["cause"], observed["start_recovery"]), ("start_timeout", "ready_recovery_malformed"))
+        with patch.object(baseline, "_run_disposable", lane), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await baseline.run_disposable(None, expected_image=None, core_version=CORE)
+        observed = found.exception.contract_diagnostic["observation_failure"]
+        self.assertEqual((observed["cause"], observed["start_recovery"], observed["window_index"]),
+                         ("start_timeout", "ready_recovery_malformed", 1))
+        assert_bounded(self, observed)
+
+    async def test_codex_probe_a_stale_refusal_does_not_replace_the_current_timeout(self):
+        # Codex delta probe made permanent: 3c255e5 reported core_not_running here.
+        calls = []
+        stale = {"attempt_id": ATTEMPTS[2], "cause": "core_not_running", "pending_store_classes": []}
+        wire = self.recovery_wire(TimeoutError("synthetic"), ready_value(last_start_refusal=stale), calls)
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.start_interval(wire, "control")
+        self.assert_setup_diagnostic(found.exception, "start_timeout", "start", readiness_reads=1, core_running=True,
+                                     pending_store_classes=[], start_recovery="stale_refusal_ignored")
+        self.assert_one_read_back(calls)
+
+    async def test_a_refusal_counts_only_for_its_own_attempt_on_the_real_observer(self):
+        hass, ledger, handlers, _modules = await observer_runtime(state="not_running")
+
+        class Lost(Wire):
+            """``/start`` fails in transport; ``before`` says whether the
+            observer handler ran first (a lost response) or never (a lost request)."""
+
+            def __init__(self, before):
+                super().__init__(hass, handlers)
+                self.before = before
+
+            async def command(self, payload):
+                if not payload["type"].endswith("/start"):
+                    return await super().command(payload)
+                self.payloads.append(dict(payload))
+                if self.before:
+                    connection = SimpleNamespace(send_result=Mock(), send_error=Mock())
+                    await self.handlers["start"](self.hass, connection, {"id": 1, **payload})
+                raise RuntimeError("Home Assistant request failed") from TimeoutError()
+
+        async def attempt(wire):
+            with self.assertRaises(acceptance.ObservationError) as found:
+                await acceptance.start_interval(wire, "control", window="baseline_export", window_index=0)
+            self.assert_one_read_back(wire.payloads)
+            self.assertNotIn(wire.payloads[0]["attempt_id"], json.dumps(found.exception.diagnostic))
+            return found.exception.diagnostic
+
+        # 1. A current refusal names its own cause.
+        first = Wire(hass, handlers)
+        current = await attempt(first)
+        self.assertEqual((current["cause"], current["start_recovery"]), ("core_not_running", "current_refusal"))
+        self.assertEqual(ledger.start_refusal()["attempt_id"], first.payloads[0]["attempt_id"])
+        # 2. The next start is lost before the observer: the retained refusal is stale.
+        hass.state = "running"
+        lost = Lost(before=False)
+        stale = await attempt(lost)
+        self.assertEqual((stale["condition"], stale["cause"], stale["start_recovery"], stale["core_running"]),
+                         ("setup_observation_unavailable", "start_timeout", "stale_refusal_ignored", True))
+        self.assertNotEqual(lost.payloads[0]["attempt_id"], first.payloads[0]["attempt_id"])
+        # 3. A foreign attempt's refusal is equally ignored.
+        ledger.refuse_start("hooks_not_intact", [], ATTEMPTS[2])
+        foreign = await attempt(Lost(before=False))
+        self.assertEqual((foreign["cause"], foreign["start_recovery"]), ("start_timeout", "stale_refusal_ignored"))
+        # 4. The observer refused this attempt but its response was lost: still attributed.
+        hass.state = "not_running"
+        refused = await attempt(Lost(before=True))
+        self.assertEqual((refused["cause"], refused["start_recovery"]), ("core_not_running", "current_refusal"))
+        # 5. The interval opened but its response was lost: no refusal, the timeout stands.
+        hass.state = "running"
+        opened = await attempt(Lost(before=True))
+        self.assertEqual((opened["cause"], opened["start_recovery"]), ("start_timeout", "no_refusal"))
+        self.assertIsNotNone(ledger.active)
+        self.assertIsNone(ledger.start_refusal())
+
+    async def test_removing_the_attempt_correlation_is_caught(self):
+        stale = {"attempt_id": ATTEMPTS[2], "cause": "core_not_running", "pending_store_classes": []}
+        for old, new in (('            elif refusal["attempt_id"] == attempt_id:', "            elif True:"),
+                         ('            elif refusal["attempt_id"] == attempt_id:',
+                          '            elif refusal["attempt_id"] or attempt_id:')):
+            with self.subTest(mutation=new):
+                mutated = mutated_acceptance(old, new)
+                with self.assertRaises(mutated.ObservationError) as found:
+                    await mutated.start_interval(self.recovery_wire(
+                        TimeoutError(), ready_value(last_start_refusal=stale), []), "control")
+                # The stale-refusal test above would fail on this cause.
+                self.assertEqual(found.exception.diagnostic["cause"], "core_not_running")
+        # Observer mutation: a refusal recorded without the request's attempt is never current.
+        hass, _ledger, handlers, _modules = await observer_runtime(state="not_running")
+        original = observer.Ledger.refuse_start
+        with patch.object(observer.Ledger, "refuse_start",
+                          lambda self, cause, classes, _attempt: original(self, cause, classes, ATTEMPTS[2])), \
+                self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.start_interval(Wire(hass, handlers), "control")
+        self.assertEqual((found.exception.diagnostic["cause"], found.exception.diagnostic["start_recovery"]),
+                         ("start_transport_error", "stale_refusal_ignored"))
+
+    def test_attempt_identifiers_are_fresh_and_bounded_by_the_observer_schema(self):
+        source = acceptance.OBSERVER.read_text(encoding="utf-8")
+        self.assertIn('vol.Required("attempt_id"): vol.Match("^" + ATTEMPT_ID + r"\\Z")', source)
+        self.assertEqual(observer.ATTEMPT_ID, acceptance.ATTEMPT_ID)
+        ledger = observer.Ledger(lambda: 0)
+        for attempt in (None, 7, "A" * 32, "a" * 31, "a" * 32 + "\n", SYNTHETIC_IDS[1]):
+            with self.subTest(attempt=attempt):
+                self.assertEqual(ledger.refuse_start("core_not_running", [], attempt)["attempt_id"], "0" * 32)
+        self.assertEqual(ledger.refuse_start("core_not_running", [], ATTEMPTS[0])["attempt_id"], ATTEMPTS[0])
+        self.assertEqual(set(acceptance.START_RECOVERY), {"recovery_unavailable", "ready_recovery_malformed",
+                                                          "no_refusal", "current_refusal", "stale_refusal_ignored"})
+
+
+class CodexDeltaProbeTests(unittest.TestCase):
+    """The reviewer's AST probes at 3c255e5, made permanent (HAMCP-180 R1)."""
+
+    def test_an_added_raise_in_an_enumerated_function_is_caught(self):
+        source = Path(acceptance.__file__).read_text(encoding="utf-8")
+        mutated = source.replace("    for attempt in range(41):",
+                                 '    raise RuntimeError("synthetic")\n    for attempt in range(41):')
+        self.assertNotEqual(mutated, source)
+        self.assertTrue(raise_sites(mutated, SETUP_FUNCTIONS)[1])
+
+    def test_a_raise_in_a_reached_helper_is_caught(self):
+        source = Path(acceptance.__file__).read_text(encoding="utf-8")
+        mutated = source.replace('    booleans = ("core_running",',
+                                 '    raise RuntimeError("synthetic")\n    booleans = ("core_running",')
+        self.assertNotEqual(mutated, source)
+        self.assertTrue(raise_sites(mutated, SETUP_FUNCTIONS)[1], "readiness_problem is not enumerated")
+
+    def test_the_boundary_checker_catches_each_bypass(self):
+        source = Path(acceptance.__file__).read_text(encoding="utf-8")
+        self.assertEqual(boundary_sites(source, SETUP_FUNCTIONS), [])
+        self.assertLessEqual({*DECODERS, *VALIDATORS}, set(setup_helpers(source, SETUP_FUNCTIONS)))
+        mutations = (
+            # The 3c255e5 shape: a setup function validating and reading the response itself.
+            ("        _problem, ready = decode_readiness(value)",
+             '        _problem, ready = readiness_problem(value), value\n        ready["core_running"]'),
+            # A decoder reading observer data outside its guard.
+            ("    try:\n        problem = readiness_problem(value, store_classes=store_classes)",
+             '    value["core_running"]\n    try:\n        problem = readiness_problem(value, store_classes=store_classes)'),
+            # A decoder whose guard no longer catches Exception.
+            ("        return problem, state\n    except Exception:", "        return problem, state\n    except TypeError:"),
+            # A helper that raises instead of returning a fixed cause.
+            ('        return "readiness_shape_invalid"\n    if store_classes:',
+             '        raise ValueError("readiness_shape_invalid")\n    if store_classes:'),
+            # A setup function that bypasses the start-response decoder.
+            ("    interval_id = _start_response(value)", '    interval_id = value["interval_id"]'),
+        )
+        for old, new in mutations:
+            with self.subTest(mutation=new):
+                self.assertEqual(source.count(old), 1, old)
+                self.assertNotEqual(boundary_sites(source.replace(old, new), SETUP_FUNCTIONS), [])
+
+    def test_extra_adversarial_store_keys_redact(self):
+        keys = ["lоvelace.synthetic", "cоre.uuid", "/config/lovelace.secret", "../core.uuid", "a" * 100000,
+                "CORE.uuid", "Core.config", "LOVELACE.secret", "core./config/private", "lovelace/../synthetic",
+                "Knx.synthetic", "core.ｕuid"]
+        expected = ["unclassified", "unclassified", "unclassified", "unclassified", "unclassified", "unclassified",
+                    "unclassified", "unclassified", "core", "lovelace", "unclassified", "core"]
+        for key, want in zip(keys, expected):
+            with self.subTest(key=key[:40]):
+                self.assertEqual(observer.store_class(key), want)
+                self.assertEqual(acceptance._store_class(key), "invalid")
+
+
+def legacy_store_class(key):
+    """Mutation: the reviewed-head (48e7fec) shape-based classifier that R2 replaced."""
+    if type(key) is not str:
+        return "unclassified"
+    if key in observer.STORE_KEYS:
+        return key
+    head, _dot, rest = key.partition(".")
+    if head == "core" and re.fullmatch(r"[a-z]{1,32}(?:_[a-z]{1,32}){0,3}", rest):
+        return "core." + rest
+    return head if re.fullmatch(r"[a-z][a-z0-9_]{0,31}", head) else "unclassified"
+
+
+IDENTIFIER_KEYS = {
+    SYNTHETIC_IDS[0]: "unclassified",
+    SYNTHETIC_IDS[0] + ".lovelace": "unclassified",
+    SYNTHETIC_IDS[1]: "unclassified",
+    "light.kitchen": "unclassified",
+    "sensor.kitchen_42_temperature": "unclassified",
+    "custom_integration_0123abcd": "unclassified",
+    "my_integration.storage": "unclassified",
+    "person_" + SYNTHETIC_IDS[0]: "person",
+    "lovelace.dashboard_" + SYNTHETIC_IDS[2]: "lovelace",
+    "frontend.user_data_" + SYNTHETIC_IDS[0]: "frontend",
+    "mobile_app/" + SYNTHETIC_IDS[3]: "mobile_app",
+    "homekit_controller-entity-map": "homekit_controller",
+    "homekit." + SYNTHETIC_IDS[1]: "homekit",
+    "homekitx": "unclassified",
+    "lovelace" + SYNTHETIC_IDS[2]: "unclassified",
+    "Lovelace.dashboard": "unclassified",
+    "lovelace\n" + SYNTHETIC_IDS[3]: "unclassified",
+    "core." + SYNTHETIC_IDS[0]: "core",
+    "core.entity_registry_0123": "core",
+    "core.entity_registry/../" + SYNTHETIC_IDS[3]: "core",
+    "core.restore_state_extra": "core",
+    "core.custom_component_cache_backup_store": "core",
+    "core." + "a" * 40: "core",
+    "core": "unclassified",
+    "/config/.storage/core.entity_registry": "unclassified",
+    "../../" + SYNTHETIC_IDS[3]: "unclassified",
+    "core.analytics": "core.analytics",
+    "core.uuid": "core.uuid",
+    "alarmo.storage": "alarmo.storage",
+    "alarmo.storage.bak": "alarmo",
+}
+
+
+class StoreClassRedactionTests(unittest.IsolatedAsyncioTestCase):
+    """HAMCP-180 R2: a store class comes only from the fixed vocabulary; an
+    identifier-shaped key is never echoed in any output."""
+
+    def test_vocabulary_is_fixed_shared_and_identifier_free(self):
+        self.assertEqual(observer.STORE_CLASSES, acceptance.STORE_CLASSES)
+        self.assertEqual(observer.CORE_STORE_NAMES, set(acceptance.CORE_STORE_NAMES))
+        self.assertEqual(observer.STORE_DOMAINS, set(acceptance.STORE_DOMAINS))
+        self.assertLessEqual(observer.STORE_KEYS, observer.STORE_CLASSES)
+        for value in observer.STORE_CLASSES:
+            # No digit, hex run, separator or path can be emitted, whatever the input.
+            self.assertRegex(value, r"\A[a-z_]{1,32}(?:\.[a-z_]{1,32})?\Z")
+
+    def test_identifier_shaped_keys_map_to_a_class_never_the_key(self):
+        # Codex probe made permanent, plus adversarial keys. All synthetic.
+        for key, expected in IDENTIFIER_KEYS.items():
+            with self.subTest(key=key):
+                value = observer.store_class(key)
+                self.assertEqual(value, expected)
+                self.assertIn(value, acceptance.STORE_CLASSES)
+                if key not in acceptance.STORE_CLASSES:
+                    self.assertNotEqual(value, key)
+                for identifier in SYNTHETIC_IDS:
+                    self.assertNotIn(identifier, value)
+        for key in (b"lovelace", type("Key", (str,), {})("lovelace"), ["lovelace"], None):
+            self.assertEqual(observer.store_class(key), "unclassified")
+
+    def leaks(self, classify=None, summarize=None):
+        """Every observer and client output an unnamed store reaches, as text."""
+        with patch.object(observer, "store_class", classify or observer.store_class), \
+                patch.object(acceptance, "_store_class", summarize or acceptance._store_class):
+            ledger = observer.Ledger(lambda: 0)
+            stores = [pending_store(key) for key in IDENTIFIER_KEYS]
+            for store in stores:
+                ledger.track(store)
+            pending = ledger.pending_store_classes()
+            hashes = {key: None for key in acceptance.STORE_HASH_KEYS}
+            identity = ledger.start("control", dict(hashes))
+            for store in stores:
+                ledger.record("storage_delay_save", store=store)
+            refusal = ledger.refuse_start("setup_not_settled_late_start", pending, ATTEMPTS[0])
+            value = ledger.finish(identity, dict(hashes),
+                                  {key: True for key in acceptance.OBSERVER_HOOKS})
+            value.update(core_version=CORE, observer_sha256=sha256(acceptance.OBSERVER.read_bytes()))
+            try:
+                acceptance.verify_interval(value, identity, [], kind="control", core_version=CORE,
+                                           window="baseline_export", window_index=1)
+            except acceptance.ObservationError as error:
+                diagnostic = error.diagnostic
+            else:
+                self.fail("an untolerated store write must fail the interval")
+            setup = acceptance.setup_failure("setup_not_settled_late_start", "start", core_running=True,
+                                             pending_store_classes=pending).diagnostic
+            outputs = {"pending": pending, "refusal": refusal, "events": value["events"],
+                       "diagnostic": diagnostic, "setup": setup}
+        return outputs, json.dumps(outputs)
+
+    def assert_no_identifier(self, text):
+        for key in IDENTIFIER_KEYS:
+            if key not in acceptance.STORE_CLASSES:
+                self.assertNotIn(json.dumps(key), text)
+        for identifier in (*SYNTHETIC_IDS, "kitchen", "dashboard", "entity_registry_0123", "/config", "DO_NOT_RECORD"):
+            self.assertNotIn(identifier, text)
+
+    def test_no_output_echoes_an_identifier_shaped_key(self):
+        outputs, text = self.leaks()
+        self.assert_no_identifier(text)
+        self.assertEqual(outputs["diagnostic"]["condition"], "untolerated_store")
+        self.assertEqual(outputs["diagnostic"]["event_count"], len(IDENTIFIER_KEYS))
+        assert_bounded(self, outputs["diagnostic"])
+        assert_bounded(self, outputs["setup"])
+        self.assertLessEqual(set(outputs["pending"]), acceptance.STORE_CLASSES)
+        self.assertEqual({event.get("store_class") for event in outputs["events"]} - {None},
+                         set(IDENTIFIER_KEYS.values()) - set(observer.STORE_KEYS))
+
+    def test_mutations_echoing_the_key_or_trusting_its_shape_are_caught(self):
+        for classify in (lambda key: key, legacy_store_class):
+            with self.subTest(classify=classify), self.assertRaises(AssertionError):
+                self.assert_no_identifier(self.leaks(classify=classify)[1])
+        # Client mutation: a hostile observer class echoed into the summary.
+        hostile = {"kind": "storage_write", "origin": "background", "store": "other",
+                   "store_class": SYNTHETIC_IDS[0]}
+        self.assertEqual(acceptance._event_summary(hostile)["store_class"], "invalid")
+        with patch.object(acceptance, "_store_class", lambda value: value):
+            self.assertEqual(acceptance._event_summary(hostile)["store_class"], SYNTHETIC_IDS[0])
+            with self.assertRaises(AssertionError):
+                self.assert_no_identifier(self.leaks(classify=lambda key: key,
+                                                     summarize=lambda value: value)[1])
+
+    async def test_hostile_observer_classes_are_invalid_in_every_client_output(self):
+        value = receipt()
+        value["events"] = [{"kind": "storage_write", "origin": "background", "store": "other",
+                            "store_class": item} for item in (*SYNTHETIC_IDS, "core." + SYNTHETIC_IDS[0])]
+        with self.assertRaises(acceptance.ObservationError) as found:
+            acceptance.verify_interval(value, value["interval_id"], [], core_version=CORE)
+        text = json.dumps(found.exception.diagnostic)
+        self.assertEqual(found.exception.diagnostic["event"]["store_class"], "invalid")
+        self.assertEqual({row["store_class"] for row in found.exception.diagnostic["event_counts"]}, {"invalid"})
+        for identifier in SYNTHETIC_IDS:
+            self.assertNotIn(identifier, text)
+        async def hostile(_payload):
+            return ready_value(storage_pending=True, pending_store_classes=[SYNTHETIC_IDS[0]])
+        with self.assertRaises(acceptance.ObservationError) as found:
+            await acceptance.wait_disposable_setup(SimpleNamespace(command=hostile))
+        self.assertNotIn(SYNTHETIC_IDS[0], json.dumps(found.exception.diagnostic))
+
+    async def test_ready_output_names_classes_only(self):
+        hass, ledger, handlers, _modules = await observer_runtime()
+        stores = [pending_store(key) for key in IDENTIFIER_KEYS]  # tracked weakly; keep them alive
+        for store in stores:
+            ledger.track(store)
+        value = await Wire(hass, handlers).command({"type": "alarmo_interval_observer/ready"})
+        self.assertEqual(value["pending_store_classes"],
+                         sorted(set(IDENTIFIER_KEYS.values()) - observer.TOLERATED_KEYS)[:observer.MAX_STORE_CLASSES])
+        self.assert_no_identifier(json.dumps(value))
+        self.assertIsNone(acceptance.readiness_problem(value))
 
 
 UNSET = object()

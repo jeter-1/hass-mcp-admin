@@ -114,9 +114,10 @@ outside the measured interval and waits for setup/storage settlement. Exact Core
 2026.9.4 `helpers/registry.py:13-14,74-79` schedules registry writes after 180
 seconds during startup (10 seconds while running). A setup-only readiness read
 therefore allows at most 41 polls over 200 seconds, requiring Core running,
-no queued or active fixed-store writes, and intact observer hooks. It does not
-force saves or retry feature reads. The 45-second observation and 30-second
-feature collection bounds are unchanged; missing settlement still fails. It then:
+no queued or active untolerated Core Store writes, and intact observer hooks. It
+does not force saves or retry feature reads. The 45-second observation and
+30-second feature collection bounds are unchanged; missing settlement still
+fails. It then:
 
 1. Captures an actual extra harmless `get_states` request as a negative observer
    control and proves that a zero-command expectation rejects it.
@@ -145,6 +146,115 @@ it is not a global zero-write claim. This finite interval cannot prove absence
 of future arbitrary tasks or writes bypassing Core Store. Hashes of the fixed
 Alarmo/config-entry/entity/device stores supplement the hooks without retaining
 store contents. The observer retains no arguments, config bodies or credentials.
+
+Setup readiness covers every Core Store, not only the four hashed ones
+(HAMCP-180). It tracks Stores alive when the hooks install, found by a scan, and
+every Store a hook later sees. A Store is pending while its write lock is held,
+or while it holds data with a scheduled delayed save or final-write listener.
+Readiness also waits 2 seconds after the last untolerated store activity. Only
+`auth` and `core.restore_state` are excluded, because intervals already report
+them as background bookkeeping. The interval allowlist is unchanged: a write to
+any other store inside a window still fails.
+
+An event for an unnamed store carries a `store_class` from a fixed vocabulary
+that the observer and the client share:
+
+- a known integration domain that creates Stores, when it is the whole key or
+  is followed by `.`, `_`, `-` or `/` (the rest of the key is dropped);
+- `core.<name>` for a known Core Store name, or bare `core` for any other
+  `core.` key; or
+- `unclassified` for everything else.
+
+The vocabulary is the Core Store names and Store-creating integration domains of
+the pinned Core source, plus Alarmo. A key is never classified by its shape, so
+an entity ID, UUID, hex hash, digit-bearing suffix, path or unknown name is
+never echoed. The client reports any class outside the vocabulary as `invalid`.
+
+A failed check raises `ObservationError` with a bounded diagnostic. The
+diagnostic contains:
+
+- the failed `condition`;
+- the window label and index;
+- the interval kind and event counts by bounded summary;
+- the offending event's summary; and
+- `changed_stores` or command counts where relevant.
+
+Every setup, readiness or `/start` failure raises `ObservationError` with one
+fixed-shape diagnostic. Its fields are:
+
+- `condition`: `setup_not_settled`, `setup_observation_unavailable` or
+  `interval_start_refused`;
+- `cause`, a fixed code, as listed below;
+- `phase` (`readiness` or `start`);
+- the window label and index;
+- `readiness_reads`;
+- `core_running`;
+- the pending store classes; and
+- `start_recovery`, which says how a failed `/start` was attributed, or `null`
+  outside that path.
+
+The fixed causes are:
+
+- **Readiness:** `readiness_budget_exhausted`, `readiness_timeout`,
+  `readiness_transport_error`, `readiness_shape_invalid`,
+  `readiness_hooks_not_intact` and `store_class_list_malformed`.
+- **Observer `/start` refusals:** `setup_not_settled_late_start`,
+  `core_not_running`, `hooks_not_intact`, `store_hash_unavailable`,
+  `interval_unavailable` and `start_internal_error`.
+- **Client-side start failures:** `start_timeout`, `start_transport_error` and
+  `start_response_invalid`.
+
+The runtime websocket client does not keep error codes. The observer therefore
+keeps its last `/start` refusal, which `/ready` returns, and the client reads it
+back once after a failed start. Nothing is retried. Cancellation still
+propagates. No exception message, key or argument enters a diagnostic.
+
+Each `/start` carries a fresh test-owned `attempt_id` (32 lowercase hex). The
+observer schema requires it and records it with the refusal. Only a refusal
+recorded for the current attempt may name the cause. Otherwise the current
+failure (`start_timeout` or `start_transport_error`) stays the cause, and
+`start_recovery` records why:
+
+- `current_refusal`: the refusal belongs to this attempt and names the cause.
+- `stale_refusal_ignored`: the retained refusal belongs to another attempt.
+- `no_refusal`: the read-back is well formed and holds no refusal.
+- `ready_recovery_malformed`: the read-back is malformed in any field, including
+  when the hooks are not intact.
+- `recovery_unavailable`: the read-back itself failed.
+
+The attempt identifier never enters a diagnostic.
+
+Observer responses are read only through two total decoders, one for `/ready`
+and one for `/start`. They validate the whole envelope, including the class
+list and the retained refusal, before reading the hook bit. Any unexpected
+error while decoding becomes a fixed cause: `readiness_shape_invalid` while
+waiting, or `ready_recovery_malformed` on the `/start` read-back.
+
+A unit test walks the call closure of the setup functions. It rejects:
+
+- a raise in any helper they reach;
+- observer-data access outside a decoder's `except Exception` guard; and
+- a setup function that subscripts a response or calls a validator directly.
+
+That structural check does not enumerate implicit errors such as `TypeError`. A
+malformed-shape matrix covers those behaviourally.
+
+The diagnostic appears in the slot's `contract_diagnostic`. A baseline proof
+failure also retains it in the FAIL receipt. A setup failure happens before the
+lane has a result, so no FAIL receipt exists to retain it; the slot's
+`contract_diagnostic` carries it.
+
+The observer model is `alarmo-core-interval-v2`. The interval verifier refuses
+a v1 observation with `condition=observer_model`, so a v1 Alarmo interval or
+combined cleanup proof is not re-accepted. A standalone entity-metadata receipt
+and its cleanup receipt are checked by `verify_receipt_files`, which does not
+read the observer model. Pairs from v1 runs, such as main CI #1086, therefore
+still verify there. HAMCP-182 uses receipts regenerated on `main` after HAMCP-180
+merges, not those pairs.
+
+An unnamed-store burst that starts after the window opens cannot be prevented
+by setup readiness. It still fails, and the diagnostic now names its class for a
+reviewed decision.
 
 The required result marker is `Alarmo disposable inspection contract:`. Missing
 fixture receipt or a non-PASS result fails that slot's Real HA runner. The final
