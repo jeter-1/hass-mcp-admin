@@ -290,7 +290,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
         "invalid_request",
     ),
     ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH: ErrorDefinition(
-        "An execution task cannot be cancelled after dispatch.",
+        "An execution task cannot be cancelled after dispatch intent was recorded.",
         False,
         409,
         "invalid_request",
@@ -476,7 +476,7 @@ ERROR_CATALOG: dict[ErrorCode, ErrorDefinition] = {
             "required_action",
         ),
     ),
-    ErrorCode.DUPLICATE_APPLY_ATTEMPT: ErrorDefinition("The operational apply was already dispatched and will not be repeated.", False, 409, "invalid_request"),
+    ErrorCode.DUPLICATE_APPLY_ATTEMPT: ErrorDefinition("The operational apply already reached a recorded outcome and will not be repeated.", False, 409, "invalid_request"),
     ErrorCode.INTERNAL_INVARIANT_VIOLATION: ErrorDefinition("An operational governance invariant failed closed.", False, 500, "internal_error"),
     ErrorCode.INVALID_CURSOR: ErrorDefinition("The pagination cursor is invalid.", False, 400, "invalid_params"),
     ErrorCode.STALE_CURSOR: ErrorDefinition(

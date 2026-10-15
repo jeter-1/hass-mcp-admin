@@ -1,0 +1,37 @@
+{
+  "core": "2026.10.0",
+  "integration_receipt_sha256": "1e6968c01c3932496057ae81e4d89d0e8aecb375f4a2639ab50a2e700d564c18",
+  "owned_containers_remaining": 0,
+  "owned_network_remaining": false,
+  "required_alarmo_interval": "PASS",
+  "required_automation_baseline": {
+    "comparison_counts": {
+      "ADDED": 1,
+      "CHANGED": 1,
+      "REMOVED": 1,
+      "TOTAL": 124,
+      "UNCHANGED": 120,
+      "UNKNOWN": 1
+    },
+    "continuation_reads": 0,
+    "fixture_cleanup": true,
+    "records_after": 123,
+    "records_before": 123,
+    "result": "PASS"
+  },
+  "required_entity_metadata": {
+    "authority_transition": [
+      21,
+      22
+    ],
+    "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+    "core": "2026.10.0",
+    "fixture_cleanup": true,
+    "receipt_sha256": "52b8ecff4fbc50c984e8d194ab46d45633b00184ef438bfb5a71e51bee288d0d",
+    "result": "PASS",
+    "scenarios": 9,
+    "support_slot": "rollback"
+  },
+  "result": "PASS",
+  "support_slot": "rollback"
+}

@@ -1,0 +1,15 @@
+$ check_step signed 1
+Step 1 extend-capabilities 2026.10.1: sequence 10, references {'2026.10.0': 21, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']
+Candidate SHA256: d9607779d6f7945083dc1ef8126857c880901653e33b32cae808eaece16488d4
+Signed journal verified with the public key: sequence 10, digest sha256:0b9a5c7ce7187f15652e7c29aa06d01f3674de46d12e37c618ccf532e5d867db, SHA256 2e8ef48427224d2cf48bd1e537d84dba6306be8eddf154c189d4e7a67dd9057a
+OK
+$ check_step signed 2
+Step 2 extend-capabilities 2026.10.0: sequence 11, references {'2026.10.0': 22, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']
+Candidate SHA256: 30c4d3adb510cef7021b97dbcc75a58edb4858f1c8228e8271993e7f39a0478d
+Signed journal verified with the public key: sequence 11, digest sha256:73ca0e005a5033917c18b94312fef6643f12d29ad690963bd767d2b567c53047, SHA256 dde7aa3eb03b322514ce47a23482aea6113e560cc5ca66c162a18f59e425a0fb
+OK
+$ check_step signed 3
+Step 3 revoke 2026.9.4: sequence 12, references {'2026.10.0': 22, '2026.10.1': 22}, revoked ['2026.9.2', '2026.9.3', '2026.9.4']
+Candidate SHA256: 05979036cd69710582ce391be13c3dd039169b97f60e44da5ef3f2a58b14ed34
+Signed journal verified with the public key: sequence 12, digest sha256:9d14f06ab0a0870404540ea8cfa70cefe05cc243bebb9fab0b090121081be5fc, SHA256 089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6
+OK

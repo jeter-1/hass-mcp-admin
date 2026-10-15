@@ -1,0 +1,90 @@
+{
+ "now": "2026-10-15T14:03:31Z",
+ "controls": [
+  {
+   "control": "baseline: real files pass",
+   "exit": 0,
+   "last_line": "OK",
+   "expected": "OK",
+   "passed": true
+  },
+  {
+   "control": "pinned: one byte appended to journal-3",
+   "exit": 1,
+   "last_line": "FAILED: journal_3 SHA256 0f42a1020ac3b7d340e5bb4a2cb48f488f26a1f319bb50bca6d9f4b3cd94357e is not the recorded output",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "pinned: journal-2 bytes in place of journal-3",
+   "exit": 1,
+   "last_line": "FAILED: journal_3 SHA256 dde7aa3eb03b322514ce47a23482aea6113e560cc5ca66c162a18f59e425a0fb is not the recorded output",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "pinned: installed registry differs from journal-3",
+   "exit": 1,
+   "last_line": "FAILED: installed registry is not journal 3 bytes",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "unpinned: seq-12 envelope signature flipped",
+   "exit": 1,
+   "last_line": "FAILED: journal_3 journal signature does not verify",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "unpinned: journal-3 outer signature flipped",
+   "exit": 1,
+   "last_line": "FAILED: journal_3 journal signature does not verify",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "unpinned: seq-12 revocation reason edited",
+   "exit": 1,
+   "last_line": "FAILED: journal_3 journal signature does not verify",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "unpinned: seq-11 envelope dropped from journal-3",
+   "exit": 1,
+   "last_line": "FAILED: journal_3 journal signature does not verify",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "unpinned: journal-1 non-canonical whitespace",
+   "exit": 1,
+   "last_line": "FAILED: journal_1 is not canonical JSON",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "unpinned: candidate-3 envelope differs from seq 12",
+   "exit": 1,
+   "last_line": "FAILED: seq 12 is not candidate_3",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "unpinned: --now after seq-10 expiry",
+   "exit": 1,
+   "last_line": "FAILED: seq 10 is not current at --now",
+   "expected": "FAILED",
+   "passed": true
+  },
+  {
+   "control": "unpinned: --now before seq-12 generated_at",
+   "exit": 1,
+   "last_line": "FAILED: seq 12 is not current at --now",
+   "expected": "FAILED",
+   "passed": true
+  }
+ ],
+ "passed": true
+}

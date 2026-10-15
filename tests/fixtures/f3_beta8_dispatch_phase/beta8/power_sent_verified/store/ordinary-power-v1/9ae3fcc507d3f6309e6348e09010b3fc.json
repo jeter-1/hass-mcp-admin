@@ -1,0 +1,1 @@
+{"baseline": {"entity_id": "light.synthetic", "last_updated": "synthetic-revision-1", "state": "off"}, "model": "ordinary-power-v1", "prepared_hash": "ca3b5de097db240cc2afc794d93d9fc7a7a55ad3106445ff4e7dae868cde1b76", "request": {"action": "turn_on", "entity_id": "light.synthetic", "operation_id": "1789560000-1449acb443e04aa4a090f0c759f9f53c"}}

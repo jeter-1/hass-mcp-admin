@@ -1,0 +1,71 @@
+{
+ "base": "690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1",
+ "baseline_journal": {
+  "sha256": "ecaccd79ff79582f633e1406546a844ee4b38920703e4192e6463162dd4a4402",
+  "source": "origin/main 690a00b upstream-trust/ha-core-release-registry.json"
+ },
+ "generated_by": "Claude Code (Part 2 preparation session)",
+ "harness": {
+  "check_step.py": "efd20c9ee5cbbb056c92d593148f51fbde0a3119117fe748ec6c1877144c7062",
+  "harness/runtime_check.py": "6be751c3975f6a0f51ff441c1f97d0f4ffbaa2c182481e0a70078540f3a9c168",
+  "harness/verify_signed_chain.py": "fb9d63afe138f888849b62585884ca8d488343d1f8276411706e57f450b7db4d",
+  "harness/verify_signed_chain_controls.py": "791d76798bb03524f6a3bcd66ef43535fee4841535bcc80e115e57571875e3af"
+ },
+ "installed_registry": {
+  "byte_identical_to": "owner journal-3.json",
+  "path": "upstream-trust/ha-core-release-registry.json",
+  "sha256": "089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6"
+ },
+ "interpreter": "/tmp/hamcp069a-py312/bin/python (locked env, tests/requirements.lock)",
+ "python": "3.12.14",
+ "reports": {
+  "check-step-signed.log": "2e85f15be2bfb582bd9ef2a2d57fdaa7aeb6e3c38fc0a980a8bb4f3d0469606e",
+  "receipt-verify-212261d.json": "1edf59000d1b38e2258e787d4447ddbbc0b29bd6014ddabbef75b86ab9eb5bc6",
+  "runtime-beta8-7370ad25-signed.json": "00659ad4970fd7a168f2122f6752b5a7add4d2eb1f97881611abfe1c789f9140",
+  "runtime-beta9-690a00b-signed.json": "4d47fc98cb4d271decd5afe477dbcb82caa31b9f683fbf7599232870e6804457",
+  "verify-signed-chain-controls.json": "4711a52a88876520f28838900cfc4c072fc4a09705219d0e3d91b6a0b7ccd8f5",
+  "verify-signed-chain.log": "686578edc515f70b6c407b09091cdab47438b78632d33f960a65a798412a250f"
+ },
+ "runtime_part0": {
+  "beta8": {
+   "baseline_sha256": "ecaccd79ff79582f633e1406546a844ee4b38920703e4192e6463162dd4a4402",
+   "engineering_version": "2.4.1-beta.8",
+   "failures": [],
+   "final_sha256": "089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6",
+   "now": "2026-10-15T14:00:00Z",
+   "passed": true,
+   "public_key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+   "runtime_tree": "b4736c819cf009ca9579e244b4e5b60e701f13e5",
+   "source_commit": "7370ad25eb98e03347d73e152f38881895477d74",
+   "source_extract": "git archive 7370ad25eb98e03347d73e152f38881895477d74 (extracted to /home/josh/repos/hass-mcp-admin/.artifacts/hamcp182/part2/src-7370ad25)",
+   "steps_sha256": [
+    "2e8ef48427224d2cf48bd1e537d84dba6306be8eddf154c189d4e7a67dd9057a",
+    "dde7aa3eb03b322514ce47a23482aea6113e560cc5ca66c162a18f59e425a0fb"
+   ]
+  },
+  "beta9": {
+   "baseline_sha256": "ecaccd79ff79582f633e1406546a844ee4b38920703e4192e6463162dd4a4402",
+   "engineering_version": "2.4.1-beta.9",
+   "failures": [],
+   "final_sha256": "089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6",
+   "now": "2026-10-15T14:00:00Z",
+   "passed": true,
+   "public_key_sha256": "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac",
+   "runtime_tree": "c363397b2cabc567394b9cdde9daffe9a0bfb5bd",
+   "source_commit": "690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1",
+   "source_extract": "git archive 690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1 (extracted to /home/josh/repos/hass-mcp-admin/.artifacts/hamcp182/part2/src-690a00b)",
+   "steps_sha256": [
+    "2e8ef48427224d2cf48bd1e537d84dba6306be8eddf154c189d4e7a67dd9057a",
+    "dde7aa3eb03b322514ce47a23482aea6113e560cc5ca66c162a18f59e425a0fb"
+   ]
+  }
+ },
+ "signed_files": {
+  "candidate-2-extend-2026.10.0.json": "30c4d3adb510cef7021b97dbcc75a58edb4858f1c8228e8271993e7f39a0478d",
+  "candidate-3-revoke-2026.9.4.json": "05979036cd69710582ce391be13c3dd039169b97f60e44da5ef3f2a58b14ed34",
+  "journal-1.json": "2e8ef48427224d2cf48bd1e537d84dba6306be8eddf154c189d4e7a67dd9057a",
+  "journal-2.json": "dde7aa3eb03b322514ce47a23482aea6113e560cc5ca66c162a18f59e425a0fb"
+ },
+ "signing_head": "212261d9883412c699542b83d421b6a2e8b1cd29",
+ "task": "HAMCP-182 Part 2"
+}

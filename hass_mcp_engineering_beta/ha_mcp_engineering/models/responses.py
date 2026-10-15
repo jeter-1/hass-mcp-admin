@@ -97,7 +97,22 @@ _RECEIPT_FACTS = frozenset({
     "execution_request_id", "reason", "reason_code", "failure_category",
     "diagnostic_code", "error_category", "operation_id", "operation_hash",
     "dispatch_intent_recorded", "redispatch_prohibited", "authorization",
+    # HAMCP-181 S9: the shared dispatch-facts qualifiers survive budgets.
+    "dispatch_phase", "attempt_counts_basis", "attempt_count_scope",
+    "intent_recorded", "changed_by_engineering", "dispatch_performed",
+    "setter_call_not_sent", "provider_call_not_sent", "outcome_code",
+    "result_text", "dispatched_at_basis",
 })
+
+# HAMCP-181 S9: a dispatch counter is never emitted without its basis.
+_DISPATCH_COUNTERS = ("provider_attempt_count", "dispatch_count", "attempt_count")
+_COUNTER_BASIS = "attempt_counts_basis"
+_MINIMAL_DISPATCH_FACTS = (
+    "dispatch_phase", "attempt_counts_basis", "attempt_count_scope",
+    "intent_recorded", "changed_by_engineering", "dispatch_performed",
+    "setter_call_not_sent", "provider_call_not_sent", "outcome_code",
+    "result_text", "dispatched_at_basis",
+)
 
 
 def _receipt_paths(value: Any, path: tuple = ()) -> set[tuple]:
@@ -191,6 +206,61 @@ def logbook_data_limit(limit: int) -> int:
     return limit - len(_compact_json(_logbook_receipt(value, limit))) + 2
 
 
+def _shed_result_text(value, facts, reads) -> bool:
+    # The prose restates dispatch_phase/outcome_code, which stay.
+    return facts.pop("result_text", None) is not None
+
+
+def _shed_duplicate_verification(value, facts, reads) -> bool:
+    # Same rule as terminal_outcome == state: drop only an identical repeat.
+    if (
+        "verification_status" in facts
+        and facts.get("task_verification_status") == facts["verification_status"]
+    ):
+        del facts["verification_status"]
+        return True
+    return False
+
+
+def _shed_self_retrieval(value, facts, reads) -> bool:
+    # A hint to re-run the operation that produced this receipt is navigation
+    # back to the same truncated response, not disclosure data.
+    kept = [read for read in reads if read.get("tool") != value.get("operation")]
+    if len(kept) == len(reads):
+        return False
+    reads[:] = kept
+    return True
+
+
+def _shed_dispatched_at_basis(value, facts, reads) -> bool:
+    # dispatched_at itself is a legacy receipt fact and stays.
+    return facts.pop("dispatched_at_basis", None) is not None
+
+
+def _shed_dispatch_phase(value, facts, reads) -> bool:
+    return facts.pop("dispatch_phase", None) is not None
+
+
+def _shed_counter_group(value, facts, reads) -> bool:
+    # The counter, its basis and the parent scope leave together.
+    removed = False
+    for key in ("provider_attempt_count", _COUNTER_BASIS, "attempt_count_scope"):
+        if key in facts:
+            del facts[key]
+            removed = True
+    return removed
+
+
+_MINIMAL_SHEDDING = (
+    _shed_result_text,
+    _shed_duplicate_verification,
+    _shed_self_retrieval,
+    _shed_dispatched_at_basis,
+    _shed_dispatch_phase,
+    _shed_counter_group,
+)
+
+
 def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
     """Project one action's primary receipt for the smallest configured budget."""
     def mapping(item: Any) -> dict:
@@ -230,6 +300,13 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
     for key in ("task_id", "terminal_outcome", "provider_attempt_count"):
         if key not in facts and key in task:
             facts[key] = task[key]
+    for key in _MINIMAL_DISPATCH_FACTS:
+        if key in facts:
+            continue
+        for source in (body, task):
+            if key in source and not isinstance(source[key], (dict, list)):
+                facts[key] = source[key]
+                break
     if "task_state" not in facts and "state" not in facts and "state" in task:
         facts["task_state"] = task["state"]
     if "status" in verification:
@@ -276,6 +353,13 @@ def _minimal_receipt(value: dict[str, Any], limit: int) -> str:
             facts.pop("terminal_outcome", None)
         completeness.pop("reason", None)
         output = _compact_json(receipt)
+    # HAMCP-181 S9: shed the additive dispatch qualifiers in a fixed order.
+    # A counter is never kept without its basis (design section 2.4.3 item 6).
+    for shed in _MINIMAL_SHEDDING:
+        if len(output) <= limit:
+            break
+        if shed(value, facts, reads):
+            output = _compact_json(receipt)
     if len(output) > limit:
         raise ValueError("response bound cannot contain reconciliation identity")
     return output
@@ -336,21 +420,36 @@ def _bounded_json(output: str, limit: int) -> str:
         for item_size, parent, key, path in options:
             if size <= limit:
                 return _compact_json(value)
-            size -= item_size + len(_compact_json(key)) + 1 + (len(parent) > 1)
-            del parent[key]
-            previous = omission["omitted_path_count"]
-            count = previous + 1
-            size += len(str(count)) - len(str(previous))
-            omission["omitted_path_count"] = count
-            if count <= 16:
-                pointer = "/" + "/".join(
-                    str(part).replace("~", "~0").replace("/", "~1") for part in path
+            if key not in parent:
+                continue  # already removed with its counter basis
+            removals = [(item_size, key, path)]
+            if key == _COUNTER_BASIS:
+                # HAMCP-181 S9: drop sibling counters with their basis.
+                removals.extend(
+                    (len(_compact_json(parent[name])), name, (*path[:-1], name))
+                    for name in _DISPATCH_COUNTERS
+                    if name in parent
                 )
-                size += len(_compact_json(pointer)) + (previous > 0)
-                omission["omitted_paths"].append(pointer)
-            elif count == 17:
-                size += 1  # JSON false is one character longer than true.
-                omission["omitted_paths_complete"] = False
+            for removed_size, removed_key, removed_path in removals:
+                size -= (
+                    removed_size + len(_compact_json(removed_key)) + 1
+                    + (len(parent) > 1)
+                )
+                del parent[removed_key]
+                previous = omission["omitted_path_count"]
+                count = previous + 1
+                size += len(str(count)) - len(str(previous))
+                omission["omitted_path_count"] = count
+                if count <= 16:
+                    pointer = "/" + "/".join(
+                        str(part).replace("~", "~0").replace("/", "~1")
+                        for part in removed_path
+                    )
+                    size += len(_compact_json(pointer)) + (previous > 0)
+                    omission["omitted_paths"].append(pointer)
+                elif count == 17:
+                    size += 1  # JSON false is one character longer than true.
+                    omission["omitted_paths_complete"] = False
         if size <= limit:
             return _compact_json(value)
         # One further pass may remove secondary detail, never primary IDs.

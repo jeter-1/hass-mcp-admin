@@ -113,6 +113,16 @@ from ..governance.task_models import ExecutionTaskState, TERMINAL_TASK_STATES
 from ..governance.task_storage import ExecutionTaskStorageError
 from ..request_context import begin_request, current_telemetry, end_request
 from .registry import ClosedAdapterRegistry
+from . import dispatch_facts as dispatch_projection
+from .dispatch_facts import (
+    PROVIDER_CALL_NOT_SENT,
+    PHASE_SEND_UNCERTAIN,
+    ChildFacts,
+    DispatchFacts,
+    child_facts,
+    dispatch_facts,
+    legacy_dispatch_facts,
+)
 from .repository import (
     ACTIVE_RECOVERY_CHECKPOINT_LIMIT,
     ChildExecutionRepository,
@@ -165,20 +175,49 @@ SETTER_NOT_SENT_FIELDS = {
 }
 
 
-def _setter_call_not_sent_recorded(declaration: Any, record: Any) -> bool:
-    """Whether a dashboard child's dispatch result proves no setter call."""
+_CHILD_AUDIT_FACT_KEYS = (
+    "dispatch_phase",
+    PROVIDER_CALL_NOT_SENT,
+    "dispatch_performed",
+    "provider_dispatch_occurred",
+    "changed_by_engineering",
+)
 
-    return (
-        declaration["capability_id"] == DASHBOARD_CAPABILITY_ID
-        and record is not None
-        and record.dispatch_intent is not None
-        and record.normalized_outcome == "dispatch_failed_confirmed"
-        and not record.provider_response_received
-        and any(
-            event.get("event_type") == "dispatch_result_recorded"
-            and SETTER_CALL_NOT_SENT in tuple(event.get("diagnostic_codes") or ())
-            for event in record.events
+
+def _child_audit_facts(event_type: Any, facts: ChildFacts) -> dict[str, Any]:
+    """Design section 5.1 child-audit qualifiers for one replayed event."""
+
+    if event_type == "preflight_noop_verified":
+        if facts.phase == dispatch_projection.PHASE_ALREADY_PRESENT:
+            return {"dispatch_phase": facts.phase}
+        return {}
+    if event_type != dispatch_projection.DISPATCH_RESULT_EVENT:
+        return {}
+    value: dict[str, Any] = {"dispatch_phase": facts.phase}
+    if (
+        facts.phase == dispatch_projection.PHASE_INTENT_RECORDED_NOT_SENT
+        and not facts.setter_proof
+    ):
+        value.update({PROVIDER_CALL_NOT_SENT: True, "dispatch_performed": False})
+    elif facts.phase == dispatch_projection.PHASE_SENT_REJECTED_NO_MUTATION:
+        value.update(
+            {"provider_dispatch_occurred": True, "changed_by_engineering": False}
         )
+    elif facts.phase == dispatch_projection.PHASE_SENT_FAILED_MUTATION_UNPROVEN:
+        value.update(
+            {"provider_dispatch_occurred": True, "changed_by_engineering": None}
+        )
+    return value
+
+
+def _setter_call_not_sent_recorded(declaration: Any, record: Any) -> bool:
+    """Whether a dashboard child's dispatch result proves no setter call.
+
+    HAMCP-181: a thin wrapper over the single shared (b) predicate.
+    """
+
+    return dispatch_projection.is_dashboard_setter_not_sent(
+        declaration["capability_id"], record
     )
 
 
@@ -706,15 +745,19 @@ class _AuditedConfigurationGateway:
                 action, resource_type, target_id, proposed_config
             )
         except Exception as exc:
+            # HAMCP-181 design section 5.1 (PR1 gateway-audit rule): label a
+            # received response only when the exception proves one.
+            # ``mutation_dispatched is False`` alone also covers local
+            # pre-send refusals, so it is not proof of a response.
             details = getattr(exc, "details", {})
             response_received = bool(
                 isinstance(details, dict)
                 and details.get("provider_response_received") is True
-            ) or getattr(exc, "mutation_dispatched", None) is False
+            )
             self.auditor(
                 "provider_response_received"
                 if response_received
-                else "provider_response_lost"
+                else "provider_result_uncertain"
             )
             raise
         self.auditor("provider_response_received")
@@ -1340,6 +1383,11 @@ class F3RuntimeIntegration:
                 if event.get(SETTER_CALL_NOT_SENT) is True
                 else {}
             ),
+            **{
+                key: event[key]
+                for key in _CHILD_AUDIT_FACT_KEYS
+                if key in event
+            },
             "result_status": "error" if event_type == "lock_failure_cleanup" else "success",
             "fallback_occurred": False,
             "fallback": "none",
@@ -1372,6 +1420,12 @@ class F3RuntimeIntegration:
         if audit is None:
             return True
         pending: list[dict[str, Any]] = []
+        # HAMCP-181 S13: one pure projection of this record (no I/O).
+        facts = child_facts(
+            record,
+            capability=declaration["capability_id"],
+            child_id=declaration["child_id"],
+        )
         for item in record.events[start:]:
             diagnostics = tuple(item.get("diagnostic_codes") or ())
             audit_event_id = _persisted_audit_event_id(
@@ -1398,6 +1452,7 @@ class F3RuntimeIntegration:
                     "dispatch_count": record.dispatch_count,
                     "observation_count": record.observation_attempts,
                     "verification_count": record.verification_attempts,
+                    **_child_audit_facts(item.get("event_type"), facts),
                 },
                 declaration=declaration,
             )
@@ -1454,13 +1509,15 @@ class F3RuntimeIntegration:
         self.service._record_task_event(
             task, "duplicate_apply_prevented", changes={}
         )
+        facts = legacy_dispatch_facts(task)
         raise GovernanceError(
             ErrorCode.DUPLICATE_APPLY_ATTEMPT,
+            message=self.service.duplicate_apply_message(facts),
             details={
                 "task_id": task.task_id,
                 "task_state": task.state.value,
                 "execution_authority": "legacy_pre_beta20",
-                "provider_dispatch_occurred": bool(task.dispatched_at),
+                **facts.public_fields(),
                 "required_action": (
                     "read_only_legacy_reconciliation"
                     if task.dispatched_at
@@ -2429,30 +2486,77 @@ class F3RuntimeIntegration:
             changes=changes,
         )
 
-    def dashboard_setter_not_sent(self, task: Any) -> bool:
-        """Whether every saved intent of this task provably sent no setter.
-
-        Display only: never dispatch, retry or state authority.
-        """
-
-        if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
-            return False
-        children = [
-            (declaration, self.children.get(declaration["child_id"]))
-            for declaration in self.children.declarations_for_task(task.task_id)
-        ]
-        intents = [
-            (declaration, record) for declaration, record in children
-            if record is not None and record.dispatch_intent is not None
-        ]
-        return bool(intents) and all(
-            _setter_call_not_sent_recorded(declaration, record)
-            for declaration, record in intents
-        )
-
     @staticmethod
     def setter_not_sent_fields() -> dict[str, Any]:
         return dict(SETTER_NOT_SENT_FIELDS)
+
+    def dispatch_facts_for_task(
+        self,
+        task: Any,
+        *,
+        declarations: Any = None,
+        records: Any = None,
+    ) -> DispatchFacts:
+        """The single display projection of a public task's dispatch facts.
+
+        Read only, never authority.  Must not be called while holding the
+        child repository's exclusive transaction (it reads through it).
+        Health passes its already-collected ``declarations`` and ``records``
+        so the projection adds no reads to the fenced scan.
+        """
+
+        if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
+            return legacy_dispatch_facts(task)
+        if declarations is None:
+            try:
+                declarations = self.children.declarations_for_task(task.task_id)
+            except Exception:
+                return dispatch_facts(task=task, children=None)
+        if not declarations:
+            return dispatch_facts(task=task, children=None)
+        referenced = {
+            item.get("child_execution_id")
+            for item in task.provider_attempts
+            if isinstance(item, dict)
+        }
+        incomplete = task.manual_review_reason == "f3_sequence_incomplete"
+        children: list[ChildFacts] = []
+        for declaration in declarations:
+            child_id = declaration["child_id"]
+            capability = declaration["capability_id"]
+            try:
+                record = (
+                    self.children.get(child_id)
+                    if records is None
+                    else records[child_id]
+                )
+            except Exception:
+                children.append(
+                    ChildFacts(
+                        child_id, capability, PHASE_SEND_UNCERTAIN,
+                        evidence_conflict=True,
+                    )
+                )
+                continue
+            children.append(
+                child_facts(
+                    record,
+                    capability=capability,
+                    child_id=child_id,
+                    missing=record is None
+                    and (child_id in referenced or incomplete),
+                )
+            )
+        return dispatch_facts(task=task, children=children)
+
+    def public_task_facts(
+        self, value: dict[str, Any], task: Any, facts: DispatchFacts | None = None
+    ) -> dict[str, Any]:
+        """Overlay the shared facts and counter qualifiers on a task view."""
+
+        facts = facts if facts is not None else self.dispatch_facts_for_task(task)
+        value.update(facts.public_fields())
+        return dispatch_projection.qualify_counters(value, facts)
 
     @staticmethod
     def _entity_metadata_not_dispatched(
@@ -2461,7 +2565,9 @@ class F3RuntimeIntegration:
         """Whether an entity metadata sequence was verified with no dispatch.
 
         Scoped to entity metadata (V9); other verified no-dispatch children
-        keep their shipped ``succeeded_verified`` projection.
+        keep their shipped ``succeeded_verified`` projection.  This decides a
+        stored terminal outcome, so HAMCP-181 PR1 (no producer changes) keeps
+        it verbatim; tests prove it agrees with the shared (a) predicate.
         """
 
         return bool(declarations) and all(
@@ -2811,21 +2917,31 @@ class F3RuntimeIntegration:
             self.service._active_task_ids_by_plan.pop(plan.plan_id, None)
         task = self.service._load_task(task.task_id)
         plan = self.service._load(plan.plan_id)
+        # HAMCP-181 S1-S3: one facts object for the top level, the
+        # execution task and the nested plan.execution_task.
+        facts = self.dispatch_facts_for_task(task)
         result = {
             "status": "applied" if task.state == ExecutionTaskState.SUCCEEDED_VERIFIED else "accepted",
             "task_id": task.task_id,
             "task_state": task.state.value,
             "task_reused": existing is not None,
-            "provider_dispatch_occurred": bool(task.provider_attempts),
+            "provider_dispatch_occurred": facts.provider_dispatch_occurred,
             "redispatch_performed": False,
-            "execution_task": self.service._public_task(task),
-            "plan": self.service._public(plan, include_configs=False),
+            "execution_task": self.public_task_facts(
+                self.service._public_task(task), task, facts
+            ),
+            "plan": self.service._public(
+                plan, include_configs=False, dispatch_facts=facts
+            ),
         }
-        if self.dashboard_setter_not_sent(task):
+        result.update(facts.public_fields())
+        if facts.not_sent and facts.setter_not_sent:
             result.update(SETTER_NOT_SENT_FIELDS)
             result["execution_task"] = {
                 **result["execution_task"], **SETTER_NOT_SENT_FIELDS
             }
+        # The status override stays keyed on the stored terminal outcome
+        # (status preservation rule, design section 2.4.3 item 4).
         if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME:
             result.update(
                 {
@@ -2895,6 +3011,16 @@ class F3RuntimeIntegration:
             current = self.service._load_task(task.task_id)
             return await self._cancel_locked(current)
 
+    def _cancel_refusal(self, task: Any) -> GovernanceError:
+        facts = self.dispatch_facts_for_task(task)
+        details = {"task_id": task.task_id, "task_state": task.state.value}
+        details.update(facts.public_fields())
+        return GovernanceError(
+            ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH,
+            self.service.cancel_refusal_message(facts),
+            details=details,
+        )
+
     async def _cancel_locked(self, task: Any) -> dict[str, Any]:
         declarations = self.children.declarations_for_task(task.task_id)
         records = [self.children.get(item["child_id"]) for item in declarations]
@@ -2905,7 +3031,9 @@ class F3RuntimeIntegration:
             item is not None and item.dispatch_intent is not None
             for item in records
         ):
-            raise GovernanceError(ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH)
+            # The refusal decision above stays on stored intent; the shared
+            # facts only describe the refusal (HAMCP-181 S11, display only).
+            raise self._cancel_refusal(task)
         plan = self.service._load(task.plan_id)
         prepared, _requests = await self._load_prepared(plan, task)
         # Only the first unresolved child can be active in an ordered sequence.
@@ -2944,9 +3072,7 @@ class F3RuntimeIntegration:
             if not self.children.cancel(
                 declaration["child_id"], now=self.service.now()
             ):
-                raise GovernanceError(
-                    ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH
-                )
+                raise self._cancel_refusal(task)
             break
         self.service._record_task_event(
             task,
@@ -3616,20 +3742,28 @@ class F3RuntimeIntegration:
             "provider_dispatch_occurred": False,
         }
 
-    def decorate_task(self, task: Any) -> dict[str, Any]:
+    def decorate_task(
+        self, task: Any, *, facts: DispatchFacts | None = None
+    ) -> dict[str, Any]:
         try:
-            return self._decorate_task(task)
+            return self._decorate_task(task, facts=facts)
         except Exception:
             self._readiness_fault("task_projection:" + task.task_id)
             raise
 
-    def _decorate_task(self, task: Any) -> dict[str, Any]:
+    def _decorate_task(
+        self, task: Any, *, facts: DispatchFacts | None = None
+    ) -> dict[str, Any]:
         value = self.service._public_task(task)
+        facts = facts if facts is not None else self.dispatch_facts_for_task(task)
         if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
-            return value
+            return self.public_task_facts(value, task, facts)
         rows = self._public_child_projection(task)
         value["f3_children"] = [item["detail"] for item in rows]
-        if self.dashboard_setter_not_sent(task):
+        # HAMCP-181: one shared projection for every dispatch field.  The
+        # #253 values below are re-applied verbatim (value-identical rule).
+        value.update(facts.public_fields())
+        if facts.not_sent and facts.setter_not_sent:
             value.update(SETTER_NOT_SENT_FIELDS)
             for detail in value["f3_children"]:
                 if detail["dispatch_count"]:
@@ -3644,7 +3778,7 @@ class F3RuntimeIntegration:
                 **value["verification_summary"],
                 "children": [item["summary"] for item in rows],
             }
-        return value
+        return dispatch_projection.qualify_counters(value, facts)
 
     def _public_child_projection(self, task: Any) -> list[dict[str, Any]]:
         rows: list[dict[str, Any]] = []
@@ -3782,6 +3916,12 @@ class F3RuntimeIntegration:
                     and declaration["child_id"] not in lock_task_ids
                 ):
                     continue
+            # HAMCP-181 S18: the counters below are qualified by one projection.
+            item_facts = child_facts(
+                record,
+                capability=declaration.get("capability_id"),
+                child_id=declaration["child_id"],
+            )
             items.append(
                 {
                     "child_id": declaration["child_id"],
@@ -3802,6 +3942,8 @@ class F3RuntimeIntegration:
                     "intent_timestamp": None if record is None or record.dispatch_intent is None else record.dispatch_intent["committed_at"],
                     "evidence_deadline": None if record is None or record.dispatch_intent is None else record.dispatch_intent["evidence_deadline"],
                     "dispatch_count": 0 if record is None else record.dispatch_count,
+                    "dispatch_phase": item_facts.phase,
+                    "attempt_counts_basis": item_facts.attempt_counts_basis,
                     "provider_response_received": False if record is None else record.provider_response_received,
                     "observation_count": 0 if record is None else record.observation_attempts,
                     "verification_count": 0 if record is None else record.verification_attempts,
@@ -4178,6 +4320,7 @@ class F3RuntimeIntegration:
         )
         reconciliation = (self.reconciliation_items() if collected is None
                           else collected["reconciliation"])
+        dispatch_outcomes = self._dispatch_outcome_counts(collected)
         pending_reconciliation = bool(reconciliation)
         manual_recovery = any(item["lock_recovery"]["requires_manual_intervention"]
                               for item in reconciliation)
@@ -4217,6 +4360,8 @@ class F3RuntimeIntegration:
                 self.children.list() if collected is None else collected["materialized"]
             )),
             "manual_review_count": child["manual_review_count"],
+            "dispatch_outcome_counts": dispatch_outcomes,
+            "dispatch_outcome_count_basis": "f3_parent_aggregate_phase",
             "legacy_task_count": task_navigation["legacy_task_count"],
             "legacy_active_task_count": task_navigation[
                 "legacy_active_task_count"
@@ -4260,6 +4405,31 @@ class F3RuntimeIntegration:
                 "poll_interval_seconds": 0.05,
             },
         }
+
+    def _dispatch_outcome_counts(self, collected=None) -> dict[str, int]:
+        """HAMCP-181 S17: count each F3 parent once under its aggregate phase."""
+
+        if collected is None:
+            parents = [
+                task for task in self.service.task_repository.list()
+                if task.legacy_projection.get("execution_authority")
+                == F3_EXECUTION_AUTHORITY
+            ]
+            facts = [self.dispatch_facts_for_task(task) for task in parents]
+        else:
+            facts = [
+                self.dispatch_facts_for_task(
+                    task,
+                    declarations=collected["manifests"]
+                    .get(task.task_id, {})
+                    .get("declarations", ()),
+                    records=collected["records"],
+                )
+                for task in collected["parents"].values()
+                if task.legacy_projection.get("execution_authority")
+                == F3_EXECUTION_AUTHORITY
+            ]
+        return dispatch_projection.outcome_counts(facts)
 
     @staticmethod
     def _is_terminal_zero_dispatch_parent(task: Any) -> bool:
