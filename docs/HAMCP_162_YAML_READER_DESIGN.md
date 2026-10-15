@@ -1,8 +1,10 @@
 # HAMCP-162 delegated read-only YAML configuration reader — design
 
-Status: **Part 1 design report, revision 2 (correction batch after the
-independent Codex design review R1–R7, §12). Owner decisions recorded (§10);
-final owner approval follows the focused delta review.** No production code,
+Status: **Part 1 design report, revision 3.** Revision 2 was the
+correction batch after the independent Codex design review (R1–R7).
+Revision 3 corrects the delta review's R2 residual and R8 (§13). Owner
+decisions are recorded in §10; final owner approval follows the focused
+delta review of revision 3. No production code,
 policy, registry, schema, version or workflow change is part of this
 document. Nothing here authorizes a capture, deployment, live Home
 Assistant or Engineering access, registry signing, a HOLD or support-window
@@ -59,7 +61,7 @@ change, or a release.
 | Upstream call Engineering builds | `{"file": "configuration.yaml", "yaml_path": <validated>, "include_content": false, "include_parsed": true}`; the `file` value is a binary constant |
 | Readable files | `configuration.yaml` only |
 | Refused before dispatch, with zero upstream calls | any other `file` value (byte-exact comparison), and any `yaml_path` that names a credential-shaped key at any level (§3, R1) |
-| Returned | the parsed subtree only. It is projected through a positive allowlist and then YAML-aware redaction that carries the **full key path**, including the requested `yaml_path` (credential keys at any level, database and connection URIs, PEM, JWT, bearer, URL credentials). `!secret`/`!env_var` are kept as reference names only. Raw text and comments are never returned. |
+| Returned | the parsed subtree only. It is projected through a positive allowlist and then YAML-aware redaction that carries the **full key path**, including the requested `yaml_path` (credential keys at any level, PEM, JWT, bearer, URL credentials). Connection strings are **default-deny**: they are shown only when proven credential-free, and otherwise redacted whole, keeping at most the scheme. `!secret`/`!env_var` become typed reference markers (`{"secret_ref": name}`, `{"env_var_ref": name}`) that carry the name only, never a value or an `!env_var` default. Raw text and comments are never returned. |
 | Admission | an **optional reviewed tool**: compiled per-version bindings for 8.4.3 and 8.5.0 over the **complete runtime descriptor** under an explicit fingerprint model, with an explicit per-version disposition for every registry version. It is a separate optional capability in the same admission generation and dispatch-lease path as stock reads. It is outside the stock policy JSON, the stock count, the order fingerprint and the whole-catalog validator, so no existing digest, signed entry, profile id or fingerprint changes (§5). |
 | Core | the existing `core.basic_rest_read` + `core.basic_websocket_read` profiles; no signed-registry change (§5.4) |
 | Catalog | 87 public tools while the filesystem flag is off (unchanged). **88** (59 native + 29 delegated) when the flag is on and the contract is exact (§6). |
@@ -402,6 +404,18 @@ the shared sanitizer).
 A `content` field in the response is dropped and counted as a shape
 violation (§4).
 
+*Order* (made explicit in revision 3). L4 evaluates `parsed` in one walk
+over absolute paths. At each node it applies these steps in order:
+1. the reference-marker collision check;
+2. the path-context rule (a container withheld whole is never descended);
+3. reference minting;
+4. the connection-string redactor;
+5. the other value scanners;
+6. the node and depth caps with truncation.
+
+A minted marker is final, and later L4 steps skip it. L5 then runs on the
+result, and only after L5 are markers rendered.
+
 *`is_credential_key(key)`*, the single shared predicate used by L3 and L4:
 - Normalization: `str(key)`, lowercased, every run of characters outside
   `[a-z0-9]` replaced with `_`, then leading and trailing `_` stripped. This
@@ -434,12 +448,16 @@ not on the returned node alone:
   - a mapping or list is replaced whole by the same marker. Its children are
     not walked, so innocuous-looking child names below a sensitive ancestor
     (for example `credentials: {user: …, value: …}`) never appear.
-- **Reference tags under a sensitive key** (chosen behaviour, made explicit):
-  - a scalar that is exactly `!secret <name>` (pattern below) is kept, because
-    it is a reference, not a value;
-  - `!env_var NAME [default]` becomes `!env_var NAME`, and a default becomes
-    `[REDACTED:env_var_default]`;
-  - any other tag string under a sensitive key gets the marker.
+- **Reference tags under a sensitive key** (revision 3, R8): a scalar whose
+  own key is the first matching sensitive key and which is minted as a
+  **reference marker** under the *Reference markers* rule below is kept as
+  that marker. The reference name stays visible; a resolved value never
+  appears, and an `!env_var` default never appears. Every other value under
+  a sensitive key gets the credential marker. This includes a malformed
+  reference, an `!include*` tag string, and a plain string that merely
+  resembles a reference. A reference inside a container that is withheld
+  whole (for example `credentials: {password: !secret x}`) is withheld with
+  the container, because its children are not walked.
 - With L3 in place, the requested prefix never contains a credential-shaped
   segment. The rule still includes the prefix so that it is correct on its
   own: if L3 were removed, a direct `mqtt.password` selection would return
@@ -448,83 +466,247 @@ not on the returned node alone:
   therefore applied **before** the value is placed in the envelope, using the
   absolute path, and never inferred from envelope keys.
 
-*Connection-URI redactor (R2)*, scoped to this reader (no change to the
-global sanitizer's patterns). It applies to every string at any depth that
-survived the path-context rule, regardless of key name:
-- **Detection.** The string, after trimming surrounding whitespace, starts
-  with `scheme://`, where the scheme matches `[A-Za-z][A-Za-z0-9+.-]{0,31}`.
-  This covers driver-qualified SQLAlchemy forms (`postgresql+psycopg2://`,
-  `mysql+pymysql://`, `mssql+pyodbc://`), `mysql://`, `postgresql://`,
-  `sqlite://`, `mongodb+srv://`, `redis://`, `amqp://`, `mqtt://`, `http(s)://`
-  and any other scheme.
-- **Exact parse, or whole-value redaction.** The authority is the text
-  between `://` and the first `/`, `?` or `#`. The value is parsed only when
-  all of these hold:
-  - it contains no whitespace or control characters;
-  - it contains at most one `@`, and if present that `@` is inside the
-    authority;
-  - every `%` begins a valid `%XX` escape;
-  - it has no fragment (`#`);
-  - the query, if any, is a `&`-separated list where each item has at most
-    one `=`.
+*Connection-string redactor (R2; **default-deny** since revision 3)*, scoped
+to this reader (no change to the global sanitizer's patterns). A connection
+string is shown **only** when it is proven credential-free. Every other
+connection string is redacted **whole**. Revision 2 tried to name every
+place a credential can sit, and the delta review's encoded `odbc_connect`
+counterexample passed every check: the credential sat inside a parameter
+*value* whose *name* was harmless. Revision 3 inverts the burden of proof.
 
-  If any check fails, **the entire value** is replaced with
-  `[REDACTED:connection_uri_unparsed]`. A password containing an unencoded
-  `/`, `?`, `#` or a second `@` therefore never leaks through a mis-split
-  authority.
-- **Userinfo.** When parsed and the authority contains `@`, everything
-  before the `@` (user and password, plain or percent-encoded) is replaced
-  with `[REDACTED]`. The scheme, host, port, path and the credential-free
-  query stay visible. Example:
-  `mysql+pymysql://[REDACTED]@db.local:3306/ha?charset=utf8mb4`.
-- **Query credentials.** Each query parameter name is percent-decoded and
-  tested with `is_credential_key`, plus `user`, `username`, `sslkey`,
-  `sslpassword`, `sslcert` and `authsource`. A matching parameter's value is
-  replaced with `[REDACTED]`. Credential-free parameters (`charset`,
-  `unix_socket`, `sslmode`) stay visible.
-- **Keyword DSNs.** A string that is not a URI but contains, case-insensitively,
-  a `password=`, `passwd=`, `pwd=` or `pass=` assignment at a word boundary
-  (libpq or ODBC style) is replaced whole with
-  `[REDACTED:connection_string]`.
-- **Connection keys.** For a value whose own key normalizes to `db_url`,
-  `database_url`, `dsn`, `connection_string`, or ends in `_db_url`, `_dsn`
-  or `_connection_string`: a non-string value, or a string that is neither a
-  `!secret` reference nor a URI that parses under the rules above, is
-  replaced whole with `[REDACTED:connection_uri_unparsed]`.
+- **Governed values.** The rule applies to every value at any depth that
+  survived the path-context rule, regardless of key name, when any of these
+  holds:
+  1. **Connection key.** The value's own key normalizes to `db_url`,
+     `database_url`, `dsn`, `connection_string`, `conn_str`, `odbc_connect`
+     or `sqlalchemy_url`, or ends in `_db_url`, `_dsn`,
+     `_connection_string` or `_odbc_connect`. The own key is the last key
+     of the **absolute** path. For a direct selection such as
+     `recorder.db_url`, that is the last `yaml_path` segment, never the
+     envelope key `value`. Non-string values under a connection key are
+     governed too.
+  2. **Connection URI.** A string that starts with `scheme://`, where the
+     scheme matches `[A-Za-z][A-Za-z0-9+.-]{0,31}` and is **not** one of the
+     web schemes `http`, `https`, `ws` or `wss` (case-insensitive). This
+     covers every database form, driver-qualified or not (`mysql://`,
+     `mysql+pymysql://`, `postgresql+psycopg2://`, `mssql+pyodbc://`,
+     `sqlite://`, `mongodb+srv://`), the broker and stream forms (`redis://`,
+     `amqp://`, `mqtt://`, `rtsp://`) and any unknown scheme. The same holds
+     when the scheme follows leading whitespace.
+  3. **Keyword connection string.** A string that, case-insensitively,
+     either in raw form or in any of its percent-decoded forms (bounded
+     decoding, below), contains:
+     - two or more `name=value` assignments separated by `;` (ODBC style,
+       where `name` matches `[A-Za-z][A-Za-z0-9 _]{0,31}`); or
+     - one assignment whose name is a connection keyword: `driver`,
+       `server`, `dsn`, `uid`, `user id`, `pwd`, `password`, `passwd`,
+       `trusted_connection`, `integrated security`, `data source`,
+       `initial catalog`, `dbname`, `sslpassword`, `sslkey` or
+       `odbc_connect`.
+
+     libpq strings such as `host=db dbname=ha user=u password=…` are
+     caught by the `dbname`/`password` keywords.
+- **Visible only if all of these hold.** Otherwise the value is redacted
+  whole.
+  1. **It is a connection URI or a URI under a connection key.** A keyword
+     connection string, a non-URI string under a connection key, and a
+     non-string under a connection key are **never** visible. The one
+     exception is a reference marker (R8, below).
+  2. **Strict raw grammar.** The raw string is ASCII and contains no
+     whitespace (leading or trailing included), control characters or
+     `#`. It has the form `scheme "://" host [":" port] path ["?" query]`
+     with:
+     - **no userinfo**: no `@` anywhere in the string;
+     - a host that is empty, a hostname or IPv4 address
+       `[A-Za-z0-9.-]{1,253}`, or a bracketed IPv6 address
+       `\[[0-9A-Fa-f:.]{2,45}\]`, and a port of `[0-9]{1,5}`;
+     - a path matching `(/[A-Za-z0-9._~%-]*)*`, so `;`, `=`, `:`, `@`, `,`
+       and `+` in the path are refused;
+     - a query, if present, that is a non-empty `&`-separated list of items.
+       Each item has exactly one `=`, and its name and value use only
+       `[A-Za-z0-9._~%+-]`. A `;` anywhere refuses;
+     - every `%` beginning a valid `%XX` escape.
+  3. **Full, bounded percent-decoding.** Each component is decoded until
+     it no longer changes, for at most **four rounds**: the host, each path
+     segment, each query name and each query value. The value is refused
+     when any of these is true:
+     - a round meets an invalid escape;
+     - the component still changes after round four;
+     - a decoded form is not valid UTF-8 or is not ASCII;
+     - the final decoded form leaves its charset. The charsets are: a path
+       segment `[A-Za-z0-9._~-]*`; a query name `[A-Za-z0-9._-]{1,64}`; a
+       query value `[A-Za-z0-9._~+ -]{0,256}`, where `+` is checked both
+       literally and as a space.
+
+     The decoded charsets exclude `=`, `;`, `@`, `:`, `/`, `{`, `}` and
+     `%`. So a nested connection string (`odbc_connect`, a DSN-less driver
+     string, any `=`/`;` assignment list), a nested URI or a nested
+     credential can never be shown, however many times it was encoded.
+  4. **No credential-like name.** Each decoded query name is normalized
+     with `_normalize_key` and must not:
+     - match `is_credential_key`; or
+     - be one of the connection-credential names `user`, `username`,
+       `uid`, `user_id`, `userid`, `login`, `pwd`, `pass`, `passwd`,
+       `password`, `sslkey`, `sslcert`, `sslpassword`, `authsource`,
+       `authmechanism`, `odbc_connect`, `dsn`, `connection_string`,
+       `connect_args`, `trusted_connection` or `integrated_security`.
+
+     Each name must also be in the positive allowlist `charset`,
+     `unix_socket`, `sslmode`, `ssl`, `ssl_mode`, `connect_timeout`,
+     `application_name`, `timeout`, `mode`, `cache`, `check_same_thread`,
+     `encrypt`, `trustservercertificate` or `driver`. No name may appear
+     twice. No decoded value may trip a value scanner (JWT, bearer, PEM or
+     opaque blob).
+- **Redaction form.** A governed value that is not visible keeps at most
+  its scheme:
+  - if the raw string begins with a scheme that matches the grammar, it
+    becomes `<scheme>://[REDACTED:connection_uri]`. The scheme is kept
+    verbatim, for example `mssql+pyodbc://[REDACTED:connection_uri]`;
+  - otherwise (keyword strings, non-URI or non-string values under a
+    connection key, leading whitespace) it becomes
+    `[REDACTED:connection_string]`.
+
+  No host, port, path, user, database name or query fragment of a redacted
+  value survives. Either output is a single valid `REDACTION_MARKER`
+  (`E/sanitization.py`:11), optionally after a scheme, so L5 treats it as
+  an immutable delimiter.
+- **Web URIs** (`http`, `https`, `ws`, `wss`, not under a connection key)
+  stay useful for REST and webhook configuration, including templated
+  URLs. L4 still decodes the whole string and each query name and value
+  with the same bounded decoding. It replaces the whole URI with
+  `<scheme>://[REDACTED:connection_uri]` when:
+  - an `@` appears in the authority, in raw or any decoded form;
+  - a decoded query name matches `is_credential_key` or the
+    connection-credential names;
+  - a decoded query value is a keyword connection string, contains both
+    `=` and `;`, or contains a nested `scheme://`;
+  - the decoding is invalid or unstable.
+
+  The existing L5 URL patterns still run afterwards.
+- **Examples** (synthetic values):
+
+  | Input | Output |
+  |---|---|
+  | `sqlite:////config/home-assistant_v2.db` | unchanged |
+  | `mysql://db.local:3306/ha?charset=utf8mb4` | unchanged |
+  | `postgresql://db.local/ha?sslmode=require` | unchanged |
+  | `mysql://[fd00::5]:3306/ha` | unchanged |
+  | `mysql+pymysql://ha:p%40ss@db.local/ha?charset=utf8mb4` | `mysql+pymysql://[REDACTED:connection_uri]` |
+  | `mysql://ha@db.local/ha` (user only) | `mysql://[REDACTED:connection_uri]` |
+  | `mssql+pyodbc:///?odbc_connect=DRIVER%3D%7BX%7D%3BSERVER%3Ddb%3BUID%3Du%3BPWD%3D…` (the delta review's probe) | `mssql+pyodbc://[REDACTED:connection_uri]` |
+  | `mssql+pyodbc:///?odbc_connect=DRIVER%3D%7BX%7D%3BTrusted_Connection%3Dyes` (no credential) | `mssql+pyodbc://[REDACTED:connection_uri]` (nested connection string) |
+  | `postgresql://db/ha?%2550WD=x` (double-encoded `PWD` name) | `postgresql://[REDACTED:connection_uri]` |
+  | `postgresql://db/ha?application_name=%25253D` (triple-encoded `=`) | `postgresql://[REDACTED:connection_uri]` |
+  | `postgresql://db/ha?sslmode=require#x` | `postgresql://[REDACTED:connection_uri]` |
+  | `Server=db;Database=ha;Uid=u;Pwd=…` | `[REDACTED:connection_string]` |
+  | `host=db dbname=ha user=u password=…` | `[REDACTED:connection_string]` |
+  | `db_url: 42`, `db_url: "local"` | `[REDACTED:connection_string]` |
+  | `db_url: !secret recorder_db_url` | reference marker `{"secret_ref": "recorder_db_url"}` (R8) |
 - **Credential-free recorder settings stay visible**, for example
   `purge_keep_days`, `commit_interval`, `auto_purge`, `auto_repack`,
-  `db_max_retries`, `db_retry_wait`, `include`, `exclude`, a credential-free
-  `db_url` such as `sqlite:////config/home-assistant_v2.db`, and
-  `db_url: !secret recorder_db_url`.
+  `db_max_retries`, `db_retry_wait`, `include` and `exclude`. A
+  credential-free `db_url` such as `sqlite:////config/home-assistant_v2.db`,
+  or a MySQL/PostgreSQL URI without userinfo and with allowlisted
+  parameters only, stays visible.
+- **Disclosed over-match.** A credential-free database URI that uses a
+  parameter outside the allowlist, a `:` or `;` in its path (for example
+  `sqlite:///:memory:`), or userinfo with a username only is redacted to
+  its scheme. That is the accepted cost of default-deny.
 
 *Other value scanners*, on every string that survives the steps above:
 - the existing JWT, bearer, `Authorization` header, URL userinfo, URL
   credential-parameter, webhook-path and Matter patterns (`E/sanitization.py`
   :76-92). The existing URL-userinfo patterns cover only `http(s)` (:84-85),
-  which is why the connection-URI redactor above is required;
+  which is why the connection-string redactor above is required;
 - **new PEM detection**: any `-----BEGIN [A-Z0-9 ]*(PRIVATE KEY|CERTIFICATE|ENCRYPTED PRIVATE KEY|OPENSSH PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----`
   marker redacts the whole string, not just the block (the #2714 style);
 - a bare base64 run of 200 or more characters is redacted as
   `opaque_blob`.
 
-*Tags* (outside sensitive keys):
-- A string matching `^!secret [A-Za-z0-9_.-]{1,128}$` is kept. The secret
-  *name* is a reference, not a value.
-- `^!env_var ` keeps only the variable name (`!env_var NAME`). Any default
-  is replaced with `[REDACTED:env_var_default]`.
+*Reference markers* (revision 3, R8). One rule applies at every depth and
+under every key, sensitive or not:
+- **What upstream gives Engineering.** Upstream renders a tagged scalar as
+  its source text (`"!secret mqtt_password"`, `"!env_var MQTT_PW fallback"`,
+  `yaml_jsonify`, §1.1). Engineering never sees the YAML tag itself.
+- **Minting.** L4, and only L4, mints a reference marker. It does so from a
+  whole scalar string value (never a mapping key, and never a substring)
+  that matches one of these exactly:
+  - `^!secret ([A-Za-z0-9_][A-Za-z0-9_.-]{0,127})$`, which becomes
+    `SecretRef(name)`;
+  - `^!env_var ([A-Za-z_][A-Za-z0-9_]{0,127})$`, which becomes
+    `EnvVarRef(name)`;
+  - `^!env_var ([A-Za-z_][A-Za-z0-9_]{0,127}) .+$` (dot matches newline),
+    which becomes `EnvVarRef(name, default_redacted=True)`. The default is
+    discarded at once. It is never inspected, logged, counted by value or
+    forwarded, and `env_var_default` is recorded.
+
+  A name that trips any value scanner (JWT, bearer, opaque blob or a known
+  secret) is not minted.
+- **Not minted.** The following are a *malformed reference*:
+  - any other string whose first non-whitespace characters are
+    case-insensitively `!secret` or `!env_var` (for example `!secret`
+    alone, `!secret two words`, `!SECRET x`, a leading space, a name over
+    128 characters, or `!env_var 1BAD`);
+  - a matching string that trips a value scanner.
+
+  A malformed reference becomes the credential marker under a sensitive key
+  and `[REDACTED:reference_malformed]` elsewhere.
+- **Marker identity.** A marker is an instance of an Engineering-internal
+  frozen type, `ReferenceMarker` (kind `secret` or `env_var`, the name, and
+  `default_redacted`), defined in `E/sanitization.py`. No upstream data can
+  construct it: upstream output is JSON, and the only constructor call is
+  in L4's minting rule. A JSON mapping that looks like a rendered marker is
+  ordinary data. An upstream mapping whose key set is exactly `{secret_ref}`,
+  `{env_var_ref}` or `{env_var_ref, default_redacted}` is replaced whole
+  with `[REDACTED:reference_marker_collision]`, so the client can never be
+  shown a forged reference.
+- **Rendering.** After L5, and only then, the reader's envelope builder
+  serializes each marker to `{"secret_ref": "<name>"}`, `{"env_var_ref":
+  "<name>"}` or `{"env_var_ref": "<name>", "default_redacted": true}`.
+  No sanitizer runs after rendering. The node cap counts a marker as one
+  node. The response size check runs on the rendered form.
+- **Residual (disclosed; verified, `yaml_rt.py`:208-209).** A YAML string
+  literal written exactly like a tag (for example `password: "!secret
+  abc"`, quoted) renders byte-identically to a real `!secret abc` tag.
+  Engineering cannot tell them apart, so it is shown as
+  `{"secret_ref": "abc"}`. The exposure is bounded to text that matches the
+  strict name grammar and passes the value scanners. This residual is
+  listed for Josh's acceptance (§12, revision 3).
+
+*Other tags* (outside sensitive keys):
 - `!include*` strings are kept only if the target matches
   `[A-Za-z0-9_./-]{1,256}`.
 - Any other string that starts with `!` passes through the normal value
   scanners.
 
 *Accounting.* Redaction is recorded per category (`redaction.categories`:
-`credential_key`, `connection_uri`, `connection_uri_unparsed`,
-`connection_string`, `env_var_default`, `pem`, `opaque_blob`, and the existing
-sanitizer categories) and as `redacted_field_count`. `completeness` stays
+`credential_key`, `connection_uri`, `connection_string`, `env_var_default`,
+`reference_malformed`, `reference_marker_collision`, `pem`, `opaque_blob`,
+and the existing sanitizer categories) and as `redacted_field_count`. A
+preserved reference marker is not a redaction. `completeness` stays
 `complete`, because a redacted value is not missing data.
 
 **L5. The existing gateway sanitizer.** It runs last, with its usual key
-sets, `max_string` and its `response_too_large` refusal.
+sets, `max_string` and its `response_too_large` refusal. It has one
+narrow, reader-scoped addition (R8):
+- **Opt-in exemption.** `sanitize_untrusted_data(...,
+  preserve_reference_markers=False)` is a new keyword, default off. With it
+  on, the walker keeps a value only if `type(value) is ReferenceMarker` (an
+  exact type, never a subclass, and never decided by JSON shape or string
+  content) **and** its name still matches the minting grammar. This holds
+  under a sensitive key too: the check runs before the key-category
+  replacement for that item. A marker whose name fails revalidation becomes
+  `[REDACTED:reference_malformed]`.
+- **Nothing else is exempt.** A plain string such as `"!secret x"` is
+  sanitized as usual, and under a sensitive key it is replaced by the key
+  marker. So is a mapping shaped like a rendered marker, and so is any
+  other value.
+- **Default off.** With the opt-in off, which is every other tool, a
+  `ReferenceMarker` that ever reached the sanitizer is replaced by
+  `[REDACTED:reference_marker]`. It never reaches `repr()`, so a name
+  cannot leak through another tool. Output for every value that is not a
+  `ReferenceMarker` is byte-identical with the opt-in on or off.
+- Only `ha_config_get_yaml` passes the opt-in.
 
 **`!secret` values are never resolved by Engineering**: Engineering has no
 code path that reads `secrets.yaml` and will not gain one.
@@ -549,7 +731,10 @@ code path that reads `secrets.yaml` and will not gain one.
 | A symlinked `configuration.yaml` that resolves to another allowed file is readable | **Inferred** possible. The allow rule is evaluated on the requested path. L4 still applies to whatever is returned. |
 | Inline credentials are returned by upstream | Verified (no redaction in the read path) |
 | A selected credential leaf loses its key name upstream (R1) | Verified by the review's offline probe (CC:2386-2394 returns only the selected node). Engineering refuses such selections (L3) and redacts by absolute path (L4). |
-| Database URIs with userinfo pass the existing scanner (R2) | Verified by the review's offline probe (`E/sanitization.py`:84-85 match `http(s)` only). Engineering adds the connection-URI redactor (L4). |
+| Database URIs with userinfo pass the existing scanner (R2) | Verified by the review's offline probe (`E/sanitization.py`:84-85 match `http(s)` only). Engineering adds the connection-string redactor (L4). |
+| A percent-encoded ODBC DSN in an `odbc_connect` query value passes revision 2's name-based URI rule and real L5 (R2 residual) | Verified by the delta review's probe at `e6fb813`. Revision 3 makes connection strings default-deny: nested assignments, nested URIs and multiply-encoded credentials can never satisfy the decoded charsets (L4). Revision 3's rule is not yet executed; Part 2 tests and the focused review probe prove it. |
+| L5 unconditionally replaces values under sensitive keys, so an L4-preserved reference cannot survive the unchanged sanitizer (R8) | Verified (`E/sanitization.py`:341-350; delta review probe). Revision 3 adds an opt-in exemption for the internal `ReferenceMarker` type only (L5). |
+| Upstream renders a tagged scalar and a quoted string with the same text identically in `parsed` | Verified (`yaml_rt.py`:208-209, component 2.2.1 tree): `f"{node.tag} {node.value}".strip()`. A quoted literal that looks exactly like a reference is therefore shown as a reference (disclosed residual, L4 *Reference markers*). |
 | L4 catches every secret | **Not claimed.** Key and pattern redaction is best-effort over free-form configuration. An unlabeled secret value (for example `foo: s3cr3t`) cannot be recognized (D12). R1 and R2 are labeled or structurally recognizable credentials and are **not** covered by the D12 residual. Disclosed in the tool description and in `limitations`. |
 | Upstream alias expansion cannot exceed Engineering caps | Inferred; bounded by §4 caps and `response_too_large` |
 
@@ -631,7 +816,9 @@ an audit record with a fixed reason code (`yaml_read_arguments_invalid`,
   "yaml_path": <requested path, echoed>,
   "source": "disk",                              # not the loaded runtime config
   "found": bool,
-  "value": <redacted parsed> | null,             # null when not found
+  "value": <redacted parsed> | null,             # null when not found; may contain
+                                                 # reference markers {"secret_ref": ..} /
+                                                 # {"env_var_ref": .., ["default_redacted": true]}
   "completeness": "complete" | "partial",
   "limitations": [str],
   "redaction": {"redacted_field_count": int, "categories": [str]}
@@ -1031,9 +1218,11 @@ assertion moves from 30 to 31.
   - disk, not loaded runtime config;
   - mapping-key paths only; paths naming a credential key are refused;
   - includes are not followed;
-  - `!secret` names only, never values;
-  - redaction is best-effort, deliberately over-matches credential-like
-    keys, and redacts connection-string credentials;
+  - `!secret`/`!env_var` appear as typed reference markers carrying the
+    name only, never values or `!env_var` defaults;
+  - redaction is best-effort and deliberately over-matches credential-like
+    keys; connection strings are shown only when proven credential-free and
+    are otherwise redacted whole (scheme kept at most);
   - it requires ha-mcp filesystem tools and the HA-MCP custom component.
 
 **`CAPABILITY_PROVIDER_MATRIX` row** (`E/capabilities.py:437`):
@@ -1066,8 +1255,10 @@ with README.md:15/:153 and TOOL_AUDIT.md.
 **What this unlocks** (read-only):
 - **Audit F002.** Recorder settings (`yaml_path=recorder`, giving
   `purge_keep_days`, `commit_interval`, `include`, `exclude`, and `db_url`
-  with userinfo and credential parameters redacted, or the whole value
-  redacted when it cannot be parsed exactly). Database-size and free-space
+  shown only when proven credential-free, such as the default SQLite path;
+  otherwise it is redacted whole to its scheme, for example
+  `mysql+pymysql://[REDACTED:connection_uri]`, or shown as a
+  `{"secret_ref": …}` marker). Database-size and free-space
   sensor definitions, when they are inline in `configuration.yaml`.
 - **YAML-defined entities.** The audit's YAML-defined entity origin can be
   confirmed by key, for example `template`, `sensor`, `mqtt`, `command_line`
@@ -1150,32 +1341,102 @@ search every output channel for each one.
    - a mapping beneath a sensitive ancestor whose child names are innocuous
      (`credentials: {value: …, id: …}`), withheld whole;
    - integer, float, boolean and null values under sensitive keys;
-   - `password: !secret mqtt_password` kept as the reference;
-     `password: !env_var MQTT_PW fallback` loses the default;
+   - reference behaviour is tested in group 3a (final pipeline);
    - **L3 disabled by mutation:** direct `mqtt.password` and
      `mqtt.credentials` selections return only the marker as `value` (L4
      alone is correct);
    - no synthetic credential appears in the response, an error, a warning,
      `limitations` or the audit record.
-4. **R2 connection URIs** (final wrapper; `recorder` mapping and a direct
-   `recorder.db_url` selection, both):
-   - `mysql://`, `mysql+pymysql://`, `postgresql://`,
-     `postgresql+psycopg2://`, `mssql+pyodbc://` with plain userinfo;
-   - percent-encoded user and password (`p%40ss%3Aw0rd`);
-   - query-string credentials (`?password=…`, `?sslpassword=…`,
-     `?user=…&charset=utf8mb4`), with credential-free parameters kept;
-   - malformed or ambiguous values, each redacted whole: two `@`, an
-     unencoded `/` or `#` in the password, a bad `%` escape, whitespace,
-     a fragment;
-   - libpq and ODBC keyword DSNs;
-   - a non-string `db_url` and an unparseable string `db_url`;
-   - credential-free `sqlite:////config/home-assistant_v2.db` and
-     `db_url: !secret recorder_db_url` remain visible;
-   - the existing `http(s)://user:pass@` control is still redacted.
+3a. **R8 reference markers** (final pipeline, L4 then real L5 with the
+    opt-in, then rendering; never L4 alone):
+    - `password: !secret mqtt_password` gives `{"secret_ref":
+      "mqtt_password"}`, and so does `api_key: !secret k`. A non-sensitive
+      key (`broker: !secret mqtt_host`) gives a marker too;
+    - `token: !env_var TOK` gives `{"env_var_ref": "TOK"}`;
+    - `password: !env_var MQTT_PW <synthetic default>` gives
+      `{"env_var_ref": "MQTT_PW", "default_redacted": true}`. The default,
+      including a multi-word or multi-line one, appears in no channel;
+    - an ordinary sensitive string (`password: <synthetic>`) gives the
+      credential marker;
+    - malformed tags (`!secret` alone, `!secret two words`, `!SECRET x`, a
+      leading space, a 129-character name, `!env_var 1BAD d`, and a name
+      that is a JWT): the credential marker under a sensitive key and
+      `[REDACTED:reference_malformed]` elsewhere. No marker is minted;
+    - a sensitive container holding a reference (`credentials: {password:
+      !secret x}`) is withheld whole;
+    - forgery: upstream mappings `{env_var_ref: <synthetic>}`, `{secret_ref:
+      <synthetic>}` and `{env_var_ref: x, default_redacted: true}` give
+      `[REDACTED:reference_marker_collision]` (or the credential marker
+      where the key is sensitive). The synthetic value appears nowhere;
+    - L5 directly: with the opt-in on, a plain string `"!secret x"` under
+      `password` is replaced by the key marker. A `ReferenceMarker`
+      subclass instance and a marker whose name was altered to fail the
+      grammar are not preserved. With the opt-in off, a `ReferenceMarker`
+      becomes `[REDACTED:reference_marker]`, and the name appears nowhere;
+    - **other tools unchanged:** the existing sanitizer corpus gives
+      byte-identical output with the opt-in on and off, and every existing
+      sanitizer test passes unmodified;
+    - the quoted-literal residual (`password: "!secret abc"` rendered by
+      upstream exactly like a tag) is pinned as shown as a marker, which
+      documents the disclosed behaviour.
+4. **R2 connection strings, default-deny** (final wrapper; both the
+   `recorder` mapping and a direct `recorder.db_url` selection, and the
+   same value under a non-connection key):
+   - **the delta review's ODBC probe, verbatim:** `mssql+pyodbc:///?odbc_connect=`
+     plus the fully percent-encoded `DRIVER={Synthetic
+     Driver};SERVER=db.invalid;DATABASE=ha;UID=synthetic;PWD=<synthetic>`.
+     The output is exactly `mssql+pyodbc://[REDACTED:connection_uri]`;
+   - **a nested DSN behind an allowlisted name:**
+     `mssql+pyodbc://db.invalid/ha?driver=` plus the percent-encoded
+     `X;UID=synthetic;PWD=<synthetic>`, redacted whole. Only the decoded
+     value check catches this case, because `driver` is allowlisted; the
+     verbatim probe is also caught by the `odbc_connect` name check;
+   - the same credential **double- and triple-encoded** in the
+     `odbc_connect` value, in a query name (`%2550WD=…`), in a query value
+     (`?application_name=%25253D…`) and in userinfo, each redacted whole.
+     A **quadruple-encoded** variant is redacted as unstable;
+   - **mixed-case keys:** `PWD`, `Pwd`, `pWd`, `Uid`, `PassWord`,
+     `ODBC_Connect`, `Odbc-Connect` as query names, as keyword assignments
+     and as YAML connection keys;
+   - **nested `odbc_connect` with `Trusted_Connection=yes`** and no
+     credential, redacted whole. A DSN-less driver string and any value
+     with `=`/`;` pairs are redacted whole too;
+   - **malformed encodings**, each redacted whole: `%G1`, a trailing `%`,
+     `%4`, `%00`, invalid UTF-8 `%FF`, overlong `%C0%AE`, a non-ASCII
+     decoded character, a duplicate parameter name, `;` mixed with `&`,
+     `@` in the path, two `@`, a fragment, inner whitespace and leading
+     whitespace;
+   - **userinfo**: plain, user-only and percent-encoded
+     (`p%40ss%3Aw0rd`) userinfo for `mysql://`, `mysql+pymysql://`,
+     `postgresql://`, `postgresql+psycopg2://` and `mssql+pyodbc://`. Each
+     is redacted to its scheme, with no host or database name visible;
+   - query names outside the allowlist on a database URI (`?foo=bar`)
+     are redacted whole. So are credential names (`?password=…`,
+     `?sslpassword=…`, `?user=…&charset=utf8mb4`);
+   - standalone libpq and ODBC keyword strings, raw and percent-encoded,
+     give `[REDACTED:connection_string]`;
+   - a non-string `db_url`, a non-URI string `db_url` and an unknown
+     scheme are redacted;
+   - **web URIs**: `https://api.example.com/v1?entity=sensor.x` and a
+     templated REST URL stay visible. `https://host/?odbc_connect=…`,
+     `https://u:p@host`, `https://u%253Ap@host` and an
+     `?x=PWD%3Dy%3Bz` value are redacted whole. The existing
+     `http(s)://user:pass@` L5 control still holds;
+   - **credential-free values stay visible:**
+     `sqlite:////config/home-assistant_v2.db`,
+     `mysql://db.local:3306/ha?charset=utf8mb4`,
+     `postgresql://db.local/ha?sslmode=require` and `mysql://[fd00::5]:3306/ha`.
+     `db_url: !secret recorder_db_url` gives the reference marker;
+   - **every channel is searched** for the synthetic credential in raw
+     form and in its single-, double- and triple-percent-encoded forms:
+     the response, the error, the partial/truncation case (credential URI
+     both inside and beyond the node cap), warnings, `limitations` and the
+     audit record.
 5. **Other secrets in output:** inline suffix keys at depth inside lists; an
    `Authorization` header; a JWT; a PEM private key and a certificate inside
-   a string; a long base64 blob; `!secret name` kept as the name only; no
-   `content` field ever, even if the peer sends one.
+   a string; a long base64 blob; `!secret name` rendered as a
+   `{"secret_ref": name}` marker only; no `content` field ever, even if the
+   peer sends one.
 6. **Identity and shape:** a mismatched `file` or `yaml_path`; `count` above
    1 or inconsistent; `files_searched` other than 1; non-empty upstream
    `warnings`; extra fields; wrong types. Each is refused.
@@ -1248,14 +1509,30 @@ Each of the following must fail at least one test:
 - computing L4 key context from the returned node only (without the
   requested prefix);
 - walking into, rather than replacing, a container under a sensitive key;
-- dropping the connection-URI redactor, or limiting it to `http(s)`;
-- redacting only userinfo when parsing is ambiguous (instead of the whole
-  value);
+- dropping the connection-string redactor, or limiting it to `http(s)`;
+- **skipping nested query-value handling** (checking query names only):
+  the nested-DSN-behind-`driver=` case must fail. Dropping the name check
+  alone leaves the verbatim ODBC probe redacted by the value check, and a
+  separate name-only case (`?%2550WD=x`) must fail;
+- decoding only once, or with no stability bound (the double-, triple- and
+  quadruple-encoded cases fail);
+- redacting only userinfo or only the matching parameter instead of the
+  whole value;
+- dropping the positive query-name allowlist for database URIs;
+- making connection-keyword or query-name matching case-sensitive;
+- deriving the connection-key context from the envelope key instead of the
+  absolute path (the direct `recorder.db_url` case fails);
+- exempting references at L5 by JSON shape or string content instead of
+  `type(value) is ReferenceMarker`;
+- minting a marker for a malformed reference, or skipping the collision
+  check;
+- passing the L5 opt-in from any other tool, or changing default-off
+  output;
 - making key matching case- or separator-sensitive;
 - forwarding `include_content: true`;
 - passing upstream error text;
 - removing PEM detection;
-- keeping `!env_var` defaults;
+- keeping `!env_var` defaults, or keeping them inside the marker;
 - admitting on listed component hashes without the complete runtime-contract
   fingerprint, or ignoring the top-level field set;
 - counting optional tools in the order fingerprint;
@@ -1275,14 +1552,14 @@ Each of the following must fail at least one test:
 
 | File | Kind | Lines (est.) |
 |---|---|---|
-| `E/providers/upstream_yaml_reader.py` (new) | runtime: schema, L1-L3, args, identity, projection, path-context and connection-URI redaction, bounds, bindings, dispositions, optional authority | 500-600 |
-| `E/sanitization.py` | runtime: PEM and opaque-blob scanners (shared, opt-in parameter); the connection-URI redactor stays in the reader module | 30-50 |
+| `E/providers/upstream_yaml_reader.py` (new) | runtime: schema, L1-L3, args, identity, projection, path-context redaction, default-deny connection-string redaction, reference minting and rendering, bounds, bindings, dispositions, optional authority | 600-720 |
+| `E/sanitization.py` | runtime: PEM and opaque-blob scanners (shared, opt-in parameter); the `ReferenceMarker` type, the default-off `preserve_reference_markers` exemption and the default-off marker branch (R8); the connection-string redactor and reference minting stay in the reader module | 60-90 |
 | `E/providers/upstream_read_gateway.py` | runtime: optional-entry evaluation, extension-aware coordinator installation, routing through the existing lease path, `optional_tools` reporting | 180-250 |
 | `E/upstream_tool_policy.py` | runtime: optional binding load, model check, version-set assertion | 50-80 |
 | `E/ha_mcp_readmission/ha_mcp.py` | runtime: extension on `compiled_exact` selection, authority material, observation of the optional contract | 60-100 |
 | `E/ha_mcp_readmission/coordinator.py`, `models.py` | runtime: stock-plus-extension surface profiles, `optional` flag, aggregate exclusion | 60-100 |
 | `E/ha_core_readmission/routes.py`, `E/capabilities.py`, tool registration | runtime | 40-60 |
-| **Runtime total** | | **~920-1,240** |
+| **Runtime total** | | **~1,050-1,400** |
 | `tests/test_hamcp162_yaml_reader.py` + fixtures generator | tests | 1,500-1,900 |
 | Coordinator and selector regression tests (extension, aggregate isolation, leases) | tests | 250-350 |
 | Count-assertion updates (§6) | tests and scripts | ~60 |
@@ -1347,8 +1624,9 @@ acceptance contract follows the beta.8 shape:
 | F15 | Adding a provider surface would change the family descriptors and every `family_admission` record | `E/compatibility_family.py:59-62, :411, :849` | per-tool explicit dispositions instead (D2) |
 | F16 | With the flag on, backup and lifecycle whole-catalog validation already refuses (both surfaces `held` for 8.4.3 and 8.5.0, so no loss today) | `E/providers/operational_backup.py:326` | unchanged; noted for when those holds lift |
 | F17 | A selected credential leaf or sensitive ancestor loses its key name in the returned node (review R1) | CC:2386-2394; review probe | L3 refusal and L4 absolute-path redaction (§2.2) |
-| F18 | The existing URL-userinfo scanner covers `http(s)` only, so database URIs pass unredacted (review R2) | `E/sanitization.py`:84-85; review probe | reader-scoped connection-URI redactor (§2.2) |
+| F18 | The existing URL-userinfo scanner covers `http(s)` only, so database URIs pass unredacted (review R2). A name-based URI rule still misses a percent-encoded ODBC DSN in `odbc_connect` (delta review R2 residual) | `E/sanitization.py`:84-85; review and delta-review probes | reader-scoped **default-deny** connection-string redactor (§2.2, revision 3) |
 | F19 | Home Assistant loads only `configuration.yaml`; `configuration.yml` is neither a Core configuration file nor on the component allowlist (review R6) | HAC:40; CC:267-279 | byte-exact single-file L1 refuses `.yml` |
+| F21 | Upstream renders a tagged scalar as its source text, which is identical to a quoted string with the same text, and the unchanged final sanitizer replaces any value under a sensitive key (delta review R8) | `yaml_rt.py`:208-209; `E/sanitization.py`:341-350 | L4-minted internal `ReferenceMarker` type with a default-off L5 exemption by exact type; quoted-literal residual disclosed (§2.2, revision 3) |
 | F20 | The current coordinator installs one profile per surface and aggregates all declared capabilities, so an attached-only route can neither pass `acquire_route` nor be added without affecting the stock aggregate (review R5) | `coordinator.py:147`, :452-500, :723-802 | extension profile, aggregate isolation, existing lease path (§5.2) |
 
 ## 10. Owner decisions (recorded 2026-10-15)
@@ -1376,7 +1654,8 @@ authorizes implementation, capture, release or deployment before that.
 
 ## 11. Non-actions in Part 1
 
-These apply to revision 1 and to the revision 2 correction batch.
+These apply to revision 1, the revision 2 correction batch and the
+revision 3 correction batch.
 
 - No production code, schema, policy, registry, signed-registry, HOLD,
   support-window, version, `.release/`, workflow or stable-v1 change.
@@ -1395,7 +1674,7 @@ a focused delta review follows.
 | Finding | Severity | Resolution in revision 2 | Where |
 |---|---|---|---|
 | R1: selecting a credential leaf or ancestor strips the key context | High | Both: pre-dispatch refusal of any credential-shaped `yaml_path` segment (L3), **and** absolute-path redaction that includes the requested prefix and replaces whole values and containers (L4). Reference-tag behaviour made explicit. Final-wrapper tests across leaf, parent, nested, list, numeric and every output channel | §2.2 L3/L4, §3, §8.1 groups 2-3, §8.2 |
-| R2: database URIs bypass the `http(s)`-only scanner | High | Reader-scoped connection-URI redactor: any scheme including driver-qualified forms; userinfo and credential query parameters redacted; the whole value redacted when parsing is not exact; keyword DSNs; connection keys; credential-free recorder settings kept | §2.2 L4, §8.1 group 4 |
+| R2: database URIs bypass the `http(s)`-only scanner | High | Reader-scoped connection-URI redactor: any scheme including driver-qualified forms; userinfo and credential query parameters redacted; the whole value redacted when parsing is not exact; keyword DSNs; connection keys; credential-free recorder settings kept. **Superseded by revision 3's default-deny rule (§13)** | §2.2 L4, §8.1 group 4 |
 | R3: the package glob reads Engineering-denied names upstream; independence claim false | Medium | **Resolved by scope removal** (D4/D5): no glob and no `packages/`; the upstream `file` is a binary constant naming the one allowlisted file; zero upstream calls for any other path. Independence claim replaced with the true L1/L2 relationship and matching tests | §0, §2.2 L1/L2, §3, §8.1 group 2 |
 | R4: optional bindings omit complete runtime-descriptor coverage | Medium | Binding on the complete runtime-contract fingerprint under the release's explicit model (v2 projection only), plus an exact top-level field set; component hashes are diagnostic only; mutation tests for every top-level field including `_meta` and `execution` | §5.2, §8.1 group 10 |
 | R5: post-profile attachment lacks a generation, authority and lease contract | Medium | Optional extension profile on `compiled_exact` selections only, in the authority fingerprint; stock-plus-extension coordinator profiles; aggregate isolation; same generation, live revalidation, `acquire_route` and `commit_route` path; retirement refuses before dispatch; signed selections never carry it | §5.2, §5.3, §8.1 group 11, §8.3 |
@@ -1414,3 +1693,28 @@ match flattened, no glob warnings), §5.4 (no `list_files`), §6 description,
   additively and needs its own review.
 - **8.6.0 and later** bindings follow their HOLD decisions (D7).
 - **Analysis consumers** adopt the reader in a separate task (D13).
+
+## 13. Revision 3: R2 residual and R8 correction
+
+**Source.** The focused Codex design delta review of PR #260 at `e6fb813`
+returned *needs corrections*. R1 and R3–R7 are resolved. The R2 residual
+remains High, and R8 is a new Low finding. There are no Critical findings.
+This is a docs-only correction batch, and a focused delta review of
+revision 3 follows.
+
+| Finding | Severity | Resolution in revision 3 | Where |
+|---|---|---|---|
+| R2 residual: a percent-encoded ODBC DSN in an `odbc_connect` query value passes the name-based URI rule and real L5 | High | **Default-deny** for connection strings. These are values under connection keys (judged by the absolute path, so a direct `recorder.db_url` selection is included), every non-web `scheme://` URI, and keyword connection strings. A value is visible only if it passes a strict raw grammar (no userinfo, no `;`, no fragment, exact query items) **and**, after decoding every component until stable (at most four rounds), stays inside decoded charsets that exclude `=`, `;`, `@`, `:`, `/`, `{`, `}` and `%`. It must also have no credential-like or non-allowlisted query name and no duplicate name. Otherwise the whole value is redacted, keeping at most the scheme. Web URIs stay useful but are redacted whole on any userinfo, credential name, nested connection string or nested URI, or unstable encoding. Credential-free SQLite, MySQL and PostgreSQL URIs stay visible | §2.2 L4 *Connection-string redactor*, §8.1 group 4, §8.2 |
+| R8: L4-preserved references conflict with the unchanged L5 | Low | One rule: L4 alone mints an internal frozen `ReferenceMarker` from a whole scalar that matches a strict `!secret`/`!env_var` grammar. The `!env_var` default is discarded at minting. L5 gains a **default-off** `preserve_reference_markers` opt-in that keeps only `type(value) is ReferenceMarker` with a revalidated name, including under sensitive keys. Plain strings and mappings shaped like a marker get no exemption, and forged marker shapes are redacted. Markers render after L5 as `{"secret_ref": name}` / `{"env_var_ref": name[, "default_redacted": true]}`. Other tools are byte-identical, and a marker reaching a default-off sanitizer is redacted | §2.2 L4 *Reference markers*, L5, §4, §8.1 group 3a, §8.2 |
+
+Also updated: the status line, the §0 summary, §2.3, the §4 `value` note,
+the §6 description, the §7 F002 example, the §8.3 sizes (still one PR,
+under the threshold), F18, the new F21, and §11.
+
+**For Josh's final approval** (a disclosed residual, not a new product
+decision): a YAML string literal written exactly like a tag (`"!secret
+abc"`, quoted) renders identically upstream (`yaml_rt.py`:208-209), so it
+is shown as a reference marker. The exposure is limited to text matching
+the strict name grammar that passes the value scanners. The alternative is
+to drop reference preservation under sensitive keys entirely. Revision 3
+keeps preservation, as the brief directs.
