@@ -17,12 +17,16 @@ inferred from omission:
   `provider_dispositions` object naming exactly the four surfaces with
   `admitted`, `partial` or `held`.
 - The five legacy entries (7.14.1, 7.14.2, 8.0.0, 8.1.0 and 8.2.0) now declare
-  the dispositions they effectively had, each backed by recorded review
-  evidence. No surface moved to `held`.
+  their dispositions explicitly. 7.14.1, 7.14.2, 8.0.0 and 8.1.0 keep all four
+  surfaces `admitted`; each is backed by capability-specific review evidence.
+- ha-mcp 8.2.0 backup and lifecycle are now `held` (owner decision). Their only
+  evidence is the whole-release admission commit plus CI, not a
+  capability-specific review. 8.2.0 read gateway and dashboard stay `admitted`.
 
-Effective behavior is unchanged for all ten compiled entries. Production
-ha-mcp 8.5.0 keeps read gateway and dashboard `admitted` and backup and
-lifecycle `held`, and its entry is byte-identical.
+That is the only effective change across the ten compiled entries. 8.1.1 and
+8.4.1 onward are unchanged. Production ha-mcp 8.5.0 and rollback ha-mcp 8.4.3
+keep read gateway and dashboard `admitted` and backup and lifecycle `held`, and
+both entries are byte-identical.
 
 **F3 re-apply checks the approved hash (F-01).** Re-applying a plan whose F3
 task already exists now validates the caller's `expected_plan_hash` exactly as
@@ -38,8 +42,10 @@ Assistant supplies no user identity. Decisions made that way used to report
 administrator decided through the separate channel, not which administrator.
 The decisions now report:
 - `principal_separation_enforced: false`;
-- a new `principal_separation_status` object,
+- in the existing `principal_separation_status` object,
   `{evaluated: true, enforced: false, reason: anonymous_fallback_principal}`.
+  The `anonymous_fallback_principal` reason is new; beta.10 already exposed
+  the object, derived from the stored flag.
 
 An identified principal still reports `true` with
 `external_administrator_distinct`. An undecided plan reports `null` with
@@ -60,11 +66,19 @@ rather than a declared constant. An unpinned generated label fails the guard.
 
 The healthy catalog remains **87 tools: 59 native and 28 delegated reads**.
 
-Downgrade: beta.10 reads every beta.11 record. A downgraded server returns to
-displaying `principal_separation_enforced` from the stored value and loses
-the status object. A beta.11 anonymous-fallback approval is stored as `false`,
-and beta.10 refuses to apply that approval, so decide pending approvals again
-after a downgrade. A downgraded server also returns to defaulting absent
-dispositions to `admitted` and to the unchecked F3 re-apply hash.
+Downgrade: beta.10 reads every beta.11 record. It keeps the
+`principal_separation_status` object but derives it, and
+`principal_separation_enforced`, from the stored flag again:
+- A beta.11 anonymous-fallback decision is stored as `false`. beta.10 reports
+  it as `false` with reason `external_principal_not_distinct`, and refuses to
+  apply that approval. Apply or reject pending approved plans before a
+  downgrade, or decide them again after it.
+- A pre-beta.11 anonymous-fallback decision is stored as `true`. beta.10 again
+  reports it as `true` with `external_administrator_distinct`, overstating
+  separation as it did before beta.11.
+
+A downgraded server also returns to defaulting absent dispositions to
+`admitted`, so ha-mcp 8.2.0 backup and lifecycle are admitted again, and to the
+unchecked F3 re-apply hash.
 
 Follow the [beta.11 acceptance contract](V2_4_1_BETA11_ACCEPTANCE.md).

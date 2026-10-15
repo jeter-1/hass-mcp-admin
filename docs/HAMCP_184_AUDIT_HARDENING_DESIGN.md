@@ -9,6 +9,11 @@ Status: implemented on `agent/HAMCP-184-audit-hardening` for Engineering
 - Owner decisions (Josh, 2026-10-14/15): F-02 is honest reporting only (a named
   approver is not required; who can approve and how is unchanged). F-05 also
   covers the five legacy compiled entries (7.14.1–8.2.0) without dispositions.
+  After the independent review (finding R1, per-entry evidence): ha-mcp 8.2.0
+  backup and lifecycle are `held`; 7.14.1, 7.14.2, 8.0.0 and 8.1.0 stay
+  admitted on every surface; 8.1.1 and 8.4.1 onward are unchanged.
+- The branch merges `origin/main` `38ce701` (#259, HAMCP-187 docs only; still
+  beta.10) with a merge commit.
 - Production is ha-mcp 8.5.0. ha-mcp 8.7.0 adoption is parked and out of scope.
 
 Path prefix: `R/` = `hass_mcp_engineering_beta/ha_mcp_engineering/`.
@@ -20,7 +25,7 @@ Path prefix: `R/` = `hass_mcp_engineering_beta/ha_mcp_engineering/`.
 | File | Finding | Change |
 | --- | --- | --- |
 | `R/upstream_tool_policy.py` | F-05 | `provider_disposition` returns `held` for an absent surface or unknown value; the loader requires `provider_dispositions` on every reviewed entry. |
-| `R/upstream_release_registry.json` | F-05 | Explicit `provider_dispositions` added to 7.14.1, 7.14.2, 8.0.0, 8.1.0 and 8.2.0 (canonical JSON). No other field changed. |
+| `R/upstream_release_registry.json` | F-05 | Explicit `provider_dispositions` added to 7.14.1, 7.14.2, 8.0.0, 8.1.0 and 8.2.0 (canonical JSON); 8.2.0 backup and lifecycle are `held`. No other field changed. |
 | `R/f3_runtime/runtime.py` | F-01 | `_apply` existing-task branch validates `expected_plan_hash` before any state change. |
 | `R/governance/service.py` | F-02 | The approval module that sets `principal_separation_enforced`: truthful writer, projection and an unchanged-eligibility gate. |
 | `R/governance/models.py` | F-02 | Comment on `ChangeApproval.principal_separation_enforced` only (same approval module family; no schema or behavior change). |
@@ -65,11 +70,15 @@ dispositions.
    with exactly the four `PROVIDER_SURFACES` and closed-set values. An absent
    entry gives `release_registry_entry_fields_invalid`. A null, missing,
    extra or unknown value gives `release_registry_provider_dispositions_invalid`.
-3. Each legacy entry declares what it effectively received before.
+3. Each legacy entry declares its dispositions explicitly. Where
+   capability-specific review evidence exists, that is what it effectively
+   received before. Where it does not (8.2.0 backup and lifecycle), the
+   surface is `held`.
 
-**Per-release decisions.** Each decision is backed by review evidence; none
-relies on the old default alone. Evidence was gathered read-only from the
-current source and history.
+**Per-release decisions.** Every `admitted` value is backed by
+capability-specific review evidence; none relies on the old default alone.
+Evidence was gathered read-only from the current source and history, and the
+independent review checked it per entry.
 
 | Release | read_gateway | dashboard | backup | lifecycle | Basis |
 | --- | --- | --- | --- | --- | --- |
@@ -77,9 +86,16 @@ current source and history.
 | 7.14.2 | admitted | admitted | admitted | admitted | Same as 7.14.1. Also has the F3 dashboard exact setter contract. |
 | 8.0.0 | admitted | admitted | admitted | admitted | Exact policy. Read_v3 attestation. Beta 14 exact-release backup/lifecycle validator. STRUCTURED_V1 lifecycle contract. |
 | 8.1.0 | admitted | admitted | admitted | admitted | Exact policy (78 tools). Read_v3 attestation. 8.1.0 review §backup/lifecycle "exact-release reviewed". STRUCTURED_V1 contract. |
-| 8.2.0 | admitted | admitted | admitted | admitted | Exact whole-release admission (5ddbfc3). It added 8.2.0 to the lifecycle response contracts and the add-on runtime planning profile. Read_v3 attestation and F3 dashboard setter. |
+| 8.2.0 | admitted | admitted | **held** | **held** | Read_v3 attestation and F3 dashboard setter support read gateway and dashboard. Backup and lifecycle have only the exact whole-release admission (5ddbfc3), which added 8.2.0 to the lifecycle response contracts and the add-on runtime planning profile, plus CI. No capability-specific backup or lifecycle review exists, so both are held (owner decision on review finding R1). |
 
-No legacy surface was found to lack review, so none moves to `held`.
+**8.2.0 backup and lifecycle (owner decision).** The independent review found
+the 8.2.0 evidence sufficient for whole-release, catalog and dashboard
+admission but not a capability-specific backup or lifecycle decision. Josh
+decided both are `held`. The backup and lifecycle providers now refuse an
+8.2.0 catalog with `upstream_version_mismatch` before dispatch. This removes
+reachability; it adds none. Planning-only coverage and response contracts for
+8.2.0 stay in source and are unaffected. Readmitting either surface needs a
+capability-specific review and a new owner decision.
 
 Two points are narrower than "admitted" implies, and both are unchanged.
 Neither is created by the disposition:
@@ -88,17 +104,20 @@ Neither is created by the disposition:
   versions have no F3 exact dashboard setter contract (`f3_dashboard/provider.py`).
   `partial` was not used: today only `admitted` passes the dashboard read gate,
   so `partial` would remove reviewed dashboard reads.
-- **Backup and lifecycle on 8.0.0–8.2.0.** These were accepted for planning and
-  fixture runs; live apply was left to a production canary. Every other
+- **Backup and lifecycle on 8.0.0 and 8.1.0.** These were accepted for planning
+  and fixture runs; live apply was left to a production canary. Every other
   per-version gate still applies (catalog validator, response contracts).
-- **8.2.0 backup and lifecycle (owner attention).** The evidence is an exact
-  admission commit plus CI, not backup- or lifecycle-specific prose.
 
 **Unchanged entries.**
 
 - 8.1.1 keeps its family-admission explicit all-admitted dispositions.
 - 8.4.1, 8.4.3, 8.5.0 and 8.6.0 keep backup/lifecycle `held` and
-  dashboard/read_gateway `admitted`, byte for byte.
+  dashboard/read_gateway `admitted`, byte for byte. In particular the
+  production 8.5.0 entry (canonical SHA-256
+  `21640b41468b0eea68445331c0d4545fa0715df05ebf7cdcb35e934c46ee6659`) and the rollback
+  8.4.3 entry
+  (`e106412d0f5d124f9ed9f4b974539d355089170fb79b1295513fe374ab973afa`) are
+  byte-identical to base.
 
 **Before/after effective dispositions.** Values come from
 `provider_disposition()` on base `b249738` and on this branch.
@@ -110,13 +129,17 @@ Neither is created by the disposition:
 | 8.0.0 | A, A, A, A | A, A, A, A | no → yes |
 | 8.1.0 | A, A, A, A | A, A, A, A | no → yes |
 | 8.1.1 | A, A, A, A | A, A, A, A | yes → yes |
-| 8.2.0 | A, A, A, A | A, A, A, A | no → yes |
+| **8.2.0** | **A, A, A, A** | **A, A, held, held** | no → yes (**backup and lifecycle → held**) |
 | 8.4.1 | A, A, held, held | A, A, held, held | yes → yes |
 | 8.4.3 | A, A, held, held | A, A, held, held | yes → yes |
 | **8.5.0 (production)** | **A, A, held, held** | **A, A, held, held** | yes → yes (entry bytes unchanged) |
 | 8.6.0 | A, A, held, held | A, A, held, held | yes → yes |
 
 (A = `admitted`; column order is read_gateway, dashboard, backup, lifecycle.)
+The 8.2.0 backup and lifecycle cells are the only effective change.
+`tests/test_hamcp184_provider_dispositions_fail_closed.py` pins both tables,
+asserts that exactly those two cells differ, and proves both providers refuse
+8.2.0 before dispatch while 8.1.0 passes the disposition gate.
 
 **Compatibility checks.**
 
@@ -232,4 +255,5 @@ The limits, verbatim: "No live HA. No signed-registry, HOLD, support-window or
 stable-v1 changes. No reviewer sessions (Codex reviews). Draft only; no Ready."
 
 The batch also adds no new write reachability, dispatch path, fallback or
-provider route, and makes no approval-eligibility change.
+provider route, and makes no approval-eligibility change. The one
+reachability change is a removal: ha-mcp 8.2.0 backup and lifecycle are held.

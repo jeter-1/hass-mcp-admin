@@ -7,9 +7,10 @@ Builds on 2.4.1-beta.10's truthful dispatch facts.
 - Fail closed on provider dispositions (F-05): an absent surface or unknown
   value reads `held`, and the registry loader refuses a reviewed entry without
   explicit dispositions for all four provider surfaces. The five legacy
-  entries (7.14.1-8.2.0) now declare the dispositions they effectively had;
-  effective admission is unchanged for every entry, and the production 8.5.0
-  entry is byte-identical.
+  entries (7.14.1-8.2.0) now declare their dispositions explicitly. ha-mcp
+  8.2.0 backup and lifecycle become `held` (no capability-specific review);
+  every other effective disposition is unchanged, and the production 8.5.0 and
+  rollback 8.4.3 entries are byte-identical.
 - Validate the caller's `expected_plan_hash` on F3 re-apply of an existing
   task (F-01), refusing an empty or wrong hash with `approval_hash_mismatch`
   before any dispatch or state change. A matching replay is unchanged.

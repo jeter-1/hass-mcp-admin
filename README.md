@@ -2,7 +2,8 @@
 
 Engineering **2.4.1-beta.11** hardens four audit findings (HAMCP-184): provider
 dispositions fail closed and every compiled ha-mcp release declares them
-explicitly (effective admission unchanged, including production 8.5.0), F3
+explicitly (ha-mcp 8.2.0 backup and lifecycle become held; all other
+admission unchanged, including production 8.5.0 and rollback 8.4.3), F3
 re-apply validates the approved plan hash, approvals decided by the anonymous
 Ingress fallback principal no longer report `principal_separation_enforced:
 true` (reporting only; eligibility unchanged), and the CI runner guard checks

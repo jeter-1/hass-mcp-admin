@@ -16,6 +16,9 @@ Bind the following:
   - F-02 is honest reporting only. A named approver is not required, and who
     can approve, and how, is unchanged.
   - F-05 also covers the five legacy compiled entries (7.14.1–8.2.0).
+  - Following the independent review (R1), ha-mcp 8.2.0 backup and lifecycle
+    are `held`: they have no capability-specific review evidence. 7.14.1,
+    7.14.2, 8.0.0 and 8.1.0 stay admitted on every surface.
 - the base `main` (2.4.1-beta.10 at `b249738`), and every later main merge
   into the branch;
 - the final reviewed commit and tree.
@@ -57,9 +60,11 @@ Offline source evidence must prove each of the following.
 
 **F-05.**
 - Every compiled registry entry declares exactly the four provider surfaces.
-- The effective dispositions of all ten entries equal the pre-HAMCP-184 table
-  in the design note, and 8.5.0 is exactly read gateway and dashboard
-  `admitted`, backup and lifecycle `held`.
+- The effective dispositions of all ten entries equal the after table in the
+  design note. The only difference from the pre-HAMCP-184 table is 8.2.0
+  backup and lifecycle, now `held`; both providers refuse 8.2.0 before
+  dispatch. 8.5.0 and 8.4.3 are exactly read gateway and dashboard
+  `admitted`, backup and lifecycle `held`, with byte-identical entries.
 - An absent entry, null, missing surface, extra surface, unknown value or
   non-object is refused at load.
 - The accessor returns `held` for absent and unknown values.
