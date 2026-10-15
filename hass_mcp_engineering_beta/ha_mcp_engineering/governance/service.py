@@ -115,6 +115,17 @@ from .resources import (
     validate_resource,
 )
 from ..f3_runtime.health_scan import HealthScanFence
+from ..f3_runtime.dispatch_facts import (
+    PHASE_ALREADY_PRESENT,
+    PHASE_INTENT_RECORDED_NOT_SENT,
+    PHASE_PRE_INTENT,
+    SENT_PHASES,
+    DispatchFacts,
+    dispatch_facts as f3_dispatch_facts,
+    legacy_dispatch_facts,
+    outcome_counts as dispatch_outcome_counts,
+    qualify_counters as dispatch_qualify_counters,
+)
 from .storage import (
     ChangePlanRepository,
     ChangePlanStorageError,
@@ -129,6 +140,7 @@ from .task_models import (
     parse_task_timestamp,
 )
 from .task_storage import (
+    F3_EXECUTION_AUTHORITY,
     ExecutionTaskRepository,
     ExecutionTaskStorageError,
     TaskHealthSnapshotSuperseded,
@@ -1739,7 +1751,6 @@ class ChangeGovernanceService:
             "terminal_outcome": task.terminal_outcome,
             "result_status": result_status,
             "error_code": error_code,
-            "provider_dispatch_occurred": bool(task.dispatched_at),
             "approval_consumed": self._task_approval_consumed(task),
             "approval_authority_version": (
                 task.approval_reference.get("authority_version")
@@ -1762,6 +1773,11 @@ class ChangeGovernanceService:
             "fallback_occurred": False,
             "fallback": "none",
         }
+        # HAMCP-181 S12: new entries derive the dispatch fields from the
+        # shared projection; historical audit records are not rewritten.
+        facts = self._dispatch_facts(task)
+        safe["provider_dispatch_occurred"] = facts.provider_dispatch_occurred
+        safe["dispatch_phase"] = facts.dispatch_phase
         if self.audit:
             self.audit.write(safe)
         log_event(
@@ -1884,30 +1900,129 @@ class ChangeGovernanceService:
             ApprovalState.CONSUMED.value
         )
 
+    def _dispatch_facts(self, task: ExecutionTask) -> DispatchFacts:
+        """The shared HAMCP-181 display projection; never authority.
+
+        Eligibility, claim, rollback admission and cancellation keep their
+        stored-intent predicates (``_task_is_dispatched``).  Without a
+        readable F3 child manifest an F3 task projects as uncertain (c).
+        """
+
+        if task.legacy_projection.get("execution_authority") != "f3_child_sequence":
+            return legacy_dispatch_facts(task)
+        if self.f3_runtime is None:
+            return f3_dispatch_facts(task=task, children=None)
+        try:
+            return self.f3_runtime.dispatch_facts_for_task(task)
+        except Exception:
+            return f3_dispatch_facts(task=task, children=None)
+
+    @staticmethod
+    def duplicate_apply_message(facts: DispatchFacts) -> str:
+        """Phase-derived duplicate-apply wording (HAMCP-181 S10, F-03)."""
+
+        if facts.dispatch_phase in {PHASE_PRE_INTENT, PHASE_ALREADY_PRESENT}:
+            return (
+                "The operational apply already ended without a dispatch "
+                "intent and will not be repeated."
+            )
+        if facts.dispatch_phase == PHASE_INTENT_RECORDED_NOT_SENT:
+            return (
+                "The operational apply recorded its single dispatch intent, "
+                "but the provider call was not sent; it will not be repeated."
+            )
+        return (
+            "The operational apply already recorded its single dispatch "
+            "intent and will not be repeated."
+        )
+
+    @staticmethod
+    def cancel_refusal_message(facts: DispatchFacts) -> str:
+        """Phase-derived cancellation-refusal wording (HAMCP-181 S11)."""
+
+        if facts.dispatch_phase in {PHASE_PRE_INTENT, PHASE_ALREADY_PRESENT}:
+            return (
+                "The execution task can no longer be cancelled in its current "
+                "state; no dispatch intent was recorded."
+            )
+        return (
+            "An execution task cannot be cancelled after dispatch intent "
+            "was recorded."
+        )
+
     def _task_plan_projection(
-        self, task: ExecutionTask
+        self, task: ExecutionTask, *, facts: DispatchFacts | None = None
     ) -> dict[str, Any]:
+        facts = facts if facts is not None else self._dispatch_facts(task)
         value = {
             "record_kind": "f1_execution_task",
             "task_id": task.task_id,
             "task_state": task.state.value,
             "terminal_outcome": task.terminal_outcome,
             "updated_at": task.updated_at,
-            "provider_dispatch_occurred": self._task_is_dispatched(task),
+            "provider_dispatch_occurred": facts.provider_dispatch_occurred,
         }
 
         if task.legacy_projection.get("execution_authority") == "f3_child_sequence":
             # Use the same authoritative parent/child projection as the task
             # reader. Legacy operational verification remains historical data.
             public_task = (
-                self.f3_runtime.decorate_task(task)
+                self.f3_runtime.decorate_task(task, facts=facts)
                 if self.f3_runtime is not None
                 else self._public_task(task, include_events=False)
             )
             value["verification_summary"] = deepcopy(
                 public_task["verification_summary"]
             )
+        # HAMCP-181 S4/S5: additive qualifiers from the same facts object.
+        projected = facts.public_fields()
+        projected.pop("provider_dispatch_occurred")
+        value.update(projected)
         return value
+
+    @staticmethod
+    def _project_f3_operational_block(
+        value: dict[str, Any], task: ExecutionTask, facts: DispatchFacts
+    ) -> None:
+        """Project the legacy contract-v3 block of an F3 plan truthfully.
+
+        No F3 writer updates ``plan.operational.dispatch`` or
+        ``plan.operational.verification``; the stored block stays untouched
+        and only this public copy is derived from the shared facts and the
+        authoritative execution-task verification summary (HAMCP-181 S16).
+        """
+
+        operational = value.get("operational")
+        if not isinstance(operational, dict):
+            return
+        dispatch = dict(operational.get("dispatch") or {})
+        dispatch.update(
+            {
+                "dispatched": facts.provider_dispatch_occurred,
+                "attempt_count": len(task.provider_attempts),
+                "provider_response_received": facts.dispatch_phase in SENT_PHASES,
+                "projection_source": "f3_dispatch_facts",
+                "authoritative_dispatch_field": "execution_task",
+                "dispatch_phase": facts.dispatch_phase,
+                "attempt_counts_basis": facts.attempt_counts_basis,
+                "attempt_count_scope": "parent_sum_of_child_intents",
+                "dispatched_at_basis": facts.dispatched_at_basis,
+                "dispatch_intent_recorded_at": facts.dispatch_intent_recorded_at,
+                "provider_response_recorded_at": (
+                    facts.provider_response_recorded_at
+                ),
+            }
+        )
+        operational["dispatch"] = dispatch
+        verification = operational.get("verification")
+        summary = value.get("execution_task", {}).get("verification_summary")
+        if isinstance(verification, dict) and isinstance(summary, dict):
+            status = summary.get("status")
+            operational["verification"] = {
+                **verification,
+                "status": status if isinstance(status, str) else "unknown",
+                "projection_source": "execution_task.verification_summary",
+            }
 
     def _public_task(
         self, task: ExecutionTask, *, include_events: bool = True
@@ -1920,6 +2035,13 @@ class ChangeGovernanceService:
             value["lifecycle_events"] = events[-100:]
             value["events_truncated"] = len(events) > 100
         return value
+
+    def _public_task_with_facts(
+        self, task: ExecutionTask, facts: DispatchFacts
+    ) -> dict[str, Any]:
+        value = self._public_task(task)
+        value.update(facts.public_fields())
+        return dispatch_qualify_counters(value, facts)
 
     def get_execution_task(self, task_id: str) -> dict[str, Any]:
         task = self._load_task(task_id)
@@ -1970,7 +2092,12 @@ class ChangeGovernanceService:
                 continue
             if plan_id and task.plan_id != plan_id:
                 continue
-            summaries.append(self._public_task(task, include_events=False))
+            # HAMCP-181 S6: the summary carries the same facts and counter
+            # qualifiers as get_execution_task.
+            facts = self._dispatch_facts(task)
+            summary = self._public_task(task, include_events=False)
+            summary.update(facts.public_fields())
+            summaries.append(dispatch_qualify_counters(summary, facts))
             if len(summaries) >= max(1, min(int(limit), 100)):
                 break
         return {"count": len(summaries), "tasks": summaries}
@@ -2002,14 +2129,14 @@ class ChangeGovernanceService:
                         ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH.value
                     ),
                 )
+                facts = self._dispatch_facts(task)
                 raise GovernanceError(
                     ErrorCode.CANCELLATION_NOT_PERMITTED_AFTER_DISPATCH,
+                    self.cancel_refusal_message(facts),
                     details={
                         "task_id": task.task_id,
                         "task_state": task.state.value,
-                        "provider_dispatch_occurred": (
-                            self._task_is_dispatched(task)
-                        ),
+                        **facts.public_fields(),
                     },
                 )
             self._record_task_event(
@@ -2431,6 +2558,14 @@ class ChangeGovernanceService:
                     "rollback_available": False,
                 }
             )
+            f3_facts = self._f3_plan_dispatch_facts(plan)
+            if f3_facts is not None:
+                # HAMCP-181 S16: F3 never writes the legacy block, so an
+                # F3-backed plan audit derives from the shared facts.
+                safe["provider_dispatch_occurred"] = (
+                    f3_facts.provider_dispatch_occurred
+                )
+                safe["dispatch_phase"] = f3_facts.dispatch_phase
             if failure_category is not None:
                 safe["failure_category"] = failure_category
             if failure_stage is not None:
@@ -2616,7 +2751,28 @@ class ChangeGovernanceService:
             self._apply_challenge_expiration_state(projected)
         return projected
 
-    def _public(self, plan: ChangePlan, *, include_configs: bool = True) -> dict[str, Any]:
+    def _f3_plan_dispatch_facts(self, plan: ChangePlan) -> DispatchFacts | None:
+        """Shared facts for an F3-backed plan, or ``None`` for legacy plans."""
+
+        try:
+            task = self.task_repository.get_for_plan(plan.plan_id)
+        except ExecutionTaskStorageError:
+            return None
+        if (
+            task is None
+            or task.legacy_projection.get("execution_authority")
+            != "f3_child_sequence"
+        ):
+            return None
+        return self._dispatch_facts(task)
+
+    def _public(
+        self,
+        plan: ChangePlan,
+        *,
+        include_configs: bool = True,
+        dispatch_facts: DispatchFacts | None = None,
+    ) -> dict[str, Any]:
         self._require_v2_persisted_plan_safe(plan)
         value = plan.to_dict()
         prohibited = self._is_effectively_prohibited_plan(plan)
@@ -2687,8 +2843,15 @@ class ChangeGovernanceService:
             raise GovernanceError(
                 ErrorCode.EXECUTION_TASK_STORAGE_ERROR
             ) from exc
+        facts = (
+            None
+            if task is None
+            else dispatch_facts
+            if dispatch_facts is not None
+            else self._dispatch_facts(task)
+        )
         value["execution_task"] = (
-            self._task_plan_projection(task)
+            self._task_plan_projection(task, facts=facts)
             if task is not None
             else {
                 "record_kind": "legacy_plan",
@@ -2737,6 +2900,14 @@ class ChangeGovernanceService:
                 value["authoritative_verification_field"] = (
                     "execution_task.verification_summary"
                 )
+            if (
+                plan.contract_version == OPERATIONAL_PLAN_CONTRACT_VERSION
+                and task is not None
+                and facts is not None
+                and task.legacy_projection.get("execution_authority")
+                == "f3_child_sequence"
+            ):
+                self._project_f3_operational_block(value, task, facts)
             sanitized = sanitize_untrusted_data(
                 value,
                 known_secrets=self.sensitive_values,
@@ -7132,28 +7303,27 @@ class ChangeGovernanceService:
             "duplicate_apply_prevented",
             changes={},
         )
+        # HAMCP-181 S10 / audit F-03: one facts object for the details, the
+        # wording and the replay result.  The refusal itself is unchanged.
+        facts = self._dispatch_facts(task)
         if task.state != ExecutionTaskState.SUCCEEDED_VERIFIED:
             details = {
                 "task_id": task.task_id,
                 "task_state": task.state.value,
-                "provider_dispatch_occurred": (
-                    self._task_is_dispatched(task)
-                ),
+                **facts.public_fields(),
             }
-            if (
-                self.f3_runtime is not None
-                and self.f3_runtime.dashboard_setter_not_sent(task)
-            ):
+            if facts.not_sent and facts.setter_not_sent:
                 # HAMCP-177 R1 (display only): the saved intent keeps the
                 # post-intent phase; no dashboard setter call was ever sent.
+                # The #253 fields are re-applied verbatim.
                 details.update(self.f3_runtime.setter_not_sent_fields())
+            if task.state == ExecutionTaskState.CANCELLED_PRE_DISPATCH:
+                raise GovernanceError(
+                    ErrorCode.EXECUTION_TASK_INVALID_STATE, details=details
+                )
             raise GovernanceError(
-                (
-                    ErrorCode.EXECUTION_TASK_INVALID_STATE
-                    if task.state
-                    == ExecutionTaskState.CANCELLED_PRE_DISPATCH
-                    else ErrorCode.DUPLICATE_APPLY_ATTEMPT
-                ),
+                ErrorCode.DUPLICATE_APPLY_ATTEMPT,
+                self.duplicate_apply_message(facts),
                 details=details,
             )
         result = {
@@ -7162,11 +7332,16 @@ class ChangeGovernanceService:
             "task_state": task.state.value,
             "task_reused": True,
             "redispatch_performed": False,
-            "provider_dispatch_occurred": self._task_is_dispatched(task),
+            "provider_dispatch_occurred": facts.provider_dispatch_occurred,
             "terminal_outcome": task.terminal_outcome,
-            "task": self._public_task(task),
-            "plan": self._public(plan, include_configs=False),
+            "task": self._public_task_with_facts(task, facts),
+            "plan": self._public(
+                plan, include_configs=False, dispatch_facts=facts
+            ),
         }
+        result.update(facts.public_fields())
+        # The status override stays keyed on the stored terminal outcome
+        # (status preservation rule, design section 2.4.3 item 4).
         if task.terminal_outcome == ENTITY_METADATA_NOT_DISPATCHED_OUTCOME:
             result.update(
                 {
@@ -7470,8 +7645,8 @@ class ChangeGovernanceService:
                 error_code=error_code,
             )
 
-    @staticmethod
     def _decorate_task_result(
+        self,
         result: dict[str, Any],
         task: ExecutionTask | None,
         *,
@@ -7479,6 +7654,7 @@ class ChangeGovernanceService:
     ) -> dict[str, Any]:
         if task is None:
             return result
+        facts = self._dispatch_facts(task)
         return {
             **result,
             "task_id": task.task_id,
@@ -7488,9 +7664,9 @@ class ChangeGovernanceService:
                 "task_id": task.task_id,
                 "state": task.state.value,
                 "terminal_outcome": task.terminal_outcome,
-                "provider_dispatch_occurred": bool(
-                    task.dispatched_at or task.provider_attempts
-                ),
+                "provider_dispatch_occurred": facts.provider_dispatch_occurred,
+                "dispatch_phase": facts.dispatch_phase,
+                "attempt_counts_basis": facts.attempt_counts_basis,
             },
         }
 
@@ -12717,6 +12893,17 @@ class ChangeGovernanceService:
         )
         if self.f3_runtime is not None:
             summary["f3"] = (self.f3_runtime.health() if collected_f3 is None else collected_f3)
+            f3_outcomes = summary["f3"].get("dispatch_outcome_counts")
+            if isinstance(f3_outcomes, dict):
+                execution["dispatch_outcome_counts"] = {
+                    key: int(value) + int(f3_outcomes.get(key, 0))
+                    for key, value in execution["dispatch_outcome_counts"].items()
+                }
+        execution["dispatch_outcome_count_basis"] = (
+            "parent_aggregate_phase"
+            if self.f3_runtime is not None
+            else "legacy_tasks_only"
+        )
         summary["approval_notifications"] = (
             self.approval_notifications.health_snapshot()
             if self.approval_notifications is not None
@@ -13393,6 +13580,16 @@ class ChangeGovernanceService:
                     task.state
                     == ExecutionTaskState.FAILED_POST_DISPATCH
                     for task in tasks
+                ),
+                # HAMCP-181 S17: additive outcome sub-counts beside the state
+                # counts.  Legacy tasks are counted here from their own
+                # record; F3 parents are added by the overlay from F3 health,
+                # which already holds their child records.
+                "dispatch_outcome_counts": dispatch_outcome_counts(
+                    legacy_dispatch_facts(task)
+                    for task in tasks
+                    if task.legacy_projection.get("execution_authority")
+                    != F3_EXECUTION_AUTHORITY
                 ),
                 "cancellations": sum(
                     task.state
