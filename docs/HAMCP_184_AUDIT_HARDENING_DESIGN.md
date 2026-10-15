@@ -39,7 +39,10 @@ there are no signed-registry, HOLD, support-window, stable-v1,
 - Tests: `tests/test_hamcp184_provider_dispositions_fail_closed.py`,
   `tests/test_hamcp184_f3_reapply_hash_guard.py`,
   `tests/test_hamcp184_principal_separation_honesty.py`, and
-  `tests/test_ci_efficiency.py` (HAMCP-178 runner guard).
+  `tests/test_ci_efficiency.py` (HAMCP-178 runner guard), and
+  `tests/test_signed_compatibility_registry.py` (its hand projection of the
+  compiled 7.14.2 entry into a signed entry now drops the compiled-only
+  `provider_dispositions`; signed schema and data unchanged).
 - Instructions: `.github/workflows/AGENTS.md` (runner rule wording).
 - Docs: this note, `docs/EXTERNAL_APPROVAL.md`, `docs/SECURITY.md`,
   `docs/architecture/ADR-007-COMPATIBILITY-FAMILY-ADMISSION.md` (amendment),
