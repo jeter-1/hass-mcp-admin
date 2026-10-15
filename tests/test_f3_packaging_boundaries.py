@@ -43,6 +43,7 @@ ALLOWED_EXPLICIT_F3_IMPORTS = {
     "tests/test_f3_lock_manager.py",
     "tests/test_hamcp135_governed_rollback.py",
     "tests/test_hamcp069a_entity_metadata_adapter.py",
+    "tests/test_hamcp183_entity_registry_error_truth.py",
     "tests/test_f3_tokenless_lock_recovery.py",
     "tests/fixtures/f3_lock_recovery/generate.py",
     "tests/f3_configuration_fixtures.py",
