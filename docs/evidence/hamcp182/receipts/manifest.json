@@ -1,0 +1,73 @@
+{
+ "inputs_sha256": {
+  "entry-extend-2026.10.0.json": "c31779cbce35dd68dc0fb245d0369e9d6bd589ac7d36cfe08f068b585e67b462",
+  "entry-extend-2026.10.1.json": "3bba61e410205023128a816b1979e41b6d8b31226c932daa6c43b54a0cbfa366",
+  "entry-revoke-2026.9.4.json": "fc039f0ecddcc772c906ffad64864b0440c9dd78e34781a4aa1f9241b88c0e1e",
+  "evidence-extend-2026.10.0.json": "3adb28b6e69b959cee6b03b6827b1b3f0a80bbb68268b0d7da65d385bd22639f",
+  "evidence-extend-2026.10.1.json": "5271e4580ca7bd693a0cea63a53c58a892bab635c54cefac06cb216f38c59f40",
+  "evidence-revoke-2026.9.4.json": "539556f2f02fb7ed3d08e23096cb2574a0f0bdf0bded8024d37f24cdbb1b68db"
+ },
+ "model": "hamcp182-receipt-manifest-v1",
+ "run": {
+  "conclusion": "success",
+  "event": "workflow_dispatch",
+  "head_branch": "main",
+  "head_sha": "690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1",
+  "run_attempt": 1,
+  "run_id": 38681524688,
+  "run_number": 1100,
+  "workflow": ".github/workflows/ci.yml"
+ },
+ "runtime_tree": "c363397b2cabc567394b9cdde9daffe9a0bfb5bd",
+ "slots": {
+  "current": {
+   "artifact_id": 11948098495,
+   "core": "2026.10.1",
+   "files_sha256": {
+    "alarmo-cleanup-ha-2026-10-1.json": "f1fdc9dfcee20794feba9bf712f748cf64b09b397c738ca629af4d7f8676b09e",
+    "entity-metadata-ha-2026-10-1.json": "4ff155a18c34f668bae723ee16da69a1eb8448b29f43f279ce07b6b59c824c51"
+   },
+   "lane": "ha-2026-10-1",
+   "name": "entity-metadata-core-2026.10.1-current-amd64",
+   "verifier_summary": {
+    "authority_transition": [
+     21,
+     22
+    ],
+    "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+    "core": "2026.10.1",
+    "fixture_cleanup": true,
+    "receipt_sha256": "4ff155a18c34f668bae723ee16da69a1eb8448b29f43f279ce07b6b59c824c51",
+    "result": "PASS",
+    "scenarios": 9,
+    "support_slot": "current"
+   },
+   "zip_sha256": "124950f12d3eff942a513c370cfb8dece8953ade6fd9632581561c8d3dca2114"
+  },
+  "rollback": {
+   "artifact_id": 11948661527,
+   "core": "2026.10.0",
+   "files_sha256": {
+    "alarmo-cleanup-ha-2026-10-0.json": "3d0dd3de40d09cea7929aec63096fdc399ed275d75b3fcf3084e2ead47870c75",
+    "entity-metadata-ha-2026-10-0.json": "52b8ecff4fbc50c984e8d194ab46d45633b00184ef438bfb5a71e51bee288d0d"
+   },
+   "lane": "ha-2026-10-0",
+   "name": "entity-metadata-core-2026.10.0-rollback-amd64",
+   "verifier_summary": {
+    "authority_transition": [
+     21,
+     22
+    ],
+    "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+    "core": "2026.10.0",
+    "fixture_cleanup": true,
+    "receipt_sha256": "52b8ecff4fbc50c984e8d194ab46d45633b00184ef438bfb5a71e51bee288d0d",
+    "result": "PASS",
+    "scenarios": 9,
+    "support_slot": "rollback"
+   },
+   "zip_sha256": "8dc5a32bb87abf2b81450d3736651522079d2a95f6ce7221995ff840e995c9e4"
+  }
+ },
+ "verified_at_commit": "690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1"
+}
