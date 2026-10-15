@@ -282,8 +282,10 @@ class Harness(unittest.IsolatedAsyncioTestCase):
         if replay is not None:
             surfaces.append(replay)
         for surface in surfaces:
-            added = (set(NO_CALL_FIELDS) - {'provider_dispatch_occurred'}) | {'dispatch_count_basis'}
+            added = (set(NO_CALL_FIELDS) - {'provider_dispatch_occurred', 'attempt_counts_basis'}) | {'dispatch_count_basis'}
             self.assertFalse(added & set(surface), surface)
+            # HAMCP-181 §2.4.1: a sent surface names the saved-intent basis.
+            self.assertEqual(surface.get('attempt_counts_basis'), 'saved_dispatch_intent', surface)
         for surface in (result, *([replay] if replay is not None else [])):
             self.assertIs(surface['provider_dispatch_occurred'], sent)
         for entry in self.audit(name):
