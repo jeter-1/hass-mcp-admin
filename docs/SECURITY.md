@@ -553,6 +553,8 @@ is never included in an exception log.
 ## MCP SDK and dependency boundary
 
 Engineering version `2.0.1` pins the stable MCP 1.x SDK at 1.28.1.
+Engineering 2.4.1-beta.11 moves that pin to 1.30.0 for GHSA-84m7-p3x7-pcfv
+(CVE-2026-59951); the adapter still admits exactly one reviewed version.
 Every required contact with the SDK's private FastMCP tool registry is isolated
 in `mcp_sdk_compatibility.py`. The adapter admits only the reviewed SDK version
 and expected mapping shape, returns read-only mapping snapshots containing
