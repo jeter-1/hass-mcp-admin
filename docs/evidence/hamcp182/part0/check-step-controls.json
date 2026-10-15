@@ -1,0 +1,139 @@
+{
+ "planned": [
+  {
+   "step": 1,
+   "mode": "candidate",
+   "exit": 0,
+   "last": "OK"
+  },
+  {
+   "step": 1,
+   "mode": "signed",
+   "exit": 0,
+   "last": "OK"
+  },
+  {
+   "step": 2,
+   "mode": "candidate",
+   "exit": 0,
+   "last": "OK"
+  },
+  {
+   "step": 2,
+   "mode": "signed",
+   "exit": 0,
+   "last": "OK"
+  },
+  {
+   "step": 3,
+   "mode": "candidate",
+   "exit": 0,
+   "last": "OK"
+  },
+  {
+   "step": 3,
+   "mode": "signed",
+   "exit": 0,
+   "last": "OK"
+  }
+ ],
+ "controls": [
+  {
+   "control": "step 1 candidate checked as step 2",
+   "exit": 1,
+   "last": "FAILED: candidate was not prepared from this previous journal",
+   "refused": true
+  },
+  {
+   "control": "step 2 candidate against sequence 9",
+   "exit": 1,
+   "last": "FAILED: previous journal sequence 9 is not the step's predecessor",
+   "refused": true
+  },
+  {
+   "control": "step 1 signed output offered for step 2",
+   "exit": 1,
+   "last": "FAILED: signed tip sequence differs",
+   "refused": true
+  },
+  {
+   "control": "reviewed fingerprint with another public key",
+   "exit": 1,
+   "last": "FAILED: public key fingerprint is not the reviewed Core key",
+   "refused": true
+  },
+  {
+   "control": "production fingerprint with the rehearsal key",
+   "exit": 1,
+   "last": "FAILED: public key fingerprint is not the reviewed Core key",
+   "refused": true
+  },
+  {
+   "control": "non-canonical candidate bytes",
+   "exit": 1,
+   "last": "FAILED: candidate is not canonical",
+   "refused": true
+  },
+  {
+   "control": "extension relabeled add",
+   "exit": 1,
+   "last": "FAILED: candidate operation differs",
+   "refused": true
+  },
+  {
+   "control": "extension model swapped",
+   "exit": 1,
+   "last": "FAILED: candidate operation differs",
+   "refused": true
+  },
+  {
+   "control": "extension_review removed",
+   "exit": 1,
+   "last": "FAILED: candidate fields differ",
+   "refused": true
+  },
+  {
+   "control": "extension_review altered",
+   "exit": 1,
+   "last": "FAILED: extension review is not the reviewed evidence bytes",
+   "refused": true
+  },
+  {
+   "control": "extra reference appended",
+   "exit": 1,
+   "last": "FAILED: entries are not previous with only the reviewed extension",
+   "refused": true
+  },
+  {
+   "control": "sibling entry altered",
+   "exit": 1,
+   "last": "FAILED: entries are not previous with only the reviewed extension",
+   "refused": true
+  },
+  {
+   "control": "revocations altered on extension",
+   "exit": 1,
+   "last": "FAILED: revocations changed",
+   "refused": true
+  },
+  {
+   "control": "expiry beyond 90 days",
+   "exit": 1,
+   "last": "FAILED: expiry is not generated_at + 90 days",
+   "refused": true
+  },
+  {
+   "control": "tombstone reason altered",
+   "exit": 1,
+   "last": "FAILED: tombstone differs",
+   "refused": true
+  },
+  {
+   "control": "tombstone dropped on revoke",
+   "exit": 1,
+   "last": "FAILED: revocations are not previous + one tombstone",
+   "refused": true
+  }
+ ],
+ "ok": true
+}

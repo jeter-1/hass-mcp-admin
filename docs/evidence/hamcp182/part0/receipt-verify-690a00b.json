@@ -1,0 +1,34 @@
+{
+  "2026.10.0": {
+    "status": "PASS",
+    "summary": {
+      "authority_transition": [
+        21,
+        22
+      ],
+      "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+      "core": "2026.10.0",
+      "fixture_cleanup": true,
+      "receipt_sha256": "52b8ecff4fbc50c984e8d194ab46d45633b00184ef438bfb5a71e51bee288d0d",
+      "result": "PASS",
+      "scenarios": 9,
+      "support_slot": "rollback"
+    }
+  },
+  "2026.10.1": {
+    "status": "PASS",
+    "summary": {
+      "authority_transition": [
+        21,
+        22
+      ],
+      "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+      "core": "2026.10.1",
+      "fixture_cleanup": true,
+      "receipt_sha256": "4ff155a18c34f668bae723ee16da69a1eb8448b29f43f279ce07b6b59c824c51",
+      "result": "PASS",
+      "scenarios": 9,
+      "support_slot": "current"
+    }
+  }
+}

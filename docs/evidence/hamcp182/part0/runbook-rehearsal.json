@@ -1,0 +1,482 @@
+{
+ "ephemeral_public_key_sha256": "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098",
+ "steps": [
+  {
+   "step": 1,
+   "operation": "extend 2026.10.1",
+   "prepare": {
+    "argv": [
+     "prepare_core_release_registry.py",
+     "extend-capabilities",
+     "--entry",
+     "entry-extend-2026.10.1.json",
+     "--evidence",
+     "evidence-extend-2026.10.1.json",
+     "--public-key",
+     "public-key.txt",
+     "--previous",
+     "journal-0-seq9-twin.json",
+     "--output",
+     "candidate-1-extend-2026.10.1.json"
+    ],
+    "exit": 0,
+    "output": [
+     "Prepared output SHA256: 5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31"
+    ],
+    "leaked": []
+   },
+   "check_candidate": {
+    "argv": [
+     "check_step.py",
+     "candidate",
+     "1",
+     "--previous",
+     "journal-0-seq9-twin.json",
+     "--candidate",
+     "candidate-1-extend-2026.10.1.json",
+     "--public-key",
+     "public-key.txt",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Step 1 extend-capabilities 2026.10.1: sequence 10, references {'2026.10.0': 21, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']",
+     "Candidate SHA256: 5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+     "OK"
+    ],
+    "leaked": []
+   },
+   "sign": {
+    "argv": [
+     "sign_step.py",
+     "--key-pem",
+     "core-key.pem",
+     "--previous",
+     "journal-0-seq9-twin.json",
+     "--candidate",
+     "candidate-1-extend-2026.10.1.json",
+     "--expected-candidate-sha256",
+     "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+     "--output",
+     "journal-1.json",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Public key fingerprint: c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098",
+     "Signed journal SHA256: 475f79c682cd70136ed1247b0c2ad4b7390000b4d6185d913b4e1d452d97229a"
+    ],
+    "leaked": []
+   },
+   "check_signed": {
+    "argv": [
+     "check_step.py",
+     "signed",
+     "1",
+     "--previous",
+     "journal-0-seq9-twin.json",
+     "--candidate",
+     "candidate-1-extend-2026.10.1.json",
+     "--signed",
+     "journal-1.json",
+     "--public-key",
+     "public-key.txt",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Step 1 extend-capabilities 2026.10.1: sequence 10, references {'2026.10.0': 21, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']",
+     "Candidate SHA256: 5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+     "Signed journal verified with the public key: sequence 10, digest sha256:2ea015638dde042afd15efab06bc21937c23665224af424fad0f7a53f57d7760, SHA256 475f79c682cd70136ed1247b0c2ad4b7390000b4d6185d913b4e1d452d97229a",
+     "OK"
+    ],
+    "leaked": []
+   },
+   "pem": "unencrypted",
+   "candidate_sha256": "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+   "journal_sha256": "475f79c682cd70136ed1247b0c2ad4b7390000b4d6185d913b4e1d452d97229a",
+   "ok": true
+  },
+  {
+   "step": 2,
+   "operation": "extend 2026.10.0",
+   "prepare": {
+    "argv": [
+     "prepare_core_release_registry.py",
+     "extend-capabilities",
+     "--entry",
+     "entry-extend-2026.10.0.json",
+     "--evidence",
+     "evidence-extend-2026.10.0.json",
+     "--public-key",
+     "public-key.txt",
+     "--previous",
+     "journal-1.json",
+     "--output",
+     "candidate-2-extend-2026.10.0.json"
+    ],
+    "exit": 0,
+    "output": [
+     "Prepared output SHA256: db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0"
+    ],
+    "leaked": []
+   },
+   "check_candidate": {
+    "argv": [
+     "check_step.py",
+     "candidate",
+     "2",
+     "--previous",
+     "journal-1.json",
+     "--candidate",
+     "candidate-2-extend-2026.10.0.json",
+     "--public-key",
+     "public-key.txt",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Step 2 extend-capabilities 2026.10.0: sequence 11, references {'2026.10.0': 22, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']",
+     "Candidate SHA256: db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0",
+     "OK"
+    ],
+    "leaked": []
+   },
+   "sign": {
+    "argv": [
+     "sign_step.py",
+     "--key-pem",
+     "core-key-encrypted.pem",
+     "--previous",
+     "journal-1.json",
+     "--candidate",
+     "candidate-2-extend-2026.10.0.json",
+     "--expected-candidate-sha256",
+     "db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0",
+     "--output",
+     "journal-2.json",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Public key fingerprint: c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098",
+     "Signed journal SHA256: 219cf876bc15f00e71e7db721cc16f235d400c08d83b961a3ea8f3fcfb743046",
+     "/home/josh/repos/home-infrastructure/.codex-worktrees/adr021-validation/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/getpass.py:91: GetPassWarning: Can not control echo on the terminal.",
+     "  passwd = fallback_getpass(prompt, stream)",
+     "Warning: Password input may be echoed.",
+     "PEM passphrase (hidden):"
+    ],
+    "leaked": []
+   },
+   "check_signed": {
+    "argv": [
+     "check_step.py",
+     "signed",
+     "2",
+     "--previous",
+     "journal-1.json",
+     "--candidate",
+     "candidate-2-extend-2026.10.0.json",
+     "--signed",
+     "journal-2.json",
+     "--public-key",
+     "public-key.txt",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Step 2 extend-capabilities 2026.10.0: sequence 11, references {'2026.10.0': 22, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']",
+     "Candidate SHA256: db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0",
+     "Signed journal verified with the public key: sequence 11, digest sha256:f1ee40450842177d64c6312af7bc6679dde117bce1912b137c2575d242927c95, SHA256 219cf876bc15f00e71e7db721cc16f235d400c08d83b961a3ea8f3fcfb743046",
+     "OK"
+    ],
+    "leaked": []
+   },
+   "pem": "encrypted (passphrase via hidden prompt)",
+   "candidate_sha256": "db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0",
+   "journal_sha256": "219cf876bc15f00e71e7db721cc16f235d400c08d83b961a3ea8f3fcfb743046",
+   "ok": true
+  },
+  {
+   "step": 3,
+   "operation": "revoke 2026.9.4",
+   "prepare": {
+    "argv": [
+     "prepare_core_release_registry.py",
+     "revoke",
+     "--entry",
+     "entry-revoke-2026.9.4.json",
+     "--evidence",
+     "evidence-revoke-2026.9.4.json",
+     "--public-key",
+     "public-key.txt",
+     "--previous",
+     "journal-2.json",
+     "--output",
+     "candidate-3-revoke-2026.9.4.json",
+     "--reason",
+     "outside the CI support window; retired by owner direction (HAMCP-182)"
+    ],
+    "exit": 0,
+    "output": [
+     "Prepared output SHA256: e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756"
+    ],
+    "leaked": []
+   },
+   "check_candidate": {
+    "argv": [
+     "check_step.py",
+     "candidate",
+     "3",
+     "--previous",
+     "journal-2.json",
+     "--candidate",
+     "candidate-3-revoke-2026.9.4.json",
+     "--public-key",
+     "public-key.txt",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Step 3 revoke 2026.9.4: sequence 12, references {'2026.10.0': 22, '2026.10.1': 22}, revoked ['2026.9.2', '2026.9.3', '2026.9.4']",
+     "Candidate SHA256: e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756",
+     "OK"
+    ],
+    "leaked": []
+   },
+   "sign": {
+    "argv": [
+     "sign_step.py",
+     "--key-pem",
+     "core-key.pem",
+     "--previous",
+     "journal-2.json",
+     "--candidate",
+     "candidate-3-revoke-2026.9.4.json",
+     "--expected-candidate-sha256",
+     "e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756",
+     "--output",
+     "journal-3.json",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Public key fingerprint: c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098",
+     "Signed journal SHA256: 89f8c1f1eb67a5cc5e5a762000717bc3b8b3cff6dc3f5fa9e8a53eb4c3ddfaf5"
+    ],
+    "leaked": []
+   },
+   "check_signed": {
+    "argv": [
+     "check_step.py",
+     "signed",
+     "3",
+     "--previous",
+     "journal-2.json",
+     "--candidate",
+     "candidate-3-revoke-2026.9.4.json",
+     "--signed",
+     "journal-3.json",
+     "--public-key",
+     "public-key.txt",
+     "--rehearsal-key-sha256",
+     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    ],
+    "exit": 0,
+    "output": [
+     "Step 3 revoke 2026.9.4: sequence 12, references {'2026.10.0': 22, '2026.10.1': 22}, revoked ['2026.9.2', '2026.9.3', '2026.9.4']",
+     "Candidate SHA256: e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756",
+     "Signed journal verified with the public key: sequence 12, digest sha256:3745ffd2e686b281750bc52cb643fa77e263e8895af4707d258b2f378dc51a14, SHA256 89f8c1f1eb67a5cc5e5a762000717bc3b8b3cff6dc3f5fa9e8a53eb4c3ddfaf5",
+     "OK"
+    ],
+    "leaked": []
+   },
+   "pem": "unencrypted",
+   "candidate_sha256": "e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756",
+   "journal_sha256": "89f8c1f1eb67a5cc5e5a762000717bc3b8b3cff6dc3f5fa9e8a53eb4c3ddfaf5",
+   "ok": true
+  }
+ ],
+ "signer_controls": [
+  {
+   "argv": [
+    "sign_step.py",
+    "--key-pem",
+    "other.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "--output",
+    "another Ed25519 PEM.json",
+    "--rehearsal-key-sha256",
+    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+   ],
+   "exit": 1,
+   "output": [
+    "Signing refused: the PEM is not the reviewed Core key (public key fingerprint 98365aae1eb1ba4d5861f3f9ec934452ee6af81308799ffc0fd38d28539ee14c)."
+   ],
+   "leaked": [],
+   "control": "another Ed25519 PEM",
+   "refused": true
+  },
+  {
+   "argv": [
+    "sign_step.py",
+    "--key-pem",
+    "ec.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "--output",
+    "non-Ed25519 (P-256) PEM.json",
+    "--rehearsal-key-sha256",
+    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+   ],
+   "exit": 1,
+   "output": [
+    "Core registry signing refused; review inputs and bounds."
+   ],
+   "leaked": [],
+   "control": "non-Ed25519 (P-256) PEM",
+   "refused": true
+  },
+  {
+   "argv": [
+    "sign_step.py",
+    "--key-pem",
+    "core-key-encrypted.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "--output",
+    "encrypted PEM, wrong passphrase.json",
+    "--rehearsal-key-sha256",
+    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+   ],
+   "exit": 1,
+   "output": [
+    "/home/josh/repos/home-infrastructure/.codex-worktrees/adr021-validation/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/getpass.py:91: GetPassWarning: Can not control echo on the terminal.",
+    "  passwd = fallback_getpass(prompt, stream)",
+    "Warning: Password input may be echoed.",
+    "PEM passphrase (hidden): ",
+    "Core registry signing refused; review inputs and bounds."
+   ],
+   "leaked": [],
+   "control": "encrypted PEM, wrong passphrase",
+   "refused": true
+  },
+  {
+   "argv": [
+    "sign_step.py",
+    "--key-pem",
+    "core-key.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "0000000000000000000000000000000000000000000000000000000000000000",
+    "--output",
+    "wrong expected candidate sha.json",
+    "--rehearsal-key-sha256",
+    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+   ],
+   "exit": 1,
+   "output": [
+    "Core registry signing refused; review inputs and bounds."
+   ],
+   "leaked": [],
+   "control": "wrong expected candidate sha",
+   "refused": true
+  },
+  {
+   "argv": [
+    "sign_step.py",
+    "--key-pem",
+    "core-key.pem",
+    "--previous",
+    "journal-3.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "--output",
+    "stale previous journal (step 1 candidate on sequence 12).json",
+    "--rehearsal-key-sha256",
+    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+   ],
+   "exit": 1,
+   "output": [
+    "Core registry signing refused; review inputs and bounds."
+   ],
+   "leaked": [],
+   "control": "stale previous journal (step 1 candidate on sequence 12)",
+   "refused": true
+  },
+  {
+   "argv": [
+    "sign_step.py",
+    "--key-pem",
+    "core-key.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "--output",
+    "default-fingerprint.json"
+   ],
+   "exit": 1,
+   "output": [
+    "Signing refused: the PEM is not the reviewed Core key (public key fingerprint c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098)."
+   ],
+   "leaked": [],
+   "control": "ephemeral PEM against the default (production) fingerprint",
+   "refused": true
+  },
+  {
+   "argv": [
+    "sign_step.py",
+    "--key-pem",
+    "core-key.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "--output",
+    "existing.json",
+    "--rehearsal-key-sha256",
+    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+   ],
+   "exit": 1,
+   "output": [
+    "Core registry signing refused; review inputs and bounds."
+   ],
+   "leaked": [],
+   "control": "output already exists",
+   "refused": true
+  }
+ ],
+ "no_secret_in_any_output": true,
+ "ok": true
+}
