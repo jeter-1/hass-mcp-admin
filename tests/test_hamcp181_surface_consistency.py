@@ -35,8 +35,9 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 import tests.test_f3_runtime_integration as integration  # noqa: E402
 import tests.test_hamcp177_dashboard_write_admission as dashboard  # noqa: E402
 from tests.hamcp069a_entity_fixtures import EntityMetadataServiceTestCase  # noqa: E402
+import tests.test_beta37_exact_helper_state as helper_state  # noqa: E402
 from tests.test_hamcp181_dispatch_facts import (  # noqa: E402
-    INTENT_AT, FakeRecord, sent_verified,
+    INTENT_AT, FakeRecord, not_sent, r_proven, r_unproven, sent_verified, uncertain,
 )
 from ha_mcp_engineering.errors import ErrorCode, GovernanceError  # noqa: E402
 from ha_mcp_engineering.f3_runtime import dispatch_facts as df  # noqa: E402
@@ -378,6 +379,92 @@ class AllB1ParentReceiptTests(_CounterBasisMixin, unittest.TestCase):
                 self.assertIs(body["provider_dispatch_occurred"], True)
                 self.assertNotIn("setter_call_not_sent", body)
                 self.assertNotEqual(body.get("attempt_counts_basis"), df.BASIS_NO_SETTER_CALL)
+
+
+class MixedParentReceiptTests(_CounterBasisMixin, unittest.TestCase):
+    """Section 2.4.3: a mixed parent follows the section 2.1 table at every budget."""
+
+    def test_sent_r_proven_r_unproven_b_and_c_children(self):
+        records = [sent_verified(), r_proven(), r_unproven(), not_sent(), uncertain()]
+        children = [df.child_facts(record, child_id=f"child-{index}")
+                    for index, record in enumerate(records)]
+        self.assertEqual([child.phase for child in children], [
+            df.PHASE_SENT_RESPONSE_RECEIVED, df.PHASE_SENT_REJECTED_NO_MUTATION,
+            df.PHASE_SENT_FAILED_MUTATION_UNPROVEN, df.PHASE_INTENT_RECORDED_NOT_SENT,
+            df.PHASE_SEND_UNCERTAIN])
+        facts = df.dispatch_facts(task=SimpleNamespace(dispatched_at=INTENT_AT),
+                                  children=children)
+        execution_task = df.qualify_counters({
+            "task_id": "task-mixed", "state": "manual_review_required",
+            "terminal_outcome": "manual_review_required",
+            "provider_attempt_count": len(records),
+            "provider_attempts": [{"attempt": index + 1, "dispatch_count": 1}
+                                  for index in range(len(records))],
+            **facts.public_fields(),
+        }, facts)
+        result = {
+            "status": "accepted", "task_id": "task-mixed",
+            "task_state": "manual_review_required", "redispatch_performed": False,
+            "plan_id": "plan-mixed", "plan_hash": "c" * 64,
+            "execution_task": execution_task, **facts.public_fields(),
+        }
+        self.assertEqual(result["child_dispatch_phases"],
+                         {child.phase: 1 for child in children})
+        for limit in BUDGETS:
+            with self.subTest(limit=limit):
+                body = receipt(result, limit)
+                self.assert_counters_qualified(body)
+                self.assertIs(body["provider_dispatch_occurred"], True)
+                # Neither a no-call, a no-change nor a rejection claim survives.
+                for claim in ("setter_call_not_sent", df.PROVIDER_CALL_NOT_SENT,
+                              "changed_by_engineering", "outcome_code", "result_text"):
+                    self.assertNotIn(claim, body)
+                if "attempt_counts_basis" in body:
+                    self.assertEqual(body["attempt_counts_basis"], df.BASIS_SAVED_INTENT)
+                if limit != 1024:
+                    self.assertEqual(body["dispatch_phase"], df.PHASE_SEND_UNCERTAIN)
+                    self.assertEqual(body["dispatched_at"], INTENT_AT)
+                    self.assertEqual(body["dispatched_at_basis"],
+                                     df.DISPATCHED_AT_INTENT_COMMIT_TIME)
+
+
+class HelperStateNoOpStatusTests(helper_state.ExactHelperStateRuntimeTests):
+    """Section 2.4.3 item 4: a generic (a) keeps ``status`` in PR1."""
+
+    async def test_generic_no_op_status_is_unchanged_at_apply_and_replay(self):
+        plan = await self.create_and_grant()
+        self.helper.set_observed_state("on", self.clock)
+        applied = await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        replayed = await self.service.apply(plan["plan_id"], plan["plan_hash"])
+        self.assertEqual(self.helper.dispatch_count, 0)
+        additive = {
+            "provider_dispatch_occurred": False,
+            "dispatch_phase": df.PHASE_ALREADY_PRESENT,
+            "outcome_code": ENTITY_METADATA_NOT_DISPATCHED_OUTCOME,
+            "changed_by_engineering": False,
+            "intent_recorded": False,
+            "dispatch_performed": False,
+            "attempt_counts_basis": df.BASIS_NO_INTENT,
+            "dispatched_at": None,
+            "dispatched_at_basis": df.DISPATCHED_AT_NO_INTENT,
+        }
+        for label, result, status in (("apply", applied, "applied"),
+                                      ("replay", replayed, "already_applied")):
+            with self.subTest(surface=label):
+                # PR1 keeps the generic status; PR2 owns "already_present".
+                self.assertEqual(result["status"], status)
+                self.assertEqual(result["task_state"], "succeeded_verified")
+                task = self.service.get_execution_task(result["task_id"])
+                self.assertEqual(task["state"], "succeeded_verified")
+                self.assertEqual(task["terminal_outcome"], "succeeded_verified")
+                self.assertEqual(subset(result, additive), additive)
+                self.assertEqual(subset(task, additive), additive)
+                self.assertIn("already present", result["result_text"])
+
+
+for _name in [name for name in dir(helper_state.ExactHelperStateRuntimeTests)
+              if name.startswith("test_")]:
+    setattr(HelperStateNoOpStatusTests, _name, None)
 
 
 class ZeroChildReceiptTests(_CounterBasisMixin, unittest.TestCase):
