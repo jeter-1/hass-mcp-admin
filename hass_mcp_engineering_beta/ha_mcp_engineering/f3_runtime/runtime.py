@@ -2486,18 +2486,6 @@ class F3RuntimeIntegration:
             changes=changes,
         )
 
-    def dashboard_setter_not_sent(self, task: Any) -> bool:
-        """Whether every saved intent of this task provably sent no setter.
-
-        Display only: never dispatch, retry or state authority.  HAMCP-181:
-        derived from the shared dispatch facts (parent (b), dashboard only).
-        """
-
-        if task.legacy_projection.get("execution_authority") != F3_EXECUTION_AUTHORITY:
-            return False
-        facts = self.dispatch_facts_for_task(task)
-        return facts.not_sent and facts.setter_not_sent
-
     @staticmethod
     def setter_not_sent_fields() -> dict[str, Any]:
         return dict(SETTER_NOT_SENT_FIELDS)
