@@ -10,10 +10,14 @@ output re-verification), and the output is written with the shipped `write_new`
 
 Key handling:
   - The PEM path is an argument; the file is read once, bounded to 64 KiB.
-  - An unencrypted PEM loads directly; an encrypted PEM asks for the
-    passphrase with a hidden getpass prompt. Nothing is read from the
-    environment, written, logged or printed except public fingerprints and
-    output hashes.
+  - An unencrypted PEM loads directly, with no prompt and no terminal needed.
+  - An encrypted PEM asks for the passphrase only through a hidden prompt.
+    Before prompting, stdin must be a terminal whose echo is verifiably switched
+    off, or the signer refuses without reading anything. getpass's fallback to
+    echoed input (GetPassWarning) is a refusal, never a warning. There is no
+    passphrase argument, environment variable or file.
+  - Nothing is read from the environment, written, logged or printed except
+    public fingerprints and output hashes.
   - The loaded key must be Ed25519 and its PUBLIC key must have the reviewed
     fingerprint before anything is signed.
   - Every failure exits with a fixed message and no traceback or input value.
@@ -26,6 +30,12 @@ import getpass
 import hashlib
 from pathlib import Path
 import sys
+import warnings
+
+try:
+    import termios
+except ImportError:  # no POSIX terminal control: an encrypted PEM is refused
+    termios = None
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
@@ -35,6 +45,39 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey 
 
 PUBLIC_KEY_SHA256 = "7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac"
 MAX_PEM_BYTES = 64 * 1024
+NO_HIDDEN_INPUT = ("Signing refused: the encrypted PEM needs its passphrase typed in a real local "
+                   "terminal with hidden input (not piped, not an IDE output pane). Nothing was read.")
+
+
+def require_hidden_input() -> None:
+    """Refuse unless stdin is a terminal whose echo can be verifiably switched off."""
+    hidden = False
+    try:
+        fd = sys.stdin.fileno()
+        if termios is not None and sys.stdin.isatty():
+            old = termios.tcgetattr(fd)
+            quiet = list(old)
+            quiet[3] &= ~termios.ECHO
+            termios.tcsetattr(fd, termios.TCSANOW, quiet)
+            try:
+                hidden = not termios.tcgetattr(fd)[3] & termios.ECHO
+            finally:
+                termios.tcsetattr(fd, termios.TCSANOW, old)
+    except (AttributeError, OSError, ValueError) + ((termios.error,) if termios else ()):
+        hidden = False
+    if not hidden:
+        raise SystemExit(NO_HIDDEN_INPUT)
+
+
+def read_passphrase() -> bytes:
+    require_hidden_input()
+    with warnings.catch_warnings():
+        # getpass warns before falling back to echoed input; that fallback is a refusal.
+        warnings.simplefilter("error", getpass.GetPassWarning)
+        try:
+            return getpass.getpass("PEM passphrase (hidden): ").encode()
+        except getpass.GetPassWarning:
+            raise SystemExit(NO_HIDDEN_INPUT) from None
 
 
 def load_key(path: Path) -> Ed25519PrivateKey:
@@ -42,7 +85,7 @@ def load_key(path: Path) -> Ed25519PrivateKey:
     try:
         key = serialization.load_pem_private_key(pem, password=None)
     except TypeError:  # encrypted PEM: password required
-        passphrase = getpass.getpass("PEM passphrase (hidden): ").encode()
+        passphrase = read_passphrase()
         key = serialization.load_pem_private_key(pem, password=passphrase)
         del passphrase
     del pem

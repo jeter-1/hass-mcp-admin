@@ -1,5 +1,5 @@
 {
- "ephemeral_public_key_sha256": "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098",
+ "ephemeral_public_key_sha256": "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7",
  "steps": [
   {
    "step": 1,
@@ -21,7 +21,7 @@
     ],
     "exit": 0,
     "output": [
-     "Prepared output SHA256: 5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31"
+     "Prepared output SHA256: 9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584"
     ],
     "leaked": []
    },
@@ -37,12 +37,12 @@
      "--public-key",
      "public-key.txt",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
     "exit": 0,
     "output": [
      "Step 1 extend-capabilities 2026.10.1: sequence 10, references {'2026.10.0': 21, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']",
-     "Candidate SHA256: 5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+     "Candidate SHA256: 9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
      "OK"
     ],
     "leaked": []
@@ -57,16 +57,16 @@
      "--candidate",
      "candidate-1-extend-2026.10.1.json",
      "--expected-candidate-sha256",
-     "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+     "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
      "--output",
      "journal-1.json",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
     "exit": 0,
     "output": [
-     "Public key fingerprint: c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098",
-     "Signed journal SHA256: 475f79c682cd70136ed1247b0c2ad4b7390000b4d6185d913b4e1d452d97229a"
+     "Public key fingerprint: 8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7",
+     "Signed journal SHA256: c269369a3f359e06eb2426ea1cd5841cd746836bbb2cad4e914f8437d0cbab5e"
     ],
     "leaked": []
    },
@@ -84,20 +84,20 @@
      "--public-key",
      "public-key.txt",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
     "exit": 0,
     "output": [
      "Step 1 extend-capabilities 2026.10.1: sequence 10, references {'2026.10.0': 21, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']",
-     "Candidate SHA256: 5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
-     "Signed journal verified with the public key: sequence 10, digest sha256:2ea015638dde042afd15efab06bc21937c23665224af424fad0f7a53f57d7760, SHA256 475f79c682cd70136ed1247b0c2ad4b7390000b4d6185d913b4e1d452d97229a",
+     "Candidate SHA256: 9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
+     "Signed journal verified with the public key: sequence 10, digest sha256:9ec83007ef443527cdef76dfb3a47577c3d10266cc99c3a7d45e274127a4dfb2, SHA256 c269369a3f359e06eb2426ea1cd5841cd746836bbb2cad4e914f8437d0cbab5e",
      "OK"
     ],
     "leaked": []
    },
-   "pem": "unencrypted",
-   "candidate_sha256": "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
-   "journal_sha256": "475f79c682cd70136ed1247b0c2ad4b7390000b4d6185d913b4e1d452d97229a",
+   "pem": "unencrypted (no prompt)",
+   "candidate_sha256": "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
+   "journal_sha256": "c269369a3f359e06eb2426ea1cd5841cd746836bbb2cad4e914f8437d0cbab5e",
    "ok": true
   },
   {
@@ -120,7 +120,7 @@
     ],
     "exit": 0,
     "output": [
-     "Prepared output SHA256: db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0"
+     "Prepared output SHA256: abdb25fd3e5df28882c3a4b5282184191bd62dee0c88a3e351bdf159b7e8661f"
     ],
     "leaked": []
    },
@@ -136,19 +136,18 @@
      "--public-key",
      "public-key.txt",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
     "exit": 0,
     "output": [
      "Step 2 extend-capabilities 2026.10.0: sequence 11, references {'2026.10.0': 22, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']",
-     "Candidate SHA256: db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0",
+     "Candidate SHA256: abdb25fd3e5df28882c3a4b5282184191bd62dee0c88a3e351bdf159b7e8661f",
      "OK"
     ],
     "leaked": []
    },
    "sign": {
     "argv": [
-     "sign_step.py",
      "--key-pem",
      "core-key-encrypted.pem",
      "--previous",
@@ -156,21 +155,24 @@
      "--candidate",
      "candidate-2-extend-2026.10.0.json",
      "--expected-candidate-sha256",
-     "db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0",
+     "abdb25fd3e5df28882c3a4b5282184191bd62dee0c88a3e351bdf159b7e8661f",
      "--output",
      "journal-2.json",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
+    "scenario": "none",
     "exit": 0,
+    "traceback": false,
     "output": [
-     "Public key fingerprint: c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098",
-     "Signed journal SHA256: 219cf876bc15f00e71e7db721cc16f235d400c08d83b961a3ea8f3fcfb743046",
-     "/home/josh/repos/home-infrastructure/.codex-worktrees/adr021-validation/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/getpass.py:91: GetPassWarning: Can not control echo on the terminal.",
-     "  passwd = fallback_getpass(prompt, stream)",
-     "Warning: Password input may be echoed.",
-     "PEM passphrase (hidden):"
+     "PEM passphrase (hidden): ",
+     "Public key fingerprint: 8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7",
+     "Signed journal SHA256: 02a11025237dd55f265160811ccd372f3824aebe59c8a26604f8c6f884c77c10"
     ],
+    "stdin": "pty",
+    "prompt_shown": true,
+    "answered": true,
+    "echoed": false,
     "leaked": []
    },
    "check_signed": {
@@ -187,20 +189,20 @@
      "--public-key",
      "public-key.txt",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
     "exit": 0,
     "output": [
      "Step 2 extend-capabilities 2026.10.0: sequence 11, references {'2026.10.0': 22, '2026.10.1': 22, '2026.9.4': 21}, revoked ['2026.9.2', '2026.9.3']",
-     "Candidate SHA256: db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0",
-     "Signed journal verified with the public key: sequence 11, digest sha256:f1ee40450842177d64c6312af7bc6679dde117bce1912b137c2575d242927c95, SHA256 219cf876bc15f00e71e7db721cc16f235d400c08d83b961a3ea8f3fcfb743046",
+     "Candidate SHA256: abdb25fd3e5df28882c3a4b5282184191bd62dee0c88a3e351bdf159b7e8661f",
+     "Signed journal verified with the public key: sequence 11, digest sha256:d19ad6e5c1415f86438b676d47b205205debece29ffd19b8040ed2e7201a967e, SHA256 02a11025237dd55f265160811ccd372f3824aebe59c8a26604f8c6f884c77c10",
      "OK"
     ],
     "leaked": []
    },
-   "pem": "encrypted (passphrase via hidden prompt)",
-   "candidate_sha256": "db08f9ccf70afcb396c7a5fc3ea2be2729c86edbd387a2debd3931bf7548afc0",
-   "journal_sha256": "219cf876bc15f00e71e7db721cc16f235d400c08d83b961a3ea8f3fcfb743046",
+   "pem": "encrypted (passphrase typed on a PTY at the hidden prompt)",
+   "candidate_sha256": "abdb25fd3e5df28882c3a4b5282184191bd62dee0c88a3e351bdf159b7e8661f",
+   "journal_sha256": "02a11025237dd55f265160811ccd372f3824aebe59c8a26604f8c6f884c77c10",
    "ok": true
   },
   {
@@ -225,7 +227,7 @@
     ],
     "exit": 0,
     "output": [
-     "Prepared output SHA256: e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756"
+     "Prepared output SHA256: e57c0f3ff43a4d37d90a4f11e71d74a4a74b0eeaf8308b20879b2fefb95724cf"
     ],
     "leaked": []
    },
@@ -241,12 +243,12 @@
      "--public-key",
      "public-key.txt",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
     "exit": 0,
     "output": [
      "Step 3 revoke 2026.9.4: sequence 12, references {'2026.10.0': 22, '2026.10.1': 22}, revoked ['2026.9.2', '2026.9.3', '2026.9.4']",
-     "Candidate SHA256: e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756",
+     "Candidate SHA256: e57c0f3ff43a4d37d90a4f11e71d74a4a74b0eeaf8308b20879b2fefb95724cf",
      "OK"
     ],
     "leaked": []
@@ -261,16 +263,16 @@
      "--candidate",
      "candidate-3-revoke-2026.9.4.json",
      "--expected-candidate-sha256",
-     "e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756",
+     "e57c0f3ff43a4d37d90a4f11e71d74a4a74b0eeaf8308b20879b2fefb95724cf",
      "--output",
      "journal-3.json",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
     "exit": 0,
     "output": [
-     "Public key fingerprint: c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098",
-     "Signed journal SHA256: 89f8c1f1eb67a5cc5e5a762000717bc3b8b3cff6dc3f5fa9e8a53eb4c3ddfaf5"
+     "Public key fingerprint: 8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7",
+     "Signed journal SHA256: 3de940f0326c99e64e5a36ea31b8490cba351929b6e4ccb8d4567cef3cc0c5cd"
     ],
     "leaked": []
    },
@@ -288,20 +290,20 @@
      "--public-key",
      "public-key.txt",
      "--rehearsal-key-sha256",
-     "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+     "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
     ],
     "exit": 0,
     "output": [
      "Step 3 revoke 2026.9.4: sequence 12, references {'2026.10.0': 22, '2026.10.1': 22}, revoked ['2026.9.2', '2026.9.3', '2026.9.4']",
-     "Candidate SHA256: e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756",
-     "Signed journal verified with the public key: sequence 12, digest sha256:3745ffd2e686b281750bc52cb643fa77e263e8895af4707d258b2f378dc51a14, SHA256 89f8c1f1eb67a5cc5e5a762000717bc3b8b3cff6dc3f5fa9e8a53eb4c3ddfaf5",
+     "Candidate SHA256: e57c0f3ff43a4d37d90a4f11e71d74a4a74b0eeaf8308b20879b2fefb95724cf",
+     "Signed journal verified with the public key: sequence 12, digest sha256:d88ac42ad4f247be6c62dde3fbfaf910ca8ec3cb951df9793e8eb7a058517c6c, SHA256 3de940f0326c99e64e5a36ea31b8490cba351929b6e4ccb8d4567cef3cc0c5cd",
      "OK"
     ],
     "leaked": []
    },
-   "pem": "unencrypted",
-   "candidate_sha256": "e5f9c015f337301207dab4daec52ca41229ff6b2ee0c21a2f7a24b6f6039e756",
-   "journal_sha256": "89f8c1f1eb67a5cc5e5a762000717bc3b8b3cff6dc3f5fa9e8a53eb4c3ddfaf5",
+   "pem": "unencrypted (no prompt)",
+   "candidate_sha256": "e57c0f3ff43a4d37d90a4f11e71d74a4a74b0eeaf8308b20879b2fefb95724cf",
+   "journal_sha256": "3de940f0326c99e64e5a36ea31b8490cba351929b6e4ccb8d4567cef3cc0c5cd",
    "ok": true
   }
  ],
@@ -316,15 +318,15 @@
     "--candidate",
     "candidate-1-extend-2026.10.1.json",
     "--expected-candidate-sha256",
-    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
     "--output",
     "another Ed25519 PEM.json",
     "--rehearsal-key-sha256",
-    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
    ],
    "exit": 1,
    "output": [
-    "Signing refused: the PEM is not the reviewed Core key (public key fingerprint 98365aae1eb1ba4d5861f3f9ec934452ee6af81308799ffc0fd38d28539ee14c)."
+    "Signing refused: the PEM is not the reviewed Core key (public key fingerprint 64cbf125cf8061444d16026085851016c884e63cfd5d9f75f4ccf70b03efc356)."
    ],
    "leaked": [],
    "control": "another Ed25519 PEM",
@@ -340,11 +342,11 @@
     "--candidate",
     "candidate-1-extend-2026.10.1.json",
     "--expected-candidate-sha256",
-    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
     "--output",
     "non-Ed25519 (P-256) PEM.json",
     "--rehearsal-key-sha256",
-    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
    ],
    "exit": 1,
    "output": [
@@ -356,7 +358,6 @@
   },
   {
    "argv": [
-    "sign_step.py",
     "--key-pem",
     "core-key-encrypted.pem",
     "--previous",
@@ -364,22 +365,25 @@
     "--candidate",
     "candidate-1-extend-2026.10.1.json",
     "--expected-candidate-sha256",
-    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
     "--output",
-    "encrypted PEM, wrong passphrase.json",
+    "encrypted PEM, wrong passphrase (typed on a PTY).json",
     "--rehearsal-key-sha256",
-    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
    ],
+   "scenario": "none",
    "exit": 1,
+   "traceback": false,
    "output": [
-    "/home/josh/repos/home-infrastructure/.codex-worktrees/adr021-validation/python/cpython-3.12.14-linux-x86_64-gnu/lib/python3.12/getpass.py:91: GetPassWarning: Can not control echo on the terminal.",
-    "  passwd = fallback_getpass(prompt, stream)",
-    "Warning: Password input may be echoed.",
     "PEM passphrase (hidden): ",
     "Core registry signing refused; review inputs and bounds."
    ],
+   "stdin": "pty",
+   "prompt_shown": true,
+   "answered": true,
+   "echoed": false,
    "leaked": [],
-   "control": "encrypted PEM, wrong passphrase",
+   "control": "encrypted PEM, wrong passphrase (typed on a PTY)",
    "refused": true
   },
   {
@@ -396,7 +400,7 @@
     "--output",
     "wrong expected candidate sha.json",
     "--rehearsal-key-sha256",
-    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
    ],
    "exit": 1,
    "output": [
@@ -416,11 +420,11 @@
     "--candidate",
     "candidate-1-extend-2026.10.1.json",
     "--expected-candidate-sha256",
-    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
     "--output",
     "stale previous journal (step 1 candidate on sequence 12).json",
     "--rehearsal-key-sha256",
-    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
    ],
    "exit": 1,
    "output": [
@@ -440,13 +444,13 @@
     "--candidate",
     "candidate-1-extend-2026.10.1.json",
     "--expected-candidate-sha256",
-    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
     "--output",
     "default-fingerprint.json"
    ],
    "exit": 1,
    "output": [
-    "Signing refused: the PEM is not the reviewed Core key (public key fingerprint c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098)."
+    "Signing refused: the PEM is not the reviewed Core key (public key fingerprint 8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7)."
    ],
    "leaked": [],
    "control": "ephemeral PEM against the default (production) fingerprint",
@@ -462,11 +466,11 @@
     "--candidate",
     "candidate-1-extend-2026.10.1.json",
     "--expected-candidate-sha256",
-    "5f4a60bb84c7389fca6aa7d8f4795d9d3f4ddb09af07e29c4d12ec10bc8def31",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
     "--output",
     "existing.json",
     "--rehearsal-key-sha256",
-    "c257ac0bdd45aa64fb40270267f35ea63a51844ece6cee18f4c7a585ab566098"
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
    ],
    "exit": 1,
    "output": [
@@ -475,6 +479,236 @@
    "leaked": [],
    "control": "output already exists",
    "refused": true
+  }
+ ],
+ "hidden_input_controls": [
+  {
+   "argv": [
+    "--key-pem",
+    "core-key-encrypted.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
+    "--output",
+    "hidden-0.json",
+    "--rehearsal-key-sha256",
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
+   ],
+   "scenario": "none",
+   "exit": 1,
+   "traceback": false,
+   "output": [
+    "Signing refused: the encrypted PEM needs its passphrase typed in a real local terminal with hidden input (not piped, not an IDE output pane). Nothing was read."
+   ],
+   "stdin": "pipe",
+   "prompt_shown": false,
+   "answer_left_unread": true,
+   "echoed": false,
+   "leaked": [],
+   "control": "non-TTY stdin: passphrase pre-loaded on a pipe",
+   "refused": true
+  },
+  {
+   "argv": [
+    "--key-pem",
+    "core-key-encrypted.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
+    "--output",
+    "hidden-1.json",
+    "--rehearsal-key-sha256",
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
+   ],
+   "scenario": "none",
+   "exit": 1,
+   "traceback": false,
+   "output": [
+    "Signing refused: the encrypted PEM needs its passphrase typed in a real local terminal with hidden input (not piped, not an IDE output pane). Nothing was read."
+   ],
+   "stdin": "/dev/null",
+   "leaked": [],
+   "control": "non-TTY stdin: /dev/null",
+   "refused": true
+  },
+  {
+   "argv": [
+    "--key-pem",
+    "core-key-encrypted.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
+    "--output",
+    "hidden-2.json",
+    "--rehearsal-key-sha256",
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
+   ],
+   "scenario": "echo control fails",
+   "exit": 1,
+   "traceback": false,
+   "output": [
+    "Signing refused: the encrypted PEM needs its passphrase typed in a real local terminal with hidden input (not piped, not an IDE output pane). Nothing was read."
+   ],
+   "stdin": "pty",
+   "prompt_shown": false,
+   "answered": false,
+   "echoed": false,
+   "leaked": [],
+   "control": "PTY, echo control fails (review R1 reproduction)",
+   "refused": true
+  },
+  {
+   "argv": [
+    "--key-pem",
+    "core-key-encrypted.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
+    "--output",
+    "hidden-3.json",
+    "--rehearsal-key-sha256",
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
+   ],
+   "scenario": "echo flag not cleared",
+   "exit": 1,
+   "traceback": false,
+   "output": [
+    "Signing refused: the encrypted PEM needs its passphrase typed in a real local terminal with hidden input (not piped, not an IDE output pane). Nothing was read."
+   ],
+   "stdin": "pty",
+   "prompt_shown": false,
+   "answered": false,
+   "echoed": false,
+   "leaked": [],
+   "control": "PTY, echo control leaves ECHO on",
+   "refused": true
+  },
+  {
+   "argv": [
+    "--key-pem",
+    "core-key-encrypted.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
+    "--output",
+    "hidden-4.json",
+    "--rehearsal-key-sha256",
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
+   ],
+   "scenario": "echo control fails after pre-flight",
+   "exit": 1,
+   "traceback": false,
+   "output": [
+    "Signing refused: the encrypted PEM needs its passphrase typed in a real local terminal with hidden input (not piped, not an IDE output pane). Nothing was read."
+   ],
+   "stdin": "pty",
+   "prompt_shown": false,
+   "answered": false,
+   "echoed": false,
+   "leaked": [],
+   "control": "PTY, echo control fails inside getpass after pre-flight",
+   "refused": true
+  },
+  {
+   "argv": [
+    "--key-pem",
+    "core-key-encrypted.pem",
+    "--previous",
+    "journal-0-seq9-twin.json",
+    "--candidate",
+    "candidate-1-extend-2026.10.1.json",
+    "--expected-candidate-sha256",
+    "9470a912e209e930891fc7a0f6569431c611e9a5e5ad5a150dd3eb33459db584",
+    "--output",
+    "hidden-5.json",
+    "--rehearsal-key-sha256",
+    "8b1bcdcb604ec373eb53e2ad4303fdbfb4337c5f03157f0da3307dd029a859f7"
+   ],
+   "scenario": "getpass fallback forced",
+   "exit": 1,
+   "traceback": false,
+   "output": [
+    "Signing refused: the encrypted PEM needs its passphrase typed in a real local terminal with hidden input (not piped, not an IDE output pane). Nothing was read."
+   ],
+   "stdin": "pty",
+   "prompt_shown": false,
+   "answered": false,
+   "echoed": false,
+   "leaked": [],
+   "control": "PTY, getpass echoed-input fallback forced",
+   "refused": true
+  }
+ ],
+ "mutations": [
+  {
+   "mutation": "pre-fix signer: plain getpass (fallback restored)",
+   "controls_failed": [
+    "non-TTY stdin: passphrase pre-loaded on a pipe",
+    "non-TTY stdin: /dev/null",
+    "PTY, echo control fails (review R1 reproduction)",
+    "PTY, echo control leaves ECHO on",
+    "PTY, echo control fails inside getpass after pre-flight",
+    "PTY, getpass echoed-input fallback forced"
+   ],
+   "echoed": [
+    "PTY, echo control fails (review R1 reproduction)",
+    "PTY, echo control leaves ECHO on",
+    "PTY, getpass echoed-input fallback forced"
+   ],
+   "signed": [
+    "non-TTY stdin: passphrase pre-loaded on a pipe",
+    "PTY, echo control fails (review R1 reproduction)",
+    "PTY, echo control leaves ECHO on",
+    "PTY, echo control fails inside getpass after pre-flight",
+    "PTY, getpass echoed-input fallback forced"
+   ],
+   "detected": true
+  },
+  {
+   "mutation": "GetPassWarning not fatal (fallback restored)",
+   "controls_failed": [
+    "PTY, echo control fails inside getpass after pre-flight",
+    "PTY, getpass echoed-input fallback forced"
+   ],
+   "echoed": [
+    "PTY, echo control fails inside getpass after pre-flight",
+    "PTY, getpass echoed-input fallback forced"
+   ],
+   "signed": [
+    "PTY, echo control fails inside getpass after pre-flight",
+    "PTY, getpass echoed-input fallback forced"
+   ],
+   "detected": true
+  },
+  {
+   "mutation": "hidden-input pre-flight removed",
+   "controls_failed": [
+    "PTY, echo control leaves ECHO on",
+    "PTY, echo control fails inside getpass after pre-flight"
+   ],
+   "echoed": [
+    "PTY, echo control leaves ECHO on"
+   ],
+   "signed": [
+    "PTY, echo control leaves ECHO on",
+    "PTY, echo control fails inside getpass after pre-flight"
+   ],
+   "detected": true
   }
  ],
  "no_secret_in_any_output": true,

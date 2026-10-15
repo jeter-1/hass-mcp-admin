@@ -95,25 +95,25 @@
   {
    "control": "extension_review altered",
    "exit": 1,
-   "last": "FAILED: extension review is not the reviewed evidence bytes",
+   "last": "FAILED: shipped transition validation refused (extension review hash mismatch)",
    "refused": true
   },
   {
    "control": "extra reference appended",
    "exit": 1,
-   "last": "FAILED: entries are not previous with only the reviewed extension",
+   "last": "FAILED: shipped transition validation refused (registry_entry_evidence_invalid)",
    "refused": true
   },
   {
    "control": "sibling entry altered",
    "exit": 1,
-   "last": "FAILED: entries are not previous with only the reviewed extension",
+   "last": "FAILED: shipped transition validation refused (positive transition must preserve all sibling entries)",
    "refused": true
   },
   {
    "control": "revocations altered on extension",
    "exit": 1,
-   "last": "FAILED: revocations changed",
+   "last": "FAILED: shipped transition validation refused (positive transition cannot alter retained denials)",
    "refused": true
   },
   {
@@ -131,7 +131,37 @@
   {
    "control": "tombstone dropped on revoke",
    "exit": 1,
-   "last": "FAILED: revocations are not previous + one tombstone",
+   "last": "FAILED: shipped transition validation refused (withdrawal must bind one denied release)",
+   "refused": true
+  },
+  {
+   "control": "identical release entry appended (review probe)",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a release version",
+   "refused": true
+  },
+  {
+   "control": "conflicting 2026.10.1 entry after the reviewed one",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a release version",
+   "refused": true
+  },
+  {
+   "control": "conflicting 2026.10.1 entry before the reviewed one",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a release version",
+   "refused": true
+  },
+  {
+   "control": "duplicate JSON member",
+   "exit": 1,
+   "last": "FAILED: candidate is not strict JSON (duplicate JSON member)",
+   "refused": true
+  },
+  {
+   "control": "revocation repeated on revoke",
+   "exit": 1,
+   "last": "FAILED: candidate repeats a revocation",
    "refused": true
   }
  ],

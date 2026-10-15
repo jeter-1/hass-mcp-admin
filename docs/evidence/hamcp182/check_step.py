@@ -17,7 +17,6 @@ import argparse
 import base64
 from datetime import timedelta
 import hashlib
-import json
 from pathlib import Path
 import sys
 
@@ -69,6 +68,18 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit("FAILED: " + message)
 
 
+def strict(raw: bytes, what: str):
+    # The shipped loader the signer uses: duplicate JSON members and non-finite values refuse.
+    try:
+        return prepare.strict_json(raw)
+    except ValueError as error:
+        raise SystemExit(f"FAILED: {what} is not strict JSON ({error})") from None
+
+
+def unique(values: list, message: str) -> None:
+    require(len(values) == len(set(values)), message)
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument("mode", choices=("candidate", "signed"))
 parser.add_argument("step", type=int, choices=sorted(STEPS))
@@ -87,18 +98,20 @@ public = Ed25519PublicKey.from_public_bytes(key_raw)
 operation, version, entry_path, evidence_path = STEPS[args.step]
 for path in (entry_path, evidence_path):
     require(sha((HERE / path).read_bytes()) == INPUT_SHA256[path], f"{path} is not the reviewed input")
-entry = json.loads((HERE / entry_path).read_bytes())
+entry = strict((HERE / entry_path).read_bytes(), entry_path)
 evidence = (HERE / evidence_path).read_bytes()
 
 previous_raw = args.previous.read_bytes()
-previous = prepare.parse_journal(previous_raw, public).accepted
+current = prepare.parse_journal(previous_raw, public)
+previous = current.accepted
 require(previous.sequence == EXPECTED_SEQUENCE[args.step] - 1,
         f"previous journal sequence {previous.sequence} is not the step's predecessor")
 before = {e.version: e.to_mapping() for e in previous.entries}
 
 candidate_raw = args.candidate.read_bytes()
-candidate = json.loads(candidate_raw)
-require(candidate_raw == canonical_json(candidate) + b"\n", "candidate is not canonical")
+candidate = strict(candidate_raw, "candidate")
+require(isinstance(candidate, dict) and candidate_raw == canonical_json(candidate) + b"\n",
+        "candidate is not canonical")
 extension = operation == "extend-capabilities"
 require(set(candidate) == CANDIDATE_FIELDS | ({"extension_review"} if extension else set()),
         "candidate fields differ")
@@ -116,6 +129,15 @@ require(candidate["review_evidence_sha256"] == sha(evidence) == entry["evidence_
 generated = parse_utc_timestamp(envelope["generated_at"])
 require(parse_utc_timestamp(envelope["expires_at"]) - generated == timedelta(days=90),
         "expiry is not generated_at + 90 days")
+# Release identities must be unique before entries are keyed by version below.
+unique([e["version"] for e in envelope["entries"]], "candidate repeats a release version")
+unique([e["entry_id"] for e in envelope["entries"]], "candidate repeats a release entry_id")
+unique([r["version"] for r in envelope["revocations"]], "candidate repeats a revocation")
+# The shipped closed envelope schema and transition rules, as the signer applies them.
+try:
+    prepare.validate_transition(candidate, current, generated)
+except (KeyError, TypeError, ValueError) as error:
+    raise SystemExit(f"FAILED: shipped transition validation refused ({error})") from None
 after = {e["version"]: e for e in envelope["entries"]}
 old_revocations = [r.to_mapping() for r in previous.revocations]
 if extension:

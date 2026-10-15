@@ -8,7 +8,12 @@ runbook step runs as a subprocess, exactly as the runbook spells it:
   prepare_core_release_registry.py extend-capabilities|revoke -> check_step.py candidate
   -> sign_step.py (step 1, 3 unencrypted PEM; step 2 encrypted PEM) -> check_step.py signed
 
-Signer refusals are also exercised, and no output may contain key material or
+Step 2 types the passphrase into a real pseudo-terminal after the hidden prompt
+appears and proves it was not echoed. Signer misuse refusals are exercised, and
+(H1, review R1) so are the hidden-input refusals: non-TTY stdin, echo control
+failing or ineffective, and getpass's echoed fallback must each refuse before
+any passphrase is read. Three source mutations that weaken one layer each must
+make at least one of those controls fail. No output may contain key material or
 the passphrase. Prints a JSON report; the key and PEMs are deleted at exit.
 """
 
@@ -27,13 +32,15 @@ import tempfile
 HERE = Path(__file__).resolve().parent
 EVIDENCE = HERE.parent
 ROOT = HERE.parents[3]
-sys.path[:0] = [str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
+sys.path[:0] = [str(HERE), str(EVIDENCE), str(ROOT / "scripts"), str(ROOT / "hass_mcp_engineering_beta")]
 import prepare_core_release_registry as prepare  # noqa: E402
+from terminal import on_pipe, on_pty, signer_command  # noqa: E402
 from cryptography.hazmat.primitives import serialization  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import ec  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (  # noqa: E402
     Ed25519PrivateKey, Ed25519PublicKey)
 from ha_mcp_engineering.signed_registry import canonical_json  # noqa: E402
+from sign_step import NO_HIDDEN_INPUT  # noqa: E402
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--out", type=Path, required=True, help="new directory for journals and report")
@@ -72,13 +79,29 @@ def twin(production: Path, production_key: Path) -> bytes:
     return out
 
 
-def run(argv, *, stdin=None):
-    done = subprocess.run([sys.executable, *map(str, argv)], input=stdin, capture_output=True,
-                          text=True, cwd=ROOT, start_new_session=True)  # no tty: getpass reads stdin
+def names(argv):
+    return [Path(a).name if os.sep in str(a) else str(a) for a in argv]
+
+
+def leaks(text: str) -> list:
+    return [i for i, s in enumerate(SECRETS) if s in text] + (["PEM"] if "PRIVATE KEY" in text else [])
+
+
+def run(argv):
+    done = subprocess.run([sys.executable, *map(str, argv)], stdin=subprocess.DEVNULL,
+                          capture_output=True, text=True, cwd=ROOT, start_new_session=True)
     text = done.stdout + done.stderr
-    leaked = [i for i, s in enumerate(SECRETS) if s in text] + (["PEM"] if "PRIVATE KEY" in text else [])
-    return {"argv": [Path(a).name if os.sep in str(a) else str(a) for a in argv],
-            "exit": done.returncode, "output": text.strip().splitlines(), "leaked": leaked}
+    return {"argv": names(argv), "exit": done.returncode, "output": text.strip().splitlines(),
+            "leaked": leaks(text)}
+
+
+def run_signer(argv, *, answer=None, stdin="pty", scenario="none", mutation=()):
+    """sign_step.py with the passphrase typed on a PTY after the prompt, or pre-loaded on a pipe."""
+    command = signer_command(EVIDENCE / "sign_step.py", argv, scenario=scenario, mutation=mutation)
+    runner = on_pty if stdin == "pty" else on_pipe
+    result = runner(command, answer=None if answer is None else answer.encode(), cwd=ROOT)
+    result["leaked"] = leaks("\n".join(result["output"])) + (["passphrase echoed"] if result.get("echoed") else [])
+    return {"argv": names(argv), "scenario": scenario, **result}
 
 
 args.out.mkdir(parents=True, exist_ok=False)
@@ -121,16 +144,20 @@ with tempfile.TemporaryDirectory() as private:
                                                  "--candidate", candidate] + rehearsal)
         expected = record["check_candidate"]["output"][-2].removeprefix("Candidate SHA256: ")
         pem = encrypted_pem if step == 2 else plain_pem
-        record["sign"] = run([EVIDENCE / "sign_step.py", "--key-pem", pem, "--previous", previous,
-                              "--candidate", candidate, "--expected-candidate-sha256", expected,
-                              "--output", signed, "--rehearsal-key-sha256", fingerprint],
-                             stdin=PASSPHRASE + "\n" if step == 2 else None)
+        sign_argv = ["--key-pem", pem, "--previous", previous, "--candidate", candidate,
+                     "--expected-candidate-sha256", expected, "--output", signed,
+                     "--rehearsal-key-sha256", fingerprint]
+        record["sign"] = (run_signer(sign_argv, answer=PASSPHRASE) if step == 2
+                          else run([EVIDENCE / "sign_step.py", *sign_argv]))
         record["check_signed"] = run(check + ["signed", step, "--previous", previous, "--candidate",
                                               candidate, "--signed", signed] + rehearsal)
-        record["pem"] = "encrypted (passphrase via hidden prompt)" if step == 2 else "unencrypted"
+        record["pem"] = ("encrypted (passphrase typed on a PTY at the hidden prompt)" if step == 2
+                         else "unencrypted (no prompt)")
         record["candidate_sha256"], record["journal_sha256"] = expected, sha(signed.read_bytes())
         record["ok"] = (all(record[k]["exit"] == 0 for k in ("prepare", "check_candidate", "sign", "check_signed"))
-                        and record["check_signed"]["output"][-1] == "OK")
+                        and record["check_signed"]["output"][-1] == "OK"
+                        and (step != 2 or (record["sign"]["prompt_shown"] and record["sign"]["answered"]
+                                           and not record["sign"]["echoed"])))
         report["steps"].append(record)
         if step == 1:
             first_candidate = (candidate, expected)
@@ -140,11 +167,12 @@ with tempfile.TemporaryDirectory() as private:
     scratch = args.out / "refused"
     scratch.mkdir()
 
-    def sign(name, pem, *, prev=seq9, expected_sha=expected, output=None, stdin=None):
-        result = run([EVIDENCE / "sign_step.py", "--key-pem", pem, "--previous", prev,
-                      "--candidate", candidate, "--expected-candidate-sha256", expected_sha,
-                      "--output", output or scratch / f"{name}.json",
-                      "--rehearsal-key-sha256", fingerprint], stdin=stdin)
+    def sign(name, pem, *, prev=seq9, expected_sha=expected, output=None, answer=None):
+        argv = ["--key-pem", pem, "--previous", prev, "--candidate", candidate,
+                "--expected-candidate-sha256", expected_sha,
+                "--output", output or scratch / f"{name}.json", "--rehearsal-key-sha256", fingerprint]
+        result = (run_signer(argv, answer=answer) if answer is not None
+                  else run([EVIDENCE / "sign_step.py", *argv]))
         result["control"] = name
         result["refused"] = result["exit"] != 0 and not (output or scratch / f"{name}.json").exists()
         return result
@@ -154,7 +182,7 @@ with tempfile.TemporaryDirectory() as private:
     report["signer_controls"] = [
         sign("another Ed25519 PEM", other_pem),
         sign("non-Ed25519 (P-256) PEM", ec_pem),
-        sign("encrypted PEM, wrong passphrase", encrypted_pem, stdin="wrong\n"),
+        sign("encrypted PEM, wrong passphrase (typed on a PTY)", encrypted_pem, answer="wrong-throwaway"),
         sign("wrong expected candidate sha", plain_pem, expected_sha="0" * 64),
         sign("stale previous journal (step 1 candidate on sequence 12)", plain_pem, prev=previous),
     ]
@@ -170,10 +198,63 @@ with tempfile.TemporaryDirectory() as private:
     out.update(control="output already exists", refused=out["exit"] != 0 and existing.read_bytes() == b"{}\n")
     report["signer_controls"].append(out)
 
+    # H1 (review R1): hidden input is guaranteed or nothing is read. The answer is the
+    # real throwaway passphrase, so a fallback would sign; it is offered only after a prompt.
+    hidden_cases = [
+        ("non-TTY stdin: passphrase pre-loaded on a pipe", "pipe", PASSPHRASE, "none"),
+        ("non-TTY stdin: /dev/null", "pipe", None, "none"),
+        ("PTY, echo control fails (review R1 reproduction)", "pty", PASSPHRASE, "echo control fails"),
+        ("PTY, echo control leaves ECHO on", "pty", PASSPHRASE, "echo flag not cleared"),
+        ("PTY, echo control fails inside getpass after pre-flight", "pty", PASSPHRASE,
+         "echo control fails after pre-flight"),
+        ("PTY, getpass echoed-input fallback forced", "pty", PASSPHRASE, "getpass fallback forced"),
+    ]
+
+    def hidden_controls(directory, mutation=()):
+        directory.mkdir()
+        results = []
+        for number, (name, stdin, answer, scenario) in enumerate(hidden_cases):
+            output = directory / f"hidden-{number}.json"
+            result = run_signer(["--key-pem", encrypted_pem, "--previous", seq9, "--candidate", candidate,
+                                 "--expected-candidate-sha256", expected, "--output", output,
+                                 "--rehearsal-key-sha256", fingerprint],
+                                answer=answer, stdin=stdin, scenario=scenario, mutation=mutation)
+            result["control"] = name
+            result["refused"] = (result["exit"] != 0 and not output.exists() and not result["traceback"]
+                                 and not result.get("prompt_shown") and not result.get("answered")
+                                 and not result.get("echoed") and result["output"][-1:] == [NO_HIDDEN_INPUT]
+                                 and (answer is None or stdin == "pty" or result["answer_left_unread"]))
+            results.append(result)
+        return results
+
+    report["hidden_input_controls"] = hidden_controls(scratch / "hidden")
+    mutations = {
+        "pre-fix signer: plain getpass (fallback restored)": [(
+            "        passphrase = read_passphrase()\n",
+            '        passphrase = getpass.getpass("PEM passphrase (hidden): ").encode()\n')],
+        "GetPassWarning not fatal (fallback restored)": [(
+            '        warnings.simplefilter("error", getpass.GetPassWarning)\n', "")],
+        "hidden-input pre-flight removed": [(
+            "    require_hidden_input()\n    with warnings", "    with warnings")],
+    }
+    report["mutations"] = []
+    for number, (name, mutation) in enumerate(mutations.items()):
+        results = hidden_controls(scratch / f"mutation-{number}", mutation)
+        report["mutations"].append({
+            "mutation": name,
+            "controls_failed": [r["control"] for r in results if not r["refused"]],
+            # Expected under a mutation: the throwaway passphrase may be echoed (redacted here).
+            "echoed": [r["control"] for r in results if r.get("echoed")],
+            "signed": [r["control"] for r in results if r["exit"] == 0],
+        })
+        report["mutations"][-1]["detected"] = bool(report["mutations"][-1]["controls_failed"])
+
 report["no_secret_in_any_output"] = not any(
     r["leaked"] for s in report["steps"] for r in (s["prepare"], s["check_candidate"], s["sign"], s["check_signed"])
-) and not any(c["leaked"] for c in report["signer_controls"])
+) and not any(c["leaked"] for c in report["signer_controls"] + report["hidden_input_controls"])
 report["ok"] = (all(s["ok"] for s in report["steps"]) and all(c["refused"] for c in report["signer_controls"])
+                and all(c["refused"] for c in report["hidden_input_controls"])
+                and all(m["detected"] for m in report["mutations"])
                 and report["no_secret_in_any_output"])
 (args.out / "report.json").write_text(json.dumps(report, indent=1) + "\n")
 print(json.dumps(report, indent=1))

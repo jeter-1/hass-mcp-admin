@@ -11,13 +11,22 @@ pull request's exact head says **SAFE TO SIGN**. Run it from a checkout of that
 reviewed head. Evidence: [`core-registry-hamcp182.md`](core-registry-hamcp182.md).
 
 **Rules:**
+- **Run this in a real local terminal**: a terminal window, or an SSH session
+  in one, with every command typed or pasted at the shell prompt. Do **not**
+  run it piped into a shell, from a script file, through `ssh host 'command'`,
+  or in an IDE output, run or notebook pane. The Setup pre-flight checks this,
+  and so does each signing step.
 - Use only the commands below. Use no other signer, helper or edited command.
   - If any command refuses or prints anything other than what is expected:
     STOP, keep every file, and report. Do not retry with a different tool.
 - Your Core signing PEM is passed **only** as the `--key-pem` path to
   `sign_step.py`.
-  - If the PEM is encrypted, `sign_step.py` asks for the passphrase in a hidden
-    prompt.
+  - An unencrypted PEM is used directly; there is no prompt. An encrypted PEM
+    also works; this runbook does not require either form.
+  - If the PEM is encrypted, `sign_step.py` asks for the passphrase only at its
+    hidden prompt `PEM passphrase (hidden): `, and only after it has verified
+    that the terminal will not echo it. Otherwise it refuses before reading
+    anything. There is no passphrase argument, environment variable or file.
   - Never `cat`, `echo`, copy or move the PEM, never put it inside the
     repository, and never paste its contents or passphrase anywhere.
 - Every output path must be new. Both tools refuse to overwrite.
@@ -47,6 +56,13 @@ REASON="outside the CI support window; retired by owner direction (HAMCP-182)"
 set +x
 ```
 
+Terminal pre-flight. If you ever open a new terminal, redo Setup from the top.
+
+```bash
+[ -t 0 ] && [ -t 1 ] && [ -t 2 ] && echo "terminal OK" || echo "STOP: not a real terminal"
+#   expect "terminal OK". Anything else: STOP and open a real local terminal.
+```
+
 Confirm the public-key fingerprint:
 
 ```bash
@@ -63,8 +79,8 @@ PEM. `sign_step.py` re-checks the second condition before it signs.
 | File | SHA256 |
 |---|---|
 | `scripts/prepare_core_release_registry.py` | `6e09d3f96e79253f730604ffb10caffe69d77c183fc734f5517a3733cdf4b368` |
-| `docs/evidence/hamcp182/check_step.py` | `a65b0db957de1abd379d35c43ebb61486b7faa33c960b9ce0cdac4661a2f4690` |
-| `docs/evidence/hamcp182/sign_step.py` | `e698f7879383e5d281d5f6f234be94e873afd52a8a38f6c2da8eb02bc25f2b54` |
+| `docs/evidence/hamcp182/check_step.py` | `efd20c9ee5cbbb056c92d593148f51fbde0a3119117fe748ec6c1877144c7062` |
+| `docs/evidence/hamcp182/sign_step.py` | `43491477e88f6bdd0fad5dd1e4862bf32dda9e003282a60ba00cb9e0c3681381` |
 | `docs/evidence/hamcp182/core-public-key.txt` | `9b27fb7f81cae19b1de066e926178e8d33b185d2601b5c30723fbe447ccc9f42` |
 | `docs/evidence/hamcp182/candidates/candidate-1-extend-2026.10.1.json` | `d9607779d6f7945083dc1ef8126857c880901653e33b32cae808eaece16488d4` |
 
@@ -77,12 +93,15 @@ $PY $D/check_step.py candidate 1 --previous upstream-trust/ha-core-release-regis
   --candidate $D/candidates/candidate-1-extend-2026.10.1.json
 #   expect "references {'2026.10.0': 21, '2026.10.1': 22, '2026.9.4': 21}",
 #   "Candidate SHA256: d9607779d6f7945083dc1ef8126857c880901653e33b32cae808eaece16488d4" and "OK"
+[ -t 0 ] && [ -t 1 ] && [ -t 2 ] && echo "terminal OK" || echo "STOP: not a real terminal"
 $PY $D/sign_step.py --key-pem "$KEY_PEM" \
   --previous upstream-trust/ha-core-release-registry.json \
   --candidate $D/candidates/candidate-1-extend-2026.10.1.json \
   --expected-candidate-sha256 d9607779d6f7945083dc1ef8126857c880901653e33b32cae808eaece16488d4 \
   --output $O/journal-1.json
-#   expect "Public key fingerprint: 7793e80f…3dac" and "Signed journal SHA256: <J1>"
+#   expect "terminal OK"; for an encrypted PEM, the hidden prompt "PEM passphrase (hidden): "
+#   (nothing appears as you type); then "Public key fingerprint: 7793e80f…3dac" and
+#   "Signed journal SHA256: <J1>"
 $PY $D/check_step.py signed 1 --previous upstream-trust/ha-core-release-registry.json \
   --candidate $D/candidates/candidate-1-extend-2026.10.1.json --signed $O/journal-1.json
 #   expect "Signed journal verified with the public key: sequence 10 ..." and "OK"
@@ -100,6 +119,7 @@ $PY $D/check_step.py candidate 2 --previous $O/journal-1.json \
   --candidate $O/candidate-2-extend-2026.10.0.json
 #   expect "references {'2026.10.0': 22, '2026.10.1': 22, '2026.9.4': 21}",
 #   "Candidate SHA256: <S2>" (equal to the prepared SHA) and "OK"
+[ -t 0 ] && [ -t 1 ] && [ -t 2 ] && echo "terminal OK" || echo "STOP: not a real terminal"
 $PY $D/sign_step.py --key-pem "$KEY_PEM" --previous $O/journal-1.json \
   --candidate $O/candidate-2-extend-2026.10.0.json --expected-candidate-sha256 <S2> \
   --output $O/journal-2.json
@@ -120,6 +140,7 @@ $PY $D/check_step.py candidate 3 --previous $O/journal-2.json \
   --candidate $O/candidate-3-revoke-2026.9.4.json
 #   expect "references {'2026.10.0': 22, '2026.10.1': 22}",
 #   "revoked ['2026.9.2', '2026.9.3', '2026.9.4']", "Candidate SHA256: <S3>" and "OK"
+[ -t 0 ] && [ -t 1 ] && [ -t 2 ] && echo "terminal OK" || echo "STOP: not a real terminal"
 $PY $D/sign_step.py --key-pem "$KEY_PEM" --previous $O/journal-2.json \
   --candidate $O/candidate-3-revoke-2026.9.4.json --expected-candidate-sha256 <S3> \
   --output $O/journal-3.json
@@ -149,6 +170,8 @@ That draft PR is published only by its merge, after review and Josh's Ready.
 
 | Message | Meaning |
 |---|---|
+| `STOP: not a real terminal` | The pre-flight failed. Do not run the signer here. Open a real local terminal and redo Setup. |
+| `Signing refused: the encrypted PEM needs its passphrase typed in a real local terminal with hidden input (not piped, not an IDE output pane). Nothing was read.` | Hidden input could not be guaranteed, so no passphrase was read and nothing was signed. Open a real local terminal and redo Setup. Never pipe or paste the passphrase into a command. |
 | `Signing refused: the PEM is not the reviewed Core key (public key fingerprint …)` | Wrong PEM. Nothing was signed. |
 | `Core registry signing refused; review inputs and bounds.` | Wrong passphrase, wrong expected SHA, stale predecessor, existing output, or invalid transition. Nothing was written. |
 | `FAILED: …` from `check_step.py` | The candidate or signed journal is not the reviewed operation. Do not continue. |

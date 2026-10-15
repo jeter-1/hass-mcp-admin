@@ -124,7 +124,13 @@ precomputed. The runbook prepares them from the previous signed step.
 `check_step.py` (public key only) pins the six input hashes and requires:
 - the reviewed key fingerprint, the step's predecessor sequence and the exact
   predecessor bytes;
-- a canonical candidate with the exact field set, model and operation;
+- a candidate parsed with the shipped duplicate-rejecting `strict_json` loader
+  (a repeated JSON member refuses), canonical, with the exact field set, model
+  and operation;
+- unique release versions, entry IDs and revocations (a repeated entry,
+  identical or conflicting, refuses before entries are keyed by version);
+- the shipped `validate_transition` (the closed envelope schema and transition
+  rules the signer applies);
 - the direct-successor sequence and digest, and the evidence binding;
 - a 90-day expiry.
 
@@ -202,19 +208,26 @@ This runs the runbook's exact commands as subprocesses:
 - the shipped prepare CLI;
 - `check_step.py candidate`;
 - `sign_step.py`, with an unencrypted PEM for steps 1 and 3 and a
-  passphrase-encrypted PEM for step 2;
+  passphrase-encrypted PEM for step 2. The step-2 passphrase is typed on a
+  pseudo-terminal only after the hidden prompt appears (`harness/terminal.py`);
 - `check_step.py signed`.
 
 Results:
-- **All 3 steps pass.**
+- **All 3 steps pass.** Step 2 shows the hidden prompt, and the passphrase is
+  not echoed.
 - **7/7 signer refusals:** another Ed25519 PEM, a P-256 PEM, a wrong
-  passphrase, a wrong expected SHA, a stale predecessor, the default
-  (production) fingerprint with the rehearsal key, and an existing output.
+  passphrase typed on a PTY, a wrong expected SHA, a stale predecessor, the
+  default (production) fingerprint with the rehearsal key, and an existing
+  output.
+- **6/6 hidden-input refusals** (§10): each exits non-zero with the fixed
+  message, shows no prompt, reads and echoes nothing, writes no output and
+  prints no traceback.
+- **3/3 mutations detected** (§10).
 - No output contains the passphrase, the raw private key or PEM text.
 
 **Checker controls** (`harness/check_step_controls.py`,
 `part0/check-step-controls.json`): all 6 planned step/mode checks print `OK`,
-and all **16 mutations are refused**. The mutations are:
+and all **21 mutations are refused**. The mutations are:
 - wrong step, wrong predecessor, or a step-1 output offered for step 2;
 - wrong key, or the production fingerprint with the rehearsal key;
 - non-canonical bytes;
@@ -222,7 +235,10 @@ and all **16 mutations are refused**. The mutations are:
 - removed or altered `extension_review`;
 - an extra reference, an altered sibling, or altered revocations;
 - expiry beyond 90 days;
-- an altered or dropped tombstone.
+- an altered or dropped tombstone;
+- duplicates (§10): an identical release entry appended (the review's probe),
+  a conflicting 2026.10.1 entry after and before the reviewed one, a repeated
+  JSON member, and a repeated revocation.
 
 ### 5.1 beta.8 rollback: the journal is safe, the entity-metadata tool is NOT
 
@@ -292,6 +308,11 @@ entries. An Engineering rollback to beta.8 is covered in §5.1.
   - Signing is the shipped `sign_candidate`, and output is the shipped
     `write_new`.
   - It refuses a key whose public fingerprint is not `7793e80f…3dac`.
+  - An unencrypted PEM needs no prompt. The runbook accepts either form.
+  - An encrypted PEM's passphrase is read only at a hidden prompt that is
+    guaranteed before anything is read (§10). There is no passphrase argument,
+    environment variable or file. The runbook must run in a real local
+    terminal and pre-flights that before each signing step.
   - It never prints or stores key material.
   - Every failure exits with a fixed message.
 - Any deviation from the runbook voids this review: a different signer, an
@@ -308,3 +329,74 @@ entries. An Engineering rollback to beta.8 is covered in §5.1.
 - Approved-but-unapplied plans across the selection-token change were not
   exercised.
 - The live Core version was not observed.
+
+## 10. Pre-signing review corrections (H1, L1)
+
+The independent Codex pre-signing review of head `5a4f2ce` returned **sign after
+corrections**. It verified candidate 1, the receipt bindings and both runtime
+rehearsals, and raised two findings. Both are corrected here; nothing else
+changed. Main is still `690a00b`, so the runtime-tree binding is unchanged.
+
+**H1 (High): the encrypted-key prompt could echo the passphrase and still
+sign.** `sign_step.py` called `getpass.getpass`, which only *warns*
+(`GetPassWarning`) when it cannot switch echo off, and then reads echoed
+input. The 5a4f2ce rehearsal report recorded that warning on its encrypted
+step; it was missed. The signer now:
+- before prompting, requires stdin to be a terminal and verifies, by reading
+  the setting back, that echo can be switched off (then restores it); a
+  platform without POSIX terminal control refuses;
+- turns `GetPassWarning` into a refusal, so getpass's echoed fallback never
+  reads input;
+- in either case exits non-zero with the fixed message `Signing refused: the
+  encrypted PEM needs its passphrase typed in a real local terminal with hidden
+  input (not piped, not an IDE output pane). Nothing was read.`;
+- has no passphrase argument, environment variable or file. An unencrypted PEM
+  is unchanged (no prompt).
+
+Proof (`harness/runbook_rehearsal.py`, `part0/runbook-rehearsal.json`;
+throwaway keys only):
+
+| Hidden-input control | Result |
+|---|---|
+| Non-TTY stdin, the real throwaway passphrase pre-loaded on a pipe | refused; the passphrase is left unread in the pipe |
+| Non-TTY stdin, `/dev/null` | refused |
+| PTY, every echo-control call fails (the review's reproduction) | refused; no prompt, nothing read or echoed, no output |
+| PTY, echo control succeeds but leaves ECHO on | refused |
+| PTY, echo control fails inside getpass after the pre-flight | refused (fallback warning is fatal) |
+| PTY, getpass's echoed fallback forced | refused |
+| PTY, real hidden prompt (step 2) | signs; prompt shown, passphrase not echoed |
+
+Mutations: each re-runs the six controls against a mutated `sign_step.py`
+(compiled in memory, never written):
+
+| Mutation | Controls that then fail |
+|---|---|
+| Pre-fix signer: plain `getpass` (fallback restored) | all 6; 5 sign, 3 echo |
+| `GetPassWarning` not fatal | fallback-after-pre-flight, fallback forced (both sign and echo) |
+| Pre-flight removed | ECHO-left-on (signs and echoes), fallback-after-pre-flight |
+
+The review's own probe, re-run unchanged against these files, now records the
+echo-control failure as exit 1 with no passphrase requested or echoed and no
+signed output.
+
+**L1 (Low): the checker accepted duplicate candidate entries.** `check_step.py`
+keyed entries by version, so a repeated release entry collapsed. The shipped
+signer already refused such bytes. The checker now uses the shipped
+`strict_json` loader, requires unique versions, entry IDs and revocations, and
+runs the shipped `validate_transition` (§4). Of the five duplicate controls, the
+5a4f2ce checker printed `OK` for two (an identical appended entry, and a
+conflicting entry before the reviewed one); the corrected checker refuses all
+five. Candidate 1 still passes, and its bytes are unchanged.
+
+**Pinned files at this correction:**
+
+| File | SHA256 |
+|---|---|
+| `OWNER-SIGNING-RUNBOOK.md` | `40a142b057a1477249079b483b48ce4abbf9e8c18cc20b20fee7938bfbc978a2` |
+| `sign_step.py` | `43491477e88f6bdd0fad5dd1e4862bf32dda9e003282a60ba00cb9e0c3681381` |
+| `check_step.py` | `efd20c9ee5cbbb056c92d593148f51fbde0a3119117fe748ec6c1877144c7062` |
+| `candidates/candidate-1-extend-2026.10.1.json` | `d9607779d6f7945083dc1ef8126857c880901653e33b32cae808eaece16488d4` (unchanged) |
+| `core-public-key.txt` | `9b27fb7f81cae19b1de066e926178e8d33b185d2601b5c30723fbe447ccc9f42` (unchanged) |
+| `scripts/prepare_core_release_registry.py` | `6e09d3f96e79253f730604ffb10caffe69d77c183fc734f5517a3733cdf4b368` (unchanged) |
+
+The runbook's pinned-files table carries the same hashes, except for its own.

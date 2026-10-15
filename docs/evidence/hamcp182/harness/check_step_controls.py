@@ -1,7 +1,8 @@
 """HAMCP-182: replay check_step.py over the ephemeral-key rehearsal (build_journals.py output).
 
 Every planned step must pass in both modes; every mutation must be refused with
-"FAILED:" and a non-zero exit. Public keys only. Prints a JSON report.
+"FAILED:" and a non-zero exit, including repeated entries, revocations and JSON
+members (L1). Public keys only. Prints a JSON report.
 """
 
 from __future__ import annotations
@@ -70,6 +71,36 @@ def drop_tombstone(v):
     v["envelope"]["revocations"] = v["envelope"]["revocations"][:-1]
 
 
+def duplicate_entry(where):
+    # L1 (review R2): a repeated release entry, identical or conflicting, either order.
+    def change(v):
+        entries = v["envelope"]["entries"]
+        index = next(i for i, e in enumerate(entries) if e["version"] == "2026.10.1")
+        reviewed = entries[index]
+        conflicting = {**reviewed, "capabilities": reviewed["capabilities"][:-1]}
+        if where == "identical":
+            entries.append(entries[0])
+        elif where == "conflicting after":
+            entries.insert(index + 1, conflicting)
+        else:
+            entries.insert(index, conflicting)
+    return change
+
+
+def duplicate_revocation(v):
+    v["envelope"]["revocations"].append(v["envelope"]["revocations"][0])
+
+
+def duplicate_member():
+    # A repeated JSON member that plain json.loads would collapse (last wins).
+    raw = (run / "planned/candidate-step1.json").read_bytes()
+    model = json.loads(raw)["model"]
+    path = Path(tmp) / "duplicate-member.json"
+    path.write_bytes(b"{" + json.dumps({"model": model}, separators=(",", ":")).encode()[1:-1]
+                     + b"," + raw[1:])
+    return path
+
+
 with tempfile.TemporaryDirectory() as tmp:
     other_key = Path(tmp) / "other.txt"
     other_key.write_text(base64.b64encode(bytes(range(32))).decode() + "\n")
@@ -100,6 +131,14 @@ with tempfile.TemporaryDirectory() as tmp:
         ("tombstone reason altered", lambda: check(
             "candidate", 3, mutated(3, lambda v: v["envelope"]["revocations"][-1].update(reason="other")))),
         ("tombstone dropped on revoke", lambda: check("candidate", 3, mutated(3, drop_tombstone))),
+        ("identical release entry appended (review probe)", lambda: check(
+            "candidate", 1, mutated(1, duplicate_entry("identical")))),
+        ("conflicting 2026.10.1 entry after the reviewed one", lambda: check(
+            "candidate", 1, mutated(1, duplicate_entry("conflicting after")))),
+        ("conflicting 2026.10.1 entry before the reviewed one", lambda: check(
+            "candidate", 1, mutated(1, duplicate_entry("conflicting before")))),
+        ("duplicate JSON member", lambda: check("candidate", 1, duplicate_member())),
+        ("revocation repeated on revoke", lambda: check("candidate", 3, mutated(3, duplicate_revocation))),
     ]
 
     def _noncanonical():
