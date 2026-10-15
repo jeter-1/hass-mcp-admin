@@ -2874,6 +2874,10 @@ class F3RuntimeIntegration:
             task = existing
             if task.plan_hash != self.service.plan_hash(plan):
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
+            # HAMCP-184 F-01: a re-apply carries the same caller-intent guard
+            # as the first apply and the legacy path, before any state change.
+            if not expected_plan_hash or expected_plan_hash != task.plan_hash:
+                raise GovernanceError(ErrorCode.APPROVAL_HASH_MISMATCH)
             prepared, requests = await self._load_prepared(plan, task)
         task = self._enter_public_preflight(task)
         if task.state in TERMINAL_TASK_STATES:
