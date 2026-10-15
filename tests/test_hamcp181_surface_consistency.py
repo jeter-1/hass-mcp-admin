@@ -23,7 +23,6 @@ Every provider, registry and clock is synthetic and offline.
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -46,8 +45,6 @@ from ha_mcp_engineering.governance.entity_metadata import (  # noqa: E402
 )
 from ha_mcp_engineering.governance.task_models import ExecutionTaskState  # noqa: E402
 from ha_mcp_engineering.models.responses import SuccessResponse  # noqa: E402
-
-logging.disable(logging.CRITICAL)
 
 BUDGETS = (None, 2000, 1024)
 # A counter is never shown without the basis that says what it counts

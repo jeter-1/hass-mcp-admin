@@ -12,7 +12,6 @@ All gateways, records and audit files are synthetic and offline.
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 import sys
 import unittest
@@ -32,8 +31,6 @@ from ha_mcp_engineering.governance.helper_state import HelperStateGatewayError  
 from ha_mcp_engineering.governance.resources import (  # noqa: E402
     ConfigurationMutationNotDispatchedError,
 )
-
-logging.disable(logging.CRITICAL)
 
 TARGET = ("automation", "apply_hvac_comfort")
 

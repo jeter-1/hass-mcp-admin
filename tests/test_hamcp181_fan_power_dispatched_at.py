@@ -11,7 +11,6 @@ authority inputs and audit files are synthetic.
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 import sys
 import tempfile
@@ -39,8 +38,6 @@ from ha_mcp_engineering.power.service import PowerCoreAuthority, PowerService  #
 from ha_mcp_engineering.providers.upstream_fan import FanProvider  # noqa: E402
 from ha_mcp_engineering.providers.upstream_power import PowerProvider  # noqa: E402
 from ha_mcp_engineering.request_context import begin_request, end_request  # noqa: E402
-
-logging.disable(logging.CRITICAL)
 
 FACT_KEYS = ("dispatched_at", "dispatched_at_basis", "dispatch_intent_recorded_at",
              "provider_response_recorded_at", "dispatch_phase", "attempt_counts_basis")
