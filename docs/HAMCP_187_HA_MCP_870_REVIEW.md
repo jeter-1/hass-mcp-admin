@@ -1,14 +1,21 @@
 # HAMCP-187: upstream ha-mcp 8.7.0 review
 
 This is a read-only review report. It changes no runtime, policy, registry,
-workflow, support-window or stable-v1 file, and it admits nothing. Every
-admission step below is a design proposal for Josh to decide.
+workflow, support-window or stable-v1 file, and it admits nothing.
+
+**Status: 8.7.0 adoption is parked.** Josh decided on 2026-10-15 to stay on
+ha-mcp 8.5.0 with HA-MCP Custom Component 2.2.1 (see "Decisions recorded" at
+the end). The admission plan in section 8 and the update steps in sections 5
+and 8.7 are kept as conditional designs for a future reconsideration. They are
+not pending approval requests.
 
 - Base: `main` at `690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1` (Engineering
   `2.4.1-beta.9`, stable `1.1.2`).
 - Production reference (owner-stated): ha-mcp 8.5.0 add-on, `admitted_exact`,
-  with the HA-MCP Custom Component ("File & YAML Tools" entry only) on Core
-  2026.10.1.
+  with the HA-MCP Custom Component 2.2.1 ("File & YAML Tools" entry only) on
+  Core 2026.10.1. The component version was stated by the owner on
+  2026-10-15, after the capture. The capture in section 10 used 2.2.0 and
+  2.2.2; it did not run 2.2.1.
 - Review date: 2026-10-15.
 - Amended 2026-10-15 with an owner-authorized disposable local capture
   (section 10). Where the capture contradicted an earlier source-only claim,
@@ -325,7 +332,7 @@ Required bindings: the `FAN_RELEASES` and power release maps
 |---|---|---|---|
 | ha_config_get_dashboard | 35ee7247 / 9d193def / 3d5eb7f0. **Compatible for Engineering's calls; incompatible upstream** | structural | Upstream adds `describe` and removes `mode` (search is now implied by `query`). Searches span all dashboards when no `url_path` is given, and results carry `truncated`. `openWorldHint` changes from false to true (#2700, #2671). Engineering calls only `list_only=true` and `url_path` (`upstream_dashboard.py:513,611,634`); its `"mode"` at `:1626` is an output metadata key, not this input. `describe=true` runs QuickJS inside HA, so it must stay withheld |
 | ha_get_skill_guide | See 3a | — | Fixed internal read of `references/dashboard-guide.md`. `clients/mcp.py:359-371` needs 8.7.0 |
-| ha_config_set_dashboard | Compatible change (behaviour narrowed) | `readOnlyHint: false`, `idempotentHint: false` and `openWorldHint` true added; input structure equal to 8.6 (`02cde8fb`) | Parameters, the `config_hash` optimistic lock and `compute_config_hash` are unchanged. New pre-write rejections of `""` and `{"item": …}` list slots. One extra read occurs before inner patches. With component 2.2.2, component-path saves add advisory card `warnings` after QuickJS checks, which can take up to about 20 s (`dashboard_edit.py:211-221`). **Measured by capture (section 10, Q3):** the first write after each Core start took 5.9–6.7 s (QuickJS start-up; the first write ever also installs `quickjs-ng`); later writes took 0.27–0.87 s with a custom card and about 0.012 s without. This holds with 8.5.0 as well as 8.7.0, because the component does the work. With component 2.2.0 every write took ≤ 0.019 s. Engineering's setter timeout must still be checked against the ~6 s first write and the 20 s upstream bound |
+| ha_config_set_dashboard | Compatible change (behaviour narrowed) | `readOnlyHint: false`, `idempotentHint: false` and `openWorldHint` true added; input structure equal to 8.6 (`02cde8fb`) | Parameters, the `config_hash` optimistic lock and `compute_config_hash` are unchanged. New pre-write rejections of `""` and `{"item": …}` list slots. One extra read occurs before inner patches. With component 2.2.2, component-path saves add advisory card `warnings` after QuickJS checks, which can take up to about 20 s (`dashboard_edit.py:211-221`). **Measured by capture (section 10, Q3):** the first write after each Core start took 5.9–6.7 s (QuickJS start-up; the first write after a fresh container also installs `quickjs-ng`); later writes took 0.27–0.87 s with a custom card and about 0.012 s without. This holds with 8.5.0 as well as 8.7.0, because the component does the work. With component 2.2.0 every write took ≤ 0.019 s. Engineering's setter timeout must still be checked against the ~6 s first write and the 20 s upstream bound |
 
 Required bindings:
 - `upstream_dashboard_builtin_attestations.json`;
@@ -389,7 +396,8 @@ Required bindings:
   - The count does not depend on the component version. The 8.7.0 descriptors
     do (the `ha_search` variant).
   - That matches the owner-stated 8.5.0 count. The 79 in the HAMCP-162 note
-    could not be reproduced (see item C3 in section 9).
+    could not be reproduced. The owner has since reported that production
+    shows 80, so the question is settled (item C3 in section 9).
   - Engineering must still expose its own count (87: 59 native, 28
     delegated; `docs/V2_4_1_BETA9_ACCEPTANCE.md:78`), with no filesystem tool.
 
@@ -412,10 +420,14 @@ preserved:
 - `REDACT_SECRETS` (default False)
 - the `DISABLED_TOOLS` / `PINNED_TOOLS` seeds (`:738-742`)
 
-**New settings and options** (#2636):
+**New settings and options** (#2636). Exactly two Settings fields are new:
 - `enable_snapshot_actions`, default True. It is the old behaviour; false
   blocks every snapshot action, including list.
 - `backup_read_only`, default False. True blocks create, restore and delete.
+
+Two related snapshot-delete controls are **retained, not new**: they already
+exist in v8.5.0 (`src/ha_mcp/config.py:436-447`) with the same aliases and
+defaults:
 - `enable_snapshot_delete`, default False.
 - `snapshot_delete_min_age_days`, default 7.
 
@@ -435,8 +447,9 @@ paths, so saved settings carry over without migration:
 the filesystem and YAML flags, are exported only if present. On the stable
 add-on they come from `feature_flags.json`.
 
-**Post-update checklist** (owner-run, after the Engineering beta in section 8
-is deployed):
+**Post-update checklist.** *Conditional:* this applies only if adoption is
+reopened (see "Decisions recorded"). It would be owner-run, after the
+Engineering beta in section 8 is deployed.
 1. Before updating, take a partial backup of the ha-mcp add-on, so
    `/data/feature_flags.json`, `backup_settings.json`, `tool_config.json` and
    `secret_path.txt` are captured.
@@ -460,11 +473,15 @@ is deployed):
    `.storage/core.config_entries`, and from there into every backup.
    - **Configure** stores the URL on disk at once. Do not configure it unless
      HA Core should connect to ha-mcp.
-   - **Leaving it unactioned** keeps the URL in memory only.
-   - The owner should choose between these with section 10, Q2 in hand.
-6. Update the custom component to 2.2.2 through HACS and restart Core. HACS
-   only refreshes metadata; nothing installs automatically. The "File & YAML
-   Tools" entry needs no reconfiguration.
+   - **Leaving it unactioned** keeps the URL in memory only, in Core.
+   - **Owner rule (2026-10-15):** if 8.7.0 is ever deployed, never act on the
+     ha-mcp discovery notification: neither Configure nor Ignore.
+6. Component: under the 2026-10-15 decision, production stays on component
+   2.2.1, 2.2.2 is not taken, and HACS auto-update stays off. Taking 2.2.2
+   (which brings #2671, section 10, Q3) would need a new owner decision. If
+   one is ever made: update through HACS and restart Core. HACS only refreshes
+   metadata; nothing installs automatically. The "File & YAML Tools" entry
+   needs no reconfiguration.
 7. Through Engineering, read `server_info` and confirm all of the following:
    - upstream identity `ha-mcp-v8.7.0-600677bb`;
    - an upstream catalog of 80 tools;
@@ -495,10 +512,12 @@ missing type means `tools`. The "File & YAML Tools" entry is unaffected.
   commands when a capability is missing
   (`component_helper_collections.py:32`).
 - Writes fall back only when the first attempt provably never ran.
-- The only hard floor is `MIN_COMPONENT_VERSION = "1.2.0"` for file tools.
+- The only hard floor is `MIN_COMPONENT_VERSION = "1.2.0"`, which the file
+  tools check per call. It does not decide whether they are registered
+  (section 3d).
 - *Captured (section 10, Q4):* all four pairings of 8.5.0 or 8.7.0 with 2.2.0
   or 2.2.2 work for searches and governed dashboard writes, so either update
-  order works.
+  order works. Component 2.2.1, production's component, was not captured.
 
 **Other component changes.**
 - **#2697:** helper domains come from Core's helper flows, and component
@@ -516,30 +535,39 @@ component 2.2.2.
 
 **Must the component and add-on update together?**
 - Technically, no.
-- Operationally, yes, as the owner's plan says, because the exact descriptor
-  Engineering must admit depends on the component version:
-  - the `ha_search` variant;
-  - the presence of the filesystem tools.
-- Admission evidence must be captured for the pair 8.7.0 + 2.2.2. The pair
-  8.5.0 + 2.2.2, which is the rollback state, must also be shown to keep the
+- For Engineering admission, the pairing matters because the exact 8.7.0
+  descriptor Engineering must admit depends on the component through the
+  `ha_search` variant. The filesystem tool set does **not** depend on the
+  component: registration is flag-only (section 3d). The component matters to
+  the file tools only through the per-call `1.2.0` floor.
+- Admission evidence must therefore be captured for the exact pairing that
+  would be deployed, and the rollback pairing must be shown to keep the
   existing 8.5.0 binding valid.
 - **Verified by capture (section 10, Q1 and Q4):** 8.5.0's catalog is
   byte-identical with 2.2.0 and 2.2.2 (fingerprint `f112aa40…`). 8.7.0's
   catalog differs between the two (`95c69e8e…` with 2.2.0, `0906cbce…` with
   2.2.2) only in the `ha_search` reduced schema and one description.
-- **Updating together is no longer required for #2671 either.** Production
-  can run 8.7.0 with component 2.2.0. That pairing avoids #2671 entirely,
-  because 2.2.0 contains no card-check code. It keeps the 8.7.0 reference
-  `ha_search` variant for domain-only searches (no `search_unified`). See
-  section 10, Q4 for what that costs.
+- **Updating together is not required for #2671 either.** #2671 arrives with
+  component 2.2.2, whichever server runs. 8.7.0 with 2.2.0 was captured
+  working and runs no card code, because 2.2.0 contains none.
+- **Component 2.2.1 (production's component; source only, not captured).**
+  Upstream `v8.6.0` ships component 2.2.1. Its tree contains no `quickjs`,
+  `linkedom` or npm code, so by source it avoids #2671 as 2.2.0 does. Unlike
+  2.2.0, it already advertises `search_unified` and `template_diagnose`
+  (`custom_components/ha_mcp_tools/websocket_api.py:374,440` at `v8.6.0`).
+  It also advertises `search` and `device_registry_child_semantics`, so
+  8.7.0 + 2.2.1 would take the `search_unified` `ha_search` variant
+  *(inferred)*. That descriptor, its fingerprint and its dashboard behaviour
+  were not captured. A future admission must capture 8.7.0 + 2.2.1 itself
+  rather than reuse the 2.2.0 or 2.2.2 results.
 
 ## 7. Security deltas
 
 | Change | Delta | Default | Engineering relevance |
 |---|---|---|---|
 | #2714 PEM redaction | Add-on option values matching `-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----` are redacted (`redaction.py:73,165,192`). Each PEM line is learned so `RedactSecretsMiddleware` (`:456`) scrubs log echoes | **Off** (`REDACT_SECRETS=False`, `config_settings.py:544-546`) | Affects `ha_get_app` output only when enabled. **Not applied to `ha_read_file` / `ha_config_get_yaml` content.** Engineering sanitization must remain the control for HAMCP-162 |
-| #2613 MCP discovery | The add-on POSTs `{"service":"mcp","config":{"url":"http://<host>:9583<secret_path>"}}` to Supervisor `/discovery` on every start on Core ≥ 2026.10 (`app_discovery.py:50-90`; `config.yaml discovery: [mcp]`). No opt-out | **On**, unconditional | **New disclosure** of the secret-path URL into HA Core's discovery flow, visible to HA admins. It does not change the authentication model. **Quantified in section 10, Q2:** in memory only while the discovery is unactioned; written to `.storage/core.config_entries`, and so into backups, once the entry is configured, or once it is ignored and then re-announced. Not readable by non-admin users or by `ha_read_file`. Owner decision: accept, or ask upstream for an opt-out |
-| #2671 card checking | Component 2.2.2 runs dashboard-resource JavaScript in a QuickJS sandbox inside the HA process. It installs `quickjs-ng` on demand and downloads `linkedom` from `registry.npmjs.org` (integrity-checked, cached in `.storage`) (`card_runtime.py:17,85-88`; `custom_cards.py:36-38,585-600`). Upstream `SECURITY.md:35-53`: contains broken cards, "not an adversarial one" | Triggered by `ha_config_get_dashboard(describe=true)` and by component dashboard writes | **Confirmed by capture (section 10, Q3):** Engineering-equivalent dashboard writes trigger it whenever component 2.2.2 is installed, with ha-mcp 8.5.0 as well as 8.7.0. The first write after a fresh container pip-installs `quickjs-ng==0.17.0.1` (version-pinned, not hash-pinned). If any local `/local/` resource exists, it also downloads `linkedom` 0.18.13 from `registry.npmjs.org`. That download is sha512-checked once, then cached in `.storage` and re-executed from the cache **without re-verification**. Card JavaScript from `www/` then runs in-process on every write that uses the card. Component 2.2.0 does none of this. Owner decision |
+| #2613 MCP discovery | The add-on POSTs `{"service":"mcp","config":{"url":"http://<host>:9583<secret_path>"}}` to Supervisor `/discovery` on every start on Core ≥ 2026.10 (`app_discovery.py:50-90`; `config.yaml discovery: [mcp]`). No opt-out | **On**, unconditional | **New disclosure** of the secret-path URL into HA Core's discovery flow, visible to HA admins. It does not change the authentication model. **Quantified in section 10, Q2:** in memory only while the discovery is unactioned; written to `.storage/core.config_entries`, and so into backups, once the entry is configured, or once it is ignored and then re-announced. Not readable by non-admin users or by `ha_read_file`. **Owner decision (2026-10-15):** not accepted as-is; adoption parked; an upstream opt-out is to be requested. If 8.7.0 is ever deployed, never act on (Configure or Ignore) the discovery notification |
+| #2671 card checking | Component 2.2.2 runs dashboard-resource JavaScript in a QuickJS sandbox inside the HA process. It installs `quickjs-ng` on demand and downloads `linkedom` from `registry.npmjs.org` (integrity-checked, cached in `.storage`) (`card_runtime.py:17,85-88`; `custom_cards.py:36-38,585-600`). Upstream `SECURITY.md:35-53`: contains broken cards, "not an adversarial one" | Triggered by component dashboard writes (`dashboard_edit`) and by the component's card describe path (`ha_config_get_dashboard(describe=true)`); exact conditions in section 10.4 | **Confirmed by capture (section 10, Q3):** Engineering-equivalent dashboard writes trigger it whenever component 2.2.2 is installed, with ha-mcp 8.5.0 as well as 8.7.0. Every component dashboard write, even with built-in cards only, loads the card definitions; if `quickjs-ng` is not installed, that first load pip-installs `quickjs-ng==0.17.0.1` (version-pinned, not hash-pinned). Only a write whose saved dashboard contains a `custom:` card (or a describe of all or of custom cards) loads custom cards. If the registered `module`/`js` resources then resolve to any `/local/` or `/hacsfiles/` `.js` path, even one whose file is missing, `linkedom` 0.18.13 is loaded: from the `.storage` cache **without re-verification** if present, otherwise downloaded from `registry.npmjs.org` and sha512-checked once. Card JavaScript from `www/` or `www/community/` then runs in-process. Components 2.2.0 and 2.2.1 contain none of this code (2.2.1 by source only). **Owner decision (2026-10-15):** stay on component 2.2.1, do not take 2.2.2, keep HACS auto-update off, and request upstream hash-pinning, cache re-verification and a card-JS opt-out |
 | #2636 backup controls | `guard_snapshot_route` refuses snapshot delete through `ha_call_service` and WebSocket routes | On | Net tightening |
 | #2614 context | Component service calls attributed to the caller | On | Better audit |
 | Component deny list | `approval_pin.json` denied; listings hide `secrets.yaml`, `approval_pin.json` and `.storage`; symlink bypass of the `secrets.yaml` exception closed | On | Tightening for HAMCP-162 |
@@ -553,6 +581,13 @@ I found no newly default-enabled destructive tool, and no change to the HTTP
 endpoint's secret-path validation.
 
 ## 8. Admission plan (design only)
+
+**Parked (owner decision, 2026-10-15).** PRs A–E below are a conditional
+design, kept for reconsideration; none is scheduled. HAMCP-184 proceeds
+independently, because explicit fail-closed provider dispositions are needed
+regardless of 8.7.0. Reconsideration triggers are listed in "Decisions
+recorded". If reopened, the plan must be re-based on the then-current `main`
+and the then-chosen component pairing.
 
 **Ownership.** HAMCP-184 / F-05 is assumed to own the general fix that makes
 `provider_disposition` stop defaulting to `admitted`
@@ -634,9 +669,10 @@ The key names and shapes were checked against the compiled 8.6.0 entry at
 **Dispositions.** Every surface is explicit:
 - `read_gateway`: admitted.
 - `dashboard`: admitted. This is conditional on re-validating setter latency
-  and the QuickJS warnings (section 3c). It is also conditional on the owner
-  either accepting #2671 or keeping production on component 2.2.0
-  (section 10, Q4).
+  and the QuickJS warnings (section 3c). It is also conditional on the
+  component pairing: under the 2026-10-15 decision, production keeps
+  component 2.2.1, which has no card runtime by source, so #2671 would not
+  apply; taking 2.2.2 would need a separate owner decision (section 10, Q4).
 - `backup`: held.
 - `lifecycle`: held.
 
@@ -685,7 +721,8 @@ binary-owned per version.
   - Take the 23 `INPUT_FINGERPRINTS` from the 8.7.0 capture.
 - **`providers/upstream_search_8_7.py`**, token
   `ha-mcp-8.7.0-search-descriptor-pair-v1`. It needs a reference variant and a
-  component-unified variant captured with component 2.2.2.
+  component-unified variant, captured with the component actually deployed
+  (2.2.1 under the 2026-10-15 decision; the section 10 capture used 2.2.2).
   `_trusted_release` currently hard-codes 8.6.0.
 - **`providers/upstream_blueprint.py`**: add 8.7.0, input `6a09a0f2…`, source
   `a9675228…`.
@@ -796,8 +833,9 @@ These are protected workflow and script surfaces.
 - **Release notes must disclose:**
   - the client-visible `ha_get_history` output change;
   - the dashboard getter `openWorldHint` change;
-  - the #2613 discovery disclosure and, if component 2.2.2 is deployed, the
-    #2671 QuickJS card checks, as owner-accepted consequences.
+  - the #2613 discovery disclosure and, only if a later owner decision takes
+    component 2.2.2, the #2671 QuickJS card checks, as consequences the owner
+    has then accepted.
 
 ### 8.7 Deploy order and rollback
 
@@ -805,11 +843,12 @@ These are protected workflow and script surfaces.
    on 8.5.0 with no upstream change: `server_info` still shows `admitted_exact`
    on `ha-mcp-v8.5.0-e1538bcd`, the canaries pass, and no behaviour changes.
 2. Owner step. Take a partial backup of the ha-mcp add-on. Then update the
-   ha-mcp add-on to 8.7.0 **and** the component to 2.2.2 in the same
-   maintenance window, restarting Core after the component update. Run the
-   section 5 checklist. *Alternative (section 10, Q4):* update only the
-   add-on and keep component 2.2.0, which avoids #2671. Admission evidence
-   must then include the 8.7.0 + 2.2.0 descriptor pair.
+   ha-mcp add-on to 8.7.0 and run the section 5 checklist. Under the
+   2026-10-15 decision the component stays at **2.2.1** (2.2.2 not taken, HACS
+   auto-update off), which avoids #2671 by source. Admission evidence must
+   then include a captured 8.7.0 + 2.2.1 descriptor pair; the captured
+   8.7.0 + 2.2.0 and 8.7.0 + 2.2.2 pairs do not substitute for it. *Earlier
+   design, superseded:* update the component to 2.2.2 in the same window.
 3. Acceptance on 8.7.0:
    - `server_info` shows `ha-mcp-v8.7.0-600677bb` and `admitted_exact`
      (or the documented 80-tool state);
@@ -822,14 +861,14 @@ These are protected workflow and script surfaces.
    - refusals for `describe`, `core_options` and the scene list.
 4. **Rollback.** Restore the 8.5.0 add-on from the partial backup, or reinstall
    8.5.0 and restore `/data`.
-   - The component can stay at 2.2.2: per-capability negotiation means no
-     hard floor beyond 1.2.0. The disposable capture showed 8.5.0 + 2.2.2
-     working, with a catalog identical to 8.5.0 + 2.2.0 (section 10, Q4). That
-     is evidence for the CI lane to reproduce, not a substitute for it. With
-     2.2.2 left in place, the #2671 card checks keep running under 8.5.0.
+   - The component needs no rollback: per-capability negotiation means no
+     hard floor beyond 1.2.0, and 8.5.0 + 2.2.1 is today's production state.
+     (If 2.2.2 were ever taken: the capture showed 8.5.0 + 2.2.2 working, with
+     a catalog identical to 8.5.0 + 2.2.0 (section 10, Q4), and the #2671 card
+     checks would keep running under 8.5.0.)
    - The discovery entry created by 8.7.0 stays in Core's discovery list.
-     Handle it as section 5, item 5 describes: ignoring it persists the URL
-     at the next announcement.
+     Do not act on it (section 5, item 5): ignoring it persists the URL at the
+     next announcement.
    - Engineering needs no rollback, because it admits both versions.
    - Rolling back reintroduces the #2695 defect for direct ha-mcp clients
      (section 9, item C1).
@@ -867,8 +906,10 @@ about 600–1,000 lines across about 20 files.
 | E | Materialize `2.4.1-beta.N` and add the acceptance document | release metadata | B, C, D |
 
 B and C can merge into one PR if the owner prefers fewer reviews. C is
-separate because the dashboard is the only admitted write family here, and it
-is where the new upstream latency and QuickJS behaviour land.
+separate because the dashboard is the write family affected by the new
+upstream latency and QuickJS card-runtime behaviour. It is not the only
+admitted write family: B carries the power and fan bindings, whose typed
+write canaries section 8.7 also requires.
 
 HAMCP-162 (filesystem reads) stays a separate task, sequenced after E.
 
@@ -903,8 +944,10 @@ HAMCP-162 (filesystem reads) stays a separate task, sequenced after E.
   cannot be produced from the stated settings. A live 79 would mean
   production differs from them, for example an extra `DISABLED_TOOLS` entry
   in `tool_config.json`, or a different flag origin.
-- Confirm with a read-only `server_info` before the 8.7.0 acceptance baseline
-  is fixed. This dispute is about production state, not about 8.7.0.
+- **Settled (owner-reported, 2026-10-15):** production `server_info` and
+  health show 80 upstream tools; the 79 was a transient settings state. This
+  is the owner's report, not a reviewer observation; no further production
+  check is requested.
 
 **C4 (Medium): 8.7.0 is not "8.6.0 + fixes".**
 - It is 235 commits beyond 8.6.0.
@@ -924,8 +967,9 @@ HAMCP-162 (filesystem reads) stays a separate task, sequenced after E.
 **C5 (Low): "the component and add-on must update together" is an
 Engineering admission constraint, not an upstream requirement.** Upstream
 negotiates per capability with fallback. Engineering, however, binds exact
-descriptors that depend on the component, through the `ha_search` variant and
-the filesystem tool set.
+descriptors that depend on the component through the `ha_search` variant. The
+filesystem tool set does not depend on the component (registration is
+flag-only, section 3d).
 
 **C6 (Low): #2714 does not protect filesystem reads.** PEM redaction applies
 only to add-on option values, and only with `redact_secrets` on. It does not
@@ -1043,8 +1087,8 @@ visible in the write result.
   `ha_list_files` and `ha_read_file`. `ha_write_file`, `ha_delete_file` and
   `ha_config_set_yaml` are absent.
 - **The 79-vs-80 dispute is not resolved in favour of 79.** No combination of
-  the stated settings and either component version produced 79. A live 79
-  means production differs from the stated settings (section 9, C3).
+  the stated settings and either component version produced 79. The owner
+  has since reported 80 in production (section 9, C3, settled).
 - **The count does not depend on the component.** Registration is flag-only
   (section 3d, corrected).
 - **The 8.7.0 descriptors do depend on the component.** With 2.2.2 (which
@@ -1118,7 +1162,40 @@ npm.
 - Egress at that point went to `pypi.org`, `files.pythonhosted.org` and
   `wheels.home-assistant.io`.
 
-**First dashboard write with 2.2.2.**
+**When each step is triggered (v8.7.0 component source; the capture
+exercised the `/local/` case).**
+- **Card definitions and `quickjs-ng`.** After every successful component
+  dashboard write (`dashboard_edit.py:211,221-227`), including writes with
+  built-in cards only, the component computes advisory card warnings, which
+  first loads the card definitions (`card_definitions.py:852-905`). The
+  describe path loads them too (`:912-913`). The definitions are built once
+  per Core process. The first build calls `async_ensure_runtime`
+  (`card_runtime.py:74-100`), which pip-installs `quickjs-ng` only if it is
+  not already installed. The package lives in the container's site-packages,
+  so the install happens on the first write after a fresh container (first
+  install, HA update or reinstall) and not again after a plain Core restart.
+- **Custom-card loading and `linkedom`.** On the write path, custom cards are
+  loaded only when the saved dashboard contains a `custom:` card
+  (`card_definitions.py:893-903`); a built-in-only write never loads them. The
+  describe path loads them when no card type is given or the type is
+  `custom:` (`:914-919`). Loading resolves every registered `module` or `js`
+  dashboard resource under **`/hacsfiles/`** (`www/community`) or **`/local/`**
+  (`www`) to a `.js` path, without checking that the file exists
+  (`custom_cards.py:54,188-197,631-650`). If that map is non-empty, the
+  `linkedom` bundle is requested before any file is read (`:672-680`), so a
+  stale registration of a missing file is enough. The bundle comes from the
+  `.storage` cache if the cache file exists, unverified (`:579-600`).
+  Otherwise it is downloaded from `registry.npmjs.org` and sha512-checked
+  (`:200-204`). The cache is in the config directory, so it survives Core
+  restarts and is downloaded again only when the cache file is missing.
+- **Card JavaScript.** A card file's top-level code runs when the file is
+  loaded into QuickJS: the first custom-card load in a Core process, and
+  again whenever the file's mtime changes (`custom_cards.py:401-475`). Its
+  `setConfig` check runs on every write, or describe, whose dashboard contains
+  that card (`:338-360,519-523`). A missing file is skipped as "resource file
+  is missing or unreadable", after `linkedom` has already been loaded.
+
+**First dashboard write with 2.2.2 (as captured, `/local/` resource present).**
 1. The component installs `quickjs-ng==0.17.0.1` through HA's requirements
    path (`card_runtime.py:15-100`).
    - Egress: `pypi.org`, `files.pythonhosted.org`, `wheels.home-assistant.io`.
@@ -1130,8 +1207,9 @@ npm.
    HA process. The `schema` variant returned advisory warnings, for example
    ``vertical: Expected a value of type `boolean` ``, and the write still
    committed.
-3. If any `/local/` dashboard resource file exists, it downloads the
-   `linkedom` 0.18.13 tarball from **`registry.npmjs.org`**.
+3. Because the written dashboard contained the `custom:` card and a `/local/`
+   resource was registered, it downloaded the `linkedom` 0.18.13 tarball from
+   **`registry.npmjs.org`** (the cache did not yet exist).
    - Observed at 16:13:26Z and, after a recreate, at 16:20:54Z.
    - The version is pinned and the tarball is checked against a pinned sha512
      at download.
@@ -1168,8 +1246,9 @@ npm.
 **After a container recreate (R4, same image and config).**
 - The `quickjs-ng` install repeats on the first write, because it lives in the
   container's site-packages. That means every HA update or reinstall.
-- The `linkedom` download also repeats, because R4 deleted the cache. The new
-  sha256 equals the original.
+- The `linkedom` download also repeated, but only because the R4 procedure
+  deleted the cache file; the cache itself lives in the config directory and
+  would otherwise have been reused. The new sha256 equals the original.
 - First write: 6.7 s.
 
 **Backups.** A local Core backup contains
@@ -1183,10 +1262,19 @@ the cached bundle, which then runs unverified.
 - **Does it download an npm package?** Yes, `linkedom` 0.18.13 from
   `registry.npmjs.org`. It is pinned and integrity-checked at download, but
   not when executed later.
-- **When?** On the first write after each fresh container (not at install).
-  The pip install of `quickjs-ng` happens at the same moment. Later writes
-  and restarts reuse the cache.
-- **Card JS runs on every write that references a local custom card.**
+- **When?** Nothing happens at install or Core start-up.
+  - `quickjs-ng` pip install: the first component dashboard write (any cards)
+    or describe after a fresh container, if the package is missing.
+  - QuickJS definitions build (about 6 s): the first such call after every
+    Core start; no egress.
+  - `linkedom` download: the first custom-card load while the cache file is
+    missing. A custom-card load needs a `custom:` card in the written
+    dashboard (or a custom describe) and at least one registered
+    `/local/` or `/hacsfiles/` `.js` resource, even a missing one. Otherwise
+    the unverified cache is reused, across restarts.
+  - Card JS: top-level code when a card file is first loaded in a Core
+    process or has changed; `setConfig` on every write or describe whose
+    dashboard contains that card.
 
 ### 10.5 Q4: component pairing
 
@@ -1203,19 +1291,23 @@ WebSocket command, as observed in Core's WebSocket debug log.
 **Answers.**
 - **8.7.0 works with component 2.2.0.** Catalog, fast query search and
   governed dashboard writes all work.
-- **Production can stay on 2.2.0 to avoid #2671.** The 2.2.0 tree contains no
-  `quickjs`, `linkedom` or npm code at all.
+- **A component without the card runtime avoids #2671.** The 2.2.0 tree
+  contains no `quickjs`, `linkedom` or npm code at all (captured). Production
+  runs 2.2.1, whose tree also contains none (source only; 2.2.1 was not
+  captured).
 - **#2671 exposure follows the component, not the server.** 8.5.0 with 2.2.2
   runs card JS too. Updating the component alone, without 8.7.0, would bring
   #2671 into today's production.
 - **Fast search works in both pairings for queries.** Only the domain-only
   `search_unified` path needs 2.2.2.
-- **Cost of staying on 2.2.0.**
+- **Cost of not taking 2.2.2** (as captured for 2.2.0; the same list applies
+  to 2.2.1 by source).
   - It forgoes the 2.2.2 fixes listed in section 6: #2697 search secret
     scrubbing, #2614 caller attribution, #2618 helper writes, and the
     `approval_pin.json` and listing denials for HAMCP-162.
-  - Engineering must then bind the 8.7.0 + 2.2.0 descriptor, which is
-    `95c69e8e…` in this profile.
+  - Engineering must then bind the descriptor of the pairing actually
+    deployed. For 8.7.0 + 2.2.0 that is `95c69e8e…` in this profile; 8.7.0 +
+    2.2.1 was not captured.
 - **Engineering's as-is guide call fails closed on 8.7.0.** 8.7.0 rejects
   `skill`, so no key is returned and the write is refused with
   `BPS_ACKNOWLEDGMENT_REQUIRED`. This confirms the `clients/mcp.py:359-371`
@@ -1235,7 +1327,7 @@ WebSocket command, as observed in Core's WebSocket debug log.
 | 6 | 8.5.0 + 2.2.2 *not verified*; update together for operational reasons | Verified; 8.7.0 + 2.2.0 is a working way to avoid #2671 |
 | 7 #2671 | Engineering writes trigger it, *inferred* | Confirmed; also with 8.5.0; cache not re-verified |
 | 8.7 | Ignore the discovery entry | See section 5 item 5 |
-| 9 C3 | 80 vs 79 disputed | 80 captured; 79 is a production-state question |
+| 9 C3 | 80 vs 79 disputed | 80 captured; settled by the owner's report of 80 in production |
 
 ### 10.7 Probe artifacts (not findings)
 
@@ -1291,30 +1383,44 @@ same host keeps other pinned Core and ha-mcp images for local lane work.
 No live system, production credential or endpoint path was used, so none
 needed revoking.
 
-## Next human decisions
+## Decisions recorded
 
-**Recorded owner decisions (Josh, 2026-10-15, on HAMCP-187):**
-1. No move to 8.7.0 yet.
-2. #2613 and #2671 are not accepted as-is; their exposure was to be
-   quantified first (now done in section 10).
-3. HAMCP-184 owns admission PR A.
-4. 8.6.0 stays compiled, superseded, never to be deployed.
-5. The disposable capture was authorized, and section 10 records it.
+**Owner decisions (Josh, 2026-10-15, recorded on HAMCP-187).** These
+supersede the open decision requests in earlier revisions of this report.
+They are owner direction; the production facts in them are owner-reported,
+not reviewer observations.
 
-**Open decisions:**
-1. **#2671.** Choose one:
-   - accept component 2.2.2 with its in-HA JavaScript, its first-write
-     `quickjs-ng` pip install and `linkedom` npm download, and a cache that
-     is executed without re-verification;
-   - keep production on component 2.2.0 (with 8.5.0 now, and with 8.7.0 later),
-     giving up the 2.2.2 fixes listed in section 10, Q4;
-   - ask upstream for an opt-out, or for the cache to be verified on load.
+1. **Stay on ha-mcp 8.5.0 with HA-MCP Custom Component 2.2.1.**
+   - Component 2.2.1 shipped with ha-mcp 8.6.0 and contains no `quickjs`,
+     `linkedom`, npm or custom-card runtime code; that code first appears in
+     2.2.2 (source check; 2.2.1 was not captured, section 6).
+   - Do not take component 2.2.2. Keep HACS auto-update off.
+2. **8.7.0 admission work (PRs A–E, section 8) is parked.** HAMCP-184 still
+   proceeds independently.
+3. **Reconsideration triggers:**
+   - HA Core 2026.11 compatibility (early November): if CI shows 8.5.0
+     incompatible, reopen 8.7.0 (or later) admission;
+   - a security fix relevant to Engineering's use of ha-mcp;
+   - upstream opt-outs for #2613 and #2671.
+4. **Upstream requests to file:**
+   - #2613: an opt-out for the discovery announcement;
+   - #2671: hash-pin `quickjs-ng`, re-verify the cached `linkedom` bundle on
+     load, and an opt-out for card JavaScript execution.
+5. **Operator rule if 8.7.0 is ever deployed:** never act on (Configure or
+   Ignore) the ha-mcp discovery notification (section 10, Q2).
+6. **79 vs 80 is settled.** Production `server_info` and health on 2026-10-15
+   show 80 upstream tools; the 79 was a transient settings state. No
+   production check is requested (section 9, C3).
+7. **8.6.0 stays compiled, marked superseded and never to be deployed**
+   (section 8.8).
 
-   Note that #2671 arrives with the component, whichever server version runs.
-2. **#2613.** Choose how to handle the discovered entry: leave it unactioned,
-   which keeps the URL in memory only, or accept that the URL is persisted and
-   backed up (section 10, Q2). Alternatively, ask upstream for an opt-out.
-3. **C3.** Authorize a read-only production `server_info` check to settle 79
-   vs 80. The capture shows 80 under the stated settings.
-4. **Upgrade direction.** When to revisit decision 1, given C1: 8.7.0 is the
-   first fix for a destructive defect present in production.
+**Earlier decisions (Josh, 2026-10-15), still standing or completed:**
+- #2613 and #2671 were not accepted as-is, and their exposure was to be
+  quantified first. Done in section 10.
+- HAMCP-184 owns admission PR A (explicit provider dispositions).
+- The disposable capture was authorized, and section 10 records it.
+
+**Related owner item (from the HAMCP-187 record, outside this report's
+scope):** direct-client #2695 exposure on 8.5.0 (section 9, C1) is to be
+mitigated by the pending add-on port-mapping check and secret-path rotation
+decision.
