@@ -1,0 +1,11 @@
+$ verify_signed_chain.py --baseline <origin/main 690a00b upstream-trust/ha-core-release-registry.json> --signed-dir <owner output dir> --installed upstream-trust/ha-core-release-registry.json --now 2026-10-15T14:03:31Z
+Public key fingerprint 7793e80f480b573fbef4e7ca762ff9d1ac783fee1e253db7c35ba8fe21f63dac; files 7 SHA256 match
+Raw Ed25519: 46 signatures verified; chain 1..12 linked; envelopes 1-9 unchanged
+seq 10 sha256:0b9a5c7ce7187f15652e7c29aa06d01f3674de46d12e37c618ccf532e5d867db references {'2026.10.0': 21, '2026.10.1': 22, '2026.9.4': 21} revoked ['2026.9.2', '2026.9.3'] expires_at 2027-01-13T10:31:21Z
+seq 11 sha256:73ca0e005a5033917c18b94312fef6643f12d29ad690963bd767d2b567c53047 references {'2026.10.0': 22, '2026.10.1': 22, '2026.9.4': 21} revoked ['2026.9.2', '2026.9.3'] expires_at 2027-01-13T13:35:16Z
+seq 12 sha256:9d14f06ab0a0870404540ea8cfa70cefe05cc243bebb9fab0b090121081be5fc references {'2026.10.0': 22, '2026.10.1': 22} revoked ['2026.9.2', '2026.9.3', '2026.9.4'] expires_at 2027-01-13T13:40:21Z
+Runtime stepwise [(True, 9), (True, 10), (True, 11), (True, 12), (False, 12), (False, 12)]; jump [(True, 9), (True, 12), (False, 12)]
+Installed upstream-trust/ha-core-release-registry.json is byte-identical to journal 3
+Registry code: CORE_IDENTITY='home-assistant-core'; root /home/josh/repos/hass-mcp-admin/.claude/worktrees/bridge-cse_014c98dy1HEXGCFiGhDwAYXA
+OK
+exit 0

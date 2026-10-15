@@ -1,0 +1,238 @@
+{
+  "adapter_id": "compiled-core-entity-registry-metadata-operation-v1",
+  "added_capability": {
+    "adapter_id": "compiled-core-entity-registry-metadata-operation-v1",
+    "capability_id": "core.entity_registry_metadata_operation",
+    "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+    "profile_id": "core_entity_registry_metadata_operation_v1",
+    "profile_version": 1
+  },
+  "authority_instances": "separate_ephemeral_registries",
+  "authority_transition": [
+    21,
+    22
+  ],
+  "capability_id": "core.entity_registry_metadata_operation",
+  "contract_fingerprint": "sha256:cc09630efbc0e1e6d0a587696406f6502c62fe730a767bc0a8cfc96a9988f767",
+  "core": "2026.10.1",
+  "core_image": "ghcr.io/home-assistant/home-assistant:2026.10.1@sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",
+  "engineering_command_types": [
+    "config/area_registry/list",
+    "config/category_registry/list",
+    "config/entity_registry/get",
+    "config/entity_registry/update",
+    "config/label_registry/list"
+  ],
+  "engineering_source": {
+    "commit": "690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1",
+    "runtime_tree": "c363397b2cabc567394b9cdde9daffe9a0bfb5bd"
+  },
+  "fixture_absence": {
+    "area": true,
+    "category": true,
+    "helper_config": true,
+    "helper_entity": true,
+    "labels": true
+  },
+  "fixture_cleanup": true,
+  "image_index_digest": "sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0",
+  "image_receipt_sha256": "78e3cd174d6277b4c93c4ed89081fc859fd6d6afaa1c466da1c705f4218042da",
+  "predecessor_admission": {
+    "acquired": false,
+    "control_capability_acquired": true,
+    "ha_requests": 0,
+    "ha_updates": 0,
+    "reason": "authority_unavailable"
+  },
+  "predecessor_capabilities_sha256": "6d4853d0aa499d24c8d27631667a8e492d016913ed12c8e01b50873923e3971e",
+  "production_authority": false,
+  "profile_id": "core_entity_registry_metadata_operation_v1",
+  "profile_version": 1,
+  "provider_identity": "synthetic_disposable_lane",
+  "result": "PASS",
+  "scenarios": {
+    "alias_normalization": {
+      "ha_commands": 0,
+      "planner_reason": "entity_metadata_invalid_value",
+      "raw_readback": [
+        "Lamp",
+        null
+      ],
+      "raw_written": [
+        " Lamp ",
+        "",
+        null
+      ],
+      "restored": true,
+      "result": "PASS"
+    },
+    "area_requires_own_name": {
+      "ha_updates": 0,
+      "planner": {
+        "area_without_name": "entity_metadata_area_requires_own_name",
+        "clear_name_with_area": "entity_metadata_area_requires_own_name"
+      },
+      "preconditions": {
+        "area": false,
+        "device_bound": true,
+        "device_has_parent": false,
+        "original_name": false,
+        "own_name": false
+      },
+      "raw": {
+        "area_without_name": "invalid_info",
+        "clear_name_with_area": "invalid_info",
+        "name_with_area": "accepted"
+      },
+      "restored": true,
+      "result": "PASS"
+    },
+    "closed_field_update": {
+      "dispatch_count": 1,
+      "expected": {
+        "aliases": [
+          "Desk lamp",
+          null,
+          "Reading light"
+        ],
+        "area_id": "hamcp179_study",
+        "categories": {
+          "helpers": "01M4YXEM5Y8R35FFHNN8FJFBJQ"
+        },
+        "hidden_by": "user",
+        "icon": "mdi:desk-lamp",
+        "labels": [
+          "hamcp179_night",
+          "hamcp179_outdoor"
+        ],
+        "name": "HAMCP179 Desk"
+      },
+      "ha_updates": 1,
+      "preflight": {
+        "aliases": [
+          null
+        ],
+        "area_id": null,
+        "categories": {},
+        "hidden_by": null,
+        "icon": null,
+        "labels": [],
+        "name": null
+      },
+      "readback": {
+        "aliases": [
+          "Desk lamp",
+          null,
+          "Reading light"
+        ],
+        "area_id": "hamcp179_study",
+        "categories": {
+          "helpers": "01M4YXEM5Y8R35FFHNN8FJFBJQ"
+        },
+        "hidden_by": "user",
+        "icon": "mdi:desk-lamp",
+        "labels": [
+          "hamcp179_night",
+          "hamcp179_outdoor"
+        ],
+        "name": "HAMCP179 Desk"
+      },
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "unmanaged_fields_preserved": true
+    },
+    "no_change": {
+      "ha_updates": 0,
+      "plan_created": false,
+      "provider_dispatch_occurred": false,
+      "result": "PASS",
+      "status": "no_change"
+    },
+    "not_found": {
+      "error_code": "entity_not_found",
+      "ha_updates": 0,
+      "plan_created": false,
+      "provider_dispatch_occurred": false,
+      "result": "PASS"
+    },
+    "response_lost_applied": {
+      "dispatch_count": 1,
+      "ha_updates": 1,
+      "indeterminate": true,
+      "readback_applied": true,
+      "replay_reused": true,
+      "replay_updates": 0,
+      "result": "PASS",
+      "task_state": "succeeded_verified"
+    },
+    "response_lost_unapplied": {
+      "dispatch_count": 1,
+      "ha_updates": 0,
+      "indeterminate": true,
+      "outcome": "verification_mismatch",
+      "readback_unchanged": true,
+      "replay": "duplicate_apply_attempt",
+      "replay_updates": 0,
+      "result": "PASS",
+      "task_state": "failed_post_dispatch"
+    },
+    "restore": {
+      "dispatch_count": 1,
+      "expected": {
+        "aliases": [
+          null
+        ],
+        "area_id": null,
+        "categories": {},
+        "hidden_by": null,
+        "icon": null,
+        "labels": [],
+        "name": null
+      },
+      "ha_updates": 1,
+      "preflight": {
+        "aliases": [
+          null
+        ],
+        "area_id": null,
+        "categories": {},
+        "hidden_by": null,
+        "icon": null,
+        "labels": [],
+        "name": null
+      },
+      "readback": {
+        "aliases": [
+          null
+        ],
+        "area_id": null,
+        "categories": {},
+        "hidden_by": null,
+        "icon": null,
+        "labels": [],
+        "name": null
+      },
+      "result": "PASS",
+      "task_state": "succeeded_verified",
+      "unmanaged_fields_preserved": true
+    },
+    "unknown_label": {
+      "ha_updates": 0,
+      "planner_reason": "entity_metadata_reference_not_found",
+      "raw_readback": [
+        "hamcp179_night"
+      ],
+      "raw_written": [
+        "hamcp179_night",
+        "hamcp179_unknown"
+      ],
+      "restored": true,
+      "result": "PASS"
+    }
+  },
+  "support_slot": "current",
+  "synthetic_labels": [
+    "hamcp179_night",
+    "hamcp179_outdoor"
+  ]
+}

@@ -264,13 +264,42 @@ class DormantProfileTests(unittest.TestCase):
             october_entry["probe_profile_sha256"],
             CHILD_DEVICE_NAME_PARTS_PROBE_PROFILE.contract_fingerprint,
         )
-        # No signed entry admits the dormant profile today.
+        # HAMCP-182 sequence 12 selects the profile on exactly 2026.10.0 and
+        # 2026.10.1, with the compiled contract; no other entry in any signed
+        # envelope has ever carried it.
+        (profile,) = CORE_ENTITY_METADATA_PROFILES
+        self.assertEqual(registry["envelopes"][-1]["sequence"], 12)
+        self.assertEqual(
+            sorted(e["version"] for e in entries), ["2026.10.0", "2026.10.1"]
+        )
         for entry in entries:
             with self.subTest(version=entry["version"]):
-                self.assertNotIn(
-                    ENTITY_METADATA,
-                    {item["capability_id"] for item in entry["capabilities"]},
+                (reference,) = [
+                    item
+                    for item in entry["capabilities"]
+                    if item["capability_id"] == ENTITY_METADATA
+                ]
+                self.assertEqual(
+                    reference,
+                    {key: profile.to_mapping()[key] for key in reference},
                 )
+        carriers = {
+            (envelope["sequence"], entry["version"])
+            for envelope in registry["envelopes"]
+            for entry in envelope["entries"]
+            if ENTITY_METADATA
+            in {item["capability_id"] for item in entry["capabilities"]}
+        }
+        self.assertEqual(
+            carriers,
+            {
+                (10, "2026.10.1"),
+                (11, "2026.10.0"),
+                (11, "2026.10.1"),
+                (12, "2026.10.0"),
+                (12, "2026.10.1"),
+            },
+        )
 
     def test_static_and_f3_routes_require_the_dormant_profile(self):
         self.assertEqual(
