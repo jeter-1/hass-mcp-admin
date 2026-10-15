@@ -1984,12 +1984,13 @@ class ChangeGovernanceService:
     def _project_f3_operational_block(
         value: dict[str, Any], task: ExecutionTask, facts: DispatchFacts
     ) -> None:
-        """Project the legacy contract-v3 block of an F3 plan truthfully.
+        """Project the legacy contract-v3 dispatch block of an F3 plan truthfully.
 
-        No F3 writer updates ``plan.operational.dispatch`` or
-        ``plan.operational.verification``; the stored block stays untouched
-        and only this public copy is derived from the shared facts and the
-        authoritative execution-task verification summary (HAMCP-181 S16).
+        No F3 writer updates ``plan.operational.dispatch``; the stored block
+        stays untouched and only this public copy is derived from the shared
+        facts (HAMCP-181 S16).  ``operational.verification`` keeps its stored
+        value: ``authoritative_verification_field`` already names the
+        execution-task verification summary (RC6).
         """
 
         operational = value.get("operational")
@@ -2014,15 +2015,6 @@ class ChangeGovernanceService:
             }
         )
         operational["dispatch"] = dispatch
-        verification = operational.get("verification")
-        summary = value.get("execution_task", {}).get("verification_summary")
-        if isinstance(verification, dict) and isinstance(summary, dict):
-            status = summary.get("status")
-            operational["verification"] = {
-                **verification,
-                "status": status if isinstance(status, str) else "unknown",
-                "projection_source": "execution_task.verification_summary",
-            }
 
     def _public_task(
         self, task: ExecutionTask, *, include_events: bool = True

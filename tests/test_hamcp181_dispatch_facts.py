@@ -122,6 +122,32 @@ class ChildPhaseTests(unittest.TestCase):
             with self.subTest(name):
                 self.assertEqual(df.child_facts(record).phase, phase)
 
+    def test_uncertainty_code_with_a_response_stays_send_uncertain(self):
+        # The OD-15 entity-registry error result after send (HAMCP-183) and
+        # the configuration exception that carries a response record
+        # ``dispatch_indeterminate`` with a received response.  Design
+        # section 3 (c) keeps them send-uncertain, and readback never
+        # upgrades the phase or claims a change.
+        shapes = {
+            "registry_error_after_send": ("provider_error_after_send",
+                                          "provider_response_indeterminate"),
+            "configuration_exception": ("provider_response_indeterminate",),
+        }
+        for name, codes in shapes.items():
+            for outcome in ("dispatch_indeterminate", "succeeded_verified",
+                            "verification_mismatch", "manual_review_required"):
+                with self.subTest(name, outcome=outcome):
+                    record = FakeRecord(operation="update_entity_metadata",
+                                        target_type="entity_registry_metadata",
+                                        response=True, outcome=outcome, codes=codes)
+                    facts = df.child_facts(record)
+                    self.assertEqual(facts.phase, df.PHASE_SEND_UNCERTAIN)
+                    self.assertIsNone(facts.changed_by_engineering)
+                    self.assertEqual(facts.provider_response_recorded_at, RESPONSE_AT)
+                    parent = df.aggregate((facts,))
+                    self.assertTrue(parent.provider_dispatch_occurred)
+                    self.assertIsNone(parent.changed_by_engineering)
+
     def test_missing_child_is_uncertain_and_absent_record_is_pre_intent(self):
         self.assertEqual(df.child_facts(None, missing=True).phase, df.PHASE_SEND_UNCERTAIN)
         self.assertTrue(df.child_facts(None, missing=True).evidence_conflict)

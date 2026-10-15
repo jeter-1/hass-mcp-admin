@@ -92,6 +92,14 @@ _B_CONFLICTING_CODES = frozenset(
         "readback_only_recovery",
     }
 )
+# Design section 3 (c): the adapters' uncertainty codes on a dispatch result.
+_C_UNCERTAINTY_CODES = frozenset(
+    {
+        "provider_result_uncertain",
+        "fan_response_uncertain",
+        "provider_response_indeterminate",
+    }
+)
 _R_PROVEN_CONFLICTING_CODES = frozenset(
     {
         PROVIDER_CALL_NOT_SENT,
@@ -402,6 +410,11 @@ def child_facts(
             ),
             **base,
         )
+    if codes & _C_UNCERTAINTY_CODES:
+        # (c) stays send-uncertain even when a response arrived, e.g. the
+        # OD-15 entity-registry error result after send (HAMCP-183); readback
+        # never upgrades the dispatch phase.
+        return ChildFacts(phase=PHASE_SEND_UNCERTAIN, **base)
     if response:
         return ChildFacts(
             phase=PHASE_SENT_RESPONSE_RECEIVED,

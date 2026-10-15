@@ -132,9 +132,16 @@ class S16OperationalBlockTests(integration._OperationalActivationBase):
             dispatch["dispatch_phase"], "sent_response_received"
         )
         self.assertEqual(dispatch["attempt_counts_basis"], "saved_dispatch_intent")
-        self.assertEqual(verification["status"], "verified")
+        # RC6: the legacy verification block keeps its stored value and the
+        # pointer names the authoritative execution-task summary.
+        self.assertEqual(verification["status"], "not_run")
+        self.assertNotIn("projection_source", verification)
         self.assertEqual(
-            verification["projection_source"], "execution_task.verification_summary"
+            public["authoritative_verification_field"],
+            "execution_task.verification_summary",
+        )
+        self.assertEqual(
+            public["execution_task"]["verification_summary"]["status"], "verified"
         )
         # Every surface agrees with the execution-task projection.
         task = public["execution_task"]
@@ -149,7 +156,9 @@ class S16OperationalBlockTests(integration._OperationalActivationBase):
         public = self.service.get_plan(plan["plan_id"])
         public = public.get("plan", public)
         self.assertTrue(public["operational"]["dispatch"]["dispatched"])
-        self.assertEqual(public["operational"]["verification"]["status"], "verified")
+        self.assertEqual(
+            public["execution_task"]["verification_summary"]["status"], "verified"
+        )
 
     async def test_stored_plan_operational_block_is_not_rewritten(self):
         # Display only: the stored legacy block keeps its persisted values.
