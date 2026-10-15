@@ -1,9 +1,11 @@
 # HAMCP-182: entity-metadata extension of Core 2026.10.1 / 2026.10.0 and revocation of 2026.9.4
 
-**Status: Part 1 prepared, STOPPED for the Codex pre-signing review.** This
-pull request changes no journal: `upstream-trust/ha-core-release-registry.json`
-is byte-identical to `main` (sequence 9). Nothing here was signed with the
-production key, and no private key was read, requested or handled by the agent.
+**Status: Part 2 prepared, STOPPED for the independent Codex Part 2 review.**
+Josh signed sequences 10, 11 and 12 with the reviewed runbook at head `212261d`.
+This pull request now installs the owner-signed sequence-12 journal,
+byte-identical, as `upstream-trust/ha-core-release-registry.json`; merging it
+publishes the registry (§7, §11). The agent never read, requested or handled a
+private key. Part 1 (§1–§10) is kept as reviewed before signing.
 
 The proposed operations are, in this order:
 
@@ -278,9 +280,9 @@ update as not applied, without the registry readback beta.9 performs.
 
 ## 7. Publication, refresh, rollback
 
-**Publication is the merge of a later Part 2 change** that copies the signed
-sequence-12 journal into `upstream-trust/ha-core-release-registry.json`. This PR
-does not publish anything. The runtime fetches raw `main` with the behavior
+**Publication is the merge of the Part 2 change** that copies the signed
+sequence-12 journal into `upstream-trust/ha-core-release-registry.json` (§11).
+Before Part 2 this PR published nothing. The runtime fetches raw `main` with the behavior
 documented in
 [HAMCP-161 §6.5](../hamcp161/core-registry-hamcp161.md#65-publication-refresh-and-cache),
 which is unchanged in beta.8/beta.9:
@@ -400,3 +402,181 @@ five. Candidate 1 still passes, and its bytes are unchanged.
 | `scripts/prepare_core_release_registry.py` | `6e09d3f96e79253f730604ffb10caffe69d77c183fc734f5517a3733cdf4b368` (unchanged) |
 
 The runbook's pinned-files table carries the same hashes, except for its own.
+
+## 11. Part 2: signed-chain verification and publication preparation
+
+### 11.1 Owner signing (owner-reported facts)
+
+- Josh ran the reviewed runbook at head `212261d9883412c699542b83d421b6a2e8b1cd29`
+  (base `690a00b2…8ec1`) on 2026-10-15, in a real local terminal. Sequences 10,
+  11 and 12 were each signed, then verified OK by `check_step.py signed`.
+- **Interpreter deviation (owner-authorized).** The first candidate-1 check with
+  `PY=python3` stopped before signing: `check_step.py` imports repository
+  modules that need `jinja2`, which the system Python lacked. Nothing was
+  written. Josh then set `PY=/tmp/hamcp069a-py312/bin/python` (CPython 3.12.14).
+  This is the locked environment both reviewed rehearsals used: 66/66 packages
+  match `tests/requirements.lock` and `pip check` is clean. Josh accepted that
+  the original hash-enforced install cannot be shown. No runbook command,
+  checker, signer or candidate byte changed.
+- `KEY_PEM` was unset, and Josh confirmed the terminal is closed.
+- **History check.** Josh's separate count-only history check returned 7 and 8.
+  He confirmed that every hit was check-command text only, with no key or
+  passphrase. He explicitly decided to continue without key rotation, which
+  supersedes the earlier rule for this result. The agent did not read any
+  shell history.
+
+### 11.2 Signed files
+
+| File | Where committed | SHA256 | Sequence, content digest |
+|---|---|---|---|
+| candidate 1 | `candidates/candidate-1-extend-2026.10.1.json` (reviewed, unchanged) | `d9607779…88d4` | - |
+| journal 1 | `part2/signed/journal-1.json` | `2e8ef48427224d2cf48bd1e537d84dba6306be8eddf154c189d4e7a67dd9057a` | 10, `sha256:0b9a5c7c…67db` |
+| candidate 2 | `part2/signed/candidate-2-extend-2026.10.0.json` | `30c4d3adb510cef7021b97dbcc75a58edb4858f1c8228e8271993e7f39a0478d` | - |
+| journal 2 | `part2/signed/journal-2.json` | `dde7aa3eb03b322514ce47a23482aea6113e560cc5ca66c162a18f59e425a0fb` | 11, `sha256:73ca0e00…3047` |
+| candidate 3 | `part2/signed/candidate-3-revoke-2026.9.4.json` | `05979036cd69710582ce391be13c3dd039169b97f60e44da5ef3f2a58b14ed34` | - |
+| journal 3 | `upstream-trust/ha-core-release-registry.json` | `089247cafa29b3ab0c1687a63419d999ae9c894fa0a94248f73008eabf6785e6` | 12, `sha256:9d14f06a…e5fc` |
+
+All files are byte-identical to the owner's output directory. Journal 3 expires
+2027-01-13T13:40:21Z.
+
+### 11.3 Independent verification of the real chain
+
+All of these were run with the production **public** key only, under the same
+locked interpreter.
+
+- **The reviewed checker, unchanged.** `check_step.py signed 1/2/3` re-run on
+  the real files. Each prints `OK`: sequences 10, 11 and 12 with the digests
+  above (`part2/reports/check-step-signed.log`).
+- **`harness/verify_signed_chain.py` (new in Part 2).** This verifier checks
+  the chain two ways, independently of the signer's own checks.
+  - Raw path:
+    - It pins all seven file SHA256s and the key fingerprint.
+    - It verifies **46** Ed25519 signatures directly with `cryptography`. These
+      are every envelope and every journal signature, over the canonical
+      unsigned bytes.
+    - It checks that each file is canonical, that sequences 1..12 link by
+      content digest, and that `generated_at` strictly increases.
+    - It checks that each journal keeps every earlier envelope unchanged, with
+      the journal header and revocation sources unchanged.
+    - It checks that each tip equals its candidate's envelope, and that each
+      candidate is fenced to its predecessor file.
+    - It checks that each tip expires exactly 90 days after it was generated.
+  - Exact transitions:
+    - 10 = 9 plus the 2026.10.1 extension only.
+    - 11 = 10 plus the 2026.10.0 extension only.
+    - 12 = 11 minus 2026.9.4.
+    - Each extension appends exactly the compiled
+      `core_entity_registry_metadata_operation_v1` contract and sets
+      `evidence_sha256` to the reviewed evidence input.
+    - Sequence 12's revocations are sequence 9's (2026.9.2, 2026.9.3, unchanged)
+      plus the exact 2026.9.4 tombstone. The tombstone names the sequence-9
+      entry, with the directed reason, and `revoked_at` equal to `generated_at`.
+    - The entity reference appears only in (10, 2026.10.1), (11, 10.0/10.1) and
+      (12, 10.0/10.1).
+  - Runtime path: this checkout's `CoreReleaseRegistry`, the add-on's refresh
+    code.
+    - Stepwise 9 → 10 → 11 → 12, and the one-merge jump 9 → 12, are accepted,
+      with the expected digests.
+    - Afterwards, journals 9, 10 and 11 are refused, and the tip stays at 12.
+  - `--installed` proves `upstream-trust/ha-core-release-registry.json` is
+    byte-identical to journal 3. Output: `part2/reports/verify-signed-chain.log`.
+    The committed copies under `part2/signed/` also pass.
+- **`harness/verify_signed_chain_controls.py`.** This runs 12 controls: the real
+  files pass, and 11 tamperings refuse with `FAILED:`.
+  - The tamperings are: an appended byte, the wrong journal, an installed file
+    that differs, flipped envelope and journal signatures, an edited reason, a
+    dropped envelope, non-canonical bytes, a candidate that differs from the
+    tip, and `--now` before generation or after expiry.
+  - Controls past the hash pins run an in-memory verifier with the pin check
+    removed.
+  - Envelope-level tamperings are caught first by the journal signature, which
+    covers every envelope.
+  - Output: `part2/reports/verify-signed-chain-controls.json`.
+
+### 11.4 Bindings revalidated before preparing publication
+
+| Binding | Value now | Same as signing review? |
+|---|---|---|
+| `origin/main` | `690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1` (fetched 2026-10-15) | yes |
+| Runtime tree `ha_mcp_engineering` (main and this branch) | `c363397b2cabc567394b9cdde9daffe9a0bfb5bd` = receipts' `runtime_tree` | yes |
+| Baseline journal on main | sequence 9, SHA256 `ecaccd79…4402` | yes |
+| `ci/support-window.yaml` blob | `d8bee572…`: current 2026.10.1, rollback 2026.10.0, candidate `null` | yes |
+| `scripts/core_lane_bindings.py` blob | `81b32875…`; 2026.10.1 `sha256:130241f2…aa0`, 2026.10.0 `sha256:1b64d38f…3a4` = sequence-12 `image_index_digest` = digests in the entity receipts | yes |
+| Receipts | the four committed receipts are byte-identical to the run 38681524688 downloads; shipped `verify_receipt_files` PASS for both slots, a result identical to `part0/receipt-verify-690a00b.json` (`part2/reports/receipt-verify-212261d.json`) | yes |
+| `prepare_core_release_registry.py`, `check_step.py`, `sign_step.py`, `core-public-key.txt`, candidate 1 | pinned hashes in §10, unchanged | yes |
+| Stable v1 `hass_mcp_admin/` tree | `fc27fc9a…`, identical to main | yes |
+
+### 11.5 Part 0 re-run on the real signed journals
+
+`harness/runtime_check.py`, unchanged from the reviewed head (blob `11cf4202`),
+was re-run with:
+- the production public key;
+- baseline = main's sequence-9 journal;
+- steps = journals 1 and 2;
+- final = journal 3;
+- `--now 2026-10-15T14:00:00Z`.
+
+It ran against two `git archive` extracts:
+
+| Runtime | Source | Runtime tree | Result |
+|---|---|---|---|
+| beta.9 (deployed) | `690a00b2fcbffc4e90c97a1cad36ccf6168e8ec1` | `c363397b…` | **passed**, 0 failures |
+| beta.8 (rollback) | `7370ad25eb98e03347d73e152f38881895477d74` | `b4736c81…` | **passed**, 0 failures |
+
+- After digests and selection tokens are normalized, the two results are
+  identical to each other. Each is also identical to its ephemeral-key
+  rehearsal in §5.
+- On the final journal:
+  - 2026.10.0 and 2026.10.1: 22 references, 22 compatible. The entity-metadata
+    capability is admitted, its route is available, and it acquires for an
+    exact target. Configuration authority is kept.
+  - 2026.9.4: revoked, with no entry, nothing admitted and every profile
+    deny-only. Its in-flight configuration lease fails revalidation.
+  - The cache restart restores sequence 12, and the rollback to sequence 9 is
+    refused.
+- Reports: `part2/reports/runtime-beta9-690a00b-signed.json` and
+  `runtime-beta8-7370ad25-signed.json`. Provenance is in
+  `part2/reports/manifest.json`.
+- The §5.1 rule still applies. After publication, do not create, approve or
+  apply entity-metadata plans while Engineering beta.8 is running.
+
+### 11.6 What this Part 2 head changes
+
+- `upstream-trust/ha-core-release-registry.json`: sequence 9 → the owner-signed
+  sequence-12 journal 3, byte-identical.
+- `part2/signed/`, `part2/reports/`, `harness/verify_signed_chain.py` and
+  `harness/verify_signed_chain_controls.py`: evidence only.
+- `tests/test_hamcp129_platform_reads.py`: the read-only registry assertion now
+  expects sequence 12, entries {2026.10.0, 2026.10.1}, and revocations
+  {2026.9.2, 2026.9.3, 2026.9.4}.
+- `tests/test_hamcp069a_entity_metadata_readmission.py`: "no signed entry
+  carries the dormant profile" is replaced by an assertion that the profile is
+  carried exactly on 2026.10.0/2026.10.1 with the compiled contract, and in no
+  other envelope or entry.
+  - Both tests fail against the old sequence-9 file (checked locally: `9 != 12`).
+- `OWNER-SIGNING-RUNBOOK.md`: a post-signing status note, plus the queued
+  documentation correction. The Setup line now reads
+  `PY=<locked-env>/bin/python  # the repository's locked Python 3.12 environment (tests/requirements.lock)`.
+  - SHA256 at signing: `40a142b057a1477249079b483b48ce4abbf9e8c18cc20b20fee7938bfbc978a2`.
+  - SHA256 now: `29e3f00e34d18246bd3e727d242fabb6f46ffe561ddae0d689a92299cf330ce4`.
+  - No command, pin, signer or input changed.
+- No runtime source, schema, tool registration, workflow, release declaration,
+  version, `config.yaml`, Dockerfile or stable-v1 file changes.
+
+### 11.7 Effect of merging, and limitations
+
+- **Effect.** Production fetches raw `main`, so publication takes effect on the
+  next registry refresh (§7). From then on, Engineering beta.9 admits
+  `core.entity_registry_metadata_operation` on Core 2026.10.0 and 2026.10.1.
+  `create_entity_metadata_plan` becomes usable. Its writes still go through the
+  governed plan, exact-hash approval, apply and read-back path. Core 2026.9.4
+  loses all Core authority.
+- **No release.** There is no Engineering version change, image, tag or
+  deployment. Ready plus merge publishes only this registry file.
+- **Rollback** requires a new owner-signed sequence (§7). Reverting the file has
+  no effect on a runtime that has already accepted sequence 12.
+- The live Core version and the deployed add-on were not observed. Part 0 is
+  offline and import-level.
+- `docs/HAMCP_069A_ENTITY_METADATA_DESIGN.md` still describes the capability as
+  dormant "until a separate owner-signed registry sequence PR". This is that PR.
+  The design document is historical and is not edited here.

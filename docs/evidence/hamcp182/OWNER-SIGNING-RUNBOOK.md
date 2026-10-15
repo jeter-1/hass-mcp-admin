@@ -6,6 +6,11 @@ This runbook does three things, in this order:
 2. extend 2026.10.0 (sequence 11);
 3. revoke 2026.9.4 (sequence 12).
 
+**Status:** executed by Josh on 2026-10-15 from reviewed head `212261d`
+(sequences 10, 11 and 12 signed and verified). The only edits since signing are
+this status note and the `PY` line in Setup, which now names the interpreter the
+signing actually used; see [record §11](core-registry-hamcp182.md#11-part-2-signed-chain-verification-and-publication-preparation).
+
 **Precondition:** run this only after the Codex PRE-SIGNING review of this
 pull request's exact head says **SAFE TO SIGN**. Run it from a checkout of that
 reviewed head. Evidence: [`core-registry-hamcp182.md`](core-registry-hamcp182.md).
@@ -47,7 +52,7 @@ sha256sum scripts/prepare_core_release_registry.py docs/evidence/hamcp182/check_
   docs/evidence/hamcp182/sign_step.py docs/evidence/hamcp182/core-public-key.txt \
   docs/evidence/hamcp182/candidates/candidate-1-extend-2026.10.1.json
 #   expect the hashes in the "Pinned files" table below. Any difference: STOP.
-PY=python3                     # Python >= 3.12 with `cryptography`
+PY=<locked-env>/bin/python     # the repository's locked Python 3.12 environment (tests/requirements.lock)
 D=docs/evidence/hamcp182
 O=/home/josh/repos/hass-mcp-admin/.artifacts/hamcp182/owner   # outside the repository checkout
 mkdir -p "$O"

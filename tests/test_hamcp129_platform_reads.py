@@ -1349,15 +1349,16 @@ class CatalogMetadataTests(unittest.TestCase):
     def test_signed_core_registry_is_read_only_and_covers_supported_cores(self):
         registry = json.loads((ROOT / "upstream-trust/ha-core-release-registry.json").read_text())
         tip = registry["envelopes"][-1]
-        self.assertEqual(tip["sequence"], 9)
+        self.assertEqual(tip["sequence"], 12)
         entries = {entry["version"]: entry for entry in tip["entries"]}
-        for version in ("2026.9.4", "2026.10.0", "2026.10.1"):
+        self.assertEqual(sorted(entries), ["2026.10.0", "2026.10.1"])
+        for version in ("2026.10.0", "2026.10.1"):
             with self.subTest(version=version):
                 capabilities = {item["capability_id"] for item in entries[version]["capabilities"]}
                 self.assertTrue({"core.basic_websocket_read", "core.basic_rest_read"} <= capabilities)
         revoked = {item["version"] for item in tip["revocations"]}
-        self.assertTrue({"2026.9.2", "2026.9.3"} <= revoked)
-        self.assertFalse({"2026.9.2", "2026.9.3"} & set(entries))
+        self.assertEqual(revoked, {"2026.9.2", "2026.9.3", "2026.9.4"})
+        self.assertFalse(revoked & set(entries))
 
 
 import tests.test_core_update_continuity as core_continuity  # noqa: E402
