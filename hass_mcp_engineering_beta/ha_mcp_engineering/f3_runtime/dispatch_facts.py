@@ -685,11 +685,10 @@ def qualify_counters(value: dict[str, Any], facts: DispatchFacts) -> dict[str, A
             for item in attempts
         ]
 
-    if "provider_attempts" in value:
-        value["provider_attempts"] = stamp_attempts(value["provider_attempts"])
-    summary = value.get("verification_summary")
-    if isinstance(summary, Mapping) and isinstance(summary.get("children"), list):
-        value["verification_summary"] = {
+    def stamp_summary(summary: Any) -> Any:
+        if not (isinstance(summary, Mapping) and isinstance(summary.get("children"), list)):
+            return summary
+        return {
             **summary,
             "children": [
                 {**item, "attempt_counts_basis": basis_for(item)}
@@ -698,23 +697,27 @@ def qualify_counters(value: dict[str, Any], facts: DispatchFacts) -> dict[str, A
                 for item in summary["children"]
             ],
         }
+
+    def stamp_changes(changes: Mapping[str, Any]) -> dict[str, Any]:
+        stamped = dict(changes)
+        if "provider_attempts" in stamped:
+            stamped["provider_attempts"] = stamp_attempts(stamped["provider_attempts"])
+        if "verification_summary" in stamped:
+            stamped["verification_summary"] = stamp_summary(stamped["verification_summary"])
+        return stamped
+
+    if "provider_attempts" in value:
+        value["provider_attempts"] = stamp_attempts(value["provider_attempts"])
+    if "verification_summary" in value:
+        value["verification_summary"] = stamp_summary(value["verification_summary"])
+    # S20: historic lifecycle events keep their counters next to a basis too.
     for key in ("lifecycle_events", "events"):
         events = value.get(key)
         if not isinstance(events, list):
             continue
         value[key] = [
-            {
-                **event,
-                "changes": {
-                    **event["changes"],
-                    "provider_attempts": stamp_attempts(
-                        event["changes"]["provider_attempts"]
-                    ),
-                },
-            }
-            if isinstance(event, Mapping)
-            and isinstance(event.get("changes"), Mapping)
-            and "provider_attempts" in event["changes"]
+            {**event, "changes": stamp_changes(event["changes"])}
+            if isinstance(event, Mapping) and isinstance(event.get("changes"), Mapping)
             else event
             for event in events
         ]

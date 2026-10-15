@@ -111,7 +111,7 @@ _MINIMAL_DISPATCH_FACTS = (
     "dispatch_phase", "attempt_counts_basis", "attempt_count_scope",
     "intent_recorded", "changed_by_engineering", "dispatch_performed",
     "setter_call_not_sent", "provider_call_not_sent", "outcome_code",
-    "result_text",
+    "result_text", "dispatched_at_basis",
 )
 
 
@@ -232,6 +232,11 @@ def _shed_self_retrieval(value, facts, reads) -> bool:
     return True
 
 
+def _shed_dispatched_at_basis(value, facts, reads) -> bool:
+    # dispatched_at itself is a legacy receipt fact and stays.
+    return facts.pop("dispatched_at_basis", None) is not None
+
+
 def _shed_dispatch_phase(value, facts, reads) -> bool:
     return facts.pop("dispatch_phase", None) is not None
 
@@ -250,6 +255,7 @@ _MINIMAL_SHEDDING = (
     _shed_result_text,
     _shed_duplicate_verification,
     _shed_self_retrieval,
+    _shed_dispatched_at_basis,
     _shed_dispatch_phase,
     _shed_counter_group,
 )
