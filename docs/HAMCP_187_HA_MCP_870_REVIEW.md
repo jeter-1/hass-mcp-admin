@@ -10,6 +10,9 @@ admission step below is a design proposal for Josh to decide.
   with the HA-MCP Custom Component ("File & YAML Tools" entry only) on Core
   2026.10.1.
 - Review date: 2026-10-15.
+- Amended 2026-10-15 with an owner-authorized disposable local capture
+  (section 10). Where the capture contradicted an earlier source-only claim,
+  the claim is corrected in place and marked **Corrected by capture**.
 
 ## Evidence method and limits
 
@@ -30,9 +33,13 @@ fingerprints for 8.5.0 (`0d7ecdb7…`) and 8.6.0 (`47151934…`) exactly.
 **Not done:**
 - No live Home Assistant, live Engineering, deployed endpoint or Supervisor
   access.
-- No component-enabled capture. That needs a disposable Core with the
-  component installed. Production-profile (80-tool) and component-search
-  descriptors are therefore source-derived, not captured.
+- ~~No component-enabled capture.~~ Done in section 10: a disposable Core
+  2026.10.1 with component 2.2.0 and 2.2.2, ha-mcp 8.5.0 and 8.7.0, under
+  production-mirroring settings. Those captures are evidence only. They are
+  not committed admission fixtures, and an admission PR must regenerate them
+  with the admission scripts.
+- No Supervisor runtime. The #2613 announcement itself could not fire
+  (section 10, Q2); Core's side of it was exercised with a synthetic flow.
 - No strict-contract or runtime-contract fingerprint computation. That needs
   the `mcp` package and the admission scripts.
 - No arm64 execution.
@@ -126,7 +133,11 @@ production settings.**
     `readOnlyHint: false`.
   - Dashboard getter and setter `openWorldHint` changes from `false` to
     `true`.
-  - This changes every tool's annotation and runtime fingerprint.
+  - This changes the annotations of 75 of the 80 production-profile tools.
+    The other five (`ha_manage_app`, `ha_manage_blueprints`,
+    `ha_manage_pipeline`, `ha_manage_theme`, `ha_set_integration`) already
+    carried all four hints in 8.5.0 (captured; section 10, Q1). Every runtime
+    fingerprint still changes, because `_meta` and descriptions differ.
 - **#2613 also adds add-on MCP discovery.** See section 7.
 - **`tools/call`.**
   - The error envelope is unchanged: `raise_tool_error` still raises
@@ -144,7 +155,8 @@ production settings.**
 (`upstream_tool_policy.py:24`, `upstream_read_gateway.py:121-122`,
 `upstream_dashboard.py:68`, `f3_dashboard/constants.py:24`,
 `upstream_search_8_6.py:17`) needs no change. Admission does need a complete
-new descriptor binding, because annotations differ on every tool.
+new descriptor binding, because every descriptor differs (annotations on
+75 of 80 tools, and `_meta` on all of them).
 
 **Minimum Engineering change for protocol: none.**
 
@@ -217,7 +229,8 @@ defect is present in production 8.5.0 and in rollback 8.4.3.
 
 **Rebinding applies to every row.** No tool descriptor is byte-identical to
 8.5.0:
-- every tool's annotations changed (#2613);
+- annotations changed on 75 of 80 tools (#2613; the other five already
+  carried all four hints);
 - 8.5.0's private `_meta.ha_mcp` is absent (since 8.6.0, #2487);
 - most descriptions were rewritten.
 
@@ -251,7 +264,7 @@ functional class is "unchanged".
 | ha_get_hacs_info | text-only | Compatible | annotations only | Uses per-request credentials (`tools_hacs.py:130-141`, #2689). Engineering's `HACS_INFO_RESPONSE_ENVELOPE_MODEL_V1` binding needs an 8.7.0 key (`upstream_read_gateway.py:151-153`) |
 | ha_get_history | bb827688 / 48bbc5e7 / 3d3e136a | **Incompatible output, new in 8.7** | **structural + output** | See note H |
 | ha_get_overview | text-only | Unchanged | annotations only | Hint text only |
-| ha_get_skill_guide | 23273e15 / 84790a9d / b9088e1e | Incompatible (8.6 change, already projected) | text-only input | #2556 (in 8.6.0): `skill` removed, `file` defaults to `SKILL.md`. **`clients/mcp.py:359-371` hard-codes the argument rewrite for `server_version == "8.6.0"` and must include 8.7.0** |
+| ha_get_skill_guide | 23273e15 / 84790a9d / b9088e1e | Incompatible (8.6 change, already projected) | text-only input | #2556 (in 8.6.0): `skill` removed, `file` defaults to `SKILL.md`. **`clients/mcp.py:359-371` hard-codes the argument rewrite for `server_version == "8.6.0"` and must include 8.7.0.** Confirmed by capture (section 10, Q4): on 8.7.0 the unrewritten `{skill, file}` call fails, no key is returned, and the dashboard write is refused with `BPS_ACKNOWLEDGMENT_REQUIRED`. That failure is closed, not silent |
 | ha_get_state | text-only | Unchanged (description changed) | description only | Body identical |
 | ha_get_todo | text-only | Unchanged | annotations only | — |
 | ha_get_zone | text-only | Unchanged | annotations only | Only the write path changed (#2643) |
@@ -312,7 +325,7 @@ Required bindings: the `FAN_RELEASES` and power release maps
 |---|---|---|---|
 | ha_config_get_dashboard | 35ee7247 / 9d193def / 3d5eb7f0. **Compatible for Engineering's calls; incompatible upstream** | structural | Upstream adds `describe` and removes `mode` (search is now implied by `query`). Searches span all dashboards when no `url_path` is given, and results carry `truncated`. `openWorldHint` changes from false to true (#2700, #2671). Engineering calls only `list_only=true` and `url_path` (`upstream_dashboard.py:513,611,634`); its `"mode"` at `:1626` is an output metadata key, not this input. `describe=true` runs QuickJS inside HA, so it must stay withheld |
 | ha_get_skill_guide | See 3a | — | Fixed internal read of `references/dashboard-guide.md`. `clients/mcp.py:359-371` needs 8.7.0 |
-| ha_config_set_dashboard | Compatible change (behaviour narrowed) | `readOnlyHint: false`, `idempotentHint: false` and `openWorldHint` true added; input structure equal to 8.6 (`02cde8fb`) | Parameters, the `config_hash` optimistic lock and `compute_config_hash` are unchanged. New pre-write rejections of `""` and `{"item": …}` list slots. One extra read occurs before inner patches. With component 2.2.2, component-path saves add advisory card `warnings` after QuickJS checks, which can take up to about 20 s (`dashboard_edit.py:211-221`). **Engineering's setter timeout and its full-config write must be re-validated against this latency**, *inferred risk* |
+| ha_config_set_dashboard | Compatible change (behaviour narrowed) | `readOnlyHint: false`, `idempotentHint: false` and `openWorldHint` true added; input structure equal to 8.6 (`02cde8fb`) | Parameters, the `config_hash` optimistic lock and `compute_config_hash` are unchanged. New pre-write rejections of `""` and `{"item": …}` list slots. One extra read occurs before inner patches. With component 2.2.2, component-path saves add advisory card `warnings` after QuickJS checks, which can take up to about 20 s (`dashboard_edit.py:211-221`). **Measured by capture (section 10, Q3):** the first write after each Core start took 5.9–6.7 s (QuickJS start-up; the first write ever also installs `quickjs-ng`); later writes took 0.27–0.87 s with a custom card and about 0.012 s without. This holds with 8.5.0 as well as 8.7.0, because the component does the work. With component 2.2.0 every write took ≤ 0.019 s. Engineering's setter timeout must still be checked against the ~6 s first write and the 20 s upstream bound |
 
 Required bindings:
 - `upstream_dashboard_builtin_attestations.json`;
@@ -331,10 +344,16 @@ Required bindings:
 | ha_read_file | Compatible, narrowed | `approval_pin.json` is now denied (`const.py:95`). The `secrets.yaml` masking exception now checks the resolved target, closing a symlink bypass (`__init__.py:681`). **No PEM masking of file content:** only canonical `secrets.yaml` is masked (`__init__.py:1244,2841`) |
 
 **Registration and binding.**
-- These tools register only when `HAMCP_ENABLE_FILESYSTEM_TOOLS` is on **and**
-  a component of at least version `1.2.0` is detected
-  (`tools_filesystem.py:98,415-424`). That is why every standalone capture,
-  8.5.0 included, shows 77 tools even with the flag set.
+- **Corrected by capture.** The earlier text said these tools register only
+  when the flag is on *and* a component of at least `1.2.0` is detected. That
+  is wrong. Registration depends only on `enable_filesystem_tools`
+  (`tools_filesystem.py:415-424,949-959`; `tools_yaml_read.py:519-528` uses the
+  same gate). That flag is a beta sub-flag: it is forced off unless
+  `ENABLE_BETA_FEATURES` is also on. `MIN_COMPONENT_VERSION = "1.2.0"`
+  (`:98`) is checked per call, not at registration. The earlier 77-tool
+  standalone captures had `ENABLE_BETA_FEATURES` unset, which is why the
+  three tools were absent. With beta on, both 8.5.0 and 8.7.0 advertise 80
+  tools (section 10, Q1).
 - Engineering has **no runtime binding** for these three tools today.
 - The whole-catalog validator refuses an 80-tool catalog, while
   dependency-scoped paths work (`docs/V2_4_1_BETA6_ACCEPTANCE.md:56,90`;
@@ -362,12 +381,15 @@ Required bindings:
 - **`ENABLE_TOOL_SEARCH` (#2670).** The default is off, and the catalog is
   unaffected. When on, the catalog becomes pinned tools plus `ha_search_tools`
   and `ha_call_{read,write,delete}_tool`. Production must keep it off.
-- **Production count *(inferred from source, not captured)*:**
-  - **80**: 88 minus `ha_config_set_yaml`, `ha_write_file`, `ha_delete_file`,
-    two `ha_dev_*` tools, `ha_get_dashboard_screenshot`,
+- **Production count (captured; section 10, Q1):**
+  - **80** for both 8.5.0 and 8.7.0 under production-mirroring settings, with
+    identical name sets: 88 minus `ha_config_set_yaml`, `ha_write_file`,
+    `ha_delete_file`, two `ha_dev_*` tools, `ha_get_dashboard_screenshot`,
     `ha_manage_custom_tool` and `ha_manage_security_policy`.
-  - That is the same as the owner-stated 8.5.0 production count, but see item
-    C3 in section 9.
+  - The count does not depend on the component version. The 8.7.0 descriptors
+    do (the `ha_search` variant).
+  - That matches the owner-stated 8.5.0 count. The 79 in the HAMCP-162 note
+    could not be reproduced (see item C3 in section 9).
   - Engineering must still expose its own count (87: 59 native, 28
     delegated; `docs/V2_4_1_BETA9_ACCEPTANCE.md:78`), with no filesystem tool.
 
@@ -431,9 +453,15 @@ is deployed):
 4. Decide `redact_secrets`. It is off by default and is the HAMCP-162
    recommended prerequisite. #2714 PEM redaction applies only when it is on.
 5. Under Settings → Devices & services, a discovered "Model Context Protocol"
-   entry appears. Its URL contains the secret path. **Ignore it.** Do not
-   configure it unless HA Core should connect to ha-mcp. It is re-announced
-   on every add-on start.
+   entry appears. Its URL contains the secret path. It is re-announced on
+   every add-on start. **Corrected by capture (section 10, Q2):** the earlier
+   advice was "Ignore it", but Ignore is not inert. The next re-announcement
+   writes the URL into the ignored entry's data in
+   `.storage/core.config_entries`, and from there into every backup.
+   - **Configure** stores the URL on disk at once. Do not configure it unless
+     HA Core should connect to ha-mcp.
+   - **Leaving it unactioned** keeps the URL in memory only.
+   - The owner should choose between these with section 10, Q2 in hand.
 6. Update the custom component to 2.2.2 through HACS and restart Core. HACS
    only refreshes metadata; nothing installs automatically. The "File & YAML
    Tools" entry needs no reconfiguration.
@@ -468,7 +496,9 @@ missing type means `tools`. The "File & YAML Tools" entry is unaffected.
   (`component_helper_collections.py:32`).
 - Writes fall back only when the first attempt provably never ran.
 - The only hard floor is `MIN_COMPONENT_VERSION = "1.2.0"` for file tools.
-- *Inferred:* either update order works.
+- *Captured (section 10, Q4):* all four pairings of 8.5.0 or 8.7.0 with 2.2.0
+  or 2.2.2 work for searches and governed dashboard writes, so either update
+  order works.
 
 **Other component changes.**
 - **#2697:** helper domains come from Core's helper flows, and component
@@ -492,17 +522,24 @@ component 2.2.2.
   - the presence of the filesystem tools.
 - Admission evidence must be captured for the pair 8.7.0 + 2.2.2. The pair
   8.5.0 + 2.2.2, which is the rollback state, must also be shown to keep the
-  existing 8.5.0 binding valid. *Not verified:* 8.5.0 would see
-  `search_unified`, which already exists in 2.2.1, so the 8.5.0 descriptor
-  should be unaffected.
+  existing 8.5.0 binding valid.
+- **Verified by capture (section 10, Q1 and Q4):** 8.5.0's catalog is
+  byte-identical with 2.2.0 and 2.2.2 (fingerprint `f112aa40…`). 8.7.0's
+  catalog differs between the two (`95c69e8e…` with 2.2.0, `0906cbce…` with
+  2.2.2) only in the `ha_search` reduced schema and one description.
+- **Updating together is no longer required for #2671 either.** Production
+  can run 8.7.0 with component 2.2.0. That pairing avoids #2671 entirely,
+  because 2.2.0 contains no card-check code. It keeps the 8.7.0 reference
+  `ha_search` variant for domain-only searches (no `search_unified`). See
+  section 10, Q4 for what that costs.
 
 ## 7. Security deltas
 
 | Change | Delta | Default | Engineering relevance |
 |---|---|---|---|
 | #2714 PEM redaction | Add-on option values matching `-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----` are redacted (`redaction.py:73,165,192`). Each PEM line is learned so `RedactSecretsMiddleware` (`:456`) scrubs log echoes | **Off** (`REDACT_SECRETS=False`, `config_settings.py:544-546`) | Affects `ha_get_app` output only when enabled. **Not applied to `ha_read_file` / `ha_config_get_yaml` content.** Engineering sanitization must remain the control for HAMCP-162 |
-| #2613 MCP discovery | The add-on POSTs `{"service":"mcp","config":{"url":"http://<host>:9583<secret_path>"}}` to Supervisor `/discovery` on every start on Core ≥ 2026.10 (`app_discovery.py:50-90`; `config.yaml discovery: [mcp]`). No opt-out | **On**, unconditional | **New disclosure** of the secret-path URL into HA Core's discovery flow, visible to HA admins. It does not change the authentication model. Owner decision: accept, or ask upstream for an opt-out |
-| #2671 card checking | Component 2.2.2 runs dashboard-resource JavaScript in a QuickJS sandbox inside the HA process. It installs `quickjs-ng` on demand and downloads `linkedom` from `registry.npmjs.org` (integrity-checked, cached in `.storage`) (`card_runtime.py:17,85-88`; `custom_cards.py:36-38,585-600`). Upstream `SECURITY.md:35-53`: contains broken cards, "not an adversarial one" | Triggered by `ha_config_get_dashboard(describe=true)` and by component dashboard writes | **Engineering dashboard writes through `ha_config_set_dashboard` will trigger it** when component 2.2.2 is installed *(inferred from `dashboard_edit.py:211-221`)*. It adds new outbound npm access and in-process JS execution. Owner decision |
+| #2613 MCP discovery | The add-on POSTs `{"service":"mcp","config":{"url":"http://<host>:9583<secret_path>"}}` to Supervisor `/discovery` on every start on Core ≥ 2026.10 (`app_discovery.py:50-90`; `config.yaml discovery: [mcp]`). No opt-out | **On**, unconditional | **New disclosure** of the secret-path URL into HA Core's discovery flow, visible to HA admins. It does not change the authentication model. **Quantified in section 10, Q2:** in memory only while the discovery is unactioned; written to `.storage/core.config_entries`, and so into backups, once the entry is configured, or once it is ignored and then re-announced. Not readable by non-admin users or by `ha_read_file`. Owner decision: accept, or ask upstream for an opt-out |
+| #2671 card checking | Component 2.2.2 runs dashboard-resource JavaScript in a QuickJS sandbox inside the HA process. It installs `quickjs-ng` on demand and downloads `linkedom` from `registry.npmjs.org` (integrity-checked, cached in `.storage`) (`card_runtime.py:17,85-88`; `custom_cards.py:36-38,585-600`). Upstream `SECURITY.md:35-53`: contains broken cards, "not an adversarial one" | Triggered by `ha_config_get_dashboard(describe=true)` and by component dashboard writes | **Confirmed by capture (section 10, Q3):** Engineering-equivalent dashboard writes trigger it whenever component 2.2.2 is installed, with ha-mcp 8.5.0 as well as 8.7.0. The first write after a fresh container pip-installs `quickjs-ng==0.17.0.1` (version-pinned, not hash-pinned). If any local `/local/` resource exists, it also downloads `linkedom` 0.18.13 from `registry.npmjs.org`. That download is sha512-checked once, then cached in `.storage` and re-executed from the cache **without re-verification**. Card JavaScript from `www/` then runs in-process on every write that uses the card. Component 2.2.0 does none of this. Owner decision |
 | #2636 backup controls | `guard_snapshot_route` refuses snapshot delete through `ha_call_service` and WebSocket routes | On | Net tightening |
 | #2614 context | Component service calls attributed to the caller | On | Better audit |
 | Component deny list | `approval_pin.json` denied; listings hide `secrets.yaml`, `approval_pin.json` and `.storage`; symlink bypass of the `secrets.yaml` exception closed | On | Tightening for HAMCP-162 |
@@ -597,7 +634,9 @@ The key names and shapes were checked against the compiled 8.6.0 entry at
 **Dispositions.** Every surface is explicit:
 - `read_gateway`: admitted.
 - `dashboard`: admitted. This is conditional on re-validating setter latency
-  and the QuickJS warnings (section 3c), and on the owner accepting #2671.
+  and the QuickJS warnings (section 3c). It is also conditional on the owner
+  either accepting #2671 or keeping production on component 2.2.0
+  (section 10, Q4).
 - `backup`: held.
 - `lifecycle`: held.
 
@@ -757,8 +796,8 @@ These are protected workflow and script surfaces.
 - **Release notes must disclose:**
   - the client-visible `ha_get_history` output change;
   - the dashboard getter `openWorldHint` change;
-  - the #2613 discovery disclosure and the #2671 QuickJS card checks, as
-    owner-accepted consequences.
+  - the #2613 discovery disclosure and, if component 2.2.2 is deployed, the
+    #2671 QuickJS card checks, as owner-accepted consequences.
 
 ### 8.7 Deploy order and rollback
 
@@ -768,7 +807,9 @@ These are protected workflow and script surfaces.
 2. Owner step. Take a partial backup of the ha-mcp add-on. Then update the
    ha-mcp add-on to 8.7.0 **and** the component to 2.2.2 in the same
    maintenance window, restarting Core after the component update. Run the
-   section 5 checklist.
+   section 5 checklist. *Alternative (section 10, Q4):* update only the
+   add-on and keep component 2.2.0, which avoids #2671. Admission evidence
+   must then include the 8.7.0 + 2.2.0 descriptor pair.
 3. Acceptance on 8.7.0:
    - `server_info` shows `ha-mcp-v8.7.0-600677bb` and `admitted_exact`
      (or the documented 80-tool state);
@@ -782,9 +823,13 @@ These are protected workflow and script surfaces.
 4. **Rollback.** Restore the 8.5.0 add-on from the partial backup, or reinstall
    8.5.0 and restore `/data`.
    - The component can stay at 2.2.2: per-capability negotiation means no
-     hard floor beyond 1.2.0. This needs proof in the 8.5.0 + 2.2.2 lane.
-   - The discovery entry created by 8.7.0 stays in Core's discovery list and
-     should be ignored.
+     hard floor beyond 1.2.0. The disposable capture showed 8.5.0 + 2.2.2
+     working, with a catalog identical to 8.5.0 + 2.2.0 (section 10, Q4). That
+     is evidence for the CI lane to reproduce, not a substitute for it. With
+     2.2.2 left in place, the #2671 card checks keep running under 8.5.0.
+   - The discovery entry created by 8.7.0 stays in Core's discovery list.
+     Handle it as section 5, item 5 describes: ignoring it persists the URL
+     at the next announcement.
    - Engineering needs no rollback, because it admits both versions.
    - Rolling back reintroduces the #2695 defect for direct ha-mcp clients
      (section 9, item C1).
@@ -853,20 +898,28 @@ HAMCP-162 (filesystem reads) stays a separate task, sequenced after E.
 - The brief states 80 tools.
 - Register HAMCP-162's 2026-10-14 note records 79 (77 + 2) live, "so one of
   `ha_config_get_yaml` / `ha_list_files` / `ha_read_file` appears hidden".
-- Source predicts 80 for both 8.5.0 and 8.7.0 under the stated settings.
+- **Capture result (section 10, Q1):** under the stated settings, 8.5.0 and
+  8.7.0 each advertise exactly 80 tools, with either component version. 79
+  cannot be produced from the stated settings. A live 79 would mean
+  production differs from them, for example an extra `DISABLED_TOOLS` entry
+  in `tool_config.json`, or a different flag origin.
 - Confirm with a read-only `server_info` before the 8.7.0 acceptance baseline
-  is fixed.
+  is fixed. This dispute is about production state, not about 8.7.0.
 
 **C4 (Medium): 8.7.0 is not "8.6.0 + fixes".**
 - It is 235 commits beyond 8.6.0.
 - It includes new **structural** input changes on Engineering-used tools:
   `ha_config_list_helpers`, `ha_get_history` and `ha_config_get_dashboard`.
 - It includes a client-visible `ha_get_history` output change.
-- It includes new annotations on every tool.
+- It includes new annotations on 75 of the 80 production-profile tools.
 - It includes two new security-relevant behaviours: Supervisor discovery of
   the secret-path URL, and in-HA QuickJS execution with an npm download
   through component 2.2.2.
 - None of these is in the release-note list in the brief.
+- **Refined by capture (section 10, Q4):** #2671 belongs to component 2.2.2,
+  not to the ha-mcp 8.7.0 server. Component 2.2.2 runs card JavaScript under
+  8.5.0 too, and 8.7.0 with 2.2.0 runs none. #2613 belongs to the 8.7.0
+  add-on.
 
 **C5 (Low): "the component and add-on must update together" is an
 Engineering admission constraint, not an upstream requirement.** Upstream
@@ -884,15 +937,384 @@ count on it.
 `core_lane_bindings.py`, the October Core rotation never needed one. 8.7.0
 needs one explicitly (section 8.3).
 
+## 10. Disposable capture (2026-10-15)
+
+**Authority.** Owner decision 5 (Josh, 2026-10-15, recorded on HAMCP-187)
+authorized a disposable local capture, for evidence only. Nothing here touched
+live Home Assistant, the production ha-mcp add-on, Nabu Casa, Engineering, or
+any real credential or endpoint path. The admin token was created inside the
+throwaway config, and the MCP secret path was the synthetic
+`/synthetic-review/mcp`. Everything was destroyed afterwards (section 10.9).
+
+### 10.1 Method
+
+| Item | Value |
+|---|---|
+| Core | `ghcr.io/home-assistant/home-assistant@sha256:130241f28d01fa80dfa3b44f7d89781c188d8642ecab9024f079f19f9f82baa0`, the 2026.10.1 pin in `ci/support-window.yaml:58-59`. Fresh empty config directory, `TZ=UTC` |
+| ha-mcp 8.7.0 | `ghcr.io/homeassistant-ai/ha-mcp@sha256:600677bbd7574dfb59682e40d6945f73fcc8852d3684b3671506602473942448` (standalone, `serverInfo.version` 8.7.0) |
+| ha-mcp 8.5.0 | `ghcr.io/homeassistant-ai/ha-mcp@sha256:e1538bcdadb13a5467bbb8258fba3262a05518585e18115742da638adec7057c` (standalone, `serverInfo.version` 8.5.0) |
+| Component 2.2.0 | `custom_components/ha_mcp_tools` from upstream `v8.5.0` (`311d6dc273fb4e9a5b8cde0de15f69472a64fe44`) |
+| Component 2.2.2 | `custom_components/ha_mcp_tools` from upstream `v8.7.0` (`a96752286be1a6511f32a62e90213641c8d18068`) |
+| Component entry | One "File & YAML Tools" (`tools`) entry, created through the config flow. The in-process server entry was never created |
+| ha-mcp settings | `ENABLE_BETA_FEATURES=true`, `HAMCP_ENABLE_FILESYSTEM_TOOLS=true`, `ENABLE_YAML_CONFIG_EDITING=false`, `DISABLED_TOOLS=ha_write_file,ha_delete_file`; settings UI disabled; read-only root filesystem with tmpfs scratch |
+| Client | Stdlib MCP client, `initialize` at `2025-03-26`, then `tools/list` and `tools/call`. Fingerprints are `sha256` of the canonical sorted-key JSON of the tool list, the same method that reproduced the committed fingerprints |
+
+**Why the beta flag is on.** `enable_filesystem_tools` is a beta sub-flag.
+Upstream forces it off unless `ENABLE_BETA_FEATURES` is on, so "filesystem
+tools ON" cannot be mirrored without the beta master flag. The production
+add-on sets these through `feature_flags.json` rather than the environment;
+the effective values are the same *(inferred from the override precedence in
+section 5)*.
+
+**Network.**
+- `hamcp187-int` was a Docker `--internal` network with no route out. Core and
+  ha-mcp sat on it, and ha-mcp never had any other network.
+- Images were pulled by the host Docker daemon before any container started.
+- For #2671, Core alone was then attached to a second, egress-capable network
+  (phase C onward).
+- A sniffer sidecar shared Core's network namespace and logged every DNS query
+  and answer, every TCP SYN, the TLS SNI, plaintext HTTP request lines, and any
+  other UDP to a non-internal destination. It wrote 263 events.
+- **Positive control:** a TCP connect from Core to `example.com:443` at
+  16:25:51Z was logged as `dns` and `syn` events.
+- **Gaps.** The sniffer is restarted with each Core restart, which leaves a gap
+  of about 7 s during Core start-up. HA's package log shows no installs in any
+  gap. The first container recreate (R3) was not sniffed because the sniffer
+  failed to start; it was repeated with the sniffer as R4, which is the run
+  reported here.
+
+**Dashboard writes.** The probe performs the same sequence that Engineering's
+governed dashboard path sends, against a throwaway dashboard:
+1. `ha_get_skill_guide` for `references/dashboard-guide.md` (the 8.6+ `file`
+   form for 8.7.0, and `{skill, file}` for 8.5.0, matching
+   `clients/mcp.py:359-371`), taking the best-practice key;
+2. `ha_config_get_dashboard` with `url_path` for the `config_hash`;
+3. `ha_config_set_dashboard` with the full config, the hash and the key;
+4. a readback compared with the written config.
+
+The variants were:
+- `std`: built-in cards only;
+- `schema`: a tile card with a deliberately wrong option type and an unknown
+  card type;
+- `custom`: adds the card `custom:hamcp187-card`, served from
+  `www/hamcp187-card.js` and registered as a `/local/` module resource;
+- `custombad`: the same card with an option its `setConfig` rejects.
+
+The synthetic card records what globals exist when its top-level code runs,
+and its `setConfig` throws a distinctive message, so running it inside HA is
+visible in the write result.
+
+**Timeline (UTC).**
+
+| Time | Phase |
+|---|---|
+| 15:57 | A: Core started, internal network only |
+| 15:58–16:03 | A2/B: discovery probe (section 10, Q2) |
+| 16:04 | C: component 2.2.0 installed; egress network attached; `tools` entry created |
+| 16:06–16:10 | 8.7.0 + 2.2.0: catalog, search and dashboard writes |
+| 16:11 | E: component 2.2.2 replaces 2.2.0; Core restarted |
+| 16:12–16:16 | 8.7.0 + 2.2.2: catalog, search and dashboard writes |
+| 16:16–16:21 | R1 restart; R2 cache tamper; R3/R4 container recreate; B1 backup check |
+| 16:22–16:24 | 8.5.0 + 2.2.2: catalog (with and without beta), search and writes |
+| 16:24 | G: component 2.2.0 replaces 2.2.2 (downgrade); Core restarted |
+| 16:25 | 8.5.0 + 2.2.0, then 8.7.0 + 2.2.0 card writes; sniffer positive control |
+| 16:26 | I: `ha_read_file` deny check |
+
+### 10.2 Q1: tool count
+
+| Server | Component | Beta | Tools | Fingerprint |
+|---|---|---|---|---|
+| 8.5.0 | 2.2.2 | off | 77 | `0d7ecdb7f58b9b3f92fe05e0f3afbd213da6d5841263219d8c12c3dea1d77845` |
+| 8.7.0 | 2.2.0 | off | 77 | `c6426571c1a7d38a6014f849a8f7f522b1bb22433e71a7455d34f0313b025e18` |
+| 8.5.0 | 2.2.0 | on | **80** | `f112aa40…` |
+| 8.5.0 | 2.2.2 | on | **80** | `f112aa40…` (identical to 2.2.0) |
+| 8.7.0 | 2.2.0 | on | **80** | `95c69e8e1f4c9c7e1863572600f7a798b5fadab692a9471563e756beafd9ec80` |
+| 8.7.0 | 2.2.2 | on | **80** | `0906cbcefee80254bdaa492a4b82401498c34cb4eb4e71dcb590f2ab2b5cb94e` |
+
+**Method check.**
+- The 8.5.0 beta-off row reproduces the committed reviewed 8.5.0 stock
+  fingerprint (`upstream_tool_policy_8_5_0.json`, 77 tools) exactly.
+- The 8.7.0 beta-off row reproduces this report's reference catalog exactly.
+- So the capture method agrees with both committed and earlier evidence.
+
+**Answers.**
+- **Production-mirroring count: 80, for both 8.5.0 and 8.7.0.** The name sets
+  are identical. The three tools beyond the 77 are `ha_config_get_yaml`,
+  `ha_list_files` and `ha_read_file`. `ha_write_file`, `ha_delete_file` and
+  `ha_config_set_yaml` are absent.
+- **The 79-vs-80 dispute is not resolved in favour of 79.** No combination of
+  the stated settings and either component version produced 79. A live 79
+  means production differs from the stated settings (section 9, C3).
+- **The count does not depend on the component.** Registration is flag-only
+  (section 3d, corrected).
+- **The 8.7.0 descriptors do depend on the component.** With 2.2.2 (which
+  advertises `search_unified`), `ha_search` drops `search_types`,
+  `include_config` and `config_time_budget`, and `ha_config_set_helper` has a
+  description-only change. 8.5.0's catalog is the same with either component.
+- **8.5.0 vs 8.7.0 at 80 tools.** All 80 descriptors differ:
+  - `_meta`: 80 (8.5.0's `_meta.ha_mcp` is gone);
+  - description: 78;
+  - annotations: 75;
+  - `inputSchema`: 72;
+  - `title`: 1.
+- **Correction to section 1.** The five tools with unchanged annotations had
+  all four hints already in 8.5.0.
+
+### 10.3 Q2: #2613 discovery
+
+**Does the announcement happen here?** No. The add-on announces itself by
+POSTing to the Supervisor `/discovery` endpoint (`app_discovery.py:50-90`).
+This capture had no Supervisor and ran the standalone image, so nothing was
+announced. The Core side was therefore exercised directly, with a synthetic
+URL and a probe integration that starts the same `hassio`-source flow for the
+`mcp` handler that `components/hassio/discovery.py:125-130` starts.
+
+**Where the URL goes in Core 2026.10.1** (source plus synthetic run):
+
+| State | Where the URL is | Evidence |
+|---|---|---|
+| Discovery shown, not actioned | Only in the in-memory flow (`context`, flow data). The admin `config_entries/flow/progress` result and the REST flow GET did not contain it | Synthetic run |
+| Same, non-admin user | Flow APIs return 401 or `unauthorized` | Synthetic run |
+| **Configured** | Entry data `url` in `.storage/core.config_entries` | `mcp/config_flow.py:246` (source) |
+| **Ignored**, before the next announcement | Nothing persisted. The ignored entry has no `data.url` | Synthetic run |
+| **Ignored, then re-announced** (every add-on start) | `_abort_if_unique_id_configured(updates={CONF_URL: url})` writes the URL into the ignored entry's data in `.storage/core.config_entries`. A rotated URL overwrites it | `mcp/config_flow.py:212` (source); synthetic run |
+| Persisted, then backed up | A local Core backup's `homeassistant.tar.gz` contains `data/.storage/core.config_entries` with the URL | Synthetic run |
+
+**Who can read a persisted URL.**
+- **HA admins** can, through `.storage`, a backup, or the entry's data.
+- **Non-admin users** cannot. Non-admin `config_entries/get` and the REST entry
+  list returned no entry data.
+- **`ha_read_file` through the component cannot.** Every one of
+  `.storage/core.config_entries`, `/config/.storage/core.config_entries` and
+  `www/../.storage/core.config_entries` was denied with "Path not allowed".
+  `.storage` is a non-overridable deny segment (`const.py:60,70-75` in both
+  component versions). A control read of `www/` succeeded.
+- **Logs:** `hassio/discovery.py` logs only the discovery uuid, at debug level
+  (source), so `home-assistant.log`, which the file tools may read, does not
+  receive the URL.
+- **Flow events:** they carry only `handler`, `flow_id` and progress or
+  refresh flags (`data_entry_flow.py:851-866`).
+
+**Answer.**
+- The secret-path URL is written to disk, and from there into Core backups,
+  as soon as the discovered entry is **configured**, or once it is **ignored**
+  and the add-on starts again.
+- Leaving the discovery **unactioned** keeps it in memory only, in Core.
+- Section 5 item 5 and section 8.7 are corrected accordingly.
+
+**Not examined.** Supervisor keeps its own store of discovery messages, and
+the Core hassio discovery proxy exists. Both need the Supervisor runtime or
+its exact source, and neither was available. Whether a Supervisor or full
+backup includes that store is unknown.
+
+### 10.4 Q3: #2671 component JavaScript and npm
+
+**Install and Core start-up.** No JavaScript runs and nothing is fetched from
+npm.
+- On a fresh container, HA pip-installs whichever manifest requirements Core
+  does not already ship. Observed: `ruamel.yaml` and `voluptuous-openapi`.
+  The manifest lists them as unpinned (`>=`). The list is identical in 2.2.0
+  and 2.2.2 and pre-dates #2671.
+- Egress at that point went to `pypi.org`, `files.pythonhosted.org` and
+  `wheels.home-assistant.io`.
+
+**First dashboard write with 2.2.2.**
+1. The component installs `quickjs-ng==0.17.0.1` through HA's requirements
+   path (`card_runtime.py:15-100`).
+   - Egress: `pypi.org`, `files.pythonhosted.org`, `wheels.home-assistant.io`.
+   - The package is **version-pinned but not hash-pinned**.
+   - HA's constraints apply. A different `quickjs` provider causes a refusal.
+   - With `skip_pip`, card checks become unavailable and the write is not
+     blocked.
+2. It runs Home Assistant frontend card-editor schemas in QuickJS inside the
+   HA process. The `schema` variant returned advisory warnings, for example
+   ``vertical: Expected a value of type `boolean` ``, and the write still
+   committed.
+3. If any `/local/` dashboard resource file exists, it downloads the
+   `linkedom` 0.18.13 tarball from **`registry.npmjs.org`**.
+   - Observed at 16:13:26Z and, after a recreate, at 16:20:54Z.
+   - The version is pinned and the tarball is checked against a pinned sha512
+     at download.
+   - The extracted bundle is cached at
+     `.storage/ha_mcp_tools/linkedom-0.18.13.js` (413,058 bytes, sha256
+     `12e8f1ad…`). A failed download is retried after 600 s.
+4. It then executes the **third-party card JavaScript** from `www/` (top-level
+   code plus `setConfig`) inside HA.
+   - Proof: the `custombad` write returned the card's own exception text,
+     `views[0].cards[1] (custom:hamcp187-card): hamcp187: label must not be
+     'bad'`, as a warning. The write still committed and read back equal.
+   - Sandbox observed by the card: no `std`, `os`, `require`,
+     `XMLHttpRequest` or `WebSocket`; `fetch` is a stub that rejects
+     (`custom_cards.py:60-180`).
+
+**Later writes.**
+- No egress.
+- 0.27–0.87 s with the custom card; about 0.012 s with built-in cards only.
+
+**After a Core restart (R1).**
+- No egress, and the cache is reused.
+- The first write takes 5.9 s (QuickJS start-up).
+
+**After cache tampering (R2).**
+- JavaScript appended to the cached `linkedom` file **ran after a restart**,
+  with no re-verification and no re-download (`_async_dom`,
+  `custom_cards.py:579-612`, reads the cache without a check).
+- So the sha512 check protects only the download, not the file the component
+  executes later.
+- Anyone who can write `.storage` can already change HA, so this widens a
+  boundary rather than creating a new one: code in a data file now executes
+  as code.
+
+**After a container recreate (R4, same image and config).**
+- The `quickjs-ng` install repeats on the first write, because it lives in the
+  container's site-packages. That means every HA update or reinstall.
+- The `linkedom` download also repeats, because R4 deleted the cache. The new
+  sha256 equals the original.
+- First write: 6.7 s.
+
+**Backups.** A local Core backup contains
+`data/.storage/ha_mcp_tools/linkedom-0.18.13.js`. Restoring a backup restores
+the cached bundle, which then runs unverified.
+
+**Answer.**
+- **Does 2.2.2 execute JavaScript inside HA?** Yes. It runs frontend schema
+  code, linkedom, and dashboard-resource card code, on governed dashboard
+  writes.
+- **Does it download an npm package?** Yes, `linkedom` 0.18.13 from
+  `registry.npmjs.org`. It is pinned and integrity-checked at download, but
+  not when executed later.
+- **When?** On the first write after each fresh container (not at install).
+  The pip install of `quickjs-ng` happens at the same moment. Later writes
+  and restarts reuse the cache.
+- **Card JS runs on every write that references a local custom card.**
+
+### 10.5 Q4: component pairing
+
+| Pairing | Catalog | Query search | Domain-only search | Governed dashboard write | Card JS in HA |
+|---|---|---|---|---|---|
+| 8.5.0 + 2.2.0 | 80, `f112aa40…` | component `ha_mcp_tools/search` | legacy | OK, readback equal; 0.011–0.016 s | **No** (no warning on `custombad`, no egress, no QuickJS log lines) |
+| 8.5.0 + 2.2.2 | 80, `f112aa40…` | component `ha_mcp_tools/search` | legacy | OK, readback equal; 0.01–0.28 s | **Yes** (the `custombad` warning appeared) |
+| 8.7.0 + 2.2.0 | 80, `95c69e8e…` | component `ha_mcp_tools/search` | legacy | OK, readback equal; 0.011–0.019 s | **No** |
+| 8.7.0 + 2.2.2 | 80, `0906cbce…` | component `ha_mcp_tools/search` | component `search_unified` | OK, readback equal; up to 6.7 s for the first write after a start | **Yes** |
+
+In every pairing, writes went through the component's `dashboard_edit`
+WebSocket command, as observed in Core's WebSocket debug log.
+
+**Answers.**
+- **8.7.0 works with component 2.2.0.** Catalog, fast query search and
+  governed dashboard writes all work.
+- **Production can stay on 2.2.0 to avoid #2671.** The 2.2.0 tree contains no
+  `quickjs`, `linkedom` or npm code at all.
+- **#2671 exposure follows the component, not the server.** 8.5.0 with 2.2.2
+  runs card JS too. Updating the component alone, without 8.7.0, would bring
+  #2671 into today's production.
+- **Fast search works in both pairings for queries.** Only the domain-only
+  `search_unified` path needs 2.2.2.
+- **Cost of staying on 2.2.0.**
+  - It forgoes the 2.2.2 fixes listed in section 6: #2697 search secret
+    scrubbing, #2614 caller attribution, #2618 helper writes, and the
+    `approval_pin.json` and listing denials for HAMCP-162.
+  - Engineering must then bind the 8.7.0 + 2.2.0 descriptor, which is
+    `95c69e8e…` in this profile.
+- **Engineering's as-is guide call fails closed on 8.7.0.** 8.7.0 rejects
+  `skill`, so no key is returned and the write is refused with
+  `BPS_ACKNOWLEDGMENT_REQUIRED`. This confirms the `clients/mcp.py:359-371`
+  change in section 8.2. 8.5.0 accepts `{skill, file}`.
+
+### 10.6 Q5: report claims corrected by the capture
+
+| Section | Earlier claim | Now |
+|---|---|---|
+| Evidence, "Not done" | No component-enabled capture | Done here |
+| 1, 3, 9 C4 | Every tool's annotations changed | 75 of 80; all 80 descriptors still differ |
+| 3a `ha_get_skill_guide` | `clients/mcp.py` must include 8.7.0 (source) | Confirmed; the unrewritten call fails closed |
+| 3c setter | Latency up to about 20 s, *inferred* | Measured (Q3); first write after a start about 6 s |
+| 3d | Filesystem tools need flag **and** component ≥ 1.2.0 at registration; 77 explained by that | **Wrong.** Flag-only registration; 77 is the beta master flag being off |
+| 4 | 80 *inferred* | 80 captured for both versions |
+| 5 item 5 | "Ignore it" | Ignore persists the URL at the next announcement |
+| 6 | 8.5.0 + 2.2.2 *not verified*; update together for operational reasons | Verified; 8.7.0 + 2.2.0 is a working way to avoid #2671 |
+| 7 #2671 | Engineering writes trigger it, *inferred* | Confirmed; also with 8.5.0; cache not re-verified |
+| 8.7 | Ignore the discovery entry | See section 5 item 5 |
+| 9 C3 | 80 vs 79 disputed | 80 captured; 79 is a production-state question |
+
+### 10.7 Probe artifacts (not findings)
+
+- `ha_search` with `search_types: ["entity"]` errored identically in all four
+  pairings. That is an invalid value chosen by the probe, not a defect.
+- `home-assistant_v2.db` contained the synthetic URL. It came from the probe
+  integration's own service call, which carried the URL in `service_data`.
+  The real `hassio` discovery path fires no event that carries the URL
+  (source).
+- The first synthetic card file was empty, caused by a write slip. That run
+  (8.7.0 + 2.2.2 `custom`, 16:13Z) still showed the `linkedom` download and a
+  "not found in dashboard resources" warning. The card was rewritten and the
+  runs repeated.
+
+### 10.8 Limits
+
+- No Supervisor, add-on runtime or `ha-mcp` add-on image; standalone images
+  only.
+- amd64 only.
+- Settings mirrored the stated production settings, not production itself.
+  No production file was read.
+- Captures are evidence for this report, not admission fixtures. No strict or
+  runtime contract fingerprints were computed.
+- The raw logs and capture files were destroyed with the environment, as the
+  brief required. Only the summaries above survive. The fingerprints in Q1 can
+  be reproduced by repeating the method.
+
+### 10.9 Cleanup
+
+Cleanup ran on 2026-10-15 and was verified at 16:34:46Z.
+
+**Removed:**
+- Containers: `hamcp187-core`, `hamcp187-sniff` and `hamcp187-mcp870`, with
+  `docker rm -f`. The 8.5.0 containers had already been removed after their
+  phases.
+- Networks: `hamcp187-int` and `hamcp187-egress`.
+- The capture directory, with its throwaway config, `.storage`, admin token,
+  backups, component trees, Core source extract, logs and tool lists.
+  Root-owned files were removed through a `--network none` container, and the
+  directory was then deleted.
+- The capture helper scripts in the session scratchpad.
+
+**Verified:**
+- `docker ps -a --filter name=hamcp187`: 0 containers.
+- `docker network ls --filter name=hamcp187`: 0 networks.
+- `docker volume ls --filter dangling=true`: 0 volumes.
+- The capture directory: "No such file or directory".
+
+**Kept, deliberately.** The public, digest-pinned images listed in
+section 10.1 remain in the local image cache. They hold no capture state. The
+same host keeps other pinned Core and ha-mcp images for local lane work.
+
+No live system, production credential or endpoint path was used, so none
+needed revoking.
+
 ## Next human decisions
 
-1. Accept or reject the 8.7.0 upgrade direction given C1. It is the first fix
-   for a destructive defect present in production.
-2. Accept or reject the two new security-relevant behaviours:
-   - #2613 Supervisor discovery of the secret-path URL;
-   - #2671 QuickJS and npm in HA, triggered by dashboard writes.
-   If either is unacceptable, request upstream opt-outs before admission.
-3. Choose the PR split (section 8.9) and confirm whether HAMCP-184 owns PR A.
-4. Decide on 8.6.0: keep compiled and superseded (recommended), or remove.
-5. Authorize a disposable Core 2026.10.1 with component 2.2.2 capture
-   environment, local only, for the component-search and 80-tool evidence.
+**Recorded owner decisions (Josh, 2026-10-15, on HAMCP-187):**
+1. No move to 8.7.0 yet.
+2. #2613 and #2671 are not accepted as-is; their exposure was to be
+   quantified first (now done in section 10).
+3. HAMCP-184 owns admission PR A.
+4. 8.6.0 stays compiled, superseded, never to be deployed.
+5. The disposable capture was authorized, and section 10 records it.
+
+**Open decisions:**
+1. **#2671.** Choose one:
+   - accept component 2.2.2 with its in-HA JavaScript, its first-write
+     `quickjs-ng` pip install and `linkedom` npm download, and a cache that
+     is executed without re-verification;
+   - keep production on component 2.2.0 (with 8.5.0 now, and with 8.7.0 later),
+     giving up the 2.2.2 fixes listed in section 10, Q4;
+   - ask upstream for an opt-out, or for the cache to be verified on load.
+
+   Note that #2671 arrives with the component, whichever server version runs.
+2. **#2613.** Choose how to handle the discovered entry: leave it unactioned,
+   which keeps the URL in memory only, or accept that the URL is persisted and
+   backed up (section 10, Q2). Alternatively, ask upstream for an opt-out.
+3. **C3.** Authorize a read-only production `server_info` check to settle 79
+   vs 80. The capture shows 80 under the stated settings.
+4. **Upgrade direction.** When to revisit decision 1, given C1: 8.7.0 is the
+   first fix for a destructive defect present in production.
