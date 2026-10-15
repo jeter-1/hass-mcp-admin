@@ -23,7 +23,7 @@ from .adapter import FanAdapter, prepare_record
 from .authority import FanCoreAuthority
 from .contracts import FAN_CONTRACTS, PROVIDER, FanRefusal, FanRequest, digest
 from .locks import FanLockStore
-from .audit import FanExecutionRepository
+from .audit import FanExecutionRepository, dispatch_fact_fields
 
 MAX_RECORDS = 4096
 MAX_ACTIVE = 16
@@ -182,6 +182,12 @@ class FanService:
             telemetry.audit_context.update({key: result[key] for key in (
                 "task_id", "operation_id", "operation_hash", "provider_attempt_count",
                 "dispatch_intent_recorded", "provider_response_received", "terminal")})
+            # HAMCP-181: the same dispatch facts as the receipt (bounded by
+            # request_summary's whitelist before any audit write).
+            telemetry.audit_context.update({key: result[key] for key in (
+                "dispatch_phase", "attempt_counts_basis", "provider_dispatch_occurred",
+                "dispatched_at_basis", "dispatch_intent_recorded_at",
+                "provider_response_recorded_at") if key in result})
             telemetry.audit_context[self.outcome_key] = result["state"]
         return result
 
@@ -288,6 +294,10 @@ class FanService:
                                 "mode": item.mode, "conflict_hold": item.conflict_hold}
                                for item in retained],
             "complete": True,
+            # HAMCP-181 (OD-6(ii)): additive qualifiers; ``dispatched_at``
+            # above stays the literal null.
+            **{key: value for key, value in dispatch_fact_fields(record).items()
+               if key not in {"dispatched_at"}},
         }
 
     async def reconcile(self, task_id):

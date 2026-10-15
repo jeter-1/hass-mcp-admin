@@ -784,10 +784,11 @@ class F3ConfigurationActivationTests(ConfigurationPlanTestCase):
         self.assertEqual(result["task_state"], "succeeded_verified")
         self.assertEqual(record.dispatch_count, 1)
         self.assertEqual(sum(call[0] == "write" for call in self.gateway.calls), 1)
-        self.assertIn(
-            '"event": "f3_provider_response_lost"',
-            self.audit_path.read_text(encoding="utf-8"),
-        )
+        # HAMCP-181 section 5.1: a lost response is uncertain, not "lost"
+        # proof and never a received response.
+        audit_text = self.audit_path.read_text(encoding="utf-8")
+        self.assertIn('"event": "f3_provider_result_uncertain"', audit_text)
+        self.assertNotIn('"event": "f3_provider_response_received"', audit_text)
 
     async def test_active_legacy_configuration_task_blocks_conflicting_f3_plan(self):
         historical = await self.create_automation_plan()

@@ -2,7 +2,40 @@
 import re
 
 from ..f3.persistence import DurableExecutionRepository
+from ..f3_runtime import dispatch_facts as dispatch_projection
 from .contracts import OPERATION_PATTERN, PROVIDER, digest
+
+# HAMCP-181 (OD-6(ii)): fan/power publish the shared dispatch facts beside the
+# unchanged literal ``dispatched_at: null``.  No stored field records the
+# provider send instant, so no send time is ever published.
+_TIMESTAMP = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})"
+)
+_FACT_VALUES = {
+    "dispatch_phase": frozenset(dispatch_projection.PHASE_RANK),
+    "attempt_counts_basis": frozenset({
+        dispatch_projection.BASIS_NO_INTENT,
+        dispatch_projection.BASIS_SAVED_INTENT,
+        dispatch_projection.BASIS_NO_PROVIDER_CALL,
+    }),
+    "dispatched_at_basis": frozenset({
+        dispatch_projection.DISPATCHED_AT_NO_INTENT,
+        dispatch_projection.DISPATCHED_AT_CALL_NOT_SENT,
+        dispatch_projection.DISPATCHED_AT_SEND_TIME_NOT_RECORDED,
+    }),
+}
+_FACT_TIMES = ("dispatch_intent_recorded_at", "provider_response_recorded_at")
+
+
+def dispatch_fact_fields(record):
+    """The fan/power facts for one execution record (``None`` before one)."""
+
+    facts = dispatch_projection.dispatch_facts_for_record(record)
+    value = facts.public_fields(include_dispatched_at=False)
+    # The receipt keeps its own reconciliation fields; these are qualifiers.
+    for name in ("provider_response_received", "retryable"):
+        value.pop(name, None)
+    return value
 
 
 def request_summary(telemetry, *, kind="fan", provider=PROVIDER):
@@ -28,6 +61,20 @@ def request_summary(telemetry, *, kind="fan", provider=PROVIDER):
             safe[name] = context[name]
     if type(context.get("provider_attempt_count")) is int and context["provider_attempt_count"] in (0, 1):
         safe["provider_attempt_count"] = context["provider_attempt_count"]
+    for name, allowed in _FACT_VALUES.items():
+        value = context.get(name)
+        if isinstance(value, str) and value in allowed:
+            safe[name] = value
+    for name in _FACT_TIMES:
+        value = context.get(name)
+        if value is None and name in context:
+            safe[name] = None
+        elif isinstance(value, str) and _TIMESTAMP.fullmatch(value):
+            safe[name] = value
+    if type(context.get("provider_dispatch_occurred")) is bool:
+        safe["provider_dispatch_occurred"] = context["provider_dispatch_occurred"]
+    if "dispatched_at_basis" in safe:
+        safe["dispatched_at"] = None  # never a send time (OD-6(ii))
     return safe
 
 
@@ -97,6 +144,10 @@ class FanExecutionRepository(DurableExecutionRepository):
                 "verified": True if record.normalized_outcome == "succeeded_verified" else None,
                 "read_only_recovery": any(e["event_type"] == "recovery_claimed" for e in record.events),
             }
+            # Current durable facts belong on the snapshot only (time-local
+            # events are not backdated); existing keys keep their values.
+            for name, value in dispatch_fact_fields(record).items():
+                snapshot.setdefault(name, value)
             snapshot["audit_event_id"] = digest(snapshot)
             entries.append(snapshot)
             if self.audit.write_batch(entries) != len(entries):

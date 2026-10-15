@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.4.1-beta.10 - Truthful dispatch facts on every surface (HAMCP-181 PR1)
+
+Builds on 2.4.1-beta.9's truthful entity-registry error results.
+
+- Derive the dispatch facts once, from the stored F3 records, and publish
+  them on every apply, plan, task, receipt, refusal, audit, health,
+  reconciliation and admin surface and on typed fan and power receipts:
+  `dispatch_phase`, `provider_dispatch_occurred`, `changed_by_engineering`
+  where proven, `attempt_counts_basis` beside every stored counter, and
+  `dispatched_at_basis` with `dispatch_intent_recorded_at` and
+  `provider_response_recorded_at`.
+- Keep fan and power `dispatched_at: null`; publish `null` with
+  `call_not_sent` for a governed task whose provider call was proven not
+  sent; keep every other stored value.
+- Claim "rejected, not changed" only for automation or script REST 4xx and
+  entity-registry `unauthorized` with permission denied; every other
+  confirmed failure with a response stays mutation-unproven, and a dispatch
+  result with an uncertainty code (including beta.9's registry error result
+  after send) stays send-uncertain through readback.
+- Make duplicate-apply (F-03) and cancellation wording follow the phase, stop
+  labelling a local configuration refusal as a provider response, project the
+  stale F3 `plan.operational.dispatch` block from the facts, and relabel the admin
+  "Dispatch count" as "Dispatch intents".
+- Preserve every status, state, terminal outcome, stored counter and
+  timestamp, retry and eligibility rules, persisted formats, signed
+  registries, HOLD, support window, workflows and stable v1. The backup,
+  lifecycle and helper-state gateway audit labels are unchanged (disclosed
+  limitation).
+
 ## 2.4.1-beta.9 - Truthful entity-registry error results (HAMCP-183)
 
 Builds on 2.4.1-beta.8's dependency-scoped dashboard write admission.

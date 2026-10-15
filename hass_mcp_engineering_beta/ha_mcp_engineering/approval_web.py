@@ -582,7 +582,10 @@ class IngressApprovalApplication:
                 ("Outcome", item["normalized_outcome"]),
                 ("Intent", item["intent_timestamp"]),
                 ("Evidence deadline", item["evidence_deadline"]),
-                ("Dispatch count", item["dispatch_count"]),
+                # HAMCP-181 S18: the counter is a saved dispatch intent, not
+                # proof of a provider send; the phase qualifies it.
+                ("Dispatch intents", item["dispatch_count"]),
+                ("Dispatch phase", item.get("dispatch_phase", "unknown")),
                 ("Provider response", item["provider_response_received"]),
                 ("Observation / verification", f"{item['observation_count']} / {item['verification_count']}"),
                 ("Selective holds", item["selective_hold_keys"]),
