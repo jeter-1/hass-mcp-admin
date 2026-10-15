@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.1-beta.11 - Audit hardening (HAMCP-184)
+
+Builds on 2.4.1-beta.10's truthful dispatch facts.
+
+- Fail closed on provider dispositions (F-05): an absent surface or unknown
+  value reads `held`, and the registry loader refuses a reviewed entry without
+  explicit dispositions for all four provider surfaces. The five legacy
+  entries (7.14.1-8.2.0) now declare the dispositions they effectively had;
+  effective admission is unchanged for every entry, and the production 8.5.0
+  entry is byte-identical.
+- Validate the caller's `expected_plan_hash` on F3 re-apply of an existing
+  task (F-01), refusing an empty or wrong hash with `approval_hash_mismatch`
+  before any dispatch or state change. A matching replay is unchanged.
+- Report principal separation truthfully (F-02): an approval or rejection by
+  the anonymous Ingress fallback principal stores and displays
+  `principal_separation_enforced: false`, with a `principal_separation_status`
+  reason (`anonymous_fallback_principal`); identified principals keep `true`.
+  Older records are projected, not rewritten. Approval eligibility, flow and
+  elevated-class behavior are unchanged.
+- Check the generated add-on matrix runner labels, not a declared constant, in
+  the CI runner guard (F-06); `ci.yml` is unchanged.
+- Preserve the 87-tool catalog, signed registries, HOLD, support window,
+  persisted formats, workflows and stable v1.
+
 ## 2.4.1-beta.10 - Truthful dispatch facts on every surface (HAMCP-181 PR1)
 
 Builds on 2.4.1-beta.9's truthful entity-registry error results.

@@ -1,11 +1,13 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.10** makes dispatch outcomes truthful on every public
-surface (HAMCP-181): one display-only projection derives `dispatch_phase`,
-`provider_dispatch_occurred`, counter bases and the `dispatched_at` basis and
-companion times from the stored F3 records, so plan reads, task lists,
-receipts, refusals, audits, health and the admin page agree, and nothing
-stored changes. It builds on beta.9's truthful entity-registry error results
+Engineering **2.4.1-beta.11** hardens four audit findings (HAMCP-184): provider
+dispositions fail closed and every compiled ha-mcp release declares them
+explicitly (effective admission unchanged, including production 8.5.0), F3
+re-apply validates the approved plan hash, approvals decided by the anonymous
+Ingress fallback principal no longer report `principal_separation_enforced:
+true` (reporting only; eligibility unchanged), and the CI runner guard checks
+generated matrix runners. It builds on beta.10's truthful dispatch facts on
+every public surface (HAMCP-181), beta.9's truthful entity-registry error results
 (HAMCP-183), beta.8's dependency-scoped dashboard write admission (HAMCP-177),
 beta.7's delegated platform reads (`ha_get_system_health`, `ha_get_app` and
 `ha_get_integration`), beta.6's typed power and fan admission repair, beta.5's
@@ -15,8 +17,8 @@ beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA10_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA10_ACCEPTANCE.md).
+See the [release notes](docs/V2_4_1_BETA11_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA11_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -100,14 +102,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.10 release notes](docs/V2_4_1_BETA10_RELEASE_NOTES.md) and
-[2.4.1-beta.10 acceptance contract](docs/V2_4_1_BETA10_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.11 release notes](docs/V2_4_1_BETA11_RELEASE_NOTES.md) and
+[2.4.1-beta.11 acceptance contract](docs/V2_4_1_BETA11_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.10 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.11 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
