@@ -12,9 +12,11 @@ reproducible here; it is attributed to the upstream ha-mcp provider.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import inspect
 import json
 import unittest
+from unittest.mock import patch
 
 from tests.test_readonly_upstream_gateway import (
     FakeTransport,
@@ -88,6 +90,12 @@ class _HeldSearchTransport(FakeTransport):
 
 class ConcurrentDelegatedReadTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
+        # Gateway initialization publishes its catalog into module globals;
+        # restore them so later tests see the catalog they started with.
+        from ha_mcp_engineering import capabilities
+        for name in ("_DYNAMIC_UPSTREAM_CAPABILITIES", "_UPSTREAM_READ_GATEWAY_SUMMARY"):
+            self.enterContext(patch.object(
+                capabilities, name, deepcopy(getattr(capabilities, name))))
         self.keys = [f"sensor.hamcp168_{index}" for index in range(_BURST)]
         # Mixed upstream flags: partial must follow ha-mcp, call by call.
         self.partial_by_key = {
@@ -139,6 +147,19 @@ class ConcurrentDelegatedReadTests(unittest.IsolatedAsyncioTestCase):
             pending = [k for k in self.keys if not tasks[k].done()]
             self.assertEqual(self.keys[: self.keys.index(key)], pending)
         self.assertEqual(0, self.transport.in_flight)
+
+
+class PublishedCatalogIsolationTests(unittest.TestCase):
+    def test_burst_leaves_the_published_dynamic_catalog_unchanged(self):
+        from ha_mcp_engineering import capabilities
+        before = (capabilities.dynamic_upstream_capabilities(),
+                  dict(capabilities._UPSTREAM_READ_GATEWAY_SUMMARY))
+        result = unittest.TestResult()
+        ConcurrentDelegatedReadTests(
+            "test_burst_is_fully_concurrent_and_completes_individually").run(result)
+        self.assertTrue(result.wasSuccessful(), result.failures + result.errors)
+        self.assertEqual(before, (capabilities.dynamic_upstream_capabilities(),
+                                  dict(capabilities._UPSTREAM_READ_GATEWAY_SUMMARY)))
 
 
 if __name__ == "__main__":
