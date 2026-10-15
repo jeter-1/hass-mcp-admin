@@ -9,7 +9,8 @@ section 2.2 field sets.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -17,7 +18,7 @@ from typing import Any
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "hass_mcp_engineering_beta"))
+sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 
 from ha_mcp_engineering.f3_runtime import dispatch_facts as df  # noqa: E402
 
@@ -268,9 +269,11 @@ class RProvenTests(unittest.TestCase):
         }
         for name, record in negatives.items():
             with self.subTest(name):
-                record.response = True
-                record.provider_response_received = True
-                record.normalized_outcome = "dispatch_failed_confirmed"
+                # Rebuild so the dispatch-result event carries the codes.
+                record = replace(record, response=True, events=[],
+                                 outcome="dispatch_failed_confirmed")
+                self.assertEqual(df._codes(df._dispatch_result_event(record)),
+                                 frozenset(record.codes))
                 facts = df.child_facts(record)
                 self.assertEqual(facts.phase, df.PHASE_SENT_FAILED_MUTATION_UNPROVEN)
                 self.assertIsNone(facts.changed_by_engineering)
@@ -514,6 +517,160 @@ class CounterQualifierTests(unittest.TestCase):
         # Counters keep their stored values.
         self.assertEqual([item["dispatch_count"] for item in value["provider_attempts"]],
                          [1, 1, 0])
+
+
+FIXTURES = ROOT / "tests" / "fixtures" / "f3_beta8_dispatch_phase" / "beta8"
+
+# shape: (parent phase, provider_dispatch_occurred, changed_by_engineering,
+#         child phases in declaration order)
+BETA8_EXPECTED = {
+    "a_helper_already_present": (df.PHASE_ALREADY_PRESENT, False, False,
+                                 [df.PHASE_ALREADY_PRESENT]),
+    "b_dashboard_setter_not_sent": (df.PHASE_INTENT_RECORDED_NOT_SENT, False, False,
+                                    [df.PHASE_INTENT_RECORDED_NOT_SENT]),
+    "r_proven_configuration_4xx": (df.PHASE_SENT_REJECTED_NO_MUTATION, True, False,
+                                   [df.PHASE_SENT_REJECTED_NO_MUTATION]),
+    "r_unproven_operational_rejection": (df.PHASE_SENT_FAILED_MUTATION_UNPROVEN, True, None,
+                                         [df.PHASE_SENT_FAILED_MUTATION_UNPROVEN]),
+    "c_response_lost_verified": (df.PHASE_SEND_UNCERTAIN, True, None,
+                                 [df.PHASE_SEND_UNCERTAIN]),
+    "sent_verified_configuration": (df.PHASE_SENT_RESPONSE_RECEIVED, True, True,
+                                    [df.PHASE_SENT_RESPONSE_RECEIVED]),
+    "v9_entity_metadata_already_present": (df.PHASE_ALREADY_PRESENT, False, False,
+                                           [df.PHASE_ALREADY_PRESENT]),
+    "mixed_three_child_parent": (df.PHASE_SENT_RESPONSE_RECEIVED, True, True,
+                                 [df.PHASE_SENT_RESPONSE_RECEIVED,
+                                  df.PHASE_SENT_RESPONSE_RECEIVED,
+                                  df.PHASE_SENT_REJECTED_NO_MUTATION]),
+}
+
+
+def _fixture_hashes(shape: str) -> dict[str, str]:
+    import hashlib
+
+    prefix = f"{shape}/store/"
+    provenance = json.loads((FIXTURES / "provenance.json").read_text(encoding="utf-8"))
+    files = {key[len(prefix):]: value for key, value in provenance["files"].items()
+             if key.startswith(prefix)}
+    for relative, digest in files.items():
+        actual = hashlib.sha256((FIXTURES / shape / "store" / relative).read_bytes()).hexdigest()
+        assert actual == digest, (shape, relative)
+    return files
+
+
+class Beta8HistoricalRecordTests(unittest.IsolatedAsyncioTestCase):
+    """Records written by the exact beta.8 writer (7370ad2) project correctly.
+
+    The current runtime opens a copy of each committed store, runs startup
+    recovery, and reads every surface.  No stored file may change: the
+    projection is display only and no migration rewrites historical records.
+    """
+
+    async def open(self, shape: str):
+        import hashlib
+        import shutil
+        import tempfile
+        from datetime import datetime, timedelta
+
+        import tests.test_dev14_configuration_plans as dev14
+        import tests.test_f3_runtime_integration as f3_integration
+        from ha_mcp_engineering.audit import AuditLogger
+        from ha_mcp_engineering.f3_runtime.runtime import F3RuntimeIntegration
+        from ha_mcp_engineering.governance.service import ChangeGovernanceService
+        from ha_mcp_engineering.governance.storage import ChangePlanRepository
+        from ha_mcp_engineering.request_context import begin_request, end_request
+
+        hashes = _fixture_hashes(shape)
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        root = Path(temp.name)
+        store = root / "plans"
+        shutil.copytree(FIXTURES / shape / "store", store)
+        (task_path,) = (store / "execution-tasks-v1").glob("*.json")
+        stored_task = json.loads(task_path.read_text(encoding="utf-8"))
+        now = datetime.fromisoformat(stored_task["updated_at"]) + timedelta(minutes=1)
+        gateway = dev14.FakeConfigurationGateway()
+        service = ChangeGovernanceService(
+            ChangePlanRepository(store), gateway,
+            AuditLogger(str(root / "audit.jsonl"), "synthetic-hamcp181-secret"),
+            now=lambda: now)
+        _telemetry, context = begin_request("synthetic-hamcp181-beta8-reader")
+        self.addCleanup(end_request, context)
+        runtime = F3RuntimeIntegration(
+            service=service, storage_root=str(store),
+            configuration_gateway=f3_integration._ExactFakeConfigurationGateway(gateway),
+            backup_gateway=None, lifecycle_gateway=None,
+            provider_identity_reader=f3_integration._provider_identity, retention_days=90)
+        service.f3_runtime = runtime
+        await runtime.recover_once("startup")
+        self.assertEqual([call for call in gateway.calls if call[0] == "write"], [])
+
+        def unchanged():
+            for relative, digest in hashes.items():
+                actual = hashlib.sha256((store / relative).read_bytes()).hexdigest()
+                self.assertEqual(actual, digest, f"{shape}: {relative} was rewritten")
+
+        return service, runtime, stored_task, unchanged
+
+    async def test_every_beta8_shape_projects_and_is_never_rewritten(self):
+        for shape, (phase, occurred, changed, child_phases) in BETA8_EXPECTED.items():
+            with self.subTest(shape=shape):
+                service, runtime, stored, unchanged = await self.open(shape)
+                task = service.task_repository.get(stored["task_id"])
+                facts = runtime.dispatch_facts_for_task(task)
+                self.assertEqual(facts.dispatch_phase, phase)
+                self.assertIs(facts.provider_dispatch_occurred, occurred)
+                self.assertIs(facts.changed_by_engineering, changed)
+                self.assertEqual([child.phase for child in facts.children], child_phases)
+                view = service.get_execution_task(stored["task_id"])
+                listed = [item for item in service.list_execution_tasks()["tasks"]
+                          if item["task_id"] == stored["task_id"]]
+                plan = service.get_plan(stored["plan_id"])
+                for surface in (view, *listed):
+                    self.assertEqual(surface["dispatch_phase"], phase, surface)
+                    self.assertIs(surface["provider_dispatch_occurred"], occurred)
+                self.assertEqual(plan["execution_task"]["dispatch_phase"], phase)
+                # Stored values the projection must not alter.
+                self.assertEqual(view["state"], stored["state"])
+                self.assertEqual(view["terminal_outcome"], stored["terminal_outcome"])
+                unchanged()
+
+    async def test_beta8_dashboard_b_keeps_stored_intent_but_publishes_null(self):
+        service, runtime, stored, unchanged = await self.open("b_dashboard_setter_not_sent")
+        self.assertIsNotNone(stored["dispatched_at"])
+        view = service.get_execution_task(stored["task_id"])
+        self.assertIsNone(view["dispatched_at"])
+        self.assertEqual(view["dispatched_at_basis"], df.DISPATCHED_AT_CALL_NOT_SENT)
+        self.assertEqual(view["attempt_counts_basis"], df.BASIS_NO_SETTER_CALL)
+        self.assertIs(view["intent_recorded"], True)
+        self.assertIs(view["dispatch_performed"], False)
+        self.assertEqual(view["dispatch_intent_recorded_at"], stored["dispatched_at"])
+        unchanged()
+
+    async def test_beta8_intent_phases_keep_the_stored_dispatched_at(self):
+        for shape in ("r_proven_configuration_4xx", "r_unproven_operational_rejection",
+                      "c_response_lost_verified", "sent_verified_configuration",
+                      "mixed_three_child_parent"):
+            with self.subTest(shape=shape):
+                service, _runtime, stored, unchanged = await self.open(shape)
+                view = service.get_execution_task(stored["task_id"])
+                self.assertEqual(view["dispatched_at"], stored["dispatched_at"])
+                self.assertEqual(view["dispatched_at_basis"],
+                                 df.DISPATCHED_AT_INTENT_COMMIT_TIME)
+                self.assertEqual(view["provider_attempt_count"],
+                                 len(stored["provider_attempts"]))
+                self.assertGreater(view["provider_attempt_count"], 0)
+                unchanged()
+
+    async def test_beta8_no_intent_shapes_publish_no_intent_basis(self):
+        for shape in ("a_helper_already_present", "v9_entity_metadata_already_present"):
+            with self.subTest(shape=shape):
+                service, _runtime, stored, unchanged = await self.open(shape)
+                view = service.get_execution_task(stored["task_id"])
+                self.assertIsNone(view["dispatched_at"])
+                self.assertEqual(view["dispatched_at_basis"], df.DISPATCHED_AT_NO_INTENT)
+                self.assertEqual(view["attempt_counts_basis"], df.BASIS_NO_INTENT)
+                unchanged()
 
 
 if __name__ == "__main__":

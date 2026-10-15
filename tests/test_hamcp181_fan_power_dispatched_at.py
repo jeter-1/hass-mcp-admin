@@ -213,6 +213,45 @@ class _FanPowerCases:
         self.assertEqual({key: again.get(key) for key in FACT_KEYS},
                          {key: result.get(key) for key in FACT_KEYS})
 
+    async def test_7_beta8_record_reads_null_with_stored_companions(self):
+        """A record written by the exact beta.8 writer (7370ad2) is read, never rewritten."""
+
+        import hashlib
+        import shutil
+
+        from tests.test_hamcp181_dispatch_facts import FIXTURES, _fixture_hashes
+
+        shape = f"{self.kind_type.name}_sent_verified"
+        hashes = _fixture_hashes(shape)
+        provenance = json.loads((FIXTURES / "provenance.json").read_text(encoding="utf-8"))
+        task_id = provenance["shapes"][shape]["task_id"]
+        self.kind = self.kind_type(self)
+        await self.kind.build()
+        await self.service.close()
+        root = Path(self.tmp.name)
+        for child in root.iterdir():
+            if child.is_dir():
+                shutil.rmtree(child)
+        shutil.copytree(FIXTURES / shape / "store", root, dirs_exist_ok=True)
+        self.clock.advance(3600)
+        reader = self.kind.rebuilt()
+        self.addAsyncCleanup(reader.close)
+        receipt = reader.receipt(task_id)
+        record = reader.executions.get(task_id)
+        self.assertEqual(receipt["state"], "succeeded_verified")
+        self.assertIsNone(receipt["dispatched_at"])
+        self.assertEqual(receipt["dispatched_at_basis"], df.DISPATCHED_AT_SEND_TIME_NOT_RECORDED)
+        self.assertEqual(receipt["dispatch_phase"], df.PHASE_SENT_RESPONSE_RECEIVED)
+        self.assertEqual(receipt["dispatch_intent_recorded_at"],
+                         record.dispatch_intent["committed_at"])
+        result_event = [e for e in record.events
+                        if e["event_type"] == df.DISPATCH_RESULT_EVENT][-1]
+        self.assertEqual(receipt["provider_response_recorded_at"], result_event["occurred_at"])
+        self.assertTrue(receipt["provider_dispatch_occurred"])
+        for relative, digest in hashes.items():
+            self.assertEqual(hashlib.sha256((root / relative).read_bytes()).hexdigest(), digest,
+                             f"{shape}: {relative} was rewritten")
+
 
 class FanDispatchedAtTests(_FanPowerCases, unittest.IsolatedAsyncioTestCase):
     kind_type = FanKind

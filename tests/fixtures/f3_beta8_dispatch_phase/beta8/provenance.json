@@ -1,0 +1,313 @@
+{
+  "files": {
+    "a_helper_already_present/store/execution-tasks-v1/fd6f5a07d4a44965baa119e45001dbf8.ed8798f605c943a89c9cae380b5de437.json": "d628c99403966875f1c3964a602492e6e8a84dab37318070dcd53a995321a689",
+    "a_helper_already_present/store/f3-child-execution-v1/b2af279efbadebb8d5710b3adf8d7e172fe08cd9a78582aa0d411245ae099344.child.json": "4248edf15ee7fde824fcc98b897cc2d02363272011d447b598cb855f17ea6517",
+    "a_helper_already_present/store/f3-child-execution-v1/ed8798f605c943a89c9cae380b5de437.manifest.json": "c088dfd3bb6672cff0c90fd6033c8056146e34b80c5d8985104de1dac294e093",
+    "a_helper_already_present/store/f3-operation-locks-v1/state.json": "0210bf373f2b2c786e491385305feb7b0b82a4657e360c4bb272344db8e600a5",
+    "a_helper_already_present/store/operational-administration-v3/fd6f5a07d4a44965baa119e45001dbf8.json": "ffa6343003a1d5d90e836fcf637df9a7bf293ed0d33770545d92ded74f1803f7",
+    "b_dashboard_setter_not_sent/store/dashboard_artifacts/dde4c721bc8f4f40ae1e18ad9385d291.json": "d26176d59315c74d723a146b93ae8add3283907abaf85d8c93b9c43cb254b997",
+    "b_dashboard_setter_not_sent/store/execution-tasks-v1/dde4c721bc8f4f40ae1e18ad9385d291.ebe6e6860266416d96665ba3655cc3ed.json": "382bcdeed2ea7416fe69940c76dd8d47f0bb9ccea920692f24c4ec1f74b67db0",
+    "b_dashboard_setter_not_sent/store/f3-child-execution-v1/421b47e2ad7bcac630202261d404e0b926eb9be0d62ac038e748378ea724c5db.child.json": "13e609466f5ad69ae75f93adb74d43ede90245e6e670d628b8558571ed2494e6",
+    "b_dashboard_setter_not_sent/store/f3-child-execution-v1/ebe6e6860266416d96665ba3655cc3ed.manifest.json": "5af9f8943af5e22461e74abf4a1f7cfa9b074530c646bc1dd19e09e4205c0f85",
+    "b_dashboard_setter_not_sent/store/f3-operation-locks-v1/state.json": "1bc18ebae40e994a3532f652d9cdc67d2473900416454aae0478d94092d20bc4",
+    "b_dashboard_setter_not_sent/store/operational-administration-v3/dde4c721bc8f4f40ae1e18ad9385d291.json": "5413909009f474cfc34ef7b4b0ab214df9bf2607720708ec79e07bb0d3ba86d1",
+    "c_response_lost_verified/store/1b3ecf6fb9444cf0b6b36c8bc21ef419.json": "1a434d0665dc0a98e9a48b25b705317465fff31f12f5ac4225be7459cfc0dcac",
+    "c_response_lost_verified/store/execution-tasks-v1/1b3ecf6fb9444cf0b6b36c8bc21ef419.3b872ba598344a5b811b445a624cbf7d.json": "95a8a9cecf0de58a86f9c4779b57d9744f3236c1c6c3f1de88ae09da021f99aa",
+    "c_response_lost_verified/store/f3-child-execution-v1/3b872ba598344a5b811b445a624cbf7d.manifest.json": "3510e6e0c0a4a6b2031f7c1eb929f54af105f3101168e1cf8ecec3a5a3ae15c2",
+    "c_response_lost_verified/store/f3-child-execution-v1/62253a8ab69c28047c44cabe492e82fe9c7cfbe8108123739f56d7a157e6ad74.child.json": "c5b004a3adda54d65dc9201970ba71699de082c0fc64383ce2118ab5a27f3ed5",
+    "c_response_lost_verified/store/f3-operation-locks-v1/state.json": "f9eb3b33927747c5a7447a8270234b70b6439e0c2520280f4440590f1138aec9",
+    "fan_sent_verified/store/f3-operation-locks-v1/state.json": "1bc18ebae40e994a3532f652d9cdc67d2473900416454aae0478d94092d20bc4",
+    "fan_sent_verified/store/ordinary-fan-v1/27fe1aa5aaff3bce9105277bf5a5f84f.json": "8c9b4a2921113f6710403384f478000987d9515a9e912e51c8d96103dbe9eeae",
+    "fan_sent_verified/store/ordinary-fan-v1/f3-operation-executions-v1/b96347b18668af9e2eaecf61a2bf98e27831a760d90b42482c2d4aa96d9a864e.json": "a2d02dbdc8b67a017821d458e2523d75f08d9caf56ef00dd4f5e7ce3e8b0eaff",
+    "mixed_three_child_parent/store/990fafd85e994ca7b13dd0ab0c288e1b.json": "85dc9cd05eada2e4af2f75521f2ad59bd210e73949c7caeee4ce0e06a4b2e790",
+    "mixed_three_child_parent/store/execution-tasks-v1/990fafd85e994ca7b13dd0ab0c288e1b.01d8b018dcf64c2a8a4f10d31abc08ce.json": "4c4936e9e7adc3efd65bc10aefa4199fb1632f6efbdc80360a87b5cba5cd0a4e",
+    "mixed_three_child_parent/store/f3-child-execution-v1/01d8b018dcf64c2a8a4f10d31abc08ce.manifest.json": "666c33a4534d615c715573a259abcbfa1e7b4860792241f82795988a1500bdc1",
+    "mixed_three_child_parent/store/f3-child-execution-v1/056e6616148188ad19b5e3fe69098ee69ed0168a3b94656e4c21310376e3a390.child.json": "b975cf7aefcc378158a0a49c0a8870baa97a0bbb1050c284199935da30bd4e01",
+    "mixed_three_child_parent/store/f3-child-execution-v1/5aa5442d958525f9a3d833a0b6c43766a690885b31bb8ae5127759aa71a550c1.child.json": "09177e4c6dcdd956ebd636a4b32990e6d55679d54378029a0cdf25620c94ad65",
+    "mixed_three_child_parent/store/f3-child-execution-v1/b54c48713be1b94b2b551c62ccd99f2ba822e118de7298e511ea3018c88ac98e.child.json": "e724ac0ad70ceed6c15e94ab591fb371b8ef013b26900722ecaeee028c7c379a",
+    "mixed_three_child_parent/store/f3-operation-locks-v1/state.json": "720ea1c59200254cadd7d22b70045a7f14bc08e5a72e7bf6870e1782de508c45",
+    "power_sent_verified/store/f3-operation-locks-v1/state.json": "1bc18ebae40e994a3532f652d9cdc67d2473900416454aae0478d94092d20bc4",
+    "power_sent_verified/store/ordinary-power-v1/9ae3fcc507d3f6309e6348e09010b3fc.json": "24eda4857a499d683b9ed83ced9772db6053361547583eb7f77c4ba33dfc8d32",
+    "power_sent_verified/store/ordinary-power-v1/f3-operation-executions-v1/a6cfe94093492135f97961a55b2cc5b6f6aa90632e8bf536c7b302ee699d3140.json": "87fe8ab5cb4303fe7ed3acc38f810531e5007be615f576a930e3697f4f9bb30f",
+    "r_proven_configuration_4xx/store/872049ac2ccf4d4c8470093e9edcdf3b.json": "9a7bb63c65f8f067ba563e43dfa9dcc0fbf353029a95175c073a8d1fc116fe24",
+    "r_proven_configuration_4xx/store/execution-tasks-v1/872049ac2ccf4d4c8470093e9edcdf3b.da5bb9c8e3f848f4ad804068e4cbad83.json": "f7995ae058c2f75fec75b53a80869ea5a4831d17d32ff41e6b2c6202c62ab04a",
+    "r_proven_configuration_4xx/store/f3-child-execution-v1/8e9a43aed0ac7ed35716f4b259f43522a32b167e0dcb39fd6c56b6b0d851fa42.child.json": "642d395563e95b54689547ddf2a3855084286b434def76e1364f8c1c9977b263",
+    "r_proven_configuration_4xx/store/f3-child-execution-v1/da5bb9c8e3f848f4ad804068e4cbad83.manifest.json": "f969b59ca048623679dfec1879898f2434b1660485064740802da091446015ae",
+    "r_proven_configuration_4xx/store/f3-operation-locks-v1/state.json": "f9eb3b33927747c5a7447a8270234b70b6439e0c2520280f4440590f1138aec9",
+    "r_unproven_operational_rejection/store/execution-tasks-v1/98bc342ccfab4f168c1b8caca24ae45f.154c15b1e534409bbaca4691ea1740b0.json": "ce73f72e1b054be43ba325324c6a42cf10917551e85e2886168490cd3c14fce0",
+    "r_unproven_operational_rejection/store/f3-child-execution-v1/0d1a0db61260cb36683b2f0afbe1733ad64f109fe8fd8c134eedabd51a413e35.child.json": "1730c2fb8d44c2513c773fb852a10a3e704e514a464610e2040c1fe1b9c80ca5",
+    "r_unproven_operational_rejection/store/f3-child-execution-v1/154c15b1e534409bbaca4691ea1740b0.manifest.json": "60132cb87ea10b244763486541722521d471da5ba04113c8154cda4422909898",
+    "r_unproven_operational_rejection/store/f3-operation-locks-v1/state.json": "1bc18ebae40e994a3532f652d9cdc67d2473900416454aae0478d94092d20bc4",
+    "r_unproven_operational_rejection/store/operational-administration-v3/98bc342ccfab4f168c1b8caca24ae45f.json": "8f25de71164c474d060e2571067c9c9a33a2214812ae431476f1f4d8c17f5b9d",
+    "sent_verified_configuration/store/bef3fc39dff846feaeaf14ad78b38540.json": "c4f46c55f61bd9e50919147df1be7c2aea674c79375c231b62a858821b6deeef",
+    "sent_verified_configuration/store/execution-tasks-v1/bef3fc39dff846feaeaf14ad78b38540.62c60901f73b4f00a28afdc52c8acdcc.json": "c147e44f34d8f47cb505be221186cc647ccaa651d1a039a2a9dbe0a9fc4ce032",
+    "sent_verified_configuration/store/f3-child-execution-v1/137811746dda9254946bb19b26a56a59a608e45bc44e7d774a34dcabe75b13db.child.json": "7db449669c328b4fe28842946bce2bdd605c28e74a5f7b78a99cb47c14db8362",
+    "sent_verified_configuration/store/f3-child-execution-v1/62c60901f73b4f00a28afdc52c8acdcc.manifest.json": "cb7bca9f9f087ac50e24c8921c06ebf1159a286794834340ff9586133bebf1a7",
+    "sent_verified_configuration/store/f3-operation-locks-v1/state.json": "f9eb3b33927747c5a7447a8270234b70b6439e0c2520280f4440590f1138aec9",
+    "v9_entity_metadata_already_present/store/2b896265a18f45158eab99eaefd15cdf.json": "ebe92d0398f0fe31ab0cc014ed6b895889ef8ff2ceed8945a2d6c5135b2939a2",
+    "v9_entity_metadata_already_present/store/execution-tasks-v1/2b896265a18f45158eab99eaefd15cdf.9a13d1d0b0e7495380c0e9071c1aec16.json": "1ac3597936509f8a0b3ebfb494e59c93ba6848bc7991f94390f0f51946fc0b2c",
+    "v9_entity_metadata_already_present/store/f3-child-execution-v1/865be6e98cb8409b58e6db243c6b664f34ea283b80a75a18a3bd988b273ad245.child.json": "ff71e0df97844f02e3280cbbf8d62e98f1c4fa08360c9c70f3c412a7f97f2522",
+    "v9_entity_metadata_already_present/store/f3-child-execution-v1/9a13d1d0b0e7495380c0e9071c1aec16.manifest.json": "75924c670f8a1f5c72b55e52a1f6061f586ffa7831a156379dcdb0a16f6a25fc",
+    "v9_entity_metadata_already_present/store/f3-operation-locks-v1/state.json": "1bc18ebae40e994a3532f652d9cdc67d2473900416454aae0478d94092d20bc4"
+  },
+  "fixture_type": "synthetic exact historical APIs; no production records",
+  "generator": "tests/fixtures/f3_beta8_dispatch_phase/generate.py",
+  "generator_command": "python generate.py <clean 7370ad2 checkout> <new output directory>",
+  "generator_sha256": "d9340369fcc2f6f38056c4cddf2d525d9aab4fe735b615e1ee80238f8346937f",
+  "shapes": {
+    "a_helper_already_present": {
+      "children": [
+        {
+          "child_id": "52555b9ec24280a94d64f88af04433ca55720a7a2c18111ede8da1770dc5ef29",
+          "codes": [
+            "desired_state_already_reached"
+          ],
+          "dispatch_count": 0,
+          "state": "terminal"
+        }
+      ],
+      "plan_id": "fd6f5a07d4a44965baa119e45001dbf8",
+      "task_id": "ed8798f605c943a89c9cae380b5de437",
+      "task_state": "succeeded_verified"
+    },
+    "b_dashboard_setter_not_sent": {
+      "children": [
+        {
+          "child_id": "fe3252435d507b638723b16472ea0649125a009e2c3b344fba6f121f22fa9a4c",
+          "codes": [
+            "fallback_none",
+            "other_protocol_or_transport_failure",
+            "possibly_dispatched",
+            "provider_confirmed_no_mutation",
+            "setter_call_not_sent"
+          ],
+          "dispatch_count": 1,
+          "state": "terminal"
+        }
+      ],
+      "plan_id": "dde4c721bc8f4f40ae1e18ad9385d291",
+      "task_id": "ebe6e6860266416d96665ba3655cc3ed",
+      "task_state": "failed_post_dispatch"
+    },
+    "c_response_lost_verified": {
+      "children": [
+        {
+          "child_id": "862eb144b21b718f9d11878ee761d54807914c772dcee7495ee6aebf83ee555b",
+          "codes": [
+            "exact_readback_completed",
+            "exact_readback_verified",
+            "possibly_dispatched",
+            "provider_response_indeterminate"
+          ],
+          "dispatch_count": 1,
+          "state": "terminal"
+        }
+      ],
+      "plan_id": "1b3ecf6fb9444cf0b6b36c8bc21ef419",
+      "task_id": "3b872ba598344a5b811b445a624cbf7d",
+      "task_state": "succeeded_verified"
+    },
+    "fan_sent_verified": {
+      "provider_attempt_count": 1,
+      "state": "succeeded_verified",
+      "task_id": "27fe1aa5aaff3bce9105277bf5a5f84f"
+    },
+    "mixed_three_child_parent": {
+      "children": [
+        {
+          "child_id": "2c0a6495b3bba6c5289063bde2134c2dbc3f3e0198402426dfe210314b2cea48",
+          "codes": [
+            "exact_readback_completed",
+            "exact_readback_verified",
+            "possibly_dispatched",
+            "provider_response_received"
+          ],
+          "dispatch_count": 1,
+          "state": "terminal"
+        },
+        {
+          "child_id": "c6ee03b8f0fbb3e3a7a1202ffdc8a5bbcf59e36243205849802c513c3f3d7ebd",
+          "codes": [
+            "exact_readback_completed",
+            "exact_readback_verified",
+            "possibly_dispatched",
+            "provider_response_received"
+          ],
+          "dispatch_count": 1,
+          "state": "terminal"
+        },
+        {
+          "child_id": "9d701d1029e3a0fd1d42f2f416e751cc2624ee91814416a34a08ba91f1ffedd9",
+          "codes": [
+            "possibly_dispatched",
+            "provider_rejected_mutation"
+          ],
+          "dispatch_count": 1,
+          "state": "terminal"
+        }
+      ],
+      "plan_id": "990fafd85e994ca7b13dd0ab0c288e1b",
+      "task_id": "01d8b018dcf64c2a8a4f10d31abc08ce",
+      "task_state": "manual_review_required"
+    },
+    "power_sent_verified": {
+      "provider_attempt_count": 1,
+      "state": "succeeded_verified",
+      "task_id": "9ae3fcc507d3f6309e6348e09010b3fc"
+    },
+    "r_proven_configuration_4xx": {
+      "children": [
+        {
+          "child_id": "2376be00a0c82f5d0325412e60823d02ff69835c802f50ade63b8ad6b863542f",
+          "codes": [
+            "possibly_dispatched",
+            "provider_rejected_mutation"
+          ],
+          "dispatch_count": 1,
+          "state": "terminal"
+        }
+      ],
+      "plan_id": "872049ac2ccf4d4c8470093e9edcdf3b",
+      "task_id": "da5bb9c8e3f848f4ad804068e4cbad83",
+      "task_state": "failed_post_dispatch"
+    },
+    "r_unproven_operational_rejection": {
+      "children": [
+        {
+          "child_id": "0db5458a17a9eb437cf1851823a29fa182b2e165cde2e5bd80d8ea1549397158",
+          "codes": [
+            "possibly_dispatched",
+            "provider_rejection_confirmed"
+          ],
+          "dispatch_count": 1,
+          "state": "terminal"
+        }
+      ],
+      "plan_id": "98bc342ccfab4f168c1b8caca24ae45f",
+      "task_id": "154c15b1e534409bbaca4691ea1740b0",
+      "task_state": "failed_post_dispatch"
+    },
+    "sent_verified_configuration": {
+      "children": [
+        {
+          "child_id": "794139383a61178fa8cfa51651c2f7d2f4507cba82f5a65a9cb97ec220aeb7a0",
+          "codes": [
+            "exact_readback_completed",
+            "exact_readback_verified",
+            "possibly_dispatched",
+            "provider_response_received"
+          ],
+          "dispatch_count": 1,
+          "state": "terminal"
+        }
+      ],
+      "plan_id": "bef3fc39dff846feaeaf14ad78b38540",
+      "task_id": "62c60901f73b4f00a28afdc52c8acdcc",
+      "task_state": "succeeded_verified"
+    },
+    "v9_entity_metadata_already_present": {
+      "children": [
+        {
+          "child_id": "dd0b7301514aff13374d774abf2570beecf8135aad765bbb8e6ce0e389ffa22d",
+          "codes": [
+            "desired_state_already_reached"
+          ],
+          "dispatch_count": 0,
+          "state": "terminal"
+        }
+      ],
+      "plan_id": "2b896265a18f45158eab99eaefd15cdf",
+      "task_id": "9a13d1d0b0e7495380c0e9071c1aec16",
+      "task_state": "succeeded_verified"
+    }
+  },
+  "source": "7370ad25eb98e03347d73e152f38881895477d74",
+  "source_files": {
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/__init__.py": "7b05dd5d72b78bee11c024c7631c1315d4e8a69dc822b68ec3701bdf5d2e2385",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/contracts.py": "55aef7cffee8d9d9fdeb6590accf863a8129153ba9d52cc2190967b96e68141c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/executor.py": "fbfcbcbb60afc481082c0a5c1b683877c7c90a8e0fad6e47651c38f656f04607",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/locks.py": "042de242234c7e5b9e8c80cccbf72202401c6bf65e39deeba8530b176ee77d5d",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/models.py": "9b5e886e8de815cc1d86c273caaf80b24168f7c461c703561084be966c620b3f",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/observability.py": "f0e4c2f256ea816157fdfc50ced31212b36848f6b62698cf02822c083bff40bd",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_adapter.py": "6999492838c88215e18c1641cca19c0549e34653ec079094eeae22c12911b2d0",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_locks.py": "4a43b22abe77bd3ccc9acc7f79d8f192379a4cd5ec6f87efbdb5dbe77b935dc4",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_models.py": "6ced35b09632125fd5aa323c78a207fb7c96990f8e0def31c102c7b6338b90fa",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_observability.py": "83c297af62f775e4de87b1560021a20b5d4842f57a6c433c5334a14359b33848",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/operational_strategies.py": "d3158e134fbfcc0532d7312ec3d0dad3df983fa5920ddc6cf168f445810f597a",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3/persistence.py": "352095c960da8d647c616a3a0cb44a85b8ffa30f10b925d360f7b88a02893113",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/__init__.py": "34b1224e40c7aed8bb9aaf757044441c6d0aea8523525463f0964345a6f19196",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/adapter.py": "a2dcc08721fc70462b0a5dc12f30d537e6889c2da1447ac6d9315d32f9f9a533",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/gateway.py": "6718fc1c988a4cf3020abb3ad3c1341e60de015e8d62ead60bdd173f7017951c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/locks.py": "821b8d82063a96796064bb3c844379750206cb650b8f40d1af855df6a72f6890",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/migration.py": "453cb84d8a873ddfb9897a386c0bf058536ad3d721af7d1e9891c786e707f041",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/models.py": "1af4f5a5f5787abebac9f5cfb7b303e69e154a1d897a19a61df77ab0a0c24d1b",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/observability.py": "9450fa7ed94f26c5385d9449fafc4a58e0bfb811f9fd0f50e11770c54146b098",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/outcomes.py": "7c00a51b4eeb358c8195ff961c79266d228b31858cd33814ba5139df153517d9",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/sequence.py": "372ee687f1552619be219c1ca4f89d1b7194a5a55a95f7e458828f9f44661e0f",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_configuration/strategies.py": "f1d4b8f9dd79a5e11979195177f753700cc8aa061693eefc2122cd3c429833a8",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/__init__.py": "4aebfd8a1a910569e835efed081bf02b054d8a07fecd2d18aa467cf9d90fdf7d",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/adapter.py": "a6af399d2e888efdd5d26e9ef2e2e06b16f547ec3b6e13784d9457b966aa88ee",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/approval_projection.py": "9d08e7274b458c3b07bf4c5437942542441f3ed5690cba51726874bfd13c8fba",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/artifact_store.py": "7ae83489e4d538084f5dc8c61980d8e409c7da43728d38a3d7e71b55ff5f38d6",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/atomicity.py": "fa03632582d909850083cabf2669614f2f497d79bfbcfb3ebf406d68f14ee603",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/constants.py": "678bbb6e59edb89c7ca43a8409b224957933cdf70de19b9a7f24b0ebce4736eb",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/errors.py": "96ce389cb79a13e9ce680e4745ae44a8dcfea67d5be11f2902fe29cf1eaab375",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/gateway.py": "9dd436d5c2a503260c41afdad314154feeef0a2c793a525ba3a1d86fc3f02920",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/identity.py": "360b29360bfc06dd4cab143c158dddd1d1b02bd0af89e2ad3a31b2ad0ff7e2c8",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/json_codec.py": "a5dda42ea8bfdec380772bff4f0d5dfd33c91b6c2bbf97efae0941955fc9a27a",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/models.py": "985e67d80da03364dda93247b27dee286d8fcbf861a979e544922d50e401518b",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/observability.py": "6dc5e735c0123c806d90fb51fd93b29abc769104073384ee3882ad8764d5760b",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/patch.py": "b442dae87ab9b54fe1ed287675d6a0711b7914d481c4f20097e96bad1cd9b5ef",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/planning.py": "8038a8677c62a3832eb9d2dfdc823bcfae7b2a5248d275e3ddaffd2b272989ee",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/provider.py": "9b9a0ba48b3634525d37bee15c1d3fc97058d2c1ad4fe6f01a6934a294daf73c",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/raw_evidence.py": "91bcee89e17dd4f57365e64decdc69f35211eee50c7ade8cd7bbbcc0a057e399",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/risk.py": "20f7c9b7ba3fbb2b59437b99e8866169f17de32dae06a5f3f7ab9b611aac55b7",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/semantic_diff.py": "fb131a58c286500cc41901c2e01bd1ab9946a661806c4052a85deab2481a00ee",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/serialization.py": "8b4b55dfe9a9174d41feb5a9fa6339e9675ff4c5d8970d948a4f9cd4aab751eb",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_dashboard/verification.py": "805d8ca473a8e0507b2c4f1e97075123eed0f305702ed2534645dd5c0dd0ff30",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/__init__.py": "d7de783551faacffed5dedcd6a3f6021904d95f0e98ba72b10cc249b6ba6d9ef",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/health_scan.py": "4b712a323ec149ddfeb2aec8e3b8fa08477fd96b5373a4bf9fbe10a712695c5a",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/registry.py": "7a1b60d287385718d878c87acdc636f3fbf4db947b51ef567fcead474778ea04",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/repository.py": "376b83037dd225657a6641b95af8fe99ab7f784929b850acaed38d8b4c028502",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py": "b0417c6a0b303b8af9dce0b04ee4f00ecdb97de63a55c7bc6eda6d2701a7cb14",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/fan/__init__.py": "9dedd4f5e3218c4cd7c556a2b7541cdb5c5cd1d9208130c0c61ef27675beedca",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/fan/adapter.py": "5959a8675ddb8f795e228896779faf753a855dea9a5d2c11370b2a987c3538bb",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/fan/audit.py": "44e1981d73e85b10a22dd6620c59f53883b49441f33e60a6d344884d7e52fa42",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/fan/authority.py": "cb8774ed6d4d905ca97240a255f58daea85e5f17630e6f964f793e787b280d3b",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/fan/contracts.py": "2d93bdbc37f6c8730017670d6b523874d200e38a32722fc6ea0b55279dff4ef4",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/fan/locks.py": "e3d529016648142f79d2329105f1c5dbc66e2f0d10aa9d6dc20b2f7d341ccdd5",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/fan/service.py": "269c57eb0b32f0ce4340c49d0a258c6fb7c90d7d0fa370afa84f96f387b1623e",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/__init__.py": "c6962dba85e2ad5929ccd0574b64703d04e4fc6d91c58d2dd48caf85d5d9c906",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/approval_notifications.py": "5c20ec98ea5bd5ea4101d30a8dfb1130b2c5fec8e33d7f7b7ba512f1cf1a06e3",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/config_validation.py": "291ed40205760606ea9019a99dda535d7eba3335435e238ceff0a7552ecf90ee",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/configuration_eligibility.py": "9f717f4f47e027e364a99e750bc8f202277602ebb9ef690f3325de2c40fdc309",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/configuration_reverification.py": "7b91154703a49e38cb81ab74e8ce51b1e22ff653063b57d7c52cbb65bbda64ef",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/configuration_rollback_eligibility.py": "b02762e2083db54bfd1a0d83b897f6e1fbb8eaf1ac7cca2b4e9acb78c653d4bd",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/entity_metadata.py": "1a0417ec809eda635a62c3c2904513e67e55bfa4880467aae6df13e3ff9b10e1",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/entity_metadata_disclosure.py": "36fd56cb5543580f7c97481702bd347d01eb40812e304b43a9cf305c9e8cf417",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/entity_metadata_planning.py": "5a40671bfca26bcf876a1db8b9b7911b5440e455d8fd6f5a76e3ec6b3c8c77b2",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_dependency.py": "af85879b548fed996afc23e965d74a0918616fd477a9bdbd24a37eb20ce18611",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/helper_state.py": "7efe44c95e90002c28fcc483b4cf7acf7de8b5a06af1b1f07e8f32b71b21469b",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/historical_policy.py": "3e6cafd00407b46d186ca6938a75bdc5749e115438e5036f6a582135725cb077",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/models.py": "cfafcfeedc7295d51ac94e0b50dc697307b9ffdf65ff5f16166119227c96dd90",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/normalize.py": "d408a1bc47b7c8052c922948905b6e09aec628a01e8303de11c27157bc076ce4",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/operational.py": "e40c3ab6c3188225bd1f733583cf1ee95cfc56bd4311a1d210fc9ed6336a6edd",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/operational_lifecycle.py": "e3fd1ba090fdde6d2254747363210f4a8f23c003be1c0b48cb66ad3eae5d57cf",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/policy.py": "a37cc1e47797e221ecb9e2028fb846936e95cdfaf9892375225ef851c140e328",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/resources.py": "0f64aa0f27b1f4d1e273dbdcfb812b845e8ddec32d19f37cbdb7ad50fd14f028",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/reverification_storage.py": "8bc3e9fed966e7dad09e0e4d01c884fa55870f5f32849dfb955cd67664ae4a2d",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/risk.py": "40169eef8ba2597f27515f798f13c4c4f8bba38492535a6ecfe2a18f090ffecb",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/runtime.py": "7ec90a78b5566dab1139e72a6e196a5a5131f5657a0805d6123dd21f861c14d2",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/semantic_projection.py": "d921f25290f4d6b8be893aeebbff5a8e506243c9cac2916148cda2de07bee37b",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py": "35ad391e10e48a2ddd33547439b584d7f2c832fa367eb96c50cfb55d2a1fd07f",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/storage.py": "0a8fa1d17699c5a4569cfa4a5b4b4bb4b443ea282e36053768d11ead0222cb45",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_models.py": "695de4c972772d9a841509eb9087847c2ccc6a5933c3b9bd9d25987228c230b4",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/task_storage.py": "bea86e7ed1757b5c265bfb596f3efdacb3517758f930fa4c8bf59feec77035bb",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/governance/validation.py": "b193b84d6313c6ffe89a51efbbb4733f0793c0ffef40e475da0b8e1f09572ba8",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/power/__init__.py": "c3f0741cd92691adeff6c80c63b51f45d5149374541b0fcdf7254c15e7043282",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/power/adapter.py": "d232b592f10192381d6c6355c06ac1799fd66c110ba8daa0b73022bc493b69b6",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/power/contracts.py": "69f77c5d0c90a39edf16935a6c5440711b87ccd2dd201b767084ec1a56648791",
+    "hass_mcp_engineering_beta/ha_mcp_engineering/power/service.py": "493b6807d9c619d38355a09a757f309d66931ff7ffe3c175175d6f50999157e3"
+  },
+  "source_version": "2.4.1-beta.8"
+}
