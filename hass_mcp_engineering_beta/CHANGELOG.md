@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.4.1-beta.9 - Truthful entity-registry error results (HAMCP-183)
+
+Builds on 2.4.1-beta.8's dependency-scoped dashboard write admission.
+
+- Record a sent `config/entity_registry/update` answered with an error result
+  other than `unauthorized`/`forbidden` as uncertain (`dispatch_indeterminate`,
+  `provider_error_after_send`) instead of confirmed non-mutation, because Core
+  can assign the entry and still answer `unknown_error` (OD-15).
+- Settle it by the existing registry readback: the planned state is
+  `succeeded_verified` with rollback offered, the prior state is
+  `verification_mismatch`, any other state is `manual_review_required`
+  (`readback_matches_neither_plan_nor_prior`), and an unavailable readback
+  stays `observing` until manual review. Recovery applies the same mapping from
+  the persisted dispatch diagnostics; nothing is redispatched.
+- Keep authorization refusals confirmed non-mutation and Engineering's pre-send
+  refusals unchanged; correct the gateway comment.
+- Preserve task states, terminal outcome strings, durable formats, the signed
+  registries, HOLD, support window, workflows and stable v1. This fix gates
+  HAMCP-182 publication.
+
 ## 2.4.1-beta.8 - Dashboard-write dependency-scoped admission (HAMCP-177)
 
 Builds on 2.4.1-beta.7's delegated platform reads.

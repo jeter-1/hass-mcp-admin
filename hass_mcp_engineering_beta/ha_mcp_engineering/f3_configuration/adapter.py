@@ -19,6 +19,7 @@ from ha_mcp_engineering.f3.locks import (
 
 from ..errors import EngineeringServerError
 from ..governance.config_validation import normalize_configuration_validation
+from ..governance.entity_metadata import EntityMetadataUpdateErrorResult
 from ..governance.normalize import (
     AUTOMATION_NORMALIZATION_VERSION,
     stable_hash,
@@ -49,6 +50,15 @@ from .observability import (
     NullConfigurationEventSink,
 )
 from .strategies import ConfigurationStrategy, strategy_for
+
+
+# OD-15 (HAMCP-183): a sent update answered with a non-authorization error
+# result.  Readback then settles it: the planned state is verified success, the
+# exact prior state is verified not applied, and any other state needs manual
+# review because neither the plan nor the absence of a change explains it.
+ERROR_RESULT_AFTER_SEND = "provider_error_after_send"
+PRIOR_STATE_OBSERVED = "prior_state_observed"
+ERROR_RESULT_READBACK_UNEXPLAINED = "readback_matches_neither_plan_nor_prior"
 
 
 class ConfigurationGateway(Protocol):
@@ -513,6 +523,29 @@ class ConfigurationOperationAdapter:
                 codes=("provider_completed_unexpectedly",),
                 provider_mutation_count=1,
             )
+        except EntityMetadataUpdateErrorResult:
+            # OD-15 (HAMCP-183): the sent registry update was answered with an
+            # error result that is not an authorization refusal.  That is not
+            # a non-mutation proof, so the dispatch is recorded as uncertain
+            # (never confirmed, never a zero mutation count) and the shared
+            # observe/verify readback decides; ``provider_error_after_send``
+            # keeps the received error visible next to whatever readback finds.
+            self._increment("intents_committed")
+            self._increment("dispatch_attempts")
+            self._increment("responses_received")
+            return self._dispatch_result(
+                operation,
+                NormalizedOperationOutcome.DISPATCH_INDETERMINATE,
+                intent=True,
+                invocation_count=1,
+                may_have_dispatched=True,
+                response_received=True,
+                codes=(
+                    ERROR_RESULT_AFTER_SEND,
+                    "provider_response_indeterminate",
+                ),
+                provider_mutation_count=None,
+            )
         except Exception as exc:
             self._increment("intents_committed")
             self._increment("dispatch_attempts")
@@ -564,9 +597,13 @@ class ConfigurationOperationAdapter:
         operation: PreparedConfigurationOperation,
         dispatch: ConfigurationDispatchResult | None,
     ) -> ConfigurationObservationResult:
-        del dispatch
         self._require_operation(operation)
-        return await self._observe(operation, attempt_count=1)
+        return await self._observe(
+            operation,
+            attempt_count=1,
+            error_result_sent=ERROR_RESULT_AFTER_SEND
+            in tuple(getattr(dispatch, "diagnostic_codes", ()) or ()),
+        )
 
     async def verify(
         self,
@@ -605,6 +642,20 @@ class ConfigurationOperationAdapter:
                 NormalizedOperationOutcome.SUCCEEDED_VERIFIED,
                 verified=True,
                 codes=("exact_readback_verified",),
+            )
+        if (
+            ERROR_RESULT_AFTER_SEND in observation.diagnostic_codes
+            and PRIOR_STATE_OBSERVED not in observation.diagnostic_codes
+        ):
+            # The error result left the target in neither the planned nor the
+            # prior state; do not report it as an ordinary not-applied failure.
+            self._increment("manual_review_transitions")
+            return self._verification_result(
+                operation,
+                observation,
+                NormalizedOperationOutcome.MANUAL_REVIEW_REQUIRED,
+                verified=False,
+                codes=(ERROR_RESULT_READBACK_UNEXPLAINED,),
             )
         self._increment("verification_mismatches")
         return self._verification_result(
@@ -655,6 +706,8 @@ class ConfigurationOperationAdapter:
         return await self._observe(
             operation,
             attempt_count=max(1, context.prior_observation_attempts + 1),
+            error_result_sent=ERROR_RESULT_AFTER_SEND
+            in tuple(getattr(context, "dispatch_diagnostic_codes", ()) or ()),
         )
 
     async def prepare_rollback(
@@ -727,6 +780,7 @@ class ConfigurationOperationAdapter:
         operation: PreparedConfigurationOperation,
         *,
         attempt_count: int,
+        error_result_sent: bool = False,
     ) -> ConfigurationObservationResult:
         self._increment("readbacks")
         try:
@@ -789,6 +843,13 @@ class ConfigurationOperationAdapter:
             "configuration_check_status": config_status,
             "mismatch_fields": list(bounded_mismatches(mismatches)),
         }
+        codes: tuple[str, ...] = ("exact_readback_completed",)
+        if error_result_sent:
+            codes += (ERROR_RESULT_AFTER_SEND,)
+            if self.strategy.fingerprint(observed) == (
+                operation.current_state_fingerprint
+            ):
+                codes += (PRIOR_STATE_OBSERVED,)
         result = ConfigurationObservationResult(
             outcome=NormalizedOperationOutcome.OBSERVING,
             attempt_count=attempt_count,
@@ -803,7 +864,7 @@ class ConfigurationOperationAdapter:
             ),
             mismatch_fields=bounded_mismatches(mismatches),
             evidence_hash=stable_hash(evidence),
-            diagnostic_codes=("exact_readback_completed",),
+            diagnostic_codes=codes,
             identity_match=identity_match,
             resource_exists=observed is not None,
             semantic_match=comparison.semantic_match,
