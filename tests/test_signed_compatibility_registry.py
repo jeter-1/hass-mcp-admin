@@ -553,6 +553,10 @@ class StrictModelTests(unittest.TestCase):
         }
         projected = deepcopy(release)
         projected.pop("runtime_contract_fingerprint_model")
+        # Provider dispositions are compiled-registry admission state, not
+        # signed release evidence; every compiled entry declares them
+        # (HAMCP-184 F-05).
+        projected.pop("provider_dispositions")
         projected["tool_contracts"] = [
             {
                 "tool_name": name,

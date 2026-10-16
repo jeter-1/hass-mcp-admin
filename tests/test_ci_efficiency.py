@@ -295,11 +295,28 @@ LITERAL = re.compile(r"'((?:[^']|'')*)'")
 MATRIX_KEY = re.compile(r"^matrix\.([A-Za-z_][A-Za-z0-9_-]*)$")
 # Runner values supplied at run time by a fromJSON matrix, keyed by the
 # (workflow, job) that consumes them and bound to the exact reviewed matrix
-# expression; each draws its labels from support_window.RUNNERS.
+# expression. HAMCP-184 F-06: the guard resolves such a matrix to every runner
+# value the committed generator actually emits for every tier
+# (generated_runner_labels), not to a declared constant, so an unpinned value
+# in a generated row fails the guard.
 DYNAMIC_RUNNER_SOURCES = {
     ("ci.yml", "exact-addon-runtime-acceptance"):
         "${{ fromJSON(needs.prepare_exact_image_matrix.outputs.addon) }}",
 }
+
+
+def generated_runner_labels(module):
+    """Every ``runner`` value the add-on matrix generator emits, in any tier.
+
+    This is the exact source of ``prepare_exact_image_matrix.outputs.addon``
+    (scripts/support_window.py addon_matrix). Rows without ``runner`` take the
+    job's quoted literal fallback, which the guard resolves separately.
+    """
+    window = module.load(ROOT)
+    return sorted({row["runner"]
+                   for tier in sorted(module.TIERS)
+                   for row in module.addon_matrix(window, tier)["include"]
+                   if "runner" in row})
 
 
 def matrix_labels(workflow_name, job_name, job, key, dynamic_sources):
@@ -388,7 +405,7 @@ class RunnerImagePinningTests(unittest.TestCase):
         if str(ROOT / "tests") not in sys.path:
             sys.path.append(str(ROOT / "tests"))
         from support.support_window_matrix import support_window
-        cls.dynamic_sources = {key: (expression, support_window().RUNNERS.values())
+        cls.dynamic_sources = {key: (expression, generated_runner_labels(support_window()))
                                for key, expression in DYNAMIC_RUNNER_SOURCES.items()}
         directory = ROOT / ".github/workflows"
         cls.paths = sorted([*directory.glob("*.yml"), *directory.glob("*.yaml")])
@@ -420,6 +437,62 @@ class RunnerImagePinningTests(unittest.TestCase):
             job = self.workflows[workflow_name]["jobs"][job_name]
             self.assertEqual(job["strategy"]["matrix"], expression)
             self.assertEqual(job["runs-on"], "${{ matrix.runner || 'ubuntu-24.04' }}")
+
+    def test_dynamic_runner_labels_are_the_generated_matrix_values(self):
+        # HAMCP-184 F-06: the matrix-sourced runner at ci.yml
+        # exact-addon-runtime-acceptance resolves only to explicit images that
+        # the committed generator emits from support_window.RUNNERS.
+        from support.support_window_matrix import support_window
+        module = support_window()
+        labels = generated_runner_labels(module)
+        self.assertTrue(labels)
+        self.assertLessEqual(set(labels), set(module.RUNNERS.values()))
+        for label in labels:
+            self.assertRegex(label, PINNED_RUNNER)
+            self.assertNotIn("latest", label.casefold())
+        window = module.load(ROOT)
+        for tier in sorted(module.TIERS):
+            for row in module.addon_matrix(window, tier)["include"]:
+                with self.subTest(tier=tier, row=row.get("architecture")):
+                    if "runner" in row:
+                        self.assertEqual(row["runner"], module.RUNNERS[row["architecture"]])
+
+    def test_unpinned_generated_runner_fails_the_guard(self):
+        # Mutation: an unpinned value reaching a generated matrix row must fail
+        # the guard for the real ci.yml job, not pass on a declared constant.
+        from unittest.mock import patch
+        from support.support_window_matrix import support_window
+        module = support_window()
+        for unpinned in ("ubuntu-latest", "self-hosted", "ubuntu"):
+            with self.subTest(runner=unpinned):
+                with patch.dict(module.RUNNERS, {arch: unpinned for arch in module.RUNNERS}):
+                    sources = {key: (expression, generated_runner_labels(module))
+                               for key, expression in DYNAMIC_RUNNER_SOURCES.items()}
+                found = floating_runner_labels("ci.yml", self.workflows["ci.yml"], sources)
+                self.assertIn(("exact-addon-runtime-acceptance", unpinned), found)
+        self.assertEqual(floating_runner_labels("ci.yml", self.workflows["ci.yml"], self.dynamic_sources), [])
+
+    def test_unpinned_runner_in_generated_rows_fails_even_with_pinned_constant(self):
+        # Mutation: the generator emits a runner that is not taken from the
+        # pinned RUNNERS constant. Resolving the declared constant would miss
+        # it; resolving the generated rows must not.
+        from unittest.mock import patch
+        from support.support_window_matrix import support_window
+        module = support_window()
+        original = module.addon_matrix
+
+        def drifted(window, tier):
+            matrix = original(window, tier)
+            return {**matrix, "include": [{**row, "runner": "ubuntu-latest"} if "runner" in row else row
+                                          for row in matrix["include"]]}
+
+        with patch.object(module, "addon_matrix", drifted):
+            labels = generated_runner_labels(module)
+        self.assertEqual(labels, ["ubuntu-latest"])
+        self.assertTrue(all(PINNED_RUNNER.match(value) for value in module.RUNNERS.values()))
+        sources = {key: (expression, labels) for key, expression in DYNAMIC_RUNNER_SOURCES.items()}
+        self.assertIn(("exact-addon-runtime-acceptance", "ubuntu-latest"),
+                      floating_runner_labels("ci.yml", self.workflows["ci.yml"], sources))
 
     def test_guard_refuses_floating_and_unresolvable_runner_labels(self):
         def job(runs_on, matrix=None):

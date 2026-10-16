@@ -13,6 +13,8 @@ from typing import Any
 
 
 POLICY_PATH = Path(__file__).with_name("upstream_tool_policy.json")
+# Mirrors compatibility_family.PROVIDER_DISPOSITIONS without an import cycle.
+_PROVIDER_DISPOSITION_VALUES = frozenset({"admitted", "partial", "held"})
 RELEASE_REGISTRY_PATH = Path(__file__).with_name(
     "upstream_release_registry.json"
 )
@@ -728,9 +730,17 @@ class ReviewedUpstreamRelease:
         }
 
     def provider_disposition(self, surface: str) -> str:
-        """Return exact provider authority; legacy reviewed entries are admitted."""
+        """Return exact declared provider authority; fail closed otherwise.
 
-        return dict(self.provider_dispositions).get(surface, "admitted")
+        HAMCP-184 F-05: an absent surface or a value outside the reviewed
+        closed set is ``held``. Admission is never inferred from omission;
+        every compiled entry declares every provider surface explicitly.
+        """
+
+        value = dict(self.provider_dispositions).get(surface)
+        if value not in _PROVIDER_DISPOSITION_VALUES:
+            return "held"
+        return value
 
 
 @dataclass(frozen=True)
@@ -1589,6 +1599,8 @@ def _load_reviewed_release(
         "error_contract_fingerprint",
         "entity_lookup_missing_resource_status",
         "tool_contracts",
+        # HAMCP-184 F-05: explicit for every provider surface, never defaulted.
+        "provider_dispositions",
     }
     optional = {
         "strict_full_contract_fingerprint",
@@ -1600,7 +1612,6 @@ def _load_reviewed_release(
         "source_tag_object",
         "source_tree",
         "family_admission",
-        "provider_dispositions",
         "revoked",
         "revocation_reason",
     }
@@ -2001,28 +2012,27 @@ def _load_reviewed_release(
             raise UpstreamToolPolicyError(
                 "release_registry_family_admission_invalid"
             ) from exc
-    if dispositions_raw is not None:
-        try:
-            from .compatibility_family import (
-                PROVIDER_DISPOSITIONS,
-                PROVIDER_SURFACES,
-            )
-        except Exception as exc:
-            raise UpstreamToolPolicyError(
-                "release_registry_provider_dispositions_invalid"
-            ) from exc
-        if (
-            not isinstance(dispositions_raw, dict)
-            or set(dispositions_raw) != PROVIDER_SURFACES
-            or any(
-                item not in PROVIDER_DISPOSITIONS
-                for item in dispositions_raw.values()
-            )
-        ):
-            raise UpstreamToolPolicyError(
-                "release_registry_provider_dispositions_invalid"
-            )
-        provider_dispositions = tuple(sorted(dispositions_raw.items()))
+    try:
+        from .compatibility_family import (
+            PROVIDER_DISPOSITIONS,
+            PROVIDER_SURFACES,
+        )
+    except Exception as exc:
+        raise UpstreamToolPolicyError(
+            "release_registry_provider_dispositions_invalid"
+        ) from exc
+    if (
+        not isinstance(dispositions_raw, dict)
+        or set(dispositions_raw) != PROVIDER_SURFACES
+        or any(
+            item not in PROVIDER_DISPOSITIONS
+            for item in dispositions_raw.values()
+        )
+    ):
+        raise UpstreamToolPolicyError(
+            "release_registry_provider_dispositions_invalid"
+        )
+    provider_dispositions = tuple(sorted(dispositions_raw.items()))
     revoked = value.get("revoked", False)
     revocation_reason = value.get("revocation_reason")
     if type(revoked) is not bool or (

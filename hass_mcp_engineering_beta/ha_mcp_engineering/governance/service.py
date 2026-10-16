@@ -190,6 +190,51 @@ APPROVAL_AUTHORITY_VERSION = 3
 APPROVAL_CHANNEL = "home_assistant_ingress"
 APPROVAL_CHALLENGE_TTL = timedelta(minutes=60)
 DEFAULT_APPROVER_PRINCIPAL = "home_assistant_admin_ingress"
+
+
+def principal_separation_proven(principal: str) -> bool:
+    """Return whether an Ingress decision names a distinct identified principal.
+
+    HAMCP-184 F-02: the anonymous fallback principal records that a Home
+    Assistant administrator decided through the separate Ingress channel, but
+    it does not identify which administrator, so principal separation is not
+    proven. Approval eligibility is unchanged (see
+    ``_external_principal_authority_valid``).
+    """
+
+    return principal != DEFAULT_APPROVER_PRINCIPAL
+
+
+def principal_separation_status(approval: Any) -> dict[str, Any]:
+    """Return the truthful public principal-separation projection.
+
+    Records persisted before HAMCP-184 stored ``True`` for the anonymous
+    fallback principal; they are projected from the recorded principal so every
+    plan read reports the same truth for old and new records. Persisted records
+    are never rewritten (F3 approval-bundle hashes bind the stored value).
+    """
+
+    evaluated = approval.principal_separation_enforced is not None
+    anonymous = (
+        evaluated and approval.approver_principal == DEFAULT_APPROVER_PRINCIPAL
+    )
+    enforced = (
+        (approval.principal_separation_enforced is True and not anonymous)
+        if evaluated
+        else None
+    )
+    return {
+        "evaluated": evaluated,
+        "enforced": enforced,
+        "reason": (
+            "no_external_approver_exists" if not evaluated
+            else "anonymous_fallback_principal" if anonymous
+            else "external_administrator_distinct" if enforced
+            else "external_principal_not_distinct"
+        ),
+    }
+
+
 CONFIGURATION_PLAN_CONTRACT_VERSION = 2
 BETA6_PROHIBITED_COMPAT_CONTRACT_VERSION = 2
 BETA6_LEGACY_EXPIRED_AUTOMATION_CONTRACT_VERSION = 1
@@ -2789,16 +2834,11 @@ class ChangeGovernanceService:
                 acknowledgement.pop("csrf_digest", None)
                 acknowledgement.pop("csrf_issued_at", None)
                 acknowledgement.pop("approver_principal", None)
-            evaluated = plan.approval.principal_separation_enforced is not None
-            value["approval"]["principal_separation_status"] = {
-                "evaluated": evaluated,
-                "enforced": plan.approval.principal_separation_enforced if evaluated else None,
-                "reason": (
-                    "external_administrator_distinct" if plan.approval.principal_separation_enforced
-                    else "external_principal_not_distinct" if evaluated
-                    else "no_external_approver_exists"
-                ),
-            }
+            separation = principal_separation_status(plan.approval)
+            value["approval"]["principal_separation_status"] = separation
+            value["approval"]["principal_separation_enforced"] = separation[
+                "enforced"
+            ]
         approval_lifecycle = self._approval_lifecycle(plan)
         value["approval_lifecycle"] = approval_lifecycle
         value["approval_bundle_state"] = self._effective_approval_bundle_state(
@@ -7142,7 +7182,9 @@ class ChangeGovernanceService:
                     approval.approval_expires_at = plan.expires_at
                     approval.channel = APPROVAL_CHANNEL
                     approval.approver_principal = principal
-                    approval.principal_separation_enforced = True
+                    approval.principal_separation_enforced = (
+                        principal_separation_proven(principal)
+                    )
                     if (
                         ApprovalActionKind.ELEVATED_RISK_ACKNOWLEDGEMENT
                         in plan.policy_decision.required_acknowledgements
@@ -7255,7 +7297,9 @@ class ChangeGovernanceService:
                 approval.bundle_state = "rejected"
                 approval.channel = APPROVAL_CHANNEL
                 approval.approver_principal = principal
-                approval.principal_separation_enforced = True
+                approval.principal_separation_enforced = (
+                    principal_separation_proven(principal)
+                )
                 if acknowledgement is not None:
                     acknowledgement.state = ApprovalState.REJECTED
                     acknowledgement.approver_principal = principal
@@ -11969,7 +12013,7 @@ class ChangeGovernanceService:
             approval.state != ApprovalState.APPROVED
             or approval.channel != APPROVAL_CHANNEL
             or approval.approval_kind != approval_kind
-            or not approval.principal_separation_enforced
+            or not self._external_principal_authority_valid(plan)
             or not approval.approver_principal
             or approval.bound_plan_hash != self.plan_hash(plan)
             or approval.policy_decision_hash
@@ -12003,6 +12047,27 @@ class ChangeGovernanceService:
         if self._approval_bundle_state(plan) != "fully_approved":
             return ErrorCode.EXTERNAL_APPROVAL_REQUIRED
         return None
+
+    @staticmethod
+    def _external_principal_authority_valid(plan: ChangePlan) -> bool:
+        """Return the unchanged principal eligibility of an Ingress decision.
+
+        HAMCP-184 F-02 changes reporting only. An identified principal records
+        ``True``. The anonymous fallback principal records ``False`` and stays
+        eligible exactly where it was accepted before: standard-class plans.
+        Elevated plans already refuse it when the decision is made.
+        """
+
+        approval = plan.approval
+        if approval.principal_separation_enforced is True:
+            return True
+        return bool(
+            approval.principal_separation_enforced is False
+            and approval.approver_principal == DEFAULT_APPROVER_PRINCIPAL
+            and plan.policy_decision is not None
+            and plan.policy_decision.policy_class
+            == ApprovalPolicyClass.STANDARD_ADMIN
+        )
 
     def _valid_external_approval(
         self, plan: ChangePlan, approval_kind: str
