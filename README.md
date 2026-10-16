@@ -1,10 +1,16 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.13** makes the Core gateway fail closed for any tool
-with no Core requirement mapping (HAMCP-164): such a tool is refused as
+Engineering **2.4.1-beta.14** closes three HAMCP-189 residuals: a governed
+step acquires Core authority before any read that could conclude "already
+satisfied", so under degraded Core it is refused before any Home Assistant
+read; an unmapped F3 operation is refused with the exact reason
+`core_requirement_unmapped`; and cancel is recorded durably before any
+provider contact, succeeds during an ha-mcp outage, and is never dispatched by
+a later recovery pass. It builds on beta.13's fail-closed Core gateway
+(HAMCP-164): a tool with no Core requirement mapping is refused as
 `core_requirement_unmapped` before any provider, upstream or Home Assistant
 call, and Core independence comes only from a closed, justified allowlist of
-exact tool names. No working tool changes behavior. It builds on beta.12's
+exact tool names. It also builds on beta.12's
 audit hardening (HAMCP-184): provider
 dispositions fail closed and every compiled ha-mcp release declares them
 explicitly (ha-mcp 8.2.0 backup and lifecycle become held; all other
@@ -24,8 +30,8 @@ beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA13_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA13_ACCEPTANCE.md).
+See the [release notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA14_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -109,14 +115,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.13 release notes](docs/V2_4_1_BETA13_RELEASE_NOTES.md) and
-[2.4.1-beta.13 acceptance contract](docs/V2_4_1_BETA13_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.14 release notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md) and
+[2.4.1-beta.14 acceptance contract](docs/V2_4_1_BETA14_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.13 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.14 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

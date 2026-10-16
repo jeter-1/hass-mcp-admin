@@ -20,9 +20,16 @@ class PausedCore:
         self.leases = set()
         self.commits = set()
         self.acquired = self.consumed = self.released = self.finished = 0
+        self.pre_dispatch_reconciles = 0
 
     async def reconcile_once(self, reason):
         if reason == "mutation_pre_dispatch":
+            # HAMCP-189: the first pre-dispatch reconcile now guards the
+            # preflight readback; pause at the final one before approval
+            # consumption, exactly where this seam paused before.
+            self.pre_dispatch_reconciles += 1
+            if self.pre_dispatch_reconciles < 2:
+                return
             self.entered.set()
             await self.resume.wait()
 
@@ -100,8 +107,9 @@ class RecoveryApprovalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(child.dispatch_count, 1)
         self.assertEqual(len(task.provider_attempts), 1)
         self.assertEqual(self.service._load(plan["plan_id"]).approval.state.value, "consumed")
-        # The outer governed apply and the child dispatch each own authority.
-        self.assertEqual((core.acquired, core.consumed, core.finished, core.released), (2, 2, 2, 0))
+        # The child preflight readback (HAMCP-189), the child dispatch and the
+        # verification readback each own one authority set.
+        self.assertEqual((core.acquired, core.consumed, core.finished, core.released), (3, 3, 3, 0))
         await self.runtime.recover_once("terminal_parent_control")
         self.assertEqual(self.helper.dispatch_count, 1)
         self.assert_settled(core)
