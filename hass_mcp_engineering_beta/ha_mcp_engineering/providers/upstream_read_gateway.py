@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace as dataclass_replace
 import json
 import re
 import threading
@@ -109,6 +109,14 @@ from .upstream_platform_reads import (
     read_arguments as platform_read_arguments,
     stats_precheck_required as platform_stats_precheck_required,
     validate_result as validate_platform_result,
+)
+from . import upstream_yaml_reader as yaml_reader
+from .upstream_yaml_reader import (
+    YamlReadRefusal,
+    evaluate_optional,
+    is_yaml_adapter,
+    sibling_drift as optional_sibling_drift,
+    synthesized_policy_entry as optional_policy_entry,
 )
 from .ha_2026_8_device_compatibility import (
     CompositeDeviceCompatibilityError,
@@ -354,7 +362,14 @@ _EXPECTED_PROVIDER_OUTCOMES = {
 }
 
 
+_YAML_RETRYABLE_CODES = frozenset(
+    {yaml_reader.VALIDATION_OR_UNAVAILABLE, yaml_reader.READ_FAILED}
+)
+
+
 def _public_read_schema(entry, observed):
+    if is_yaml_adapter(entry):
+        return deepcopy(yaml_reader.PUBLIC_SCHEMA)
     schema = public_schema_8_6(
         entry,
         platform_public_schema(entry, blueprint_public_schema(entry, observed)),
@@ -398,7 +413,11 @@ class ReviewedUpstreamReadTool(Tool):
         # The exact schema is reviewed separately; descriptive or annotation
         # content advertised by the remote peer cannot weaken the read boundary.
         annotations = ToolAnnotations(
-            title=entry.exposed_name if is_blueprint_adapter(entry) else entry.upstream_name,
+            title=(
+                yaml_reader.TITLE if is_yaml_adapter(entry)
+                else entry.exposed_name if is_blueprint_adapter(entry)
+                else entry.upstream_name
+            ),
             readOnlyHint=entry.reviewed_annotations.read_only,
             destructiveHint=entry.reviewed_annotations.destructive,
             idempotentHint=entry.reviewed_annotations.idempotent,
@@ -1067,12 +1086,13 @@ class UpstreamReadGateway:
                 if self._readmission_coordinator is None:
                     self._readmission_coordinator = (
                         CapabilityAdmissionCoordinator(
-                            (readmission_selection.profile,)
+                            readmission_selection.profiles
                         )
                     )
                 else:
                     self._readmission_coordinator.replace_surface_profile(
-                        readmission_selection.profile
+                        readmission_selection.profile,
+                        readmission_selection.optional_extension,
                     )
                 readmission_result = (
                     self._readmission_coordinator.reconcile(
@@ -3618,6 +3638,14 @@ class UpstreamReadGateway:
                     },
                 )
             code, retryable = _public_failure(category)
+            public_message = _safe_failure_message(
+                category,
+                policy_entry.upstream_name,
+            )
+            if exc.public_code is not None:
+                code = exc.public_code
+                public_message = yaml_reader.FAILURES[code][1]
+                retryable = code in _YAML_RETRYABLE_CODES
             if telemetry:
                 telemetry.error_code = code
                 telemetry.result_status = "failure"
@@ -3643,10 +3671,7 @@ class UpstreamReadGateway:
                 operation=exposed_name,
                 error="UpstreamReadGatewayError",
                 error_code=code,
-                message=_safe_failure_message(
-                    category,
-                    policy_entry.upstream_name,
-                ),
+                message=public_message,
                 details={"failure_category": category, **exc.details},
                 retryable=retryable,
                 metadata=failure_metadata,
@@ -5108,12 +5133,18 @@ class _GatewayFailure(RuntimeError):
         *,
         dispatched: bool,
         details: dict[str, Any] | None = None,
+        public_code: str | None = None,
     ):
         super().__init__("The reviewed upstream read operation failed.")
         self.category = category
         self.dispatched = dispatched
         # Fixed, Engineering-authored keys only; never upstream text.
         self.details = dict(details or {})
+        # A fixed reader code from a closed table (HAMCP-162); it selects a
+        # fixed Engineering message and never carries upstream text.
+        if public_code is not None and public_code not in yaml_reader.FAILURES:
+            raise ValueError("gateway_public_code_unknown")
+        self.public_code = public_code
 
 
 def _safe_schema_component_fingerprint(value: Any) -> str | None:
