@@ -26,7 +26,9 @@ out of scope and would be reported before it is changed.
 `R/f3/executor.py` is **not** needed (see O9 below) and is not changed.
 
 Non-protected files: new tests (`tests/test_hamcp189_*.py`), the edited
-`tests/test_configuration_reverification.py` (flake rider), this note, the
+`tests/test_configuration_reverification.py` (flake rider), the
+`tests/test_f3_packaging_boundaries.py` allowlist entry for the new O9 test's
+explicit F3 imports, this note, the
 beta.13 release-notes correction (L2), the new beta acceptance and release
 notes, and the `CHANGELOG.md` and `README.md` entries.
 
@@ -147,33 +149,52 @@ terminate the task itself, truthfully, independent of the service reconciler.
 
 ### 4.2 Design
 
-In `_recover_active_candidates`, when a recovery attempt for a child fails,
-`_expired_pre_intent_terminal(...)` decides whether this is a stuck expired
+In `_recover_active_candidates`, when a recovery attempt for a child raises,
+`_terminate_expired_pre_intent(...)` decides whether this is a stuck expired
 task that has passed its deadline:
 
-- the child exists, is not terminal, has no dispatch intent and
-  `dispatch_count == 0`;
-- the plan loads, and its dispatch authority has expired on the durable
-  clock: `now >= min(plan.expires_at, approval.approval_expires_at)`;
-- the deadline has passed:
-  `now >= expiry + EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS` (600 s).
+- the child exists, is not terminal, has no dispatch intent,
+  `dispatch_count == 0`, and its claim has expired (no live owner);
+- the plan loads, its hash matches the child declaration, and no operator
+  cancel is recorded;
+- its dispatch authority has expired on the durable clock, and the deadline
+  has passed:
+  `now >= min(plan.expires_at, approval.approval_expires_at)
+  + EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS` (600 s);
+- every related lock record is a regular lock that matches the child's
+  recorded tokens. A conflict hold or an unrecorded generation keeps the
+  bounded retry for its own reconciler.
 
-Before the deadline the existing `bounded_retry` path runs unchanged (backoff
+Before the deadline, the existing `bounded_retry` path runs unchanged (backoff
 5 → 10 → 20 … capped at 300 s). The retries are bounded because the deadline
-is anchored on the durable `expires_at`, and backoff only grows: at most 7
-expired-family retries fit in the window, across restarts. The window
-tolerates a wall-clock correction near expiry. A clock stepped back before
-`expires_at` returns the task to the normal path.
+is anchored on the durable `expires_at`, and backoff only grows. At most 7
+expired-family retries fit in the window, even across restarts; the tests
+allow 8. The window tolerates a wall-clock correction near expiry. A clock
+stepped back before `expires_at` returns the task to the normal path. The
+hook runs only when the attempt raises: configuration plans, whose executor
+preflight rejects the expired plan itself, never reach it.
 
-After the deadline the runtime:
+After the deadline, the runtime:
 
 1. terminalizes the child through a new claimless primitive,
    `DurableExecutionRepository.terminalize_expired_claim_pre_dispatch`. It
-   requires an expired claim, the expected claim generation, no dispatch
+   requires the expected claim generation, an expired claim, no dispatch
    intent and `dispatch_count == 0`, and appends the existing
-   `pre_dispatch_terminal` event;
-2. projects the plan and task with the existing `_project`, and clears the
-   child's readiness fault through the normal settled path.
+   `pre_dispatch_terminal` event. A live or changed claim raises
+   `ExecutionClaimLost`; any intent or dispatch count raises
+   `BlindRedispatchProhibited`;
+2. releases the child's exact recorded locks through the existing
+   `_release_orphaned_child_locks`, the same release the orphan reconciler
+   uses for a terminal pre-dispatch child. Conflict holds are excluded above,
+   so no hold-release reason is written;
+3. projects the plan and task with the existing `_project`, records the
+   existing `transition_processed` runtime result, and clears the child's
+   readiness fault.
+
+Any exception inside this helper falls back to the unchanged bounded retry.
+If a crash lands between steps 1 and 2, the next sweep projects the terminal
+child (`failed_pre_dispatch`). The orphan reconciler, which handles a terminal
+pre-dispatch child under a terminal parent, then releases the locks.
 
 Outcome strings are the ones configuration plans already produce for the same
 cause. **No new stored string:**
@@ -183,6 +204,7 @@ cause. **No new stored string:**
 | child outcome | `preflight_rejected` | `terminalize_pre_dispatch` outcome set |
 | child diagnostic | `plan_expired` | operational adapter and configuration preflight |
 | task state / terminal outcome | `failed_pre_dispatch` | `_project` (unchanged) |
+| child runtime result | `transition_processed` | settled recovery path |
 | plan status | `FAILED` | `_project` (unchanged) |
 
 Approval expiry and plan expiry are the same instant
@@ -199,6 +221,27 @@ durable cancel wins because a recorded cancel never reaches this branch), the
 service reconciler, and every non-expired failure keep their current
 behavior. A task that is not expired keeps retrying, as today. That residual
 is outside O9 and is disclosed.
+
+### 4.3 Tests
+
+`tests/test_hamcp189_expired_pre_intent_deadline.py` uses the real exact
+helper-state F3 path. Approval consumption is refused at the Core seam, so the
+child records `pre_intent_retry_required` with no intent:
+
+- recovery runs at every eligible instant after expiry. The child terminates
+  after 1–8 retries, at or after the deadline, as `preflight_rejected` /
+  `plan_expired`. The task is `failed_pre_dispatch` and the plan `FAILED`.
+  Nothing is dispatched, locks and leases are settled, readiness is restored,
+  and later sweeps change nothing;
+- one second before the deadline, the child still retries and readiness is
+  still false. At the next eligible instant, it terminates;
+- preservation: a failure while the plan is valid keeps `bounded_retry`.
+  After preparation recovers, the same task dispatches exactly once;
+- the deadline survives a runtime restart;
+- composition with the service reconciler never dispatches and settles;
+- the primitive refuses a live claim, a changed generation, an
+  already-terminal child (unchanged record) and a dispatched child
+  (`BlindRedispatchProhibited`, unchanged record).
 
 ## 5. R8 and L1 — the gateway audit keeps the refusal reason
 
