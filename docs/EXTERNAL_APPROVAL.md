@@ -266,7 +266,25 @@ the full challenge binding before atomically recording a decision. Approval
 records authority version `3`, channel `home_assistant_ingress`, the bounded
 approver principal, challenge and plan identifiers, exact bound hash, approval
 kind, decision time, challenge request and expiry, and
-`principal_separation_enforced: true`.
+`principal_separation_enforced`.
+
+`principal_separation_enforced` is reported truthfully (HAMCP-184). It is
+`true` only when Home Assistant Ingress identified the deciding administrator
+(`X-Remote-User-Id`, recorded as `home_assistant_admin_ingress:<id>`). When
+Ingress supplies no user identity the decision is recorded under the anonymous
+fallback principal `home_assistant_admin_ingress`; the record then stores
+`false`, and every plan read reports `principal_separation_enforced: false` with
+`principal_separation_status.reason` `anonymous_fallback_principal`. Records
+written before HAMCP-184 stored `true` for such decisions; they are not
+rewritten, and plan reads project them from the recorded principal so old and
+new records display the same truth. Plans with no Ingress decision report
+`null` with reason `no_external_approver_exists`. Audit records carry only
+`approval_principal_present` and execution tasks carry no separation claim.
+
+This is reporting only. Eligibility is unchanged: a standard-class decision
+from the anonymous fallback principal remains valid for apply, and elevated
+plan approval still refuses the anonymous fallback with
+`approval_principal_mismatch`.
 
 For an elevated bundle the panel exposes only plan approval first. After that
 POST succeeds, a new challenge requires an explicit elevated-risk
@@ -282,8 +300,9 @@ handoffs.
 ## Apply and rollback enforcement
 
 Apply requires every prior governance gate plus authority version `3`, the
-external Ingress channel and principal, principal-separation enforcement, the
-exact challenge-bound plan and policy hashes, the required ordered action set,
+external Ingress channel and principal, the unchanged principal eligibility
+(an identified administrator, or the anonymous fallback for standard class
+only), the exact challenge-bound plan and policy hashes, the required ordered action set,
 same-administrator confirmation for elevated policy, approval kind `apply`,
 unexpired and unconsumed approval, and a non-rejected plan. Without that record,
 `apply_change_plan` returns `external_approval_required` before a Home Assistant

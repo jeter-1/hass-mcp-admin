@@ -71,6 +71,17 @@ semantics are migrated in place: existing exact entries have no inferred family
 authority, default to admitted providers, and remain active. Exact 8.1.0 policy,
 tool classifications, digests, and runtime behavior are unchanged.
 
+Amended by HAMCP-184 (2.4.1-beta.12): provider dispositions are no longer
+defaulted. Every reviewed registry entry must declare all four provider
+surfaces explicitly, the loader refuses an entry without them, and an absent
+surface or unknown value is `held`. The five pre-format-3 entries (7.14.1
+through 8.2.0) now declare their dispositions. 7.14.1, 7.14.2, 8.0.0 and 8.1.0
+declare the `admitted` dispositions they previously received by default, so
+their effective runtime behavior is unchanged. 8.2.0 declares backup and
+lifecycle `held` and read gateway and dashboard `admitted`: its backup and
+lifecycle admission rested only on the old default and the whole-release
+admission, with no capability-specific review (owner decision).
+
 ## First acceptance: ha-mcp 8.1.1
 
 The 8.1.1 tag resolves to source commit

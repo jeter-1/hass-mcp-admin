@@ -251,6 +251,11 @@ rejection is terminal; legacy caller approvals are not migrated. No log,
 recommendation, request note, challenge identifier or forwarded header is an
 approval credential. See [`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md).
 
+Since HAMCP-184 (2.4.1-beta.12) `principal_separation_enforced` is `true` only
+for a decision by an Ingress-identified administrator. A decision under the
+anonymous fallback principal (no `X-Remote-User-Id`) reports `false` with reason
+`anonymous_fallback_principal`; its standard-class eligibility is unchanged.
+
 ## Beta 24 ingress and execution hardening
 
 The authenticated beta gateway uses the canonical direct socket peer as its

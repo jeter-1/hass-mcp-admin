@@ -241,7 +241,10 @@ class ChangeApproval:
     channel: str | None = None
     approver_principal: str | None = None
     # None means no external approver exists yet, so separation has not been
-    # evaluated. False is reserved for a completed evaluation that failed.
+    # evaluated. True means a distinct identified Ingress principal decided.
+    # False means a decision was recorded without proven separation: since
+    # HAMCP-184 that is the anonymous fallback principal (still eligible for
+    # standard-class plans; eligibility is unchanged).
     principal_separation_enforced: bool | None = None
     approved_at: str | None = None
     approving_caller_id: str | None = None
