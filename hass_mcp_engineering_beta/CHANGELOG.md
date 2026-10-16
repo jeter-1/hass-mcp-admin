@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.4.1-beta.14 - Core authority before "already satisfied", exact unmapped refusal, durable cancel (HAMCP-189)
+
+Builds on 2.4.1-beta.13's fail-closed Core gateway.
+
+- Acquire and consume a Core lease before any governed F3 preflight read, run
+  every preflight read under an authorizer that revalidates it, and revalidate
+  after the reads. Under degraded Core, a step whose target is already reached
+  is refused before any Home Assistant read as
+  `provider_unavailable_pre_dispatch` / `dispatch_authority_unavailable`, with
+  no verified outcome and no approval consumption. Under admitted Core the
+  HAMCP-181 `succeeded_verified` / `desired_state_already_reached` outcome is
+  unchanged. Fan and power steps are unchanged.
+- Admit the final dispatch call only after the pre-dispatch checks consume the
+  dispatch authority, and only while it revalidates.
+- Refuse an F3 operation with no Core route as `core_requirement_unmapped`
+  before any read, lease or approval consumption; refusal codes are a closed
+  set. Every registered F3 operation has a Core route today.
+- Record an operator cancel durably (`operator_cancel_requested`) before any
+  provider contact, from the stored provider identity, so cancel succeeds
+  during an ha-mcp outage or identity drift. Every recovery pass checks for a
+  recorded cancel before and after each await that precedes execution and
+  never dispatches a cancelled task; a restart between the child cancel and
+  the public event still projects `cancelled_pre_dispatch`. The cancel result
+  adds `provider_contacted: false`. Cancel after a dispatch intent is still
+  refused.
+- Preserve the 87-tool catalog, input schemas, signed registries, HOLD,
+  support window, persisted formats, workflows and stable v1.
+
 ## 2.4.1-beta.13 - Core gateway fails closed for unmapped tools (HAMCP-164)
 
 Builds on 2.4.1-beta.12's audit hardening.
