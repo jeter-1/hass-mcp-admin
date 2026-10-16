@@ -330,6 +330,13 @@ one place.
 - Production's actual component options and extra directories (D5a assumes
   the default).
 - A non-admin token for `get_caller_token`.
+- **Open reconciliation with production.** The HAMCP-162 register row
+  (2026-10-14) records that production ha-mcp advertised 79 tools (77 plus
+  2 unreviewed), not 80. This capture, with production-mirroring settings on
+  8.5.0, gives 80 (77 plus all three tools). Which production setting hides
+  one tool, if any, is **unknown**. Settling it needs a separately
+  authorized read-only observation of the production catalog, which this
+  task did not perform.
 - Concurrency, and repeated sessions on a single ha-mcp process beyond the
   case run.
 
