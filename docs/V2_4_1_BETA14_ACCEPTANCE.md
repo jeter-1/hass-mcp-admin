@@ -34,13 +34,18 @@ and the bounded independent review.
 The review needs a security section covering:
 - exposure of `ha_config_get_yaml` only, with `ha_list_files` and
   `ha_read_file` never exposed;
-- zero write, service-call, reload, restart, deletion, fallback or
-  forwarding reachability;
+- zero write, reload, restart, deletion, fallback or forwarding
+  reachability, and no Engineering service call; the one accepted exception
+  is the K1 caller-token bootstrap (first call: the component's
+  `POST ha_mcp_tools/get_caller_token`, persisted);
 - the fixed upstream argument shape;
 - refusal of every non-`configuration.yaml` file and every credential-shaped
   path before route acquisition, Core acquisition and any upstream call;
 - the L4/L5 redaction rules A, B, C′, R10 and R11, and the default-off
-  reference-marker exemption by exact type;
+  reference-marker exemption by registry identity only (H2);
+- node truncation before redaction (H2, owner direction superseding design
+  section 6.3), and the final pass of every client-visible field through the
+  pipeline (H1);
 - the explicit per-version dispositions with no default;
 - the complete-descriptor (R4) binding;
 - the generation and dispatch lease (R5), and exclusion from the stock

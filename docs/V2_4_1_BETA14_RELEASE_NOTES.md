@@ -12,8 +12,11 @@ Josh's 2026-10-16 decisions K1–K11 apply.
 
 No signed registry, HOLD, support window, Core profile, probe fingerprint,
 persisted format, workflow or stable-v1 change is included. No write,
-service call, reload, restart, deletion or fallback path is reachable. Only
-`ha_config_get_yaml` is exposed. `ha_list_files` and `ha_read_file` stay
+reload, restart, deletion or fallback path is reachable, and Engineering
+makes no service call. The one accepted exception is the K1 caller-token
+bootstrap: the first call may make the ha-mcp component call
+`POST ha_mcp_tools/get_caller_token` and persist the admin caller token (see
+**K1 dependency** below). Only `ha_config_get_yaml` is exposed. `ha_list_files` and `ha_read_file` stay
 reviewed and never exposed.
 
 The healthy catalog grows from 87 to **88 tools: 59 native and 29 delegated
@@ -38,6 +41,22 @@ fields:
 - `completeness`;
 - `limitations`;
 - `redaction` (count and categories).
+
+Every one of these fields passes the redaction pipeline (H1): `value`
+through L4 and L5, and every other field, including include and path
+descriptions, limitations, warnings, metadata and error details, through a
+final shared-sanitizer pass with the configured known secrets. Key paths in
+`limitations` and the `yaml_path` echo use the key pipeline and end in `*` at
+the first segment the value tree would redact.
+
+**Truncation runs before redaction (H2, owner direction 2026-10-16).** The
+4,000-node cap applies to the decoded upstream tree first; redaction then
+judges exactly the kept shapes. This supersedes design section 6.3 ("redaction
+runs before truncation"). Nodes beyond the cap are never returned, so they are
+neither examined nor counted. Reference markers are trusted only by the
+identity of a marker the same read minted. A mapping shaped like a rendered
+marker, from upstream data or from truncation, is withheld as
+`reference_marker_collision`.
 
 **How values are protected.**
 - `!secret NAME` and `!env_var NAME` become typed reference-name markers,

@@ -17,11 +17,19 @@ Builds on 2.4.1-beta.13's fail-closed Core gateway.
   - percent-encoding up to four rounds, NFKC and casefold;
   - PEM, opaque blobs and the existing sanitizer patterns.
 
-  `!secret`/`!env_var` become typed reference-name markers. Values and
-  `!env_var` defaults are never returned, and `!include` is never followed.
+  `!secret`/`!env_var` become typed reference-name markers, trusted only by
+  the identity of a marker the same read minted. Values and `!env_var`
+  defaults are never returned, and `!include` is never followed.
+- Apply the 4,000-node cap to the upstream tree before redaction, so a
+  truncated mapping is judged in its returned shape; marker-shaped mappings
+  are withheld. Pass every other client-visible field (limitations, include
+  and path descriptions, warnings, metadata, error details) through a final
+  shared-sanitizer pass with the configured known secrets.
 - Disclose on every success the YAML 1.2 parse (K7), key conversion and
   collapse (K5) and best-effort redaction (D12). Disclose the first-call
-  admin caller-token dependency (K1) in the description.
+  admin caller-token dependency (K1: the component's
+  `POST ha_mcp_tools/get_caller_token`) in the description; Engineering makes
+  no write or service call.
 - Map upstream errors to fixed codes, with no upstream text. HTTP 400 is
   reported as "upstream validation failed or component unavailable" (K2);
   non-UTF-8 and other 500 errors as "upstream read failed" (K4).

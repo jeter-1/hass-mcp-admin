@@ -22,7 +22,9 @@ It is an optional reviewed tool:
 
 `ha_list_files` and `ha_read_file` are reviewed and never exposed. The
 catalog is 59 static + 29 delegated = 88. There are no plans, approvals,
-writes or physical execution. See the
+Engineering writes, service calls or physical execution. The one accepted
+dependency (K1) is that the first call may make the ha-mcp component call
+`POST ha_mcp_tools/get_caller_token` and persist the admin caller token. See the
 [design](docs/HAMCP_162_YAML_READER_DESIGN.md) and the
 [beta.14 notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md).
 
