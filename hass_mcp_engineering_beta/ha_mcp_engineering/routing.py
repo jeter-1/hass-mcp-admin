@@ -932,7 +932,8 @@ class AuthenticatedMcpGateway:
             # recent_error_counts measures terminal public tool outcomes. The
             # transport, provider, and response-conversion layers may all see
             # the same exception, but one tools/call contributes one count.
-            if tool_name and telemetry.error_code:
+            # An empty name refused as unmapped is a terminal tool outcome too.
+            if (tool_name or core_unmapped_refused) and telemetry.error_code:
                 METRICS.record_error(telemetry.error_code)
             if telemetry.tool_started is not None:
                 telemetry.tool_duration_ms = round(
@@ -948,7 +949,12 @@ class AuthenticatedMcpGateway:
             METRICS.record_transport_completion()
             if operation_duration is not None and rpc_method is not None:
                 METRICS.record_mcp_operation(operation_duration, rpc_method)
-            if tool_name:
+            # Only a string name has a tool audit shape.  A non-string name
+            # (rejected by the SDK) falls to the generic request record, and
+            # an empty name refused as unmapped keeps the refusal record.
+            if isinstance(tool_name, str) and (
+                tool_name or core_unmapped_refused
+            ):
                 risk = capability.get("risk")
                 access = (
                     "proposal"

@@ -160,6 +160,10 @@ ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
 # contact; recovery and projection honor it by this exact marker.
 OPERATOR_CANCEL_REASON = "operator_cancel_requested"
 ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
+# O9: abandoned pre-intent work whose dispatch authority has expired keeps its
+# bounded retries for this long after the durable expiry, then is rejected
+# before dispatch.  Backoff only grows, so at most a handful of retries fit.
+EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS = 600
 PERSISTED_AUDIT_EVENT_MODEL = "f3-persisted-audit-event-v1"
 _RECOVERY_MODE_CHECKPOINT = "checkpoint"
 _RECOVERY_MODE_POST_INTENT = "post_intent"
@@ -230,6 +234,18 @@ def _setter_call_not_sent_recorded(declaration: Any, record: Any) -> bool:
     return dispatch_projection.is_dashboard_setter_not_sent(
         declaration["capability_id"], record
     )
+
+
+def _dispatch_authority_expiry(plan: Any) -> datetime:
+    """Return the earliest durable instant after which the plan cannot run."""
+
+    values = [plan.expires_at]
+    if plan.approval is not None and plan.approval.approval_expires_at:
+        values.append(plan.approval.approval_expires_at)
+    instants = [datetime.fromisoformat(value) for value in values]
+    if any(item.tzinfo is None for item in instants):
+        raise ValueError("plan expiry is not timezone-aware")
+    return min(instants)
 
 
 def _operator_cancelled(record: Any) -> bool:
@@ -616,6 +632,107 @@ class _core_call_window:
             end_request(self._token)
         else:
             telemetry.core_dispatch_authorizer = self._prior
+
+
+ROLLBACK_PLANNING_REQUIREMENTS = ("core.dependency_helper_planning",)
+# The same pair the gateway maps for create_entity_metadata_plan.
+ROLLBACK_ENTITY_METADATA_REQUIREMENTS = (
+    "core.dependency_helper_planning",
+    "core.entity_registry_metadata_operation",
+)
+
+
+def _rollback_core_refusal(*, acquired: bool) -> GovernanceError:
+    return GovernanceError(
+        ErrorCode.PROVIDER_UNAVAILABLE,
+        details={
+            "reason": "core_capability_unavailable",
+            "reason_code": "core_capability_unavailable",
+            "core_authority_acquired": acquired,
+            "plan_created": False,
+            "provider_dispatch_occurred": False,
+        },
+    )
+
+
+class _rollback_planning_lease:
+    """HAMCP-189 R1: hold current Core authority for one fresh rollback plan.
+
+    ``rollback_change`` is Core-independent at the gateway because an existing
+    rollback plan is a local idempotent return.  Fresh planning reads current
+    configuration, so the lease is acquired and consumed before the first
+    planning read, every read in the window is revalidated, and the caller
+    requires the lease to be current before it persists a plan.  A runtime
+    composed without Core enforces nothing, like the gateway.
+    """
+
+    def __init__(
+        self,
+        core_runtime: Any,
+        requirements: tuple[str, ...],
+        *,
+        target: dict[str, str] | None = None,
+    ):
+        self._core = core_runtime
+        self._requirements = requirements
+        self._target = target
+        self._authority: Any = None
+        self._commits: Any = None
+        self._window: _core_call_window | None = None
+        self._refusal: GovernanceError | None = None
+
+    def _authorize(self) -> bool:
+        return self._core.revalidate(self._authority, self._commits) is True
+
+    def _refuse(self) -> GovernanceError:
+        self._refusal = _rollback_core_refusal(acquired=True)
+        return self._refusal
+
+    def require_current(self) -> None:
+        if self._core is not None and not self._authorize():
+            raise self._refuse()
+
+    async def __aenter__(self) -> "_rollback_planning_lease":
+        core = self._core
+        if core is None:
+            return self
+        authority = (
+            core.acquire(self._requirements)
+            if self._target is None
+            else core.acquire(self._requirements, target=self._target)
+        )
+        if authority is None:
+            raise _rollback_core_refusal(acquired=False)
+        commits = core.consume(authority)
+        if commits is None:
+            core.release(authority)
+            raise _rollback_core_refusal(acquired=True)
+        self._authority, self._commits = authority, commits
+        self._window = _core_call_window(self._authorize)
+        try:
+            await self._window.__aenter__()
+        except BaseException:
+            core.finish(commits)
+            raise
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        if self._core is None:
+            return False
+        # A planning failure while Core retired is reported as the Core
+        # refusal, never as a planning verdict reached on unadmitted Core.
+        retired = (
+            isinstance(exc, Exception)
+            and exc is not self._refusal
+            and not self._authorize()
+        )
+        try:
+            await self._window.__aexit__(exc_type, exc, tb)
+        finally:
+            self._core.finish(self._commits)
+        if retired:
+            raise self._refuse() from None
+        return False
 
 
 class _ReadbackOnlyRecoveryAdapter:
@@ -3564,6 +3681,14 @@ class F3RuntimeIntegration:
                     "approval_required": cached.status != PlanStatus.APPLIED,
                     "plan_hash": self.service.plan_hash(cached),
                 }
+        async with _rollback_planning_lease(
+            self.core_runtime, ROLLBACK_PLANNING_REQUIREMENTS
+        ) as lease:
+            return await self._plan_garage_inverse(
+                source, snapshot, plan_id, lease
+            )
+
+    async def _plan_garage_inverse(self, source, snapshot, plan_id, lease):
         from ..governance.resources import resource_identity_matches
         observed = []
         for op in source.operations:
@@ -3590,6 +3715,7 @@ class F3RuntimeIntegration:
             })
         context = {"plan_id": plan_id, "snapshot": snapshot, "observed": observed,
                    "selected": selected, "complete": complete}
+        lease.require_current()
         created = await self.service._create_configuration_plan(
             title="Restore exact verified garage configuration prefix",
             description=inverse_eligibility.DISCLOSURE,
@@ -3662,11 +3788,39 @@ class F3RuntimeIntegration:
                     "plan_hash": self.service.plan_hash(existing),
                 }
         task = self.service.task_repository.get_for_plan(source_plan.plan_id)
-        if source_plan.contract_version == 2 and any(
+        entity_metadata = source_plan.contract_version == 2 and any(
             operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE
             for operation in source_plan.operations
-        ):
-            return await self._create_entity_metadata_rollback(source_plan, task)
+        )
+        # HAMCP-189 R1: every return above is local.  Fresh planning reads
+        # current state, so it runs inside its own Core lease.
+        async with _rollback_planning_lease(
+            self.core_runtime,
+            (
+                ROLLBACK_ENTITY_METADATA_REQUIREMENTS
+                if entity_metadata
+                else ROLLBACK_PLANNING_REQUIREMENTS
+            ),
+            target=(
+                {
+                    "target_type": "entity_registry_metadata",
+                    "target_id": source_plan.operations[0].target_id,
+                }
+                if entity_metadata
+                else None
+            ),
+        ) as lease:
+            if entity_metadata:
+                return await self._create_entity_metadata_rollback(
+                    source_plan, task, lease
+                )
+            return await self._plan_fresh_rollback(
+                source_plan, task, retry_source, lease
+            )
+
+    async def _plan_fresh_rollback(
+        self, source_plan: Any, task: Any, retry_source: bool, lease: Any
+    ) -> dict[str, Any]:
         if task is None or task.state not in {
             ExecutionTaskState.SUCCEEDED_VERIFIED,
             ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
@@ -3755,6 +3909,7 @@ class F3RuntimeIntegration:
         for operation in operations:
             if operation.get("resource_type") != "helper":
                 operation.pop("helper_type", None)
+        lease.require_current()
         created = await self.service.create_configuration_plan(
             title=f"Rollback governed change {source_plan.plan_id}"[:160],
             description=(
@@ -3792,7 +3947,7 @@ class F3RuntimeIntegration:
         }
 
     async def _create_entity_metadata_rollback(
-        self, source_plan: Any, task: Any
+        self, source_plan: Any, task: Any, lease: Any
     ) -> dict[str, Any]:
         """Plan the reverse of one verified entity metadata update (§8).
 
@@ -3889,6 +4044,7 @@ class F3RuntimeIntegration:
             ) from None
         if prepared.no_change is not None:
             raise refuse("forward_not_verified")
+        lease.require_current()
         created = await self.service._create_configuration_plan(
             title=f"Rollback governed change {source_plan.plan_id}"[:160],
             description=entity_metadata_planning.ROLLBACK_DISCLOSURE.format(
@@ -5445,6 +5601,71 @@ class F3RuntimeIntegration:
             "next_cursor": next_cursor,
         }
 
+    def _terminate_expired_pre_intent(
+        self, declaration: dict[str, Any], *, now: datetime
+    ) -> bool:
+        """O9: reject abandoned pre-intent work after its expiry deadline.
+
+        Recovery of a child whose plan dispatch authority has expired fails on
+        every sweep.  Once the durable expiry plus the retry window has
+        passed, the child is rejected before dispatch with the outcome the
+        configuration preflight gives an expired plan, its exact locks are
+        released and the task is projected.  Anything less certain keeps the
+        bounded retry.  The executor is never called.
+        """
+
+        child_id = declaration["child_id"]
+        record = self.children.get(child_id)
+        if (
+            record is None
+            or record.terminal
+            or record.dispatch_intent is not None
+            or record.dispatch_count
+            or datetime.fromisoformat(record.claim_expires_at) > now
+        ):
+            return False
+        plan = self.service._load_for_projection(declaration["plan_id"])
+        task = self.service._load_task(declaration["public_task_id"])
+        if (
+            self.service.plan_hash(plan) != declaration["plan_hash"]
+            or self._cancel_recorded(task.task_id)
+        ):
+            return False
+        deadline = _dispatch_authority_expiry(plan) + timedelta(
+            seconds=EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS
+        )
+        if now < deadline:
+            return False
+        if any(
+            item.conflict_hold
+            or not self._lock_record_matches_execution_authority(
+                declaration, record, item
+            )
+            for item in self._related_lock_records(
+                declaration, record, self.locks.records()
+            )
+        ):
+            # A hold or an unrecorded generation needs its own reconciler.
+            return False
+        record = self.children.terminalize_expired_claim_pre_dispatch(
+            child_id,
+            expected_claim_generation=record.claim_generation,
+            diagnostic_codes=("plan_expired",),
+            now=now,
+        )
+        self._release_orphaned_child_locks(declaration, record)
+        self._project(plan, task)
+        self.children.update_runtime(
+            child_id,
+            changes={
+                "last_reconciliation_at": now.isoformat(),
+                "reconciliation_result": "transition_processed",
+                "backoff_seconds": 0,
+                "next_eligible_at": None,
+            },
+        )
+        return True
+
     async def _recover_active_candidates(
         self,
         candidates: tuple[tuple[dict[str, Any], Any | None], ...],
@@ -5610,6 +5831,17 @@ class F3RuntimeIntegration:
                 settled.append(declaration["child_id"])
                 self._clear_readiness_fault(fault_key, fault_revision)
             except Exception:
+                try:
+                    expired_terminal = self._terminate_expired_pre_intent(
+                        declaration, now=now
+                    )
+                except Exception:
+                    expired_terminal = False
+                if expired_terminal:
+                    processed += 1
+                    settled.append(declaration["child_id"])
+                    self._clear_readiness_fault(fault_key, fault_revision)
+                    continue
                 self._readiness_fault(fault_key)
                 self._sweep_failures += 1
                 backoff = min(

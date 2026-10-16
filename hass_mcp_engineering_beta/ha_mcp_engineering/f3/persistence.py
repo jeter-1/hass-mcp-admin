@@ -841,6 +841,61 @@ class DurableExecutionRepository:
             mutator=update,
         )
 
+    def terminalize_expired_claim_pre_dispatch(
+        self,
+        task_id: str,
+        *,
+        expected_claim_generation: int,
+        diagnostic_codes: tuple[str, ...],
+        now: datetime | None = None,
+    ) -> ExecutionRecord:
+        """Reject abandoned pre-intent work whose dispatch authority expired.
+
+        There is no owner to claim through: only an expired claim of the
+        expected generation qualifies, so a live owner is never overtaken.
+        """
+
+        instant = now or utc_now()
+        now_text = timestamp(instant)
+        codes = bounded_diagnostics(diagnostic_codes)
+        with self._exclusive_transaction():
+            record = self._read_unlocked(task_id)
+            if record is None:
+                raise ExecutionRecordCorrupt("execution record is missing")
+            if record.dispatch_intent is not None or record.dispatch_count:
+                raise BlindRedispatchProhibited(
+                    "post-intent work cannot become pre-dispatch"
+                )
+            if record.terminal:
+                raise ExecutionStorageError(
+                    "terminal execution cannot be rejected again"
+                )
+            if (
+                record.claim_generation != expected_claim_generation
+                or parse_timestamp(
+                    record.claim_expires_at, field_name="claim_expires_at"
+                )
+                > instant
+            ):
+                raise ExecutionClaimLost(
+                    "execution claim is live or has changed"
+                )
+            record.normalized_outcome = "preflight_rejected"
+            record.task_state = NORMALIZED_OUTCOME_TO_TASK_STATE[
+                "preflight_rejected"
+            ]
+            record.state = "terminal"
+            record.terminal = True
+            append_execution_event(
+                record,
+                event_type="pre_dispatch_terminal",
+                occurred_at=now_text,
+                diagnostic_codes=codes,
+            )
+            record.validate()
+            self._write_unlocked(record)
+            return record
+
     def terminalize_verified_no_dispatch(
         self,
         task_id: str,
