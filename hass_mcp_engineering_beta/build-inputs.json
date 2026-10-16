@@ -12,7 +12,7 @@
   },
   "installer_version": "25.0.1",
   "python_version": "3.12.14",
-  "requirements_sha256": "a093692aa05945f0e617f3cb22a54ee32448cf9fd6a412312acfed62056e2775",
+  "requirements_sha256": "45c86057668f4e1a992fee06796770e41d5c7e7959b0a9859ad0b89cbf0040a7",
   "runtime": {
     "aiohappyeyeballs": "2.7.1",
     "aiohttp": "3.14.3",
@@ -34,7 +34,7 @@
     "jsonschema": "4.25.1",
     "jsonschema-specifications": "2025.9.1",
     "markupsafe": "3.0.3",
-    "mcp": "1.28.1",
+    "mcp": "1.30.0",
     "multidict": "6.9.1",
     "propcache": "0.5.2",
     "pycparser": "3.0",
@@ -54,6 +54,6 @@
     "uvicorn": "0.51.0",
     "yarl": "1.24.5"
   },
-  "runtime_lock_sha256": "41bd744985006a2b27e2874173f8ea6c09b61eb27483768d410539c43ce185c9",
+  "runtime_lock_sha256": "9f8b592c062fc6947c45b08ee243d6e163ece22c738730da8544280f920fac33",
   "schema_version": 1
 }

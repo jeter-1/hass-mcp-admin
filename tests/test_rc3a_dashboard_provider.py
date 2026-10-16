@@ -1476,7 +1476,7 @@ class PublicDashboardToolTests(unittest.IsolatedAsyncioTestCase):
 class DependencyContractTests(unittest.TestCase):
     def test_existing_mcp_dependency_supplies_streamable_http_client(self):
         requirements = (BETA / "requirements.txt").read_text(encoding="utf-8")
-        self.assertIn("mcp==1.28.1", requirements)
+        self.assertIn("mcp==1.30.0", requirements)
         self.assertNotIn("fastmcp==", requirements)
         self.assertTrue(callable(McpDashboardTransport.execute_dashboard_read))
 

@@ -1,5 +1,24 @@
 # Changelog
 
+## 2.4.1-beta.11 - MCP SDK 1.30.0 security upgrade (HAMCP-188)
+
+Builds on 2.4.1-beta.10's truthful dispatch facts.
+
+- Upgrade `mcp` from 1.28.1 to 1.30.0 for GHSA-84m7-p3x7-pcfv /
+  CVE-2026-59951 (stateful Streamable HTTP sessions never reclaimed). Only
+  `mcp` changes: requirements, both locks with the reviewed wheel hash, the
+  build-input inventory and the reviewed SDK version guard.
+- Inherit the SDK fix: in stateful mode, refused opening requests, DELETE and
+  idle sessions are reclaimed, and idle now means no request in flight. The
+  SDK's own 4 MiB body and 10,000-session limits sit behind Engineering's
+  2,000,000-byte gateway and 1,024-session caps. The outbound client follows
+  only same-origin redirects.
+- Add offline contract tests for batch refusal, protocol negotiation, session
+  reclamation and outbound redirects.
+- Preserve the 87-tool catalog and every descriptor, fingerprints, signed
+  registries, HOLD, support window, storage formats, workflows and stable v1
+  (which still pins `mcp==1.9.0`; a separate owner decision).
+
 ## 2.4.1-beta.10 - Truthful dispatch facts on every surface (HAMCP-181 PR1)
 
 Builds on 2.4.1-beta.9's truthful entity-registry error results.

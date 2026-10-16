@@ -490,7 +490,7 @@ class AddonIsolationTests(unittest.TestCase):
         self.assertEqual(
             beta,
             [
-                "mcp==1.28.1",
+                "mcp==1.30.0",
                 "aiohttp==3.14.3",
                 "uvicorn==0.51.0",
                 "starlette==1.3.1",

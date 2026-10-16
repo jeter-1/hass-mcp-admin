@@ -25,7 +25,7 @@ from mcp.shared.version import SUPPORTED_PROTOCOL_VERSIONS
 from starlette.responses import JSONResponse
 
 
-PINNED_MCP_SDK_VERSION = "1.28.1"
+PINNED_MCP_SDK_VERSION = "1.30.0"
 REVIEWED_UPSTREAM_PROTOCOL_VERSION = "2025-03-26"
 _COMPATIBILITY_ERROR_MESSAGE = (
     "The pinned MCP SDK compatibility contract is unavailable; startup is blocked."
