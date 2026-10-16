@@ -114,6 +114,36 @@ _MATTER_CODE_LABEL = re.compile(
 )
 
 
+# HAMCP-162 R8: reference-name grammars shared by the YAML reader's minting
+# rule and the opt-in revalidation below.
+SECRET_REFERENCE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
+ENV_VAR_REFERENCE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+REFERENCE_MARKER_DENIED = "[REDACTED:reference_marker]"
+REFERENCE_MALFORMED = "[REDACTED:reference_malformed]"
+
+
+@dataclass(frozen=True)
+class ReferenceMarker:
+    """Engineering-internal `!secret`/`!env_var` reference (name only).
+
+    Only the YAML reader mints it. Upstream JSON can never construct it, and
+    no sanitizer path renders it through ``repr``.
+    """
+
+    kind: str
+    name: str
+    default_redacted: bool = False
+
+    def valid(self) -> bool:
+        if type(self.name) is not str or type(self.default_redacted) is not bool:
+            return False
+        if self.kind == "secret":
+            return not self.default_redacted and SECRET_REFERENCE_NAME.fullmatch(self.name) is not None
+        if self.kind == "env_var":
+            return ENV_VAR_REFERENCE_NAME.fullmatch(self.name) is not None
+        return False
+
+
 @dataclass(frozen=True)
 class SanitizationResult:
     value: Any
@@ -133,9 +163,11 @@ class _Sanitizer:
         *,
         known_secrets: tuple[str, ...],
         max_string: int | None,
+        preserve_reference_markers: bool = False,
     ) -> None:
         self.known_secrets = tuple(secret for secret in known_secrets if secret)
         self.max_string = max_string
+        self.preserve_reference_markers = preserve_reference_markers is True
         self.redacted_field_count = 0
         self.categories: set[str] = set()
         self.truncated_field_count = 0
@@ -338,13 +370,31 @@ class _Sanitizer:
         deduplicated = REPEATED_REDACTION_MARKER.sub(r"\1", "".join(output))
         return self._truncate(deduplicated)
 
+    def _reference_marker(self, value: ReferenceMarker) -> Any:
+        # Exact type only; a subclass or a look-alike mapping is ordinary data.
+        if not self.preserve_reference_markers:
+            self._record_field({"reference_marker"})
+            return REFERENCE_MARKER_DENIED
+        if value.valid():
+            return value
+        self._record_field({"reference_malformed"})
+        return REFERENCE_MALFORMED
+
     def sanitize(self, value: Any, path: tuple[str, ...] = ()) -> Any:
+        if type(value) is ReferenceMarker:
+            return self._reference_marker(value)
         if isinstance(value, Mapping):
             safe: dict[str, Any] = {}
             for raw_key, item in value.items():
                 key = self._normalize_key(raw_key)
                 try:
                     key_category = self._category_for_key(key, path)
+                    if self.preserve_reference_markers and type(item) is ReferenceMarker:
+                        safe_key = (
+                            str(raw_key) if key_category else self._sanitize_string(str(raw_key))
+                        )
+                        safe[safe_key] = self._reference_marker(item)
+                        continue
                     if key_category:
                         safe[str(raw_key)] = self._marker(key_category)
                         self._record_field({key_category})
@@ -390,10 +440,20 @@ def sanitize_untrusted_data(
     *,
     known_secrets: tuple[str, ...] = (),
     max_string: int | None = None,
+    preserve_reference_markers: bool = False,
 ) -> SanitizationResult:
-    """Recursively sanitize untrusted data, failing closed at each field."""
+    """Recursively sanitize untrusted data, failing closed at each field.
 
-    sanitizer = _Sanitizer(known_secrets=known_secrets, max_string=max_string)
+    ``preserve_reference_markers`` (default off) keeps an exact
+    ``ReferenceMarker`` whose name still matches the minting grammar, even
+    under a sensitive key. Only the HAMCP-162 YAML reader passes it.
+    """
+
+    sanitizer = _Sanitizer(
+        known_secrets=known_secrets,
+        max_string=max_string,
+        preserve_reference_markers=preserve_reference_markers,
+    )
     try:
         safe = sanitizer.sanitize(value)
     except Exception:

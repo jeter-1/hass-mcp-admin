@@ -1,0 +1,937 @@
+"""HAMCP-162 YAML configuration reader (``ha_config_get_yaml``).
+
+One public tool reads one mapping-key path of ``configuration.yaml`` through
+the reviewed upstream ``ha_config_get_yaml``. Everything else is refused
+before dispatch with zero upstream calls. Engineering builds the upstream
+arguments itself (the ``file`` value is a constant), validates the response
+identity, and redacts the parsed value with the full key path before the
+shared sanitizer runs (design layers L1-L5).
+
+The upstream tool is an *optional reviewed tool*: it is admitted only for
+exact versions listed in :data:`OPTIONAL_DISPOSITIONS` whose complete runtime
+descriptor matches the D1-captured binding. It never joins the stock policy
+or the stock catalog accounting, so its absence or drift never quarantines a
+stock read.
+"""
+from __future__ import annotations
+
+from collections import Counter, deque
+from dataclasses import dataclass
+import json
+import re
+import unicodedata
+from typing import Any
+from urllib.parse import unquote_to_bytes
+
+from ..sanitization import (
+    ENV_VAR_REFERENCE_NAME,
+    SECRET_REFERENCE_NAME,
+    ReferenceMarker,
+    _AUTH_FLOW_KEYS,
+    _COOKIE_KEYS,
+    _MATTER_CODE_KEYS,
+    _MATTER_PAYLOAD_KEYS,
+    _PASSWORD_KEYS,
+    _TOKEN_KEYS,
+    _WEBHOOK_KEYS,
+    sanitize_untrusted_data,
+)
+
+TOOL_NAME = "ha_config_get_yaml"
+TITLE = "Read YAML Config Fragment"
+SIBLING_TOOLS = ("ha_list_files", "ha_read_file")
+ALLOWED_FILE = "configuration.yaml"
+CORE_REQUIREMENTS = ("core.basic_rest_read", "core.basic_websocket_read")
+
+MAX_DEPTH = 24
+MAX_NODES = 4_000
+MAX_INCLUDE_LIMITATIONS = 16
+MAX_FILE_ARGUMENT_CHARS = 4_096
+MAX_DECODE_ROUNDS = 4
+YAML_PATH_PATTERN = (
+    r"^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}(\.[A-Za-z0-9_][A-Za-z0-9_-]{0,63}){0,7}$"
+)
+_YAML_PATH = re.compile(YAML_PATH_PATTERN)
+_SEGMENT = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_-]{0,63}")
+
+PUBLIC_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["yaml_path"],
+    "properties": {
+        "yaml_path": {
+            "type": "string",
+            "pattern": YAML_PATH_PATTERN,
+            "description": (
+                "Dotted mapping-key path in configuration.yaml, e.g. 'recorder' "
+                "or 'homeassistant.customize'. List indices are not supported. "
+                "Paths naming a credential key (password, token, api_key, pin, "
+                "code, ...) are refused; read the parent instead."
+            ),
+        },
+        "file": {
+            "type": "string",
+            "enum": [ALLOWED_FILE],
+            "default": ALLOWED_FILE,
+            "description": "Only configuration.yaml is readable in this release.",
+        },
+    },
+}
+
+DESCRIPTION = (
+    "Read one mapping-key path of configuration.yaml as parsed data "
+    "(read-only).\n"
+    "- Only configuration.yaml is readable; every other file, including "
+    "secrets.yaml and packages/, is refused before any upstream call.\n"
+    "- Values are ha-mcp's YAML 1.2 parse of the file on disk, not Home "
+    "Assistant's loaded configuration, and may differ from Home Assistant's "
+    "YAML 1.1 interpretation (for example on/off/yes/no and numbers with "
+    "leading zeros).\n"
+    "- Non-string mapping keys are converted to strings upstream; keys that "
+    "convert to the same text collapse to one.\n"
+    "- !secret and !env_var become {\"secret_ref\": name} and "
+    "{\"env_var_ref\": name} markers; values and !env_var defaults are never "
+    "returned. !include tags are returned as text and never followed.\n"
+    "- Credential-shaped keys, connection strings and credential text are "
+    "redacted whole (best effort; this over-redacts, for example most URLs "
+    "and any text mentioning a token, auth or session). Selecting a "
+    "credential-shaped path is refused.\n"
+    "- The first call may make the ha-mcp component fetch and persist an "
+    "admin caller token (an accepted dependency)."
+)
+
+# Response-level disclosures carried by every successful result.
+K7_LIMITATION = (
+    "yaml_1_2_parse:values are ha-mcp's YAML 1.2 parse and may differ from "
+    "Home Assistant's YAML 1.1 interpretation"
+)
+K5_LIMITATION = (
+    "keys_converted:non-string mapping keys are converted to strings "
+    "upstream and keys with the same text collapse to one"
+)
+D12_LIMITATION = (
+    "redaction_best_effort:a credential under an innocent key with no "
+    "credential word in its text is not recognized"
+)
+DISCLOSURE_LIMITATIONS = (K7_LIMITATION, K5_LIMITATION, D12_LIMITATION)
+K7_WARNING = (
+    "Values are ha-mcp's YAML 1.2 parse of configuration.yaml and may differ "
+    "from Home Assistant's YAML 1.1 interpretation."
+)
+ANNOTATIONS = {
+    "readOnlyHint": True,
+    "destructiveHint": False,
+    "idempotentHint": True,
+    "openWorldHint": False,
+}
+
+
+# ---------------------------------------------------------------------------
+# Refusals and fixed failure codes.
+
+ARGUMENTS_INVALID = "yaml_read_arguments_invalid"
+FILE_NOT_ALLOWED = "yaml_file_not_allowed"
+PATH_INVALID = "yaml_path_invalid"
+PATH_SENSITIVE = "yaml_path_sensitive"
+FILE_NOT_ALLOWED_UPSTREAM = "yaml_file_not_allowed_upstream"
+FILE_NOT_FOUND = "yaml_file_not_found"
+PARSE_ERROR = "yaml_parse_error"
+VALIDATION_OR_UNAVAILABLE = "yaml_upstream_validation_or_component_unavailable"
+READ_FAILED = "yaml_read_failed"
+IDENTITY_INVALID = "yaml_read_response_identity_invalid"
+
+# code -> (gateway failure category, fixed public message)
+FAILURES: dict[str, tuple[str, str]] = {
+    ARGUMENTS_INVALID: (
+        "invalid_request",
+        "Arguments must be yaml_path and optionally file, both strings.",
+    ),
+    FILE_NOT_ALLOWED: ("invalid_request", "Only configuration.yaml is readable."),
+    PATH_INVALID: (
+        "invalid_request",
+        "yaml_path must be a dotted mapping-key path of at most eight segments.",
+    ),
+    PATH_SENSITIVE: (
+        "invalid_request",
+        "yaml_path names a credential-shaped key; read the parent instead.",
+    ),
+    FILE_NOT_ALLOWED_UPSTREAM: (
+        "invalid_request",
+        "The upstream component refused the file path.",
+    ),
+    FILE_NOT_FOUND: ("resource_not_found", "configuration.yaml was not found."),
+    PARSE_ERROR: (
+        "upstream_error",
+        "configuration.yaml could not be parsed as YAML.",
+    ),
+    VALIDATION_OR_UNAVAILABLE: (
+        "upstream_error",
+        "upstream validation failed or component unavailable",
+    ),
+    READ_FAILED: ("upstream_error", "upstream read failed"),
+    IDENTITY_INVALID: (
+        "invalid_response",
+        "The upstream response did not match the reviewed shape.",
+    ),
+}
+PRE_DISPATCH_CODES = frozenset(
+    {ARGUMENTS_INVALID, FILE_NOT_ALLOWED, PATH_INVALID, PATH_SENSITIVE}
+)
+
+
+class YamlReadRefusal(Exception):
+    """A fixed-code reader refusal. Never carries upstream text or a value."""
+
+    def __init__(self, code: str, *, details: dict[str, Any] | None = None) -> None:
+        if code not in FAILURES:
+            raise ValueError("yaml_refusal_code_unknown")
+        super().__init__(code)
+        self.code = code
+        self.category, self.message = FAILURES[code]
+        self.details = dict(details or {})
+
+
+# ---------------------------------------------------------------------------
+# L1-L3: argument validation before admission and dispatch.
+
+# L2 deny floor: segment names, basenames and basename patterns.
+_L2_SEGMENTS = frozenset(
+    {
+        ".storage", ".cloud", ".git", "ssl", "www", "custom_components",
+        "blueprints", "backups", "deps", "tts", "packages", ".ha_mcp_tools",
+    }
+)
+_L2_BASENAMES = frozenset({"secrets.yaml", "secrets.yml", "approval_pin.json"})
+_L2_BASENAME_PATTERNS = tuple(
+    re.compile(pattern)
+    for pattern in (
+        r".*secret.*", r".*credential.*", r".*token.*", r".*\.pem", r".*\.key",
+        r".*\.crt", r".*\.csr", r".*\.der", r".*\.p12", r".*\.pfx", r".*\.jks",
+        r".*\.db", r".*\.db-.*", r".*\.sqlite.*", r".*\.json", r".*\.log.*",
+        r"id_rsa.*", r"id_ed25519.*",
+    )
+)
+
+
+def l1_allows(file_value: Any) -> bool:
+    """L1: absent, or a string byte-equal to ``configuration.yaml``."""
+
+    return type(file_value) is str and file_value == ALLOWED_FILE
+
+
+def l2_denies(file_value: str) -> bool:
+    """L2 deny floor: case-insensitive on every ``/``-separated segment."""
+
+    segments = file_value.lower().split("/")
+    if any(segment in _L2_SEGMENTS or segment.startswith(".") for segment in segments):
+        return True
+    basename = segments[-1]
+    return basename in _L2_BASENAMES or any(
+        pattern.fullmatch(basename) for pattern in _L2_BASENAME_PATTERNS
+    )
+
+
+# The single L1-admitted value is never denied by L2.
+assert not l2_denies(ALLOWED_FILE)
+
+
+def validate_arguments(arguments: Any) -> str:
+    """Return the accepted ``yaml_path`` or raise a pre-dispatch refusal."""
+
+    if type(arguments) is not dict or not set(arguments) <= {"yaml_path", "file"}:
+        raise YamlReadRefusal(ARGUMENTS_INVALID)
+    if any(type(value) is not str for value in arguments.values()):
+        raise YamlReadRefusal(ARGUMENTS_INVALID)
+    if "yaml_path" not in arguments:
+        raise YamlReadRefusal(ARGUMENTS_INVALID)
+    if "file" in arguments:
+        file_value = arguments["file"]
+        if not l1_allows(file_value) or l2_denies(file_value):
+            raise YamlReadRefusal(FILE_NOT_ALLOWED)
+    yaml_path = arguments["yaml_path"]
+    if not _YAML_PATH.fullmatch(yaml_path):
+        raise YamlReadRefusal(PATH_INVALID)
+    if any(is_credential_key(segment.lower()) for segment in yaml_path.split(".")):
+        raise YamlReadRefusal(PATH_SENSITIVE)
+    return yaml_path
+
+
+def refusal_audit_details(arguments: Any) -> dict[str, int]:
+    """Value-free audit detail for a refused argument: lengths only."""
+
+    if type(arguments) is not dict:
+        return {}
+    return {
+        f"{name}_length": len(value)
+        for name, value in sorted(arguments.items())
+        if name in {"yaml_path", "file"} and type(value) is str
+    }
+
+
+def upstream_arguments(yaml_path: str) -> dict[str, Any]:
+    """The only argument shape Engineering ever sends upstream."""
+
+    return {
+        "yaml_path": yaml_path,
+        "file": ALLOWED_FILE,
+        "include_content": False,
+        "include_parsed": True,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Rule A: canonicalization.
+
+_ESCAPE = re.compile(r"%[0-9A-Fa-f]{2}")
+_STRAY_PERCENT = re.compile(r"%(?![0-9A-Fa-f]{2})")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
+
+class _EncodingRefused(ValueError):
+    pass
+
+
+def canonical(raw: str) -> tuple[str, int]:
+    """Rule A then NFKC and casefold. Returns (canonical text, rounds)."""
+
+    text, rounds, _decoded = canonical_forms(raw)
+    return text, rounds
+
+
+def canonical_forms(raw: str) -> tuple[str, int, str]:
+    """Return (canonical text, rounds, decoded NFKC text before casefold)."""
+
+    value = raw
+    rounds = MAX_DECODE_ROUNDS
+    for count in range(MAX_DECODE_ROUNDS):
+        if not _ESCAPE.search(value):
+            rounds = count
+            break
+        if _STRAY_PERCENT.search(value):
+            raise _EncodingRefused("ambiguous")
+        try:
+            decoded = unquote_to_bytes(value).decode("utf-8", "strict")
+        except (UnicodeError, ValueError):
+            raise _EncodingRefused("invalid") from None
+        if Counter(_CONTROL.findall(decoded)) - Counter(_CONTROL.findall(value)):
+            raise _EncodingRefused("control")
+        value = decoded
+    try:
+        decoded = unicodedata.normalize("NFKC", value)
+        text = decoded.casefold()
+    except (TypeError, ValueError):
+        raise _EncodingRefused("invalid") from None
+    # One final check: covers a value still escaped after the last round and
+    # an escape introduced by NFKC (fullwidth percent).
+    if _ESCAPE.search(text):
+        raise _EncodingRefused("non_converging")
+    return text, rounds, decoded
+
+
+# ---------------------------------------------------------------------------
+# is_credential_key, rule B, rule C' and K1.
+
+CREDENTIAL_WORDS = (
+    "pwd", "passw", "secret", "token", "apikey", "api_key", "api-key", "auth",
+    "credential", "private", "bearer", "cookie", "session",
+)
+_COMPACT_WORDS = tuple(sorted({re.sub("[^a-z0-9]", "", word) for word in CREDENTIAL_WORDS}))
+_DELIMITED_TOKEN = re.compile(r"\b(pass|key)\s*[=:]")
+_CONNECTION_WORDS = ("url", "uri", "dsn", "connect", "connstr", "database")
+_IDENTIFIER = re.compile(r"[a-z0-9_.-]+")
+_SCHEME = re.compile(r"([a-z][a-z0-9+.-]{0,31})://")
+_SQLITE = re.compile(r"sqlite:///[a-z0-9_./-]+")
+_SQLITE_FORBIDDEN = re.compile("[\x00-\x1f\x7f  ]")
+_SANITIZER_KEY_SETS = frozenset().union(
+    _TOKEN_KEYS, _PASSWORD_KEYS, _COOKIE_KEYS, _WEBHOOK_KEYS, _AUTH_FLOW_KEYS,
+    _MATTER_CODE_KEYS, _MATTER_PAYLOAD_KEYS,
+)
+_YAML_EXACT_KEYS = frozenset(
+    "api_password apikey app_key app_secret auth auth_token bearer_token "
+    "consumer_key consumer_secret access_key secret_key private_key "
+    "encryption_key psk pin code passcode key pwd pass".split()
+)
+_CONTAINS = (
+    "password", "passwd", "passphrase", "secret", "token", "credential",
+    "api_key", "apikey", "private_key",
+)
+_SUFFIXES = ("_pin", "_code", "_psk", "_key", "_pass", "_pwd")
+
+
+def _compact(text: str) -> str:
+    return re.sub("[^a-z0-9]", "", text)
+
+
+def _word_in_compact_key(canonical_key: str) -> bool:
+    compact = _compact(canonical_key)
+    return any(word in compact for word in _COMPACT_WORDS)
+
+
+def is_credential_key(canonical_key: str) -> bool:
+    """The one shared predicate of L3 and L4 (input is a canonical key)."""
+
+    normalized = re.sub("[^a-z0-9]+", "_", canonical_key).strip("_")
+    return (
+        normalized in _SANITIZER_KEY_SETS
+        or normalized in _YAML_EXACT_KEYS
+        or any(part in normalized for part in _CONTAINS)
+        or normalized.endswith(_SUFFIXES)
+        or _word_in_compact_key(canonical_key)
+    )
+
+
+def is_connection_key(canonical_key: str) -> bool:
+    compact = _compact(canonical_key)
+    return any(word in compact for word in _CONNECTION_WORDS)
+
+
+def _userinfo(text: str) -> bool:
+    index = text.find("://")
+    return index >= 0 and "@" in text[index + 3 :]
+
+
+def credential_text(canonical_text: str) -> bool:
+    """C'1 userinfo, C'2 credential word (substring), C'3 delimited token."""
+
+    return (
+        _userinfo(canonical_text)
+        or any(word in canonical_text for word in CREDENTIAL_WORDS)
+        or _DELIMITED_TOKEN.search(canonical_text) is not None
+    )
+
+
+def key_text_unsafe(canonical_key: str) -> bool:
+    """K1: a key whose own text would carry a credential."""
+
+    if _userinfo(canonical_key):
+        return True
+    return (
+        _word_in_compact_key(canonical_key)
+        or _DELIMITED_TOKEN.search(canonical_key) is not None
+    ) and not _IDENTIFIER.fullmatch(canonical_key)
+
+
+def sqlite_visible(raw: str, canonical_text: str, rounds: int) -> bool:
+    """R11: the one exact safe shape visible under a connection key."""
+
+    if not _SQLITE.fullmatch(canonical_text) or _SQLITE_FORBIDDEN.search(canonical_text):
+        return False
+    if ".." in canonical_text.split("/"):
+        return False
+    return rounds == 0 and canonical_text == raw
+
+
+CREDENTIAL_MARKER = "[REDACTED:credential_key]"
+ENCODING_MARKER = "[REDACTED:encoding]"
+CONNECTION_STRING_MARKER = "[REDACTED:connection_string]"
+CONNECTION_URI_SUFFIX = "://[REDACTED:connection_uri]"
+REFERENCE_MALFORMED_MARKER = "[REDACTED:reference_malformed]"
+COLLISION_MARKER = "[REDACTED:reference_marker_collision]"
+INCLUDE_MALFORMED_MARKER = "[REDACTED:include_malformed]"
+DEPTH_MARKER = "[TRUNCATED:max_depth]"
+
+
+def redaction_form(canonical_text: str | None) -> tuple[str, str]:
+    """C' redaction form: at most the canonical scheme survives."""
+
+    match = _SCHEME.match(canonical_text) if isinstance(canonical_text, str) else None
+    if match and not credential_text(match[1]):
+        return match[1] + CONNECTION_URI_SUFFIX, "connection_uri"
+    return CONNECTION_STRING_MARKER, "connection_string"
+
+
+# ---------------------------------------------------------------------------
+# Reference markers, includes and the other value scanners.
+
+_SECRET_REF = re.compile(r"!secret (" + SECRET_REFERENCE_NAME.pattern + r")")
+_ENV_REF = re.compile(r"!env_var (" + ENV_VAR_REFERENCE_NAME.pattern + r")")
+_ENV_REF_DEFAULT = re.compile(
+    r"!env_var (" + ENV_VAR_REFERENCE_NAME.pattern + r") .+", re.DOTALL
+)
+_REFERENCE_LIKE = re.compile(r"\s*(?:!secret|!env_var)", re.IGNORECASE)
+_INCLUDE = re.compile(
+    r"!include(?:_dir_list|_dir_named|_dir_merge_list|_dir_merge_named)? "
+    r"([A-Za-z0-9_./-]{1,256})"
+)
+_INCLUDE_LIKE = re.compile(r"\s*!include", re.IGNORECASE)
+_PEM = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE|ENCRYPTED PRIVATE KEY|"
+    r"OPENSSH PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----",
+    re.IGNORECASE,
+)
+_OPAQUE_BLOB = re.compile(r"[A-Za-z0-9+/=]{200,}")
+_COLLISION_KEY_SETS = (
+    frozenset({"secret_ref"}),
+    frozenset({"env_var_ref"}),
+    frozenset({"env_var_ref", "default_redacted"}),
+)
+
+
+def scanner_category(text: str, known_secrets: tuple[str, ...]) -> str | None:
+    """Existing sanitizer patterns plus PEM and opaque-blob detection."""
+
+    result = sanitize_untrusted_data(text, known_secrets=known_secrets)
+    if result.failed_closed:
+        return "sanitization_failure"
+    if result.redaction_applied:
+        return sorted(result.redaction_categories)[0]
+    if _PEM.search(text):
+        return "pem"
+    if _OPAQUE_BLOB.search(text):
+        return "opaque_blob"
+    return None
+
+
+def mint_reference(value: str, known_secrets: tuple[str, ...]) -> ReferenceMarker | None:
+    """Mint a marker from a whole scalar string, or return None."""
+
+    for pattern, default_redacted in ((_SECRET_REF, False), (_ENV_REF, False)):
+        match = pattern.fullmatch(value)
+        if match:
+            kind = "secret" if pattern is _SECRET_REF else "env_var"
+            name = match[1]
+            break
+    else:
+        match = _ENV_REF_DEFAULT.fullmatch(value)
+        if not match:
+            return None
+        kind, name, default_redacted = "env_var", match[1], True
+    if scanner_category(name, known_secrets) is not None:
+        return None
+    return ReferenceMarker(kind=kind, name=name, default_redacted=default_redacted)
+
+
+def reference_like(value: str) -> bool:
+    return _REFERENCE_LIKE.match(value) is not None
+
+
+# ---------------------------------------------------------------------------
+# L4: path-context redaction over absolute canonical key paths.
+
+
+@dataclass
+class _Accounting:
+    redacted: int = 0
+    categories: set[str] | None = None
+    includes: list[str] | None = None
+    depth_truncated: int = 0
+
+    def __post_init__(self) -> None:
+        self.categories = set()
+        self.includes = []
+
+    def record(self, category: str) -> None:
+        self.redacted += 1
+        self.categories.add(category)
+
+
+class _L4:
+    def __init__(self, known_secrets: tuple[str, ...]) -> None:
+        self.known_secrets = known_secrets
+        self.account = _Accounting()
+
+    def redact(self, value: Any, display: list[str], cpath: list[str], depth: int) -> Any:
+        first_credential = next(
+            (index for index, key in enumerate(cpath) if is_credential_key(key)), None
+        )
+        if first_credential is not None:
+            if first_credential == len(cpath) - 1 and type(value) is str:
+                marker = mint_reference(value, self.known_secrets)
+                if marker is not None:
+                    return self._minted(marker)
+            self.account.record("credential_key")
+            return CREDENTIAL_MARKER
+        if type(value) is dict and frozenset(value) in _COLLISION_KEY_SETS:
+            self.account.record("reference_marker_collision")
+            return COLLISION_MARKER
+        connection = any(is_connection_key(key) for key in cpath)
+        if type(value) is dict:
+            if connection:
+                self.account.record("connection_string")
+                return CONNECTION_STRING_MARKER
+            canonical_keys = []
+            for key in value:
+                try:
+                    canonical_key = canonical(str(key))[0]
+                except _EncodingRefused:
+                    self.account.record("encoding")
+                    return ENCODING_MARKER
+                if key_text_unsafe(canonical_key):
+                    self.account.record("connection_string")
+                    return CONNECTION_STRING_MARKER
+                canonical_keys.append(canonical_key)
+            if value and depth >= MAX_DEPTH:
+                self.account.depth_truncated += 1
+                return DEPTH_MARKER
+            return {
+                key: self.redact(child, display + [str(key)], cpath + [canonical_key], depth + 1)
+                for (key, child), canonical_key in zip(value.items(), canonical_keys)
+            }
+        if type(value) is list:
+            if connection:
+                self.account.record("connection_string")
+                return CONNECTION_STRING_MARKER
+            if value and depth >= MAX_DEPTH:
+                self.account.depth_truncated += 1
+                return DEPTH_MARKER
+            # List elements are transparent: they inherit the holding key's path.
+            return [self.redact(child, display, cpath, depth + 1) for child in value]
+        if type(value) is str:
+            return self._string(value, display, connection)
+        if connection:
+            self.account.record("connection_string")
+            return CONNECTION_STRING_MARKER
+        if value is None or type(value) in (bool, int, float):
+            return value
+        self.account.record("encoding")
+        return ENCODING_MARKER
+
+    def _minted(self, marker: ReferenceMarker) -> ReferenceMarker:
+        if marker.default_redacted:
+            # The default is discarded here; only the fact is recorded.
+            self.account.record("env_var_default")
+        return marker
+
+    def _string(self, value: str, display: list[str], connection: bool) -> Any:
+        marker = mint_reference(value, self.known_secrets)
+        if marker is not None:
+            return self._minted(marker)
+        if reference_like(value):
+            self.account.record("reference_malformed")
+            return REFERENCE_MALFORMED_MARKER
+        if _INCLUDE.fullmatch(value):
+            self._include(display)
+        elif _INCLUDE_LIKE.match(value):
+            self.account.record("include_malformed")
+            return INCLUDE_MALFORMED_MARKER
+        try:
+            text, rounds, decoded = canonical_forms(value)
+        except _EncodingRefused:
+            self.account.record("encoding")
+            return ENCODING_MARKER
+        if credential_text(text):
+            replacement, category = redaction_form(text)
+            self.account.record(category)
+            return replacement
+        if connection:
+            if sqlite_visible(value, text, rounds):
+                return value
+            replacement, category = redaction_form(text)
+            self.account.record(category)
+            return replacement
+        # The existing patterns are case-sensitive (JWT, known secrets), so
+        # they run on the decoded text before casefold as well.
+        category = scanner_category(decoded, self.known_secrets) or scanner_category(
+            text, self.known_secrets
+        )
+        if category is not None:
+            self.account.record(category)
+            return f"[REDACTED:{category}]"
+        # Visible values are emitted raw, never in canonical form.
+        return value
+
+    def _include(self, display: list[str]) -> None:
+        segments = []
+        for segment in display:
+            if not _SEGMENT.fullmatch(segment) or len(segments) >= 16:
+                segments.append("*")
+                break
+            segments.append(segment)
+        self.account.includes.append(".".join(segments))
+
+
+def _count_nodes(value: Any) -> int:
+    total = 0
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        total += 1
+        if type(node) is dict:
+            stack.extend(node.values())
+        elif type(node) is list:
+            stack.extend(node)
+    return total
+
+
+def truncate_breadth_first(value: Any, cap: int = MAX_NODES) -> tuple[Any, int]:
+    """Keep the first ``cap`` nodes in breadth-first order.
+
+    Returns the kept tree and the number of omitted nodes. Children of one
+    container are enqueued together, so omitted children are always a
+    suffix of their container.
+    """
+
+    total = _count_nodes(value)
+    if total <= cap:
+        return value, 0
+
+    def shell(node: Any) -> Any:
+        if type(node) is dict:
+            return {}
+        if type(node) is list:
+            return []
+        return node
+
+    root = shell(value)
+    kept = 1
+    queue: deque[tuple[Any, Any]] = deque([(value, root)])
+    while queue and kept < cap:
+        source, target = queue.popleft()
+        if type(source) is dict:
+            for key, child in source.items():
+                if kept >= cap:
+                    break
+                target[key] = shell(child)
+                kept += 1
+                queue.append((child, target[key]))
+        elif type(source) is list:
+            for child in source:
+                if kept >= cap:
+                    break
+                target.append(shell(child))
+                kept += 1
+                queue.append((child, target[-1]))
+    return root, total - kept
+
+
+def render_markers(value: Any) -> Any:
+    """Serialize minted markers after L5; nothing sanitizes after this."""
+
+    if type(value) is ReferenceMarker:
+        if value.kind == "secret":
+            return {"secret_ref": value.name}
+        rendered: dict[str, Any] = {"env_var_ref": value.name}
+        if value.default_redacted:
+            rendered["default_redacted"] = True
+        return rendered
+    if type(value) is dict:
+        return {key: render_markers(child) for key, child in value.items()}
+    if type(value) is list:
+        return [render_markers(child) for child in value]
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Response decoding, identity validation and error classification (K3).
+
+
+def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate_member")
+        result[key] = value
+    return result
+
+
+def _reject_constant(_value: str) -> Any:
+    raise ValueError("non_finite_number")
+
+
+def _strict_json(text: str) -> Any:
+    return json.loads(
+        text,
+        object_pairs_hook=_reject_duplicates,
+        parse_constant=_reject_constant,
+    )
+
+
+def _canonical_text(value: Any) -> str:
+    return json.dumps(
+        value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    )
+
+
+def _single_text(call_result: Any) -> str:
+    content = call_result.get("content") if type(call_result) is dict else None
+    if (
+        type(content) is not list
+        or len(content) != 1
+        or type(content[0]) is not dict
+        or content[0].get("type") != "text"
+        or type(content[0].get("text")) is not str
+    ):
+        raise YamlReadRefusal(IDENTITY_INVALID)
+    return content[0]["text"]
+
+
+_SUCCESS_KEYS = frozenset(
+    {"success", "yaml_path", "matches", "count", "files_searched",
+     "files_unreadable", "warnings"}
+)
+_MATCH_KEYS = frozenset({"file", "yaml_path", "parsed"})
+
+
+def decode_success(call_result: Any, yaml_path: str) -> tuple[bool, Any]:
+    """Validate the exact success identity; return (found, parsed)."""
+
+    text = _single_text(call_result)
+    try:
+        payload = _strict_json(text)
+        structured = call_result.get("structuredContent")
+        if structured is not None and _canonical_text(structured) != _canonical_text(payload):
+            raise YamlReadRefusal(IDENTITY_INVALID)
+    except (RecursionError, TypeError, UnicodeError, ValueError):
+        raise YamlReadRefusal(IDENTITY_INVALID) from None
+    if type(payload) is not dict or not set(payload) <= _SUCCESS_KEYS:
+        raise YamlReadRefusal(IDENTITY_INVALID)
+    if not {"success", "yaml_path", "matches", "count", "files_searched",
+            "files_unreadable"} <= set(payload):
+        raise YamlReadRefusal(IDENTITY_INVALID)
+    matches = payload["matches"]
+    count = payload["count"]
+    if (
+        payload["success"] is not True
+        or payload["yaml_path"] != yaml_path
+        or type(payload["yaml_path"]) is not str
+        or type(payload["files_searched"]) is not int
+        or payload["files_searched"] != 1
+        or type(payload["files_unreadable"]) is not int
+        or payload["files_unreadable"] != 0
+        or type(matches) is not list
+        or type(count) is not int
+        or count != len(matches)
+        or count not in (0, 1)
+    ):
+        raise YamlReadRefusal(IDENTITY_INVALID)
+    if "warnings" in payload and payload["warnings"] != []:
+        raise YamlReadRefusal(IDENTITY_INVALID)
+    if not matches:
+        return False, None
+    match = matches[0]
+    if (
+        type(match) is not dict
+        or set(match) != _MATCH_KEYS
+        or match["file"] != ALLOWED_FILE
+        or match["yaml_path"] != yaml_path
+    ):
+        raise YamlReadRefusal(IDENTITY_INVALID)
+    return True, match["parsed"]
+
+
+_PARSE_POSITION = re.compile(r"at line (\d{1,7}), column (\d{1,7})")
+
+
+def classify_error(call_result: Any) -> YamlReadRefusal:
+    """K2/K3/K4: map an upstream error to a fixed code; no upstream text."""
+
+    try:
+        payload = _strict_json(_single_text(call_result))
+    except (YamlReadRefusal, RecursionError, TypeError, UnicodeError, ValueError):
+        return YamlReadRefusal(READ_FAILED)
+    if type(payload) is not dict or payload.get("success") is not False:
+        return YamlReadRefusal(READ_FAILED)
+    error = payload.get("error")
+    if type(error) is str:
+        # Component string error.
+        if error.startswith("Path not allowed"):
+            return YamlReadRefusal(FILE_NOT_ALLOWED_UPSTREAM)
+        if error.startswith("File does not exist"):
+            return YamlReadRefusal(FILE_NOT_FOUND)
+        return YamlReadRefusal(READ_FAILED)
+    if type(error) is dict:
+        # ha-mcp structured error object.
+        code = error.get("code")
+        if code == "CONFIG_INVALID":
+            message = error.get("message")
+            position = (
+                _PARSE_POSITION.search(message) if type(message) is str else None
+            )
+            details = (
+                {"line": int(position[1]), "column": int(position[2])}
+                if position
+                else {}
+            )
+            return YamlReadRefusal(PARSE_ERROR, details=details)
+        if code == "VALIDATION_FAILED":
+            return YamlReadRefusal(VALIDATION_OR_UNAVAILABLE)
+    return YamlReadRefusal(READ_FAILED)
+
+
+# ---------------------------------------------------------------------------
+# The whole success projection: L4, caps, L5, rendering and the envelope.
+
+
+@dataclass(frozen=True)
+class YamlReadResult:
+    envelope: dict[str, Any]
+    redacted_field_count: int
+    redaction_categories: tuple[str, ...]
+    partial: bool
+    sanitization_failed: bool = False
+
+
+def project_success(
+    call_result: Any,
+    yaml_path: str,
+    *,
+    known_secrets: tuple[str, ...] = (),
+    max_string: int | None = None,
+) -> YamlReadResult:
+    found, parsed = decode_success(call_result, yaml_path)
+    limitations: list[str] = []
+    redacted = 0
+    categories: set[str] = set()
+    value: Any = None
+    partial = False
+    sanitization_failed = False
+    if found:
+        prefix = yaml_path.split(".")
+        walker = _L4(known_secrets)
+        redacted_tree = walker.redact(parsed, list(prefix), [segment.lower() for segment in prefix], 1)
+        account = walker.account
+        redacted += account.redacted
+        categories |= account.categories
+        if account.depth_truncated:
+            partial = True
+            limitations.append(f"value_depth_limited:{MAX_DEPTH}")
+        # Redaction above runs before truncation.
+        kept, omitted = truncate_breadth_first(redacted_tree)
+        if omitted:
+            partial = True
+            limitations.append(f"value_truncated:{omitted} nodes omitted")
+        includes = sorted(set(account.includes))
+        if includes:
+            partial = True
+            limitations.extend(
+                f"include_not_followed:{path}"
+                for path in includes[:MAX_INCLUDE_LIMITATIONS]
+            )
+            if len(includes) > MAX_INCLUDE_LIMITATIONS:
+                limitations.append("include_not_followed_truncated")
+        sanitation = sanitize_untrusted_data(
+            kept,
+            known_secrets=known_secrets,
+            max_string=max_string,
+            preserve_reference_markers=True,
+        )
+        sanitization_failed = sanitation.failed_closed
+        redacted += sanitation.redacted_field_count
+        categories |= set(sanitation.redaction_categories)
+        if sanitation.truncated_field_count:
+            partial = True
+            limitations.append(
+                f"strings_truncated:{sanitation.truncated_field_count}"
+            )
+        value = render_markers(sanitation.value)
+    limitations.extend(DISCLOSURE_LIMITATIONS)
+    envelope = {
+        "file": ALLOWED_FILE,
+        "yaml_path": yaml_path,
+        "source": "disk",
+        "found": found,
+        "value": value,
+        "completeness": "partial" if partial else "complete",
+        "limitations": limitations,
+        "redaction": {
+            "redacted_field_count": redacted,
+            "categories": sorted(categories),
+        },
+    }
+    return YamlReadResult(
+        envelope=envelope,
+        redacted_field_count=redacted,
+        redaction_categories=tuple(sorted(categories)),
+        partial=partial,
+        sanitization_failed=sanitization_failed,
+    )
