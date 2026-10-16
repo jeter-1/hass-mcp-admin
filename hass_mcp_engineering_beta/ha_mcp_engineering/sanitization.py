@@ -383,6 +383,10 @@ class _Sanitizer:
     def sanitize(self, value: Any, path: tuple[str, ...] = ()) -> Any:
         if type(value) is ReferenceMarker:
             return self._reference_marker(value)
+        if isinstance(value, ReferenceMarker):
+            # A subclass is never preserved and never rendered through repr.
+            self._record_field({"reference_marker"})
+            return REFERENCE_MARKER_DENIED
         if isinstance(value, Mapping):
             safe: dict[str, Any] = {}
             for raw_key, item in value.items():

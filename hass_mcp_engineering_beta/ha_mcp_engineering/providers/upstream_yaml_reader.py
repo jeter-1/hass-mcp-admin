@@ -26,6 +26,7 @@ from urllib.parse import unquote_to_bytes
 from ..sanitization import (
     ENV_VAR_REFERENCE_NAME,
     SECRET_REFERENCE_NAME,
+    REDACTION_MARKER,
     ReferenceMarker,
     _AUTH_FLOW_KEYS,
     _COOKIE_KEYS,
@@ -694,6 +695,26 @@ def truncate_breadth_first(value: Any, cap: int = MAX_NODES) -> tuple[Any, int]:
     return root, total - kept
 
 
+def _relabeled_count(before: Any, after: Any) -> int:
+    """Fields L4 already redacted that L5 replaced again under its own key rule.
+
+    L5 keeps the tree shape, so a parallel walk finds them; each such field
+    was counted once by L4 and must not be counted again.
+    """
+
+    if type(before) is dict and type(after) is dict:
+        return sum(
+            _relabeled_count(child, after[key]) for key, child in before.items() if key in after
+        )
+    if type(before) is list and type(after) is list:
+        return sum(_relabeled_count(a, b) for a, b in zip(before, after))
+    return int(
+        type(before) is str
+        and before != after
+        and REDACTION_MARKER.search(before) is not None
+    )
+
+
 def render_markers(value: Any) -> Any:
     """Serialize minted markers after L5; nothing sanitizes after this."""
 
@@ -906,7 +927,9 @@ def project_success(
             preserve_reference_markers=True,
         )
         sanitization_failed = sanitation.failed_closed
-        redacted += sanitation.redacted_field_count
+        redacted += sanitation.redacted_field_count - _relabeled_count(
+            kept, sanitation.value
+        )
         categories |= set(sanitation.redaction_categories)
         if sanitation.truncated_field_count:
             partial = True
