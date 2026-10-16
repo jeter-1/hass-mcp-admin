@@ -1,84 +1,102 @@
 # Engineering 2.4.1-beta.11 release notes
 
-Engineering 2.4.1-beta.11 is an audit-hardening release (HAMCP-184). It closes
-four findings from the 2026-10-14 main audit on top of beta.10 (HAMCP-181
-PR1). No tool, input schema, description, routing, signed registry, HOLD,
-support window, persisted format, workflow or stable-v1 change is included.
-No new write, dispatch, service-call or fallback path is reachable. The
-design note is [`HAMCP_184_AUDIT_HARDENING_DESIGN.md`](HAMCP_184_AUDIT_HARDENING_DESIGN.md).
+Engineering 2.4.1-beta.11 is a dependency security release (HAMCP-188). It
+upgrades the pinned MCP Python SDK (`mcp`) from 1.28.1 to 1.30.0. That fixes
+GHSA-84m7-p3x7-pcfv / CVE-2026-59951, which `pip-audit --strict` reports
+against 1.28.1. It builds on beta.10's truthful dispatch facts (HAMCP-181).
+Josh chose the latest 1.30.x patch on the same major line; 2.x is out of
+scope. No Engineering runtime code, public schema, tool registration,
+provider route or policy changes.
 
-**Provider dispositions fail closed (F-05).** A reviewed ha-mcp release used
-to admit a provider surface (read gateway, dashboard, backup, lifecycle) when
-its registry entry declared no disposition for it. Admission is no longer
-inferred from omission:
-- The disposition accessor returns `held` for an absent surface or an unknown
-  value.
-- The registry loader refuses a reviewed entry without an explicit
-  `provider_dispositions` object naming exactly the four surfaces with
-  `admitted`, `partial` or `held`.
-- The five legacy entries (7.14.1, 7.14.2, 8.0.0, 8.1.0 and 8.2.0) now declare
-  their dispositions explicitly. 7.14.1, 7.14.2, 8.0.0 and 8.1.0 keep all four
-  surfaces `admitted`; each is backed by capability-specific review evidence.
-- ha-mcp 8.2.0 backup and lifecycle are now `held` (owner decision). Their only
-  evidence is the whole-release admission commit plus CI, not a
-  capability-specific review. 8.2.0 read gateway and dashboard stay `admitted`.
+## Advisory
 
-That is the only effective change across the ten compiled entries. 8.1.1 and
-8.4.1 onward are unchanged. Production ha-mcp 8.5.0 and rollback ha-mcp 8.4.3
-keep read gateway and dashboard `admitted` and backup and lifecycle `held`, and
-both entries are byte-identical.
+In the stateful Streamable HTTP session manager, `mcp` 1.8.0 through 1.29.1
+(and 2.0.0 through 2.1.1) never reclaimed session state:
+- sessions had no expiry by default;
+- DELETE left the session registered;
+- a refused opening request stayed registered with a running task;
+- the number of sessions was unbounded.
 
-**F3 re-apply checks the approved hash (F-01).** Re-applying a plan whose F3
-task already exists now validates the caller's `expected_plan_hash` exactly as
-the first apply and the legacy path do. An empty or wrong hash is refused with
-`approval_hash_mismatch` before any dispatch, task event or plan change. A
-matching replay is unchanged: a finished task returns without redispatch, and
-an initialized task that never dispatched resumes and dispatches once.
+1.30.0 and 2.2.0 fix this. Stateless mode on 1.12.0 or later, and stdio or SSE
+alone, are not affected.
 
-**Truthful principal-separation reporting (F-02).** The Ingress approval route
-falls back to the anonymous principal `home_assistant_admin_ingress` when Home
-Assistant supplies no user identity. Decisions made that way used to report
-`principal_separation_enforced: true`, but they prove only that an
-administrator decided through the separate channel, not which administrator.
-The decisions now report:
-- `principal_separation_enforced: false`;
-- in the existing `principal_separation_status` object,
-  `{evaluated: true, enforced: false, reason: anonymous_fallback_principal}`.
-  The `anonymous_fallback_principal` reason is new; beta.10 already exposed
-  the object, derived from the stored flag.
+Engineering runs the SDK's Streamable HTTP server behind
+`AuthenticatedMcpGateway`, in two modes:
+- **Stateless** (the default, with the ha-mcp release registry disabled): not
+  affected by the advisory.
+- **Stateful** (registry enabled): affected on 1.28.1. Engineering already
+  limited this with its own 1,024-session cap (503), a 1,800-second idle
+  timeout and DELETE cleanup. A refused opening request still left a
+  registered session and task behind until the idle timeout reclaimed it.
 
-An identified principal still reports `true` with
-`external_administrator_distinct`. An undecided plan reports `null` with
-`no_external_approver_exists`.
+The SDK's other components are either unaffected or unused here: the
+outbound Streamable HTTP client, server auth, websocket transports and
+experimental task handlers.
 
-Reporting only (owner decision):
-- who may approve, the approval flow, standard-class eligibility of the
-  anonymous fallback and elevated-class refusal of it are unchanged;
-- existing records are never rewritten. A pre-beta.11 anonymous decision
-  stored as `true` now displays `false` and stays exactly as eligible as
-  before.
+## Dependency change
 
-**Runner guard covers matrix runners (F-06).** The CI runner guard now checks
-every runner label the committed add-on matrix generator emits for every tier,
-rather than a declared constant. An unpinned generated label fails the guard.
-`ci.yml` is unchanged; its matrix runners resolve to `ubuntu-24.04` and
-`ubuntu-24.04-arm`.
+Only `mcp` changes: 1.28.1 to 1.30.0.
+- `requirements.txt`, both locks and `build-inputs.json` change, the locks
+  with the reviewed py3-none-any wheel hash
+  `sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0`.
+- 1.30.0 declares the same `Requires-Dist` as 1.28.1, so the other 38 runtime
+  packages and every test-only package are unchanged.
+- The reviewed SDK guard (`PINNED_MCP_SDK_VERSION`) now admits only 1.30.0.
+  Any other installed version still refuses startup.
 
-The healthy catalog remains **87 tools: 59 native and 28 delegated reads**.
+## SDK behaviour changes Engineering inherits
 
-Downgrade: beta.10 reads every beta.11 record. It keeps the
-`principal_separation_status` object but derives it, and
-`principal_separation_enforced`, from the stored flag again:
-- A beta.11 anonymous-fallback decision is stored as `false`. beta.10 reports
-  it as `false` with reason `external_principal_not_distinct`, and refuses to
-  apply that approval. Apply or reject pending approved plans before a
-  downgrade, or decide them again after it.
-- A pre-beta.11 anonymous-fallback decision is stored as `true`. beta.10 again
-  reports it as `true` with `external_administrator_distinct`, overstating
-  separation as it did before beta.11.
+Engineering adapts none of these. Each is disclosed so Josh can accept it.
 
-A downgraded server also returns to defaulting absent dispositions to
-`admitted`, so ha-mcp 8.2.0 backup and lifecycle are admitted again, and to the
-unchecked F3 re-apply hash.
+1. **Stateful only: a refused opening request is reclaimed immediately.** A
+   request with no session ID that the SDK answers with 400 or more no longer
+   leaves a session or task behind. Examples are a batch, malformed JSON or
+   a non-initialize request. It no longer counts against Engineering's
+   1,024-session cap.
+2. **Stateful only: idle means no request in flight.** A session with an open
+   GET stream or a long-running request is no longer expired 1,800 seconds
+   after its last request arrived. It is reclaimed 1,800 seconds after its
+   last request completes. Engineering's 1,024-session cap still bounds the
+   total.
+3. **Stateful only: DELETE is reclaimed by the SDK itself.** Engineering's
+   post-DELETE cleanup is now a no-op safeguard.
+4. **SDK request-body limit, 4 MiB, 413.** For POST, Engineering's gateway
+   refuses bodies above 2,000,000 bytes first, so the SDK's limit applies
+   only to a GET or DELETE with a body larger than 4 MiB.
+5. **SDK session cap, 10,000, 503.** Engineering's 1,024 cap is reached first.
+6. **Outbound client: redirects stay on the same origin.** Every SDK
+   Streamable HTTP client that Engineering opens to ha-mcp follows a redirect
+   only when it stays on the endpoint's origin and keeps the method (307/308
+   for POST). It ignores `follow_redirects`. This covers the dashboard read
+   (`clients/mcp.py`), the delegated reads (`clients/upstream_read.py`) and
+   dashboard analysis (`clients/dashboard_analysis.py`).
+   - 1.28.1's default client followed every redirect, including one to another
+     origin, and re-sent the request body there.
+   - On 1.30.0 a cross-origin redirect fails as a refusal Engineering
+     classifies as `upstream_error`.
+   - Dashboard analysis's fenced transport still refuses any URL other than
+     the exact endpoint.
+7. **Outbound client output-schema validation** resolves `$ref` only within
+   the tool's own schema. No reviewed descriptor uses an external `$ref`.
 
-Follow the [beta.11 acceptance contract](V2_4_1_BETA11_ACCEPTANCE.md).
+Unchanged: JSON-RPC batch refusal, inbound protocol negotiation, protocol
+constants, all 59 native `tools/list` descriptors (byte-identical), every
+delegated descriptor, fingerprint and admission decision, the stateless
+topology, gateway authentication, the generation gate, cancellation, and the
+HAMCP-175 truthful-refusal handling across SDK task groups.
+
+## Preserved
+
+All of the following are unchanged:
+- the public catalog of **87 tools (59 native, 28 delegated)**, the Core
+  profiles, probe and signed fingerprints, the signed ha-mcp registry, the
+  8.6.0 HOLD and the support window;
+- storage formats, workflows and pinned runners;
+- stable v1.1.2.
+
+Stable v1 (`hass_mcp_admin/`) pins `mcp==1.9.0` with `stateless_http=True`.
+That version is inside the advisory's affected range and below its 1.12.0
+stateless exemption. It is frozen and retired, so it is not changed here.
+Josh needs to decide separately what to do about it.
+
+Rollback: reinstall beta.10. Nothing new is persisted.

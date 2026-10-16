@@ -1,14 +1,11 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.11** hardens four audit findings (HAMCP-184): provider
-dispositions fail closed and every compiled ha-mcp release declares them
-explicitly (ha-mcp 8.2.0 backup and lifecycle become held; all other
-admission unchanged, including production 8.5.0 and rollback 8.4.3), F3
-re-apply validates the approved plan hash, approvals decided by the anonymous
-Ingress fallback principal no longer report `principal_separation_enforced:
-true` (reporting only; eligibility unchanged), and the CI runner guard checks
-generated matrix runners. It builds on beta.10's truthful dispatch facts on
-every public surface (HAMCP-181), beta.9's truthful entity-registry error results
+Engineering **2.4.1-beta.11** upgrades the pinned MCP Python SDK from 1.28.1
+to 1.30.0 for CVE-2026-59951 (HAMCP-188). Stateful Streamable HTTP sessions
+are now reclaimed on refusal, DELETE and idle, and the outbound client follows
+only same-origin redirects. No Engineering runtime code or descriptor
+changes. It builds on beta.10's truthful dispatch facts on every public
+surface (HAMCP-181), beta.9's truthful entity-registry error results
 (HAMCP-183), beta.8's dependency-scoped dashboard write admission (HAMCP-177),
 beta.7's delegated platform reads (`ha_get_system_health`, `ha_get_app` and
 `ha_get_integration`), beta.6's typed power and fan admission repair, beta.5's
