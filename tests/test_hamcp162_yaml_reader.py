@@ -48,6 +48,7 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
 from ha_mcp_engineering.sanitization import (  # noqa: E402
     ReferenceMarker,
+    ReferenceMarkerRegistry,
     sanitize_untrusted_data,
 )
 from test_hamcp129_platform_reads import call, ok, refused  # noqa: E402
@@ -547,14 +548,15 @@ class ReferenceMarkerTests(unittest.TestCase):
                          {"a": {"env_var_ref": "n", "other": 1}})
 
     def test_l5_directly(self):
-        on = sanitize_untrusted_data({"password": "!secret x"}, preserve_reference_markers=True)
+        on = sanitize_untrusted_data({"password": "!secret x"},
+                                     preserve_reference_markers=ReferenceMarkerRegistry())
         self.assertEqual(on.value["password"], "[REDACTED:password]")
 
         class Sub(ReferenceMarker):
             pass
 
         sub = Sub(kind="secret", name="subclass_name_q7", default_redacted=False)
-        for preserve in (True, False):
+        for preserve in (ReferenceMarkerRegistry(), None):
             for key in ("broker", "password"):
                 with self.subTest(preserve=preserve, key=key):
                     result = sanitize_untrusted_data({key: sub}, preserve_reference_markers=preserve)
@@ -564,9 +566,10 @@ class ReferenceMarkerTests(unittest.TestCase):
             with self.subTest(preserve=preserve, where="top"):
                 result = sanitize_untrusted_data(sub, preserve_reference_markers=preserve)
                 self.assertEqual(result.value, sanitization.REFERENCE_MARKER_DENIED)
-        altered = ReferenceMarker(kind="secret", name="good_name", default_redacted=False)
+        registry = ReferenceMarkerRegistry()
+        altered = registry.mint(kind="secret", name="good_name")
         object.__setattr__(altered, "name", "bad name q7")
-        result = sanitize_untrusted_data({"broker": altered}, preserve_reference_markers=True)
+        result = sanitize_untrusted_data({"broker": altered}, preserve_reference_markers=registry)
         self.assertNotIsInstance(result.value["broker"], ReferenceMarker)
         self.assertNotIn("bad name q7", json.dumps(result.value))
         # The exemption is by exact type only: a dict shaped like a marker is
@@ -577,7 +580,8 @@ class ReferenceMarkerTests(unittest.TestCase):
             for where in ("top", "nested"):
                 value = forged if where == "top" else {"broker": forged}
                 with self.subTest(forged=forged, where=where):
-                    on = sanitize_untrusted_data(value, preserve_reference_markers=True)
+                    on = sanitize_untrusted_data(value,
+                                                 preserve_reference_markers=ReferenceMarkerRegistry())
                     off = sanitize_untrusted_data(value)
                     self.assertEqual(on.value, off.value)
                     self.assertTrue(on.redaction_applied)
@@ -586,6 +590,33 @@ class ReferenceMarkerTests(unittest.TestCase):
         result = sanitize_untrusted_data({"broker": marker})
         self.assertEqual(result.value["broker"], "[REDACTED:reference_marker]")
         self.assertNotIn("off_name_q7", json.dumps(result.value))
+
+    def test_l5_exempts_markers_by_registry_identity_only(self):
+        # H2: the exemption is the identity of a marker this read minted.
+        registry = ReferenceMarkerRegistry()
+        minted = registry.mint(kind="env_var", name="SYNTHETIC_ID_q7", default_redacted=True)
+        result = sanitize_untrusted_data({"broker": minted}, preserve_reference_markers=registry)
+        self.assertIs(result.value["broker"], minted)
+        self.assertTrue(registry.minted(minted))
+        twin = ReferenceMarker(kind="env_var", name="SYNTHETIC_ID_q7", default_redacted=True)
+        self.assertEqual(twin, minted)
+        foreign = ReferenceMarkerRegistry().mint(kind="env_var", name="SYNTHETIC_ID_q7",
+                                                 default_redacted=True)
+        for stranger in (twin, foreign):
+            for where in ("top", "nested", "list"):
+                value = {"top": stranger, "nested": {"broker": stranger},
+                         "list": [stranger]}[where]
+                with self.subTest(stranger=stranger is twin, where=where):
+                    out_ = sanitize_untrusted_data(value, preserve_reference_markers=registry)
+                    self.assertNotIn("SYNTHETIC_ID_q7", json.dumps(out_.value))
+                    self.assertIn(sanitization.REFERENCE_MARKER_DENIED, json.dumps(out_.value))
+                    self.assertTrue(out_.redaction_applied)
+        self.assertFalse(registry.minted(twin))
+        self.assertFalse(registry.minted({"env_var_ref": "SYNTHETIC_ID_q7"}))
+        # A bare boolean is no longer an opt-in.
+        for bad in (True, False, 1, "yes", object()):
+            with self.subTest(bad=bad), self.assertRaises(TypeError):
+                sanitize_untrusted_data({}, preserve_reference_markers=bad)
 
     def test_other_tools_unchanged_opt_in_is_byte_identical_without_markers(self):
         corpus = json.loads((EVIDENCE / "fixtures/cases.json").read_text())
@@ -597,7 +628,8 @@ class ReferenceMarkerTests(unittest.TestCase):
         for value in values:
             with self.subTest(value=repr(value)[:60]):
                 for kwargs in ({}, {"max_string": 64}, {"known_secrets": ("Zq7v0001Xw",)}):
-                    on = sanitize_untrusted_data(value, preserve_reference_markers=True, **kwargs)
+                    on = sanitize_untrusted_data(
+                        value, preserve_reference_markers=ReferenceMarkerRegistry(), **kwargs)
                     off = sanitize_untrusted_data(value, **kwargs)
                     self.assertEqual(json.dumps(on.value, sort_keys=True), json.dumps(off.value, sort_keys=True))
                     self.assertEqual(
@@ -1213,7 +1245,11 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["data"]["completeness"], "partial")
         self.assertTrue(any(item.startswith("value_truncated:") for item in result["data"]["limitations"]))
 
-    async def test_redaction_runs_before_truncation(self):
+    async def test_truncation_runs_before_redaction(self):
+        # H2 (owner direction, superseding design section 6.3): the node cap
+        # applies to the decoded upstream tree first; redaction then judges
+        # exactly the kept shapes. Beyond-cap nodes are never returned, so they
+        # are neither examined nor counted.
         s = secret("TRN")
         gateway, transport = await yaml_gateway()
         value = {"inside": f"mysql://u:{s}@db/ha", **{f"k{i:04d}": i for i in range(4100)},
@@ -1224,9 +1260,18 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         assert_absent(self, text, s)
         self.assertEqual(result["data"]["value"]["inside"], "mysql://[REDACTED:connection_uri]")
         self.assertNotIn("zz_beyond", result["data"]["value"])
-        # The omitted credentials were redacted (and counted) before truncation.
-        self.assertGreaterEqual(result["data"]["redaction"]["redacted_field_count"], 3)
+        self.assertEqual(result["data"]["redaction"]["redacted_field_count"], 1)
         self.assertEqual(result["data"]["completeness"], "partial")
+        self.assertIn("value_truncated:104 nodes omitted", result["data"]["limitations"])
+        # A redacted subtree still counts toward the cap: the cap measures the
+        # upstream tree, so a credential list beyond it makes the read partial.
+        value = {"password": [0] * 5000, "a": 1}
+        transport.respond = lambda tool, args: ok(payload(value, args["yaml_path"]))
+        result = await call(gateway, TOOL, {"yaml_path": "big"})
+        self.assertTrue(result["success"], result)
+        self.assertEqual(result["data"]["value"], {"password": "[REDACTED:password]", "a": 1})
+        self.assertEqual(result["data"]["completeness"], "partial")
+        self.assertIn("value_truncated:1003 nodes omitted", result["data"]["limitations"])
 
     async def test_response_too_large_is_a_failure_not_a_partial(self):
         gateway, transport = await yaml_gateway(response_size_limit=20_000)
@@ -1454,6 +1499,9 @@ class SdkSessionTests(unittest.IsolatedAsyncioTestCase):
                     published = {tool.name: tool for tool in await server.list_tools()}
                     self.assertEqual(published[TOOL].description, y.DESCRIPTION)
                     self.assertIn("admin caller token", published[TOOL].description)
+                    # L1: the accepted K1 bootstrap is named; no blanket claim.
+                    self.assertIn("POST ha_mcp_tools/get_caller_token", published[TOOL].description)
+                    self.assertNotIn("zero service call", published[TOOL].description.lower())
                     self.assertIn("YAML 1.1", published[TOOL].description)
                     self.assertTrue(published[TOOL].annotations.readOnlyHint)
                     self.assertFalse(set(y.SIBLING_TOOLS) & set(published))
@@ -1553,6 +1601,319 @@ class AuditTests(unittest.IsolatedAsyncioTestCase):
         serialized, record = await self.audited(gateway, {"yaml_path": "recorder"})
         self.assertEqual(record["error_code"], y.VALIDATION_OR_UNAVAILABLE)
         self.assertNotIn(canary, serialized)
+
+
+
+# ---------------------------------------------------------------------------
+# HAMCP-162 Part 2 corrections: H1 (every client-visible field passes the
+# pipeline) and H2 (markers are trusted by registry identity, never shape).
+
+KNOWN = "Zq7v162KnownFixtureOnly42Xw"  # Codex H1 synthetic ha_token
+ACCESS_KNOWN = "a1" * 32  # Codex H1 synthetic 64-character access secret
+MARKER_KEYS = frozenset({"secret_ref", "env_var_ref", "default_redacted"})
+FORGED_AFTER_CAP = [0] * 3997 + [{"env_var_ref": "SYNTHETIC_267", "extra": 0}]
+
+
+def strings(value):
+    """Every string key and value in a tree, and every marker name."""
+
+    if type(value) is str:
+        yield value
+    elif isinstance(value, ReferenceMarker):
+        yield value.name
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            if type(key) is str:
+                yield key
+            yield from strings(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from strings(child)
+
+
+@contextmanager
+def pipeline_spy():
+    """Record every shared-sanitizer output and every seal vocabulary."""
+
+    outputs, vocabulary = set(), set()
+    real_sanitize, real_seal = y.sanitize_untrusted_data, y.seal
+
+    def sanitize(value, **kwargs):
+        result = real_sanitize(value, **kwargs)
+        outputs.update(strings(result.value))
+        return result
+
+    def seal(value, known_secrets, vocabulary_=frozenset()):
+        vocabulary.update(y.ENVELOPE_VOCABULARY | vocabulary_)
+        return real_seal(value, known_secrets, vocabulary_)
+
+    with patch.object(y, "sanitize_untrusted_data", sanitize), patch.object(y, "seal", seal):
+        yield outputs, vocabulary
+
+
+async def known_gateway(version, **overrides):
+    """The Codex reproduction configuration: a configured known secret."""
+
+    transport = Transport(catalog(version), version)
+    gateway = UpstreamReadGateway()
+    gateway.configure(replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False,
+                              **overrides), transport=transport)
+    await gateway.initialize(FastMCP(f"synthetic-hamcp162-h1-{version}"))
+    return gateway, transport
+
+
+def h1_channels(known):
+    """A configured known secret planted in every upstream and caller channel."""
+
+    include = "!include ordinary.yaml"
+    return [
+        ("include_key", "sensor.value", {known: include}),
+        ("include_nested_key", "sensor.value", {"a": {"b": {known: include}}}),
+        ("include_list_key", "sensor.value", {"a": [{known: include}, {"c": include}]}),
+        ("include_encoded_key", "sensor.value", {quote(known): include}),
+        ("include_prefix_key", "sensor.value", {"x" + known + "y": include}),
+        ("include_many", "sensor.value", {f"k{i:02d}{known}": include for i in range(20)}),
+        ("include_value", "sensor.value", {"a": f"!include {known}.yaml"}),
+        ("plain_key", "sensor.value", {known: 1, "a": known}),
+        ("selected_path", "sensor." + known, "ordinary"),
+        ("selected_path_deep", f"a.b.{known}.c", {known: include}),
+    ]
+
+
+class EnvelopeSealTests(unittest.IsolatedAsyncioTestCase):
+    """H1: no client-visible field of a reader response bypasses the pipeline."""
+
+    def assert_sealed(self, result, known):
+        text = json.dumps(result, ensure_ascii=False)
+        assert_absent(self, text, known)
+        self.assertNotIn(json.dumps(known)[1:-1], json.dumps(result))
+
+    def assert_through_pipeline(self, result, outputs, vocabulary):
+        allowed = outputs | vocabulary | MARKER_KEYS
+        for text in strings(result):
+            self.assertIn(text, allowed, f"returned around the pipeline: {text!r}")
+
+    async def test_codex_h1_reproduction(self):
+        for version in VERSIONS:
+            gateway, transport = await known_gateway(version, ha_token=KNOWN)
+            self.assertIn(KNOWN, gateway._known_secrets)
+            for case, path, value in (("include_path", "sensor.value", {KNOWN: "!include ordinary.yaml"}),
+                                      ("selected_path", "sensor." + KNOWN, "ordinary")):
+                with self.subTest(version=version, case=case):
+                    transport.respond = lambda tool, args, v=value: ok(payload(v, args["yaml_path"]))
+                    result = await call(gateway, TOOL, {"yaml_path": path})
+                    self.assertTrue(result["success"], result)
+                    self.assert_sealed(result, KNOWN)
+                    # The useful read survives: provider identity, the
+                    # disclosure and the include limitation are intact.
+                    self.assertEqual(result["metadata"]["provider"], "upstream_read_gateway")
+                    self.assertEqual(result["warnings"], [y.K7_WARNING])
+                    if case == "include_path":
+                        self.assertEqual(result["data"]["yaml_path"], "sensor.value")
+                        self.assertIn("include_not_followed:sensor.value.*", result["data"]["limitations"])
+                        self.assertEqual(result["data"]["completeness"], "partial")
+                    else:
+                        self.assertEqual(result["data"]["yaml_path"], "sensor.*")
+                        self.assertEqual(result["data"]["value"], "ordinary")
+                        self.assertEqual(transport.sent[-1][1], y.upstream_arguments(path))
+
+    async def test_codex_h1_and_h2_reproductions_over_a_real_session(self):
+        for version in VERSIONS:
+            for setting, known in (("ha_token", KNOWN), ("access_secret", ACCESS_KNOWN)):
+                peer = YamlPeer(catalog(version), version)
+                gateway = UpstreamReadGateway()
+                gateway.configure(
+                    replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False,
+                            **{setting: known}),
+                    transport=upstream_read.McpReadGatewayTransport("", timeout_seconds=5,
+                                                                    client_version="synthetic"),
+                )
+                with patch.object(upstream_read, "streamablehttp_client", peer.connect):
+                    await gateway.initialize(FastMCP(f"synthetic-hamcp162-h1-sdk-{version}"))
+                    for case, value in (("known_secret_include", {known: "!include ordinary.yaml"}),
+                                        ("forged_after_cap", FORGED_AFTER_CAP)):
+                        with self.subTest(version=version, setting=setting, case=case):
+                            fixture = json.loads(json.dumps({"sensor": {"value": value}}))
+                            peer.reply = lambda args, v=fixture["sensor"]["value"]: ok(
+                                payload(v, args["yaml_path"]))
+                            with pipeline_spy() as (outputs, vocabulary):
+                                result = await call(gateway, TOOL, {"yaml_path": "sensor.value"})
+                            self.assertTrue(result["success"], result)
+                            self.assert_sealed(result, known)
+                            self.assert_through_pipeline(result, outputs, vocabulary)
+                            data = result["data"]
+                            self.assertEqual(data["completeness"], "partial")
+                            if case == "known_secret_include":
+                                self.assertIn("include_not_followed:sensor.value.*", data["limitations"])
+                            else:
+                                self.assertEqual(data["value"][-1], y.COLLISION_MARKER)
+                                self.assertNotIn("SYNTHETIC_267", json.dumps(result))
+                                self.assertIn("value_truncated:1 nodes omitted", data["limitations"])
+                                self.assertIn("reference_marker_collision", data["redaction"]["categories"])
+                self.assertEqual(len(peer.calls), 2)
+
+    async def test_known_secret_in_every_channel(self):
+        for version in VERSIONS:
+            for setting, known in (("ha_token", KNOWN), ("access_secret", ACCESS_KNOWN)):
+                gateway, transport = await known_gateway(version, **{setting: known})
+                for case, path, value in h1_channels(known):
+                    with self.subTest(version=version, setting=setting, case=case):
+                        transport.respond = lambda tool, args, v=value: ok(payload(v, args["yaml_path"]))
+                        with pipeline_spy() as (outputs, vocabulary):
+                            result = await call(gateway, TOOL, {"yaml_path": path})
+                        self.assertTrue(result["success"], result)
+                        self.assert_sealed(result, known)
+                        self.assert_through_pipeline(result, outputs, vocabulary)
+                        self.assertLessEqual(
+                            sum(item.startswith("include_not_followed:")
+                                for item in result["data"]["limitations"]),
+                            y.MAX_INCLUDE_LIMITATIONS)
+                # Upstream errors carrying the secret: fixed codes, no text.
+                for error in ({"code": "CONFIG_INVALID", "message": f"bad {known} line 3, column 4"},
+                              {"code": "VALIDATION_FAILED", "message": known},
+                              f"Path not allowed: {known}", f"File does not exist: {known}", known):
+                    with self.subTest(version=version, setting=setting, error=str(error)[:20]):
+                        transport.respond = lambda tool, args, e=error: {"isError": True, "content": [
+                            {"type": "text", "text": json.dumps({"success": False, "error": e})}]}
+                        with pipeline_spy() as (outputs, vocabulary):
+                            result = await call(gateway, TOOL, {"yaml_path": "sensor." + known})
+                        self.assertFalse(result["success"], result)
+                        self.assert_sealed(result, known)
+                        self.assert_through_pipeline(result, outputs, vocabulary)
+                        self.assertEqual(result["metadata"]["upstream_dispatch_occurred"], True)
+                # Pre-dispatch refusals echo nothing either.
+                transport.sent.clear()
+                with pipeline_spy() as (outputs, vocabulary):
+                    result = await call(gateway, TOOL, {"yaml_path": known, "file": known})
+                self.assertFalse(result["success"], result)
+                self.assert_sealed(result, known)
+                self.assert_through_pipeline(result, outputs, vocabulary)
+                self.assertEqual(transport.sent, [])
+
+    async def test_known_secret_never_reaches_the_audit_record(self):
+        gateway, transport = await known_gateway("8.5.0", ha_token=KNOWN)
+        for case, path, value in h1_channels(KNOWN):
+            with self.subTest(case=case):
+                transport.respond = lambda tool, args, v=value: ok(payload(v, args["yaml_path"]))
+                serialized, record = await AuditTests.audited(self, gateway, {"yaml_path": path})
+                self.assertEqual(record["tool_name"], TOOL)
+                assert_absent(self, serialized, KNOWN)
+
+    def test_every_envelope_field_is_sealed(self):
+        # Direct projection: every envelope string is a pipeline output or a
+        # source constant, for each planted channel.
+        for case, path, value in h1_channels(KNOWN):
+            with self.subTest(case=case), pipeline_spy() as (outputs, vocabulary):
+                result = y.project_success(ok(payload(value, path)), path, known_secrets=(KNOWN,))
+                assert_absent(self, json.dumps(result.envelope), KNOWN)
+                for text in strings(result.envelope):
+                    self.assertIn(text, outputs | vocabulary | MARKER_KEYS)
+        self.assertEqual(set(result.envelope), {"file", "yaml_path", "source", "found", "value",
+                                                "completeness", "limitations", "redaction"})
+
+    def test_path_projection(self):
+        ks = (KNOWN,)
+        self.assertEqual(y.project_path(["sensor", "value"], ks), "sensor.value")
+        self.assertEqual(y.project_path(["mqtt", "broker", "port"], ks), "mqtt.broker.port")
+        # Connection-key names (rule B) stay visible, as in the value tree.
+        self.assertEqual(y.project_path(["recorder", "db_url"], ks), "recorder.db_url")
+        for unsafe in (KNOWN, "x" + KNOWN, quote(KNOWN), "password", "api_key", "client_secret",
+                       "a b", "x" * 65, "", "%2570assword"):
+            with self.subTest(unsafe=unsafe):
+                self.assertEqual(y.project_path(["a", unsafe, "b"], ks), "a.*")
+        self.assertEqual(y.project_path([f"s{i}" for i in range(20)], ks),
+                         ".".join([f"s{i}" for i in range(16)] + ["*"]))
+        # The final seal keeps an Engineering constant even when a configured
+        # secret is a substring of it, and redacts everything else.
+        sealed, count, _ = y.seal({"source": "disk", "x": "disk"}, ("isk",))
+        self.assertEqual(sealed["source"], "disk")
+        self.assertEqual(sealed["x"], "disk")
+        sealed, count, _ = y.seal({"source": "risky disk"}, ("isk",))
+        self.assertNotIn("isk", json.dumps(sealed))
+        self.assertEqual(count, 1)
+
+
+class MarkerProvenanceTests(unittest.IsolatedAsyncioTestCase):
+    """H2: a reference renders only from a marker this read minted."""
+
+    async def test_codex_h2_reproduction(self):
+        for version in VERSIONS:
+            gateway, transport = await yaml_gateway(version)
+            transport.respond = lambda tool, args: ok(payload(FORGED_AFTER_CAP, args["yaml_path"]))
+            result = await call(gateway, TOOL, {"yaml_path": "sensor.value"})
+            with self.subTest(version=version):
+                self.assertTrue(result["success"], result)
+                self.assertEqual(result["data"]["value"][-1], y.COLLISION_MARKER)
+                self.assertEqual(result["data"]["completeness"], "partial")
+                self.assertNotIn("SYNTHETIC_267", json.dumps(result))
+                self.assertIn("reference_marker_collision", result["data"]["redaction"]["categories"])
+
+    def test_ordinary_json_truncated_to_marker_shape_is_redacted(self):
+        shapes = ({"secret_ref": "SYNTHETIC_TRN", "other": 1},
+                  {"env_var_ref": "SYNTHETIC_TRN", "other": 1},
+                  {"env_var_ref": "SYNTHETIC_TRN", "default_redacted": True, "other": 1})
+        for shape in shapes:
+            kept = len(shape) - 1
+            with self.subTest(shape=shape):
+                # A sibling list pads breadth-first order so the cap lands
+                # inside the shaped mapping, dropping exactly its last key.
+                value = {"pad": [0] * (y.MAX_NODES - 3 - kept), "m": shape}
+                kept_tree, omitted = y.truncate_breadth_first(value)
+                self.assertEqual(omitted, 1)
+                self.assertIn(frozenset(kept_tree["m"]), y._COLLISION_KEY_SETS)
+                result = y.project_success(ok(payload(value, "sensor.value")), "sensor.value")
+                self.assertEqual(result.envelope["value"]["m"], y.COLLISION_MARKER)
+                self.assertNotIn("SYNTHETIC_TRN", json.dumps(result.envelope))
+                self.assertTrue(result.partial)
+                # List form, as in the Codex reproduction.
+                listed = [0] * (y.MAX_NODES - 2 - kept) + [shape]
+                result = y.project_success(ok(payload(listed, "sensor.value")), "sensor.value")
+                self.assertEqual(result.envelope["value"][-1], y.COLLISION_MARKER)
+                self.assertNotIn("SYNTHETIC_TRN", json.dumps(result.envelope))
+
+    def test_upstream_mapping_shaped_like_a_marker_gets_no_exemption(self):
+        for shape in ({"secret_ref": "SYNTHETIC_LIT"}, {"env_var_ref": "SYNTHETIC_LIT"},
+                      {"env_var_ref": "SYNTHETIC_LIT", "default_redacted": True}):
+            for where in ("top", "nested", "list"):
+                value = {"top": shape, "nested": {"a": shape}, "list": [shape]}[where]
+                with self.subTest(shape=shape, where=where):
+                    result = y.project_success(ok(payload(value, "sensor.value")), "sensor.value")
+                    self.assertNotIn("SYNTHETIC_LIT", json.dumps(result.envelope))
+                    self.assertIn(y.COLLISION_MARKER, json.dumps(result.envelope))
+
+    def test_render_trusts_registry_identity_only(self):
+        registry, account = ReferenceMarkerRegistry(), y._Accounting()
+        minted = registry.mint(kind="secret", name="broker_pw")
+        self.assertEqual(y.render_markers({"a": minted}, registry, account),
+                         {"a": {"secret_ref": "broker_pw"}})
+        self.assertEqual(account.redacted, 0)
+        twin = ReferenceMarker(kind="secret", name="broker_pw", default_redacted=False)
+        foreign = ReferenceMarkerRegistry().mint(kind="secret", name="broker_pw")
+        for stranger in (twin, foreign, {"secret_ref": "broker_pw"}, {"env_var_ref": "N"},
+                         {"env_var_ref": "N", "default_redacted": True}):
+            with self.subTest(stranger=repr(stranger)):
+                account = y._Accounting()
+                self.assertEqual(y.render_markers({"a": [stranger]}, registry, account),
+                                 {"a": [y.COLLISION_MARKER]})
+                self.assertEqual(account.categories, {"reference_marker_collision"})
+
+    async def test_genuine_markers_still_pass(self):
+        for version in VERSIONS:
+            gateway, transport = await yaml_gateway(version)
+            value = {"password": "!secret broker_pw", "user": "!env_var SYNTHETIC_USER",
+                     "pin": "!env_var SYNTHETIC_PIN 1234", "list": ["!secret other_pw"],
+                     "pad": [0] * 100}
+            transport.respond = lambda tool, args: ok(payload(value, args["yaml_path"]))
+            result = await call(gateway, TOOL, {"yaml_path": "mqtt"})
+            with self.subTest(version=version):
+                self.assertTrue(result["success"], result)
+                rendered = result["data"]["value"]
+                self.assertEqual(rendered["password"], {"secret_ref": "broker_pw"})
+                self.assertEqual(rendered["user"], {"env_var_ref": "SYNTHETIC_USER"})
+                self.assertEqual(rendered["pin"], {"env_var_ref": "SYNTHETIC_PIN", "default_redacted": True})
+                self.assertEqual(rendered["list"], [{"secret_ref": "other_pw"}])
+                self.assertNotIn("1234", json.dumps(rendered))
+                self.assertEqual(result["data"]["completeness"], "complete")
 
 
 if __name__ == "__main__":

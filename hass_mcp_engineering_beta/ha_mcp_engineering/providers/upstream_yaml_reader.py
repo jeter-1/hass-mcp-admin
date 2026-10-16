@@ -4,8 +4,9 @@ One public tool reads one mapping-key path of ``configuration.yaml`` through
 the reviewed upstream ``ha_config_get_yaml``. Everything else is refused
 before dispatch with zero upstream calls. Engineering builds the upstream
 arguments itself (the ``file`` value is a constant), validates the response
-identity, and redacts the parsed value with the full key path before the
-shared sanitizer runs (design layers L1-L5).
+identity, bounds the parsed value, and redacts it with the full key path
+before the shared sanitizer runs (design layers L1-L5). Every other
+client-visible field passes the same final sanitizer pass (H1).
 
 The upstream tool is an *optional reviewed tool*: it is admitted only for
 exact versions listed in :data:`OPTIONAL_DISPOSITIONS` whose complete runtime
@@ -28,6 +29,7 @@ from ..sanitization import (
     SECRET_REFERENCE_NAME,
     REDACTION_MARKER,
     ReferenceMarker,
+    ReferenceMarkerRegistry,
     _AUTH_FLOW_KEYS,
     _COOKIE_KEYS,
     _MATTER_CODE_KEYS,
@@ -97,8 +99,9 @@ DESCRIPTION = (
     "redacted whole (best effort; this over-redacts, for example most URLs "
     "and any text mentioning a token, auth or session). Selecting a "
     "credential-shaped path is refused.\n"
-    "- The first call may make the ha-mcp component fetch and persist an "
-    "admin caller token (an accepted dependency)."
+    "- Engineering makes no write or service call. The one accepted "
+    "dependency: the first call may make the ha-mcp component call POST "
+    "ha_mcp_tools/get_caller_token and persist the admin caller token."
 )
 
 # Response-level disclosures carried by every successful result.
@@ -483,8 +486,14 @@ def scanner_category(text: str, known_secrets: tuple[str, ...]) -> str | None:
     return None
 
 
-def mint_reference(value: str, known_secrets: tuple[str, ...]) -> ReferenceMarker | None:
-    """Mint a marker from a whole scalar string, or return None."""
+def mint_reference(
+    value: str, known_secrets: tuple[str, ...], registry: ReferenceMarkerRegistry
+) -> ReferenceMarker | None:
+    """Mint a marker from a whole scalar string into ``registry``, or return None.
+
+    This is the only place a marker is created. L5 and rendering trust a
+    marker only by its identity in the registry of the same read (H2).
+    """
 
     for pattern, default_redacted in ((_SECRET_REF, False), (_ENV_REF, False)):
         match = pattern.fullmatch(value)
@@ -499,11 +508,58 @@ def mint_reference(value: str, known_secrets: tuple[str, ...]) -> ReferenceMarke
         kind, name, default_redacted = "env_var", match[1], True
     if scanner_category(name, known_secrets) is not None:
         return None
-    return ReferenceMarker(kind=kind, name=name, default_redacted=default_redacted)
+    return registry.mint(kind=kind, name=name, default_redacted=default_redacted)
 
 
 def reference_like(value: str) -> bool:
     return _REFERENCE_LIKE.match(value) is not None
+
+
+# ---------------------------------------------------------------------------
+# H1: client-visible key paths (include limitations and the requested path).
+
+MAX_PATH_SEGMENTS = 16
+PATH_MASK = "*"
+
+
+def path_segment_safe(segment: str, known_secrets: tuple[str, ...]) -> bool:
+    """A key-path segment may be shown only if the whole key pipeline passes.
+
+    Bounded grammar, rule A canonicalization, the credential-key predicate
+    (B and the L3/L4 path context), K1/R10 key text, the C' text rules, and
+    the scanners with the configured known secrets on the raw, decoded and
+    canonical forms.
+    """
+
+    if type(segment) is not str or not _SEGMENT.fullmatch(segment):
+        return False
+    try:
+        text, _rounds, decoded = canonical_forms(segment)
+    except _EncodingRefused:
+        return False
+    if is_credential_key(text) or key_text_unsafe(text) or credential_text(text):
+        return False
+    return all(
+        scanner_category(form, known_secrets) is None
+        for form in dict.fromkeys((segment, decoded, text))
+    )
+
+
+def project_path(segments: list[str], known_secrets: tuple[str, ...]) -> str:
+    """Safe display projection of a key path for client-visible text.
+
+    The first unsafe segment, or a segment past the bound, becomes ``*`` and
+    ends the path, so a path never carries key text that the value tree
+    would redact.
+    """
+
+    shown: list[str] = []
+    for segment in segments:
+        if len(shown) >= MAX_PATH_SEGMENTS or not path_segment_safe(segment, known_secrets):
+            shown.append(PATH_MASK)
+            break
+        shown.append(segment)
+    return ".".join(shown)
 
 
 # ---------------------------------------------------------------------------
@@ -527,8 +583,11 @@ class _Accounting:
 
 
 class _L4:
-    def __init__(self, known_secrets: tuple[str, ...]) -> None:
+    def __init__(
+        self, known_secrets: tuple[str, ...], registry: ReferenceMarkerRegistry
+    ) -> None:
         self.known_secrets = known_secrets
+        self.registry = registry
         self.account = _Accounting()
 
     def redact(self, value: Any, display: list[str], cpath: list[str], depth: int) -> Any:
@@ -537,7 +596,7 @@ class _L4:
         )
         if first_credential is not None:
             if first_credential == len(cpath) - 1 and type(value) is str:
-                marker = mint_reference(value, self.known_secrets)
+                marker = mint_reference(value, self.known_secrets, self.registry)
                 if marker is not None:
                     return self._minted(marker)
             self.account.record("credential_key")
@@ -594,7 +653,7 @@ class _L4:
         return marker
 
     def _string(self, value: str, display: list[str], connection: bool) -> Any:
-        marker = mint_reference(value, self.known_secrets)
+        marker = mint_reference(value, self.known_secrets, self.registry)
         if marker is not None:
             return self._minted(marker)
         if reference_like(value):
@@ -632,13 +691,8 @@ class _L4:
         return value
 
     def _include(self, display: list[str]) -> None:
-        segments = []
-        for segment in display:
-            if not _SEGMENT.fullmatch(segment) or len(segments) >= 16:
-                segments.append("*")
-                break
-            segments.append(segment)
-        self.account.includes.append(".".join(segments))
+        # H1: the path is upstream key text, so it gets the key pipeline.
+        self.account.includes.append(project_path(display, self.known_secrets))
 
 
 def _count_nodes(value: Any) -> int:
@@ -659,7 +713,9 @@ def truncate_breadth_first(value: Any, cap: int = MAX_NODES) -> tuple[Any, int]:
 
     Returns the kept tree and the number of omitted nodes. Children of one
     container are enqueued together, so omitted children are always a
-    suffix of their container.
+    suffix of their container. It runs on the decoded upstream tree, before
+    any redaction or minting (H2): its output is plain JSON data, so L4
+    judges the truncated shapes and nothing it emits can be a marker.
     """
 
     total = _count_nodes(value)
@@ -715,10 +771,20 @@ def _relabeled_count(before: Any, after: Any) -> int:
     )
 
 
-def render_markers(value: Any) -> Any:
-    """Serialize minted markers after L5; nothing sanitizes after this."""
+def render_markers(
+    value: Any, registry: ReferenceMarkerRegistry, account: _Accounting
+) -> Any:
+    """Serialize minted markers after L5; nothing sanitizes after this.
 
-    if type(value) is ReferenceMarker:
+    Only a marker this read's registry minted renders as a reference (H2).
+    Any other marker, and any plain mapping that has acquired a rendered
+    marker's key set, is withheld: no transform can forge a reference.
+    """
+
+    if type(value) is ReferenceMarker or isinstance(value, ReferenceMarker):
+        if not registry.minted(value) or not value.valid():
+            account.record("reference_marker_collision")
+            return COLLISION_MARKER
         if value.kind == "secret":
             return {"secret_ref": value.name}
         rendered: dict[str, Any] = {"env_var_ref": value.name}
@@ -726,9 +792,12 @@ def render_markers(value: Any) -> Any:
             rendered["default_redacted"] = True
         return rendered
     if type(value) is dict:
-        return {key: render_markers(child) for key, child in value.items()}
+        if frozenset(value) in _COLLISION_KEY_SETS:
+            account.record("reference_marker_collision")
+            return COLLISION_MARKER
+        return {key: render_markers(child, registry, account) for key, child in value.items()}
     if type(value) is list:
-        return [render_markers(child) for child in value]
+        return [render_markers(child, registry, account) for child in value]
     return value
 
 
@@ -873,6 +942,37 @@ def classify_error(call_result: Any) -> YamlReadRefusal:
 # The whole success projection: L4, caps, L5, rendering and the envelope.
 
 
+# H1: the source-defined text of the envelope. ``seal`` keeps these strings
+# only where its input is byte-equal to one of them.
+ENVELOPE_VOCABULARY = frozenset(
+    {
+        "file",
+        "yaml_path",
+        "source",
+        "found",
+        "value",
+        "completeness",
+        "limitations",
+        "redaction",
+        "redacted_field_count",
+        "categories",
+        "line",
+        "column",
+        "failure_category",
+        ALLOWED_FILE,
+        "disk",
+        "complete",
+        "partial",
+        "include_not_followed_truncated",
+        K7_WARNING,
+        *DISCLOSURE_LIMITATIONS,
+        *(code for code in FAILURES),
+        *(category for category, _message in FAILURES.values()),
+        *(message for _category, message in FAILURES.values()),
+    }
+)
+
+
 @dataclass(frozen=True)
 class YamlReadResult:
     envelope: dict[str, Any]
@@ -880,6 +980,86 @@ class YamlReadResult:
     redaction_categories: tuple[str, ...]
     partial: bool
     sanitization_failed: bool = False
+
+
+def seal(
+    value: Any,
+    known_secrets: tuple[str, ...],
+    vocabulary: frozenset[str] = frozenset(),
+) -> tuple[Any, int, set[str]]:
+    """H1: the final shared-sanitizer pass over client-visible fields.
+
+    ``project_success`` and the gateway run every field of a reader response
+    through it; no field is returned around it. The whole tree passes the
+    sanitizer, so key context still applies. Afterwards, and only where the
+    input string is byte-equal to a source-defined Engineering constant in
+    ``vocabulary`` (``ENVELOPE_VOCABULARY`` plus the gateway's own
+    constants), the constant is kept: its text is the same for every
+    configuration and every upstream, so it cannot carry upstream, caller
+    or configured text even when a configured secret is a substring of it.
+    Returns the sealed value and the count and categories of the changes it
+    kept. Raises a read failure when the sanitizer fails closed.
+    """
+
+    vocabulary = ENVELOPE_VOCABULARY | vocabulary
+    result = sanitize_untrusted_data(value, known_secrets=known_secrets)
+    if result.failed_closed:
+        raise YamlReadRefusal(READ_FAILED)
+    changed = [0]
+    sealed = _keep_constants(value, result.value, vocabulary, changed)
+    categories = set(result.redaction_categories) if changed[0] else set()
+    return sealed, changed[0], categories
+
+
+def _keep_constants(
+    original: Any, sealed: Any, vocabulary: frozenset[str], changed: list[int]
+) -> Any:
+    if type(original) is str:
+        if original in vocabulary:
+            return original
+        if sealed != original:
+            changed[0] += 1
+        return sealed
+    if type(original) is dict and type(sealed) is dict and len(original) == len(sealed):
+        kept: dict[Any, Any] = {}
+        for (key, child), (sealed_key, sealed_child) in zip(original.items(), sealed.items()):
+            if type(key) is str and key in vocabulary:
+                sealed_key = key
+            elif sealed_key != key:
+                changed[0] += 1
+            kept[sealed_key] = _keep_constants(child, sealed_child, vocabulary, changed)
+        if len(kept) == len(sealed):
+            return kept
+        return sealed
+    if type(original) is list and type(sealed) is list and len(original) == len(sealed):
+        return [
+            _keep_constants(child, sealed_child, vocabulary, changed)
+            for child, sealed_child in zip(original, sealed)
+        ]
+    if sealed != original:
+        changed[0] += 1
+    return sealed
+
+
+def seal_response(
+    body: dict[str, Any],
+    known_secrets: tuple[str, ...],
+    vocabulary: frozenset[str] = frozenset(),
+) -> dict[str, Any]:
+    """H1: seal every gateway response field except the reader's own value.
+
+    ``data`` on success is the ``project_success`` envelope, already sealed
+    field by field; it is reinserted unchanged so its rendered markers stay
+    intact (R8). Every other field (summary, warnings, metadata, error,
+    message, details, timing, request id) passes ``seal``. Key order is kept.
+    """
+
+    # The ``data`` key itself still passes; only its value is held back.
+    rest = {key: None if key == "data" else child for key, child in body.items()}
+    sealed, _count, _categories = seal(rest, known_secrets, vocabulary | {"data"})
+    if list(sealed) != list(rest):
+        raise YamlReadRefusal(READ_FAILED)
+    return {key: body["data"] if key == "data" else sealed[key] for key in body}
 
 
 def project_success(
@@ -890,6 +1070,7 @@ def project_success(
     max_string: int | None = None,
 ) -> YamlReadResult:
     found, parsed = decode_success(call_result, yaml_path)
+    registry = ReferenceMarkerRegistry()
     limitations: list[str] = []
     redacted = 0
     categories: set[str] = set()
@@ -897,20 +1078,20 @@ def project_success(
     partial = False
     sanitization_failed = False
     if found:
-        prefix = yaml_path.split(".")
-        walker = _L4(known_secrets)
-        redacted_tree = walker.redact(parsed, list(prefix), [segment.lower() for segment in prefix], 1)
-        account = walker.account
-        redacted += account.redacted
-        categories |= account.categories
-        if account.depth_truncated:
-            partial = True
-            limitations.append(f"value_depth_limited:{MAX_DEPTH}")
-        # Redaction above runs before truncation.
-        kept, omitted = truncate_breadth_first(redacted_tree)
+        # H2: truncation runs first, on the decoded upstream tree. Redaction
+        # then judges exactly the shapes that can be returned, and work is
+        # bounded by the node cap.
+        kept, omitted = truncate_breadth_first(parsed)
         if omitted:
             partial = True
             limitations.append(f"value_truncated:{omitted} nodes omitted")
+        prefix = yaml_path.split(".")
+        walker = _L4(known_secrets, registry)
+        redacted_tree = walker.redact(kept, list(prefix), [segment.lower() for segment in prefix], 1)
+        account = walker.account
+        if account.depth_truncated:
+            partial = True
+            limitations.append(f"value_depth_limited:{MAX_DEPTH}")
         includes = sorted(set(account.includes))
         if includes:
             partial = True
@@ -921,35 +1102,51 @@ def project_success(
             if len(includes) > MAX_INCLUDE_LIMITATIONS:
                 limitations.append("include_not_followed_truncated")
         sanitation = sanitize_untrusted_data(
-            kept,
+            redacted_tree,
             known_secrets=known_secrets,
             max_string=max_string,
-            preserve_reference_markers=True,
+            preserve_reference_markers=registry,
         )
         sanitization_failed = sanitation.failed_closed
-        redacted += sanitation.redacted_field_count - _relabeled_count(
-            kept, sanitation.value
-        )
-        categories |= set(sanitation.redaction_categories)
         if sanitation.truncated_field_count:
             partial = True
             limitations.append(
                 f"strings_truncated:{sanitation.truncated_field_count}"
             )
-        value = render_markers(sanitation.value)
+        value = render_markers(sanitation.value, registry, account)
+        redacted += account.redacted + sanitation.redacted_field_count - _relabeled_count(
+            redacted_tree, sanitation.value
+        )
+        categories |= account.categories | set(sanitation.redaction_categories)
     limitations.extend(DISCLOSURE_LIMITATIONS)
-    envelope = {
-        "file": ALLOWED_FILE,
-        "yaml_path": yaml_path,
-        "source": "disk",
-        "found": found,
-        "value": value,
-        "completeness": "partial" if partial else "complete",
-        "limitations": limitations,
-        "redaction": {
-            "redacted_field_count": redacted,
-            "categories": sorted(categories),
+    # H1: every field other than the value (already through L4 and L5 above)
+    # passes the final pass; the requested path gets the key-path projection.
+    fields, sealed, sealed_categories = seal(
+        {
+            "file": ALLOWED_FILE,
+            "yaml_path": project_path(yaml_path.split("."), known_secrets),
+            "source": "disk",
+            "found": found,
+            "completeness": "partial" if partial else "complete",
+            "limitations": limitations,
         },
+        known_secrets,
+    )
+    redacted += sealed
+    categories |= sealed_categories
+    summary, _count, _categories = seal(
+        {"redacted_field_count": redacted, "categories": sorted(categories)},
+        known_secrets,
+    )
+    envelope = {
+        "file": fields["file"],
+        "yaml_path": fields["yaml_path"],
+        "source": fields["source"],
+        "found": fields["found"],
+        "value": value,
+        "completeness": fields["completeness"],
+        "limitations": fields["limitations"],
+        "redaction": summary,
     }
     return YamlReadResult(
         envelope=envelope,

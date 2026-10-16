@@ -144,6 +144,29 @@ class ReferenceMarker:
         return False
 
 
+class ReferenceMarkerRegistry:
+    """The markers one YAML read minted, held by object identity (H2).
+
+    The opt-in exemption trusts a value only when it is the very object this
+    registry minted: never a type alone and never a mapping shape. Upstream
+    data, a truncation shell or a copy cannot be registered. Holding each
+    marker keeps its ``id`` from being reused while the registry lives.
+    """
+
+    __slots__ = ("_minted",)
+
+    def __init__(self) -> None:
+        self._minted: dict[int, ReferenceMarker] = {}
+
+    def mint(self, *, kind: str, name: str, default_redacted: bool = False) -> ReferenceMarker:
+        marker = ReferenceMarker(kind=kind, name=name, default_redacted=default_redacted)
+        self._minted[id(marker)] = marker
+        return marker
+
+    def minted(self, value: Any) -> bool:
+        return type(value) is ReferenceMarker and self._minted.get(id(value)) is value
+
+
 @dataclass(frozen=True)
 class SanitizationResult:
     value: Any
@@ -163,11 +186,15 @@ class _Sanitizer:
         *,
         known_secrets: tuple[str, ...],
         max_string: int | None,
-        preserve_reference_markers: bool = False,
+        preserve_reference_markers: ReferenceMarkerRegistry | None = None,
     ) -> None:
         self.known_secrets = tuple(secret for secret in known_secrets if secret)
         self.max_string = max_string
-        self.preserve_reference_markers = preserve_reference_markers is True
+        if preserve_reference_markers is not None and (
+            type(preserve_reference_markers) is not ReferenceMarkerRegistry
+        ):
+            raise TypeError("preserve_reference_markers takes a ReferenceMarkerRegistry")
+        self.minted_markers = preserve_reference_markers
         self.redacted_field_count = 0
         self.categories: set[str] = set()
         self.truncated_field_count = 0
@@ -370,9 +397,13 @@ class _Sanitizer:
         deduplicated = REPEATED_REDACTION_MARKER.sub(r"\1", "".join(output))
         return self._truncate(deduplicated)
 
+    def _preserved(self, value: Any) -> bool:
+        return self.minted_markers is not None and self.minted_markers.minted(value)
+
     def _reference_marker(self, value: ReferenceMarker) -> Any:
-        # Exact type only; a subclass or a look-alike mapping is ordinary data.
-        if not self.preserve_reference_markers:
+        # Registry identity only; an unregistered marker, a subclass or a
+        # look-alike mapping is ordinary data.
+        if not self._preserved(value):
             self._record_field({"reference_marker"})
             return REFERENCE_MARKER_DENIED
         if value.valid():
@@ -393,7 +424,7 @@ class _Sanitizer:
                 key = self._normalize_key(raw_key)
                 try:
                     key_category = self._category_for_key(key, path)
-                    if self.preserve_reference_markers and type(item) is ReferenceMarker:
+                    if self._preserved(item):
                         safe_key = (
                             str(raw_key) if key_category else self._sanitize_string(str(raw_key))
                         )
@@ -444,13 +475,14 @@ def sanitize_untrusted_data(
     *,
     known_secrets: tuple[str, ...] = (),
     max_string: int | None = None,
-    preserve_reference_markers: bool = False,
+    preserve_reference_markers: ReferenceMarkerRegistry | None = None,
 ) -> SanitizationResult:
     """Recursively sanitize untrusted data, failing closed at each field.
 
-    ``preserve_reference_markers`` (default off) keeps an exact
-    ``ReferenceMarker`` whose name still matches the minting grammar, even
-    under a sensitive key. Only the HAMCP-162 YAML reader passes it.
+    ``preserve_reference_markers`` (default off) takes the registry of one
+    YAML read. It keeps a marker that registry minted, by object identity,
+    whose name still matches the minting grammar, even under a sensitive
+    key. Only the HAMCP-162 YAML reader passes it.
     """
 
     sanitizer = _Sanitizer(

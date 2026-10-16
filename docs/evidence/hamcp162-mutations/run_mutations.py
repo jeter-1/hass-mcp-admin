@@ -89,8 +89,8 @@ MUTATIONS = [
     )], BOTH),
     # L4 path context.
     m("L4-node-only", "computing L4 key context from the returned node only", READER, [(
-        "walker.redact(parsed, list(prefix), [segment.lower() for segment in prefix], 1)",
-        "walker.redact(parsed, list(prefix), [], 1)",
+        "walker.redact(kept, list(prefix), [segment.lower() for segment in prefix], 1)",
+        "walker.redact(kept, list(prefix), [], 1)",
     )]),
     m("L4-walk-credential-container", "walking into a container under a sensitive key", READER, [(
         "        if first_credential is not None:\n            if first_credential",
@@ -143,8 +143,8 @@ MUTATIONS = [
         "connection = any(is_connection_key(key) for key in cpath)",
         "connection = any(is_connection_key(key) for key in cpath[getattr(self, 'prefix_len', 0):])",
     ), (
-        "        walker = _L4(known_secrets)\n",
-        "        walker = _L4(known_secrets)\n        walker.prefix_len = len(prefix)\n",
+        "        walker = _L4(known_secrets, registry)\n",
+        "        walker = _L4(known_secrets, registry)\n        walker.prefix_len = len(prefix)\n",
     )]),
     m("B-walk-connection-dict", "rule B: walking into a container under a connection key", READER, [(
         "            if connection:\n                self.account.record(\"connection_string\")\n"
@@ -236,20 +236,97 @@ MUTATIONS = [
         "        if type(value) is ReferenceMarker:\n            return self._reference_marker(value)",
         "        if isinstance(value, ReferenceMarker):\n            return self._reference_marker(value)",
     ), (
-        "if self.preserve_reference_markers and type(item) is ReferenceMarker:",
-        "if self.preserve_reference_markers and isinstance(item, ReferenceMarker):",
+        "        return self.minted_markers is not None and self.minted_markers.minted(value)",
+        "        return self.minted_markers is not None and isinstance(value, ReferenceMarker)",
     )], (T_READER, T_SANITIZATION)),
     m("L5-json-shape", "exempting references at L5 by JSON shape", SANITIZATION, [(
         "        if type(value) is ReferenceMarker:\n            return self._reference_marker(value)",
         "        if type(value) is ReferenceMarker:\n            return self._reference_marker(value)\n"
-        "        if self.preserve_reference_markers and isinstance(value, Mapping) and "
+        "        if self.minted_markers is not None and isinstance(value, Mapping) and "
         "set(value) <= {\"secret_ref\", \"env_var_ref\", \"default_redacted\"} and value:\n"
         "            return dict(value)",
     )], (T_READER, T_SANITIZATION)),
     m("L5-default-on", "changing default-off L5 output", SANITIZATION, [(
-        "        self.preserve_reference_markers = preserve_reference_markers is True",
-        "        self.preserve_reference_markers = True",
+        "        return self.minted_markers is not None and self.minted_markers.minted(value)",
+        "        return type(value) is ReferenceMarker if self.minted_markers is None "
+        "else self.minted_markers.minted(value)",
     )], (T_READER, T_SANITIZATION)),
+    # HAMCP-162 Part 2 (H2): markers are trusted by registry identity only.
+    m("H2-L5-type-not-identity", "exempting references at L5 by exact type without registry identity",
+      SANITIZATION, [(
+        "        return self.minted_markers is not None and self.minted_markers.minted(value)",
+        "        return self.minted_markers is not None and type(value) is ReferenceMarker",
+    )], (T_READER, T_SANITIZATION)),
+    m("H2-registry-by-equality", "registry membership by marker equality instead of identity",
+      SANITIZATION, [(
+        "        return type(value) is ReferenceMarker and self._minted.get(id(value)) is value",
+        "        return type(value) is ReferenceMarker and value in self._minted.values()",
+    )], (T_READER, T_SANITIZATION)),
+    m("H2-render-by-type", "rendering any ReferenceMarker, not only this read's minted ones", READER, [(
+        "        if not registry.minted(value) or not value.valid():",
+        "        if not value.valid():",
+    )]),
+    m("H2-exempt-by-shape", "exempting markers by shape (rendering marker-shaped mappings)", READER, [(
+        "        if frozenset(value) in _COLLISION_KEY_SETS:\n"
+        "            account.record(\"reference_marker_collision\")\n"
+        "            return COLLISION_MARKER\n"
+        "        return {key: render_markers(child, registry, account)",
+        "        if frozenset(value) in _COLLISION_KEY_SETS:\n"
+        "            return dict(value)\n"
+        "        return {key: render_markers(child, registry, account)",
+    ), (
+        "if type(value) is dict and frozenset(value) in _COLLISION_KEY_SETS:", "if False:",
+    )]),
+    m("H2-redact-before-truncation", "redacting before node truncation (the superseded order)", READER, [(
+        "        kept, omitted = truncate_breadth_first(parsed)\n"
+        "        if omitted:\n"
+        "            partial = True\n"
+        "            limitations.append(f\"value_truncated:{omitted} nodes omitted\")\n"
+        "        prefix = yaml_path.split(\".\")\n"
+        "        walker = _L4(known_secrets, registry)\n"
+        "        redacted_tree = walker.redact(kept, list(prefix), [segment.lower() for segment in prefix], 1)\n",
+        "        prefix = yaml_path.split(\".\")\n"
+        "        walker = _L4(known_secrets, registry)\n"
+        "        redacted_tree = walker.redact(parsed, list(prefix), [segment.lower() for segment in prefix], 1)\n"
+        "        redacted_tree, omitted = truncate_breadth_first(redacted_tree)\n"
+        "        if omitted:\n"
+        "            partial = True\n"
+        "            limitations.append(f\"value_truncated:{omitted} nodes omitted\")\n",
+    )]),
+    # HAMCP-162 Part 2 (H1): no client-visible field bypasses the pipeline.
+    m("H1-limitations-unsealed", "skipping sanitization on the limitations field", READER, [(
+        "        self.account.includes.append(project_path(display, self.known_secrets))",
+        "        self.account.includes.append(\".\".join(display))",
+    ), (
+        "        \"limitations\": fields[\"limitations\"],",
+        "        \"limitations\": limitations,",
+    )]),
+    m("H1-limitations-seal-only", "relying on the final seal alone for include paths (no key projection)",
+      READER, [(
+        "        self.account.includes.append(project_path(display, self.known_secrets))",
+        "        self.account.includes.append(\".\".join(display))",
+    )]),
+    m("H1-path-echo-raw", "echoing the requested path without the key projection", READER, [(
+        "            \"yaml_path\": project_path(yaml_path.split(\".\"), known_secrets),",
+        "            \"yaml_path\": yaml_path,",
+    )]),
+    m("H1-envelope-unsealed", "returning envelope fields around the final seal", READER, [(
+        "    fields, sealed, sealed_categories = seal(",
+        "    fields, sealed, sealed_categories = (lambda value, _ks: (value, 0, set()))(",
+    )]),
+    m("H1-gateway-success-unsealed", "returning gateway success fields around the seal", GATEWAY, [(
+        "            if yaml_route:\n                # H1: no field of a YAML read response bypasses the pipeline.",
+        "            if False:\n                # H1: no field of a YAML read response bypasses the pipeline.",
+    )]),
+    m("H1-gateway-failure-unsealed", "returning gateway failure fields around the seal", GATEWAY, [(
+        "            if is_yaml_adapter(policy_entry):\n                # H1: error details",
+        "            if False:\n                # H1: error details",
+    )]),
+    m("H1-seal-constants-unchecked", "keeping any string through the seal, not only source constants",
+      READER, [(
+        "        if original in vocabulary:\n            return original\n",
+        "        if True:\n            return original\n",
+    )]),
     m("mint-malformed", "minting a marker for a malformed reference", READER, [(
         "        match = pattern.fullmatch(value)\n", "        match = pattern.match(value)\n",
     )]),

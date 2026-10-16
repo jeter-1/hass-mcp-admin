@@ -39,7 +39,7 @@ from ..mcp_sdk_compatibility import (
     current_listed_catalog_generation,
     install_catalog_generation_gate,
 )
-from ..models import FailureResponse, SuccessResponse
+from ..models import FailureResponse, SuccessResponse, dump_json
 from ..ha_mcp_readmission import (
     CapabilityAdmissionCoordinator,
     DecisionGeneration,
@@ -709,6 +709,42 @@ class _RouteLease:
     core_authority: Any | None = None
     core_commits: tuple[Any, ...] | None = None
 
+
+
+def _yaml_response_vocabulary(
+    body: dict[str, Any],
+    exposed_name: str,
+    policy_entry: Any,
+    *constants: str,
+) -> frozenset[str]:
+    """H1: the gateway-authored text of one YAML read response.
+
+    The response, metadata, timing and detail key names are literals of this
+    module and of the response models. The values are the exposed and
+    reviewed tool names, the provider and reviewed server identity, the
+    reviewed schema fingerprint, and the fixed strings the caller passes.
+    Caller-derived (request id) and upstream-observed values (server version,
+    an unreviewed server name) are not in it and stay sealed.
+    """
+
+    keys = {key for key in body if key != "data"}
+    for field_name in ("metadata", "timing", "details"):
+        child = body.get(field_name)
+        if type(child) is dict:
+            keys.update(key for key in child if type(key) is str)
+    return frozenset(
+        {
+            *keys,
+            exposed_name,
+            policy_entry.upstream_name,
+            policy_entry.input_schema_fingerprint,
+            PROVIDER_ID,
+            REVIEWED_UPSTREAM_SERVER,
+            "automatic_read",
+            "none",
+            *constants,
+        }
+    )
 
 class UpstreamReadGateway:
     """Discover and register exact policy-approved pure reads through one provider."""
@@ -3958,7 +3994,7 @@ class UpstreamReadGateway:
             }
             if response_adapter is not None:
                 metadata["response_adapter"] = response_adapter
-            return SuccessResponse(
+            success = SuccessResponse(
                 operation=exposed_name,
                 summary="Completed a reviewed pure-read operation through the upstream gateway.",
                 data=data_value,
@@ -3966,7 +4002,28 @@ class UpstreamReadGateway:
                 metadata=metadata,
                 timing=timing_since(started),
                 request_id=current_request_id(),
-            ).to_json(response_limit)
+            )
+            if yaml_route:
+                # H1: no field of a YAML read response bypasses the pipeline.
+                try:
+                    sealed_body = yaml_reader.seal_response(
+                        success.as_dict(),
+                        self._known_secrets,
+                        _yaml_response_vocabulary(
+                            success.as_dict(),
+                            exposed_name,
+                            policy_entry,
+                            success.summary,
+                            *warnings,
+                            completeness,
+                        ),
+                    )
+                except YamlReadRefusal:
+                    raise _GatewayFailure(
+                        "sanitization_failed", dispatched=True
+                    ) from None
+                return dump_json(sealed_body, limit=response_limit)
+            return success.to_json(response_limit)
         except _GatewayFailure as exc:
             mapping = route_context.get("mapping")
             route_was_admitted = bool(route_context.get("admitted"))
@@ -4066,7 +4123,7 @@ class UpstreamReadGateway:
                         "upstream_version": mapping.server_version,
                     }
                 )
-            return FailureResponse(
+            failure = FailureResponse(
                 operation=exposed_name,
                 error="UpstreamReadGatewayError",
                 error_code=code,
@@ -4076,7 +4133,30 @@ class UpstreamReadGateway:
                 metadata=failure_metadata,
                 timing=timing_since(started),
                 request_id=current_request_id(),
-            ).to_json(response_limit)
+            )
+            if is_yaml_adapter(policy_entry):
+                # H1: error details, message and metadata get the same pass.
+                vocabulary = _yaml_response_vocabulary(
+                    failure.as_dict(),
+                    exposed_name,
+                    policy_entry,
+                    "UpstreamReadGatewayError",
+                    code,
+                    public_message,
+                    category,
+                )
+                try:
+                    sealed_body = yaml_reader.seal_response(
+                        failure.as_dict(), self._known_secrets, vocabulary
+                    )
+                except YamlReadRefusal:
+                    failure.details = {"failure_category": category}
+                    failure.request_id = ""
+                    sealed_body = yaml_reader.seal_response(
+                        failure.as_dict(), self._known_secrets, vocabulary
+                    )
+                return dump_json(sealed_body, limit=response_limit)
+            return failure.to_json(response_limit)
         finally:
             lease = route_context.get("lease")
             try:

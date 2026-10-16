@@ -562,7 +562,7 @@ CAPABILITY_PROVIDER_MATRIX: tuple[dict[str, Any], ...] = (
         "selected_provider": "ha_mcp_delegated",
         "completeness": "best_effort_redaction_partial_disclosed",
         "fallback_policy": "none",
-        "security_justification": "Engineering sends only file=configuration.yaml with include_parsed=true and include_content=false; every other file and every credential-naming path is refused before dispatch. Optional per-version binding (8.4.3, 8.5.0) is never default-admitted and is excluded from signed selections. The first call may fetch the admin caller token (POST ha_mcp_tools/get_caller_token), which the component persists. No writes.",
+        "security_justification": "Engineering sends only file=configuration.yaml with include_parsed=true and include_content=false; every other file and every credential-naming path is refused before dispatch. Optional per-version binding (8.4.3, 8.5.0) is never default-admitted and is excluded from signed selections. Engineering makes no write or service call; the one accepted dependency (K1) is that the first call may make the component call POST ha_mcp_tools/get_caller_token and persist the admin caller token.",
         "trust_mode": "reviewed_argument_constrained",
         "trust_profile": "ha-mcp-8.4.3-yaml-fragment-read-v1, ha-mcp-8.5.0-yaml-fragment-read-v1",
         "dependencies": "ha_mcp_tools custom component; ha_mcp_filesystem_tools_flag",
