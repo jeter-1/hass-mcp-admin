@@ -73,6 +73,30 @@ class PreIntentRetryRequired(OperationExecutorError):
         self.diagnostic_code = diagnostic_code
 
 
+class DispatchAuthorityRefused(OperationExecutorError):
+    """Independent dispatch authority refused before any provider read."""
+
+    def __init__(self, diagnostic_code: str):
+        super().__init__("F3 dispatch authority refused before dispatch")
+        self.diagnostic_code = diagnostic_code
+
+
+# Closed set of refusal codes the executor reports verbatim; anything else
+# collapses to the generic authority code so no free text reaches records.
+_DISPATCH_AUTHORITY_REFUSAL_CODES = frozenset(
+    {"dispatch_authority_unavailable", "core_requirement_unmapped"}
+)
+
+
+def _authority_refusal_code(exc: BaseException) -> str:
+    code = getattr(exc, "diagnostic_code", None)
+    if isinstance(exc, DispatchAuthorityRefused) and (
+        code in _DISPATCH_AUTHORITY_REFUSAL_CODES
+    ):
+        return str(code)
+    return "dispatch_authority_unavailable"
+
+
 class SimulatedProcessLoss(BaseException):
     """Test-only fault signal deliberately not caught by executor recovery."""
 
@@ -519,7 +543,7 @@ class SharedOperationExecutor:
             self._inject("after_preflight_before_durable_intent")
         except SimulatedProcessLoss:
             raise
-        except Exception:
+        except Exception as exc:
             persisted = self.execution_repository.get(identity.task_id)
             if persisted is not None and persisted.terminal:
                 self._release_safely(handle)
@@ -528,7 +552,11 @@ class SharedOperationExecutor:
                 claim,
                 identity,
                 outcome="provider_unavailable_pre_dispatch",
-                code="preflight_failed",
+                code=(
+                    _authority_refusal_code(exc)
+                    if isinstance(exc, DispatchAuthorityRefused)
+                    else "preflight_failed"
+                ),
             )
             self._release_safely(handle)
             return self._result(record)
@@ -536,6 +564,7 @@ class SharedOperationExecutor:
         external_authority: object | None = None
         external_commits: object | None = None
         if dispatch_authority is not None:
+            refusal_code = "dispatch_authority_unavailable"
             try:
                 candidate_authority = dispatch_authority.acquire(
                     prepared, preflight
@@ -545,14 +574,15 @@ class SharedOperationExecutor:
                     if inspect.isawaitable(candidate_authority)
                     else candidate_authority
                 )
-            except Exception:
+            except Exception as exc:
                 external_authority = None
+                refusal_code = _authority_refusal_code(exc)
             if external_authority is None:
                 record = self._terminal_pre_dispatch(
                     claim,
                     identity,
                     outcome="provider_unavailable_pre_dispatch",
-                    code="dispatch_authority_unavailable",
+                    code=refusal_code,
                 )
                 self._release_safely(handle)
                 return self._result(record)
