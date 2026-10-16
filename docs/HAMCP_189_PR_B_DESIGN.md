@@ -281,3 +281,17 @@ At-most-once dispatch, no blind redispatch, the HAMCP-164 gate, PR A's
 durable cancel, and the HAMCP-181 outcome strings are unchanged. Every new
 path is pre-dispatch or audit-only. No new write, service call, fallback or
 provider route is reachable.
+
+## 9. Release
+
+`2.4.1-beta.15` (first ready, first served; HAMCP-162 PR #267 had not merged).
+It was staged in `.release/next-version`, then materialized by one
+owner-authorized run of `scripts/promote_next_release.py --apply`, which wrote
+`config.yaml`, `version.py` and `validate_addon_metadata.py` and consumed the
+declaration. `scripts/codex-context.py` resolves
+`docs/V2_4_1_BETA15_ACCEPTANCE.md` and `docs/V2_4_1_BETA15_RELEASE_NOTES.md`
+exactly. If HAMCP-162 merges first and takes beta.15, this PR merges `main`,
+restages and rematerializes the next beta, and renames both documents.
+
+Validation evidence (focused suites, mutations, CI, and the Full and Evidence
+tier logs) is recorded in the PR body for the exact head.

@@ -1,5 +1,36 @@
 # Changelog
 
+## 2.4.1-beta.15 - Rollback Core lease, cancel telemetry, expired pre-intent deadline, gateway audit reason (HAMCP-189)
+
+Builds on 2.4.1-beta.14.
+
+- Acquire and consume a Core lease inside `rollback_change` before any fresh
+  rollback planning read (configuration, garage inverse and entity metadata),
+  run every planning read under an authorizer that revalidates it, and require
+  a current lease before the rollback plan is persisted. Under degraded Core,
+  fresh planning is refused before any Home Assistant read as
+  `provider_unavailable` / `core_capability_unavailable` and no plan is
+  created. Existing and cached rollback plans are still returned locally.
+- Begin an observed operational read's upstream attempt only after the Core
+  dispatch authorizer passes, so a refused read reports zero upstream
+  requests, and refuse a retained-session dispatch whose caller stopped
+  waiting.
+- Terminate a contract-v3 task whose dispatch authority expired before its
+  dispatch intent: bounded retries continue for 600 s after expiry, then the
+  F3 runtime ends the child `preflight_rejected` / `plan_expired`, the task
+  `failed_pre_dispatch` and the plan `FAILED`, releases its exact locks and
+  restores readiness. Only children with no intent, no dispatch count, no live
+  claim, no recorded cancel and only their own recorded locks qualify. No new
+  stored string; nothing is dispatched.
+- Audit an empty tool name refused as `core_requirement_unmapped` with the
+  full unmapped-refusal record and metric, counted once, and audit a list- or
+  dict-valued tool name as a generic request instead of failing the audit.
+- Correct the repository's beta.13 release notes: three allowlisted tools are
+  not "local state only", and rollback planning read without Core authority.
+  The published beta.13 GitHub Release is unchanged.
+- Preserve the 87-tool catalog, input schemas, signed registries, HOLD,
+  support window, persisted formats, workflows and stable v1.
+
 ## 2.4.1-beta.14 - Core authority before "already satisfied", exact unmapped refusal, durable cancel (HAMCP-189)
 
 Builds on 2.4.1-beta.13's fail-closed Core gateway.
