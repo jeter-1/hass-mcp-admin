@@ -1,11 +1,13 @@
 # HAMCP-162 delegated read-only YAML configuration reader — design
 
-Status: **Part 1 design report, revision 4.** Revision 2 was the
+Status: **Part 1 design report, revision 5.** Revision 2 was the
 correction batch after the independent Codex design review (R1–R7).
 Revision 3 corrected the delta review's R2 residual and R8 (§13).
-Revision 4 replaces the R2 recognizer with decode-then-judge rules and
-aligns R9 (§14). Owner decisions are recorded in §10; final owner approval
-follows the focused delta review of revision 4. No production code,
+Revision 4 replaced the R2 recognizer with decode-then-judge rules and
+aligned R9 (§14). Revision 5 replaces revision 4's assignment parsing with
+a substring deny on canonical text, canonicalizes keys (R10) and tightens
+the SQLite exception (R11) (§15). Owner decisions are recorded in §10;
+final owner approval follows the focused delta review of revision 5. No production code,
 policy, registry, schema, version or workflow change is part of this
 document. Nothing here authorizes a capture, deployment, live Home
 Assistant or Engineering access, registry signing, a HOLD or support-window
@@ -62,7 +64,7 @@ change, or a release.
 | Upstream call Engineering builds | `{"file": "configuration.yaml", "yaml_path": <validated>, "include_content": false, "include_parsed": true}`; the `file` value is a binary constant |
 | Readable files | `configuration.yaml` only |
 | Refused before dispatch, with zero upstream calls | any other `file` value (byte-exact comparison), and any `yaml_path` that names a credential-shaped key at any level (§3, R1) |
-| Returned | the parsed subtree only. It is projected through a positive allowlist and then YAML-aware redaction that carries the **full key path**, including the requested `yaml_path` (credential keys at any level, PEM, JWT, bearer, URL credentials). Connection strings use **decode-then-judge** rules: every string is percent-decoded to a canonical form (at most four rounds, otherwise redacted); values under connection-shaped keys (`*url*`, `*uri*`, `*dsn*`, `*connect*`, `*database*`) are redacted whole except an exact plain SQLite path; every other string is redacted whole when its canonical text holds userinfo or a credential-named assignment. At most the scheme survives. `!secret`/`!env_var` become typed reference markers (`{"secret_ref": name}`, `{"env_var_ref": name}`) that carry the name only, never a value or an `!env_var` default. Raw text and comments are never returned. |
+| Returned | the parsed subtree only. It is projected through a positive allowlist and then YAML-aware redaction that carries the **full key path**, including the requested `yaml_path` (credential keys at any level, PEM, JWT, bearer, URL credentials). Connection strings and credential text use **decode, then deny by substring**: every string and key is canonicalized (percent-decoded in at most four rounds, otherwise redacted; then NFKC and casefold); values under connection-shaped keys (`*url*`, `*uri*`, `*dsn*`, `*connect*`, `*database*`) are redacted whole except an exact plain SQLite path; every other string is redacted whole when its canonical text holds userinfo or **contains** a credential word (`pwd`, `passw`, `secret`, `token`, `apikey`, `api_key`, `api-key`, `auth`, `credential`, `private`, `bearer`, `cookie`, `session`). At most the scheme survives. `!secret`/`!env_var` become typed reference markers (`{"secret_ref": name}`, `{"env_var_ref": name}`) that carry the name only, never a value or an `!env_var` default. Raw text and comments are never returned. |
 | Admission | an **optional reviewed tool**: compiled per-version bindings for 8.4.3 and 8.5.0 over the **complete runtime descriptor** under an explicit fingerprint model, with an explicit per-version disposition for every registry version. It is a separate optional capability in the same admission generation and dispatch-lease path as stock reads. It is outside the stock policy JSON, the stock count, the order fingerprint and the whole-catalog validator, so no existing digest, signed entry, profile id or fingerprint changes (§5). |
 | Core | the existing `core.basic_rest_read` + `core.basic_websocket_read` profiles; no signed-registry change (§5.4) |
 | Catalog | 87 public tools while the filesystem flag is off (unchanged). **88** (59 native + 29 delegated) when the flag is on and the contract is exact (§6). |
@@ -405,24 +407,45 @@ the shared sanitizer).
 A `content` field in the response is dropped and counted as a shape
 violation (§4).
 
-*Order* (made explicit in revision 3). L4 evaluates `parsed` in one walk
-over absolute paths. At each node it applies these steps in order:
+*Order* (made explicit in revision 3; key canonicalization moved first in
+revision 5, R10). L4 evaluates `parsed` in one walk over absolute paths. At
+each node it applies these steps in order:
 1. the reference-marker collision check;
-2. the path-context rule (a container withheld whole is never descended);
-3. reference minting;
-4. the connection-string rules A–C (canonicalize, key-scoped
-   always-redact, value checks; revision 4);
-5. the other value scanners, on the canonical text from rule A;
-6. the node and depth caps with truncation.
+2. **key canonicalization** (R10): every mapping key gets its canonical form
+   (rule A, then NFKC and casefold) and the key-text check K1. A key that
+   fails either withholds its containing mapping;
+3. the path-context rule, on the **canonical** keys of the absolute path (a
+   container withheld whole is never descended);
+4. reference minting;
+5. the value rules on the canonical text: C′ (userinfo and credential
+   words), then the key-scoped rule B with its SQLite exception (R11);
+6. the other value scanners, on the canonical text from rule A;
+7. the node and depth caps with truncation.
 
 A minted marker is final, and later L4 steps skip it. L5 then runs on the
 result, and only after L5 are markers rendered.
 
 *`is_credential_key(key)`*, the single shared predicate used by L3 and L4:
-- Normalization: `str(key)`, lowercased, every run of characters outside
+- **Input is the canonical key** (revision 5, R10): `str(key)` canonicalized
+  by rule A (percent-decoding, at most four rounds), then NFKC-normalized
+  and casefolded. The raw key is never classified. Under L3 the `yaml_path`
+  grammar admits only ASCII `[A-Za-z0-9_-]`, so canonicalization there only
+  lowercases. In L4 it decodes `%70assword`, `p%61ssword` and
+  `%2570assword` to `password`, and maps fullwidth `ｐａｓｓｗｏｒｄ` to
+  `password`.
+- Normalization of the canonical key: every run of characters outside
   `[a-z0-9]` replaced with `_`, then leading and trailing `_` stripped. This
   is the same normalization as `E/sanitization.py` `_normalize_key` (:146).
-- A key matches if its normalized form is:
+- A key matches if its **compact** form (the canonical key with every
+  character outside `[a-z0-9]` removed) contains any **credential word** of
+  rule C′ (`pwd`, `passw`, `secret`, `token`, `apikey`, `auth`,
+  `credential`, `private`, `bearer`, `cookie`, `session`; the separator
+  variants `api_key` and `api-key` compact to `apikey`). This clause is new
+  in revision 5 and makes "a key containing a credential word redacts its
+  value" part of the one predicate, so L3 refuses such a selection and the
+  path-context rule withholds the value. Key compaction means `p_w_d`,
+  `Pass Word` and `API-Key` match too.
+- A key also matches if its normalized form is:
   - in any existing `sanitize_untrusted_data` key set (`E/sanitization.py`
     :19-75), for example `password`, `passphrase`, `token`, `api_key`,
     `secret`, `credential`, `credentials`, `client_secret`;
@@ -435,7 +458,25 @@ result, and only after L5 are markers rendered.
   - or it **ends with** `_pin`, `_code`, `_psk`, `_key`, `_pass` or `_pwd`.
 - The rules deliberately over-match. Harmless fields such as `country_code`,
   `token_url` or `entity_key` are redacted, and selecting them is refused.
-  This is fail-closed and disclosed in the description.
+  Since revision 5 this includes every key mentioning a credential word,
+  for example `homeassistant.auth_providers`, `auth_mfa_modules`,
+  `private_ble_device`, `session_timeout` and a `logger.logs` entry named
+  `homeassistant.components.auth`. This is fail-closed and disclosed in the
+  description.
+
+*Key-text check K1* (revision 5, R10). A key's own text is emitted, so it
+must not carry a credential either. On the canonical key:
+- if it holds userinfo (`://` followed later by `@`), **or**
+- if its compact form contains a credential word **and** the canonical key
+  is not a plain identifier (it does not fully match `[a-z0-9_.-]+`),
+
+then the **containing mapping** is withheld whole as
+`[REDACTED:connection_string]`. So `{"pwd=S": 1}`, `{"Pass Word": …}` and
+a URI with userinfo used as a key withhold their mapping, while an
+identifier key such as `mqtt_password`, `%70assword` or `PASSWORD` is shown
+(raw) with its value redacted under the path-context rule. A key that rule
+A refuses (invalid, ambiguous or non-converging) withholds its mapping as
+`[REDACTED:encoding]`.
 
 *Path-context rule (R1).* Redaction is defined on the **absolute key path**,
 not on the returned node alone:
@@ -443,6 +484,8 @@ not on the returned node alone:
   `yaml_path` segments followed by the mapping keys from the selected root to
   that node. List elements are transparent: an element inherits the path of
   the key that holds the list.
+- Every key on the path is judged in its **canonical** form (R10); the
+  output keeps the raw key text of visible nodes.
 - If any key on a node's absolute path matches `is_credential_key`, the node
   at the **first** matching key is replaced as a whole:
   - a scalar of any type (string, integer, float, boolean or null) becomes
@@ -468,21 +511,25 @@ not on the returned node alone:
   therefore applied **before** the value is placed in the envelope, using the
   absolute path, and never inferred from envelope keys.
 
-*Connection-string rules A–D (R2; **decode-then-judge** since revision 4)*,
-scoped to this reader (no change to the global sanitizer's patterns).
-Revisions 2 and 3 first **recognized** a connection string and then
-validated it. The delta reviews showed that recognition itself can be
-bypassed: a fully percent-encoded URI, or a keyword DSN encoded past the
-decoding bound, was never recognized and fell through as ordinary text.
-Revision 4 removes recognition. Every string is canonicalized first, every
-value under a connection-shaped key is redacted whole, and every other
-string is judged on its canonical text. The revision-2/3 recognizer,
-strict raw grammar, decoded charsets, query-name allowlist and separate
-web-URI regime are **withdrawn**.
+*Connection and credential-text rules A, B, C′, D (R2; **decode, then
+deny by substring** since revision 5)*, scoped to this reader (no change
+to the global sanitizer's patterns).
+- Revisions 2 and 3 **recognized** a connection string, then validated it.
+  Recognition could be bypassed by encoding.
+- Revision 4 decoded first and then **parsed** `name=value` assignments
+  (C2). The parse was itself bypassable: its `==` exemption missed
+  `Pwd==S`, which is a valid assignment of the value `=S`.
+- Revision 5 stops parsing. Every string is canonicalized, and any
+  canonical text that **contains** a credential word is redacted whole,
+  whatever surrounds the word.
+- The revision-2/3 recognizer, strict grammar, decoded charsets,
+  query-name allowlist and web-URI regime, and the revision-4 C2
+  assignment predicate and its credential-like name list, are
+  **withdrawn**.
 
 - **A. Canonicalize first.** This applies to every string value and every
-  mapping key in `parsed` that survives the path-context rule and is not a
-  minted reference marker.
+  mapping key in `parsed` that is not a minted reference marker (keys:
+  step 2 of the order above; values: step 5).
   - One **decoding round** replaces each valid escape `%HH` (two hex
     digits) with its byte. Other characters are kept, and `+` is not
     special. The resulting bytes must be strict UTF-8.
@@ -490,117 +537,165 @@ web-URI regime are **withdrawn**.
     a control character (C0 other than tab, LF or CR, DEL or C1). It is
     **ambiguous** if its input holds a valid escape and also a `%` that does
     not start one. Decoders disagree on such mixed input.
-  - **The rule (one number):** at most **four** decoding rounds. The value
-    is **canonical** when it holds no valid escape, which may be after zero,
-    one, two, three or four rounds. A value that still holds a valid escape
-    after the fourth round is **non-converging**. A value that needs a fifth
-    round is non-converging even if that round would end it.
+  - **The bound (one number):** at most **four** decoding rounds. Decoding
+    stops at the first round whose input holds no valid escape, which may
+    be after zero, one, two, three or four rounds.
+  - **Normalization:** the decoded text is then Unicode **NFKC**-normalized
+    and **casefolded** (`str.casefold()`). The result is the **canonical
+    text**.
+  - **One final check:** the canonical text must hold no valid escape.
+    This one check covers two cases. One is a value still escaped after
+    the fourth round, so a value that needs a fifth round is
+    non-converging even if that round would end it. The other is an
+    escape that NFKC introduced, such as fullwidth `％７０`, which becomes
+    `%70`.
   - An invalid, ambiguous or non-converging value is redacted whole as
     `[REDACTED:encoding]`. For a mapping key, the mapping that contains the
     key is withheld whole, because a key cannot be rewritten without
     changing the structure.
-  - A string with no valid escape, such as `50% off`, needs zero rounds and
-    is its own canonical text.
+  - A string with no valid escape, such as `50% off`, needs zero rounds.
   - **Every check below runs on the canonical text, never on the raw
     form.** When a value is kept visible, the **raw** string is emitted
-    unchanged. Engineering never rewrites a value to its decoded form.
-- **B. Key-scoped always-redact.** A key is **connection-shaped** if its
-  canonical name, lowercased with every character outside `[a-z0-9]`
-  removed, **contains** `url`, `uri`, `dsn`, `connect`, `connstr` or
+    unchanged. Engineering never rewrites a value to its canonical form.
+- **C′. Substring deny** on the canonical text of **every** string value,
+  under any key. The value is redacted whole when either holds:
+  - **C′1. Userinfo.** The text contains `://` and, anywhere after the
+    first `://`, an `@` (unchanged from revision 4). This includes
+    user-only userinfo and passwords that hold `/`, `?`, `#` or spaces once
+    decoded. It deliberately over-matches an `@` later in a path, query or
+    sentence.
+  - **C′2. Credential word.** The text **contains**, anywhere, any of
+    these 13 words: `pwd`, `passw`, `secret`, `token`, `apikey`, `api_key`,
+    `api-key`, `auth`, `credential`, `private`, `bearer`, `cookie`,
+    `session`. This is a plain substring test. There is no word boundary,
+    no delimiter, no `=` and no parsing. `Pwd==S`, `PWD :=S`, `;pwd;S`,
+    `P%57D=S` (canonical `pwd=s`), fullwidth `ｐｗｄ=S`, `?x=PWD%3DS` and a
+    JSON payload `{"pwd": "S"}` are all caught by the same rule.
+  - A credential word in a **key** is handled by `is_credential_key` (on
+    the compact canonical key) and K1. C′ is the value-side rule.
+  - **Redaction form (keeps at most the scheme).** It is
+    `<scheme>://[REDACTED:connection_uri]` when the canonical text begins,
+    at position 0, with a scheme matching `[a-z][a-z0-9+.-]{0,31}`
+    followed by `://`, **and** the scheme itself contains no credential
+    word. The scheme is emitted in its canonical (lower-case) form.
+    Otherwise (no scheme, leading whitespace, a scheme such as `token://`,
+    a non-string or a container) it is `[REDACTED:connection_string]`.
+  - A value that passes C′ and is not under a connection-shaped key is
+    visible as its raw string. This holds for credential-free database URLs
+    under non-connection keys (for example `sensor.value:
+    mysql://db.local:3306/ha?charset=utf8mb4`), for web URLs and templated
+    REST URLs without a credential word, for unknown schemes and for
+    credential-free DSNs such as `Server=db;Trusted_Connection=yes`.
+- **B. Key-scoped always-redact** (unchanged in substance; R10 makes the key
+  canonical). A key is **connection-shaped** if its compact canonical name
+  (rule A, NFKC, casefold, then every character outside `[a-z0-9]`
+  removed) **contains** `url`, `uri`, `dsn`, `connect`, `connstr` or
   `database`. Examples: `db_url`, `DB_URL`, `dbUrl`, `database_url`, `url`,
   `base_url`, `external_url`, `uri`, `redirect_uri`, `dsn`, `connection`,
   `Connection_String`, `conn_str`, `connect`, `connect_args`, `database`,
-  `odbc_connect`, `sqlalchemy_url`, `Db-Url` and the encoded `db%5Furl`.
+  `odbc_connect`, `sqlalchemy_url`, `Db-Url`, the encoded `db%5Furl`, and
+  `db_urℓ` (NFKC maps `ℓ` to `l`).
   - It is judged on the **absolute path** (the requested `yaml_path`
     segments plus the returned keys), like the path-context rule, at any
     nesting level. A direct `recorder.db_url` selection is in scope through
     its last `yaml_path` segment and never through the envelope key `value`.
-  - The node at the **first** connection-shaped key is redacted whole. This
-    covers strings, numbers, booleans, null, mappings and lists. Children of
-    a container are not walked.
-  - **One exact safe shape stays visible:** a string whose canonical text
-    matches `^sqlite:///[A-Za-z0-9_./-]+$` **and** which needed zero
-    decoding rounds. Its raw text is therefore identical and holds no `%`,
-    `?`, `@`, `;` or `=`. Example: `sqlite:////config/home-assistant_v2.db`.
+  - The node at the **first** connection-shaped key is redacted whole, in
+    the C′ redaction form. This covers strings, numbers, booleans, null,
+    mappings and lists. Children of a container are not walked.
   - A minted reference marker (`db_url: !secret recorder_db_url`) stays a
     marker (R8, unchanged). It carries a name, not a value.
-  - **Redaction form (keeps at most the scheme).** It is
-    `<scheme>://[REDACTED:connection_uri]` when the canonical text begins,
-    at position 0, with a scheme matching `[A-Za-z][A-Za-z0-9+.-]{0,31}`
-    followed by `://`; the scheme is kept verbatim. Otherwise (no scheme,
-    leading whitespace, a non-string or a container) it is
-    `[REDACTED:connection_string]`.
-- **C. Value checks** on the canonical text of every other string, under
-  any key. A failing value is redacted whole in the same redaction form as
-  B. A failing mapping key withholds its mapping as
-  `[REDACTED:connection_string]`.
-  - **C1. Userinfo.** The text contains `://` and, anywhere after the first
-    `://`, an `@`. This includes user-only userinfo and passwords that hold
-    `/`, `?`, `#` or spaces once decoded. It deliberately over-matches an
-    `@` later in a path, query or sentence.
-  - **C2. Credential assignment.** The text contains a **name** followed by
-    optional whitespace and `=` (not `==`), where the name is a maximal run
-    of `[A-Za-z0-9_.-]` not preceded by such a character, and the name is
-    **credential-like**. One predicate covers every assignment form:
-    - URI query items (`?password=…`, `&api_key=…`, `;PWD=…`);
-    - `;`-separated ODBC/ADO pairs (`Uid=u;Pwd=…`, `User ID=u;Password=…`);
-    - libpq whitespace pairs (`user=u password=…`);
-    - assignments nested inside a query value once decoded
-      (`?odbc_connect=…;PWD=…`, `?x=PWD=…`).
-  - **Credential-like name:** lowercased, with every character outside
-    `[a-z0-9]` removed, it contains `pwd`, `pass`, `token`, `secret`, `key`,
-    `auth` or `credential`. `uid` and `user id` are not credential-like on
-    their own. A string that pairs them with `pwd` or `password` is caught
-    by that name.
-  - A value that passes C1 and C2 is visible as its raw string. This holds
-    for credential-free database URLs under non-connection keys (for
-    example `sensor.value: mysql://db.local:3306/ha?charset=utf8mb4`), for
-    web URLs and templated REST URLs, for unknown schemes and for
-    credential-free DSNs such as `Server=db;Trusted_Connection=yes`.
-- **D. Residual (D12, best-effort).** Rules A–C recognize a credential
-  only by **structure**: a connection-shaped key, userinfo, or a
-  credential-like name in an `=` assignment. They do **not** recognize:
-  - a raw secret under an innocent key (`foo: s3cr3t`, `code_word: …`);
-  - a credential in a non-`=` form, such as a JSON or YAML payload string
-    (`'{"token": "…"}'`) or a header string other than the existing
-    `Authorization` pattern;
-  - a credential in a non-percent encoding, such as base64 shorter than the
-    200-character blob scanner, HTML entities, `\uXXXX` escapes or
-    look-alike Unicode delimiters;
-  - a credential whose assignment name is outside the credential-like list.
+  - **R11. One exact safe shape stays visible.** A string under a
+    connection-shaped key is visible only if **all** of these hold:
+    - it passed C′ (no userinfo and no credential word, so
+      `sqlite:////config/session.db` is redacted);
+    - `re.fullmatch(r"sqlite:///[a-z0-9_./-]+", canonical)` succeeds. The
+      contract is a **full-string** match. `re.match`, `re.search` or a
+      pattern anchored with `^…$` does not satisfy it, because Python's `$`
+      also matches before a final newline;
+    - the canonical text holds no control or line-separator character:
+      none of `\x00`–`\x1f`, `\x7f`, ` ` or ` `. The character
+      class already excludes them. They are also checked explicitly, so
+      that a later widening of the class cannot admit them;
+    - no `/`-separated segment of the canonical text is exactly `..`.
+      `sqlite:///../x.db` and `sqlite:////config/../x.db` are redacted;
+      `sqlite:///a..b.db` is a file name, not a segment, and stays visible;
+    - the raw string is identical to its canonical text: zero decoding
+      rounds, and NFKC and casefold change nothing. Any `%`, upper case
+      (`SQLITE:///x`, `X.db`) and fullwidth characters are therefore
+      redacted.
+
+    Example: `sqlite:////config/home-assistant_v2.db`. Showing the text
+    never opens, resolves or reads the path; the `..` refusal keeps the
+    one visible shape simple rather than guarding a filesystem.
+- **Minted references are outside C′.** Reference minting (step 4) runs
+  before C′ (step 5), and a minted marker is final. A `!secret` or
+  `!env_var` name such as `mqtt_password` is therefore kept as a marker
+  even though it contains a credential word. The name grammar admits no
+  `%`, `=`, `:`, `@` or space. This is the R8 reference behaviour and the
+  quoted-literal residual that Josh has accepted, not a new exemption.
+- **D. Residual (D12, best-effort).** C′ recognizes a credential only when
+  its canonical text holds userinfo or one of the 13 words, or when it sits
+  under a credential or connection-shaped key. It does **not** recognize:
+  - a raw secret under an innocent key, where neither the key nor the value
+    holds a credential word (`foo: s3cr3t`, `code_word: …`);
+  - a credential whose label holds none of the 13 words, such as `pass=`
+    (no `w`), `pw=`, `key=`, `psk=`, `pin=`, `code=`, `login=` or `sig=`.
+    This is **narrower than revision 4's C2 name list**, which also matched
+    `pass` and `key`. Keys are not affected, because `is_credential_key`
+    still matches `pass`, `key`, `pin`, `code` and the `_pass`/`_key`
+    suffixes;
+  - a credential word interrupted inside a **value** by separators or other
+    characters (`p_w_d=`, `to-ken=`). Value matching is a plain substring
+    and does not compact; keys are compacted;
+  - a credential word written with confusables that NFKC does not map (the
+    Cyrillic `с` in `Pсd=`), or hidden by a non-percent encoding (base64
+    shorter than the 200-character blob scanner, `&#112;wd`,
+    `pwd`);
+  - a secret split across list items or sibling values.
 
   These leak if present. The tool description and `limitations` say so.
-  Rules A–C remove the specific bypass the delta reviews found: no amount of
-  percent-encoding (up to the bound) hides a structural credential, and
-  more encoding than the bound is redacted.
-- **Examples** (synthetic values; `S` is a synthetic credential):
+  Rules A and C′ remove the bypasses that the delta reviews found. No amount
+  of percent-encoding up to the bound hides a credential word or userinfo.
+  More encoding than the bound is redacted. No assignment syntax, such as
+  `==`, `:=` or a missing `=`, matters any more.
+- **Examples** (synthetic values; `S` is a synthetic credential with no
+  credential word):
 
   | Key and input | Output |
   |---|---|
   | `db_url: sqlite:////config/home-assistant_v2.db` | unchanged |
   | `db_url: sqlite:////config/home%2Dassistant_v2.db` (any `%`) | `sqlite://[REDACTED:connection_uri]` |
+  | `db_url: sqlite:///x.db\n`, `sqlite:///../x.db`, `SQLITE:///x.db` | `sqlite://[REDACTED:connection_uri]` (R11) |
   | `db_url: sqlite:///:memory:` or `…/x.db?mode=ro` | `sqlite://[REDACTED:connection_uri]` |
   | `db_url: mysql://db.local:3306/ha?charset=utf8mb4` (no credential) | `mysql://[REDACTED:connection_uri]` |
   | `db_url: 42`, `database: home_assistant` | `[REDACTED:connection_string]` |
   | `db_url: !secret recorder_db_url` | reference marker `{"secret_ref": "recorder_db_url"}` (R8) |
   | `external_url: https://example.ui.nabu.casa` | `https://[REDACTED:connection_uri]` (disclosed cost of B) |
-  | `value: mysql://db.local:3306/ha?charset=utf8mb4` | unchanged (passes C) |
-  | `value: unknown://host/path` | unchanged (passes C) |
-  | `value: mysql://u:S@db/ha`, `mysql://u@db/ha` | `mysql://[REDACTED:connection_uri]` (C1) |
-  | `value:` the same URI percent-encoded 1–4 times | `mysql://[REDACTED:connection_uri]` (A, then C1) |
+  | `value: mysql://db.local:3306/ha?charset=utf8mb4` | unchanged (passes C′) |
+  | `value: unknown://host/path` | unchanged (passes C′) |
+  | `value: mysql://u:S@db/ha`, `mysql://u@db/ha` | `mysql://[REDACTED:connection_uri]` (C′1) |
+  | `value:` the same URI percent-encoded 1–4 times | `mysql://[REDACTED:connection_uri]` (A, then C′1) |
   | `value:` the same URI percent-encoded 5 or 6 times | `[REDACTED:encoding]` (A) |
-  | `value: Server=db;Uid=u;Pwd=S`, encoded 0–4 times | `[REDACTED:connection_string]` (C2) |
+  | `value: Server=db;Uid=u;Pwd=S`, encoded 0–4 times | `[REDACTED:connection_string]` (C′2) |
+  | `value: Server=db;Uid=u;Pwd==S` (the revision-4 counterexample), `PWD :=S`, `;pwd;S`, `P%57D=S`, `ｐｗｄ=S` | `[REDACTED:connection_string]` (C′2) |
+  | `value: mysql://db/ha?pwd==S` | `mysql://[REDACTED:connection_uri]` (C′2) |
   | `value:` the same DSN encoded 5 or 6 times | `[REDACTED:encoding]` (A) |
-  | `value: mssql+pyodbc:///?odbc_connect=` + encoded `…;UID=u;PWD=S` (the revision-2 probe) | `mssql+pyodbc://[REDACTED:connection_uri]` (C2) |
-  | `value: https://h/?x=PWD%3DS%3Bz` | `https://[REDACTED:connection_uri]` (C2, nested) |
-  | `value: host=db dbname=ha user=u password=S` | `[REDACTED:connection_string]` (C2) |
-  | `value: Server=db;Database=ha;Trusted_Connection=yes` | unchanged (no credential) |
+  | `value: mssql+pyodbc:///?odbc_connect=` + encoded `…;UID=u;PWD=S` (the revision-2 probe) | `mssql+pyodbc://[REDACTED:connection_uri]` (C′2) |
+  | `value: host=db dbname=ha user=u password=S` | `[REDACTED:connection_string]` (C′2) |
+  | `value: Refresh the access token daily` | `[REDACTED:connection_string]` (C′2, disclosed over-redaction) |
+  | `value: https://example.com/oauth/authorize` | `https://[REDACTED:connection_uri]` (C′2, disclosed over-redaction) |
+  | `value: token://host/x` | `[REDACTED:connection_string]` (the scheme holds a word) |
+  | `value: Server=db;Database=ha;Trusted_Connection=yes` | unchanged (no credential word) |
   | `value: 50% off` / `value: %41%` | unchanged / `[REDACTED:encoding]` (ambiguous) |
+  | `value: ％７０wd=S` (fullwidth `%`) | `[REDACTED:encoding]` (NFKC introduced an escape) |
+  | `mqtt: {broker: core-mosquitto, "%70assword": S}` | `broker` visible; `%70assword` shown with the credential marker (R10) |
+  | `x: {"%63redentials": [{value: S}]}` | `%63redentials` shown with the credential marker; the list is withheld (R10) |
+  | `x: {"pwd=S": 1}` | `x` withheld as `[REDACTED:connection_string]` (K1) |
 - **Credential-free recorder settings stay visible**, for example
   `purge_keep_days`, `commit_interval`, `auto_purge`, `auto_repack`,
   `db_max_retries`, `db_retry_wait`, `include` and `exclude`. `db_url` is
   visible only in the exact safe SQLite shape.
-- **Disclosed over-match (the cost of B and C).**
+- **Disclosed over-redaction (the cost of B and C′).**
   - Every non-SQLite `db_url` is redacted to its scheme, including
     credential-free MySQL and PostgreSQL URLs.
   - Every URL under a `*url*`/`*uri*` key is redacted to its scheme,
@@ -608,14 +703,24 @@ web-URI regime are **withdrawn**.
     `rest_command` `url`, and camera `still_image_url`.
   - Plain values under `database` (for example InfluxDB's database name)
     become `[REDACTED:connection_string]`.
-  - Substring matching catches innocent keys: `connect_timeout`,
-    `reconnect_interval` (numbers too), `security`, `during`.
-  - C1 redacts any value with an `@` after `://`, such as an email in a
+  - Substring matching catches innocent connection keys:
+    `connect_timeout`, `reconnect_interval` (numbers too), `security`,
+    `during`.
+  - **C′2 redacts any harmless value that mentions a credential word**
+    (new in revision 5). Examples: "Refresh the access token daily",
+    "Author: …", "Session started", "private room", "cookie jar",
+    "secretary", any `oauth`/`authorize` URL, a template mentioning
+    `token`, `session` or `auth` (for example `{% if token == 1 %}`), and a
+    `compass password hint`. The scheme is kept where present.
+  - Keys mentioning a credential word withhold their value (see
+    `is_credential_key`), for example `auth_providers` and
+    `private_ble_device`.
+  - C′1 redacts any value with an `@` after `://`, such as an email in a
     query.
-  - C2 redacts template text that assigns a credential-like variable
-    (`{% set token = … %}`) and names such as `monkey=1`.
   - Rule A redacts the rare benign string that mixes valid escapes with a
     stray `%`.
+  - Revision 4's C2 over-matches on names such as `monkey=1` are gone,
+    because `key` is no longer a value-side word.
 
 *Other value scanners*, on the canonical text (rule A) of every string that
 survives the steps above; a hit redacts the raw value:
@@ -675,8 +780,8 @@ under every key, sensitive or not:
   abc"`, quoted) renders byte-identically to a real `!secret abc` tag.
   Engineering cannot tell them apart, so it is shown as
   `{"secret_ref": "abc"}`. The exposure is bounded to text that matches the
-  strict name grammar and passes the value scanners. This residual is
-  listed for Josh's acceptance (§12, revision 3).
+  strict name grammar and passes the value scanners. Josh has accepted
+  this residual (§12, revision 3; recorded in §15).
 
 *Other tags* (outside sensitive keys):
 - `!include*` strings are kept only if the target matches
@@ -736,12 +841,13 @@ code path that reads `secrets.yaml` and will not gain one.
 | A symlinked `configuration.yaml` that resolves to another allowed file is readable | **Inferred** possible. The allow rule is evaluated on the requested path. L4 still applies to whatever is returned. |
 | Inline credentials are returned by upstream | Verified (no redaction in the read path) |
 | A selected credential leaf loses its key name upstream (R1) | Verified by the review's offline probe (CC:2386-2394 returns only the selected node). Engineering refuses such selections (L3) and redacts by absolute path (L4). |
-| Database URIs with userinfo pass the existing scanner (R2) | Verified by the review's offline probe (`E/sanitization.py`:84-85 match `http(s)` only). Engineering adds the connection-string rules A–C (L4). |
+| Database URIs with userinfo pass the existing scanner (R2) | Verified by the review's offline probe (`E/sanitization.py`:84-85 match `http(s)` only). Engineering adds the connection and credential-text rules A, B and C′ (L4). |
 | A percent-encoded ODBC DSN in an `odbc_connect` query value passes revision 2's name-based URI rule and real L5 (R2 residual) | Verified by the delta review's probe at `e6fb813`. Revision 3's default-deny fixed that probe, but its recognition step was bypassable (next row). |
-| Fully percent-encoded URIs (1–6 rounds) and keyword DSNs encoded past the bound (5–6 rounds) under ordinary keys bypass revision 3's recognition and survive real L5 (R2, second residual) | Verified by the second delta review's 12 boundary cases at `042f254` (8 counterexamples). Revision 4 replaces recognition with decode-then-judge rules A–C (L4). The author's throwaway rule model, run with the real L5 sanitizer and the reviewer's verbatim fixtures, redacts all 12 cases at both ordinary and connection paths (§14). That model is a self-check, not a review, and not an implementation; Part 2 tests prove the implementation. |
+| Fully percent-encoded URIs (1–6 rounds) and keyword DSNs encoded past the bound (5–6 rounds) under ordinary keys bypass revision 3's recognition and survive real L5 (R2, second residual) | Verified by the second delta review's 12 boundary cases at `042f254` (8 counterexamples). Revision 4 replaced recognition with decode-then-judge rules (L4). The author's throwaway rule model, run with the real L5 sanitizer and the reviewer's verbatim fixtures, redacts all 12 cases at both ordinary and connection paths (§14, and again under revision 5's rules in §15). That model is a self-check, not a review, and not an implementation; Part 2 tests prove the implementation. |
+| Revision 4's assignment parse misses `Pwd==S` (its `==` exemption), raw-key checks miss encoded or fullwidth credential keys, and `^…$` admits a SQLite value with a trailing newline (R2 third residual, R10, R11) | Verified by the revision-4 delta review's 438 probe assertions at `3391172`. Revision 5 replaces parsing with the C′ substring deny, canonicalizes keys and uses `re.fullmatch` with explicit control, `..` and raw-equals-canonical checks. The author's revision-5 self-check ports all 438 assertions (425 unchanged, 13 deliberate flips) and adds 278 (§15). It is a self-check, not a review. |
 | L5 unconditionally replaces values under sensitive keys, so an L4-preserved reference cannot survive the unchanged sanitizer (R8) | Verified (`E/sanitization.py`:341-350; delta review probe). Revision 3 adds an opt-in exemption for the internal `ReferenceMarker` type only (L5). |
 | Upstream renders a tagged scalar and a quoted string with the same text identically in `parsed` | Verified (`yaml_rt.py`:208-209, component 2.2.1 tree): `f"{node.tag} {node.value}".strip()`. A quoted literal that looks exactly like a reference is therefore shown as a reference (disclosed residual, L4 *Reference markers*). |
-| L4 catches every secret | **Not claimed.** Key and pattern redaction is best-effort over free-form configuration. An unlabeled secret value (for example `foo: s3cr3t`) cannot be recognized (D12). R1 and R2 are labeled or structurally recognizable credentials and are **not** covered by the D12 residual. Rules A–C do not recognize a credential in a non-`=` form (for example `'{"token": "…"}'`), in a non-percent encoding, or under an assignment name outside the credential-like list (§2.2 rule D). Disclosed in the tool description and in `limitations`. |
+| L4 catches every secret | **Not claimed.** Key and pattern redaction is best-effort over free-form configuration. An unlabeled secret value (for example `foo: s3cr3t`) cannot be recognized (D12). R1 and R2 are labeled or structurally recognizable credentials and are **not** covered by the D12 residual. Rules A and C′ do not recognize a credential whose label holds none of the 13 credential words (for example `pass=`, `pw=`, `key=`), a word interrupted by separators inside a value, confusables that NFKC does not map, a non-percent encoding, or a secret split across values (§2.2 rule D). The cost is disclosed over-redaction of harmless text that mentions a credential word. Disclosed in the tool description and in `limitations`. |
 | Upstream alias expansion cannot exceed Engineering caps | Inferred; bounded by §4 caps and `response_too_large` |
 
 ## 3. Argument model
@@ -1229,9 +1335,11 @@ assertion moves from 30 to 31.
   - redaction is best-effort and deliberately over-matches credential-like
     keys; values under URL, URI, DSN, connection and database keys are
     redacted whole except a plain SQLite path; other strings are redacted
-    whole when, after percent-decoding, they contain userinfo or a
-    credential-named assignment (scheme kept at most); a raw secret under
-    an innocent key, or in a non-`=` form such as a JSON payload, is not
+    whole when, after percent-decoding and Unicode normalization, they
+    contain userinfo or a credential word such as `pwd`, `token`, `auth` or
+    `session` (scheme kept at most), so harmless text mentioning such a
+    word is also redacted; a raw secret under an innocent key, or under a
+    label without a credential word (such as `pass=` or `key=`), is not
     recognized;
   - it requires ha-mcp filesystem tools and the HA-MCP custom component.
 
@@ -1338,7 +1446,9 @@ search every output channel for each one.
    - **L3 (R1):** leaf and ancestor selections such as `mqtt.password`,
      `mqtt.credentials`, `mqtt.credentials.username`, `http.api_key`,
      `influxdb.token`, `x.pin`, `x.code`, `x.auth.password`, plus
-     case/separator variants (`mqtt.Password`, `mqtt.api-key`). Each is
+     case/separator variants (`mqtt.Password`, `mqtt.api-key`) and, since
+     revision 5, any segment whose compact form contains a credential word
+     (`homeassistant.auth_providers`, `mqtt.MQTT-PassWord`). Each is
      refused with `yaml_path_sensitive`, and audit records only the reason
      code and length.
 3. **R1 path-context redaction** (final wrapper):
@@ -1390,100 +1500,120 @@ search every output channel for each one.
     - the quoted-literal residual (`password: "!secret abc"` rendered by
       upstream exactly like a tag) is pinned as shown as a marker, which
       documents the disclosed behaviour.
-4. **R2 connection strings, decode-then-judge** (revision 4; final
-   wrapper, real L5; exact expected outputs). Every case runs at an
-   ordinary path (`sensor.value`) **and** at a connection path (the
-   `recorder` mapping and a direct `recorder.db_url` selection), unless
-   stated otherwise. `S` is a synthetic credential. "Encoded n times" means
-   `urllib.parse.quote(value, safe="")` applied n times.
-   - **The delta review's 12 boundary cases, verbatim, including its 8
-     counterexamples.** `Server=db;Uid=u;Pwd=S` and `mysql://u:S@db/ha`,
+4. **R2 connection and credential text, decode then deny by substring**
+   (revision 5; final wrapper, real L5; exact expected outputs). Every case
+   runs at an ordinary path (`sensor.value`) **and** at a connection path
+   (the `recorder` mapping and a direct `recorder.db_url` selection),
+   unless stated otherwise. `S` is a synthetic credential with no
+   credential word. "Encoded n times" means `urllib.parse.quote(value,
+   safe="")` applied n times. **Every assertion of the revision-4 delta
+   review's probe set (`pr260-3391172/probes.py`, 438 assertions) is a
+   required test**, with the 13 expectations that revision 5 deliberately
+   flips (§15) asserted in their revision-5 form.
+   - **The second delta review's 12 boundary cases, verbatim, including its
+     8 counterexamples.** `Server=db;Uid=u;Pwd=S` and `mysql://u:S@db/ha`,
      each encoded 1–6 times:
      - DSN encoded 1–4 times gives `[REDACTED:connection_string]`;
      - URI encoded 1–4 times gives `mysql://[REDACTED:connection_uri]`;
      - either encoded 5 or 6 times gives `[REDACTED:encoding]`.
 
-     The outputs are identical at both paths. The 8 counterexamples are the
-     URI at depths 1–6 and the DSN at depths 5–6.
+     The outputs are identical at both paths.
+   - **The revision-4 counterexample (R2, C′2):** `Server=db;Uid=u;Pwd==S`
+     encoded 0–4 times gives `[REDACTED:connection_string]`, and 5–6 times
+     `[REDACTED:encoding]`. `mysql://db/ha?pwd==S` gives
+     `mysql://[REDACTED:connection_uri]`.
+   - **Pwd variants, depths 0–6** (C′2): `Pwd==S`, `PWD :=S`, `;pwd;S`,
+     `P%57D=S`, fullwidth `ｐｗｄ=S`, `pwd=S`, `?x=PWD%3DS%3Bz`, the
+     double-encoded name `?%2550WD=S`, and a JSON payload `{"pwd": "S"}`.
+     Each gives `[REDACTED:connection_string]` (or the scheme form where the
+     text starts with a scheme) while its total decoding depth is at most
+     four, and `[REDACTED:encoding]` beyond.
    - **Fully encoded URIs, depths 0–6:**
      - userinfo in `postgresql+psycopg2://`, `mssql+pyodbc://`,
-       `redis://:S@…` and `https://u:S@…`;
+       `redis://:S@…` and `https://u:S@…`, user-only `mysql://u@db/ha`, and
+       a fullwidth `＠` (NFKC gives `@`);
      - a credential query item (`mysql://db/ha?password=S`);
      - also at `rest.resource`.
 
      Each gives `<scheme>://[REDACTED:connection_uri]` at depths 0–4 and
      `[REDACTED:encoding]` at 5–6.
-   - **Deeply encoded standalone connection strings, depths 0–6:**
-     - ODBC `DRIVER={X};SERVER=db;UID=u;PWD=S`;
-     - ADO `Data Source=db;User ID=u;Password=S`;
-     - libpq `host=db dbname=ha user=u password=S`.
-
-     Each gives `[REDACTED:connection_string]` at depths 0–4 and
-     `[REDACTED:encoding]` at 5–6.
-   - **Nested assignments** (C2): the revision-2 `odbc_connect` probe
-     verbatim, the nested DSN behind `?driver=`, `https://h/?x=PWD%3DS%3Bz`
-     and the double-encoded name `?%2550WD=S`. Each is redacted to its
-     scheme.
+   - **Standalone connection strings, depths 0–6:** ODBC
+     `DRIVER={X};SERVER=db;UID=u;PWD=S`, ADO `Data Source=db;User
+     ID=u;Password=S`, libpq `host=db dbname=ha user=u password=S`, and the
+     revision-2 `odbc_connect` probe verbatim. Each is redacted whole at
+     depths 0–4 and gives `[REDACTED:encoding]` at 5–6.
+   - **Canonical keys (R10)**, each at depths 0–6 of key encoding:
+     - `p%61ssword`, `%70assword`, `PASSWORD`, fullwidth `ｐａｓｓｗｏｒｄ`,
+       and `MQTT-PassWord` under `mqtt` (with a visible `broker` sibling).
+       Each is an identifier key, shown raw with its value replaced by a
+       credential marker, and `broker` stays visible; `Pass Word` is not an
+       identifier and K1 withholds the `mqtt` mapping; a key encoded past
+       the bound withholds its mapping as `[REDACTED:encoding]`;
+     - encoded ancestors `%63redentials`, `p%61ssword`, `api%5Fkey`,
+       `%74oken`, `session%5Fid` and `%41uth` holding `{value: S}` or a list
+       of mappings: withheld whole;
+     - the encoded connection key `db%5Furl` and the NFKC key `db_urℓ`:
+       rule B applies;
+     - **K1:** a key whose canonical text holds userinfo or a credential
+       word and is not a plain identifier (`pwd=S`, `Pwd=S` encoded twice,
+       `mysql://u:S@db`, `token: S`) withholds its mapping as `[REDACTED:connection_string]`;
+     - **L3:** a `yaml_path` segment whose compact canonical form contains a
+       credential word (`homeassistant.auth_providers`,
+       `x.session_timeout`, `mqtt.MQTT-PassWord`) is refused with zero
+       upstream calls.
    - **Non-converging, ambiguous and invalid** (A), each giving
-     `[REDACTED:encoding]`:
-     - a benign `Living Room` encoded 5 and 6 times;
-     - mixed escapes `%41%` and `%G1%41`, and `%41 50% off`;
-     - invalid UTF-8 `%FF`, overlong `%C0%AE`, and an added control
-       character `a%00b`;
-     - a mapping **key** encoded past the bound (the mapping is withheld).
-   - **R9 bound discriminators** (exact outputs):
-     - `Living Room` encoded **4** times is visible as its raw string;
-     - encoded **5** times it gives `[REDACTED:encoding]`;
-     - `Pwd=S` encoded **4** times gives `[REDACTED:connection_string]`,
-       not `encoding`.
-
-     Strings with no valid escape (`50% off`, `100%`, `%G1`, a `{% … %}`
-     template) are their own canonical text and stay visible.
+     `[REDACTED:encoding]`: a benign `Living Room` encoded 5 and 6 times;
+     mixed escapes `%41%`, `%G1%41` and `%41 50% off`; invalid UTF-8 `%FF`,
+     overlong `%C0%AE`, and an added control character `a%00b`; an escape
+     introduced by NFKC (fullwidth `％７０wd=S`).
+   - **R9 bound discriminators** (exact outputs): `Living Room` encoded
+     **4** times is visible as its raw string; encoded **5** times it gives
+     `[REDACTED:encoding]`; `Pwd=S` encoded **4** times gives
+     `[REDACTED:connection_string]`, not `encoding`. Strings with no valid
+     escape and no credential word (`50% off`, `100%`, `%G1`, a
+     `{{ states('sensor.x') }}` template) stay visible.
    - **Each key-scoped name variant** (B), at `x.<key>`: `db_url`,
      `DB_URL`, `dbUrl`, `database_url`, `url`, `base_url`, `external_url`,
      `uri`, `redirect_uri`, `dsn`, `DSN`, `connection`,
      `Connection_String`, `conn_str`, `connect`, `connect_args`,
      `database`, `Database`, `odbc_connect`, `sqlalchemy_url`, `Db-Url`,
-     the encoded key `db%5Furl`, and the disclosed over-matches
-     `reconnect_interval` and `security`.
-     - The credential-free `mysql://db.local:3306/ha?charset=utf8mb4`
-       gives `mysql://[REDACTED:connection_uri]`.
-     - A plain string and the number `42` give
-       `[REDACTED:connection_string]`.
-     - A container under `influxdb.database` is withheld whole.
-     - A scheme hidden by encoding is recovered from the canonical text,
-       and leading whitespace keeps no scheme.
-   - **Safe-SQLite exception versus variants** (B):
-     - `sqlite:////config/home-assistant_v2.db` at `recorder.db_url` is
-       visible;
-     - these variants are redacted: `%2D` in the path, a literal `%`,
-       `?mode=ro`, `@`, `;pwd=1`, `=`, `sqlite:///:memory:`, an upper-case
-       scheme, and a space;
+     `db%5Furl`, `db_urℓ`, and the disclosed over-matches
+     `reconnect_interval` and `security`. The credential-free
+     `mysql://db.local:3306/ha?charset=utf8mb4` gives
+     `mysql://[REDACTED:connection_uri]`; a plain string and `42` give
+     `[REDACTED:connection_string]`; a container under `influxdb.database`
+     is withheld whole.
+   - **R11 safe SQLite versus variants:**
+     - visible: `sqlite:////config/home-assistant_v2.db`,
+       `sqlite:///home-assistant_v2.db` and `sqlite:///a..b.db`;
+     - redacted to `sqlite://[REDACTED:connection_uri]`: a trailing `\n`,
+       an embedded `\n`, `\r`, `\t`, `\x00`, `\x7f`, ` ` and
+       ` `; `sqlite:///../x.db`, `sqlite:////config/../x.db` and a
+       trailing `/..`; `%2D` and any literal `%`; `SQLITE:///x.db` and
+       `X.db`; fullwidth characters; `?mode=ro`, `@`, `;`, `=`, a space
+       and `sqlite:///:memory:`;
+     - redacted by C′ first: `sqlite:////config/session.db`;
      - `db_url: !secret recorder_db_url` gives the reference marker.
-   - **Credential-free values under a non-connection key go through C and
-     stay visible (raw):**
-     - `mysql://db.local:3306/ha?charset=utf8mb4`;
-     - `postgresql://db.local/ha?sslmode=require`;
-     - `mysql://[fd00::5]:3306/ha` and `unknown://host/path`;
-     - `https://api.example.com/v1?entity=sensor.x` and a templated REST
-       URL;
-     - the `odbc_connect` `Trusted_Connection=yes` URI and
-       `Server=db;Database=ha;Trusted_Connection=yes`.
-
-     The same `unknown://host/path` at `recorder.db_url` gives
-     `unknown://[REDACTED:connection_uri]` (one rule: B scope decides, not
-     the scheme).
-   - **C redactions at an ordinary key:**
-     - `mysql://u@db/ha` (user only);
-     - `?user=u&password=S`, `?api_key=S` and `?access_token=S`;
-     - a bare `pwd=S`;
-     - `{% set token = "S" %}`;
-     - an email after `://` (disclosed over-match).
-   - **Mapping keys:** a credential URI used as a mapping key withholds its
-     mapping.
-   - **Raw emitted, never canonical:** every visible encoded control
-     (for example `Living Room` encoded 4 times) is byte-identical to the
-     input.
+   - **Useful values stay visible (raw)** at a non-connection key, with no
+     credential word: `mysql://db.local:3306/ha?charset=utf8mb4`,
+     `postgresql://db.local/ha?sslmode=require`,
+     `mysql://[fd00::5]:3306/ha`, `unknown://host/path`,
+     `https://api.example.com/v1?entity=sensor.x`, a templated REST URL,
+     `Server=db;Database=ha;Trusted_Connection=yes`, `Living Room`, `50%
+     off`, and recorder settings. The same `unknown://host/path` at
+     `recorder.db_url` gives `unknown://[REDACTED:connection_uri]`.
+   - **Disclosed over-redaction, pinned with exact outputs:** "Refresh the
+     access token daily", "Author: …", "Session started", "private room",
+     "cookie jar", "secretary", `https://example.com/oauth/authorize`
+     (scheme kept), `{% if token == 1 %}`, `token://host/x` (no scheme
+     kept), an email after `://`, and the keys `auth_providers` and
+     `private_ble_device` (value withheld).
+   - **Pinned residuals (D12)**, asserted as **not** redacted so that a
+     change is noticed: `pass=S`, `key=S`, `login=S`, `p_w_d=S`, a Cyrillic
+     `Pсd=S`, and base64 shorter than the blob scanner.
+   - **Raw emitted, never canonical:** every visible encoded control (for
+     example `Living Room` encoded 4 times) is byte-identical to the input,
+     and visible keys keep their raw text.
    - **Every channel is searched** for the synthetic credential in raw
      form and in its single-, double- and triple-percent-encoded forms:
      the response, the error, the partial/truncation case (credential URI
@@ -1566,14 +1696,17 @@ Each of the following must fail at least one test:
 - computing L4 key context from the returned node only (without the
   requested prefix);
 - walking into, rather than replacing, a container under a sensitive key;
-- **rule A mutations** (revision 4, R9), each with the case that kills it:
+- **rule A mutations** (R9, extended in revision 5), each with the case
+  that kills it:
   - decoding only once: the DSN and URI encoded 2–4 times leak;
   - a bound of 3: the 4-times-encoded benign control is redacted, and the
     4-times-encoded `Pwd=S` gives `encoding` instead of the exact
     `connection_string`;
   - a bound of 5: the 5-times-encoded benign control becomes visible;
-  - no stability check (accepting whatever four rounds produce): the DSN
-    encoded 5 or 6 times leaks;
+  - no final escape check: the DSN encoded 5 or 6 times, and the fullwidth
+    `％７０wd=S`, leak;
+  - dropping NFKC: fullwidth `ｐｗｄ=S` and the key `ｐａｓｓｗｏｒｄ` leak;
+  - dropping casefold: `PWD :=S` and `P%57D=S` leak;
   - judging the raw form instead of the canonical text: the encoded URI
     and DSN leak;
   - emitting the canonical text instead of the raw string: the visible
@@ -1581,21 +1714,30 @@ Each of the following must fail at least one test:
 - **rule B mutations:**
   - dropping B, or limiting it to exact key names: credential-free MySQL
     under `recorder.db_url` or `dbUrl` becomes visible;
-  - matching raw instead of canonical key names: `db%5Fur%6C` escapes
-    scope;
+  - matching raw instead of canonical key names: `db%5Fur%6C` and
+    `db_urℓ` escape scope;
   - deriving the key context from the envelope key instead of the
     absolute path: the direct `recorder.db_url` case fails;
-  - accepting a SQLite path that needed decoding: `home%2Dassistant_v2.db`
-    becomes visible;
   - walking into, rather than replacing, a container under a
     connection-shaped key;
-- **rule C mutations:**
-  - dropping C1 or C2;
-  - limiting C2 to URI query items, which misses the standalone and
-    libpq DSNs;
-  - only splitting on `&`, which misses the nested `?x=PWD=…`;
-  - making credential-name or key matching case-sensitive;
+- **R11 mutations:**
+  - `re.match` with `$` instead of `re.fullmatch`: `sqlite:///x.db\n`
+    becomes visible;
+  - dropping the `..` segment check: `sqlite:///../x.db` becomes visible;
+  - dropping raw-equals-canonical: `home%2Dassistant_v2.db` and
+    `SQLITE:///x.db` become visible;
+- **rule C′ mutations:**
+  - dropping C′1: `mysql://u:S@db/ha` leaks;
+  - dropping C′2 or any one of the 13 words: the case for that word leaks;
+  - restoring revision 4's assignment parse (its `==` exemption):
+    `Pwd==S` leaks;
   - redacting only the matching part instead of the whole value;
+  - keeping a scheme that holds a credential word: `token://host/x` keeps
+    `token://`;
+- **R10 mutations:**
+  - classifying raw instead of canonical keys: `%70assword` and
+    `%63redentials` leak;
+  - dropping K1: `{"pwd=S": 1}` shows `S` in a key;
 - exempting references at L5 by JSON shape or string content instead of
   `type(value) is ReferenceMarker`;
 - minting a marker for a malformed reference, or skipping the collision
@@ -1626,7 +1768,7 @@ Each of the following must fail at least one test:
 
 | File | Kind | Lines (est.) |
 |---|---|---|
-| `E/providers/upstream_yaml_reader.py` (new) | runtime: schema, L1-L3, args, identity, projection, path-context redaction, connection-string rules A–C (decode-then-judge), reference minting and rendering, bounds, bindings, dispositions, optional authority | 560-680 |
+| `E/providers/upstream_yaml_reader.py` (new) | runtime: schema, L1-L3, args, identity, projection, path-context redaction with canonical keys (R10, K1), connection and credential-text rules A, B, C′ and R11, reference minting and rendering, bounds, bindings, dispositions, optional authority | 560-680 |
 | `E/sanitization.py` | runtime: PEM and opaque-blob scanners (shared, opt-in parameter); the `ReferenceMarker` type, the default-off `preserve_reference_markers` exemption and the default-off marker branch (R8); the connection-string rules and reference minting stay in the reader module | 60-90 |
 | `E/providers/upstream_read_gateway.py` | runtime: optional-entry evaluation, extension-aware coordinator installation, routing through the existing lease path, `optional_tools` reporting | 180-250 |
 | `E/upstream_tool_policy.py` | runtime: optional binding load, model check, version-set assertion | 50-80 |
@@ -1698,7 +1840,7 @@ acceptance contract follows the beta.8 shape:
 | F15 | Adding a provider surface would change the family descriptors and every `family_admission` record | `E/compatibility_family.py:59-62, :411, :849` | per-tool explicit dispositions instead (D2) |
 | F16 | With the flag on, backup and lifecycle whole-catalog validation already refuses (both surfaces `held` for 8.4.3 and 8.5.0, so no loss today) | `E/providers/operational_backup.py:326` | unchanged; noted for when those holds lift |
 | F17 | A selected credential leaf or sensitive ancestor loses its key name in the returned node (review R1) | CC:2386-2394; review probe | L3 refusal and L4 absolute-path redaction (§2.2) |
-| F18 | The existing URL-userinfo scanner covers `http(s)` only, so database URIs pass unredacted (review R2). A name-based URI rule still misses a percent-encoded ODBC DSN in `odbc_connect` (first delta review), and recognize-then-validate misses fully encoded URIs and over-bound DSNs under ordinary keys (second delta review) | `E/sanitization.py`:84-85; review and delta-review probes | reader-scoped **decode-then-judge** rules A–D (§2.2, revision 4) |
+| F18 | The existing URL-userinfo scanner covers `http(s)` only, so database URIs pass unredacted (review R2). A name-based URI rule still misses a percent-encoded ODBC DSN in `odbc_connect` (first delta review), and recognize-then-validate misses fully encoded URIs and over-bound DSNs under ordinary keys (second delta review) | `E/sanitization.py`:84-85; review and delta-review probes | reader-scoped rules A, B, C′ (**decode, then deny by substring**), R10 canonical keys and R11 (§2.2, revision 5) |
 | F19 | Home Assistant loads only `configuration.yaml`; `configuration.yml` is neither a Core configuration file nor on the component allowlist (review R6) | HAC:40; CC:267-279 | byte-exact single-file L1 refuses `.yml` |
 | F21 | Upstream renders a tagged scalar as its source text, which is identical to a quoted string with the same text, and the unchanged final sanitizer replaces any value under a sensitive key (delta review R8) | `yaml_rt.py`:208-209; `E/sanitization.py`:341-350 | L4-minted internal `ReferenceMarker` type with a default-off L5 exemption by exact type; quoted-literal residual disclosed (§2.2, revision 3) |
 | F20 | The current coordinator installs one profile per surface and aggregates all declared capabilities, so an attached-only route can neither pass `acquire_route` nor be added without affecting the stock aggregate (review R5) | `coordinator.py:147`, :452-500, :723-802 | extension profile, aggregate isolation, existing lease path (§5.2) |
@@ -1723,12 +1865,12 @@ authorizes implementation, capture, release or deployment before that.
 | D9 | One PR, or the A/B split | **One PR** (split only if the §8.3 threshold is exceeded) |
 | D10 | Part 2 protected paths (§8.3, now including the coordinator and models) and `2.4.1-beta.12` release metadata | **Authorized after HAMCP-184 merges**; release number revalidated then |
 | D11 | Never return raw `content` or comments (parsed only) in this release | **Accepted** |
-| D12 | Best-effort redaction of free-form configuration (unlabeled secret values cannot be recognized) | **Accepted with disclosure.** Labeled credentials (R1) and structurally recognizable connection strings (R2, rules A–C) are handled explicitly. Still not recognized: a raw secret under an innocent key, a credential in a non-`=` form (for example a JSON payload string), a non-percent encoding, or an assignment name outside the credential-like list (§2.2 rule D) |
+| D12 | Best-effort redaction of free-form configuration (unlabeled secret values cannot be recognized) | **Accepted with disclosure.** Labeled credentials (R1), connection strings under connection-shaped keys (rule B) and any text containing userinfo or a credential word (rule C′, on canonical text and canonical keys) are handled explicitly. Still not recognized (revision 5): a raw secret under an innocent key; a label holding none of the 13 credential words (`pass=`, `pw=`, `key=`, `psk=`, `pin=`, `code=`, `login=`); a word interrupted by separators inside a value (`p_w_d=`); confusables NFKC does not map; a non-percent encoding; a secret split across values (§2.2 rule D). **Over-redaction now includes harmless values and keys mentioning a credential word** (for example "Refresh the access token", an `oauth` URL, `auth_providers`) |
 | D13 | Analysis consumers (dependency, integrity) adopt the reader | **Later**, in a separate task |
 
 ## 11. Non-actions in Part 1
 
-These apply to revision 1 and to the revision 2, 3 and 4 correction
+These apply to revision 1 and to the revision 2, 3, 4 and 5 correction
 batches.
 
 - No production code, schema, policy, registry, signed-registry, HOLD,
@@ -1791,7 +1933,8 @@ abc"`, quoted) renders identically upstream (`yaml_rt.py`:208-209), so it
 is shown as a reference marker. The exposure is limited to text matching
 the strict name grammar that passes the value scanners. The alternative is
 to drop reference preservation under sensitive keys entirely. Revision 3
-keeps preservation, as the brief directs.
+keeps preservation, as the brief directs. *Josh has since accepted this
+residual (recorded in §15).*
 
 ## 14. Revision 4: R2 by simplification and R9
 
@@ -1840,5 +1983,96 @@ not an implementation and not a capture. Part 2 tests prove the
 implementation.
 
 **Unchanged:** R1 and R3–R8, reference markers and the quoted-literal
-residual (§13, still for Josh's acceptance), admission, catalog and
-release.
+residual (§13; accepted by Josh, recorded in §15), admission, catalog
+and release.
+
+## 15. Revision 5: substring deny, canonical keys and strict SQLite
+
+**Source.** The focused Codex delta review of revision 4 at `3391172`
+returned *needs corrections*. R9 is resolved. R2 remains High: revision 4's
+C2 assignment parse exempted `==`, so `Server=db;Uid=u;Pwd==S` (a valid
+assignment of `=S`) stayed visible. R10 (Medium) found that key-based
+checks used raw key text, so encoded or fullwidth credential keys escaped
+them. R11 (Low) found that the SQLite exception's `^…$` admits a trailing
+newline. The review's probe set (438 assertions) is authoritative and
+becomes required tests (§8.1 group 4). The architect directed parsing to
+stop in favour of a substring deny. This is a docs-only correction batch,
+and a focused delta review of revision 5 follows.
+
+| Finding | Severity | Resolution in revision 5 | Where |
+|---|---|---|---|
+| R2 (third residual): `Pwd==S` passes C2's `==` exemption | High | **Parsing removed (C′).** Every string value is canonicalized (rule A, now ending with NFKC and casefold) and redacted whole when the canonical text holds userinfo or **contains** any of `pwd`, `passw`, `secret`, `token`, `apikey`, `api_key`, `api-key`, `auth`, `credential`, `private`, `bearer`, `cookie`, `session`. At most a leading scheme is kept, and only if the scheme holds no credential word. The revision-4 C1/C2 text and its credential-like name list are removed | §2.2 rule C′ |
+| R10: key checks run on raw key text | Medium | **Canonical keys.** Every key at every level is canonicalized (rule A, NFKC, casefold) before credential-key refusal (L3), path-context redaction, rule B scope and the new key-text check **K1**. `is_credential_key` also matches any compact canonical key containing a credential word. A key that is not a plain identifier and holds userinfo or a credential word withholds its mapping; a key that rule A refuses withholds its mapping as `encoding`. Visible keys are emitted raw | §2.2 L4 order, `is_credential_key`, K1, path-context rule, rule B |
+| R11: `^…$` admits `sqlite:///x\n` | Low | `re.fullmatch(r"sqlite:///[a-z0-9_./-]+", canonical)`, with explicit refusal of `\x00`–`\x1f`, `\x7f`, ` ` and ` `, no `..` segment, the value passing C′, and the raw string equal to its canonical text | §2.2 rule B (R11) |
+
+**Changed behaviour versus revision 4** (deliberate):
+- **Over-redaction widens.** Any harmless value or key that mentions a
+  credential word is redacted ("Refresh the access token daily", "Author",
+  "Session started", `oauth` URLs, templates mentioning `token`,
+  `auth_providers`, `private_ble_device`, `session_timeout`). D12 and the
+  tool description say so (§2.2 rule D, §6, §10).
+- **Narrower value-side names (flag for Josh and the reviewer).** Revision
+  4's C2 list included `pass` and `key`; the architect's word list has
+  `passw` and `apikey`/`api_key`/`api-key` instead. A value such as
+  `pass=S` or `key=S` under an innocent key is now a disclosed D12
+  residual. Keys are unaffected: `is_credential_key` still matches `pass`,
+  `key`, `pin`, `code` and their suffixes. The revision-4 over-match on
+  names such as `monkey=1` is gone.
+- **`..` refusal diverges from the reviewer's recommendation.** The review
+  suggested that `sqlite:///../…` could be shown literally because showing
+  text opens nothing. The architect's R11 decision refuses any `..`
+  segment, so such values are redacted to the scheme. `sqlite:///a..b.db`
+  (not a segment) stays visible.
+- **SQLite is stricter.** The value must equal its canonical text, so any
+  upper case (`SQLITE:///`, `X.db`), fullwidth character or `%` is
+  redacted, and a path containing a credential word (`session.db`) is
+  redacted by C′ first.
+- **Scheme is emitted canonical.** A kept scheme appears in lower case
+  (`MYSQL://…` gives `mysql://[REDACTED:connection_uri]`).
+- **L3 refuses more selections**: any `yaml_path` segment whose compact
+  form contains a credential word (`homeassistant.auth_providers`). Read
+  the parent instead; the value is withheld there too.
+- Minted reference names are not judged by C′ (minting precedes it); this
+  is the accepted R8 behaviour, not a new exemption.
+
+**Self-check, not a review.** A throwaway author rule model of rules A, B,
+C′, R10/K1 and R11 (`~/tmp/hamcp162-r5/rule_model.py`, sha256
+`77286b97…d6edb422`) runs every case through the real, unchanged
+`sanitize_untrusted_data` as L5 and reuses the reviewers' fixtures
+verbatim (the second and third delta reviews' probe files). It passed
+**716/716** assertions:
+- **all 438** assertions of the revision-4 delta review's probe set,
+  ported: 425 unchanged and **13 deliberate flips**:
+  - R2 (3): `Server=db;Uid=u;Pwd==S`, `mysql://db/ha?pwd==S`, and `Pwd==S`
+    encoded three times are now redacted;
+  - R10 (3): the encoded keys `%70assword`, `%63redentials` and
+    `%2570assword` are now classified as credential keys;
+  - R11 (2): `sqlite:///../../secrets.yaml` and
+    `sqlite:////config/../secrets.yaml` are redacted (the `..` decision;
+    both also contain `secret`), not shown literally;
+  - D12 (5): residuals the review pinned as leaking are now caught by C′
+    or canonical keys: HTML `Pwd&#61;S`, `Pwd=S`, the fullwidth `＝`
+    delimiter, the NFKC key `db_urℓ`, and the JSON payload `{"pwd": …}`;
+- **278 new** assertions for batch 4: Pwd variants and key variants at
+  depths 0–6 at both paths, encoded ancestors, K1, R11 visible and
+  redacted lists, useful visible controls, exact over-redaction outputs,
+  the NFKC-introduced escape, the fullwidth `＠`, and pinned residuals;
+- the revision-4 rule A mutations (once, bound 3, bound 5, no stability,
+  unbounded, raw, emit canonical, lenient) and 13 revision-5 mutations
+  (restore C2's `==` exemption, no NFKC, no casefold, raw keys, no K1,
+  `match` with `$`, no `..` check, no raw-equals-canonical, no final
+  escape check after NFKC, no word list, no userinfo, raw text without
+  casefold, no B). Each is killed by at least one exact expected output.
+
+The model is not independent review, not an implementation and not a
+capture. Part 2 tests prove the implementation.
+
+**Owner acceptance recorded.** Josh has accepted the key over-redaction
+(credential-shaped keys withheld even when harmless) and the quoted-literal
+reference residual (§2.2 *Reference markers*, §13). The new value-side
+over-redaction, the `pass`/`key` narrowing and the `..` divergence are
+disclosed above for the delta review and Josh's final approval.
+
+**Unchanged:** rules A (apart from NFKC and casefold) and B (apart from
+canonical keys and R11), R1 and R3–R9, reference markers, admission,
+catalog and release.
