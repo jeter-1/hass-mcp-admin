@@ -1,19 +1,23 @@
-# HAMCP-189 PR A acceptance
+# Engineering 2.4.1-beta.14 acceptance
 
 This contract covers HAMCP-189 PR A:
 - R3/R3b: Core authority before "already satisfied";
 - R6: the exact refusal for an unmapped F3 operation;
 - R2: a durable, provider-independent cancel.
 
+It builds on 2.4.1-beta.13 (HAMCP-164).
+
 Design and final protected-file list: `docs/HAMCP_189_PR_A_DESIGN.md`.
 Authority: `docs/HAMCP_189_TRIAGE.md` and Josh's 2026-10-16 decisions O1–O9
-on register row HAMCP-189.
+on register row HAMCP-189. Release notes:
+[`V2_4_1_BETA14_RELEASE_NOTES.md`](V2_4_1_BETA14_RELEASE_NOTES.md).
 
-Release target: the next Engineering beta at materialization time. It is the
-first to be ready and is served together with HAMCP-162. The version string is
-`unknown` until `scripts/promote_next_release.py` materializes it. This
-document does not name or claim a version. PR C (R8, L1, L2) is a separate PR
-in the same release (O6).
+Release target: the next Engineering beta, first ready, first served together
+with HAMCP-162. `.release/next-version` stages `2.4.1-beta.14`. If HAMCP-162
+merges first, this PR restages the next beta and renames this document and
+the release notes to match. Materialize through
+`scripts/promote_next_release.py --apply` in this PR before Ready. PR C
+(R8, L1, L2) is a separate PR in the same release (O6).
 
 The contract separates four stages:
 1. source and offline acceptance;
@@ -27,6 +31,10 @@ It authorizes none of the later stages.
 
 Bind the following:
 - the design note;
+- the staged declaration `2.4.1-beta.14`, with exact staged acceptance and
+  release-note resolution from `scripts/codex-context.py`; before Ready, the
+  materialized version in all three version authorities and no staged
+  declaration left over;
 - the PR head SHA;
 - the passing PR `validate` run for that exact head;
 - the Full and Evidence tier logs named in the PR.
@@ -111,12 +119,17 @@ outage.
 
 ## 2. Release CI and publication
 
-These stages follow the release's own acceptance document once it is
-materialized. Publication needs Josh's Ready authorization and the protected
-merge handoff. No new persisted format is introduced:
+Require exact-head CI before release acceptance. Pending or unavailable jobs
+are not passing evidence. Publication needs Josh's Ready authorization and the
+protected merge handoff. Verify the merged source, v2.4.1-beta.14, the
+immutable version and commit images, provenance and SBOM with the shipped
+verifiers. Never invent future image identities. Retain the beta.13 artifacts
+and the known-good earlier artifacts for recovery.
+
+No new persisted format is introduced:
 - the child cancel event is the existing `execution_cancelled` event, with one
   more bounded diagnostic code;
-- the previous beta reads every record this change writes.
+- beta.13 reads every record this change writes.
 
 ## 3. Installed Engineering
 
@@ -126,7 +139,7 @@ authorization.
 1. **Installed-image binding.** Separately authorize installation of the
    published Engineering artifact. Bind the running add-on to:
    - the published image index digest;
-   - the materialized version tag;
+   - the v2.4.1-beta.14 tag;
    - the protected `main` merge commit that contains this PR.
 
    A source version alone does not prove the installed image.

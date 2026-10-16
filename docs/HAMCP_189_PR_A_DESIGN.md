@@ -17,11 +17,13 @@ Runtime changes are limited to these two protected files:
 | `R/f3/executor.py` | R6, R3b | Adds `DispatchAuthorityRefused` and a closed reason-code set. Its preflight and dispatch-authority handlers report the refusal's code instead of the generic `preflight_failed`. The early return for an already-satisfied preflight (≈473-501) is reached only after the wrapper below has validated Core authority. The executor does not change that branch itself. |
 | `R/f3_runtime/runtime.py` | R3/R3b, R6, R2 | Adds a `_CoreVerificationAdapter.preflight` lease wrapper and a dispatch-window authorizer. Changes `_CoreDispatchAuthorityGuard` so it raises the R6 refusal on unmapped operations and remembers its authority. Rewrites the order in which `_cancel_locked` records a cancel. Adds a `cancel_only` mode to `_load_prepared`. Adds a recorded-cancel check to `_recover_active_candidates`. Adds a cancelled-child branch to `_project_locked`. |
 
-Release materialization for the next beta adds the usual protected release
-surfaces under the existing `promote_next_release.py` flow
-(`hass_mcp_engineering_beta/config.yaml`, `hass_mcp_engineering_beta/Dockerfile`,
-`.release/`). Those changes come from the promotion script and are listed
-separately in the PR when they are applied. No other protected path is
+Release staging (authorized by Josh on 2026-10-16 for PR #266): the protected
+`.release/next-version` stages `2.4.1-beta.14` (first ready, first served; if
+HAMCP-162 merges first, it is restaged as the next beta). Materialization
+later adds the protected release surfaces through the existing
+`promote_next_release.py` flow (`hass_mcp_engineering_beta/config.yaml` and
+the other version authorities). Those changes come from the promotion script
+and are listed separately in the PR when applied. No other protected path is
 changed.
 
 Read-only imports, not edited:
@@ -38,7 +40,8 @@ Explicitly not changed:
 New non-protected files:
 - `tests/test_hamcp189_authority_cancel.py`
 - this note
-- `docs/HAMCP_189_PR_A_ACCEPTANCE.md`
+- `docs/V2_4_1_BETA14_ACCEPTANCE.md`
+- `docs/V2_4_1_BETA14_RELEASE_NOTES.md`
 
 HAMCP-162 overlap: none. HAMCP-162 Part 2 touches `upstream_read_gateway.py`,
 `coordinator.py`, `models.py` and `routes.py`. This PR edits none of them and
@@ -196,5 +199,7 @@ New: `tests/test_hamcp189_authority_cancel.py`.
 
 - Next beta at materialization time. It is the first to be ready, and is
   served together with HAMCP-162.
+- Staged as `2.4.1-beta.14` in `.release/next-version`; not yet
+  materialized.
 - PR C (R8, L1, L2) is a separate small PR, to be merged first or in the same
   release (O6).
