@@ -40,6 +40,7 @@ from ha_mcp_engineering.ha_core_readmission.routes import (  # noqa: E402
 from ha_mcp_engineering.ha_mcp_readmission.models import (  # noqa: E402
     AdmissionDisposition,
     UpstreamSurface,
+    evidence_fingerprint,
 )
 from ha_mcp_engineering.providers import upstream_yaml_reader as y  # noqa: E402
 from ha_mcp_engineering.providers.upstream_fan import FanProvider  # noqa: E402
@@ -508,6 +509,17 @@ class AdmissionTests(Harness):
                 y.OPTIONAL_TOOL_BINDINGS.update(bindings)
             yield
 
+    def test_an_unlisted_version_is_never_default_admitted(self):
+        # HAMCP-184 rule: a version missing from the disposition table is
+        # held, even with an otherwise matching binding for it.
+        release = replace(self.compiled.by_version["8.5.0"], version="9.9.9")
+        binding = y.OPTIONAL_TOOL_BINDINGS[("8.5.0", TOOL)]
+        with self.patched_tables(bindings={("9.9.9", TOOL): binding}):
+            self.assertNotIn("9.9.9", y.OPTIONAL_TOOL_DISPOSITIONS)
+            self.assertEqual(y.withheld_reason(release, signed_selection=False),
+                             "optional_disposition_held")
+            self.assertEqual(y.evaluate_optional(captured("8.5.0"), release).status, "held")
+
     def test_every_registry_version_has_an_explicit_disposition(self):
         self.assertEqual(set(y.OPTIONAL_TOOL_DISPOSITIONS), {r.version for r in self.compiled.releases})
         self.assertEqual({v for v, d in y.OPTIONAL_TOOL_DISPOSITIONS.items() if d == "admitted"},
@@ -605,6 +617,22 @@ class GenerationLeaseTests(Harness):
                 self.assertEqual(held.profiles, (held.profile,))
                 self.assertEqual(admitted.profiles, (admitted.profile, admitted.optional_extension))
                 self.assertTrue(admitted.optional_extension.profile_id.startswith(f"ha-mcp-optional-yaml-{version}-"))
+
+    async def test_authority_token_binds_the_extension_itself(self):
+        admitted = await AdmissionTests.selection(self, "8.5.0")
+        extension = admitted.optional_extension
+        stock_only = replace(admitted, optional_extension=None)
+        # Without an extension the token is the stock material, byte-identical.
+        self.assertEqual(stock_only.authority_token, evidence_fingerprint({
+            "profile": admitted.profile.to_mapping(),
+            "authority": admitted.authority.material_mapping(),
+        }))
+        self.assertNotEqual(admitted.authority_token, stock_only.authority_token)
+        # Changing only the extension, with the same authority, changes it.
+        changed = replace(admitted, optional_extension=replace(
+            extension, profile_version=extension.profile_version + 1))
+        self.assertEqual(changed.authority.fingerprint, admitted.authority.fingerprint)
+        self.assertNotEqual(changed.authority_token, admitted.authority_token)
 
     async def test_withheld_selections_report_the_reason(self):
         for change, reason in (
