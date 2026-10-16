@@ -1536,11 +1536,25 @@ def load_reviewed_upstream_release_registry(
         raise UpstreamToolPolicyError(
             "release_registry_default_version_revoked"
         )
-    return ReviewedUpstreamReleaseRegistry(
+    registry = ReviewedUpstreamReleaseRegistry(
         registry_format_version=value["registry_format_version"],
         default_version=default_version,
         releases=releases,
     )
+    if Path(path).resolve() == RELEASE_REGISTRY_PATH.resolve():
+        # HAMCP-162: the shipped registry and the compiled optional-tool
+        # tables must agree exactly; a version without an explicit optional
+        # disposition is a load error, never a default.
+        from .providers.upstream_yaml_reader import (
+            OptionalBindingError,
+            validate_bindings_against_registry,
+        )
+
+        try:
+            validate_bindings_against_registry(registry)
+        except OptionalBindingError as error:
+            raise UpstreamToolPolicyError(str(error)) from None
+    return registry
 
 
 def _validate_registry_family_admission_evidence(
