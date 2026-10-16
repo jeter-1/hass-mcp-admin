@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.4.1-beta.12 - Audit hardening (HAMCP-184)
+
+Builds on 2.4.1-beta.11's MCP SDK 1.30.0 security upgrade.
+
+- Fail closed on provider dispositions (F-05): an absent surface or unknown
+  value reads `held`, and the registry loader refuses a reviewed entry without
+  explicit dispositions for all four provider surfaces. The five legacy
+  entries (7.14.1-8.2.0) now declare their dispositions explicitly. ha-mcp
+  8.2.0 backup and lifecycle become `held` (no capability-specific review);
+  every other effective disposition is unchanged, and the production 8.5.0 and
+  rollback 8.4.3 entries are byte-identical.
+- Validate the caller's `expected_plan_hash` on F3 re-apply of an existing
+  task (F-01), refusing an empty or wrong hash with `approval_hash_mismatch`
+  before any dispatch or state change. A matching replay is unchanged.
+- Report principal separation truthfully (F-02): an approval or rejection by
+  the anonymous Ingress fallback principal stores and displays
+  `principal_separation_enforced: false`, with a `principal_separation_status`
+  reason (`anonymous_fallback_principal`); identified principals keep `true`.
+  Older records are projected, not rewritten. Approval eligibility, flow and
+  elevated-class behavior are unchanged.
+- Check the generated add-on matrix runner labels, not a declared constant, in
+  the CI runner guard (F-06); `ci.yml` is unchanged.
+- Preserve the 87-tool catalog, signed registries, HOLD, support window,
+  persisted formats, workflows and stable v1.
+
 ## 2.4.1-beta.11 - MCP SDK 1.30.0 security upgrade (HAMCP-188)
 
 Builds on 2.4.1-beta.10's truthful dispatch facts.

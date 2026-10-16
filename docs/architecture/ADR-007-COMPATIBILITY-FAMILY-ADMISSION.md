@@ -71,7 +71,7 @@ semantics are migrated in place: existing exact entries have no inferred family
 authority, default to admitted providers, and remain active. Exact 8.1.0 policy,
 tool classifications, digests, and runtime behavior are unchanged.
 
-Amended by HAMCP-184 (2.4.1-beta.11): provider dispositions are no longer
+Amended by HAMCP-184 (2.4.1-beta.12): provider dispositions are no longer
 defaulted. Every reviewed registry entry must declare all four provider
 surfaces explicitly, the loader refuses an entry without them, and an absent
 surface or unknown value is `held`. The five pre-format-3 entries (7.14.1

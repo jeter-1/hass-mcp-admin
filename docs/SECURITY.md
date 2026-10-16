@@ -251,7 +251,7 @@ rejection is terminal; legacy caller approvals are not migrated. No log,
 recommendation, request note, challenge identifier or forwarded header is an
 approval credential. See [`EXTERNAL_APPROVAL.md`](EXTERNAL_APPROVAL.md).
 
-Since HAMCP-184 (2.4.1-beta.11) `principal_separation_enforced` is `true` only
+Since HAMCP-184 (2.4.1-beta.12) `principal_separation_enforced` is `true` only
 for a decision by an Ingress-identified administrator. A decision under the
 anonymous fallback principal (no `X-Remote-User-Id`) reports `false` with reason
 `anonymous_fallback_principal`; its standard-class eligibility is unchanged.
