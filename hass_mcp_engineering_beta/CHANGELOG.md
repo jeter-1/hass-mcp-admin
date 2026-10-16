@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.4.1-beta.13 - Core gateway fails closed for unmapped tools (HAMCP-164)
+
+Builds on 2.4.1-beta.12's audit hardening.
+
+- Refuse any tool name with no Core requirement mapping at the gateway,
+  before Core acquisition and before any provider, upstream or Home Assistant
+  call: `CoreRequirementUnmapped`, `unsupported_operation`, reason
+  `core_requirement_unmapped`, not retryable, with zero-attempt telemetry and
+  a value-free audit record. A missing mapping no longer implies Core
+  independence.
+- Declare the 16 Core-independent native tools in a closed, immutable,
+  exact-name allowlist, each with a basis and justification; `server_info` and
+  `get_server_health` remain conditional on `check_ha`. Ambiguous route tables
+  refuse to import.
+- Recognize delegated reads only while currently published as `delegated`
+  read-gateway capabilities; their Core requirements and withholding are
+  unchanged.
+- No working tool changes behavior. Unknown or withdrawn names now receive
+  `CoreRequirementUnmapped` instead of the MCP SDK's `Unknown tool` error.
+- Correct stale MCP SDK version comments and test wording (comments and
+  documentation only).
+- Preserve the 87-tool catalog, signed registries, HOLD, support window,
+  persisted formats, workflows and stable v1.
+
 ## 2.4.1-beta.12 - Audit hardening (HAMCP-184)
 
 Builds on 2.4.1-beta.11's MCP SDK 1.30.0 security upgrade.

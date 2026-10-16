@@ -144,6 +144,15 @@ Allowlist bases:
 
 ### 2.2 Delegated reads (30 mapped routes)
 
+The 30 routes are:
+- the 28 automatic reads published in the healthy catalog (87 = 59 + 28);
+- the held canary read `ha_get_operation_status`;
+- one release-specific blueprint name: `ha_get_blueprint` on ha-mcp 8.4.3,
+  `ha_manage_blueprints` on 8.5.0.
+
+Both blueprint names map the same requirements. This accounting is pinned by
+`test_ha_core_2026_9_integration` (:2915).
+
 A delegated read reaches the gateway with no static requirements. Its Core
 authority is enforced by `R/providers/upstream_read_gateway.py`, which is
 unchanged by this task:
