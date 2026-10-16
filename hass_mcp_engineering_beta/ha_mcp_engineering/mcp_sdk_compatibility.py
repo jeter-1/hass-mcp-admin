@@ -184,9 +184,10 @@ async def initialize_reviewed_upstream_session(
 ) -> types.InitializeResult:
     """Initialize one outbound session with the reviewed upstream protocol.
 
-    MCP 1.28.1 defaults to a newer protocol than the exact ha-mcp 7.14.1
-    contract reviewed by Engineering. Use the SDK's public request surface to
-    retain that reviewed protocol instead of broadening admission.
+    The pinned MCP SDK (1.30.0) defaults to a newer protocol than the exact
+    ha-mcp 7.14.1 contract reviewed by Engineering. Use the SDK's public
+    request surface to retain that reviewed protocol instead of broadening
+    admission.
     """
 
     _require_pinned_sdk_version()
@@ -206,9 +207,10 @@ async def initialize_reviewed_upstream_session(
         raise RuntimeError(
             "The upstream MCP server returned an unsupported protocol version."
         )
-    # MCP 1.28.1 backs its public get_server_capabilities() accessor with this
-    # state. The adapter owns this narrowly reviewed private SDK contact so the
-    # exact-protocol initialization preserves the normal ClientSession contract.
+    # The pinned MCP SDK (1.30.0) backs its public get_server_capabilities()
+    # accessor with this state. The adapter owns this narrowly reviewed private
+    # SDK contact so the exact-protocol initialization preserves the normal
+    # ClientSession contract.
     session._server_capabilities = result.capabilities
     await session.send_notification(
         types.ClientNotification(types.InitializedNotification())

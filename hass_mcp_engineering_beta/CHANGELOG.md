@@ -37,7 +37,8 @@ Builds on 2.4.1-beta.10's truthful dispatch facts.
   idle sessions are reclaimed, and idle now means no request in flight. The
   SDK's own 4 MiB body and 10,000-session limits sit behind Engineering's
   2,000,000-byte gateway and 1,024-session caps. The outbound client follows
-  only same-origin redirects.
+  only method-preserving redirects that stay on the same origin or are a
+  same-host, default-port HTTP→HTTPS upgrade.
 - Add offline contract tests for batch refusal, protocol negotiation, session
   reclamation and outbound redirects.
 - Preserve the 87-tool catalog and every descriptor, fingerprints, signed

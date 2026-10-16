@@ -74,7 +74,9 @@ vulnerability. The locks differ from beta.10 only in the `mcp` entry, and
 **Outbound client.**
 - A cross-origin redirect from the upstream is not followed and is classified
   `upstream_error`.
-- A same-origin, method-preserving redirect is followed.
+- A same-origin, method-preserving redirect is followed. The SDK also permits
+  a same-host, default-port HTTP→HTTPS upgrade; any other scheme, host or port
+  change, a method change or added userinfo is refused.
 - The existing tools/list, tools/call, exception-group (HAMCP-175 truthful
   refusal), `tool_call_attempted` and cancellation suites pass unchanged.
 

@@ -588,7 +588,8 @@ class AuthenticatedMcpGateway:
             forwarded = dict(scope)
             forwarded["path"] = path[len(self.prefix):] or "/"
             if forwarded["path"] in {"/mcp", "/mcp/"}:
-                # MCP 1.28 registers the configured streamable route exactly.
+                # The pinned MCP SDK (1.30.0) registers the configured
+                # streamable route exactly.
                 # Normalize both accepted external forms to that internal path
                 # so Starlette never emits a client-visible slash redirect.
                 forwarded["path"] = "/mcp"

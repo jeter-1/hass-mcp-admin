@@ -36,8 +36,10 @@ def create_mcp_server(settings: Settings) -> FastMCP:
     )
     if settings.ha_mcp_release_registry_enabled:
         # The pinned SDK exposes the stateful session manager as a public
-        # boundary but FastMCP 1.28.1 does not yet forward its idle timeout.
-        # Instantiate it once and bound abandoned authenticated sessions.
+        # boundary. FastMCP 1.28.1 did not forward an idle timeout; the pinned
+        # 1.30.0 forwards its own default, which this explicit assignment
+        # overrides. Instantiate it once and bound abandoned authenticated
+        # sessions.
         server.streamable_http_app()
         server.session_manager.session_idle_timeout = (
             READMISSION_SESSION_IDLE_TIMEOUT_SECONDS
