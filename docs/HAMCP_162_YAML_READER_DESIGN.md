@@ -6,7 +6,8 @@ Revision 3 corrected the delta review's R2 residual and R8 (§13).
 Revision 4 replaced the R2 recognizer with decode-then-judge rules and
 aligned R9 (§14). Revision 5 replaces revision 4's assignment parsing with
 a substring deny on canonical text, canonicalizes keys (R10) and tightens
-the SQLite exception (R11) (§15). Owner decisions are recorded in §10;
+the SQLite exception (R11) (§15). Josh's decisions on revision 5 add the
+delimited-token rule C′3 (§15.1). Owner decisions are recorded in §10;
 final owner approval follows the focused delta review of revision 5. No production code,
 policy, registry, schema, version or workflow change is part of this
 document. Nothing here authorizes a capture, deployment, live Home
@@ -64,7 +65,7 @@ change, or a release.
 | Upstream call Engineering builds | `{"file": "configuration.yaml", "yaml_path": <validated>, "include_content": false, "include_parsed": true}`; the `file` value is a binary constant |
 | Readable files | `configuration.yaml` only |
 | Refused before dispatch, with zero upstream calls | any other `file` value (byte-exact comparison), and any `yaml_path` that names a credential-shaped key at any level (§3, R1) |
-| Returned | the parsed subtree only. It is projected through a positive allowlist and then YAML-aware redaction that carries the **full key path**, including the requested `yaml_path` (credential keys at any level, PEM, JWT, bearer, URL credentials). Connection strings and credential text use **decode, then deny by substring**: every string and key is canonicalized (percent-decoded in at most four rounds, otherwise redacted; then NFKC and casefold); values under connection-shaped keys (`*url*`, `*uri*`, `*dsn*`, `*connect*`, `*database*`) are redacted whole except an exact plain SQLite path; every other string is redacted whole when its canonical text holds userinfo or **contains** a credential word (`pwd`, `passw`, `secret`, `token`, `apikey`, `api_key`, `api-key`, `auth`, `credential`, `private`, `bearer`, `cookie`, `session`). At most the scheme survives. `!secret`/`!env_var` become typed reference markers (`{"secret_ref": name}`, `{"env_var_ref": name}`) that carry the name only, never a value or an `!env_var` default. Raw text and comments are never returned. |
+| Returned | the parsed subtree only. It is projected through a positive allowlist and then YAML-aware redaction that carries the **full key path**, including the requested `yaml_path` (credential keys at any level, PEM, JWT, bearer, URL credentials). Connection strings and credential text use **decode, then deny by substring**: every string and key is canonicalized (percent-decoded in at most four rounds, otherwise redacted; then NFKC and casefold); values under connection-shaped keys (`*url*`, `*uri*`, `*dsn*`, `*connect*`, `*database*`) are redacted whole except an exact plain SQLite path; every other string is redacted whole when its canonical text holds userinfo or **contains** a credential word (`pwd`, `passw`, `secret`, `token`, `apikey`, `api_key`, `api-key`, `auth`, `credential`, `private`, `bearer`, `cookie`, `session`), or a delimited `pass` or `key` label (`\b(pass\|key)\s*[=:]`, owner addition C′3). At most the scheme survives. `!secret`/`!env_var` become typed reference markers (`{"secret_ref": name}`, `{"env_var_ref": name}`) that carry the name only, never a value or an `!env_var` default. Raw text and comments are never returned. |
 | Admission | an **optional reviewed tool**: compiled per-version bindings for 8.4.3 and 8.5.0 over the **complete runtime descriptor** under an explicit fingerprint model, with an explicit per-version disposition for every registry version. It is a separate optional capability in the same admission generation and dispatch-lease path as stock reads. It is outside the stock policy JSON, the stock count, the order fingerprint and the whole-catalog validator, so no existing digest, signed entry, profile id or fingerprint changes (§5). |
 | Core | the existing `core.basic_rest_read` + `core.basic_websocket_read` profiles; no signed-registry change (§5.4) |
 | Catalog | 87 public tools while the filesystem flag is off (unchanged). **88** (59 native + 29 delegated) when the flag is on and the contract is exact (§6). |
@@ -417,8 +418,9 @@ each node it applies these steps in order:
 3. the path-context rule, on the **canonical** keys of the absolute path (a
    container withheld whole is never descended);
 4. reference minting;
-5. the value rules on the canonical text: C′ (userinfo and credential
-   words), then the key-scoped rule B with its SQLite exception (R11);
+5. the value rules on the canonical text: C′ (userinfo, credential
+   words and the delimited-token rule C′3), then the key-scoped rule B
+   with its SQLite exception (R11);
 6. the other value scanners, on the canonical text from rule A;
 7. the node and depth caps with truncation.
 
@@ -467,11 +469,14 @@ result, and only after L5 are markers rendered.
 *Key-text check K1* (revision 5, R10). A key's own text is emitted, so it
 must not carry a credential either. On the canonical key:
 - if it holds userinfo (`://` followed later by `@`), **or**
-- if its compact form contains a credential word **and** the canonical key
-  is not a plain identifier (it does not fully match `[a-z0-9_.-]+`),
+- if its compact form contains a credential word, or its canonical text
+  matches the delimited-token pattern of C′3, **and** the canonical key is
+  not a plain identifier (it does not fully match `[a-z0-9_.-]+`),
 
 then the **containing mapping** is withheld whole as
-`[REDACTED:connection_string]`. So `{"pwd=S": 1}`, `{"Pass Word": …}` and
+`[REDACTED:connection_string]`. A key that matches C′3 holds `=` or `:`,
+so it is never a plain identifier. So `{"pwd=S": 1}`, `{"key=S": 1}`,
+`{"pass: S": 1}`, `{"Pass Word": …}` and
 a URI with userinfo used as a key withhold their mapping, while an
 identifier key such as `mqtt_password`, `%70assword` or `PASSWORD` is shown
 (raw) with its value redacted under the path-context rule. A key that rule
@@ -521,7 +526,9 @@ to the global sanitizer's patterns).
   `Pwd==S`, which is a valid assignment of the value `=S`.
 - Revision 5 stops parsing. Every string is canonicalized, and any
   canonical text that **contains** a credential word is redacted whole,
-  whatever surrounds the word.
+  whatever surrounds the word. Josh's addition C′3 matches the two words
+  left out of that list, `pass` and `key`, only as a delimited label
+  (§15.1).
 - The revision-2/3 recognizer, strict grammar, decoded charsets,
   query-name allowlist and web-URI regime, and the revision-4 C2
   assignment predicate and its credential-like name list, are
@@ -558,7 +565,7 @@ to the global sanitizer's patterns).
     form.** When a value is kept visible, the **raw** string is emitted
     unchanged. Engineering never rewrites a value to its canonical form.
 - **C′. Substring deny** on the canonical text of **every** string value,
-  under any key. The value is redacted whole when either holds:
+  under any key. The value is redacted whole when any of these holds:
   - **C′1. Userinfo.** The text contains `://` and, anywhere after the
     first `://`, an `@` (unchanged from revision 4). This includes
     user-only userinfo and passwords that hold `/`, `?`, `#` or spaces once
@@ -571,8 +578,28 @@ to the global sanitizer's patterns).
     no delimiter, no `=` and no parsing. `Pwd==S`, `PWD :=S`, `;pwd;S`,
     `P%57D=S` (canonical `pwd=s`), fullwidth `ｐｗｄ=S`, `?x=PWD%3DS` and a
     JSON payload `{"pwd": "S"}` are all caught by the same rule.
+  - **C′3. Delimited token** (owner addition, 2026-10-15). C′2 leaves out
+    `pass` and `key` because, as plain substrings, they would redact
+    `keypad`, `monkey`, `bypass` and `compass`. C′3 matches those two words
+    only as a delimited label: the value is redacted whole if
+    `re.search(r"\b(pass|key)\s*[=:]", canonical)` matches anywhere. The
+    pattern is a Python `str` pattern, so `\b` and `\s` are
+    Unicode-aware, and it runs on the same canonical text as C′1 and C′2
+    (after decoding, NFKC and casefold).
+    - Caught: `pass=S`, `PASS ==S`, `key: S`, `;key=S`, `key==S`,
+      `pass:=S`, `key :=S`, `x=1;pass=S`, `?a=1&KEY=S`, a tab or no-break
+      space before the delimiter, fullwidth `ｋｅｙ＝S` and `ｐａｓｓ：S`
+      (NFKC gives `key=s` and `pass:s`), and every percent-encoded form
+      within the bound (`pass%3DS`, `%6Bey=S`, `k%45Y: S`).
+    - Not caught: words that merely contain `pass` or `key` (`keypad`,
+      `monkey`, `bypass`, `compass`, `hotkey=F5`, `passkey=1`, `keys=3`,
+      `passes: 2`), and either word without a following `=` or `:` (`key
+      fob`, `Hall pass`, `pass the salt`).
+    - `_` is a word character, so `my_key=S` and `app_key=S` are not
+      matched (a D12 residual; `api_key` is a C′2 word).
   - A credential word in a **key** is handled by `is_credential_key` (on
-    the compact canonical key) and K1. C′ is the value-side rule.
+    the compact canonical key) and K1, which also applies C′3 to
+    non-identifier keys. C′ is the value-side rule.
   - **Redaction form (keeps at most the scheme).** It is
     `<scheme>://[REDACTED:connection_uri]` when the canonical text begins,
     at position 0, with a scheme matching `[a-z][a-z0-9+.-]{0,31}`
@@ -580,6 +607,9 @@ to the global sanitizer's patterns).
     word. The scheme is emitted in its canonical (lower-case) form.
     Otherwise (no scheme, leading whitespace, a scheme such as `token://`,
     a non-string or a container) it is `[REDACTED:connection_string]`.
+    C′3 never fires on a scheme alone, because the scheme grammar admits
+    no `=` or `:`. A `key://host` value is redacted by C′3 (its text holds
+    `key:`) and keeps `key://`.
   - A value that passes C′ and is not under a connection-shaped key is
     visible as its raw string. This holds for credential-free database URLs
     under non-connection keys (for example `sensor.value:
@@ -638,17 +668,22 @@ to the global sanitizer's patterns).
   under a credential or connection-shaped key. It does **not** recognize:
   - a raw secret under an innocent key, where neither the key nor the value
     holds a credential word (`foo: s3cr3t`, `code_word: …`);
-  - a credential whose label holds none of the 13 words, such as `pass=`
-    (no `w`), `pw=`, `key=`, `psk=`, `pin=`, `code=`, `login=` or `sig=`.
-    This is **narrower than revision 4's C2 name list**, which also matched
-    `pass` and `key`. Keys are not affected, because `is_credential_key`
-    still matches `pass`, `key`, `pin`, `code` and the `_pass`/`_key`
-    suffixes;
+  - a credential whose label holds none of the 13 words and is not a
+    delimited `pass` or `key` (C′3), such as `pw=`, `psk=`, `pin=`,
+    `code=`, `login=` or `sig=`;
+  - a `pass` or `key` label that C′3 does not see as delimited: joined to
+    a preceding letter, digit or `_` (`my_key=`, `app_key=`, `passkey=`),
+    separated from its `=` or `:` by a non-whitespace character (a quoted
+    JSON or Python label such as `"key": "S"` or `{'pass': 'S'}`, and
+    `pass_word=`), or followed by another delimiter (`key→S`, `key S`).
+    Keys are not affected, because `is_credential_key` still matches
+    `pass`, `key`, `pin`, `code` and the `_pass`/`_key` suffixes;
   - a credential word interrupted inside a **value** by separators or other
     characters (`p_w_d=`, `to-ken=`). Value matching is a plain substring
     and does not compact; keys are compacted;
   - a credential word written with confusables that NFKC does not map (the
-    Cyrillic `с` in `Pсd=`), or hidden by a non-percent encoding (base64
+    Cyrillic `с` in `Pсd=` or `е` in `kеy=`), or hidden by a non-percent
+    encoding (base64
     shorter than the 200-character blob scanner, `&#112;wd`,
     `pwd`);
   - a secret split across list items or sibling values.
@@ -656,8 +691,10 @@ to the global sanitizer's patterns).
   These leak if present. The tool description and `limitations` say so.
   Rules A and C′ remove the bypasses that the delta reviews found. No amount
   of percent-encoding up to the bound hides a credential word or userinfo.
-  More encoding than the bound is redacted. No assignment syntax, such as
-  `==`, `:=` or a missing `=`, matters any more.
+  More encoding than the bound is redacted. For the 13 C′2 words no
+  assignment syntax, such as `==`, `:=` or a missing `=`, matters any more.
+  C′3 needs only an `=` or `:` after optional whitespace, so `==` and `:=`
+  are caught there too.
 - **Examples** (synthetic values; `S` is a synthetic credential with no
   credential word):
 
@@ -682,6 +719,10 @@ to the global sanitizer's patterns).
   | `value:` the same DSN encoded 5 or 6 times | `[REDACTED:encoding]` (A) |
   | `value: mssql+pyodbc:///?odbc_connect=` + encoded `…;UID=u;PWD=S` (the revision-2 probe) | `mssql+pyodbc://[REDACTED:connection_uri]` (C′2) |
   | `value: host=db dbname=ha user=u password=S` | `[REDACTED:connection_string]` (C′2) |
+  | `value: pass=S`, `PASS ==S`, `key: S`, `;key=S`, `pass:=S`, `ｋｅｙ＝S`, `pass%3DS` | `[REDACTED:connection_string]` (C′3) |
+  | `value: https://api.example.com/v1?key=S` | `https://[REDACTED:connection_uri]` (C′3) |
+  | `value: keypad`, `monkey`, `bypass`, `compass`, `key fob`, `passkey=1` | unchanged (C′3 needs a delimited label) |
+  | `value: Press key: Enter`, `Hall pass: yes` | `[REDACTED:connection_string]` (C′3, disclosed over-redaction) |
   | `value: Refresh the access token daily` | `[REDACTED:connection_string]` (C′2, disclosed over-redaction) |
   | `value: https://example.com/oauth/authorize` | `https://[REDACTED:connection_uri]` (C′2, disclosed over-redaction) |
   | `value: token://host/x` | `[REDACTED:connection_string]` (the scheme holds a word) |
@@ -691,6 +732,7 @@ to the global sanitizer's patterns).
   | `mqtt: {broker: core-mosquitto, "%70assword": S}` | `broker` visible; `%70assword` shown with the credential marker (R10) |
   | `x: {"%63redentials": [{value: S}]}` | `%63redentials` shown with the credential marker; the list is withheld (R10) |
   | `x: {"pwd=S": 1}` | `x` withheld as `[REDACTED:connection_string]` (K1) |
+  | `x: {"key=S": 1}` | `x` withheld as `[REDACTED:connection_string]` (K1 with C′3) |
 - **Credential-free recorder settings stay visible**, for example
   `purge_keep_days`, `commit_interval`, `auto_purge`, `auto_repack`,
   `db_max_retries`, `db_retry_wait`, `include` and `exclude`. `db_url` is
@@ -719,8 +761,14 @@ to the global sanitizer's patterns).
     query.
   - Rule A redacts the rare benign string that mixes valid escapes with a
     stray `%`.
-  - Revision 4's C2 over-matches on names such as `monkey=1` are gone,
-    because `key` is no longer a value-side word.
+  - **C′3 redacts harmless text with a delimited `pass` or `key` label**
+    (owner addition): `Hall pass: yes`, `Press key: Enter`, `Spare
+    key=garage`, a template `{% set key = 1 %}`, a `key://` or `pass://`
+    URI (scheme kept), and a URL whose host is `key` or `pass` followed by
+    a port (`http://key:8080/`).
+  - Revision 4's C2 over-matches on names such as `monkey=1` stay gone,
+    because C′3 needs a word boundary before `pass` or `key`.
+  - Josh has accepted this over-redaction (§15.1 decision 3).
 
 *Other value scanners*, on the canonical text (rule A) of every string that
 survives the steps above; a hit redacts the raw value:
@@ -845,9 +893,10 @@ code path that reads `secrets.yaml` and will not gain one.
 | A percent-encoded ODBC DSN in an `odbc_connect` query value passes revision 2's name-based URI rule and real L5 (R2 residual) | Verified by the delta review's probe at `e6fb813`. Revision 3's default-deny fixed that probe, but its recognition step was bypassable (next row). |
 | Fully percent-encoded URIs (1–6 rounds) and keyword DSNs encoded past the bound (5–6 rounds) under ordinary keys bypass revision 3's recognition and survive real L5 (R2, second residual) | Verified by the second delta review's 12 boundary cases at `042f254` (8 counterexamples). Revision 4 replaced recognition with decode-then-judge rules (L4). The author's throwaway rule model, run with the real L5 sanitizer and the reviewer's verbatim fixtures, redacts all 12 cases at both ordinary and connection paths (§14, and again under revision 5's rules in §15). That model is a self-check, not a review, and not an implementation; Part 2 tests prove the implementation. |
 | Revision 4's assignment parse misses `Pwd==S` (its `==` exemption), raw-key checks miss encoded or fullwidth credential keys, and `^…$` admits a SQLite value with a trailing newline (R2 third residual, R10, R11) | Verified by the revision-4 delta review's 438 probe assertions at `3391172`. Revision 5 replaces parsing with the C′ substring deny, canonicalizes keys and uses `re.fullmatch` with explicit control, `..` and raw-equals-canonical checks. The author's revision-5 self-check ports all 438 assertions (425 unchanged, 13 deliberate flips) and adds 278 (§15). It is a self-check, not a review. |
+| Revision 5's value-side word list misses `pass=S` and `key=S` under innocent keys (the narrowing disclosed in §15) | Closed by the owner-added delimited-token rule C′3 (§2.2, §15.1). The author's re-run self-check passes 1028/1028 with real L5, and dropping C′3 fails all 85 ordinary-path token catches (§15.1). Undelimited forms (`my_key=`, quoted `"key":`) remain D12 residuals. It is a self-check, not a review. |
 | L5 unconditionally replaces values under sensitive keys, so an L4-preserved reference cannot survive the unchanged sanitizer (R8) | Verified (`E/sanitization.py`:341-350; delta review probe). Revision 3 adds an opt-in exemption for the internal `ReferenceMarker` type only (L5). |
 | Upstream renders a tagged scalar and a quoted string with the same text identically in `parsed` | Verified (`yaml_rt.py`:208-209, component 2.2.1 tree): `f"{node.tag} {node.value}".strip()`. A quoted literal that looks exactly like a reference is therefore shown as a reference (disclosed residual, L4 *Reference markers*). |
-| L4 catches every secret | **Not claimed.** Key and pattern redaction is best-effort over free-form configuration. An unlabeled secret value (for example `foo: s3cr3t`) cannot be recognized (D12). R1 and R2 are labeled or structurally recognizable credentials and are **not** covered by the D12 residual. Rules A and C′ do not recognize a credential whose label holds none of the 13 credential words (for example `pass=`, `pw=`, `key=`), a word interrupted by separators inside a value, confusables that NFKC does not map, a non-percent encoding, or a secret split across values (§2.2 rule D). The cost is disclosed over-redaction of harmless text that mentions a credential word. Disclosed in the tool description and in `limitations`. |
+| L4 catches every secret | **Not claimed.** Key and pattern redaction is best-effort over free-form configuration. An unlabeled secret value (for example `foo: s3cr3t`) cannot be recognized (D12). R1 and R2 are labeled or structurally recognizable credentials and are **not** covered by the D12 residual. Rules A and C′ do not recognize a credential whose label holds none of the 13 credential words and is not a delimited `pass` or `key` (for example `pw=`, `psk=`, `my_key=`, a quoted `"key": S`), a word interrupted by separators inside a value, confusables that NFKC does not map, a non-percent encoding, or a secret split across values (§2.2 rule D). The cost is disclosed over-redaction of harmless text that mentions a credential word. Disclosed in the tool description and in `limitations`. |
 | Upstream alias expansion cannot exceed Engineering caps | Inferred; bounded by §4 caps and `response_too_large` |
 
 ## 3. Argument model
@@ -1338,9 +1387,9 @@ assertion moves from 30 to 31.
     whole when, after percent-decoding and Unicode normalization, they
     contain userinfo or a credential word such as `pwd`, `token`, `auth` or
     `session` (scheme kept at most), so harmless text mentioning such a
-    word is also redacted; a raw secret under an innocent key, or under a
-    label without a credential word (such as `pass=` or `key=`), is not
-    recognized;
+    word or a delimited `pass` or `key` label (such as `key: …`) is also
+    redacted; a raw secret under an innocent key, or under a label without
+    a credential word (such as `pw=` or `my_key=`), is not recognized;
   - it requires ha-mcp filesystem tools and the HA-MCP custom component.
 
 **`CAPABILITY_PROVIDER_MATRIX` row** (`E/capabilities.py:437`):
@@ -1528,6 +1577,21 @@ search every output channel for each one.
      Each gives `[REDACTED:connection_string]` (or the scheme form where the
      text starts with a scheme) while its total decoding depth is at most
      four, and `[REDACTED:encoding]` beyond.
+   - **Delimited token (C′3), depths 0–6, at both paths:** `pass=S`,
+     `PASS ==S`, `key: S`, `;key=S`, `key==S`, `pass:=S`, `key :=S`,
+     `Key=S`, `x=1;pass=S`, `a&key=S`, a tab and a no-break space before
+     the delimiter, fullwidth `ｋｅｙ＝S` and `ｐａｓｓ：S`, `pass%3DS`,
+     `%6Bey=S` and `k%45Y: S`. Each gives `[REDACTED:connection_string]`
+     while its total decoding depth is at most four, and
+     `[REDACTED:encoding]` beyond. Query forms
+     (`https://api.example.com/v1?key=S`, `mysql://db/ha?pass=S`,
+     `…&KEY=S`, encoded 0–4 times) give the scheme form. K1: `{"key=S":
+     1}` and a twice-encoded `pass: S` key withhold their mapping.
+     **Non-catches stay visible (raw)** at two ordinary paths: `keypad`,
+     `monkey`, `bypass`, `compass`, `key fob`, `monkey=1`, `keypad: 4`,
+     `bypass=on`, `compass: north`, `hotkey=F5`, `passkey=1`, `turnkey:
+     yes`, `Kitchen keypad`, `Hall pass`, `pass the salt`, `key lime pie`,
+     `keys=3` and `passes: 2`.
    - **Fully encoded URIs, depths 0–6:**
      - userinfo in `postgresql+psycopg2://`, `mssql+pyodbc://`,
        `redis://:S@…` and `https://u:S@…`, user-only `mysql://u@db/ha`, and
@@ -1607,10 +1671,15 @@ search every output channel for each one.
      "cookie jar", "secretary", `https://example.com/oauth/authorize`
      (scheme kept), `{% if token == 1 %}`, `token://host/x` (no scheme
      kept), an email after `://`, and the keys `auth_providers` and
-     `private_ble_device` (value withheld).
+     `private_ble_device` (value withheld); for C′3, `Hall pass: yes`,
+     `Press key: Enter`, `{% set key = 1 %}`, `Spare key=garage`,
+     `key://host/x` (scheme kept) and `http://key:8080/x` (scheme kept).
    - **Pinned residuals (D12)**, asserted as **not** redacted so that a
-     change is noticed: `pass=S`, `key=S`, `login=S`, `p_w_d=S`, a Cyrillic
-     `Pсd=S`, and base64 shorter than the blob scanner.
+     change is noticed: `login=S`, `pw=S`, `psk=S`, `p_w_d=S`, a Cyrillic
+     `Pсd=S` and `kеy=S`, base64 shorter than the blob scanner, and the
+     undelimited C′3 forms `my_key=S`, `app_key=S`, `passkey=S`,
+     `pass_word=S`, `"key": "S"`, `{'pass': 'S'}` and `key→S`. (`pass=S`
+     and `key=S` moved from this list to the C′3 catches.)
    - **Raw emitted, never canonical:** every visible encoded control (for
      example `Living Room` encoded 4 times) is byte-identical to the input,
      and visible keys keep their raw text.
@@ -1734,6 +1803,12 @@ Each of the following must fail at least one test:
   - redacting only the matching part instead of the whole value;
   - keeping a scheme that holds a credential word: `token://host/x` keeps
     `token://`;
+  - **dropping C′3**: `pass=S`, `key: S` and `{"key=S": 1}` leak, and every
+    C′3 catch at the ordinary path (depths 0–4) fails its exact output;
+  - C′3 without `\b`: `monkey=1` and `bypass=on` are redacted;
+  - C′3 as a plain substring (`pass`/`key` added to the C′2 list):
+    `keypad`, `compass` and `key fob` are redacted;
+  - NFKC or casefold removed: fullwidth `ｋｅｙ＝S` and `PASS ==S` leak;
 - **R10 mutations:**
   - classifying raw instead of canonical keys: `%70assword` and
     `%63redentials` leak;
@@ -1865,13 +1940,17 @@ authorizes implementation, capture, release or deployment before that.
 | D9 | One PR, or the A/B split | **One PR** (split only if the §8.3 threshold is exceeded) |
 | D10 | Part 2 protected paths (§8.3, now including the coordinator and models) and `2.4.1-beta.12` release metadata | **Authorized after HAMCP-184 merges**; release number revalidated then |
 | D11 | Never return raw `content` or comments (parsed only) in this release | **Accepted** |
-| D12 | Best-effort redaction of free-form configuration (unlabeled secret values cannot be recognized) | **Accepted with disclosure.** Labeled credentials (R1), connection strings under connection-shaped keys (rule B) and any text containing userinfo or a credential word (rule C′, on canonical text and canonical keys) are handled explicitly. Still not recognized (revision 5): a raw secret under an innocent key; a label holding none of the 13 credential words (`pass=`, `pw=`, `key=`, `psk=`, `pin=`, `code=`, `login=`); a word interrupted by separators inside a value (`p_w_d=`); confusables NFKC does not map; a non-percent encoding; a secret split across values (§2.2 rule D). **Over-redaction now includes harmless values and keys mentioning a credential word** (for example "Refresh the access token", an `oauth` URL, `auth_providers`) |
+| D12 | Best-effort redaction of free-form configuration (unlabeled secret values cannot be recognized) | **Accepted with disclosure.** Labeled credentials (R1), connection strings under connection-shaped keys (rule B) and any text containing userinfo or a credential word (rule C′, on canonical text and canonical keys) are handled explicitly. `pass` and `key` labels are caught when delimited (`pass=`, `key:`; rule C′3, owner addition §15.1). Still not recognized (revision 5): a raw secret under an innocent key; a label holding none of the 13 credential words and not a delimited `pass`/`key` (`pw=`, `psk=`, `pin=`, `code=`, `login=`); an undelimited `pass`/`key` label (`my_key=`, `passkey=`, a quoted `"key": S`); a word interrupted by separators inside a value (`p_w_d=`); confusables NFKC does not map; a non-percent encoding; a secret split across values (§2.2 rule D). **Over-redaction now includes harmless values and keys mentioning a credential word** (for example "Refresh the access token", an `oauth` URL, `auth_providers`) and text with a delimited `pass`/`key` label (`Press key: Enter`); owner-accepted (§15.1) |
 | D13 | Analysis consumers (dependency, integrity) adopt the reader | **Later**, in a separate task |
+
+Josh's decisions on revision 5 (2026-10-15: the C′3 token rule, keeping
+the `..` refusal and accepting the wider over-redaction) are recorded in
+§15.1.
 
 ## 11. Non-actions in Part 1
 
-These apply to revision 1 and to the revision 2, 3, 4 and 5 correction
-batches.
+These apply to revision 1, to the revision 2, 3, 4 and 5 correction
+batches, and to the revision-5 owner addition (§15.1).
 
 - No production code, schema, policy, registry, signed-registry, HOLD,
   support-window, version, `.release/`, workflow or stable-v1 change.
@@ -2014,15 +2093,16 @@ and a focused delta review of revision 5 follows.
 - **Narrower value-side names (flag for Josh and the reviewer).** Revision
   4's C2 list included `pass` and `key`; the architect's word list has
   `passw` and `apikey`/`api_key`/`api-key` instead. A value such as
-  `pass=S` or `key=S` under an innocent key is now a disclosed D12
+  `pass=S` or `key=S` under an innocent key was a disclosed D12
   residual. Keys are unaffected: `is_credential_key` still matches `pass`,
   `key`, `pin`, `code` and their suffixes. The revision-4 over-match on
-  names such as `monkey=1` is gone.
+  names such as `monkey=1` is gone. **Closed by Josh's C′3 addition**
+  (§15.1).
 - **`..` refusal diverges from the reviewer's recommendation.** The review
   suggested that `sqlite:///../…` could be shown literally because showing
   text opens nothing. The architect's R11 decision refuses any `..`
   segment, so such values are redacted to the scheme. `sqlite:///a..b.db`
-  (not a segment) stays visible.
+  (not a segment) stays visible. **Kept by Josh** (§15.1 decision 2).
 - **SQLite is stricter.** The value must equal its canonical text, so any
   upper case (`SQLITE:///`, `X.db`), fullwidth character or `%` is
   redacted, and a path containing a credential word (`session.db`) is
@@ -2069,10 +2149,70 @@ capture. Part 2 tests prove the implementation.
 
 **Owner acceptance recorded.** Josh has accepted the key over-redaction
 (credential-shaped keys withheld even when harmless) and the quoted-literal
-reference residual (§2.2 *Reference markers*, §13). The new value-side
-over-redaction, the `pass`/`key` narrowing and the `..` divergence are
-disclosed above for the delta review and Josh's final approval.
+reference residual (§2.2 *Reference markers*, §13). His decisions on the
+value-side over-redaction, the `pass`/`key` narrowing and the `..`
+divergence are recorded in §15.1.
 
 **Unchanged:** rules A (apart from NFKC and casefold) and B (apart from
 canonical keys and R11), R1 and R3–R9, reference markers, admission,
 catalog and release.
+
+### 15.1 Owner decisions on revision 5 (2026-10-15)
+
+Josh decided the three items that revision 5 flagged. This is still a
+docs-only change and part of revision 5. The focused delta review of
+revision 5 covers it (C′ including C′3, R10 and R11).
+
+| # | Decision | Recorded in |
+|---|---|---|
+| 1 | **Add a delimited-token rule to C′** for the two words left out of the substring list. On the canonical text (after decoding, NFKC and casefold), if `\b(pass\|key)\s*[=:]` matches anywhere, the whole value is redacted. This catches `pass=S`, `PASS ==S`, `key: S`, `;key=S` and their encoded forms, and does not redact `keypad`, `monkey`, `bypass` or `compass`. Tests cover each catch (including `==`, `:=`, leading separators and fullwidth forms after NFKC) and the non-catches (`keypad`, `monkey`, `bypass`, `compass`, `key fob`). A mutation that drops the rule must fail the tests | §2.2 rule C′3, K1, rule D, examples, over-redaction; §6; §8.1 group 4; §8.2; D12 |
+| 2 | **Keep refusing `..` in SQLite paths** (architect's R11 instruction). The reviewer's alternative, showing `sqlite:///../…` literally because displaying text opens nothing, was considered and not adopted | §2.2 R11, §15 |
+| 3 | **Accept the additional over-redaction**: credential words in harmless text, `oauth` URLs, `auth_providers` and similar keys. C′3's own over-redaction (`Press key: Enter`, `{% set key = 1 %}`, `key://` URIs) is of the same kind and is disclosed with it | §2.2 *Disclosed over-redaction*, D12 |
+
+**Decision 1, applied to keys.** K1 already withholds a mapping whose
+non-identifier key text holds a credential word. It now applies C′3 too, so
+a key `key=S` or `pass: S` withholds its mapping instead of showing `S` in
+the key. This only affects keys containing `=` or `:`, which are never
+plain identifiers. It is the same text test applied to the other emitted
+text, and it is called out here for the delta review.
+
+**Leak closed.** The revision-5 narrowing (`pass=S` and `key=S` under an
+innocent key) is closed. What C′3 still does not see is listed in rule D
+and D12 under the honest wording:
+- a label joined to a preceding letter, digit or `_` (`my_key=`,
+  `app_key=`, `passkey=`);
+- a label separated from its `=` or `:` by a non-whitespace character
+  (`"key": "S"`, `{'pass': 'S'}`, `pass_word=`);
+- another delimiter (`key→S`, `key S`);
+- confusables NFKC does not map (Cyrillic `е` in `kеy=`).
+
+**Self-check re-run, not a review.** The revision-5 author model was copied
+and extended with C′3 (`~/tmp/hamcp162-r5b/rule_model.py`, sha256
+`47f650cf7d3af6918d2a0af7702765e46ebf12804b674c38ef7982916f5b26a7`;
+Python 3.12.14, real unchanged `sanitize_untrusted_data` as L5). It
+passed **1028/1028** assertions:
+- the 438 ported revision-4 probe assertions are unchanged by C′3. 425
+  hold, and the same 13 deliberate flips as in §15 apply, with no new flip;
+- the 278 revision-5 assertions hold, apart from the two pinned residuals
+  `pass=S` and `key=S`, which moved to the catch set;
+- **314 new** assertions:
+  - 17 catch forms at depths 0–6 at both paths;
+  - 3 query forms at depths 0–4;
+  - K1 keys;
+  - 18 non-catches at two ordinary paths, plus one in a mapping;
+  - 6 over-redaction pins;
+  - 14 pinned residuals (10 new);
+  - 6 mutation checks (the drop sweep, NFKC/casefold on token cases, and the 3 new mutations);
+- mutations: the 8 revision-4 rule A mutations, the 13 revision-5
+  mutations and 3 new ones are all killed:
+  - **dropping C′3** is killed by 3 exact outputs, and a sweep confirms
+    that all **85/85** ordinary-path token catches (17 forms × depths 0–4)
+    fail without it;
+  - C′3 without `\b` is killed by `monkey=1` and `bypass=on`;
+  - C′3 as a plain substring is killed by `keypad`, `compass` and `key
+    fob`;
+  - NFKC and casefold removal are killed by the fullwidth and upper-case
+    token cases.
+
+The model is not independent review, not an implementation and not a
+capture. Part 2 tests prove the implementation.
