@@ -1444,8 +1444,17 @@ class SdkSessionTests(unittest.IsolatedAsyncioTestCase):
                                                                     client_version="synthetic"),
                 )
                 with patch.object(upstream_read, "streamablehttp_client", peer.connect):
-                    await gateway.initialize(FastMCP(f"synthetic-hamcp162-sdk-{version}"))
+                    server = FastMCP(f"synthetic-hamcp162-sdk-{version}")
+                    await gateway.initialize(server)
                     self.assertIn(TOOL, gateway._registered_tool_registry.snapshot())
+                    # The published description carries the K1 dependency and
+                    # the K7 disclosure; the siblings are never published.
+                    published = {tool.name: tool for tool in await server.list_tools()}
+                    self.assertEqual(published[TOOL].description, y.DESCRIPTION)
+                    self.assertIn("admin caller token", published[TOOL].description)
+                    self.assertIn("YAML 1.1", published[TOOL].description)
+                    self.assertTrue(published[TOOL].annotations.readOnlyHint)
+                    self.assertFalse(set(y.SIBLING_TOOLS) & set(published))
                     for name in y.SIBLING_TOOLS:
                         self.assertNotIn(name, gateway._registered_tool_registry.snapshot())
                     peer.calls.clear()
