@@ -17,14 +17,16 @@ Runtime changes are limited to these two protected files:
 | `R/f3/executor.py` | R6, R3b | Adds `DispatchAuthorityRefused` and a closed reason-code set. Its preflight and dispatch-authority handlers report the refusal's code instead of the generic `preflight_failed`. The early return for an already-satisfied preflight (≈473-501) is reached only after the wrapper below has validated Core authority. The executor does not change that branch itself. |
 | `R/f3_runtime/runtime.py` | R3/R3b, R6, R2 | Adds a `_CoreVerificationAdapter.preflight` lease wrapper and a dispatch-window authorizer. Changes `_CoreDispatchAuthorityGuard` so it raises the R6 refusal on unmapped operations and remembers its authority. Rewrites the order in which `_cancel_locked` records a cancel. Adds a `cancel_only` mode to `_load_prepared`. Adds a recorded-cancel check to `_recover_active_candidates`. Adds a cancelled-child branch to `_project_locked`. |
 
-Release staging (authorized by Josh on 2026-10-16 for PR #266): the protected
-`.release/next-version` stages `2.4.1-beta.14` (first ready, first served; if
-HAMCP-162 merges first, it is restaged as the next beta). Materialization
-later adds the protected release surfaces through the existing
-`promote_next_release.py` flow (`hass_mcp_engineering_beta/config.yaml` and
-the other version authorities). Those changes come from the promotion script
-and are listed separately in the PR when applied. No other protected path is
-changed.
+Release staging and materialization (authorized by Josh on 2026-10-16 for
+PR #266):
+- The protected `.release/next-version` staged `2.4.1-beta.14` (first ready,
+  first served; if HAMCP-162 merges first, it is restaged as the next beta).
+- One run of `promote_next_release.py --apply` then wrote only the protected
+  version authorities `hass_mcp_engineering_beta/config.yaml`,
+  `R/version.py` and the `BETA_VERSION` constant in
+  `scripts/validate_addon_metadata.py`, and consumed the declaration.
+
+No other protected path is changed.
 
 Read-only imports, not edited:
 - `R/ha_core_readmission/routes.py`: `f3_requirements`, `CORE_REQUIREMENT_UNMAPPED`.
@@ -199,7 +201,6 @@ New: `tests/test_hamcp189_authority_cancel.py`.
 
 - Next beta at materialization time. It is the first to be ready, and is
   served together with HAMCP-162.
-- Staged as `2.4.1-beta.14` in `.release/next-version`; not yet
-  materialized.
+- Materialized as `2.4.1-beta.14` through the staging rule.
 - PR C (R8, L1, L2) is a separate small PR, to be merged first or in the same
   release (O6).

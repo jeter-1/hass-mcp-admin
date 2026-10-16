@@ -13,10 +13,11 @@ on register row HAMCP-189. Release notes:
 [`V2_4_1_BETA14_RELEASE_NOTES.md`](V2_4_1_BETA14_RELEASE_NOTES.md).
 
 Release target: the next Engineering beta, first ready, first served together
-with HAMCP-162. `.release/next-version` stages `2.4.1-beta.14`. If HAMCP-162
-merges first, this PR restages the next beta and renames this document and
-the release notes to match. Materialize through
-`scripts/promote_next_release.py --apply` in this PR before Ready. PR C
+with HAMCP-162. `2.4.1-beta.14` was staged in `.release/next-version` and then
+materialized in this PR by one owner-authorized run of
+`scripts/promote_next_release.py --apply`, which consumed the declaration. If
+HAMCP-162 merges first, this PR merges `main`, restages and rematerializes the
+next beta, and renames this document and the release notes to match. PR C
 (R8, L1, L2) is a separate PR in the same release (O6).
 
 The contract separates four stages:
@@ -31,10 +32,9 @@ It authorizes none of the later stages.
 
 Bind the following:
 - the design note;
-- the staged declaration `2.4.1-beta.14`, with exact staged acceptance and
-  release-note resolution from `scripts/codex-context.py`; before Ready, the
-  materialized version in all three version authorities and no staged
-  declaration left over;
+- `2.4.1-beta.14` materialized in all three version authorities, with exact
+  acceptance and release-note resolution from `scripts/codex-context.py` and
+  no staged declaration left over;
 - the PR head SHA;
 - the passing PR `validate` run for that exact head;
 - the Full and Evidence tier logs named in the PR.
