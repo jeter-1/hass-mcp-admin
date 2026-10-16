@@ -5,3 +5,8 @@
 hass_mcp_engineering_beta/ha_mcp_engineering/dependency/template_semantic_registry.json -text
 scripts/template_semantic_registry_source.json -text
 docs/evidence/home-assistant-template-source-blobs.json -text
+# HAMCP-162 D1 evidence: fixtures and captures are hashed in MANIFEST.sha256 and
+# in the capture records, and some fixtures are deliberately CRLF, BOM, latin-1
+# or binary.
+docs/evidence/hamcp162/** -text
+docs/evidence/hamcp162/fixtures/variants/crlf.yaml.fixture -whitespace

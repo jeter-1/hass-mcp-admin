@@ -1,0 +1,1951 @@
+{
+ "corpus": {
+  "c0000": {
+   "group": "r2_boundary_dsn",
+   "value": "Server=db;Uid=u;Pwd=Zq7v0001Xw"
+  },
+  "c0001": {
+   "group": "r2_boundary_dsn",
+   "value": "Server%3Ddb%3BUid%3Du%3BPwd%3DZq7v0001Xw"
+  },
+  "c0002": {
+   "group": "r2_boundary_dsn",
+   "value": "Server%253Ddb%253BUid%253Du%253BPwd%253DZq7v0001Xw"
+  },
+  "c0003": {
+   "group": "r2_boundary_dsn",
+   "value": "Server%25253Ddb%25253BUid%25253Du%25253BPwd%25253DZq7v0001Xw"
+  },
+  "c0004": {
+   "group": "r2_boundary_dsn",
+   "value": "Server%2525253Ddb%2525253BUid%2525253Du%2525253BPwd%2525253DZq7v0001Xw"
+  },
+  "c0005": {
+   "group": "r2_boundary_dsn",
+   "value": "Server%252525253Ddb%252525253BUid%252525253Du%252525253BPwd%252525253DZq7v0001Xw"
+  },
+  "c0006": {
+   "group": "r2_boundary_dsn",
+   "value": "Server%25252525253Ddb%25252525253BUid%25252525253Du%25252525253BPwd%25252525253DZq7v0001Xw"
+  },
+  "c0007": {
+   "group": "r2_boundary_uri",
+   "value": "mysql://u:Zq7v0002Xw@db/ha"
+  },
+  "c0008": {
+   "group": "r2_boundary_uri",
+   "value": "mysql%3A%2F%2Fu%3AZq7v0002Xw%40db%2Fha"
+  },
+  "c0009": {
+   "group": "r2_boundary_uri",
+   "value": "mysql%253A%252F%252Fu%253AZq7v0002Xw%2540db%252Fha"
+  },
+  "c0010": {
+   "group": "r2_boundary_uri",
+   "value": "mysql%25253A%25252F%25252Fu%25253AZq7v0002Xw%252540db%25252Fha"
+  },
+  "c0011": {
+   "group": "r2_boundary_uri",
+   "value": "mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0002Xw%25252540db%2525252Fha"
+  },
+  "c0012": {
+   "group": "r2_boundary_uri",
+   "value": "mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0002Xw%2525252540db%252525252Fha"
+  },
+  "c0013": {
+   "group": "r2_boundary_uri",
+   "value": "mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0002Xw%252525252540db%25252525252Fha"
+  },
+  "c0014": {
+   "group": "r2_c2_counterexample",
+   "value": "Server=db;Uid=u;Pwd==Zq7v0003Xw"
+  },
+  "c0015": {
+   "group": "r2_c2_counterexample",
+   "value": "Server%3Ddb%3BUid%3Du%3BPwd%3D%3DZq7v0003Xw"
+  },
+  "c0016": {
+   "group": "r2_c2_counterexample",
+   "value": "Server%253Ddb%253BUid%253Du%253BPwd%253D%253DZq7v0003Xw"
+  },
+  "c0017": {
+   "group": "r2_c2_counterexample",
+   "value": "Server%25253Ddb%25253BUid%25253Du%25253BPwd%25253D%25253DZq7v0003Xw"
+  },
+  "c0018": {
+   "group": "r2_c2_counterexample",
+   "value": "Server%2525253Ddb%2525253BUid%2525253Du%2525253BPwd%2525253D%2525253DZq7v0003Xw"
+  },
+  "c0019": {
+   "group": "r2_c2_counterexample",
+   "value": "Server%252525253Ddb%252525253BUid%252525253Du%252525253BPwd%252525253D%252525253DZq7v0003Xw"
+  },
+  "c0020": {
+   "group": "r2_c2_counterexample",
+   "value": "Server%25252525253Ddb%25252525253BUid%25252525253Du%25252525253BPwd%25252525253D%25252525253DZq7v0003Xw"
+  },
+  "c0021": {
+   "group": "r2_c2_uri",
+   "value": "mysql://db/ha?pwd==Zq7v0004Xw"
+  },
+  "c0022": {
+   "group": "c2_pwd_variants",
+   "value": "Pwd==Zq7v0005Xw"
+  },
+  "c0023": {
+   "group": "c2_pwd_variants",
+   "value": "Pwd%3D%3DZq7v0005Xw"
+  },
+  "c0024": {
+   "group": "c2_pwd_variants",
+   "value": "Pwd%253D%253DZq7v0005Xw"
+  },
+  "c0025": {
+   "group": "c2_pwd_variants",
+   "value": "Pwd%25253D%25253DZq7v0005Xw"
+  },
+  "c0026": {
+   "group": "c2_pwd_variants",
+   "value": "Pwd%2525253D%2525253DZq7v0005Xw"
+  },
+  "c0027": {
+   "group": "c2_pwd_variants",
+   "value": "Pwd%252525253D%252525253DZq7v0005Xw"
+  },
+  "c0028": {
+   "group": "c2_pwd_variants",
+   "value": "Pwd%25252525253D%25252525253DZq7v0005Xw"
+  },
+  "c0029": {
+   "group": "c2_pwd_variants",
+   "value": "PWD :=Zq7v0006Xw"
+  },
+  "c0030": {
+   "group": "c2_pwd_variants",
+   "value": "PWD%20%3A%3DZq7v0006Xw"
+  },
+  "c0031": {
+   "group": "c2_pwd_variants",
+   "value": "PWD%2520%253A%253DZq7v0006Xw"
+  },
+  "c0032": {
+   "group": "c2_pwd_variants",
+   "value": "PWD%252520%25253A%25253DZq7v0006Xw"
+  },
+  "c0033": {
+   "group": "c2_pwd_variants",
+   "value": "PWD%25252520%2525253A%2525253DZq7v0006Xw"
+  },
+  "c0034": {
+   "group": "c2_pwd_variants",
+   "value": "PWD%2525252520%252525253A%252525253DZq7v0006Xw"
+  },
+  "c0035": {
+   "group": "c2_pwd_variants",
+   "value": "PWD%252525252520%25252525253A%25252525253DZq7v0006Xw"
+  },
+  "c0036": {
+   "group": "c2_pwd_variants",
+   "value": ";pwd;Zq7v0007Xw"
+  },
+  "c0037": {
+   "group": "c2_pwd_variants",
+   "value": "%3Bpwd%3BZq7v0007Xw"
+  },
+  "c0038": {
+   "group": "c2_pwd_variants",
+   "value": "%253Bpwd%253BZq7v0007Xw"
+  },
+  "c0039": {
+   "group": "c2_pwd_variants",
+   "value": "%25253Bpwd%25253BZq7v0007Xw"
+  },
+  "c0040": {
+   "group": "c2_pwd_variants",
+   "value": "%2525253Bpwd%2525253BZq7v0007Xw"
+  },
+  "c0041": {
+   "group": "c2_pwd_variants",
+   "value": "%252525253Bpwd%252525253BZq7v0007Xw"
+  },
+  "c0042": {
+   "group": "c2_pwd_variants",
+   "value": "%25252525253Bpwd%25252525253BZq7v0007Xw"
+  },
+  "c0043": {
+   "group": "c2_pwd_variants",
+   "value": "P%57D=Zq7v0008Xw"
+  },
+  "c0044": {
+   "group": "c2_pwd_variants",
+   "value": "P%2557D%3DZq7v0008Xw"
+  },
+  "c0045": {
+   "group": "c2_pwd_variants",
+   "value": "P%252557D%253DZq7v0008Xw"
+  },
+  "c0046": {
+   "group": "c2_pwd_variants",
+   "value": "P%25252557D%25253DZq7v0008Xw"
+  },
+  "c0047": {
+   "group": "c2_pwd_variants",
+   "value": "P%2525252557D%2525253DZq7v0008Xw"
+  },
+  "c0048": {
+   "group": "c2_pwd_variants",
+   "value": "P%252525252557D%252525253DZq7v0008Xw"
+  },
+  "c0049": {
+   "group": "c2_pwd_variants",
+   "value": "P%25252525252557D%25252525253DZq7v0008Xw"
+  },
+  "c0050": {
+   "group": "c2_pwd_variants",
+   "value": "\uff50\uff57\uff44=Zq7v0009Xw"
+  },
+  "c0051": {
+   "group": "c2_pwd_variants",
+   "value": "%EF%BD%90%EF%BD%97%EF%BD%84%3DZq7v0009Xw"
+  },
+  "c0052": {
+   "group": "c2_pwd_variants",
+   "value": "%25EF%25BD%2590%25EF%25BD%2597%25EF%25BD%2584%253DZq7v0009Xw"
+  },
+  "c0053": {
+   "group": "c2_pwd_variants",
+   "value": "%2525EF%2525BD%252590%2525EF%2525BD%252597%2525EF%2525BD%252584%25253DZq7v0009Xw"
+  },
+  "c0054": {
+   "group": "c2_pwd_variants",
+   "value": "%252525EF%252525BD%25252590%252525EF%252525BD%25252597%252525EF%252525BD%25252584%2525253DZq7v0009Xw"
+  },
+  "c0055": {
+   "group": "c2_pwd_variants",
+   "value": "%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252597%25252525EF%25252525BD%2525252584%252525253DZq7v0009Xw"
+  },
+  "c0056": {
+   "group": "c2_pwd_variants",
+   "value": "%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252597%2525252525EF%2525252525BD%252525252584%25252525253DZq7v0009Xw"
+  },
+  "c0057": {
+   "group": "c2_pwd_variants",
+   "value": "pwd=Zq7v0010Xw"
+  },
+  "c0058": {
+   "group": "c2_pwd_variants",
+   "value": "pwd%3DZq7v0010Xw"
+  },
+  "c0059": {
+   "group": "c2_pwd_variants",
+   "value": "pwd%253DZq7v0010Xw"
+  },
+  "c0060": {
+   "group": "c2_pwd_variants",
+   "value": "pwd%25253DZq7v0010Xw"
+  },
+  "c0061": {
+   "group": "c2_pwd_variants",
+   "value": "pwd%2525253DZq7v0010Xw"
+  },
+  "c0062": {
+   "group": "c2_pwd_variants",
+   "value": "pwd%252525253DZq7v0010Xw"
+  },
+  "c0063": {
+   "group": "c2_pwd_variants",
+   "value": "pwd%25252525253DZq7v0010Xw"
+  },
+  "c0064": {
+   "group": "c2_pwd_variants",
+   "value": "?x=PWD%3DZq7v0011Xw%3Bz"
+  },
+  "c0065": {
+   "group": "c2_pwd_variants",
+   "value": "%3Fx%3DPWD%253DZq7v0011Xw%253Bz"
+  },
+  "c0066": {
+   "group": "c2_pwd_variants",
+   "value": "%253Fx%253DPWD%25253DZq7v0011Xw%25253Bz"
+  },
+  "c0067": {
+   "group": "c2_pwd_variants",
+   "value": "%25253Fx%25253DPWD%2525253DZq7v0011Xw%2525253Bz"
+  },
+  "c0068": {
+   "group": "c2_pwd_variants",
+   "value": "%2525253Fx%2525253DPWD%252525253DZq7v0011Xw%252525253Bz"
+  },
+  "c0069": {
+   "group": "c2_pwd_variants",
+   "value": "%252525253Fx%252525253DPWD%25252525253DZq7v0011Xw%25252525253Bz"
+  },
+  "c0070": {
+   "group": "c2_pwd_variants",
+   "value": "%25252525253Fx%25252525253DPWD%2525252525253DZq7v0011Xw%2525252525253Bz"
+  },
+  "c0071": {
+   "group": "c2_pwd_variants",
+   "value": "?%2550WD=Zq7v0012Xw"
+  },
+  "c0072": {
+   "group": "c2_pwd_variants",
+   "value": "%3F%252550WD%3DZq7v0012Xw"
+  },
+  "c0073": {
+   "group": "c2_pwd_variants",
+   "value": "%253F%25252550WD%253DZq7v0012Xw"
+  },
+  "c0074": {
+   "group": "c2_pwd_variants",
+   "value": "%25253F%2525252550WD%25253DZq7v0012Xw"
+  },
+  "c0075": {
+   "group": "c2_pwd_variants",
+   "value": "%2525253F%252525252550WD%2525253DZq7v0012Xw"
+  },
+  "c0076": {
+   "group": "c2_pwd_variants",
+   "value": "%252525253F%25252525252550WD%252525253DZq7v0012Xw"
+  },
+  "c0077": {
+   "group": "c2_pwd_variants",
+   "value": "%25252525253F%2525252525252550WD%25252525253DZq7v0012Xw"
+  },
+  "c0078": {
+   "group": "c2_pwd_variants",
+   "value": "{\"pwd\": \"Zq7v0013Xw\"}"
+  },
+  "c0079": {
+   "group": "c2_pwd_variants",
+   "value": "%7B%22pwd%22%3A%20%22Zq7v0013Xw%22%7D"
+  },
+  "c0080": {
+   "group": "c2_pwd_variants",
+   "value": "%257B%2522pwd%2522%253A%2520%2522Zq7v0013Xw%2522%257D"
+  },
+  "c0081": {
+   "group": "c2_pwd_variants",
+   "value": "%25257B%252522pwd%252522%25253A%252520%252522Zq7v0013Xw%252522%25257D"
+  },
+  "c0082": {
+   "group": "c2_pwd_variants",
+   "value": "%2525257B%25252522pwd%25252522%2525253A%25252520%25252522Zq7v0013Xw%25252522%2525257D"
+  },
+  "c0083": {
+   "group": "c2_pwd_variants",
+   "value": "%252525257B%2525252522pwd%2525252522%252525253A%2525252520%2525252522Zq7v0013Xw%2525252522%252525257D"
+  },
+  "c0084": {
+   "group": "c2_pwd_variants",
+   "value": "%25252525257B%252525252522pwd%252525252522%25252525253A%252525252520%252525252522Zq7v0013Xw%252525252522%25252525257D"
+  },
+  "c0085": {
+   "group": "c3_delimited",
+   "value": "pass=Zq7v0014Xw"
+  },
+  "c0086": {
+   "group": "c3_delimited",
+   "value": "pass%3DZq7v0014Xw"
+  },
+  "c0087": {
+   "group": "c3_delimited",
+   "value": "pass%253DZq7v0014Xw"
+  },
+  "c0088": {
+   "group": "c3_delimited",
+   "value": "pass%25253DZq7v0014Xw"
+  },
+  "c0089": {
+   "group": "c3_delimited",
+   "value": "pass%2525253DZq7v0014Xw"
+  },
+  "c0090": {
+   "group": "c3_delimited",
+   "value": "pass%252525253DZq7v0014Xw"
+  },
+  "c0091": {
+   "group": "c3_delimited",
+   "value": "pass%25252525253DZq7v0014Xw"
+  },
+  "c0092": {
+   "group": "c3_delimited",
+   "value": "PASS ==Zq7v0015Xw"
+  },
+  "c0093": {
+   "group": "c3_delimited",
+   "value": "PASS%20%3D%3DZq7v0015Xw"
+  },
+  "c0094": {
+   "group": "c3_delimited",
+   "value": "PASS%2520%253D%253DZq7v0015Xw"
+  },
+  "c0095": {
+   "group": "c3_delimited",
+   "value": "PASS%252520%25253D%25253DZq7v0015Xw"
+  },
+  "c0096": {
+   "group": "c3_delimited",
+   "value": "PASS%25252520%2525253D%2525253DZq7v0015Xw"
+  },
+  "c0097": {
+   "group": "c3_delimited",
+   "value": "PASS%2525252520%252525253D%252525253DZq7v0015Xw"
+  },
+  "c0098": {
+   "group": "c3_delimited",
+   "value": "PASS%252525252520%25252525253D%25252525253DZq7v0015Xw"
+  },
+  "c0099": {
+   "group": "c3_delimited",
+   "value": "key: Zq7v0016Xw"
+  },
+  "c0100": {
+   "group": "c3_delimited",
+   "value": "key%3A%20Zq7v0016Xw"
+  },
+  "c0101": {
+   "group": "c3_delimited",
+   "value": "key%253A%2520Zq7v0016Xw"
+  },
+  "c0102": {
+   "group": "c3_delimited",
+   "value": "key%25253A%252520Zq7v0016Xw"
+  },
+  "c0103": {
+   "group": "c3_delimited",
+   "value": "key%2525253A%25252520Zq7v0016Xw"
+  },
+  "c0104": {
+   "group": "c3_delimited",
+   "value": "key%252525253A%2525252520Zq7v0016Xw"
+  },
+  "c0105": {
+   "group": "c3_delimited",
+   "value": "key%25252525253A%252525252520Zq7v0016Xw"
+  },
+  "c0106": {
+   "group": "c3_delimited",
+   "value": ";key=Zq7v0017Xw"
+  },
+  "c0107": {
+   "group": "c3_delimited",
+   "value": "%3Bkey%3DZq7v0017Xw"
+  },
+  "c0108": {
+   "group": "c3_delimited",
+   "value": "%253Bkey%253DZq7v0017Xw"
+  },
+  "c0109": {
+   "group": "c3_delimited",
+   "value": "%25253Bkey%25253DZq7v0017Xw"
+  },
+  "c0110": {
+   "group": "c3_delimited",
+   "value": "%2525253Bkey%2525253DZq7v0017Xw"
+  },
+  "c0111": {
+   "group": "c3_delimited",
+   "value": "%252525253Bkey%252525253DZq7v0017Xw"
+  },
+  "c0112": {
+   "group": "c3_delimited",
+   "value": "%25252525253Bkey%25252525253DZq7v0017Xw"
+  },
+  "c0113": {
+   "group": "c3_delimited",
+   "value": "key==Zq7v0018Xw"
+  },
+  "c0114": {
+   "group": "c3_delimited",
+   "value": "key%3D%3DZq7v0018Xw"
+  },
+  "c0115": {
+   "group": "c3_delimited",
+   "value": "key%253D%253DZq7v0018Xw"
+  },
+  "c0116": {
+   "group": "c3_delimited",
+   "value": "key%25253D%25253DZq7v0018Xw"
+  },
+  "c0117": {
+   "group": "c3_delimited",
+   "value": "key%2525253D%2525253DZq7v0018Xw"
+  },
+  "c0118": {
+   "group": "c3_delimited",
+   "value": "key%252525253D%252525253DZq7v0018Xw"
+  },
+  "c0119": {
+   "group": "c3_delimited",
+   "value": "key%25252525253D%25252525253DZq7v0018Xw"
+  },
+  "c0120": {
+   "group": "c3_delimited",
+   "value": "pass:=Zq7v0019Xw"
+  },
+  "c0121": {
+   "group": "c3_delimited",
+   "value": "pass%3A%3DZq7v0019Xw"
+  },
+  "c0122": {
+   "group": "c3_delimited",
+   "value": "pass%253A%253DZq7v0019Xw"
+  },
+  "c0123": {
+   "group": "c3_delimited",
+   "value": "pass%25253A%25253DZq7v0019Xw"
+  },
+  "c0124": {
+   "group": "c3_delimited",
+   "value": "pass%2525253A%2525253DZq7v0019Xw"
+  },
+  "c0125": {
+   "group": "c3_delimited",
+   "value": "pass%252525253A%252525253DZq7v0019Xw"
+  },
+  "c0126": {
+   "group": "c3_delimited",
+   "value": "pass%25252525253A%25252525253DZq7v0019Xw"
+  },
+  "c0127": {
+   "group": "c3_delimited",
+   "value": "key :=Zq7v0020Xw"
+  },
+  "c0128": {
+   "group": "c3_delimited",
+   "value": "key%20%3A%3DZq7v0020Xw"
+  },
+  "c0129": {
+   "group": "c3_delimited",
+   "value": "key%2520%253A%253DZq7v0020Xw"
+  },
+  "c0130": {
+   "group": "c3_delimited",
+   "value": "key%252520%25253A%25253DZq7v0020Xw"
+  },
+  "c0131": {
+   "group": "c3_delimited",
+   "value": "key%25252520%2525253A%2525253DZq7v0020Xw"
+  },
+  "c0132": {
+   "group": "c3_delimited",
+   "value": "key%2525252520%252525253A%252525253DZq7v0020Xw"
+  },
+  "c0133": {
+   "group": "c3_delimited",
+   "value": "key%252525252520%25252525253A%25252525253DZq7v0020Xw"
+  },
+  "c0134": {
+   "group": "c3_delimited",
+   "value": "Key=Zq7v0021Xw"
+  },
+  "c0135": {
+   "group": "c3_delimited",
+   "value": "Key%3DZq7v0021Xw"
+  },
+  "c0136": {
+   "group": "c3_delimited",
+   "value": "Key%253DZq7v0021Xw"
+  },
+  "c0137": {
+   "group": "c3_delimited",
+   "value": "Key%25253DZq7v0021Xw"
+  },
+  "c0138": {
+   "group": "c3_delimited",
+   "value": "Key%2525253DZq7v0021Xw"
+  },
+  "c0139": {
+   "group": "c3_delimited",
+   "value": "Key%252525253DZq7v0021Xw"
+  },
+  "c0140": {
+   "group": "c3_delimited",
+   "value": "Key%25252525253DZq7v0021Xw"
+  },
+  "c0141": {
+   "group": "c3_delimited",
+   "value": "x=1;pass=Zq7v0022Xw"
+  },
+  "c0142": {
+   "group": "c3_delimited",
+   "value": "x%3D1%3Bpass%3DZq7v0022Xw"
+  },
+  "c0143": {
+   "group": "c3_delimited",
+   "value": "x%253D1%253Bpass%253DZq7v0022Xw"
+  },
+  "c0144": {
+   "group": "c3_delimited",
+   "value": "x%25253D1%25253Bpass%25253DZq7v0022Xw"
+  },
+  "c0145": {
+   "group": "c3_delimited",
+   "value": "x%2525253D1%2525253Bpass%2525253DZq7v0022Xw"
+  },
+  "c0146": {
+   "group": "c3_delimited",
+   "value": "x%252525253D1%252525253Bpass%252525253DZq7v0022Xw"
+  },
+  "c0147": {
+   "group": "c3_delimited",
+   "value": "x%25252525253D1%25252525253Bpass%25252525253DZq7v0022Xw"
+  },
+  "c0148": {
+   "group": "c3_delimited",
+   "value": "a&key=Zq7v0023Xw"
+  },
+  "c0149": {
+   "group": "c3_delimited",
+   "value": "a%26key%3DZq7v0023Xw"
+  },
+  "c0150": {
+   "group": "c3_delimited",
+   "value": "a%2526key%253DZq7v0023Xw"
+  },
+  "c0151": {
+   "group": "c3_delimited",
+   "value": "a%252526key%25253DZq7v0023Xw"
+  },
+  "c0152": {
+   "group": "c3_delimited",
+   "value": "a%25252526key%2525253DZq7v0023Xw"
+  },
+  "c0153": {
+   "group": "c3_delimited",
+   "value": "a%2525252526key%252525253DZq7v0023Xw"
+  },
+  "c0154": {
+   "group": "c3_delimited",
+   "value": "a%252525252526key%25252525253DZq7v0023Xw"
+  },
+  "c0155": {
+   "group": "c3_delimited",
+   "value": "key\t=Zq7v0024Xw"
+  },
+  "c0156": {
+   "group": "c3_delimited",
+   "value": "key%09%3DZq7v0024Xw"
+  },
+  "c0157": {
+   "group": "c3_delimited",
+   "value": "key%2509%253DZq7v0024Xw"
+  },
+  "c0158": {
+   "group": "c3_delimited",
+   "value": "key%252509%25253DZq7v0024Xw"
+  },
+  "c0159": {
+   "group": "c3_delimited",
+   "value": "key%25252509%2525253DZq7v0024Xw"
+  },
+  "c0160": {
+   "group": "c3_delimited",
+   "value": "key%2525252509%252525253DZq7v0024Xw"
+  },
+  "c0161": {
+   "group": "c3_delimited",
+   "value": "key%252525252509%25252525253DZq7v0024Xw"
+  },
+  "c0162": {
+   "group": "c3_delimited",
+   "value": "key\u00a0=Zq7v0025Xw"
+  },
+  "c0163": {
+   "group": "c3_delimited",
+   "value": "key%C2%A0%3DZq7v0025Xw"
+  },
+  "c0164": {
+   "group": "c3_delimited",
+   "value": "key%25C2%25A0%253DZq7v0025Xw"
+  },
+  "c0165": {
+   "group": "c3_delimited",
+   "value": "key%2525C2%2525A0%25253DZq7v0025Xw"
+  },
+  "c0166": {
+   "group": "c3_delimited",
+   "value": "key%252525C2%252525A0%2525253DZq7v0025Xw"
+  },
+  "c0167": {
+   "group": "c3_delimited",
+   "value": "key%25252525C2%25252525A0%252525253DZq7v0025Xw"
+  },
+  "c0168": {
+   "group": "c3_delimited",
+   "value": "key%2525252525C2%2525252525A0%25252525253DZq7v0025Xw"
+  },
+  "c0169": {
+   "group": "c3_delimited",
+   "value": "\uff4b\uff45\uff59\uff1dZq7v0026Xw"
+  },
+  "c0170": {
+   "group": "c3_delimited",
+   "value": "%EF%BD%8B%EF%BD%85%EF%BD%99%EF%BC%9DZq7v0026Xw"
+  },
+  "c0171": {
+   "group": "c3_delimited",
+   "value": "%25EF%25BD%258B%25EF%25BD%2585%25EF%25BD%2599%25EF%25BC%259DZq7v0026Xw"
+  },
+  "c0172": {
+   "group": "c3_delimited",
+   "value": "%2525EF%2525BD%25258B%2525EF%2525BD%252585%2525EF%2525BD%252599%2525EF%2525BC%25259DZq7v0026Xw"
+  },
+  "c0173": {
+   "group": "c3_delimited",
+   "value": "%252525EF%252525BD%2525258B%252525EF%252525BD%25252585%252525EF%252525BD%25252599%252525EF%252525BC%2525259DZq7v0026Xw"
+  },
+  "c0174": {
+   "group": "c3_delimited",
+   "value": "%25252525EF%25252525BD%252525258B%25252525EF%25252525BD%2525252585%25252525EF%25252525BD%2525252599%25252525EF%25252525BC%252525259DZq7v0026Xw"
+  },
+  "c0175": {
+   "group": "c3_delimited",
+   "value": "%2525252525EF%2525252525BD%25252525258B%2525252525EF%2525252525BD%252525252585%2525252525EF%2525252525BD%252525252599%2525252525EF%2525252525BC%25252525259DZq7v0026Xw"
+  },
+  "c0176": {
+   "group": "c3_delimited",
+   "value": "\uff50\uff41\uff53\uff53\uff1aZq7v0027Xw"
+  },
+  "c0177": {
+   "group": "c3_delimited",
+   "value": "%EF%BD%90%EF%BD%81%EF%BD%93%EF%BD%93%EF%BC%9AZq7v0027Xw"
+  },
+  "c0178": {
+   "group": "c3_delimited",
+   "value": "%25EF%25BD%2590%25EF%25BD%2581%25EF%25BD%2593%25EF%25BD%2593%25EF%25BC%259AZq7v0027Xw"
+  },
+  "c0179": {
+   "group": "c3_delimited",
+   "value": "%2525EF%2525BD%252590%2525EF%2525BD%252581%2525EF%2525BD%252593%2525EF%2525BD%252593%2525EF%2525BC%25259AZq7v0027Xw"
+  },
+  "c0180": {
+   "group": "c3_delimited",
+   "value": "%252525EF%252525BD%25252590%252525EF%252525BD%25252581%252525EF%252525BD%25252593%252525EF%252525BD%25252593%252525EF%252525BC%2525259AZq7v0027Xw"
+  },
+  "c0181": {
+   "group": "c3_delimited",
+   "value": "%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252581%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252593%25252525EF%25252525BC%252525259AZq7v0027Xw"
+  },
+  "c0182": {
+   "group": "c3_delimited",
+   "value": "%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252581%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BC%25252525259AZq7v0027Xw"
+  },
+  "c0183": {
+   "group": "c3_delimited",
+   "value": "pass%3DZq7v0028Xw"
+  },
+  "c0184": {
+   "group": "c3_delimited",
+   "value": "pass%253DZq7v0028Xw"
+  },
+  "c0185": {
+   "group": "c3_delimited",
+   "value": "pass%25253DZq7v0028Xw"
+  },
+  "c0186": {
+   "group": "c3_delimited",
+   "value": "pass%2525253DZq7v0028Xw"
+  },
+  "c0187": {
+   "group": "c3_delimited",
+   "value": "pass%252525253DZq7v0028Xw"
+  },
+  "c0188": {
+   "group": "c3_delimited",
+   "value": "pass%25252525253DZq7v0028Xw"
+  },
+  "c0189": {
+   "group": "c3_delimited",
+   "value": "pass%2525252525253DZq7v0028Xw"
+  },
+  "c0190": {
+   "group": "c3_delimited",
+   "value": "%6Bey=Zq7v0029Xw"
+  },
+  "c0191": {
+   "group": "c3_delimited",
+   "value": "%256Bey%3DZq7v0029Xw"
+  },
+  "c0192": {
+   "group": "c3_delimited",
+   "value": "%25256Bey%253DZq7v0029Xw"
+  },
+  "c0193": {
+   "group": "c3_delimited",
+   "value": "%2525256Bey%25253DZq7v0029Xw"
+  },
+  "c0194": {
+   "group": "c3_delimited",
+   "value": "%252525256Bey%2525253DZq7v0029Xw"
+  },
+  "c0195": {
+   "group": "c3_delimited",
+   "value": "%25252525256Bey%252525253DZq7v0029Xw"
+  },
+  "c0196": {
+   "group": "c3_delimited",
+   "value": "%2525252525256Bey%25252525253DZq7v0029Xw"
+  },
+  "c0197": {
+   "group": "c3_delimited",
+   "value": "k%45Y: Zq7v0030Xw"
+  },
+  "c0198": {
+   "group": "c3_delimited",
+   "value": "k%2545Y%3A%20Zq7v0030Xw"
+  },
+  "c0199": {
+   "group": "c3_delimited",
+   "value": "k%252545Y%253A%2520Zq7v0030Xw"
+  },
+  "c0200": {
+   "group": "c3_delimited",
+   "value": "k%25252545Y%25253A%252520Zq7v0030Xw"
+  },
+  "c0201": {
+   "group": "c3_delimited",
+   "value": "k%2525252545Y%2525253A%25252520Zq7v0030Xw"
+  },
+  "c0202": {
+   "group": "c3_delimited",
+   "value": "k%252525252545Y%252525253A%2525252520Zq7v0030Xw"
+  },
+  "c0203": {
+   "group": "c3_delimited",
+   "value": "k%25252525252545Y%25252525253A%252525252520Zq7v0030Xw"
+  },
+  "c0204": {
+   "group": "c3_query",
+   "value": "https://api.example.com/v1?key=Zq7v0031Xw"
+  },
+  "c0205": {
+   "group": "c3_query",
+   "value": "https%3A%2F%2Fapi.example.com%2Fv1%3Fkey%3DZq7v0031Xw"
+  },
+  "c0206": {
+   "group": "c3_query",
+   "value": "https%253A%252F%252Fapi.example.com%252Fv1%253Fkey%253DZq7v0031Xw"
+  },
+  "c0207": {
+   "group": "c3_query",
+   "value": "https%25253A%25252F%25252Fapi.example.com%25252Fv1%25253Fkey%25253DZq7v0031Xw"
+  },
+  "c0208": {
+   "group": "c3_query",
+   "value": "https%2525253A%2525252F%2525252Fapi.example.com%2525252Fv1%2525253Fkey%2525253DZq7v0031Xw"
+  },
+  "c0209": {
+   "group": "c3_query",
+   "value": "mysql://db/ha?pass=Zq7v0032Xw"
+  },
+  "c0210": {
+   "group": "c3_query",
+   "value": "mysql%3A%2F%2Fdb%2Fha%3Fpass%3DZq7v0032Xw"
+  },
+  "c0211": {
+   "group": "c3_query",
+   "value": "mysql%253A%252F%252Fdb%252Fha%253Fpass%253DZq7v0032Xw"
+  },
+  "c0212": {
+   "group": "c3_query",
+   "value": "mysql%25253A%25252F%25252Fdb%25252Fha%25253Fpass%25253DZq7v0032Xw"
+  },
+  "c0213": {
+   "group": "c3_query",
+   "value": "mysql%2525253A%2525252F%2525252Fdb%2525252Fha%2525253Fpass%2525253DZq7v0032Xw"
+  },
+  "c0214": {
+   "group": "c3_query",
+   "value": "https://api.example.com/v1?a=1&KEY=Zq7v0033Xw"
+  },
+  "c0215": {
+   "group": "c3_query",
+   "value": "https%3A%2F%2Fapi.example.com%2Fv1%3Fa%3D1%26KEY%3DZq7v0033Xw"
+  },
+  "c0216": {
+   "group": "c3_query",
+   "value": "https%253A%252F%252Fapi.example.com%252Fv1%253Fa%253D1%2526KEY%253DZq7v0033Xw"
+  },
+  "c0217": {
+   "group": "c3_query",
+   "value": "https%25253A%25252F%25252Fapi.example.com%25252Fv1%25253Fa%25253D1%252526KEY%25253DZq7v0033Xw"
+  },
+  "c0218": {
+   "group": "c3_query",
+   "value": "https%2525253A%2525252F%2525252Fapi.example.com%2525252Fv1%2525253Fa%2525253D1%25252526KEY%2525253DZq7v0033Xw"
+  },
+  "c0219": {
+   "group": "c3_noncatch",
+   "value": "keypad"
+  },
+  "c0220": {
+   "group": "c3_noncatch",
+   "value": "monkey"
+  },
+  "c0221": {
+   "group": "c3_noncatch",
+   "value": "bypass"
+  },
+  "c0222": {
+   "group": "c3_noncatch",
+   "value": "compass"
+  },
+  "c0223": {
+   "group": "c3_noncatch",
+   "value": "key fob"
+  },
+  "c0224": {
+   "group": "c3_noncatch",
+   "value": "monkey=1"
+  },
+  "c0225": {
+   "group": "c3_noncatch",
+   "value": "keypad: 4"
+  },
+  "c0226": {
+   "group": "c3_noncatch",
+   "value": "bypass=on"
+  },
+  "c0227": {
+   "group": "c3_noncatch",
+   "value": "compass: north"
+  },
+  "c0228": {
+   "group": "c3_noncatch",
+   "value": "hotkey=F5"
+  },
+  "c0229": {
+   "group": "c3_noncatch",
+   "value": "passkey=1"
+  },
+  "c0230": {
+   "group": "c3_noncatch",
+   "value": "turnkey: yes"
+  },
+  "c0231": {
+   "group": "c3_noncatch",
+   "value": "Kitchen keypad"
+  },
+  "c0232": {
+   "group": "c3_noncatch",
+   "value": "Hall pass"
+  },
+  "c0233": {
+   "group": "c3_noncatch",
+   "value": "pass the salt"
+  },
+  "c0234": {
+   "group": "c3_noncatch",
+   "value": "key lime pie"
+  },
+  "c0235": {
+   "group": "c3_noncatch",
+   "value": "keys=3"
+  },
+  "c0236": {
+   "group": "c3_noncatch",
+   "value": "passes: 2"
+  },
+  "c0237": {
+   "group": "uri_userinfo",
+   "value": "postgresql+psycopg2://u:Zq7v0034Xw@db/ha"
+  },
+  "c0238": {
+   "group": "uri_userinfo",
+   "value": "postgresql%2Bpsycopg2%3A%2F%2Fu%3AZq7v0034Xw%40db%2Fha"
+  },
+  "c0239": {
+   "group": "uri_userinfo",
+   "value": "postgresql%252Bpsycopg2%253A%252F%252Fu%253AZq7v0034Xw%2540db%252Fha"
+  },
+  "c0240": {
+   "group": "uri_userinfo",
+   "value": "postgresql%25252Bpsycopg2%25253A%25252F%25252Fu%25253AZq7v0034Xw%252540db%25252Fha"
+  },
+  "c0241": {
+   "group": "uri_userinfo",
+   "value": "postgresql%2525252Bpsycopg2%2525253A%2525252F%2525252Fu%2525253AZq7v0034Xw%25252540db%2525252Fha"
+  },
+  "c0242": {
+   "group": "uri_userinfo",
+   "value": "postgresql%252525252Bpsycopg2%252525253A%252525252F%252525252Fu%252525253AZq7v0034Xw%2525252540db%252525252Fha"
+  },
+  "c0243": {
+   "group": "uri_userinfo",
+   "value": "postgresql%25252525252Bpsycopg2%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0034Xw%252525252540db%25252525252Fha"
+  },
+  "c0244": {
+   "group": "uri_userinfo",
+   "value": "mssql+pyodbc://u:Zq7v0035Xw@db/ha"
+  },
+  "c0245": {
+   "group": "uri_userinfo",
+   "value": "mssql%2Bpyodbc%3A%2F%2Fu%3AZq7v0035Xw%40db%2Fha"
+  },
+  "c0246": {
+   "group": "uri_userinfo",
+   "value": "mssql%252Bpyodbc%253A%252F%252Fu%253AZq7v0035Xw%2540db%252Fha"
+  },
+  "c0247": {
+   "group": "uri_userinfo",
+   "value": "mssql%25252Bpyodbc%25253A%25252F%25252Fu%25253AZq7v0035Xw%252540db%25252Fha"
+  },
+  "c0248": {
+   "group": "uri_userinfo",
+   "value": "mssql%2525252Bpyodbc%2525253A%2525252F%2525252Fu%2525253AZq7v0035Xw%25252540db%2525252Fha"
+  },
+  "c0249": {
+   "group": "uri_userinfo",
+   "value": "mssql%252525252Bpyodbc%252525253A%252525252F%252525252Fu%252525253AZq7v0035Xw%2525252540db%252525252Fha"
+  },
+  "c0250": {
+   "group": "uri_userinfo",
+   "value": "mssql%25252525252Bpyodbc%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0035Xw%252525252540db%25252525252Fha"
+  },
+  "c0251": {
+   "group": "uri_userinfo",
+   "value": "redis://:Zq7v0036Xw@cache:6379/0"
+  },
+  "c0252": {
+   "group": "uri_userinfo",
+   "value": "redis%3A%2F%2F%3AZq7v0036Xw%40cache%3A6379%2F0"
+  },
+  "c0253": {
+   "group": "uri_userinfo",
+   "value": "redis%253A%252F%252F%253AZq7v0036Xw%2540cache%253A6379%252F0"
+  },
+  "c0254": {
+   "group": "uri_userinfo",
+   "value": "redis%25253A%25252F%25252F%25253AZq7v0036Xw%252540cache%25253A6379%25252F0"
+  },
+  "c0255": {
+   "group": "uri_userinfo",
+   "value": "redis%2525253A%2525252F%2525252F%2525253AZq7v0036Xw%25252540cache%2525253A6379%2525252F0"
+  },
+  "c0256": {
+   "group": "uri_userinfo",
+   "value": "redis%252525253A%252525252F%252525252F%252525253AZq7v0036Xw%2525252540cache%252525253A6379%252525252F0"
+  },
+  "c0257": {
+   "group": "uri_userinfo",
+   "value": "redis%25252525253A%25252525252F%25252525252F%25252525253AZq7v0036Xw%252525252540cache%25252525253A6379%25252525252F0"
+  },
+  "c0258": {
+   "group": "uri_userinfo",
+   "value": "https://u:Zq7v0037Xw@example.com/x"
+  },
+  "c0259": {
+   "group": "uri_userinfo",
+   "value": "https%3A%2F%2Fu%3AZq7v0037Xw%40example.com%2Fx"
+  },
+  "c0260": {
+   "group": "uri_userinfo",
+   "value": "https%253A%252F%252Fu%253AZq7v0037Xw%2540example.com%252Fx"
+  },
+  "c0261": {
+   "group": "uri_userinfo",
+   "value": "https%25253A%25252F%25252Fu%25253AZq7v0037Xw%252540example.com%25252Fx"
+  },
+  "c0262": {
+   "group": "uri_userinfo",
+   "value": "https%2525253A%2525252F%2525252Fu%2525253AZq7v0037Xw%25252540example.com%2525252Fx"
+  },
+  "c0263": {
+   "group": "uri_userinfo",
+   "value": "https%252525253A%252525252F%252525252Fu%252525253AZq7v0037Xw%2525252540example.com%252525252Fx"
+  },
+  "c0264": {
+   "group": "uri_userinfo",
+   "value": "https%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0037Xw%252525252540example.com%25252525252Fx"
+  },
+  "c0265": {
+   "group": "uri_userinfo",
+   "value": "mysql://u@db/ha"
+  },
+  "c0266": {
+   "group": "uri_userinfo",
+   "value": "mysql%3A%2F%2Fu%40db%2Fha"
+  },
+  "c0267": {
+   "group": "uri_userinfo",
+   "value": "mysql%253A%252F%252Fu%2540db%252Fha"
+  },
+  "c0268": {
+   "group": "uri_userinfo",
+   "value": "mysql%25253A%25252F%25252Fu%252540db%25252Fha"
+  },
+  "c0269": {
+   "group": "uri_userinfo",
+   "value": "mysql%2525253A%2525252F%2525252Fu%25252540db%2525252Fha"
+  },
+  "c0270": {
+   "group": "uri_userinfo",
+   "value": "mysql%252525253A%252525252F%252525252Fu%2525252540db%252525252Fha"
+  },
+  "c0271": {
+   "group": "uri_userinfo",
+   "value": "mysql%25252525253A%25252525252F%25252525252Fu%252525252540db%25252525252Fha"
+  },
+  "c0272": {
+   "group": "uri_userinfo",
+   "value": "mysql://u:Zq7v0039Xw\uff20db/ha"
+  },
+  "c0273": {
+   "group": "uri_userinfo",
+   "value": "mysql%3A%2F%2Fu%3AZq7v0039Xw%EF%BC%A0db%2Fha"
+  },
+  "c0274": {
+   "group": "uri_userinfo",
+   "value": "mysql%253A%252F%252Fu%253AZq7v0039Xw%25EF%25BC%25A0db%252Fha"
+  },
+  "c0275": {
+   "group": "uri_userinfo",
+   "value": "mysql%25253A%25252F%25252Fu%25253AZq7v0039Xw%2525EF%2525BC%2525A0db%25252Fha"
+  },
+  "c0276": {
+   "group": "uri_userinfo",
+   "value": "mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0039Xw%252525EF%252525BC%252525A0db%2525252Fha"
+  },
+  "c0277": {
+   "group": "uri_userinfo",
+   "value": "mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0039Xw%25252525EF%25252525BC%25252525A0db%252525252Fha"
+  },
+  "c0278": {
+   "group": "uri_userinfo",
+   "value": "mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0039Xw%2525252525EF%2525252525BC%2525252525A0db%25252525252Fha"
+  },
+  "c0279": {
+   "group": "uri_userinfo",
+   "value": "mysql://db/ha?password=Zq7v0040Xw"
+  },
+  "c0280": {
+   "group": "uri_userinfo",
+   "value": "mysql%3A%2F%2Fdb%2Fha%3Fpassword%3DZq7v0040Xw"
+  },
+  "c0281": {
+   "group": "uri_userinfo",
+   "value": "mysql%253A%252F%252Fdb%252Fha%253Fpassword%253DZq7v0040Xw"
+  },
+  "c0282": {
+   "group": "uri_userinfo",
+   "value": "mysql%25253A%25252F%25252Fdb%25252Fha%25253Fpassword%25253DZq7v0040Xw"
+  },
+  "c0283": {
+   "group": "uri_userinfo",
+   "value": "mysql%2525253A%2525252F%2525252Fdb%2525252Fha%2525253Fpassword%2525253DZq7v0040Xw"
+  },
+  "c0284": {
+   "group": "uri_userinfo",
+   "value": "mysql%252525253A%252525252F%252525252Fdb%252525252Fha%252525253Fpassword%252525253DZq7v0040Xw"
+  },
+  "c0285": {
+   "group": "uri_userinfo",
+   "value": "mysql%25252525253A%25252525252F%25252525252Fdb%25252525252Fha%25252525253Fpassword%25252525253DZq7v0040Xw"
+  },
+  "c0286": {
+   "group": "standalone_cs",
+   "value": "DRIVER={X};SERVER=db;UID=u;PWD=Zq7v0041Xw"
+  },
+  "c0287": {
+   "group": "standalone_cs",
+   "value": "DRIVER%3D%7BX%7D%3BSERVER%3Ddb%3BUID%3Du%3BPWD%3DZq7v0041Xw"
+  },
+  "c0288": {
+   "group": "standalone_cs",
+   "value": "DRIVER%253D%257BX%257D%253BSERVER%253Ddb%253BUID%253Du%253BPWD%253DZq7v0041Xw"
+  },
+  "c0289": {
+   "group": "standalone_cs",
+   "value": "DRIVER%25253D%25257BX%25257D%25253BSERVER%25253Ddb%25253BUID%25253Du%25253BPWD%25253DZq7v0041Xw"
+  },
+  "c0290": {
+   "group": "standalone_cs",
+   "value": "DRIVER%2525253D%2525257BX%2525257D%2525253BSERVER%2525253Ddb%2525253BUID%2525253Du%2525253BPWD%2525253DZq7v0041Xw"
+  },
+  "c0291": {
+   "group": "standalone_cs",
+   "value": "DRIVER%252525253D%252525257BX%252525257D%252525253BSERVER%252525253Ddb%252525253BUID%252525253Du%252525253BPWD%252525253DZq7v0041Xw"
+  },
+  "c0292": {
+   "group": "standalone_cs",
+   "value": "DRIVER%25252525253D%25252525257BX%25252525257D%25252525253BSERVER%25252525253Ddb%25252525253BUID%25252525253Du%25252525253BPWD%25252525253DZq7v0041Xw"
+  },
+  "c0293": {
+   "group": "standalone_cs",
+   "value": "Data Source=db;User ID=u;Password=Zq7v0042Xw"
+  },
+  "c0294": {
+   "group": "standalone_cs",
+   "value": "Data%20Source%3Ddb%3BUser%20ID%3Du%3BPassword%3DZq7v0042Xw"
+  },
+  "c0295": {
+   "group": "standalone_cs",
+   "value": "Data%2520Source%253Ddb%253BUser%2520ID%253Du%253BPassword%253DZq7v0042Xw"
+  },
+  "c0296": {
+   "group": "standalone_cs",
+   "value": "Data%252520Source%25253Ddb%25253BUser%252520ID%25253Du%25253BPassword%25253DZq7v0042Xw"
+  },
+  "c0297": {
+   "group": "standalone_cs",
+   "value": "Data%25252520Source%2525253Ddb%2525253BUser%25252520ID%2525253Du%2525253BPassword%2525253DZq7v0042Xw"
+  },
+  "c0298": {
+   "group": "standalone_cs",
+   "value": "Data%2525252520Source%252525253Ddb%252525253BUser%2525252520ID%252525253Du%252525253BPassword%252525253DZq7v0042Xw"
+  },
+  "c0299": {
+   "group": "standalone_cs",
+   "value": "Data%252525252520Source%25252525253Ddb%25252525253BUser%252525252520ID%25252525253Du%25252525253BPassword%25252525253DZq7v0042Xw"
+  },
+  "c0300": {
+   "group": "standalone_cs",
+   "value": "host=db dbname=ha user=u password=Zq7v0043Xw"
+  },
+  "c0301": {
+   "group": "standalone_cs",
+   "value": "host%3Ddb%20dbname%3Dha%20user%3Du%20password%3DZq7v0043Xw"
+  },
+  "c0302": {
+   "group": "standalone_cs",
+   "value": "host%253Ddb%2520dbname%253Dha%2520user%253Du%2520password%253DZq7v0043Xw"
+  },
+  "c0303": {
+   "group": "standalone_cs",
+   "value": "host%25253Ddb%252520dbname%25253Dha%252520user%25253Du%252520password%25253DZq7v0043Xw"
+  },
+  "c0304": {
+   "group": "standalone_cs",
+   "value": "host%2525253Ddb%25252520dbname%2525253Dha%25252520user%2525253Du%25252520password%2525253DZq7v0043Xw"
+  },
+  "c0305": {
+   "group": "standalone_cs",
+   "value": "host%252525253Ddb%2525252520dbname%252525253Dha%2525252520user%252525253Du%2525252520password%252525253DZq7v0043Xw"
+  },
+  "c0306": {
+   "group": "standalone_cs",
+   "value": "host%25252525253Ddb%252525252520dbname%25252525253Dha%252525252520user%25252525253Du%252525252520password%25252525253DZq7v0043Xw"
+  },
+  "c0307": {
+   "group": "standalone_cs",
+   "value": "mssql+pyodbc:///?odbc_connect=DRIVER%3D%7BODBC%7D%3BSERVER%3Ddb%3BUID%3Du%3BPWD%3DZq7v0044Xw"
+  },
+  "c0308": {
+   "group": "standalone_cs",
+   "value": "mssql%2Bpyodbc%3A%2F%2F%2F%3Fodbc_connect%3DDRIVER%253D%257BODBC%257D%253BSERVER%253Ddb%253BUID%253Du%253BPWD%253DZq7v0044Xw"
+  },
+  "c0309": {
+   "group": "standalone_cs",
+   "value": "mssql%252Bpyodbc%253A%252F%252F%252F%253Fodbc_connect%253DDRIVER%25253D%25257BODBC%25257D%25253BSERVER%25253Ddb%25253BUID%25253Du%25253BPWD%25253DZq7v0044Xw"
+  },
+  "c0310": {
+   "group": "standalone_cs",
+   "value": "mssql%25252Bpyodbc%25253A%25252F%25252F%25252F%25253Fodbc_connect%25253DDRIVER%2525253D%2525257BODBC%2525257D%2525253BSERVER%2525253Ddb%2525253BUID%2525253Du%2525253BPWD%2525253DZq7v0044Xw"
+  },
+  "c0311": {
+   "group": "standalone_cs",
+   "value": "mssql%2525252Bpyodbc%2525253A%2525252F%2525252F%2525252F%2525253Fodbc_connect%2525253DDRIVER%252525253D%252525257BODBC%252525257D%252525253BSERVER%252525253Ddb%252525253BUID%252525253Du%252525253BPWD%252525253DZq7v0044Xw"
+  },
+  "c0312": {
+   "group": "standalone_cs",
+   "value": "mssql%252525252Bpyodbc%252525253A%252525252F%252525252F%252525252F%252525253Fodbc_connect%252525253DDRIVER%25252525253D%25252525257BODBC%25252525257D%25252525253BSERVER%25252525253Ddb%25252525253BUID%25252525253Du%25252525253BPWD%25252525253DZq7v0044Xw"
+  },
+  "c0313": {
+   "group": "standalone_cs",
+   "value": "mssql%25252525252Bpyodbc%25252525253A%25252525252F%25252525252F%25252525252F%25252525253Fodbc_connect%25252525253DDRIVER%2525252525253D%2525252525257BODBC%2525252525257D%2525252525253BSERVER%2525252525253Ddb%2525252525253BUID%2525252525253Du%2525252525253BPWD%2525252525253DZq7v0044Xw"
+  },
+  "c0314": {
+   "group": "a_nonconverging",
+   "value": "Living%2525252520Room"
+  },
+  "c0315": {
+   "group": "a_nonconverging",
+   "value": "Living%252525252520Room"
+  },
+  "c0316": {
+   "group": "a_nonconverging",
+   "value": "%41%"
+  },
+  "c0317": {
+   "group": "a_nonconverging",
+   "value": "%G1%41"
+  },
+  "c0318": {
+   "group": "a_nonconverging",
+   "value": "%41 50% off"
+  },
+  "c0319": {
+   "group": "a_nonconverging",
+   "value": "%FF"
+  },
+  "c0320": {
+   "group": "a_nonconverging",
+   "value": "%C0%AE"
+  },
+  "c0321": {
+   "group": "a_nonconverging",
+   "value": "a%00b"
+  },
+  "c0322": {
+   "group": "a_nonconverging",
+   "value": "\uff05\uff17\uff10wd=Zq7v0045Xw"
+  },
+  "c0323": {
+   "group": "r9_bounds",
+   "value": "Living%25252520Room"
+  },
+  "c0324": {
+   "group": "r9_bounds",
+   "value": "Living%2525252520Room"
+  },
+  "c0325": {
+   "group": "r9_bounds",
+   "value": "Pwd%2525253DZq7v0046Xw"
+  },
+  "c0326": {
+   "group": "r9_bounds",
+   "value": "50% off"
+  },
+  "c0327": {
+   "group": "r9_bounds",
+   "value": "100%"
+  },
+  "c0328": {
+   "group": "r9_bounds",
+   "value": "%G1"
+  },
+  "c0329": {
+   "group": "r9_bounds",
+   "value": "{{ states('sensor.x') }}"
+  },
+  "c0330": {
+   "group": "r11_sqlite_visible",
+   "value": "sqlite:////config/home-assistant_v2.db"
+  },
+  "c0331": {
+   "group": "r11_sqlite_visible",
+   "value": "sqlite:///home-assistant_v2.db"
+  },
+  "c0332": {
+   "group": "r11_sqlite_visible",
+   "value": "sqlite:///a..b.db"
+  },
+  "c0333": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/home-assistant_v2.db\n"
+  },
+  "c0334": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/home\n-assistant_v2.db"
+  },
+  "c0335": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x\r.db"
+  },
+  "c0336": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x\t.db"
+  },
+  "c0337": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x\u0000.db"
+  },
+  "c0338": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x\u007f.db"
+  },
+  "c0339": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x\u2028.db"
+  },
+  "c0340": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x\u2029.db"
+  },
+  "c0341": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:///../x.db"
+  },
+  "c0342": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/../x.db"
+  },
+  "c0343": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x.db/.."
+  },
+  "c0344": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x%2D.db"
+  },
+  "c0345": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x%.db"
+  },
+  "c0346": {
+   "group": "r11_sqlite_variants",
+   "value": "SQLITE:///x.db"
+  },
+  "c0347": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:///X.db"
+  },
+  "c0348": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/\uff58.db"
+  },
+  "c0349": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x.db?mode=ro"
+  },
+  "c0350": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/u@x.db"
+  },
+  "c0351": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x;y.db"
+  },
+  "c0352": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x=y.db"
+  },
+  "c0353": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/x y.db"
+  },
+  "c0354": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:///:memory:"
+  },
+  "c0355": {
+   "group": "r11_sqlite_variants",
+   "value": "sqlite:////config/session.db"
+  },
+  "c0356": {
+   "group": "useful_visible",
+   "value": "mysql://db.local:3306/ha?charset=utf8mb4"
+  },
+  "c0357": {
+   "group": "useful_visible",
+   "value": "postgresql://db.local/ha?sslmode=require"
+  },
+  "c0358": {
+   "group": "useful_visible",
+   "value": "mysql://[fd00::5]:3306/ha"
+  },
+  "c0359": {
+   "group": "useful_visible",
+   "value": "unknown://host/path"
+  },
+  "c0360": {
+   "group": "useful_visible",
+   "value": "https://api.example.com/v1?entity=sensor.x"
+  },
+  "c0361": {
+   "group": "useful_visible",
+   "value": "http://api.local/{{ states('input_text.x') }}/v1"
+  },
+  "c0362": {
+   "group": "useful_visible",
+   "value": "Server=db;Database=ha;Trusted_Connection=yes"
+  },
+  "c0363": {
+   "group": "useful_visible",
+   "value": "Living Room"
+  },
+  "c0364": {
+   "group": "useful_visible",
+   "value": "50% off"
+  },
+  "c0365": {
+   "group": "over_redaction",
+   "value": "Refresh the access token daily"
+  },
+  "c0366": {
+   "group": "over_redaction",
+   "value": "Author: Synthetic"
+  },
+  "c0367": {
+   "group": "over_redaction",
+   "value": "Session started"
+  },
+  "c0368": {
+   "group": "over_redaction",
+   "value": "private room"
+  },
+  "c0369": {
+   "group": "over_redaction",
+   "value": "cookie jar"
+  },
+  "c0370": {
+   "group": "over_redaction",
+   "value": "secretary"
+  },
+  "c0371": {
+   "group": "over_redaction",
+   "value": "https://example.com/oauth/authorize"
+  },
+  "c0372": {
+   "group": "over_redaction",
+   "value": "{% if token == 1 %}"
+  },
+  "c0373": {
+   "group": "over_redaction",
+   "value": "token://host/x"
+  },
+  "c0374": {
+   "group": "over_redaction",
+   "value": "mailto://someone@example.com"
+  },
+  "c0375": {
+   "group": "over_redaction",
+   "value": "Hall pass: yes"
+  },
+  "c0376": {
+   "group": "over_redaction",
+   "value": "Press key: Enter"
+  },
+  "c0377": {
+   "group": "over_redaction",
+   "value": "{% set key = 1 %}"
+  },
+  "c0378": {
+   "group": "over_redaction",
+   "value": "Spare key=garage"
+  },
+  "c0379": {
+   "group": "over_redaction",
+   "value": "key://host/x"
+  },
+  "c0380": {
+   "group": "over_redaction",
+   "value": "http://key:8080/x"
+  },
+  "c0381": {
+   "group": "d12_residual",
+   "value": "login=Zq7v0047Xw"
+  },
+  "c0382": {
+   "group": "d12_residual",
+   "value": "pw=Zq7v0048Xw"
+  },
+  "c0383": {
+   "group": "d12_residual",
+   "value": "psk=Zq7v0049Xw"
+  },
+  "c0384": {
+   "group": "d12_residual",
+   "value": "p_w_d=Zq7v0050Xw"
+  },
+  "c0385": {
+   "group": "d12_residual",
+   "value": "P\u0441d=Zq7v0051Xw"
+  },
+  "c0386": {
+   "group": "d12_residual",
+   "value": "k\u0435y=Zq7v0052Xw"
+  },
+  "c0387": {
+   "group": "d12_residual",
+   "value": "my_key=Zq7v0053Xw"
+  },
+  "c0388": {
+   "group": "d12_residual",
+   "value": "app_key=Zq7v0054Xw"
+  },
+  "c0389": {
+   "group": "d12_residual",
+   "value": "passkey=Zq7v0055Xw"
+  },
+  "c0390": {
+   "group": "d12_residual",
+   "value": "pass_word=Zq7v0056Xw"
+  },
+  "c0391": {
+   "group": "d12_residual",
+   "value": "\"key\": \"Zq7v0057Xw\""
+  },
+  "c0392": {
+   "group": "d12_residual",
+   "value": "{'pass': 'Zq7v0058Xw'}"
+  },
+  "c0393": {
+   "group": "d12_residual",
+   "value": "key\u2192Zq7v0059Xw"
+  },
+  "c0394": {
+   "group": "d12_residual",
+   "value": "QUJDREVGR0g="
+  },
+  "c0395": {
+   "group": "other_secrets",
+   "value": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.Zq7v0060Xw"
+  },
+  "c0396": {
+   "group": "other_secrets",
+   "value": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMtMiJ9.Zq7v0061Xw"
+  },
+  "c0397": {
+   "group": "other_secrets",
+   "value": "-----BEGIN ENCRYPTED PRIVATE KEY-----\nU1lOVEhFVElDLU5PVC1BLUtFWS0Zq7v0062Xw\n-----END ENCRYPTED PRIVATE KEY-----\n"
+  },
+  "c0398": {
+   "group": "other_secrets",
+   "value": "-----BEGIN CERTIFICATE-----\nU1lOVEhFVElDLUNFUlQZq7v0063Xw\n-----END CERTIFICATE-----\n"
+  },
+  "c0399": {
+   "group": "other_secrets",
+   "value": "U1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDU1lOVEhFVElDZq7v0064Xw"
+  },
+  "c0400": {
+   "group": "unicode_controls",
+   "value": "a\u00a0b"
+  },
+  "c0401": {
+   "group": "unicode_controls",
+   "value": "\ufeffbom"
+  },
+  "c0402": {
+   "group": "unicode_controls",
+   "value": "\u200bzw"
+  },
+  "c0403": {
+   "group": "unicode_controls",
+   "value": "line1\nline2"
+  },
+  "c0404": {
+   "group": "unicode_controls",
+   "value": "tab\there"
+  },
+  "c0405": {
+   "group": "unicode_controls",
+   "value": "\ud83d\ude00 emoji"
+  },
+  "c0406": {
+   "group": "unicode_controls",
+   "value": "\u0085nel"
+  },
+  "c0407": {
+   "group": "unicode_controls",
+   "value": "trailing   "
+  },
+  "c0408": {
+   "group": "unicode_controls",
+   "value": "  leading"
+  }
+ },
+ "corpus_groups": [
+  "a_nonconverging",
+  "c2_pwd_variants",
+  "c3_delimited",
+  "c3_noncatch",
+  "c3_query",
+  "d12_residual",
+  "other_secrets",
+  "over_redaction",
+  "r11_sqlite_variants",
+  "r11_sqlite_visible",
+  "r2_boundary_dsn",
+  "r2_boundary_uri",
+  "r2_c2_counterexample",
+  "r2_c2_uri",
+  "r9_bounds",
+  "standalone_cs",
+  "unicode_controls",
+  "uri_userinfo",
+  "useful_visible"
+ ],
+ "generator": "gen_fixtures.py",
+ "keys": {
+  "%25252525252570assword": "Zq7v0082Xw",
+  "%252525252570assword": "Zq7v0081Xw",
+  "%2525252525EF%2525252525BD%252525252590%2525252525EF%2525252525BD%252525252581%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252593%2525252525EF%2525252525BD%252525252597%2525252525EF%2525252525BD%25252525258F%2525252525EF%2525252525BD%252525252592%2525252525EF%2525252525BD%252525252584": "Zq7v0090Xw",
+  "%2525252570assword": "Zq7v0080Xw",
+  "%25252525EF%25252525BD%2525252590%25252525EF%25252525BD%2525252581%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252593%25252525EF%25252525BD%2525252597%25252525EF%25252525BD%252525258F%25252525EF%25252525BD%2525252592%25252525EF%25252525BD%2525252584": "Zq7v0089Xw",
+  "%25252570assword": "Zq7v0079Xw",
+  "%252525EF%252525BD%25252590%252525EF%252525BD%25252581%252525EF%252525BD%25252593%252525EF%252525BD%25252593%252525EF%252525BD%25252597%252525EF%252525BD%2525258F%252525EF%252525BD%25252592%252525EF%252525BD%25252584": "Zq7v0088Xw",
+  "%252570assword": "Zq7v0078Xw",
+  "%2525EF%2525BD%252590%2525EF%2525BD%252581%2525EF%2525BD%252593%2525EF%2525BD%252593%2525EF%2525BD%252597%2525EF%2525BD%25258F%2525EF%2525BD%252592%2525EF%2525BD%252584": "Zq7v0087Xw",
+  "%2570assword": "Zq7v0077Xw",
+  "%25EF%25BD%2590%25EF%25BD%2581%25EF%25BD%2593%25EF%25BD%2593%25EF%25BD%2597%25EF%25BD%258F%25EF%25BD%2592%25EF%25BD%2584": "Zq7v0086Xw",
+  "%70assword": "Zq7v0076Xw",
+  "%EF%BD%90%EF%BD%81%EF%BD%93%EF%BD%93%EF%BD%97%EF%BD%8F%EF%BD%92%EF%BD%84": "Zq7v0085Xw",
+  "MQTT-PassWord": "Zq7v0091Xw",
+  "PASSWORD": "Zq7v0083Xw",
+  "Pass Word": "Zq7v0092Xw",
+  "Pass%20Word": "Zq7v0093Xw",
+  "Pass%2520Word": "Zq7v0094Xw",
+  "Pass%252520Word": "Zq7v0095Xw",
+  "Pass%25252520Word": "Zq7v0096Xw",
+  "Pass%2525252520Word": "Zq7v0097Xw",
+  "Pass%252525252520Word": "Zq7v0098Xw",
+  "db%2525252525255Furl": "Zq7v0105Xw",
+  "db%25252525255Furl": "Zq7v0104Xw",
+  "db%252525255Furl": "Zq7v0103Xw",
+  "db%2525255Furl": "Zq7v0102Xw",
+  "db%25255Furl": "Zq7v0101Xw",
+  "db%255Furl": "Zq7v0100Xw",
+  "db%5Furl": "Zq7v0099Xw",
+  "db_ur%2525252525E2%252525252584%252525252593": "Zq7v0112Xw",
+  "db_ur%25252525E2%2525252584%2525252593": "Zq7v0111Xw",
+  "db_ur%252525E2%25252584%25252593": "Zq7v0110Xw",
+  "db_ur%2525E2%252584%252593": "Zq7v0109Xw",
+  "db_ur%25E2%2584%2593": "Zq7v0108Xw",
+  "db_ur%E2%84%93": "Zq7v0107Xw",
+  "db_ur\u2113": "Zq7v0106Xw",
+  "key%25252525253DZq7v0068Xw": "Zq7v0140Xw",
+  "key%252525253DZq7v0068Xw": "Zq7v0139Xw",
+  "key%2525253DZq7v0068Xw": "Zq7v0138Xw",
+  "key%25253DZq7v0068Xw": "Zq7v0137Xw",
+  "key%253DZq7v0068Xw": "Zq7v0136Xw",
+  "key%3DZq7v0068Xw": "Zq7v0135Xw",
+  "key=Zq7v0068Xw": "Zq7v0134Xw",
+  "mysql%25252525253A%25252525252F%25252525252Fu%25252525253AZq7v0066Xw%252525252540db": "Zq7v0126Xw",
+  "mysql%252525253A%252525252F%252525252Fu%252525253AZq7v0066Xw%2525252540db": "Zq7v0125Xw",
+  "mysql%2525253A%2525252F%2525252Fu%2525253AZq7v0066Xw%25252540db": "Zq7v0124Xw",
+  "mysql%25253A%25252F%25252Fu%25253AZq7v0066Xw%252540db": "Zq7v0123Xw",
+  "mysql%253A%252F%252Fu%253AZq7v0066Xw%2540db": "Zq7v0122Xw",
+  "mysql%3A%2F%2Fu%3AZq7v0066Xw%40db": "Zq7v0121Xw",
+  "mysql://u:Zq7v0066Xw@db": "Zq7v0120Xw",
+  "p%25252525252561ssword": "Zq7v0075Xw",
+  "p%252525252561ssword": "Zq7v0074Xw",
+  "p%2525252561ssword": "Zq7v0073Xw",
+  "p%25252561ssword": "Zq7v0072Xw",
+  "p%252561ssword": "Zq7v0071Xw",
+  "p%2561ssword": "Zq7v0070Xw",
+  "p%61ssword": "Zq7v0069Xw",
+  "pwd%25252525253DZq7v0065Xw": "Zq7v0119Xw",
+  "pwd%252525253DZq7v0065Xw": "Zq7v0118Xw",
+  "pwd%2525253DZq7v0065Xw": "Zq7v0117Xw",
+  "pwd%25253DZq7v0065Xw": "Zq7v0116Xw",
+  "pwd%253DZq7v0065Xw": "Zq7v0115Xw",
+  "pwd%3DZq7v0065Xw": "Zq7v0114Xw",
+  "pwd=Zq7v0065Xw": "Zq7v0113Xw",
+  "token%25252525253A%252525252520Zq7v0067Xw": "Zq7v0133Xw",
+  "token%252525253A%2525252520Zq7v0067Xw": "Zq7v0132Xw",
+  "token%2525253A%25252520Zq7v0067Xw": "Zq7v0131Xw",
+  "token%25253A%252520Zq7v0067Xw": "Zq7v0130Xw",
+  "token%253A%2520Zq7v0067Xw": "Zq7v0129Xw",
+  "token%3A%20Zq7v0067Xw": "Zq7v0128Xw",
+  "token: Zq7v0067Xw": "Zq7v0127Xw",
+  "\uff50\uff41\uff53\uff53\uff57\uff4f\uff52\uff44": "Zq7v0084Xw"
+ },
+ "manifest": {
+  "companions": {
+   "Configuration.yaml": {
+    "bytes": 25,
+    "sha256": "fae4b7a2e6c574e29cc56701984c8f0b53ceb5099d902406929a280cd53adcbf"
+   },
+   "approval_pin.json": {
+    "bytes": 22,
+    "sha256": "d8e360961cdf502f21ec6e99dcc600070171bb9b023a627895a3b60d5ea08578"
+   },
+   "automations.yaml": {
+    "bytes": 58,
+    "sha256": "1ac644a3cf450eec059ab569afd6f75010934f17df07545c1f55113462a4182f"
+   },
+   "configuration.yml": {
+    "bytes": 24,
+    "sha256": "7a35ceffbc5b1866c824416de3cecf29f91912ea56e96c62a0da5b55a923ab7d"
+   },
+   "packages/[b].yaml": {
+    "bytes": 24,
+    "sha256": "fee53f06479eb1ace7aba665ea66df49a435bee335ecd8ab84a32df9ce5af97d"
+   },
+   "packages/x.yaml": {
+    "bytes": 43,
+    "sha256": "194ad7f049b7ff3257db0b3e76a59386bfa31b54a78ac294f1311575b2a11b64"
+   },
+   "packages/y.yaml": {
+    "bytes": 18,
+    "sha256": "fc0ba1de609a15b4d75882440b0a6723adffd325295518ae985a6c2bbf525690"
+   },
+   "scripts.yaml": {
+    "bytes": 33,
+    "sha256": "0743e6cc515e5d7f31b1e081e5b767b59cb8e9184262ef6aba886e9a5bce4038"
+   },
+   "secrets.yaml": {
+    "bytes": 173,
+    "sha256": "c13f242b8bf47ab47e73e703e26897a182e6b05de35e2965c41c7295f6e6ec6c"
+   },
+   "secrets_list_variant.yaml": {
+    "bytes": 8,
+    "sha256": "25f2bb669e33041967c7ff7343c260b3e288bef9147ef86237d32a7bd7fd8ade"
+   },
+   "sensors.yaml": {
+    "bytes": 35,
+    "sha256": "9471bc54b5a1ca328c17c7f9955b3c1b0ab07f7e6405c990143371f34cbf384e"
+   },
+   "www/data.yaml": {
+    "bytes": 21,
+    "sha256": "d933dea560deb236354acd8952d6c918c2a130dd09afa555132761c60d077e86"
+   },
+   "www/readme.txt": {
+    "bytes": 19,
+    "sha256": "872afe5a770f5c5bf1b2981ade8ecdbe21a03b4ae7cf96e3366daecb7efbb4a5"
+   }
+  },
+  "variants": {
+   "alias_blowup": {
+    "bytes": 307,
+    "sha256": "bb947bd2a24f45d9947b6b2d80484f38e7383509da6284f388105c1bb8cf4dbd"
+   },
+   "binary": {
+    "bytes": 19,
+    "sha256": "a0618b853dfe15785e2e15e765227a58f9bc69b407323257d98b42fccf0b25dd"
+   },
+   "bom": {
+    "bytes": 34,
+    "sha256": "2332a450703f81e1eabd2d426fb74ccd05dd86792eac6c5820c27ca5a0586abe"
+   },
+   "comment_only": {
+    "bytes": 15,
+    "sha256": "81661c2d549ab252e266fcaad53350640c58a6d4d17dad54268e3cfc1166b6b3"
+   },
+   "crlf": {
+    "bytes": 33,
+    "sha256": "b8c7bc4a1dee9d9d19f5a6c0b658f85b8eca8b1d6a3410e55fa195d4769ee5af"
+   },
+   "depth_25": {
+    "bytes": 836,
+    "sha256": "967dad947841d4b776b3bfbe8003aa7f4b545d31dff4e415d1102d6a2e166c71"
+   },
+   "dup_child_keys": {
+    "bytes": 52,
+    "sha256": "0e64222aa367c6553b21e7d31b11a77352aab3a604277867e0a7dff0fa5f1c07"
+   },
+   "duplicate_keys": {
+    "bytes": 62,
+    "sha256": "fc4d41dd70cf12056e264ad61041009bd8685baf29772d94200fad40ce9d402e"
+   },
+   "empty": {
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+   },
+   "large_1mib_value": {
+    "bytes": 1048593,
+    "sha256": "56c229d55ab2eadbb797b3b5d91d837cdb754392bf773ba0ed7e3b03c9ef4a5a"
+   },
+   "large_8mib_file": {
+    "bytes": 9120020,
+    "sha256": "ae2f963b2da978ba866cef53cf1dd079676261bdd9164c0ff31ac9d0ed1f0c6f"
+   },
+   "latin1_text": {
+    "bytes": 23,
+    "sha256": "f83c3684c624a4ba352c7b86c7bfafa6829a047b2f619b16c631eacb4fbc5911"
+   },
+   "list_root": {
+    "bytes": 12,
+    "sha256": "db85c80086685af004a35de9b8b138d77b68b7d8e881693aa16b87c5422de04d"
+   },
+   "main": {
+    "bytes": 30948,
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63"
+   },
+   "nk_bool": {
+    "bytes": 43,
+    "sha256": "1a9b6cc5d3849510f49727a1fd8f163ffa790bca737adcbe6384deda90cfd298"
+   },
+   "nk_bool_str": {
+    "bytes": 62,
+    "sha256": "032b5e8644d88aa3d672cba73f80981e88339282262f2d9ca254816ddb649525"
+   },
+   "nk_complex": {
+    "bytes": 52,
+    "sha256": "e7401996fa232918c5584d657ec66d8402ac98255cc9bfcbab7ea5824375d960"
+   },
+   "nk_date": {
+    "bytes": 48,
+    "sha256": "5c91cbf00f00130fd9ac399f2b25eccf3338c6b047d936d94ffd926de609e709"
+   },
+   "nk_float": {
+    "bytes": 42,
+    "sha256": "1cc53b60d67a9d92290d75e15a62b6aec220abff0102703fda41136723d21bfb"
+   },
+   "nk_int": {
+    "bytes": 38,
+    "sha256": "d419cdfb72815b9fb03211562d20a47c08af245d70414616b7f4232c301abd41"
+   },
+   "nk_int_str": {
+    "bytes": 53,
+    "sha256": "388de3d8c54dd18344986617158ec3954f9f1c454dcdb401898379087a00d1d6"
+   },
+   "nk_null": {
+    "bytes": 42,
+    "sha256": "4a33d2efccb9bccbebc717f462eed1be9a5177cb3bf16e3d9b05dc8bb51588f4"
+   },
+   "nodes_4001": {
+    "bytes": 54909,
+    "sha256": "fa0301d8c480b6ce4d067f9396b6495db6ed3eeb7db308fd35aeec5c935b9f94"
+   },
+   "nonstring_keys": {
+    "bytes": 153,
+    "sha256": "712b11fc2af4bc7704eefb0d03559fdf0ca4f612e81a3a75781fb149ee8bfea6"
+   },
+   "parse_error": {
+    "bytes": 83,
+    "sha256": "8c736ef388138df1c9f2e28107305bbcccf6bd05662579d01f825de9df34d756"
+   },
+   "scalar_root": {
+    "bytes": 14,
+    "sha256": "7f2c1e7c312b9b437f9b19e4743b833a1f3671753435c97d0004dfad2a214b1f"
+   },
+   "tag_SECRET": {
+    "bytes": 25,
+    "sha256": "673a0f6ff515342fff390005256fd33c3dbd02dff7ebdc12087acafcc30e451a"
+   },
+   "tag_custom_local": {
+    "bytes": 29,
+    "sha256": "cd9fb775dd5d35a82e22f556d319843157e49dd26e332097264b46bdfd582897"
+   },
+   "tag_env_default_multiline": {
+    "bytes": 55,
+    "sha256": "3bd2d0a9bc1bc71259bf43fd7cc7fd0cac3cbdde253308d7c26f3c02ba3793d6"
+   },
+   "tag_input": {
+    "bytes": 33,
+    "sha256": "0981c8e5921c024e6e074738ca7dcfaf81d8ec288b8a2ef13b111995a02f81b1"
+   },
+   "tag_on_mapping": {
+    "bytes": 26,
+    "sha256": "42282eeb875471b3668d36cdb15c98575987ffab93e90a00236b1cf2861c2ea0"
+   },
+   "tag_on_sequence": {
+    "bytes": 27,
+    "sha256": "4e0cad1b6fa3c0b55d3f2894ffff3dad151dc8973ba00aa08a19a78c58765bc0"
+   },
+   "tag_secret_bare": {
+    "bytes": 22,
+    "sha256": "654aaff15cf896aa862cd87795c78b9aafa4a3466fc6debacf6fde268efef850"
+   }
+  }
+ },
+ "parse_error_secret": "Zq7v0159Xw",
+ "synthetic_secrets": {
+  "abc": "Zq7v0164Xw",
+  "k": "Zq7v0162Xw",
+  "mqtt_host": "mqtt.local",
+  "mqtt_password": "Zq7v0161Xw",
+  "recorder_db_url": "mysql://u:Zq7v0163Xw@db/ha",
+  "x": "Zq7v0165Xw"
+ },
+ "synthetic_values": {
+  "api_key": "Zq7v0145Xw",
+  "auth_password": "Zq7v0144Xw",
+  "comment_secret": "Zq7v0147Xw",
+  "cred_value": "Zq7v0142Xw",
+  "env_default": "Zq7v0148Xw",
+  "env_default_multi": "Zq7v0149Xw",
+  "header_bearer": "Zq7v0151Xw",
+  "influx_token": "Zq7v0146Xw",
+  "list_password": "Zq7v0152Xw",
+  "mqtt_password": "Zq7v0141Xw",
+  "nested_api_key": "Zq7v0153Xw",
+  "pin_numeric_note": "Zq7v0143Xw",
+  "recorder_url_pw": "Zq7v0154Xw",
+  "rest_password": "Zq7v0150Xw"
+ }
+}
