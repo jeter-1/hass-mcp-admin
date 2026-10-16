@@ -560,6 +560,91 @@ def _apply_readmission_decisions(
     )
 
 
+def _account_optional(
+    evaluation: _CatalogEvaluation,
+    optional: Any,
+) -> _CatalogEvaluation:
+    """Account bound optional names outside stock accounting (HAMCP-162).
+
+    Only a name with an exact per-version binding is removed from the
+    unreviewed list, once; a duplicate occurrence stays unreviewed. Matched,
+    missing, quarantined and blocked stock outcomes are unchanged.
+    """
+
+    if not optional.accounted_names:
+        return evaluation
+    remaining = list(evaluation.unreviewed)
+    for name in optional.accounted_names:
+        if name in remaining:
+            remaining.remove(name)
+    return dataclass_replace(evaluation, unreviewed=tuple(remaining))
+
+
+def _optional_state(optional: Any, state: str) -> Any:
+    """Return ``optional`` with the reader withheld under ``state``."""
+
+    tools = dict(optional.tools)
+    tools[yaml_reader.TOOL_NAME] = state
+    return dataclass_replace(
+        optional,
+        tools=tuple(sorted(tools.items())),
+        binding=None,
+        contract_fingerprint=None,
+        observed_tool=None,
+    )
+
+
+def _gate_optional_readmission(
+    optional: Any,
+    selection: Any,
+    generation: DecisionGeneration,
+) -> Any:
+    """Require the extension profile's own admitted decision (Mode B)."""
+
+    if not optional.admitted:
+        return optional
+    if selection.optional_extension is None:
+        return _optional_state(
+            optional,
+            "withheld:"
+            + (selection.optional_withheld_reason or "optional_extension_absent"),
+        )
+    decision = generation.decision_for(yaml_reader.TOOL_NAME)
+    if decision is None:
+        return _optional_state(
+            optional, "quarantined:readmission_decision_missing"
+        )
+    if not decision.disposition.admitted:
+        return _optional_state(optional, f"quarantined:{decision.reason_code}")
+    if (
+        decision.contract_fingerprint != optional.contract_fingerprint
+        or decision.adapter_id != optional.binding.adapter_token
+        or decision.profile_id != selection.optional_extension.profile_id
+    ):
+        return _optional_state(
+            optional, "quarantined:readmission_contract_mismatch"
+        )
+    return optional
+
+
+def _optional_contract_token(token: str, optional: Any) -> str:
+    """Fold observed optional outcomes into the concurrency token.
+
+    A catalog with none of the optional names keeps the stock token
+    byte-identical.
+    """
+
+    if all(state == "optional_absent" for _, state in optional.tools):
+        return token
+    return schema_fingerprint(
+        {
+            "catalog_contract_token": token,
+            "optional_outcomes": [list(item) for item in optional.tools],
+            "optional_contract_fingerprint": optional.contract_fingerprint,
+        }
+    )
+
+
 @dataclass(frozen=True)
 class _AdmittedRoute:
     entry: UpstreamToolPolicyEntry
@@ -721,6 +806,9 @@ class UpstreamReadGateway:
             "reviewed_policy_entry_count": 0,
             "reviewed_accounted_tool_count": 0,
             "reviewed_tool_accounting_valid": False,
+            "optional_tools": {},
+            "optional_reviewed_accounting_valid": False,
+            "optional_sibling_drift": [],
             "automatic_read_count": 0,
             "held_read_count": 0,
             "held_tools": [],
@@ -1078,6 +1166,22 @@ class UpstreamReadGateway:
                     else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                 ),
             )
+            # HAMCP-162: the optional reviewed reader is evaluated beside, not
+            # inside, stock accounting. Only compiled authority with an exact
+            # per-version binding and R4 descriptor match can admit it.
+            optional = evaluate_optional(
+                catalog.tools,
+                selected_release,
+                signed_selection=(
+                    readmission_selection is not None
+                    and readmission_selection.authority_source.value
+                    != "compiled_exact"
+                ),
+            )
+            evaluation = _account_optional(evaluation, optional)
+            optional_sibling_drift_records = optional_sibling_drift(
+                catalog.tools, optional.version
+            )
             if readmission_selection is not None:
                 observation = observation_for_catalog(
                     catalog,
@@ -1114,6 +1218,11 @@ class UpstreamReadGateway:
                     evaluation,
                     readmission_result.generation,
                 )
+                optional = _gate_optional_readmission(
+                    optional,
+                    readmission_selection,
+                    readmission_result.generation,
+                )
                 audit = self._readmission_coordinator.audit_projection(
                     readmission_result
                 )
@@ -1141,8 +1250,9 @@ class UpstreamReadGateway:
                 )[-8:]
             else:
                 generation = self._admission_generation + 1
-            candidate_contract_token = _catalog_contract_token(
-                catalog, evaluation
+            candidate_contract_token = _optional_contract_token(
+                _catalog_contract_token(catalog, evaluation),
+                optional,
             )
             if readmission_selection is not None:
                 candidate_contract_token = schema_fingerprint(
@@ -1348,6 +1458,158 @@ class UpstreamReadGateway:
                         "collision": exposed_name != entry.upstream_name,
                     }
                 )
+            if optional.admitted:
+                optional_entry = optional_policy_entry(optional.binding)
+                optional_tool = optional.observed_tool
+                optional_requirements = delegated_requirements(
+                    optional_entry.upstream_name
+                )
+                if optional_requirements != yaml_reader.CORE_REQUIREMENTS:
+                    # HAMCP-164: never publish a delegated read without its
+                    # exact reviewed Core mapping.
+                    optional = _optional_state(
+                        optional, "withheld:core_requirement_unmapped"
+                    )
+                elif self._core_runtime is not None:
+                    core_status = self._core_runtime.route_status(
+                        optional_requirements,
+                        delegated_tool=optional_entry.upstream_name,
+                        delegated_adapter_version=delegated_adapter_version,
+                    )
+                    observed_core_generation = core_status.get("generation")
+                    if core_route_generation_observed:
+                        core_route_generation_mixed = (
+                            core_route_generation_mixed
+                            or observed_core_generation
+                            != core_route_generation
+                        )
+                    else:
+                        core_route_generation = observed_core_generation
+                        core_route_generation_observed = True
+                    if not core_status["available"]:
+                        core_withheld.append(
+                            {
+                                "tool": optional_entry.upstream_name,
+                                "disposition": core_status["disposition"],
+                                "reason_codes": list(
+                                    core_status["reason_codes"]
+                                ),
+                            }
+                        )
+                        optional = _optional_state(
+                            optional, "withheld:core_unavailable"
+                        )
+            if optional.admitted:
+                exposed_name = optional_entry.exposed_name
+                if exposed_name in base_names or exposed_name in exposed:
+                    exposed_name = f"{ALIAS_PREFIX}{optional_entry.upstream_name}"
+                    if exposed_name in base_names or exposed_name in exposed:
+                        raise DashboardTransportError("schema_mismatch")
+                    collisions.append(
+                        {
+                            "upstream_name": optional_entry.upstream_name,
+                            "exposed_name": exposed_name,
+                        }
+                    )
+                dynamic_tools[exposed_name] = ReviewedUpstreamReadTool.build(
+                    gateway=self,
+                    entry=optional_entry,
+                    exposed_name=exposed_name,
+                    observed_tool=optional_tool,
+                    admission_generation=generation,
+                    contract_fingerprint=optional.contract_fingerprint,
+                )
+                candidate_route = _AdmittedRoute(
+                    entry=optional_entry,
+                    observed_tool=optional_tool,
+                    generation=generation,
+                    contract_fingerprint=optional.contract_fingerprint,
+                    runtime_description_fingerprint=(
+                        runtime_description_fingerprint(
+                            optional_tool.get("description")
+                        )
+                        or "invalid"
+                    ),
+                    runtime_annotation_fingerprint=(
+                        runtime_annotation_fingerprint(
+                            optional_tool.get("annotations")
+                        )
+                        or "invalid"
+                    ),
+                    runtime_output_schema_fingerprint=(
+                        _safe_schema_component_fingerprint(
+                            {
+                                "present": "outputSchema" in optional_tool,
+                                "value": optional_tool.get("outputSchema"),
+                            }
+                        )
+                        or "invalid"
+                    ),
+                    runtime_contract_fingerprint=(
+                        optional.binding.runtime_contract_fingerprint
+                    ),
+                    runtime_contract_field_fingerprints=(),
+                    runtime_contract_fingerprint_model=(
+                        optional.binding.runtime_contract_fingerprint_model
+                    ),
+                    server_version=catalog.server_version,
+                    adapter_version=delegated_adapter_version,
+                    protocol_version=catalog.protocol_version,
+                    profile_id=(
+                        readmission_selection.profile.profile_id
+                        if readmission_selection is not None
+                        else None
+                    ),
+                    adapter_id=(
+                        readmission_selection.profile.adapter_id
+                        if readmission_selection is not None
+                        else None
+                    ),
+                    authority_source=(
+                        readmission_selection.authority_source.value
+                        if readmission_selection is not None
+                        else "compiled_exact"
+                    ),
+                    authority_token=(
+                        readmission_selection.authority_token
+                        if readmission_selection is not None
+                        else None
+                    ),
+                    session_id=(
+                        observation.session_id
+                        if readmission_selection is not None
+                        else None
+                    ),
+                )
+                exposed[exposed_name] = (
+                    previous_exposed[exposed_name]
+                    if previous_exposed.get(exposed_name) == candidate_route
+                    else candidate_route
+                )
+                capabilities.append(
+                    {
+                        "tool": exposed_name,
+                        "upstream_tool": optional_entry.upstream_name,
+                        # The HAMCP-164 router recognizes a published
+                        # delegated read by this category and status; the
+                        # gateway acquires the exact Core mapping itself.
+                        "status": "delegated",
+                        "category": "upstream_read_gateway",
+                        "risk": "read",
+                        "operation_class": "automatic_read",
+                        "provider": PROVIDER_ID,
+                        "fallback": "none",
+                        "schema_fingerprint": (
+                            optional_entry.input_schema_fingerprint
+                        ),
+                        "contract_fingerprint": optional.contract_fingerprint,
+                        "admission_generation": generation,
+                        "collision": (
+                            exposed_name != optional_entry.upstream_name
+                        ),
+                        "optional": True,
+                    }
+                )
             held_canaries = self._build_held_canary_routes(
                 catalog=catalog,
                 policy=selected_policy,
@@ -1375,11 +1637,15 @@ class UpstreamReadGateway:
             full_admission = len(evaluation.matched) == (
                 selected_policy.classification_counts["automatic_read"]
             )
+            # The optional reader never changes stock accounting (HAMCP-162).
+            stock_exposed = any(
+                not is_yaml_adapter(route.entry) for route in exposed.values()
+            )
             compatibility_status = (
                 "exact"
                 if full_admission
                 else "partial"
-                if exposed
+                if stock_exposed
                 else "incompatible"
             )
             admission_status = (
@@ -1476,6 +1742,10 @@ class UpstreamReadGateway:
                     release=selected_release,
                     readmission_selection=readmission_selection,
                     core_withheld=tuple(core_withheld),
+                    optional=optional,
+                    optional_sibling_drift_records=(
+                        optional_sibling_drift_records
+                    ),
                 )
             replace_dynamic_upstream_capabilities(
                 self._dynamic_capabilities, self.health_snapshot()
@@ -1552,6 +1822,8 @@ class UpstreamReadGateway:
         release: ReviewedUpstreamRelease | None,
         readmission_selection: HaMcpAdmissionSelection | None,
         core_withheld: tuple[dict[str, Any], ...],
+        optional: Any,
+        optional_sibling_drift_records: tuple[tuple[str, str], ...] = (),
     ) -> None:
         """Publish one copy-on-write route generation under the state lock."""
 
@@ -1759,6 +2031,18 @@ class UpstreamReadGateway:
                         len(policy.tools) == len(catalog.tools)
                         and not evaluation.unreviewed
                     ),
+                    # HAMCP-162: stock accounting above is unchanged; the
+                    # optional reviewed tools are accounted separately.
+                    "optional_tools": dict(optional.tools),
+                    "optional_reviewed_accounting_valid": (
+                        len(policy.tools) + len(optional.accounted_names)
+                        == len(catalog.tools)
+                        and not evaluation.unreviewed
+                    ),
+                    "optional_sibling_drift": [
+                        {"tool": tool, "reason": reason}
+                        for tool, reason in optional_sibling_drift_records
+                    ],
                     "held_read_count": policy.classification_counts.get(
                         "held_for_canary", 0
                     ),
@@ -2775,7 +3059,13 @@ class UpstreamReadGateway:
                 )
             elif platform_stats_precheck:
                 raise ValueError("platform_stats_precheck_unbound")
-        except ValueError:
+            if is_yaml_adapter(policy_entry):
+                # The closed Engineering-built shape; caller keys are never
+                # forwarded (HAMCP-162 design section 3).
+                dispatch_arguments = yaml_reader.upstream_arguments(
+                    yaml_reader.validate_arguments(arguments)
+                )
+        except (ValueError, YamlReadRefusal):
             raise _GatewayFailure("argument_validation", dispatched=False) from None
         if transport is None:
             raise _GatewayFailure("not_configured", dispatched=False)
@@ -2885,8 +3175,18 @@ class UpstreamReadGateway:
                             else RUNTIME_CONTRACT_FINGERPRINT_MODEL_V1
                         ),
                     )
-                    live_contract_token = _catalog_contract_token(
-                        catalog, live_evaluation
+                    live_optional = evaluate_optional(
+                        catalog.tools,
+                        live_release,
+                        signed_selection=(
+                            live_selection is not None
+                            and live_selection.authority_source.value
+                            != "compiled_exact"
+                        ),
+                    )
+                    live_contract_token = _optional_contract_token(
+                        _catalog_contract_token(catalog, live_evaluation),
+                        live_optional,
                     )
                 except DashboardTransportError:
                     self._advance_live_observation_epoch()
@@ -2979,72 +3279,112 @@ class UpstreamReadGateway:
                     )
                     raise DashboardTransportError("schema_mismatch")
 
-                decision = _compare_tool_contract(
-                    policy_entry,
-                    targets[0],
-                    protocol_version=catalog.protocol_version,
-                    reviewed_runtime_description_fingerprint=(
-                        mapping.runtime_description_fingerprint
-                    ),
-                    reviewed_runtime_annotation_fingerprint=(
-                        mapping.runtime_annotation_fingerprint
-                    ),
-                    reviewed_runtime_output_schema_fingerprint=(
-                        mapping.runtime_output_schema_fingerprint
-                    ),
-                    reviewed_runtime_contract_fingerprint=(
-                        mapping.runtime_contract_fingerprint
-                    ),
-                    reviewed_runtime_contract_field_fingerprints=dict(
-                        mapping.runtime_contract_field_fingerprints
-                    ),
-                    runtime_contract_fingerprint_model=(
-                        mapping.runtime_contract_fingerprint_model
-                    ),
-                )
-                if (
-                    not decision.accepted
-                    or decision.expected_fingerprint
-                    != mapping.contract_fingerprint
-                ):
-                    self._advance_live_observation_epoch()
-                    live_contract_failure.update(
-                        {
-                            "disposition": "quarantine",
-                            "reason": (
-                                decision.reason
-                                or "runtime_contract_mismatch"
-                            ),
-                            "expected_fingerprint": (
-                                mapping.contract_fingerprint
-                            ),
-                            "observed_fingerprint": (
-                                decision.observed_fingerprint
-                            ),
-                            "expected_contract_fingerprint": (
-                                decision.expected_fingerprint
-                            ),
-                            "observed_contract_fingerprint": (
-                                decision.observed_fingerprint
-                            ),
-                            "expected_runtime_contract_fingerprint": (
-                                decision.expected_runtime_contract_fingerprint
-                            ),
-                            "observed_runtime_contract_fingerprint": (
-                                decision.observed_runtime_contract_fingerprint
-                            ),
-                            "runtime_contract_fingerprint_model": (
-                                decision.runtime_contract_fingerprint_model
-                            ),
-                            "runtime_contract_diff_fields": list(
-                                decision.runtime_contract_diff_fields
-                            ),
-                            "runtime_contract_diff_summary": (
-                                decision.runtime_contract_diff_summary
-                            ),
-                        }
+                if is_yaml_adapter(policy_entry):
+                    # HAMCP-162: the optional reader is revalidated by the
+                    # same R4 evaluation that admitted it, never by the stock
+                    # policy comparison.
+                    optional_binding = yaml_reader.ADAPTER_TOKENS.get(
+                        policy_entry.argument_restrictions[0]
                     )
-                    raise DashboardTransportError("schema_mismatch")
+                    if (
+                        optional_binding is None
+                        or optional_binding.version != mapping.server_version
+                        or not live_optional.admitted
+                        or live_optional.binding != optional_binding
+                        or live_optional.contract_fingerprint
+                        != mapping.contract_fingerprint
+                    ):
+                        self._advance_live_observation_epoch()
+                        live_status = live_optional.status
+                        live_contract_failure.update(
+                            {
+                                "disposition": "quarantine",
+                                "reason": (
+                                    live_status.partition(":")[2]
+                                    or live_status
+                                    if live_status != "admitted"
+                                    else "optional_binding_changed"
+                                ),
+                                "expected_fingerprint": (
+                                    mapping.contract_fingerprint
+                                ),
+                                "observed_fingerprint": (
+                                    yaml_reader.observed_contract_fingerprint(
+                                        targets[0], optional_binding
+                                    )
+                                    if optional_binding is not None
+                                    else "unknown"
+                                ),
+                            }
+                        )
+                        raise DashboardTransportError("schema_mismatch")
+                else:
+                    decision = _compare_tool_contract(
+                        policy_entry,
+                        targets[0],
+                        protocol_version=catalog.protocol_version,
+                        reviewed_runtime_description_fingerprint=(
+                            mapping.runtime_description_fingerprint
+                        ),
+                        reviewed_runtime_annotation_fingerprint=(
+                            mapping.runtime_annotation_fingerprint
+                        ),
+                        reviewed_runtime_output_schema_fingerprint=(
+                            mapping.runtime_output_schema_fingerprint
+                        ),
+                        reviewed_runtime_contract_fingerprint=(
+                            mapping.runtime_contract_fingerprint
+                        ),
+                        reviewed_runtime_contract_field_fingerprints=dict(
+                            mapping.runtime_contract_field_fingerprints
+                        ),
+                        runtime_contract_fingerprint_model=(
+                            mapping.runtime_contract_fingerprint_model
+                        ),
+                    )
+                    if (
+                        not decision.accepted
+                        or decision.expected_fingerprint
+                        != mapping.contract_fingerprint
+                    ):
+                        self._advance_live_observation_epoch()
+                        live_contract_failure.update(
+                            {
+                                "disposition": "quarantine",
+                                "reason": (
+                                    decision.reason
+                                    or "runtime_contract_mismatch"
+                                ),
+                                "expected_fingerprint": (
+                                    mapping.contract_fingerprint
+                                ),
+                                "observed_fingerprint": (
+                                    decision.observed_fingerprint
+                                ),
+                                "expected_contract_fingerprint": (
+                                    decision.expected_fingerprint
+                                ),
+                                "observed_contract_fingerprint": (
+                                    decision.observed_fingerprint
+                                ),
+                                "expected_runtime_contract_fingerprint": (
+                                    decision.expected_runtime_contract_fingerprint
+                                ),
+                                "observed_runtime_contract_fingerprint": (
+                                    decision.observed_runtime_contract_fingerprint
+                                ),
+                                "runtime_contract_fingerprint_model": (
+                                    decision.runtime_contract_fingerprint_model
+                                ),
+                                "runtime_contract_diff_fields": list(
+                                    decision.runtime_contract_diff_fields
+                                ),
+                                "runtime_contract_diff_summary": (
+                                    decision.runtime_contract_diff_summary
+                                ),
+                            }
+                        )
+                        raise DashboardTransportError("schema_mismatch")
 
                 self._record_matching_version_observation(
                     exposed_name=exposed_name,
@@ -3316,6 +3656,19 @@ class UpstreamReadGateway:
         try:
             if require_unmodified_script and policy_entry.upstream_name != "ha_config_get_script":
                 raise _GatewayFailure("prohibited_delegation", dispatched=False)
+            yaml_route = is_yaml_adapter(policy_entry)
+            yaml_path: str | None = None
+            if yaml_route:
+                # L1-L3 (HAMCP-162): refuse before route acquisition, Core
+                # acquisition and any upstream call.
+                try:
+                    yaml_path = yaml_reader.validate_arguments(arguments)
+                except YamlReadRefusal as refusal:
+                    raise _GatewayFailure(
+                        refusal.category,
+                        dispatched=False,
+                        public_code=refusal.code,
+                    ) from None
             try:
                 stats_precheck = platform_stats_precheck_required(
                     policy_entry, arguments
@@ -3382,6 +3735,14 @@ class UpstreamReadGateway:
                 require_parent_authority=require_unmodified_script,
             )
             route_was_admitted = True
+            if yaml_route and exchange.call_result.get("isError") is True:
+                refusal = yaml_reader.classify_error(exchange.call_result)
+                raise _GatewayFailure(
+                    refusal.category,
+                    dispatched=True,
+                    details=refusal.details,
+                    public_code=refusal.code,
+                )
             if exchange.call_result.get("isError") is True:
                 raise _GatewayFailure(
                     _classify_upstream_tool_error(
@@ -3391,131 +3752,169 @@ class UpstreamReadGateway:
                     ),
                     dispatched=True,
                 )
-            payload = _normalize_upstream_payload(
-                exchange.call_result,
-                server_version=mapping.adapter_version,
-                protocol_version=mapping.protocol_version,
-                upstream_tool=policy_entry.upstream_name,
-            )
-            if is_blueprint_adapter(policy_entry):
-                try:
-                    validate_blueprint_result(payload, arguments)
-                except ValueError:
-                    raise _GatewayFailure("invalid_response", dispatched=True) from None
-            if is_platform_adapter(policy_entry):
-                # Positive allowlist projection before the generic sanitizer.
-                try:
-                    validate_platform_result(policy_entry, payload)
-                    payload = project_platform_result(
-                        policy_entry, payload, arguments
-                    )
-                except StatsCapExceeded:
-                    raise _GatewayFailure(
-                        "response_too_large", dispatched=True
-                    ) from None
-                except PlatformResourceNotFound as exc:
-                    raise _GatewayFailure(
-                        "resource_not_found",
-                        dispatched=True,
-                        details=exc.details,
-                    ) from None
-                except ValueError:
-                    raise _GatewayFailure(
-                        "invalid_response", dispatched=True
-                    ) from None
             response_adapter = None
-            if policy_entry.upstream_name == "ha_get_device":
-                if telemetry is None:
-                    raise _GatewayFailure(
-                        "prohibited_delegation", dispatched=True
-                    )
-                lease = route_context.get("lease")
-                prior_core_authorizer = telemetry.core_dispatch_authorizer
-
-                def authorize_retained_core() -> bool:
-                    if prior_core_authorizer is not None:
-                        try:
-                            if prior_core_authorizer() is not True:
-                                return False
-                        except Exception:
-                            return False
-                    return bool(
-                        self._core_runtime is not None
-                        and isinstance(lease, _RouteLease)
-                        and lease.core_authority is not None
-                        and lease.core_commits is not None
-                        and self._core_runtime.revalidate(
-                            lease.core_authority,
-                            lease.core_commits,
-                        )
-                    )
-
-                def require_retained_core() -> None:
-                    if not telemetry.authorize_core_dispatch():
-                        raise HomeAssistantUnavailableError()
-
-                telemetry.core_dispatch_authorizer = authorize_retained_core
+            completeness_warnings: list[str] = []
+            if yaml_route:
                 try:
-                    payload, response_adapter = (
-                        await adapt_ha_get_device_composite_result(
-                            payload,
-                            arguments=arguments,
-                            upstream_version=mapping.adapter_version,
-                            rest_client=self._ha_rest_client,
-                            websocket_client=self._ha_websocket_client,
-                            authorize_core_read=require_retained_core,
+                    yaml_result = yaml_reader.project_success(
+                        exchange.call_result,
+                        yaml_path,
+                        known_secrets=self._known_secrets,
+                        max_string=max(2_000, min(response_limit // 2, 20_000)),
+                    )
+                except YamlReadRefusal as refusal:
+                    raise _GatewayFailure(
+                        refusal.category,
+                        dispatched=True,
+                        public_code=refusal.code,
+                    ) from None
+                if yaml_result.sanitization_failed:
+                    raise _GatewayFailure("sanitization_failed", dispatched=True)
+                data_value = yaml_result.envelope
+                encoded_size = len(
+                    json.dumps(
+                        data_value,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                        allow_nan=False,
+                        default=str,
+                    ).encode("utf-8")
+                )
+                if encoded_size + 8_000 > response_limit:
+                    raise _GatewayFailure("response_too_large", dispatched=True)
+                completeness = "partial" if yaml_result.partial else "complete"
+                bounded_truncation = False
+                # K7: every successful read carries the YAML 1.2 disclosure.
+                completeness_warnings = [yaml_reader.K7_WARNING]
+            else:
+                payload = _normalize_upstream_payload(
+                    exchange.call_result,
+                    server_version=mapping.adapter_version,
+                    protocol_version=mapping.protocol_version,
+                    upstream_tool=policy_entry.upstream_name,
+                )
+                if is_blueprint_adapter(policy_entry):
+                    try:
+                        validate_blueprint_result(payload, arguments)
+                    except ValueError:
+                        raise _GatewayFailure("invalid_response", dispatched=True) from None
+                if is_platform_adapter(policy_entry):
+                    # Positive allowlist projection before the generic sanitizer.
+                    try:
+                        validate_platform_result(policy_entry, payload)
+                        payload = project_platform_result(
+                            policy_entry, payload, arguments
                         )
-                    )
-                except HomeAssistantTimeoutError:
-                    raise _GatewayFailure("timeout", dispatched=True) from None
-                except HomeAssistantUnavailableError:
-                    raise _GatewayFailure(
-                        "connection_failed", dispatched=True
-                    ) from None
-                except AuthorizationError:
-                    raise _GatewayFailure(
-                        "authentication_failed", dispatched=True
-                    ) from None
-                except (
-                    CompositeDeviceCompatibilityError,
-                    HomeAssistantApiError,
-                ):
-                    raise _GatewayFailure(
-                        "invalid_response", dispatched=True
-                    ) from None
-                finally:
-                    telemetry.core_dispatch_authorizer = (
-                        prior_core_authorizer
-                    )
-            sanitation = sanitize_untrusted_data(
-                payload,
-                known_secrets=self._known_secrets,
-                max_string=max(2_000, min(response_limit // 2, 20_000)),
-            )
-            if sanitation.failed_closed:
-                raise _GatewayFailure("sanitization_failed", dispatched=True)
-            if require_unmodified_script and sanitation.redaction_applied:
-                raise _GatewayFailure("sanitization_failed", dispatched=True)
-            encoded_size = len(
-                json.dumps(
-                    sanitation.value,
-                    sort_keys=True,
-                    separators=(",", ":"),
-                    ensure_ascii=False,
-                    allow_nan=False,
-                    default=str,
-                ).encode("utf-8")
-            )
-            if encoded_size + 8_000 > response_limit:
-                raise _GatewayFailure("response_too_large", dispatched=True)
-            upstream_partial, completeness_warnings = _upstream_completeness(
-                policy_entry, sanitation.value
-            )
-            completeness = (
-                "partial"
-                if sanitation.truncated_field_count or upstream_partial
-                else "complete"
-            )
+                    except StatsCapExceeded:
+                        raise _GatewayFailure(
+                            "response_too_large", dispatched=True
+                        ) from None
+                    except PlatformResourceNotFound as exc:
+                        raise _GatewayFailure(
+                            "resource_not_found",
+                            dispatched=True,
+                            details=exc.details,
+                        ) from None
+                    except ValueError:
+                        raise _GatewayFailure(
+                            "invalid_response", dispatched=True
+                        ) from None
+                response_adapter = None
+                if policy_entry.upstream_name == "ha_get_device":
+                    if telemetry is None:
+                        raise _GatewayFailure(
+                            "prohibited_delegation", dispatched=True
+                        )
+                    lease = route_context.get("lease")
+                    prior_core_authorizer = telemetry.core_dispatch_authorizer
+
+                    def authorize_retained_core() -> bool:
+                        if prior_core_authorizer is not None:
+                            try:
+                                if prior_core_authorizer() is not True:
+                                    return False
+                            except Exception:
+                                return False
+                        return bool(
+                            self._core_runtime is not None
+                            and isinstance(lease, _RouteLease)
+                            and lease.core_authority is not None
+                            and lease.core_commits is not None
+                            and self._core_runtime.revalidate(
+                                lease.core_authority,
+                                lease.core_commits,
+                            )
+                        )
+
+                    def require_retained_core() -> None:
+                        if not telemetry.authorize_core_dispatch():
+                            raise HomeAssistantUnavailableError()
+
+                    telemetry.core_dispatch_authorizer = authorize_retained_core
+                    try:
+                        payload, response_adapter = (
+                            await adapt_ha_get_device_composite_result(
+                                payload,
+                                arguments=arguments,
+                                upstream_version=mapping.adapter_version,
+                                rest_client=self._ha_rest_client,
+                                websocket_client=self._ha_websocket_client,
+                                authorize_core_read=require_retained_core,
+                            )
+                        )
+                    except HomeAssistantTimeoutError:
+                        raise _GatewayFailure("timeout", dispatched=True) from None
+                    except HomeAssistantUnavailableError:
+                        raise _GatewayFailure(
+                            "connection_failed", dispatched=True
+                        ) from None
+                    except AuthorizationError:
+                        raise _GatewayFailure(
+                            "authentication_failed", dispatched=True
+                        ) from None
+                    except (
+                        CompositeDeviceCompatibilityError,
+                        HomeAssistantApiError,
+                    ):
+                        raise _GatewayFailure(
+                            "invalid_response", dispatched=True
+                        ) from None
+                    finally:
+                        telemetry.core_dispatch_authorizer = (
+                            prior_core_authorizer
+                        )
+                sanitation = sanitize_untrusted_data(
+                    payload,
+                    known_secrets=self._known_secrets,
+                    max_string=max(2_000, min(response_limit // 2, 20_000)),
+                )
+                if sanitation.failed_closed:
+                    raise _GatewayFailure("sanitization_failed", dispatched=True)
+                if require_unmodified_script and sanitation.redaction_applied:
+                    raise _GatewayFailure("sanitization_failed", dispatched=True)
+                encoded_size = len(
+                    json.dumps(
+                        sanitation.value,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                        allow_nan=False,
+                        default=str,
+                    ).encode("utf-8")
+                )
+                if encoded_size + 8_000 > response_limit:
+                    raise _GatewayFailure("response_too_large", dispatched=True)
+                upstream_partial, completeness_warnings = _upstream_completeness(
+                    policy_entry, sanitation.value
+                )
+                completeness = (
+                    "partial"
+                    if sanitation.truncated_field_count or upstream_partial
+                    else "complete"
+                )
+                data_value = sanitation.value
+                bounded_truncation = bool(sanitation.truncated_field_count)
             METRICS.record_provider_result(PROVIDER_ID, completeness, dispatched=True)
             publish_current_route = False
             with self._lock:
@@ -3537,7 +3936,7 @@ class UpstreamReadGateway:
                 telemetry.result_status = "partial" if completeness == "partial" else "success"
                 telemetry.completeness = completeness
             warnings = []
-            if sanitation.truncated_field_count:
+            if bounded_truncation:
                 warnings.append("The untrusted upstream response was safely bounded.")
             warnings.extend(completeness_warnings)
             if response_adapter is not None:
@@ -3562,7 +3961,7 @@ class UpstreamReadGateway:
             return SuccessResponse(
                 operation=exposed_name,
                 summary="Completed a reviewed pure-read operation through the upstream gateway.",
-                data=sanitation.value,
+                data=data_value,
                 warnings=warnings,
                 metadata=metadata,
                 timing=timing_since(started),
@@ -4347,6 +4746,9 @@ class UpstreamReadGateway:
                 "unreviewed_tools_truncated": False,
                 "observed_catalog_matches_reviewed_stock_fixture": False,
                 "blocked_tools": [],
+                "optional_tools": {},
+                "optional_reviewed_accounting_valid": False,
+                "optional_sibling_drift": [],
             }
         )
 
