@@ -419,10 +419,12 @@ class UpstreamToolPolicyEntry:
     def is_read_route(self) -> bool:
         from .providers.upstream_blueprint import is_blueprint_adapter
         from .providers.upstream_platform_reads import is_platform_adapter
+        from .providers.upstream_yaml_reader import is_yaml_adapter
         return (
             self.classification == "automatic_read"
             or is_blueprint_adapter(self)
             or is_platform_adapter(self)
+            or is_yaml_adapter(self)
         )
 
     @classmethod
@@ -1354,7 +1356,14 @@ def load_upstream_tool_policy(
     )
     from .providers.upstream_reads_8_6 import ADAPTER as READ_ADAPTER, SOURCE as READ_SOURCE, is_adapter
     from .providers.upstream_search_8_6 import ADAPTER as SEARCH_ADAPTER, is_search_entry
+    from .providers.upstream_yaml_reader import ADAPTER_TOKENS as YAML_ADAPTERS, OPTIONAL_NAMES
     for entry in entries:
+        # The optional YAML reader is binary-owned (HAMCP-162): a policy
+        # document can neither carry its adapter token nor review its names.
+        if entry.upstream_name in OPTIONAL_NAMES or any(
+            token in YAML_ADAPTERS for token in entry.argument_restrictions
+        ):
+            raise UpstreamToolPolicyError("policy_uncompiled_yaml_adapter")
         if SEARCH_ADAPTER in entry.argument_restrictions and (
             not is_search_entry(entry) or expected_version != "8.6.0"
             or expected_source_commit != READ_SOURCE

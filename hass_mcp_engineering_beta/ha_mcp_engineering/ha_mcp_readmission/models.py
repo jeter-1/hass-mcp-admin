@@ -261,19 +261,30 @@ class CapabilityContract:
     capability_id: str
     kind: CapabilityKind
     contract_fingerprint: str
+    # An optional contract (HAMCP-162) receives its own decision but never
+    # contributes to the surface aggregate. The key is emitted only when set,
+    # so every stock profile mapping and fingerprint is unchanged.
+    optional: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.kind, CapabilityKind):
             raise CompatibilityModelError("capability_kind_invalid")
         _safe_text(self.capability_id, code="capability_id_invalid")
         _digest(self.contract_fingerprint, code="contract_fingerprint_invalid")
+        if not isinstance(self.optional, bool):
+            raise CompatibilityModelError("capability_optional_invalid")
+        if self.optional and self.kind.write_capable:
+            raise CompatibilityModelError("capability_optional_invalid")
 
     def to_mapping(self) -> dict[str, Any]:
-        return {
+        mapping: dict[str, Any] = {
             "capability_id": self.capability_id,
             "kind": self.kind.value,
             "contract_fingerprint": self.contract_fingerprint,
         }
+        if self.optional:
+            mapping["optional"] = True
+        return mapping
 
 
 @dataclass(frozen=True)

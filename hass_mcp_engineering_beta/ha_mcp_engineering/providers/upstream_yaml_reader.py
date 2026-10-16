@@ -935,3 +935,514 @@ def project_success(
         partial=partial,
         sanitization_failed=sanitization_failed,
     )
+
+
+# ---------------------------------------------------------------------------
+# Optional reviewed-tool admission (design §5.2, owner decisions D2 and D7).
+#
+# Bindings are compiled from the D1 capture (docs/evidence/hamcp162). They are
+# never derived from a live observation: an observed descriptor can only
+# match a binding, never create or widen one.
+
+BINDING_MODEL = "hamcp162-optional-tool-binding-v1"
+RUNTIME_MODEL = "ha-mcp-operational-tool-descriptor-v2"
+ARGUMENT_CONSTRAINTS_ID = "hamcp162-yaml-fragment-read-arguments-v1"
+INPUT_SCHEMA_FINGERPRINT = (
+    "29c61932fef093a1c826aa150b9824724326fe38fb1d5e7fcbed5083d54f9b9a"
+)
+TOP_LEVEL_FIELDS = (
+    "_meta", "annotations", "description", "inputSchema", "name",
+    "outputSchema", "title",
+)
+_GET_YAML_RUNTIME = (
+    "75d623c93573aee91b9d78723f71ac1de30c688efda78bb48033dd62a196d007"
+)
+_SAME = "f31334156d7e5209dfc90f4f42f19e829fa93f75741665019395b045576b09a5"
+_TITLE_FP = "b5a58f2039cce78043c7e31875567abf2a0b4114ea7880071aaa09ab791cbce8"
+# Per-component hashes for reason codes and diagnostics only. They never
+# decide admission (R4).
+_GET_YAML_DIAGNOSTICS = {
+    "/_meta": "f535d29daa8306a1a10d58af032e7b650ca8ac8760558638c5515ed4af64bb55",
+    "/_meta/fastmcp/tags": "dfe77884725873810db0f7b4def09c1f98b92f9d7fea790137b93b5745b00e1e",
+    "/_meta/ha_mcp/llm_api_exposed": _SAME,
+    "/_meta/ha_mcp/pinned": _SAME,
+    "/_meta/ha_mcp/policy/deployment": "2e2c0ec055a41040c4442e9937319e1dce57868490940812a7cdeecaaebe9e9c",
+    "/_meta/ha_mcp/policy/enabled": _SAME,
+    "/_meta/ha_mcp/policy/live": _SAME,
+    "/_meta/ha_mcp/policy/rules": "811b653edaf0d2809f19593484e4555c471f955271369b69cdeb3262696470e6",
+    "/annotations": "3b57d136bd405ccf36a181b0c7aeecd323a5544ecff2e199c88e6d1aff54b950",
+    "/annotations/title": _TITLE_FP,
+    "/description": "2e4d072d031700da738a26ea8578aabfca6b8477ec607505238c950eb8893674",
+    "/execution": "f35a0cf0ef896a2236d8419cac8a2d85bfb33d12859af555f9cf7825dc785109",
+    "/inputSchema": INPUT_SCHEMA_FINGERPRINT,
+    "/outputSchema": "7751ca245b89acd7d145f5c7b68cb80458b8d38bfe36a965a332f56bc2525a8c",
+    "/title": _TITLE_FP,
+}
+DIAGNOSTIC_POINTERS = tuple(sorted(_GET_YAML_DIAGNOSTICS))
+# The four dynamic policy pointers are projected by the v2 model; a
+# difference there is never named as the drift reason.
+_POLICY_POINTERS = frozenset(
+    pointer for pointer in DIAGNOSTIC_POINTERS
+    if pointer.startswith("/_meta/ha_mcp/policy/")
+)
+_DIAGNOSTIC_REASONS = (
+    ("/inputSchema", "optional_input_schema_changed"),
+    ("/outputSchema", "optional_output_schema_changed"),
+    ("/description", "optional_description_changed"),
+    ("/annotations", "optional_annotations_changed"),
+    ("/title", "optional_title_changed"),
+    ("/execution", "optional_execution_changed"),
+    ("/_meta", "optional_meta_changed"),
+)
+
+
+@dataclass(frozen=True)
+class OptionalToolBinding:
+    version: str
+    tool_name: str
+    classification: str
+    adapter_token: str | None
+    runtime_contract_fingerprint: str
+    runtime_contract_fingerprint_model: str
+    top_level_fields: tuple[str, ...]
+    source_commit: str
+    capture_resource: str
+    capture_sha256: str
+    binding_model: str = BINDING_MODEL
+
+
+_CAPTURES = {
+    "8.4.3": (
+        "eac7a3aa7063432e9af17e7d7726040e909c7b8f",
+        "docs/evidence/hamcp162/captures/catalog-8.4.3-A.json",
+        "d5d6a5393dae9ed420d906e6b7e63be5ade7ca3ceed56e64f7f63aec50210303",
+    ),
+    "8.5.0": (
+        "311d6dc273fb4e9a5b8cde0de15f69472a64fe44",
+        "docs/evidence/hamcp162/captures/catalog-8.5.0-A.json",
+        "4321a9e0f609084d7e1fe9885a767907c5ad3bfea0712186b4a4585eeb3d31f1",
+    ),
+}
+_SIBLING_RUNTIME = {
+    ("8.4.3", "ha_list_files"): "71e51bafd62d0837b7f2056b7a8bd007aa20b0c8c42c169981a8af1796c0e083",
+    ("8.5.0", "ha_list_files"): "71e51bafd62d0837b7f2056b7a8bd007aa20b0c8c42c169981a8af1796c0e083",
+    ("8.4.3", "ha_read_file"): "97459dd33eca15079f42cce074485c821752fad85c0c6a3f545544e42adecae1",
+    ("8.5.0", "ha_read_file"): "7627857f25d581e75c41bed2cad2ddf9b41839b69b8942c033c150c17cbf92a6",
+}
+
+
+def _binding(version: str, tool: str, runtime: str, token: str | None) -> OptionalToolBinding:
+    commit, resource, digest = _CAPTURES[version]
+    return OptionalToolBinding(
+        version=version,
+        tool_name=tool,
+        classification=(
+            "mixed_or_requires_wrapper" if tool == TOOL_NAME else "prohibited"
+        ),
+        adapter_token=token,
+        runtime_contract_fingerprint=runtime,
+        runtime_contract_fingerprint_model=RUNTIME_MODEL,
+        top_level_fields=TOP_LEVEL_FIELDS,
+        source_commit=commit,
+        capture_resource=resource,
+        capture_sha256=digest,
+    )
+
+
+OPTIONAL_TOOL_BINDINGS: dict[tuple[str, str], OptionalToolBinding] = {
+    **{
+        (version, TOOL_NAME): _binding(
+            version, TOOL_NAME, _GET_YAML_RUNTIME,
+            f"ha-mcp-{version}-yaml-fragment-read-v1",
+        )
+        for version in _CAPTURES
+    },
+    **{
+        (version, tool): _binding(version, tool, runtime, None)
+        for (version, tool), runtime in _SIBLING_RUNTIME.items()
+    },
+}
+ADAPTER_TOKENS = {
+    binding.adapter_token: binding
+    for binding in OPTIONAL_TOOL_BINDINGS.values()
+    if binding.adapter_token is not None
+}
+# One explicit disposition for every registry version (HAMCP-184 rule): no
+# default exists, and a disposition is never inferred from provider
+# dispositions. 8.6.0 stays held until its HOLD lifts (D7).
+OPTIONAL_TOOL_DISPOSITIONS: dict[str, str] = {
+    "7.14.1": "held",
+    "7.14.2": "held",
+    "8.0.0": "held",
+    "8.1.0": "held",
+    "8.1.1": "held",
+    "8.2.0": "held",
+    "8.4.1": "held",
+    "8.4.3": "admitted",
+    "8.5.0": "admitted",
+    "8.6.0": "held",
+}
+OPTIONAL_NAMES = (TOOL_NAME,) + SIBLING_TOOLS
+
+
+class OptionalBindingError(ValueError):
+    """The compiled optional-tool tables disagree with the release registry."""
+
+
+def validate_bindings_against_registry(registry: Any) -> None:
+    """Load assertions: exact version coverage and matching models."""
+
+    versions = {release.version for release in registry.releases}
+    if set(OPTIONAL_TOOL_DISPOSITIONS) != versions:
+        raise OptionalBindingError("optional_disposition_versions_mismatch")
+    if any(
+        value not in {"admitted", "held"}
+        for value in OPTIONAL_TOOL_DISPOSITIONS.values()
+    ):
+        raise OptionalBindingError("optional_disposition_invalid")
+    by_version = {release.version: release for release in registry.releases}
+    for (version, tool), binding in OPTIONAL_TOOL_BINDINGS.items():
+        release = by_version.get(version)
+        if release is None or binding.version != version or binding.tool_name != tool:
+            raise OptionalBindingError("optional_binding_version_unknown")
+        if binding.runtime_contract_fingerprint_model != (
+            release.runtime_contract_fingerprint_model
+        ):
+            raise OptionalBindingError("optional_binding_model_mismatch")
+        if binding.binding_model != BINDING_MODEL:
+            raise OptionalBindingError("optional_binding_model_invalid")
+    for version, disposition in OPTIONAL_TOOL_DISPOSITIONS.items():
+        if disposition == "admitted" and (version, TOOL_NAME) not in OPTIONAL_TOOL_BINDINGS:
+            raise OptionalBindingError("optional_admitted_binding_absent")
+
+
+def binding_contract_fingerprint(binding: OptionalToolBinding, disposition: str) -> str:
+    from ..ha_mcp_readmission.models import evidence_fingerprint
+
+    return evidence_fingerprint(
+        _contract_material(
+            binding,
+            runtime=binding.runtime_contract_fingerprint,
+            top_level_fields=binding.top_level_fields,
+            disposition=disposition,
+        )
+    )
+
+
+def descriptor_diagnostic_fingerprints(tool: Any) -> dict[str, str]:
+    from ..upstream_tool_policy import schema_fingerprint
+
+    values: dict[str, str] = {}
+    for pointer in DIAGNOSTIC_POINTERS:
+        current: Any = tool
+        present = True
+        for name in pointer.lstrip("/").split("/"):
+            if not isinstance(current, dict) or name not in current:
+                present = False
+                current = None
+                break
+            current = current[name]
+        try:
+            values[pointer] = schema_fingerprint(
+                {"present": present, "value": current if present else None}
+            )
+        except (TypeError, ValueError, UnicodeError, OverflowError):
+            values[pointer] = "invalid"
+    return values
+
+
+def _observed_runtime(tool: dict[str, Any], model: str) -> str | None:
+    from ..upstream_tool_policy import runtime_contract_fingerprint
+
+    try:
+        return runtime_contract_fingerprint(tool, model=model)
+    except Exception:
+        return None
+
+
+@dataclass(frozen=True)
+class OptionalMatch:
+    status: str  # "matched" | "absent" | "drift"
+    reason: str | None
+    observed_runtime_contract_fingerprint: str | None
+
+
+def match_descriptor(tools: Any, binding: OptionalToolBinding) -> OptionalMatch:
+    """R4: exactly one occurrence, equal top-level keys, equal v2 fingerprint."""
+
+    occurrences = [
+        item for item in tuple(tools)
+        if isinstance(item, dict) and item.get("name") == binding.tool_name
+    ]
+    if not occurrences:
+        return OptionalMatch("absent", None, None)
+    if len(occurrences) > 1:
+        return OptionalMatch("drift", "optional_descriptor_duplicate", None)
+    tool = occurrences[0]
+    observed = _observed_runtime(tool, binding.runtime_contract_fingerprint_model)
+    if tuple(sorted(str(key) for key in tool)) != binding.top_level_fields:
+        return OptionalMatch("drift", "optional_descriptor_fields_changed", observed)
+    if observed == binding.runtime_contract_fingerprint:
+        return OptionalMatch("matched", None, observed)
+    reason = "optional_descriptor_contract_changed"
+    if binding.tool_name == TOOL_NAME:
+        diagnostics = descriptor_diagnostic_fingerprints(tool)
+        changed = {
+            pointer for pointer in DIAGNOSTIC_POINTERS
+            if pointer not in _POLICY_POINTERS
+            and diagnostics.get(pointer) != _GET_YAML_DIAGNOSTICS[pointer]
+        }
+        for prefix, code in _DIAGNOSTIC_REASONS:
+            if any(pointer == prefix or pointer.startswith(prefix + "/") for pointer in changed):
+                reason = code
+                break
+    return OptionalMatch("drift", reason, observed)
+
+
+@dataclass(frozen=True)
+class OptionalAdmission:
+    """The evaluated optional-tool state for one catalog and release.
+
+    ``status`` is one of the ``server_info`` values: ``admitted``,
+    ``optional_absent``, ``quarantined:<reason>``, ``held``,
+    ``withheld:<reason>`` or ``prohibited_withheld`` (siblings).
+    """
+
+    version: str | None
+    tools: tuple[tuple[str, str], ...]
+    binding: OptionalToolBinding | None
+    contract_fingerprint: str | None
+    observed_tool: dict[str, Any] | None
+    accounted_names: tuple[str, ...]
+
+    @property
+    def status(self) -> str:
+        return dict(self.tools)[TOOL_NAME]
+
+    @property
+    def admitted(self) -> bool:
+        return self.status == "admitted" and self.binding is not None
+
+
+def withheld_reason(release: Any, *, signed_selection: bool) -> str | None:
+    """Admission rules 1-4; ``None`` means the extension may be attached."""
+
+    if release is None:
+        return "optional_binding_absent"
+    if signed_selection:
+        return "optional_signed_selection"
+    if release.provider_disposition("read_gateway") != "admitted":
+        return "optional_disposition_held"
+    disposition = OPTIONAL_TOOL_DISPOSITIONS.get(release.version)
+    if disposition != "admitted":
+        return "optional_disposition_held"
+    binding = OPTIONAL_TOOL_BINDINGS.get((release.version, TOOL_NAME))
+    if binding is None:
+        return "optional_binding_absent"
+    if binding.source_commit != release.source_commit:
+        return "optional_source_commit_mismatch"
+    return None
+
+
+def evaluate_optional(
+    tools: Any,
+    release: Any,
+    *,
+    signed_selection: bool = False,
+) -> OptionalAdmission:
+    """Evaluate the optional reader and its prohibited siblings.
+
+    The result never touches stock accounting. Only an exact R4 match under
+    an admitted disposition and binding yields ``admitted``.
+    """
+
+    version = getattr(release, "version", None)
+    observed_names = {
+        item.get("name") for item in tuple(tools) if isinstance(item, dict)
+    }
+    states: dict[str, str] = {}
+    accounted: list[str] = []
+    for sibling in SIBLING_TOOLS:
+        states[sibling] = (
+            "prohibited_withheld" if sibling in observed_names else "optional_absent"
+        )
+        if (version, sibling) in OPTIONAL_TOOL_BINDINGS and sibling in observed_names:
+            accounted.append(sibling)
+    binding = OPTIONAL_TOOL_BINDINGS.get((version, TOOL_NAME))
+    if binding is not None and TOOL_NAME in observed_names:
+        accounted.append(TOOL_NAME)
+    observed_tool = None
+    contract = None
+    if TOOL_NAME not in observed_names:
+        states[TOOL_NAME] = "optional_absent"
+    else:
+        reason = withheld_reason(release, signed_selection=signed_selection)
+        if reason == "optional_disposition_held":
+            states[TOOL_NAME] = "held"
+        elif reason is not None:
+            states[TOOL_NAME] = f"withheld:{reason}"
+        else:
+            match = match_descriptor(tools, binding)
+            if match.status == "matched":
+                states[TOOL_NAME] = "admitted"
+                observed_tool = next(
+                    item for item in tuple(tools)
+                    if isinstance(item, dict) and item.get("name") == TOOL_NAME
+                )
+                contract = binding_contract_fingerprint(binding, "admitted")
+            else:
+                states[TOOL_NAME] = f"quarantined:{match.reason}"
+    return OptionalAdmission(
+        version=version,
+        tools=tuple(sorted(states.items())),
+        binding=binding if states[TOOL_NAME] == "admitted" else None,
+        contract_fingerprint=contract,
+        observed_tool=observed_tool,
+        accounted_names=tuple(sorted(accounted)),
+    )
+
+
+def sibling_drift(tools: Any, version: str | None) -> tuple[tuple[str, str], ...]:
+    """Report drift in a prohibited sibling. It never changes admission."""
+
+    drift = []
+    for sibling in SIBLING_TOOLS:
+        binding = OPTIONAL_TOOL_BINDINGS.get((version, sibling))
+        if binding is None:
+            continue
+        match = match_descriptor(tools, binding)
+        if match.status == "drift":
+            drift.append((sibling, match.reason))
+    return tuple(drift)
+
+
+def is_yaml_adapter(entry: Any) -> bool:
+    restrictions = getattr(entry, "argument_restrictions", ())
+    binding = ADAPTER_TOKENS.get(restrictions[0]) if len(restrictions) == 1 else None
+    return (
+        binding is not None
+        and entry.upstream_name == TOOL_NAME
+        and entry.exposed_name == TOOL_NAME
+        and entry.classification == "mixed_or_requires_wrapper"
+        and entry.input_schema_fingerprint == INPUT_SCHEMA_FINGERPRINT
+        and entry.reviewed_annotations.read_only
+        and not entry.reviewed_annotations.destructive
+    )
+
+
+def synthesized_policy_entry(binding: OptionalToolBinding) -> Any:
+    """The binary-owned route entry for an admitted binding.
+
+    It is built at runtime and never added to a policy document, so stock
+    policy digests, counts and order fingerprints are unchanged.
+    """
+
+    from ..upstream_tool_policy import ReviewedToolAnnotations, UpstreamToolPolicyEntry
+
+    if binding.tool_name != TOOL_NAME or binding.adapter_token is None:
+        raise OptionalBindingError("optional_binding_not_routable")
+    return UpstreamToolPolicyEntry(
+        upstream_name=TOOL_NAME,
+        exposed_name=TOOL_NAME,
+        description=DESCRIPTION,
+        classification="mixed_or_requires_wrapper",
+        input_schema_fingerprint=INPUT_SCHEMA_FINGERPRINT,
+        reason=(
+            "HAMCP-162 optional reviewed tool: configuration.yaml fragment "
+            "read through a closed Engineering-built argument shape."
+        ),
+        collision_status="none",
+        collision_policy="alias_upstream_on_collision",
+        argument_restrictions=(binding.adapter_token,),
+        response_limit_bytes=60_000,
+        timeout_seconds=60.0,
+        source_evidence=(binding.capture_resource, binding.capture_sha256),
+        reviewed_annotations=ReviewedToolAnnotations(
+            read_only=True,
+            destructive=False,
+            idempotent=True,
+            open_world=False,
+        ),
+    )
+
+
+def _contract_material(
+    binding: OptionalToolBinding,
+    *,
+    runtime: str | None,
+    top_level_fields: tuple[str, ...],
+    disposition: str,
+) -> dict[str, Any]:
+    return {
+        "model": binding.binding_model,
+        "tool_name": binding.tool_name,
+        "classification": binding.classification,
+        "adapter_token": binding.adapter_token,
+        "argument_constraints_id": ARGUMENT_CONSTRAINTS_ID,
+        "runtime_contract_fingerprint": runtime,
+        "runtime_contract_fingerprint_model": (
+            binding.runtime_contract_fingerprint_model
+        ),
+        "top_level_fields": list(top_level_fields),
+        "version": binding.version,
+        "source_commit": binding.source_commit,
+        "disposition": disposition,
+    }
+
+
+def observed_contract_fingerprint(
+    tool: Any,
+    binding: OptionalToolBinding,
+) -> str:
+    """The optional contract fingerprint computed from one observed descriptor.
+
+    It equals ``binding_contract_fingerprint(binding, "admitted")`` exactly
+    when the descriptor's top-level fields and v2 runtime fingerprint match.
+    """
+
+    from ..ha_mcp_readmission.models import evidence_fingerprint
+
+    if not isinstance(tool, dict):
+        return evidence_fingerprint({"invalid_optional_descriptor": True})
+    return evidence_fingerprint(
+        _contract_material(
+            binding,
+            runtime=_observed_runtime(
+                tool, binding.runtime_contract_fingerprint_model
+            ),
+            top_level_fields=tuple(sorted(str(key) for key in tool)),
+            disposition="admitted",
+        )
+    )
+
+
+def extension_profile(release: Any, binding: OptionalToolBinding) -> Any:
+    """The optional extension profile for a ``compiled_exact`` selection."""
+
+    from ..ha_mcp_readmission.models import (
+        CapabilityContract,
+        CapabilityKind,
+        CapabilityProfile,
+        UpstreamSurface,
+    )
+
+    contract = binding_contract_fingerprint(binding, "admitted")
+    return CapabilityProfile(
+        profile_id=(
+            f"ha-mcp-optional-yaml-{binding.version}-"
+            f"{contract.removeprefix('sha256:')[:16]}"
+        ),
+        profile_version=1,
+        surface=UpstreamSurface.HA_MCP,
+        adapter_id=binding.adapter_token,
+        expected_identity=release.server_name,
+        supported_protocols=release.allowed_protocol_versions,
+        capabilities=(
+            CapabilityContract(
+                capability_id=TOOL_NAME,
+                kind=CapabilityKind.ORDINARY_READ,
+                contract_fingerprint=contract,
+                optional=True,
+            ),
+        ),
+    )
