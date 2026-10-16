@@ -2,7 +2,7 @@
 
 Date: 2026-07-10
 
-## Optional reviewed YAML configuration reader (2.4.1-beta.14, HAMCP-162)
+## Optional reviewed YAML configuration reader (2.4.1-beta.15, HAMCP-162)
 
 `ha_config_get_yaml` is a delegated, read-only, closed Engineering wrapper
 over ha-mcp's tool of the same name. It reads one mapping-key path of
@@ -26,7 +26,7 @@ Engineering writes, service calls or physical execution. The one accepted
 dependency (K1) is that the first call may make the ha-mcp component call
 `POST ha_mcp_tools/get_caller_token` and persist the admin caller token. See the
 [design](docs/HAMCP_162_YAML_READER_DESIGN.md) and the
-[beta.14 notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md).
+[beta.15 notes](docs/V2_4_1_BETA15_RELEASE_NOTES.md).
 
 ## Source-only Alarmo inspector addition (2026-09-27)
 
