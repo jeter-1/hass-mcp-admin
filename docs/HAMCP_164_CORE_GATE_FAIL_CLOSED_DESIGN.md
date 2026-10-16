@@ -342,14 +342,15 @@ existing harness tests that use synthetic names on a runtime-less gateway
 
 ### Mutations
 
-Each mutation was applied to a working copy, run against this module and
-`tests.test_hamcp069a_entity_metadata_readmission` (39 tests), then restored
-(byte-compared):
+Each mutation was applied to a detached worktree of `73bdae9` and run against
+this module and `tests.test_hamcp069a_entity_metadata_readmission` (40 tests;
+unmutated baseline OK). The files were then restored and the worktree was
+removed:
 
 | Mutation | Result | Log |
 | --- | --- | --- |
 | A: restore skip-on-empty (gateway refusal disabled) | FAILED (errors=92) | `/home/josh/.cache/hamcp164-mutation-a-skip-on-empty.log` |
-| B: prefix allowlist (`startswith`) | FAILED (failures=33, errors=33) | `/home/josh/.cache/hamcp164-mutation-b-prefix-allowlist.log` |
+| B: prefix allowlist (`startswith`) | FAILED (failures=49, errors=49) | `/home/josh/.cache/hamcp164-mutation-b-prefix-allowlist.log` |
 | C: wildcard allowlist (`fnmatchcase`) | FAILED (failures=5, errors=5) | `/home/josh/.cache/hamcp164-mutation-c-wildcard-allowlist.log` |
 
 ## 7. Telemetry truthfulness
