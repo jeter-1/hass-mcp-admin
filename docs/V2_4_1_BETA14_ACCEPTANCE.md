@@ -44,8 +44,8 @@ The review needs a security section covering:
 - the L4/L5 redaction rules A, B, C′, R10 and R11, and the default-off
   reference-marker exemption by registry identity only (H2);
 - node truncation before redaction (H2, owner direction superseding design
-  section 6.3), and the final pass of every client-visible field through the
-  pipeline (H1);
+  sections 4 and 8.1), and the final pass of every client-visible field
+  through the pipeline (H1);
 - the explicit per-version dispositions with no default;
 - the complete-descriptor (R4) binding;
 - the generation and dispatch lease (R5), and exclusion from the stock

@@ -16,8 +16,8 @@ reload, restart, deletion or fallback path is reachable, and Engineering
 makes no service call. The one accepted exception is the K1 caller-token
 bootstrap: the first call may make the ha-mcp component call
 `POST ha_mcp_tools/get_caller_token` and persist the admin caller token (see
-**K1 dependency** below). Only `ha_config_get_yaml` is exposed. `ha_list_files` and `ha_read_file` stay
-reviewed and never exposed.
+**K1 dependency** below). Only `ha_config_get_yaml` is exposed.
+`ha_list_files` and `ha_read_file` stay reviewed and never exposed.
 
 The healthy catalog grows from 87 to **88 tools: 59 native and 29 delegated
 reads**.
@@ -51,12 +51,12 @@ the first segment the value tree would redact.
 
 **Truncation runs before redaction (H2, owner direction 2026-10-16).** The
 4,000-node cap applies to the decoded upstream tree first; redaction then
-judges exactly the kept shapes. This supersedes design section 6.3 ("redaction
-runs before truncation"). Nodes beyond the cap are never returned, so they are
-neither examined nor counted. Reference markers are trusted only by the
-identity of a marker the same read minted. A mapping shaped like a rendered
-marker, from upstream data or from truncation, is withheld as
-`reference_marker_collision`.
+judges exactly the kept shapes. This supersedes design sections 4 and 8.1
+("redaction runs before truncation"). Nodes beyond the cap are never
+returned, so they are neither examined nor counted. Reference markers are
+trusted only by the identity of a marker the same read minted. A mapping
+shaped like a rendered marker, from upstream data or from truncation, is
+withheld as `reference_marker_collision`.
 
 **How values are protected.**
 - `!secret NAME` and `!env_var NAME` become typed reference-name markers,
