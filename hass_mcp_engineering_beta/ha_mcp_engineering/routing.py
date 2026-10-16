@@ -26,8 +26,12 @@ from .errors import ErrorCode, error_definition
 from .fan.audit import request_summary as _fan_request_summary
 from .power.service import request_summary as _power_request_summary
 from .ha_core_readmission.routes import (
+    CORE_REQUIREMENT_UNMAPPED,
+    CORE_ROUTE_DELEGATED,
+    CORE_ROUTE_UNMAPPED,
+    StaticCoreRoute,
     StaticToolTargetRefused,
-    static_tool_requirements,
+    static_tool_core_route,
     static_tool_target,
 )
 from .logging_config import get_logger, log_event
@@ -51,6 +55,27 @@ UPSTREAM_VERSION_AUDIT_PATTERN = re.compile(
     r"(?:0|[1-9][0-9]{0,3})(?:-[0-9A-Za-z.-]{1,64})?"
     r"(?:\+[0-9A-Za-z.-]{1,64})?$"
 )
+
+
+_DELEGATED_CORE_ROUTE = StaticCoreRoute(CORE_ROUTE_DELEGATED)
+
+
+def _gateway_core_route(
+    tool_name: str,
+    parameters: dict,
+    capability: dict,
+) -> StaticCoreRoute:
+    """Return the gateway Core admission decision for one tools/call name."""
+
+    if (
+        capability.get("category") == "upstream_read_gateway"
+        and capability.get("status") == "delegated"
+    ):
+        # A currently published delegated read.  Its exact Core requirements
+        # are acquired by the upstream read gateway before dispatch, and its
+        # catalog entry is withheld when that authority is unavailable.
+        return _DELEGATED_CORE_ROUTE
+    return static_tool_core_route(tool_name, parameters)
 
 
 def _delegated_audit_attribution(
@@ -292,13 +317,14 @@ class AuthenticatedMcpGateway:
         rpc_id,
         rendered: str,
         request_id: str,
+        is_error: bool = False,
     ) -> None:
         payload = {
             "jsonrpc": "2.0",
             "id": rpc_id,
             "result": {
                 "content": [{"type": "text", "text": rendered}],
-                "isError": False,
+                "isError": is_error,
             },
         }
         body = (
@@ -432,6 +458,7 @@ class AuthenticatedMcpGateway:
         capability = {}
         core_authority = None
         core_commits = None
+        core_unmapped_refused = False
         response_capture = bytearray()
         authenticated_request_accepted = False
         try:
@@ -588,7 +615,8 @@ class AuthenticatedMcpGateway:
             forwarded = dict(scope)
             forwarded["path"] = path[len(self.prefix):] or "/"
             if forwarded["path"] in {"/mcp", "/mcp/"}:
-                # MCP 1.28 registers the configured streamable route exactly.
+                # The pinned MCP SDK (1.30.0) registers the configured
+                # streamable route exactly.
                 # Normalize both accepted external forms to that internal path
                 # so Starlette never emits a client-visible slash redirect.
                 forwarded["path"] = "/mcp"
@@ -708,10 +736,74 @@ class AuthenticatedMcpGateway:
                         request_id=request_id,
                     )
                     return
-            core_requirements = (
-                static_tool_requirements(tool_name, parameters)
+            core_route = (
+                _gateway_core_route(tool_name, parameters, capability)
                 if isinstance(tool_name, str)
-                else ()
+                else None
+            )
+            if (
+                self._core_runtime is not None
+                and core_route is not None
+                and core_route.classification == CORE_ROUTE_UNMAPPED
+            ):
+                # Core independence is never implied by a missing mapping.
+                # Refuse before Core acquisition and before the application,
+                # so no provider, upstream, or Home Assistant call occurs.
+                # Production always installs the Core runtime; a gateway
+                # composed without one enforces no Core gate at all.
+                definition = error_definition(
+                    ErrorCode.UNSUPPORTED_OPERATION
+                )
+                telemetry.error_code = ErrorCode.UNSUPPORTED_OPERATION.value
+                telemetry.result_status = "failure"
+                telemetry.completeness = "failed"
+                telemetry.response_status = 200
+                failure = FailureResponse(
+                    operation=tool_name[:128],
+                    error="CoreRequirementUnmapped",
+                    error_code=telemetry.error_code,
+                    message=(
+                        "The tool has no reviewed Core requirement mapping "
+                        "and is refused."
+                    ),
+                    details={
+                        "reason": CORE_REQUIREMENT_UNMAPPED,
+                        "reason_code": CORE_REQUIREMENT_UNMAPPED,
+                        "core_authority_acquired": False,
+                        "provider_dispatch_occurred": (
+                            telemetry.provider_dispatch_count > 0
+                        ),
+                        "upstream_attempted": (
+                            telemetry.ha_request_count > 0
+                            or telemetry.upstream_request_count > 0
+                        ),
+                        "home_assistant_request_count": (
+                            telemetry.ha_request_count
+                        ),
+                        "upstream_request_count": (
+                            telemetry.upstream_request_count
+                        ),
+                    },
+                    retryable=definition.retryable,
+                    timing=Timing(total_ms=telemetry.total_duration_ms),
+                    request_id=request_id,
+                )
+                core_unmapped_refused = True
+                # An unmapped name is not a callable tool, so the result keeps
+                # the client-visible isError=true that the MCP SDK gave an
+                # unknown tool, with the structured refusal as its content.
+                await self._respond_mcp_tool_result(
+                    send,
+                    rpc_id=rpc.get("id"),
+                    rendered=failure.to_json(
+                        self.settings.response_size_limit
+                    ),
+                    request_id=request_id,
+                    is_error=True,
+                )
+                return
+            core_requirements = (
+                core_route.requirements if core_route is not None else ()
             )
             if self._core_runtime is not None and core_requirements:
                 try:
@@ -880,7 +972,21 @@ class AuthenticatedMcpGateway:
                     if key.endswith("_id") and isinstance(value, (str, int))
                 }
                 audit_parameters = parameters
-                if tool_name not in {"get_integration_inspection", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
+                if core_unmapped_refused:
+                    # The name has no reviewed audit shape and its arguments
+                    # are untrusted.  Retain only bounded field names and the
+                    # refusal fact.
+                    audit_parameters = {
+                        "core_route": "unmapped",
+                        "reason_code": CORE_REQUIREMENT_UNMAPPED,
+                        "argument_fields": sorted(
+                            str(key)[:64] for key in parameters
+                        )[:32],
+                        "provider_dispatch_occurred": False,
+                        "upstream_attempted": False,
+                    }
+                    resource_ids = {}
+                elif tool_name not in {"get_integration_inspection", "capture_automation_baseline", "dashboard_integrity_analysis"} and telemetry.error_code in {
                     ErrorCode.INVALID_REQUEST.value,
                     ErrorCode.VALIDATION_FAILURE.value,
                 }:

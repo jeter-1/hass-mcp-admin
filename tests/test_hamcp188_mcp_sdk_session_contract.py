@@ -3,6 +3,14 @@
 The gateway attributes only JSON-object bodies, so JSON-RPC batch refusal is
 owned by the SDK transport; these tests prove a batch never dispatches in
 either transport mode while the equivalent single request still does.
+
+Run unchanged on the previous source and pin (mcp 1.28.1), exactly four tests
+in this module fail: the two stateful session-retention checks (a batch opening
+leaves an orphan session; refused openings consume capacity), the explicit
+version-pin assertion in the bounds test, and the cross-origin redirect
+negative control. Only the first two are behavioral proof of the CVE fix; the
+pin assertion is an expectation, and the redirect check pins a separate 1.30.0
+narrowing.
 """
 
 import asyncio
