@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import Any, Mapping
 
 from ..entity_ids import validate_entity_id
 from .probe_profiles import (
@@ -124,9 +126,6 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "get_history": ("core.basic_rest_read",),
     "get_logbook": ("core.basic_rest_read",),
     "get_error_log": ("core.basic_websocket_read",),
-    # Supervisor journal diagnostics remain available while Core is down.
-    # Their fixed native provider does not consume any Core API authority.
-    "get_core_log_history": (),
     "list_automations": ("core.automation_configuration_read",),
     "get_automation_config": ("core.automation_configuration_read",),
     "list_devices": ("core.direct_device_registry_read",),
@@ -170,6 +169,167 @@ STATIC_TOOL_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "incident_correlation": ("core.dependency_helper_planning",),
     "handoff_generation": ("core.dependency_helper_planning",),
 }
+
+# Tools whose requirements depend only on whether the caller asked for a Home
+# Assistant check.  ``check_ha=False`` reports local Engineering state and
+# makes no Core call; every other invocation is mapped.
+CONDITIONAL_CORE_STATIC_TOOLS = frozenset({"server_info", "get_server_health"})
+
+CORE_INDEPENDENT_LOCAL_STATE = "engineering_local_state"
+CORE_INDEPENDENT_SUPERVISOR_ONLY = "supervisor_api_only"
+CORE_INDEPENDENT_MOUNTED_SOURCE = "mounted_read_only_source"
+CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY = "downstream_core_authority"
+CORE_INDEPENDENCE_BASES = frozenset(
+    {
+        CORE_INDEPENDENT_LOCAL_STATE,
+        CORE_INDEPENDENT_SUPERVISOR_ONLY,
+        CORE_INDEPENDENT_MOUNTED_SOURCE,
+        CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+    }
+)
+
+
+@dataclass(frozen=True)
+class CoreIndependence:
+    """The reviewed reason a static tool acquires no gateway Core lease."""
+
+    basis: str
+    justification: str
+
+
+# The closed, reviewed set of static tools that bypass gateway Core
+# acquisition.  Lookup is exact-name only: no prefix, wildcard, or pattern
+# matching.  A static tool absent from both this allowlist and the requirement
+# map is refused by the gateway; Core independence is never implied by a
+# missing entry.  Adding an entry requires a code change and a pinned-table
+# test update.
+CORE_INDEPENDENT_STATIC_TOOLS: Mapping[str, CoreIndependence] = MappingProxyType(
+    {
+        "get_core_log_history": CoreIndependence(
+            CORE_INDEPENDENT_SUPERVISOR_ONLY,
+            "Reads the Core journal through the fixed Supervisor API provider "
+            "and must remain available while Core is down; it consumes no "
+            "Core API authority.",
+        ),
+        "get_blueprint": CoreIndependence(
+            CORE_INDEPENDENT_MOUNTED_SOURCE,
+            "Reads bounded blueprint YAML from the read-only mounted "
+            "homeassistant_config directory; it makes no Core API call.",
+        ),
+        "list_capabilities": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Returns the in-process Engineering capability catalog; it makes "
+            "no Home Assistant call.",
+        ),
+        "get_audit_log": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Reads the local Engineering audit log; it makes no Home "
+            "Assistant call.",
+        ),
+        "get_change_plan": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Reads one persisted Engineering change plan; it makes no Home "
+            "Assistant call.",
+        ),
+        "list_change_plans": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Lists persisted Engineering change plans; it makes no Home "
+            "Assistant call.",
+        ),
+        "get_execution_task": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Reads one persisted Engineering execution task; a typed fan or "
+            "power task reconciles through its own typed Core authority, and "
+            "no other path makes a Home Assistant call.",
+        ),
+        "list_execution_tasks": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Lists persisted Engineering execution tasks; it makes no Home "
+            "Assistant call.",
+        ),
+        "cancel_execution_task": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Cancels a persisted Engineering execution task and must remain "
+            "available while Core is unavailable; it dispatches no Home "
+            "Assistant change.",
+        ),
+        "approve_change_plan": CoreIndependence(
+            CORE_INDEPENDENT_LOCAL_STATE,
+            "Records the external approval request for a persisted plan hash; "
+            "the request itself makes no Home Assistant call. The queued "
+            "approval notification is delivered later by its own worker, "
+            "outside this request and outside the gateway Core lease.",
+        ),
+        "apply_change_plan": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "Each governed step acquires its exact F3 Core authority "
+            "(f3_requirements) immediately before dispatch; a gateway lease "
+            "would not bind the per-step target.",
+        ),
+        "rollback_change": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "Rollback executes through the governed F3 path, which acquires "
+            "its exact Core authority per step before dispatch.",
+        ),
+        "reverify_configuration_task": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "Read-back verification acquires its exact F3 Core authority "
+            "before each observation and holds the result when unavailable.",
+        ),
+        "control_fan": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "The typed fan provider is configured with the Core runtime and "
+            "acquires its own exact-target authority before dispatch.",
+        ),
+        "control_power": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "The typed power provider is configured with the Core runtime and "
+            "acquires its own exact-target authority before dispatch.",
+        ),
+        "run_held_read_canary": CoreIndependence(
+            CORE_INDEPENDENT_DOWNSTREAM_AUTHORITY,
+            "The upstream read gateway acquires the held route's delegated "
+            "Core requirements before dispatch and refuses when unavailable.",
+        ),
+    }
+)
+
+CORE_ROUTE_MAPPED = "mapped"
+CORE_ROUTE_INDEPENDENT = "core_independent"
+# A published delegated read: the upstream read gateway acquires its exact
+# DELEGATED_CORE_REQUIREMENTS before dispatch and withholds it when Core
+# authority is unavailable.
+CORE_ROUTE_DELEGATED = "delegated"
+CORE_ROUTE_UNMAPPED = "unmapped"
+CORE_REQUIREMENT_UNMAPPED = "core_requirement_unmapped"
+
+
+def _validate_static_core_routes() -> None:
+    """Refuse to import an ambiguous or open Core route table."""
+
+    empty = sorted(
+        name for name, values in STATIC_TOOL_CORE_REQUIREMENTS.items()
+        if not values
+    )
+    if empty:
+        raise RuntimeError(f"Static Core requirements must be non-empty: {empty}")
+    overlap = sorted(
+        set(CORE_INDEPENDENT_STATIC_TOOLS)
+        & (set(STATIC_TOOL_CORE_REQUIREMENTS) | CONDITIONAL_CORE_STATIC_TOOLS)
+    )
+    if overlap:
+        raise RuntimeError(f"Core-independent tools are also mapped: {overlap}")
+    for name, independence in CORE_INDEPENDENT_STATIC_TOOLS.items():
+        if (
+            not name
+            or any(character in name for character in "*?[]")
+            or independence.basis not in CORE_INDEPENDENCE_BASES
+            or not independence.justification
+        ):
+            raise RuntimeError(f"Invalid Core-independent entry: {name!r}")
+
+
+_validate_static_core_routes()
 
 
 def delegated_requirements(tool_name: str) -> tuple[str, ...]:
@@ -251,6 +411,34 @@ def static_tool_requirements(
     return tuple(sorted(set(requirements)))
 
 
+@dataclass(frozen=True)
+class StaticCoreRoute:
+    """The gateway's Core admission decision for one static tool call."""
+
+    classification: str
+    requirements: tuple[str, ...] = ()
+
+
+def static_tool_core_route(
+    tool_name: str,
+    arguments: Any = None,
+) -> StaticCoreRoute:
+    """Classify one static tool call as mapped, Core-independent, or unmapped.
+
+    An unmapped tool is never treated as Core-independent; the gateway refuses
+    it before any provider call.
+    """
+
+    if tool_name in CORE_INDEPENDENT_STATIC_TOOLS:
+        return StaticCoreRoute(CORE_ROUTE_INDEPENDENT)
+    requirements = static_tool_requirements(tool_name, arguments)
+    if requirements:
+        return StaticCoreRoute(CORE_ROUTE_MAPPED, requirements)
+    if tool_name in CONDITIONAL_CORE_STATIC_TOOLS:
+        return StaticCoreRoute(CORE_ROUTE_INDEPENDENT)
+    return StaticCoreRoute(CORE_ROUTE_UNMAPPED)
+
+
 STATIC_TARGET_INVALID_ENTITY_ID = "entity_metadata_invalid_entity_id"
 
 
@@ -325,8 +513,17 @@ def f3_requirements(prepared: Any) -> tuple[str, ...]:
 
 
 __all__ = [
+    "CONDITIONAL_CORE_STATIC_TOOLS",
     "CORE_2026_9_DEVICE_ADAPTER_RELEASES",
     "CORE_2026_9_RELEASES",
+    "CORE_INDEPENDENCE_BASES",
+    "CORE_INDEPENDENT_STATIC_TOOLS",
+    "CORE_REQUIREMENT_UNMAPPED",
+    "CORE_ROUTE_DELEGATED",
+    "CORE_ROUTE_INDEPENDENT",
+    "CORE_ROUTE_MAPPED",
+    "CORE_ROUTE_UNMAPPED",
+    "CoreIndependence",
     "DELEGATED_CORE_REQUIREMENTS",
     "DEVICE_DEPENDENT_DELEGATED_TOOLS",
     "STATIC_TOOL_CORE_REQUIREMENTS",
@@ -334,7 +531,9 @@ __all__ = [
     "delegated_provider_compatibility",
     "f3_requirements",
     "STATIC_TARGET_INVALID_ENTITY_ID",
+    "StaticCoreRoute",
     "StaticToolTargetRefused",
+    "static_tool_core_route",
     "static_tool_requirements",
     "static_tool_target",
 ]

@@ -66,14 +66,17 @@ Engineering adapts none of these. Each is disclosed so Josh can accept it.
 5. **SDK session cap, 10,000, 503.** Engineering's 1,024 cap is reached first.
 6. **Outbound client: redirects stay on the same origin.** Every SDK
    Streamable HTTP client that Engineering opens to ha-mcp follows a redirect
-   only when it stays on the endpoint's origin and keeps the method (307/308
-   for POST). It ignores `follow_redirects`. This covers the dashboard read
+   only when it keeps the method (307/308 for POST), adds no userinfo, and
+   either stays on the endpoint's origin (scheme, host and port) or is a
+   same-host, default-port HTTP→HTTPS upgrade. It ignores `follow_redirects`. This covers the dashboard read
    (`clients/mcp.py`), the delegated reads (`clients/upstream_read.py`) and
    dashboard analysis (`clients/dashboard_analysis.py`).
    - 1.28.1's default client followed every redirect, including one to another
      origin, and re-sent the request body there.
-   - On 1.30.0 a cross-origin redirect fails as a refusal Engineering
-     classifies as `upstream_error`.
+   - On 1.30.0 a cross-origin redirect (another host or port, a downgrade,
+     or added userinfo) fails as a refusal Engineering classifies as
+     `upstream_error`. The SDK's same-host default-port HTTP→HTTPS upgrade is
+     the one permitted scheme change.
    - Dashboard analysis's fenced transport still refuses any URL other than
      the exact endpoint.
 7. **Outbound client output-schema validation** resolves `$ref` only within
