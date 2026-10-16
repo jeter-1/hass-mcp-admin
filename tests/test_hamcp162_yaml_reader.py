@@ -567,6 +567,19 @@ class ReferenceMarkerTests(unittest.TestCase):
         result = sanitize_untrusted_data({"broker": altered}, preserve_reference_markers=True)
         self.assertNotIsInstance(result.value["broker"], ReferenceMarker)
         self.assertNotIn("bad name q7", json.dumps(result.value))
+        # The exemption is by exact type only: a dict shaped like a marker is
+        # ordinary data and is sanitized exactly as with the opt-in off.
+        for forged in ({"secret_ref": "Bearer SYNTHETIC_q7_abcdefghijklmnop"},
+                       {"env_var_ref": {"password": "SYNTHETIC_q7"}, "default_redacted": True},
+                       {"secret_ref": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGljc2lnbmF0dXJlX3E3"}):
+            for where in ("top", "nested"):
+                value = forged if where == "top" else {"broker": forged}
+                with self.subTest(forged=forged, where=where):
+                    on = sanitize_untrusted_data(value, preserve_reference_markers=True)
+                    off = sanitize_untrusted_data(value)
+                    self.assertEqual(on.value, off.value)
+                    self.assertTrue(on.redaction_applied)
+                    self.assertNotIn("SYNTHETIC_q7", json.dumps(on.value))
         marker = ReferenceMarker(kind="secret", name="off_name_q7", default_redacted=False)
         result = sanitize_untrusted_data({"broker": marker})
         self.assertEqual(result.value["broker"], "[REDACTED:reference_marker]")
@@ -785,6 +798,47 @@ class ConnectionTextTests(unittest.TestCase):
             self.assertEqual(self.at("sqlite:////config/session.db", path), redacted)
         self.assertEqual(out({"db_url": "!secret recorder_db_url"}, "recorder"),
                          {"db_url": {"secret_ref": "recorder_db_url"}})
+
+    def test_r11_layers_reject_independently(self):
+        # The full-string match and the explicit control-character check each
+        # reject on their own (design §2.2 R11, §8.2), so neither can mask a
+        # weakened other.
+        newline = "sqlite:///x.db\n"
+        self.assertFalse(y.sqlite_visible(newline, newline, 0))
+        with patch.object(y, "_SQLITE_FORBIDDEN", y.re.compile("(?!)")):
+            self.assertFalse(y.sqlite_visible(newline, newline, 0))
+            self.assertTrue(y.sqlite_visible("sqlite:///x.db", "sqlite:///x.db", 0))
+        widened = y.re.compile(r"sqlite:///[a-z0-9_./\s-]+")
+        with patch.object(y, "_SQLITE", widened):
+            for raw in (newline, "sqlite:///x\r.db", "sqlite:///x .db", "sqlite:///x\x7f.db"):
+                with self.subTest(raw=raw):
+                    self.assertFalse(y.sqlite_visible(raw, raw, 0))
+
+    def test_lists_under_connection_keys_are_replaced_whole(self):
+        # Rule B replaces a list under a connection-shaped key; it never walks
+        # it, so a safe SQLite element does not become visible.
+        safe = "sqlite:////config/home-assistant_v2.db"
+        self.assertEqual(out({"db_url": [safe]}, "recorder"), {"db_url": CONNSTR})
+        self.assertEqual(out([safe, "mysql://db.local/ha"], "recorder.db_url"), CONNSTR)
+        self.assertEqual(out({"db_url": []}, "recorder"), {"db_url": CONNSTR})
+        result = project({"db_url": [safe, safe]}, "recorder")
+        self.assertEqual(result.envelope["value"], {"db_url": CONNSTR})
+        self.assertEqual(result.redacted_field_count, 1)
+
+    def test_each_credential_word_alone_redacts_value_text(self):
+        words = ("pwd", "passw", "secret", "token", "apikey", "api_key", "api-key", "auth",
+                 "credential", "private", "bearer", "cookie", "session")
+        self.assertEqual(len(words), 13)
+        for word in words:
+            raw = f"note {word} here"
+            # The case holds no other trigger: no other word, no C'3 label.
+            self.assertEqual([w for w in words if w in raw], [word])
+            self.assertIsNone(y._DELIMITED_TOKEN.search(raw))
+            for path in self.PATHS:
+                with self.subTest(word=word, path=path):
+                    self.assertEqual(self.at(raw, path), CONNSTR)
+            with self.subTest(word=word, scheme=True):
+                self.assertEqual(out(f"{word}://host/x"), CONNSTR)
 
     def test_useful_values_stay_visible_raw(self):
         for raw in ("mysql://db.local:3306/ha?charset=utf8mb4", "postgresql://db.local/ha?sslmode=require",

@@ -71,6 +71,7 @@ VERSIONS = ("8.4.3", "8.5.0")
 TOOL = y.TOOL_NAME
 OPTIONAL = (TOOL,) + y.SIBLING_TOOLS
 SESSION = "synthetic-ha-mcp-session"
+STOCK_UPSTREAM = {"8.4.3": 78, "8.5.0": 77}  # K9 stock reviewed catalogs
 STOCK_PUBLIC = 87
 
 
@@ -298,6 +299,9 @@ class AdmissionTests(Harness):
                                      {name: "optional_absent" for name in OPTIONAL})
                     self.assertEqual(health["quarantine_reason_counts"], {})
                     self.assertEqual(health["optional_sibling_drift"], [])
+                    self.assertEqual(health["upstream_advertised_tool_count"], STOCK_UPSTREAM[version])
+                    self.assertEqual(health["reviewed_policy_entry_count"], STOCK_UPSTREAM[version])
+                    self.assertTrue(health["reviewed_tool_accounting_valid"])
                     self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(self.exposed(gateway)), STOCK_PUBLIC)
                     self.assertNotIn(TOOL, self.exposed(gateway))
                     self.assertEqual(transport.sent, [])
@@ -314,6 +318,15 @@ class AdmissionTests(Harness):
                         "ha_read_file": "prohibited_withheld",
                     })
                     self.assertTrue(health["optional_reviewed_accounting_valid"])
+                    # K9: 78 -> 81 (8.4.3) and 77 -> 80 (8.5.0). The stock
+                    # field keeps its meaning (design §5.2, D3): the three
+                    # optional names are outside the policy, so it reports
+                    # false exactly as it did before HAMCP-162; the optional
+                    # field above accounts for them.
+                    self.assertEqual(health["upstream_advertised_tool_count"], STOCK_UPSTREAM[version] + 3)
+                    self.assertEqual(health["reviewed_policy_entry_count"], STOCK_UPSTREAM[version])
+                    self.assertFalse(health["reviewed_tool_accounting_valid"])
+                    self.assertEqual(health["optional_sibling_drift"], [])
                     self.assertEqual(self.exposed(gateway), stock | {TOOL})
                     self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + len(self.exposed(gateway)), STOCK_PUBLIC + 1)
                     self.assertEqual(transport.sent, [])
