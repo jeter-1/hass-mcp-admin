@@ -23,8 +23,9 @@ exactly one of:
 
 The refusal happens before Core acquisition and before any provider, upstream
 or Home Assistant call:
-- error `CoreRequirementUnmapped`, error code `unsupported_operation`, not
-  retryable;
+- an MCP tool result with `isError: true` (as for an unknown tool on
+  beta.12), carrying error `CoreRequirementUnmapped`, error code
+  `unsupported_operation`, not retryable;
 - reason `core_requirement_unmapped`;
 - `core_authority_acquired: false`;
 - zero-attempt telemetry: no provider dispatch, no upstream or Home Assistant

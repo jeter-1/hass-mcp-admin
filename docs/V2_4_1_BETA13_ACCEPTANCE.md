@@ -70,7 +70,8 @@ tree. It must prove each of the following.
 
 **Unmapped refusal (offline proof).**
 - A synthetic unmapped tool is refused as `CoreRequirementUnmapped` /
-  `unsupported_operation` / `core_requirement_unmapped`, not retryable, with:
+  `unsupported_operation` / `core_requirement_unmapped`, not retryable, in an
+  MCP tool result with `isError: true`, with:
   - zero MCP application calls;
   - zero Core acquisitions;
   - zero Home Assistant and upstream request counts.
@@ -90,7 +91,8 @@ tree. It must prove each of the following.
 **Mutation checks.** Each of the following fails a test:
 - restoring skip-on-empty (no unmapped refusal);
 - prefix-matching the allowlist;
-- wildcard-matching the allowlist.
+- wildcard-matching the allowlist;
+- emitting the unmapped refusal with `isError: false`.
 
 ## 2. Publication and recovery preparation
 

@@ -317,13 +317,14 @@ class AuthenticatedMcpGateway:
         rpc_id,
         rendered: str,
         request_id: str,
+        is_error: bool = False,
     ) -> None:
         payload = {
             "jsonrpc": "2.0",
             "id": rpc_id,
             "result": {
                 "content": [{"type": "text", "text": rendered}],
-                "isError": False,
+                "isError": is_error,
             },
         }
         body = (
@@ -788,6 +789,9 @@ class AuthenticatedMcpGateway:
                     request_id=request_id,
                 )
                 core_unmapped_refused = True
+                # An unmapped name is not a callable tool, so the result keeps
+                # the client-visible isError=true that the MCP SDK gave an
+                # unknown tool, with the structured refusal as its content.
                 await self._respond_mcp_tool_result(
                     send,
                     rpc_id=rpc.get("id"),
@@ -795,6 +799,7 @@ class AuthenticatedMcpGateway:
                         self.settings.response_size_limit
                     ),
                     request_id=request_id,
+                    is_error=True,
                 )
                 return
             core_requirements = (

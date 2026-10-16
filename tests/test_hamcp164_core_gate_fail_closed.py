@@ -199,7 +199,7 @@ async def call(gateway, tool_name, arguments: dict | None = None) -> bytes:
     return await core9.Core20269StaticRouteTests._call(gateway, tool_name, arguments)
 
 
-def failure_payload(body: bytes) -> dict:
+def tool_result(body: bytes) -> dict:
     text = body.decode("utf-8")
     if text.startswith("event:"):
         text = next(
@@ -207,7 +207,11 @@ def failure_payload(body: bytes) -> dict:
             for line in text.splitlines()
             if line.startswith("data:")
         )
-    result = json.loads(text)["result"]
+    return json.loads(text)["result"]
+
+
+def failure_payload(body: bytes) -> dict:
+    result = tool_result(body)
     if isinstance(result.get("structuredContent"), dict):
         return result["structuredContent"]
     return json.loads(result["content"][0]["text"])
@@ -335,6 +339,10 @@ class GatewayFailClosedTests(unittest.IsolatedAsyncioTestCase):
         replace_dynamic_upstream_capabilities((), {})
 
     def assertUnmappedRefusal(self, body: bytes, app, core) -> dict:
+        # An unmapped name is not a callable tool: like the MCP SDK's unknown
+        # tool result, the refusal sets isError=true (the exact-image read
+        # gateway acceptance requires it for ha_call_service).
+        self.assertIs(tool_result(body)["isError"], True)
         payload = failure_payload(body)
         self.assertEqual(payload["error"], "CoreRequirementUnmapped")
         self.assertEqual(payload["error_code"], "unsupported_operation")

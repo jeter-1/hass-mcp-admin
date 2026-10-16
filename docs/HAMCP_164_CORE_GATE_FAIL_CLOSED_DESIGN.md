@@ -239,8 +239,19 @@ an `unmapped` name **before** Core acquisition and **before** the MCP
 application. The application owns every provider, upstream and Home Assistant
 interaction, so no such call can occur.
 
-The response is an MCP tool result (HTTP 200, `isError: false`, `success:
-false`), matching the existing gateway Core refusals:
+The response is an MCP tool result (HTTP 200, `success: false`) with
+**`isError: true`**. The structured body matches the existing gateway Core
+refusals, which use `isError: false` and are unchanged.
+
+An unmapped name is not a callable tool, so the refusal keeps the
+client-visible `isError: true` that the MCP SDK's `Unknown tool` result gave it
+on beta.12. The exact-image read-gateway CI acceptance requires that flag for
+the unadmitted `ha_call_service` (`scripts/exact_image_read_gateway_acceptance.py`
+:1605). The first CI run of this branch (38856772351) failed that check while
+the refusal used `isError: false`. The test module now pins the flag, and
+mutation D (flag reverted) fails it.
+
+The body fields are:
 
 | Field | Value |
 | --- | --- |
@@ -352,6 +363,7 @@ removed:
 | A: restore skip-on-empty (gateway refusal disabled) | FAILED (errors=92) | `/home/josh/.cache/hamcp164-mutation-a-skip-on-empty.log` |
 | B: prefix allowlist (`startswith`) | FAILED (failures=49, errors=49) | `/home/josh/.cache/hamcp164-mutation-b-prefix-allowlist.log` |
 | C: wildcard allowlist (`fnmatchcase`) | FAILED (failures=5, errors=5) | `/home/josh/.cache/hamcp164-mutation-c-wildcard-allowlist.log` |
+| D: refusal `isError` reverted to `false` (this module only, 20 tests) | FAILED (failures=92) | `/home/josh/.cache/hamcp164-mutation-d-iserror-false.log` |
 
 ## 7. Telemetry truthfulness
 
