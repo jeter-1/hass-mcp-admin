@@ -1,10 +1,20 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.13** makes the Core gateway fail closed for any tool
-with no Core requirement mapping (HAMCP-164): such a tool is refused as
-`core_requirement_unmapped` before any provider, upstream or Home Assistant
-call, and Core independence comes only from a closed, justified allowlist of
-exact tool names. No working tool changes behavior. It builds on beta.12's
+Engineering **2.4.1-beta.14** adds one optional reviewed delegated read,
+`ha_config_get_yaml` (HAMCP-162). It reads one mapping-key path of
+`configuration.yaml` only:
+- every other file, including `secrets.yaml`, and every credential-shaped
+  path is refused before any upstream call;
+- `!secret`/`!env_var` become reference-name markers;
+- credential-shaped keys, connection strings and credential text are redacted
+  whole;
+- every result discloses that values are ha-mcp's YAML 1.2 parse.
+
+It is admitted only on the exact reviewed ha-mcp 8.4.3 and 8.5.0
+descriptors. `ha_list_files` and `ha_read_file` stay unexposed.
+
+It builds on beta.13, which makes the Core gateway fail closed for any tool
+with no Core requirement mapping (HAMCP-164). It also builds on beta.12's
 audit hardening (HAMCP-184): provider
 dispositions fail closed and every compiled ha-mcp release declares them
 explicitly (ha-mcp 8.2.0 backup and lifecycle become held; all other
@@ -21,11 +31,11 @@ beta.7's delegated platform reads (`ha_get_system_health`, `ha_get_app` and
 deep-health correction, beta.4's dormant governed
 entity-registry metadata administration (`create_entity_metadata_plan`) and
 beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
-The healthy catalog is **87 tools: 59 native and 28 admitted delegated
-reads**. The Core profiles, probe and signed fingerprints, storage
+The healthy catalog is **88 tools: 59 native and 29 admitted delegated
+reads** (87 and 28 where ha-mcp is not 8.4.3 or 8.5.0). The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA13_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA13_ACCEPTANCE.md).
+See the [release notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA14_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -109,14 +119,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.13 release notes](docs/V2_4_1_BETA13_RELEASE_NOTES.md) and
-[2.4.1-beta.13 acceptance contract](docs/V2_4_1_BETA13_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.14 release notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md) and
+[2.4.1-beta.14 acceptance contract](docs/V2_4_1_BETA14_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.13 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.14 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
@@ -159,7 +169,8 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**59 static tools plus 28 delegated reads, 87 total**. The Core inventory represents
+**59 static tools plus 28 delegated reads, 87 total**, plus the optional reviewed
+`ha_config_get_yaml` on 8.4.3 and 8.5.0 only (**88 total**). The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

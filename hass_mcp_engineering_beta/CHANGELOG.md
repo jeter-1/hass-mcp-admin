@@ -1,5 +1,43 @@
 # Changelog
 
+## 2.4.1-beta.14 - Optional reviewed YAML configuration reader (HAMCP-162)
+
+Builds on 2.4.1-beta.13's fail-closed Core gateway.
+
+- Add the delegated read-only tool `ha_config_get_yaml` for one mapping-key
+  path of `configuration.yaml`. Engineering sends a fixed upstream shape
+  (`include_content: false`, `include_parsed: true`).
+- Refuse every other file (including `secrets.yaml`, `packages/`,
+  `configuration.yml` and case variants) and every credential-shaped path
+  before route acquisition, Core acquisition and any upstream call.
+- Redact on absolute canonical key paths:
+  - credential-shaped keys and containers;
+  - connection-shaped values, except one strict safe SQLite shape;
+  - credential text: userinfo, 13 words and the `pass`/`key` token rule;
+  - percent-encoding up to four rounds, NFKC and casefold;
+  - PEM, opaque blobs and the existing sanitizer patterns.
+
+  `!secret`/`!env_var` become typed reference-name markers. Values and
+  `!env_var` defaults are never returned, and `!include` is never followed.
+- Disclose on every success the YAML 1.2 parse (K7), key conversion and
+  collapse (K5) and best-effort redaction (D12). Disclose the first-call
+  admin caller-token dependency (K1) in the description.
+- Map upstream errors to fixed codes, with no upstream text. HTTP 400 is
+  reported as "upstream validation failed or component unavailable" (K2);
+  non-UTF-8 and other 500 errors as "upstream read failed" (K4).
+- Admit the tool as optional only on the exact complete-descriptor binding
+  for ha-mcp 8.4.3 (78 -> 81 upstream tools) and 8.5.0 (77 -> 80):
+  - explicit dispositions for every registry version, with no default;
+  - excluded from the stock order fingerprint, aggregate admission and signed
+    selections;
+  - a drift, removal or disposition change between admission and dispatch
+    gives zero dispatch;
+  - Core mapping: basic REST and WebSocket reads.
+- `ha_list_files` and `ha_read_file` stay reviewed and never exposed. The
+  catalog grows from 87 to 88 tools (29 delegated).
+- Preserve signed registries, HOLD, support window, policy JSON, persisted
+  formats, workflows and stable v1.
+
 ## 2.4.1-beta.13 - Core gateway fails closed for unmapped tools (HAMCP-164)
 
 Builds on 2.4.1-beta.12's audit hardening.

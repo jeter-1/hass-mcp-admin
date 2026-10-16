@@ -2,6 +2,30 @@
 
 Date: 2026-07-10
 
+## Optional reviewed YAML configuration reader (2.4.1-beta.14, HAMCP-162)
+
+`ha_config_get_yaml` is a delegated, read-only, closed Engineering wrapper
+over ha-mcp's tool of the same name. It reads one mapping-key path of
+`configuration.yaml` only:
+- Engineering sends a fixed argument shape with `include_content: false`.
+- Every other file and every credential-shaped path is refused before any
+  upstream call.
+- Values are projected through key-path, connection-string and
+  credential-text redaction, with typed `!secret`/`!env_var` reference-name
+  markers.
+
+It is an optional reviewed tool:
+- admitted only on an exact complete-descriptor binding for ha-mcp 8.4.3
+  and 8.5.0, with an explicit disposition for every registry version;
+- excluded from the stock order fingerprint, stock admission and signed
+  selections.
+
+`ha_list_files` and `ha_read_file` are reviewed and never exposed. The
+catalog is 59 static + 29 delegated = 88. There are no plans, approvals,
+writes or physical execution. See the
+[design](docs/HAMCP_162_YAML_READER_DESIGN.md) and the
+[beta.14 notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md).
+
 ## Source-only Alarmo inspector addition (2026-09-27)
 
 `get_integration_inspection` is native read-only evidence, orchestrated by
