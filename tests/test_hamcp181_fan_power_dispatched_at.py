@@ -95,7 +95,7 @@ class FanKind(_Kind):
     def service(self, test):
         provider = FanProvider(test.transport, lambda: test.transport.authority)
         return FanService(test.tmp.name, provider, FanCoreAuthority(test.core),
-                          now=test.clock, audit=test.audit)
+                          now=test.clock, sleep=test.clock.sleep, audit=test.audit)
 
     def request(self, test, noop=False):
         return FanRequest(entity_id="fan.synthetic",
@@ -119,7 +119,7 @@ class PowerKind(_Kind):
     def service(self, test):
         provider = PowerProvider(test.transport, lambda *args: test.transport.authority)
         return PowerService(test.tmp.name, provider, PowerCoreAuthority(test.core),
-                            now=test.clock, audit=test.audit)
+                            now=test.clock, sleep=test.clock.sleep, audit=test.audit)
 
     def request(self, test, noop=False):
         return PowerRequest(entity_id="light.synthetic",
