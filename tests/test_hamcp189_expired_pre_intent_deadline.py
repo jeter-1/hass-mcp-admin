@@ -32,10 +32,11 @@ from tests import test_beta37_exact_helper_state as fixtures
 from tests import test_rc5_recovery_approval as rc5
 
 
-# The doubling backoff (5, 10, 20, ... capped at 300 s) fits at most this
-# many retries inside the window after expiry, even when recovery runs at
-# every eligible instant.
-MAX_EXPIRED_RETRIES = 8
+# The doubling backoff (5, 10, 20, 40, 80, 160, then 300 s) fits at most
+# seven retries inside the 600 s window after expiry (5+10+...+160 = 315 s;
+# the seventh schedules past the window), even when recovery runs at every
+# eligible instant.
+MAX_EXPIRED_RETRIES = 7
 
 
 class ExpiredPreIntentDeadlineTests(unittest.IsolatedAsyncioTestCase):

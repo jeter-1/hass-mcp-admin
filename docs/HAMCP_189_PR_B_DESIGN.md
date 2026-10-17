@@ -14,8 +14,8 @@ out of scope and would be reported before it is changed.
 
 | File | Item |
 | --- | --- |
-| `R/f3_runtime/runtime.py` | R1 (rollback planning lease), O9 (expired pre-intent deadline) |
-| `R/f3/persistence.py` | O9 (claimless pre-dispatch terminalization helper) |
+| `R/f3_runtime/runtime.py` | R1 (rollback planning lease, garage save-boundary check), O9 (expired pre-intent deadline, including the no-record case) |
+| `R/f3/persistence.py` | O9 (claimless pre-dispatch terminalization and no-record expired materialization primitives) |
 | `R/providers/operational_lifecycle.py` | R2-telemetry |
 | `R/routing.py` | R8, L1 |
 | `.release/next-version` | release staging (consumed by the promotion script) |
@@ -25,9 +25,22 @@ out of scope and would be reported before it is changed.
 
 `R/f3/executor.py` is **not** needed (see O9 below) and is not changed.
 
+**Scope amendment requested (not changed).** Review of `4357b96` (M1) asks
+for the lease check at the save boundary, after every awaited planning read,
+for both the ordinary and the garage rollback builders. The garage builder
+saves through `runtime.persist_rollback_plan`, which is in scope and now
+checks the lease there. The ordinary builder saves inside
+`R/governance/service.py` (`_create_configuration_plan`), which is outside
+O8. The proposed narrow change is about four lines: a private
+`_before_persist: Callable[[], None] | None = None` keyword on
+`_create_configuration_plan`, called synchronously just before the plan is
+recorded, which the runtime passes as `lease.require_current`. It is
+**not** made in this PR without Josh's amendment. Until then the ordinary
+gap is pinned by an expected-failure test (§2).
+
 Non-protected files: new tests (`tests/test_hamcp189_*.py`), the edited
 `tests/test_configuration_reverification.py` (flake rider), the
-`tests/test_f3_packaging_boundaries.py` allowlist entry for the new O9 test's
+`tests/test_f3_packaging_boundaries.py` allowlist entries for the new O9 tests'
 explicit F3 imports, this note, the
 beta.13 release-notes correction (L2), the new beta acceptance and release
 notes, and the `CHANGELOG.md` and `README.md` entries.
@@ -62,9 +75,17 @@ mirrors `_CoreVerificationAdapter.preflight`:
    planning read runs under a current, revalidated authorizer. A read after
    Core retires is refused by the existing read clients
    (`HomeAssistantUnavailableError`) before any request.
-4. `lease.require_current()` immediately before the rollback plan is
-   persisted. A retired lease refuses, so no plan is created from reads whose
-   authority lapsed.
+4. `lease.require_current()` before the plan is saved. The original check
+   ran when planning returned to the runtime, before the builder's final
+   read, so a Core retirement during that last read still saved a plan
+   (review of `4357b96`, M1). The garage builder's check now runs inside
+   `persist_rollback_plan`, in the same projection transaction as the save,
+   after every awaited read (the rollback context carries the lease). The
+   ordinary builder saves inside `R/governance/service.py`, outside O8; its
+   save-boundary check waits on the amendment in §1.
+   `test_ordinary_retirement_during_final_builder_read_saves_nothing` is an
+   `expectedFailure` that records this gap and will pass once the hook
+   lands. Entity-metadata rollback is unaffected: its builder makes no read.
 5. On exit, an exception raised while the lease has retired (for example the
    read client's refusal) is translated into the Core refusal below, so the
    caller sees one truthful reason.
@@ -168,8 +189,8 @@ task that has passed its deadline:
 Before the deadline, the existing `bounded_retry` path runs unchanged (backoff
 5 → 10 → 20 … capped at 300 s). The retries are bounded because the deadline
 is anchored on the durable `expires_at`, and backoff only grows. At most 7
-expired-family retries fit in the window, even across restarts; the tests
-allow 8. The window tolerates a wall-clock correction near expiry. A clock
+expired-family retries fit in the window, even across restarts, and the
+tests assert that bound. The window tolerates a wall-clock correction near expiry. A clock
 stepped back before `expires_at` returns the task to the normal path. The
 hook runs only when the attempt raises: configuration plans, whose executor
 preflight rejects the expired plan itself, never reach it.
@@ -222,6 +243,55 @@ service reconciler, and every non-expired failure keep their current
 behavior. A task that is not expired keeps retrying, as today. That residual
 is outside O9 and is disclosed.
 
+### 4.2a Expired work with no child record (review of `4357b96`, M2)
+
+A task can be saved (state `created`/`preflight`, with an F3 declaration)
+before the runtime creates its first child record. If the runtime restarts
+in that window and the plan then expires, the original O9 path never runs:
+it starts from a child record. Recovery fails in `_load_prepared` on every
+sweep and readiness stays false.
+
+`_terminate_expired_pre_intent` now hands the no-record case to
+`_terminate_expired_unclaimed`, which works only from the durable
+declaration and plan:
+
+- the plan hash matches the declaration; the dispatch-authority deadline
+  (the same `expires_at` + 600 s) has passed on the durable clock;
+- the child's position in the declaration is valid (every earlier child
+  `succeeded_verified`, every later child absent), and no lock record exists
+  for it;
+- inside `children.public_projection_transaction()` it re-checks that the
+  task is still `created`/`preflight` and that no operator cancel is
+  recorded, then calls a new primitive,
+  `DurableExecutionRepository.materialize_expired_pre_dispatch`. Under the
+  repository's exclusive transaction the primitive returns `None` if any
+  record now exists (a competing first claim won), and otherwise writes the
+  child record directly as terminal `preflight_rejected` with diagnostic
+  `plan_expired`, an expired claim (generation 1, `claim_expires_at = now`),
+  no intent and `dispatch_count == 0`. Its events are the existing
+  `execution_started` and `pre_dispatch_terminal`;
+- after the transaction it projects with `_project` and records
+  `transition_processed`, so readiness is restored.
+
+No provider is contacted and no dispatch authority is renewed: preparation is
+not rerun after expiry. The record format and the strings are the existing
+ones (table above). Cancel keeps precedence (a recorded cancel is checked
+inside the same transaction), and the first claim keeps precedence (the
+primitive never overwrites a record).
+
+**Dashboard declarations were never stuck.** For a dashboard declaration,
+the existing executor preflight rejects the expired plan itself
+(`preflight_rejected` / `plan_expired`) and the new path is not reached; the
+test asserts that.
+
+**Pre-existing, unchanged (disclosed).** On `bdb5af8`, re-applying any
+contract-v3 plan that has reached a terminal state after expiry raises the
+operational adapter's raw `OperationalAdapterError` (`plan_expired`) instead
+of a governed refusal, because `_apply` loads the prepared operation before
+its terminal short-circuit; nothing dispatches. Cancelling an expired task
+that has no child record fails the same way in
+`_load_prepared(cancel_only=True)`. Both are outside this PR's scope.
+
 ### 4.3 Tests
 
 `tests/test_hamcp189_expired_pre_intent_deadline.py` uses the real exact
@@ -229,7 +299,7 @@ helper-state F3 path. Approval consumption is refused at the Core seam, so the
 child records `pre_intent_retry_required` with no intent:
 
 - recovery runs at every eligible instant after expiry. The child terminates
-  after 1–8 retries, at or after the deadline, as `preflight_rejected` /
+  after 1–7 retries, at or after the deadline, as `preflight_rejected` /
   `plan_expired`. The task is `failed_pre_dispatch` and the plan `FAILED`.
   Nothing is dispatched, locks and leases are settled, readiness is restored,
   and later sweeps change nothing;
@@ -237,11 +307,30 @@ child records `pre_intent_retry_required` with no intent:
   still false. At the next eligible instant, it terminates;
 - preservation: a failure while the plan is valid keeps `bounded_retry`.
   After preparation recovers, the same task dispatches exactly once;
+- the retry bound asserted is the source bound, 7 (tightened from 8 after
+  review);
 - the deadline survives a runtime restart;
 - composition with the service reconciler never dispatches and settles;
 - the primitive refuses a live claim, a changed generation, an
   already-terminal child (unchanged record) and a dispatched child
   (`BlindRedispatchProhibited`, unchanged record).
+
+`tests/test_hamcp189_expired_unclaimed_declaration.py` covers the no-record
+case (§4.2a):
+
+- operational: restart between declaration and first child, then expiry,
+  recovered with the service reconciler absent and the provider down. The
+  task ends `failed_pre_dispatch` / `plan_expired`, with zero planning,
+  dispatch and verification calls and readiness restored. The terminalization
+  step itself makes no provider contact. Also: the in-process case, one
+  second before the deadline (bounded retry, readiness false), an operator
+  cancel (cancel wins), a cancel recorded inside the projection window
+  (cancel wins), a competing first claim that wins (never overwritten) and
+  one that loses (finds the terminal record);
+- exact helper state: restart then expiry settles with the helper unchanged;
+  before the deadline it keeps retrying;
+- dashboard: restart then expiry is rejected by the existing preflight
+  without reaching the new path, with zero writes.
 
 ## 5. R8 and L1 — the gateway audit keeps the refusal reason
 
@@ -252,10 +341,15 @@ child records `pre_intent_retry_required` with no intent:
   A list or dict name no longer reaches the unhashable set lookup. It falls to
   the generic `mcp_request` record (R8). The empty name refused as unmapped
   writes the full `tool_call` unmapped-refusal record (L1);
-- the terminal error metric becomes
-  `if (tool_name or core_unmapped_refused) and telemetry.error_code:` (L1),
-  and the generic-branch metric is skipped for that case, so one terminal
-  outcome is counted once.
+- error capture and the terminal error count are keyed on the method, not
+  on the name's truthiness (review of `4357b96`, L1). The captured
+  `tools/call` response is classified whenever there is one, and the count
+  is `if rpc_method == "tools/call" and telemetry.error_code:` in `finally`;
+  the generic-branch count is skipped for `tools/call`. So every refused
+  `tools/call` writes exactly one record and one count: a falsey malformed
+  name (`None`, `False`, `0`, `[]`, `{}`) now gets the generic `mcp_request`
+  record and its count like any other non-string name, and the raw name is
+  never logged.
 
 ## 6. L2 — beta.13 release-notes correction
 

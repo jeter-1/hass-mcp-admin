@@ -63,8 +63,17 @@ with synthetic configuration and registry fakes.
   returns true, the plan is created and the lease finishes once. The
   entity-metadata lease binds the exact registry target.
 - `test_core_retired_during_planning_creates_no_plan` and
-  `test_core_retired_during_registry_planning_creates_no_plan`: retirement
-  during planning creates no plan.
+  `test_core_retired_during_registry_planning_creates_no_plan`: a retirement
+  before a planning read refuses that read and creates no plan.
+- `test_garage_retirement_during_final_builder_read_saves_nothing`: Core
+  retires after the garage builder's last awaited read returns. The refusal is
+  `provider_unavailable` / `core_capability_unavailable`, no rollback plan or
+  source rollback pointer is saved, nothing is written, the lease finishes
+  once, and a clean retry reads the same resources and creates the plan.
+- `test_ordinary_retirement_during_final_builder_read_saves_nothing` is an
+  `expectedFailure`: the ordinary builder saves inside
+  `governance/service.py`, outside the authorized files, so this gap stays
+  open until Josh's requested scope amendment.
 - `test_existing_rollback_plan_is_returned_without_core`: the idempotent local
   return still works while Core is degraded.
 - `test_runtime_without_core_keeps_current_behavior`: compositions with no
@@ -84,7 +93,7 @@ helper-state F3 path. Approval consumption is refused at the Core seam, so the
 child records `pre_intent_retry_required` with no dispatch intent.
 
 - `test_expired_task_terminates_after_bounded_retries`: recovery at every
-  eligible instant after expiry terminates the child after at most 8 retries,
+  eligible instant after expiry terminates the child after at most 7 retries,
   at or after the deadline, as `preflight_rejected` / `plan_expired`. The task
   is `failed_pre_dispatch` and the plan `FAILED`. Zero dispatch, locks and
   leases settled, readiness restored, later sweeps change nothing.
@@ -99,12 +108,33 @@ child records `pre_intent_retry_required` with no dispatch intent.
   claim, a changed generation, an already-terminal child and a dispatched
   child (`BlindRedispatchProhibited`), leaving each record unchanged.
 
+### Offline proof: expired work with no child record (O9, review M2)
+
+`tests/test_hamcp189_expired_unclaimed_declaration.py`, with the service
+reconciler absent:
+- operational (`OperationalUnclaimedTests`): restart between saving the
+  declaration and the first child, then expiry with the provider down, ends
+  `failed_pre_dispatch` / `plan_expired` with zero planning, dispatch and
+  verification calls and readiness restored; the terminalization step itself
+  contacts no provider; in-process expiry; before the deadline the bounded
+  retry continues; an operator cancel and a cancel recorded inside the
+  projection window keep precedence; a first claim that wins is never
+  overwritten, and one that loses finds the terminal record;
+- exact helper state (`HelperStateUnclaimedTests`): restart then expiry
+  settles with the helper unchanged; before the deadline it keeps retrying;
+- dashboard (`DashboardUnclaimedTests`): restart then expiry is rejected by
+  the existing preflight without the new path, with zero writes.
+
 ### Offline proof: gateway audit reason (R8, L1)
 
 `tests/test_hamcp189_gateway_audit_reason.py`:
 - `test_empty_name_audit_and_metric_carry_the_unmapped_reason` (L1);
 - `test_nonempty_unmapped_name_keeps_one_record_and_one_count`;
-- `test_list_and_dict_names_write_exactly_one_generic_record` (R8).
+- `test_list_and_dict_names_write_exactly_one_generic_record` (R8);
+- `test_every_non_string_name_writes_one_record_and_one_count`: `None`,
+  `False`, `0`, `[]`, `{}` and truthy non-string names each write one generic
+  record and one error count, with no raw value;
+- `test_successful_string_name_keeps_one_tool_record_and_no_count`.
 
 ### Mutations (each must fail)
 
@@ -115,6 +145,12 @@ child records `pre_intent_retry_required` with no dispatch intent.
 | The audit loses the empty-name reason (L1) | `test_empty_name_audit_and_metric_carry_the_unmapped_reason` |
 | The audit keeps the unhashable lookup (R8) | the list and dict name test (two subtest errors) |
 | The attempt starts before the authorizer (R2-telemetry) | four telemetry tests |
+| No lease check at the garage save boundary (review M1) | `test_garage_retirement_during_final_builder_read_saves_nothing` |
+| The no-record expired declaration is left stuck (review M2) | four no-record tests |
+| The primitive overwrites a first claim (review M2) | `test_first_claim_that_wins_is_never_overwritten` |
+| Cancel not rechecked inside the projection transaction (review M2) | `test_cancel_recorded_inside_the_projection_window_wins` |
+| A falsey name is not classified (review L1) | five audit tests |
+| A falsey name is not counted (review L1) | five audit tests |
 
 ## 2. Release CI and publication
 

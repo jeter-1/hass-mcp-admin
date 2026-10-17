@@ -10,8 +10,10 @@ stores and configuration peers are synthetic.
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 import sys
+import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -261,6 +263,115 @@ class RollbackCoreLeaseTests(ConfigurationPlanTestCase):
         self.assertEqual(again["rollback_plan_id"], first["rollback_plan_id"])
         self.assertEqual(degraded.acquired, [])
         self.assertEqual(self.reads(), [])
+
+    def retire_during_final_builder_read(self, core, builder_read_count):
+        """Retire Core while the plan builder's last awaited read runs.
+
+        The configuration plan builder awaits one current-state read per
+        operation and then saves synchronously.  Retiring after an earlier
+        read would let the next read's authorizer refuse first, so Core is
+        retired only when the last read completes; then only a check at the
+        save boundary can keep the plan unsaved.
+        """
+
+        create = self.service._create_configuration_plan
+        read = self.service._read_configuration_resource
+        building = {"active": False}
+        builder_reads: list[str] = []
+
+        async def observed_create(*args, **kwargs):
+            building["active"] = True
+            try:
+                return await create(*args, **kwargs)
+            finally:
+                building["active"] = False
+
+        # Retire after the read returns, past the read client's own
+        # post-response authority check, so nothing but the save boundary
+        # remains to notice.
+        async def retiring_read(resource_type, resource_id):
+            value = await read(resource_type, resource_id)
+            if building["active"]:
+                builder_reads.append(resource_id)
+                if len(builder_reads) == builder_read_count:
+                    core.valid_reads = 0
+            return value
+
+        self.service._create_configuration_plan = observed_create
+        self.service._read_configuration_resource = retiring_read
+
+        def restore():
+            self.service._create_configuration_plan = create
+            self.service._read_configuration_resource = read
+
+        return builder_reads, restore
+
+    async def assert_final_read_retirement_saves_nothing(
+        self, created, builder_read_count
+    ):
+        core = LeaseCore()
+        self.runtime.core_runtime = core
+        builder_reads, restore = self.retire_during_final_builder_read(
+            core, builder_read_count
+        )
+        plans_before = {plan.plan_id for plan in self.repository.list()}
+        rollback_before = copy.deepcopy(
+            self.repository.get(created["plan_id"]).rollback
+        )
+        with self.assertRaises(GovernanceError) as raised:
+            await self.service.rollback_change(
+                created["plan_id"], created["plan_hash"]
+            )
+        restore()
+        # Every builder read ran, so the refusal came after the last one.
+        self.assertEqual(len(builder_reads), builder_read_count)
+        self.assertEqual(raised.exception.code, ErrorCode.PROVIDER_UNAVAILABLE)
+        details = raised.exception.details
+        self.assertEqual(details["reason"], "core_capability_unavailable")
+        self.assertIs(details["plan_created"], False)
+        self.assertIs(details["provider_dispatch_occurred"], False)
+        self.assertEqual(
+            {plan.plan_id for plan in self.repository.list()}, plans_before
+        )
+        self.assertEqual(
+            self.repository.get(created["plan_id"]).rollback, rollback_before
+        )
+        self.assertFalse(any(call[0] == "write" for call in self.gateway.calls))
+        self.assertEqual((core.finished, core.released), (1, 0))
+        self.assertEqual(core.outstanding, 0)
+        self.assertIsNone(current_telemetry().core_dispatch_authorizer)
+        # The refusal is not sticky: current authority then plans normally.
+        # The clean retry reads exactly as many resources, so the retirement
+        # above really followed the builder's last read.
+        retry = LeaseCore()
+        self.runtime.core_runtime = retry
+        retry_reads, restore = self.retire_during_final_builder_read(retry, None)
+        try:
+            result = await self.service.rollback_change(
+                created["plan_id"], created["plan_hash"]
+            )
+        finally:
+            restore()
+        self.assertEqual(len(retry_reads), builder_read_count)
+        self.assertIn(
+            result["status"],
+            {"rollback_plan_created", "rollback_partial_plan_created"},
+        )
+        self.assertEqual(retry.outstanding, 0)
+
+    async def test_garage_retirement_during_final_builder_read_saves_nothing(self):
+        created = await self.applied(await self.create_retry_plan())
+        # The garage inverse builder reads its five planned resources.
+        await self.assert_final_read_retirement_saves_nothing(created, 5)
+
+    @unittest.expectedFailure
+    async def test_ordinary_retirement_during_final_builder_read_saves_nothing(self):
+        # Review M1, ordinary path: the public builder saves the plan with no
+        # runtime seam after its final read.  Closing it needs a save-boundary
+        # hook in governance/service.py, outside the authorized O8 file list;
+        # this documents the open gap until that scope amendment.
+        created = await self.applied(await self.create_automation_plan())
+        await self.assert_final_read_retirement_saves_nothing(created, 1)
 
     async def test_runtime_without_core_keeps_current_behavior(self):
         # Test and embedding compositions omit the Core runtime; production

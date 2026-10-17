@@ -7,7 +7,8 @@ Builds on 2.4.1-beta.14.
 - Acquire and consume a Core lease inside `rollback_change` before any fresh
   rollback planning read (configuration, garage inverse and entity metadata),
   run every planning read under an authorizer that revalidates it, and require
-  a current lease before the rollback plan is persisted. Under degraded Core,
+  a current lease where a garage-inverse rollback plan is saved, after its
+  last planning read. Under degraded Core,
   fresh planning is refused before any Home Assistant read as
   `provider_unavailable` / `core_capability_unavailable` and no plan is
   created. Existing and cached rollback plans are still returned locally.
@@ -20,11 +21,15 @@ Builds on 2.4.1-beta.14.
   F3 runtime ends the child `preflight_rejected` / `plan_expired`, the task
   `failed_pre_dispatch` and the plan `FAILED`, releases its exact locks and
   restores readiness. Only children with no intent, no dispatch count, no live
-  claim, no recorded cancel and only their own recorded locks qualify. No new
-  stored string; nothing is dispatched.
+  claim, no recorded cancel and only their own recorded locks qualify. A task
+  saved before its first child record gets the same terminal outcome after the
+  same deadline, written locally with no provider contact; cancel and a
+  competing first claim keep precedence. No new stored string; nothing is
+  dispatched.
 - Audit an empty tool name refused as `core_requirement_unmapped` with the
-  full unmapped-refusal record and metric, counted once, and audit a list- or
-  dict-valued tool name as a generic request instead of failing the audit.
+  full unmapped-refusal record and metric, counted once, and audit every
+  non-string tool name (including `null`, `false`, `0`, `[]` and `{}`) as
+  one generic request with one error count instead of failing the audit.
 - Correct the repository's beta.13 release notes: three allowlisted tools are
   not "local state only", and rollback planning read without Core authority.
   The published beta.13 GitHub Release is unchanged.

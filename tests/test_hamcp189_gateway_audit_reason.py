@@ -191,6 +191,56 @@ class NonStringNameAuditTests(unittest.TestCase):
                     ["list_capabilities"],
                 )
 
+    def test_every_non_string_name_writes_one_record_and_one_count(self):
+        # Review L1: falsey malformed names were refused by the SDK but missed
+        # both the generic audit record and the error count.  Classification
+        # now follows the tools/call method, not the name's truthiness.
+        marker = "synthetic-raw-name-marker"
+        cases = (
+            None, False, 0, [], {},
+            True, 1, 1.5, [marker], {"name": marker},
+        )
+        for name in cases:
+            with self.subTest(name=repr(name)):
+                with tempfile.TemporaryDirectory() as directory:
+                    path, client, core, tool_calls = self.fixture(directory)
+                    with client, patch.object(
+                        routing_module.METRICS, "record_error"
+                    ) as record_error:
+                        response = self.post(client, name)
+                    records = audit_records(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn("-32602", response.text)
+                self.assertEqual(tool_calls, [])
+                self.assertEqual(core.acquired, [])
+                self.assertEqual(len(records), 1, records)
+                record = records[0]
+                self.assertEqual(record["event"], "mcp_request")
+                self.assertEqual(record["mcp_method"], "tools/call")
+                self.assertEqual(record["result_status"], "failure")
+                self.assertTrue(record["error_code"])
+                self.assertNotIn("tool_name", record)
+                self.assertNotIn(marker, json.dumps(records))
+                record_error.assert_called_once_with(record["error_code"])
+
+    def test_successful_string_name_keeps_one_tool_record_and_no_count(self):
+        # Preservation: classifying by method does not count a successful
+        # tools/call as an error or add a generic duplicate record.
+        with tempfile.TemporaryDirectory() as directory:
+            path, client, core, tool_calls = self.fixture(directory)
+            with client, patch.object(
+                routing_module.METRICS, "record_error"
+            ) as record_error:
+                response = self.post(client, "list_capabilities")
+            records = audit_records(path)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("synthetic-read-ok", response.text)
+        self.assertEqual(tool_calls, ["read"])
+        self.assertEqual(len(records), 1, records)
+        self.assertEqual(records[0]["event"], "tool_call")
+        self.assertEqual(records[0]["result_status"], "success")
+        record_error.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

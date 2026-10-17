@@ -16,15 +16,21 @@ is local. Before beta.15, fresh rollback planning then read current
 configuration and registry state with no Core authority. Now the rollback
 tool acquires and consumes a Core lease before any rollback planning read:
 - every planning read runs under an authorizer that revalidates the lease;
-- the lease must still be current immediately before the rollback plan is
-  persisted;
+- for a garage-inverse rollback, the lease must still be current where the
+  rollback plan is saved, after every planning read;
 - entity-metadata rollback binds the exact registry target, as
   `create_entity_metadata_plan` does.
 
 Under degraded Core, fresh rollback planning is refused before any Home
 Assistant read as `provider_unavailable` with reason
 `core_capability_unavailable`, and no plan is created. Core retirement during
-planning also refuses. Returning an existing or cached rollback plan still
+planning also refuses: a read after retirement is refused before it is sent,
+and a garage-inverse plan is not saved if Core retired during its last read.
+For an ordinary configuration rollback, a retirement during the builder's
+final read can still save the plan, because that save happens in
+`governance/service.py`, outside this PR's authorized files; a narrow
+amendment has been requested and the gap is pinned by an expected-failure
+test. Returning an existing or cached rollback plan still
 works while Core is degraded. With Core degraded, a local planning refusal
 that comes after the lease point (for example an unsupported task state) now
 reports the Core refusal instead; with Core admitted it is unchanged.
@@ -54,11 +60,21 @@ task itself:
 - its exact locks are released and readiness is restored. Nothing is
   dispatched.
 
+The same applies to a task saved before its first child record exists (for
+example a restart between saving the task and creating its first child):
+after the same deadline, the runtime writes the child directly as
+`preflight_rejected` / `plan_expired`, without contacting any provider or
+renewing dispatch authority. A recorded cancel and a competing first claim
+keep precedence. Dashboard tasks were never stuck: the existing executor
+preflight already rejects the expired plan.
+
 A task whose approval is still valid keeps its unchanged bounded retry.
 
 **The gateway audit keeps the refusal reason (R8, L1).**
 - A tool name that is not a string (for example a list or object) no longer
-  breaks the gateway's audit step. It is audited as a generic MCP request.
+  breaks the gateway's audit step. Every non-string name, including falsey
+  ones (`null`, `false`, `0`, `[]`, `{}`), writes exactly one generic MCP
+  request record and one error count, without the raw value.
 - An empty tool name refused as `core_requirement_unmapped` now writes the
   full unmapped-refusal audit record and its error metric, counted once.
 
@@ -72,6 +88,13 @@ v2.4.1-beta.13 GitHub Release is unchanged.
 **Disclosed residuals:**
 - A task that keeps failing recovery while its approval is still valid keeps
   retrying, as before. That is outside O9.
+- Ordinary configuration rollback: Core retirement during the builder's final
+  read can still save the plan until the requested `governance/service.py`
+  amendment (see above).
+- Pre-existing and unchanged: re-applying an expired contract-v3 plan that is
+  already terminal returns the operational adapter's raw `plan_expired`
+  error instead of a governed refusal, and cancelling an expired task that
+  has no child record fails the same way. Neither dispatches.
 - `hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py` still justifies `rollback_change` with
   the pre-R1 wording; it is HAMCP-162 territory and is not edited here.
 - The configuration stale-state race (R3c) is inherent to the Home Assistant

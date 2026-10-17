@@ -3622,6 +3622,12 @@ class F3RuntimeIntegration:
         # The existing short public-projection transaction serializes only
         # durable plan/link issuance. No awaits, HA reads or dispatch under it.
         with self.children.public_projection_transaction():
+            lease = context.get("lease")
+            if lease is not None:
+                # HAMCP-189 R1: the builder's last planning read is awaited
+                # after the caller's check; authority must still be current
+                # where the plan is saved.
+                lease.require_current()
             source = self.service.repository.get(context["snapshot"]["plan_id"])
             if source is None or self._rollback_source_snapshot(source) != context["snapshot"]:
                 raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
@@ -3714,7 +3720,7 @@ class F3RuntimeIntegration:
                 "depends_on": [] if not operations else [operations[-1]["operation_id"]],
             })
         context = {"plan_id": plan_id, "snapshot": snapshot, "observed": observed,
-                   "selected": selected, "complete": complete}
+                   "selected": selected, "complete": complete, "lease": lease}
         lease.require_current()
         created = await self.service._create_configuration_plan(
             title="Restore exact verified garage configuration prefix",
@@ -5224,13 +5230,21 @@ class F3RuntimeIntegration:
         ]
 
     @staticmethod
+    def _declared_record_operation(declaration: dict[str, Any]) -> str:
+        """The adapter operation a child record of ``declaration`` carries."""
+
+        return (declaration["capability_id"]
+                if declaration["plan_contract_version"] in {1, 2}
+                else declaration["operation_id"])
+
+    @staticmethod
     def _lock_record_matches_execution_authority(
         declaration: dict[str, Any], record: Any, lock_record: Any
     ) -> bool:
         identity = record.execution_identity()
-        expected_operation = (declaration["capability_id"]
-                              if declaration["plan_contract_version"] in {1, 2}
-                              else declaration["operation_id"])
+        expected_operation = F3RuntimeIntegration._declared_record_operation(
+            declaration
+        )
         token_matches = [
             item
             for item in record.lock_tokens
@@ -5616,9 +5630,10 @@ class F3RuntimeIntegration:
 
         child_id = declaration["child_id"]
         record = self.children.get(child_id)
+        if record is None:
+            return self._terminate_expired_unclaimed(declaration, now=now)
         if (
-            record is None
-            or record.terminal
+            record.terminal
             or record.dispatch_intent is not None
             or record.dispatch_count
             or datetime.fromisoformat(record.claim_expires_at) > now
@@ -5654,6 +5669,85 @@ class F3RuntimeIntegration:
             now=now,
         )
         self._release_orphaned_child_locks(declaration, record)
+        self._project(plan, task)
+        self.children.update_runtime(
+            child_id,
+            changes={
+                "last_reconciliation_at": now.isoformat(),
+                "reconciliation_result": "transition_processed",
+                "backoff_seconds": 0,
+                "next_eligible_at": None,
+            },
+        )
+        return True
+
+    def _terminate_expired_unclaimed(
+        self, declaration: dict[str, Any], *, now: datetime
+    ) -> bool:
+        """O9: reject expired declared work whose child was never claimed.
+
+        A crash between task initialization and the first child claim leaves a
+        declaration without a record, and expired preparation can never build
+        one.  After the same deadline, the record is created already terminal
+        from the declaration's own identity.  The public projection
+        transaction orders this against cancel, and the child transaction
+        orders it against a first claim; losing either race changes nothing.
+        """
+
+        child_id = declaration["child_id"]
+        plan = self.service._load_for_projection(declaration["plan_id"])
+        task = self.service._load_task(declaration["public_task_id"])
+        if (
+            self.service.plan_hash(plan) != declaration["plan_hash"]
+            or now
+            < _dispatch_authority_expiry(plan)
+            + timedelta(seconds=EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS)
+        ):
+            return False
+        declarations = self.children.declarations_for_task(task.task_id)
+        ordinals = [item["child_id"] for item in declarations]
+        if child_id not in ordinals:
+            return False
+        index = ordinals.index(child_id)
+        for position, item in enumerate(declarations):
+            current = self.children.get(item["child_id"])
+            if position < index and (
+                current is None
+                or current.normalized_outcome != "succeeded_verified"
+            ):
+                return False
+            if position > index and current is not None:
+                return False
+        if any(
+            item.task_id == child_id for item in self.locks.records()
+        ):
+            # Locks without a claim record need their own reconciler.
+            return False
+        with self.children.public_projection_transaction():
+            current_task = self.service._load_task(task.task_id)
+            if current_task.state not in {
+                ExecutionTaskState.CREATED,
+                ExecutionTaskState.PREFLIGHT,
+            } or self._cancel_recorded(task.task_id):
+                return False
+            record = self.children.materialize_expired_pre_dispatch(
+                identity=ExecutionIdentity(
+                    task_id=child_id,
+                    plan_id=declaration["plan_id"],
+                    attempt_id=declaration["attempt_id"],
+                    request_id=declaration["request_id"],
+                    owner_id=f"expired-{uuid.uuid4().hex}",
+                ),
+                adapter_id=declaration["adapter_id"],
+                operation=self._declared_record_operation(declaration),
+                target_type=declaration["target_type"],
+                target_id=declaration["target_id"],
+                prepared_operation_hash=declaration["prepared_operation_hash"],
+                diagnostic_codes=("plan_expired",),
+                now=now,
+            )
+        if record is None:
+            return False
         self._project(plan, task)
         self.children.update_runtime(
             child_id,

@@ -901,11 +901,14 @@ class AuthenticatedMcpGateway:
                 # generation therefore cannot authorize a second provider call.
                 telemetry.core_dispatch_authorizer = authorize_core_dispatch
             await self.app(forwarded, new_receive, correlated_send)
-            if tool_name and response_capture:
+            # Classify every tools/call response, whatever its name value: a
+            # falsey malformed name is refused by the SDK and still owes one
+            # bounded generic audit record and one error count.
+            if rpc_method == "tools/call" and response_capture:
                 self._apply_mcp_outcome(telemetry, bytes(response_capture))
         except Exception:
             telemetry.error_code = telemetry.error_code or ErrorCode.INTERNAL_SERVER_ERROR.value
-            if not tool_name:
+            if rpc_method != "tools/call":
                 METRICS.record_error(telemetry.error_code)
             log_event(
                 self.logger,
@@ -932,8 +935,9 @@ class AuthenticatedMcpGateway:
             # recent_error_counts measures terminal public tool outcomes. The
             # transport, provider, and response-conversion layers may all see
             # the same exception, but one tools/call contributes one count.
-            # An empty name refused as unmapped is a terminal tool outcome too.
-            if (tool_name or core_unmapped_refused) and telemetry.error_code:
+            # Any tools/call is a terminal tool outcome, including an empty name
+            # refused as unmapped and a malformed name refused by the SDK.
+            if rpc_method == "tools/call" and telemetry.error_code:
                 METRICS.record_error(telemetry.error_code)
             if telemetry.tool_started is not None:
                 telemetry.tool_duration_ms = round(
