@@ -8,6 +8,12 @@ identity, bounds the parsed value, and redacts it with the full key path
 before the shared sanitizer runs (design layers L1-L5). Every other
 client-visible field passes the same final sanitizer pass (H1).
 
+H4: :func:`screen` is the single entry point every string the reader can
+emit passes, in every output position (:data:`OUTPUT_POSITIONS`): values,
+list items, keys at every level, reference names, key paths, limitations,
+the redaction summary and every gateway response field. It applies the
+complete rule set (:data:`SCANNER_RULES`) with no position-specific skip.
+
 The upstream tool is an *optional reviewed tool*: it is admitted only for
 exact versions listed in :data:`OPTIONAL_DISPOSITIONS` whose complete runtime
 descriptor matches the D1-captured binding. It never joins the stock policy
@@ -39,7 +45,9 @@ from ..sanitization import (
     _PASSWORD_KEYS,
     _TOKEN_KEYS,
     _WEBHOOK_KEYS,
+    key_category,
     marker_like_text,
+    normalize_key,
     sanitize_untrusted_data,
 )
 
@@ -454,9 +462,8 @@ def redaction_form(
 
 
 def _scheme_clean(scheme: str, known_secrets: tuple[str, ...]) -> bool:
-    return scanner_category(scheme, known_secrets) is None and not any(
-        secret.casefold() in scheme for secret in known_secrets if secret
-    )
+    # H4: the kept scheme is emitted text, so it passes the uniform screen.
+    return screen(scheme, known_secrets, position="value").kept
 
 
 # ---------------------------------------------------------------------------
@@ -507,8 +514,236 @@ def scanner_category(text: str, known_secrets: tuple[str, ...]) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# H4: the uniform pipeline.
+
+# Every position a reader response can carry a string in. ``screen`` refuses
+# any other position, so a new output field cannot bypass it silently.
+OUTPUT_POSITIONS = frozenset(
+    {
+        # The value tree (L4).
+        "value", "list_item", "key", "reference_name",
+        # Key paths shown as text.
+        "yaml_path", "include_path",
+        # The reader envelope.
+        "envelope", "limitation", "redaction",
+        # The gateway response fields.
+        "operation", "summary", "warning", "metadata", "timing", "request_id",
+        "error", "error_code", "message", "details", "retryable", "status",
+    }
+)
+_PATH_POSITIONS = frozenset({"yaml_path", "include_path"})
+_KEY_POSITIONS = frozenset({"key", "reference_name"})
+_VALUE_POSITIONS = frozenset({"value", "list_item"})
+
+# A sealed body's top-level field -> the position of every string under it.
+# Keys at every level are screened in position ``key``.
+FIELD_POSITIONS: dict[str, str] = {
+    "file": "envelope",
+    "source": "envelope",
+    "found": "envelope",
+    "value": "envelope",
+    "completeness": "envelope",
+    "data": "envelope",
+    "yaml_path": "yaml_path",
+    "limitations": "limitation",
+    "redaction": "redaction",
+    "operation": "operation",
+    "summary": "summary",
+    "warnings": "warning",
+    "metadata": "metadata",
+    "timing": "timing",
+    "request_id": "request_id",
+    "error": "error",
+    "error_code": "error_code",
+    "message": "message",
+    "details": "details",
+    "retryable": "retryable",
+    "success": "status",
+}
+assert set(FIELD_POSITIONS.values()) <= OUTPUT_POSITIONS
+
+# The rules ``screen`` applies, in order, to every string in every position.
+# "sanitizer" is the shared sanitizer's whole rule set (its segment and
+# serialized rules and the configured known secrets).
+SCANNER_RULES = (
+    "credential_key_context",
+    "key_scoped",
+    "canonicalize",
+    "marker_lookalike",
+    "credential_text_userinfo",
+    "credential_text_word",
+    "credential_text_delimited",
+    "key_text",
+    "connection_context",
+    "sanitizer",
+    "known_secret_casefold",
+    "pem",
+    "opaque_blob",
+)
+
+# Every category a redaction summary can name.
+REDACTION_CATEGORIES = frozenset(
+    {
+        # The reader's own.
+        "credential_key", "encoding", "connection_string", "connection_uri",
+        "reference_malformed", "reference_marker_collision", "include_malformed",
+        "env_var_default", "pem", "opaque_blob", "sanitization_failure",
+        MARKER_COLLISION_CATEGORY,
+        # The shared sanitizer's.
+        "token", "password", "auth_cookie", "url_credentials",
+        "webhook_identifier", "webhook_secret", "auth_flow",
+        "matter_setup_payload", "matter_setup_code", "reference_marker",
+    }
+)
+KNOWN_SECRET_MARKER = "[REDACTED:token]"
+
+
+@dataclass(frozen=True)
+class Screened:
+    """One ``screen`` decision.
+
+    ``text`` is the input when ``kept``, otherwise its replacement.
+    ``projectable`` (keys only): the only finding is a configured known
+    secret, so the key may be shown with each occurrence replaced (H1).
+    """
+
+    kept: bool
+    text: str
+    category: str | None = None
+    projectable: bool = False
+
+
+def screen(
+    text: str,
+    known_secrets: tuple[str, ...],
+    *,
+    position: str,
+    path: tuple[str, ...] = (),
+    vocabulary: frozenset[str] = frozenset(),
+) -> Screened:
+    """H4: the single entry point for every string the reader can emit.
+
+    ``position`` is one of :data:`OUTPUT_POSITIONS`. ``path`` holds the
+    canonical keys above the string (for a reference name, the key whose
+    value it was). Only a byte-exact match of a source-defined constant in
+    ``vocabulary`` is kept without the rules; every other string gets every
+    rule of :data:`SCANNER_RULES` on its raw, decoded and canonical forms.
+    There is no fast path for already-canonical text. A finding replaces
+    the string whole (a key path segment becomes ``*``).
+    """
+
+    if position not in OUTPUT_POSITIONS:
+        raise ValueError("yaml_screen_position_unknown")
+    if type(text) is not str:
+        raise TypeError("yaml_screen_text_not_str")
+    if text in vocabulary:
+        return Screened(True, text)
+    finding = _finding(text, known_secrets, position, tuple(path))
+    if finding is None:
+        return Screened(True, text)
+    replacement, category = finding
+    if position in _PATH_POSITIONS:
+        replacement = PATH_MASK
+    return Screened(
+        False,
+        replacement,
+        category,
+        position == "key" and _projectable(text, known_secrets, tuple(path)),
+    )
+
+
+def _finding(
+    text: str, known_secrets: tuple[str, ...], position: str, path: tuple[str, ...]
+) -> tuple[str, str] | None:
+    """The first rule of :data:`SCANNER_RULES` that ``text`` triggers."""
+
+    # A reference name may sit under a credential key; the key above it is
+    # the context.
+    context = path[:-1] if position == "reference_name" else path
+    # credential_key_context
+    if any(is_credential_key(key) for key in context):
+        return CREDENTIAL_MARKER, "credential_key"
+    # key_scoped (rule B, shared with the sanitizer)
+    normalized = tuple(normalize_key(key) for key in context)
+    for index, key in enumerate(normalized):
+        category = key_category(key, normalized[:index])
+        if category is not None:
+            return f"[REDACTED:{category}]", category
+    # canonicalize (rule A)
+    try:
+        canonical_text, rounds, decoded = canonical_forms(text)
+    except _EncodingRefused:
+        return ENCODING_MARKER, "encoding"
+    # marker_lookalike
+    if marker_like_text(text):
+        return MARKER_COLLISION, MARKER_COLLISION_CATEGORY
+    # credential_text_* and key_text
+    if position in _PATH_POSITIONS:
+        if (
+            is_credential_key(canonical_text)
+            or key_text_unsafe(canonical_text)
+            or credential_text(canonical_text)
+        ):
+            return CREDENTIAL_MARKER, "credential_key"
+    elif position in _KEY_POSITIONS:
+        if key_text_unsafe(canonical_text):
+            return CONNECTION_STRING_MARKER, "connection_string"
+    elif credential_text(canonical_text):
+        return redaction_form(canonical_text, known_secrets)
+    # connection_context; R11 exempts the exact SQLite value shape from it
+    # only, so the scanners below still run on that shape.
+    if any(is_connection_key(key) for key in context) and not (
+        position in _VALUE_POSITIONS and sqlite_visible(text, canonical_text, rounds)
+    ):
+        if position in _KEY_POSITIONS:
+            return CONNECTION_STRING_MARKER, "connection_string"
+        return redaction_form(canonical_text, known_secrets)
+    # sanitizer, pem and opaque_blob, on every form
+    for form in dict.fromkeys((text, decoded, canonical_text)):
+        category = scanner_category(form, known_secrets)
+        if category is not None:
+            return f"[REDACTED:{category}]", category
+    # known_secret_casefold
+    if any(secret.casefold() in canonical_text for secret in known_secrets if secret):
+        return KNOWN_SECRET_MARKER, "token"
+    return None
+
+
+def context_key(key: str) -> str:
+    """A key's canonical form as path context (casefold when refused)."""
+
+    try:
+        return canonical(key)[0]
+    except _EncodingRefused:
+        return key.casefold()
+
+
+def _projectable(text: str, known_secrets: tuple[str, ...], path: tuple[str, ...]) -> bool:
+    """H1: a key whose only finding is a configured known secret.
+
+    The key text with every occurrence removed must pass the whole screen;
+    L5 then shows the key with each occurrence replaced by its marker.
+    """
+
+    present = sorted(
+        {secret for secret in known_secrets if secret and secret in text},
+        key=len,
+        reverse=True,
+    )
+    if not present:
+        return False
+    residue = text
+    for secret in present:
+        residue = residue.replace(secret, " ")
+    return _finding(residue, known_secrets, "key", path) is None
+
+
 def mint_reference(
-    value: str, known_secrets: tuple[str, ...], registry: ReferenceMarkerRegistry
+    value: str,
+    known_secrets: tuple[str, ...],
+    registry: ReferenceMarkerRegistry,
+    path: tuple[str, ...] = (),
 ) -> ReferenceMarker | None:
     """Mint a marker from a whole scalar string into ``registry``, or return None.
 
@@ -527,7 +762,7 @@ def mint_reference(
         if not match:
             return None
         kind, name, default_redacted = "env_var", match[1], True
-    if scanner_category(name, known_secrets) is not None:
+    if not screen(name, known_secrets, position="reference_name", path=path).kept:
         return None
     return registry.mint(kind=kind, name=name, default_redacted=default_redacted)
 
@@ -543,30 +778,21 @@ MAX_PATH_SEGMENTS = 16
 PATH_MASK = "*"
 
 
-def path_segment_safe(segment: str, known_secrets: tuple[str, ...]) -> bool:
-    """A key-path segment may be shown only if the whole key pipeline passes.
-
-    Bounded grammar, rule A canonicalization, the credential-key predicate
-    (B and the L3/L4 path context), K1/R10 key text, the C' text rules, and
-    the scanners with the configured known secrets on the raw, decoded and
-    canonical forms.
-    """
+def path_segment_safe(
+    segment: str, known_secrets: tuple[str, ...], position: str = "yaml_path"
+) -> bool:
+    """A key-path segment may be shown only if it is bounded and ``screen``
+    keeps it (in a path position the segment's own text is also checked as
+    a credential key, K1 key text and C' credential text)."""
 
     if type(segment) is not str or not _SEGMENT.fullmatch(segment):
         return False
-    try:
-        text, _rounds, decoded = canonical_forms(segment)
-    except _EncodingRefused:
-        return False
-    if is_credential_key(text) or key_text_unsafe(text) or credential_text(text):
-        return False
-    return all(
-        scanner_category(form, known_secrets) is None
-        for form in dict.fromkeys((segment, decoded, text))
-    )
+    return screen(segment, known_secrets, position=position).kept
 
 
-def project_path(segments: list[str], known_secrets: tuple[str, ...]) -> str:
+def project_path(
+    segments: list[str], known_secrets: tuple[str, ...], position: str = "yaml_path"
+) -> str:
     """Safe display projection of a key path for client-visible text.
 
     The first unsafe segment, or a segment past the bound, becomes ``*`` and
@@ -576,7 +802,9 @@ def project_path(segments: list[str], known_secrets: tuple[str, ...]) -> str:
 
     shown: list[str] = []
     for segment in segments:
-        if len(shown) >= MAX_PATH_SEGMENTS or not path_segment_safe(segment, known_secrets):
+        if len(shown) >= MAX_PATH_SEGMENTS or not path_segment_safe(
+            segment, known_secrets, position
+        ):
             shown.append(PATH_MASK)
             break
         shown.append(segment)
@@ -611,13 +839,22 @@ class _L4:
         self.registry = registry
         self.account = _Accounting()
 
-    def redact(self, value: Any, display: list[str], cpath: list[str], depth: int) -> Any:
+    def redact(
+        self,
+        value: Any,
+        display: list[str],
+        cpath: list[str],
+        depth: int,
+        position: str = "value",
+    ) -> Any:
         first_credential = next(
             (index for index, key in enumerate(cpath) if is_credential_key(key)), None
         )
         if first_credential is not None:
             if first_credential == len(cpath) - 1 and type(value) is str:
-                marker = mint_reference(value, self.known_secrets, self.registry)
+                marker = mint_reference(
+                    value, self.known_secrets, self.registry, tuple(cpath)
+                )
                 if marker is not None:
                     return self._minted(marker)
             self.account.record("credential_key")
@@ -632,24 +869,16 @@ class _L4:
                 return self._mark(CONNECTION_STRING_MARKER)
             canonical_keys = []
             for key in value:
-                try:
-                    canonical_key = canonical(str(key))[0]
-                except _EncodingRefused:
-                    self.account.record("encoding")
-                    return self._mark(ENCODING_MARKER)
-                if marker_like_text(str(key)):
-                    # H3: a key that could read as a marker withholds the
-                    # whole mapping, like K1; its text is never trusted.
-                    self.account.record(MARKER_COLLISION_CATEGORY)
-                    return self._mark(MARKER_COLLISION)
-                if key_text_unsafe(canonical_key):
-                    self.account.record("connection_string")
-                    return self._mark(CONNECTION_STRING_MARKER)
-                category = self._key_scan(str(key))
-                if category is not None:
-                    self.account.record(category)
-                    return self._mark(f"[REDACTED:{category}]")
-                canonical_keys.append(canonical_key)
+                # H4: every key, canonical or not, gets the whole screen. A
+                # finding withholds the whole mapping, except a key whose
+                # only finding is a known secret: L5 projects it (H1).
+                screened = screen(
+                    str(key), self.known_secrets, position="key", path=tuple(cpath)
+                )
+                if not screened.kept and not screened.projectable:
+                    self.account.record(screened.category)
+                    return self._mark(screened.text)
+                canonical_keys.append(context_key(str(key)))
             if value and depth >= MAX_DEPTH:
                 self.account.depth_truncated += 1
                 return self._mark(DEPTH_MARKER)
@@ -665,9 +894,12 @@ class _L4:
                 self.account.depth_truncated += 1
                 return self._mark(DEPTH_MARKER)
             # List elements are transparent: they inherit the holding key's path.
-            return [self.redact(child, display, cpath, depth + 1) for child in value]
+            return [
+                self.redact(child, display, cpath, depth + 1, "list_item")
+                for child in value
+            ]
         if type(value) is str:
-            return self._string(value, display, connection)
+            return self._string(value, display, cpath, position)
         if connection:
             self.account.record("connection_string")
             return self._mark(CONNECTION_STRING_MARKER)
@@ -680,30 +912,16 @@ class _L4:
         # H3: L5 and rendering trust this marker by registry identity only.
         return self.registry.mint_marker(text)
 
-    def _key_scan(self, key: str) -> str | None:
-        """H3 sweep: key text gets the value scanners on its rule-A forms.
-
-        L5 scans the raw key text and replaces only the key; a finding only
-        a decoded or canonical form shows withholds the mapping, like K1.
-        """
-
-        text, _rounds, decoded = canonical_forms(key)
-        for form in dict.fromkeys((decoded, text)):
-            if form == key:
-                continue
-            category = scanner_category(form, self.known_secrets)
-            if category is not None:
-                return category
-        return None
-
     def _minted(self, marker: ReferenceMarker) -> ReferenceMarker:
         if marker.default_redacted:
             # The default is discarded here; only the fact is recorded.
             self.account.record("env_var_default")
         return marker
 
-    def _string(self, value: str, display: list[str], connection: bool) -> Any:
-        marker = mint_reference(value, self.known_secrets, self.registry)
+    def _string(
+        self, value: str, display: list[str], cpath: list[str], position: str
+    ) -> Any:
+        marker = mint_reference(value, self.known_secrets, self.registry, tuple(cpath))
         if marker is not None:
             return self._minted(marker)
         if reference_like(value):
@@ -714,41 +932,21 @@ class _L4:
         elif _INCLUDE_LIKE.match(value):
             self.account.record("include_malformed")
             return self._mark(INCLUDE_MALFORMED_MARKER)
-        try:
-            text, rounds, decoded = canonical_forms(value)
-        except _EncodingRefused:
-            self.account.record("encoding")
-            return self._mark(ENCODING_MARKER)
-        if marker_like_text(value):
-            # H3: upstream text that could read as a marker is never kept
-            # and never treated as already redacted.
-            self.account.record(MARKER_COLLISION_CATEGORY)
-            return self._mark(MARKER_COLLISION)
-        if credential_text(text):
-            replacement, category = redaction_form(text, self.known_secrets)
-            self.account.record(category)
-            return self._mark(replacement)
-        if connection:
-            if not sqlite_visible(value, text, rounds):
-                replacement, category = redaction_form(text, self.known_secrets)
-                self.account.record(category)
-                return self._mark(replacement)
-            # R11 exempts the exact SQLite shape from rule B only; the
-            # scanners below still run on it (H3 sweep).
-        # The existing patterns are case-sensitive (JWT, known secrets), so
-        # they run on the decoded text before casefold as well.
-        category = scanner_category(decoded, self.known_secrets) or scanner_category(
-            text, self.known_secrets
-        )
-        if category is not None:
-            self.account.record(category)
-            return self._mark(f"[REDACTED:{category}]")
+        # H4: the uniform screen (rule A, marker look-alikes, C', connection
+        # context with the R11 SQLite exemption from rule B only, and every
+        # scanner on every form).
+        screened = screen(value, self.known_secrets, position=position, path=tuple(cpath))
+        if not screened.kept:
+            self.account.record(screened.category)
+            return self._mark(screened.text)
         # Visible values are emitted raw, never in canonical form.
         return value
 
     def _include(self, display: list[str]) -> None:
         # H1: the path is upstream key text, so it gets the key pipeline.
-        self.account.includes.append(project_path(display, self.known_secrets))
+        self.account.includes.append(
+            project_path(display, self.known_secrets, "include_path")
+        )
 
 
 def _count_nodes(value: Any) -> int:
@@ -1035,6 +1233,12 @@ ENVELOPE_VOCABULARY = frozenset(
 )
 
 
+# H4: the constants ``seal`` keeps without the rules: the envelope text, the
+# field names and the redaction categories a summary can name.
+SEAL_VOCABULARY = ENVELOPE_VOCABULARY | REDACTION_CATEGORIES | frozenset(FIELD_POSITIONS)
+SOURCE = "disk"
+
+
 @dataclass(frozen=True)
 class YamlReadResult:
     envelope: dict[str, Any]
@@ -1045,66 +1249,129 @@ class YamlReadResult:
 
 
 def seal(
-    value: Any,
+    value: dict[str, Any],
     known_secrets: tuple[str, ...],
     vocabulary: frozenset[str] = frozenset(),
 ) -> tuple[Any, int, set[str]]:
-    """H1: the final shared-sanitizer pass over client-visible fields.
+    """H1/H4: the final pass over a body of client-visible fields.
 
-    ``project_success`` and the gateway run every field of a reader response
-    through it; no field is returned around it. The whole tree passes the
-    sanitizer, so key context still applies. Afterwards, and only where the
-    input string is byte-equal to a source-defined Engineering constant in
-    ``vocabulary`` (``ENVELOPE_VOCABULARY`` plus the gateway's own
-    constants), the constant is kept: its text is the same for every
-    configuration and every upstream, so it cannot carry upstream, caller
-    or configured text even when a configured secret is a substring of it.
-    Returns the sealed value and the count and categories of the changes it
-    kept. Raises a read failure when the sanitizer fails closed.
+    ``value`` is a mapping of top-level fields named in
+    :data:`FIELD_POSITIONS`; an unknown field fails the read. Every key and
+    string in it passes :func:`screen` in its field's position, with its key
+    path as context; only an exact source-defined constant of ``vocabulary``
+    (``SEAL_VOCABULARY`` plus the gateway's own constants) is kept without
+    the rules. Its text is the same for every configuration and upstream,
+    so it cannot carry upstream, caller or configured text. The shared
+    sanitizer also runs on the whole body and the walk is parallel to its
+    output: a shape change fails the read, and a string it changed that the
+    screen kept takes its value (defense in depth). A number or flag under
+    a credential or connection key becomes a marker. Returns the sealed
+    value and the count and categories of the changes.
     """
 
-    vocabulary = ENVELOPE_VOCABULARY | vocabulary
+    if type(value) is not dict:
+        raise YamlReadRefusal(READ_FAILED)
+    vocabulary = SEAL_VOCABULARY | vocabulary
     # H3: no input text counts as already redacted; marker-shaped text is
-    # replaced whole. Only the exact constants below are restored.
+    # replaced whole.
     result = sanitize_untrusted_data(
         value, known_secrets=known_secrets, identity_markers_only=True
     )
     if result.failed_closed:
         raise YamlReadRefusal(READ_FAILED)
-    changed = [0]
-    sealed = _keep_constants(value, result.value, vocabulary, changed)
-    categories = set(result.redaction_categories) if changed[0] else set()
-    return sealed, changed[0], categories
+    walk = _Seal(
+        known_secrets,
+        vocabulary,
+        min(result.redaction_categories, default="sanitization_failure"),
+    )
+    sealed = walk.node(value, result.value, None, ())
+    return sealed, walk.account.redacted, set(walk.account.categories)
 
 
-def _keep_constants(
-    original: Any, sealed: Any, vocabulary: frozenset[str], changed: list[int]
-) -> Any:
-    if type(original) is str:
-        if original in vocabulary:
+class _Seal:
+    def __init__(
+        self, known_secrets: tuple[str, ...], vocabulary: frozenset[str], l5_category: str
+    ) -> None:
+        self.known_secrets = known_secrets
+        self.vocabulary = vocabulary
+        self.l5_category = l5_category
+        self.account = _Accounting()
+
+    def node(
+        self, original: Any, cleaned: Any, position: str | None, path: tuple[str, ...]
+    ) -> Any:
+        if type(original) is str:
+            if type(cleaned) is not str or position is None:
+                raise YamlReadRefusal(READ_FAILED)
+            screened = screen(
+                original,
+                self.known_secrets,
+                position=position,
+                path=path,
+                vocabulary=self.vocabulary,
+            )
+            if not screened.kept:
+                # Byte-identical replacement text is not a visible change.
+                if screened.text != original:
+                    self.account.record(screened.category)
+                return screened.text
+            if original not in self.vocabulary and cleaned != original:
+                self.account.record(self.l5_category)
+                return cleaned
             return original
-        if sealed != original:
-            changed[0] += 1
-        return sealed
-    if type(original) is dict and type(sealed) is dict and len(original) == len(sealed):
-        kept: dict[Any, Any] = {}
-        for (key, child), (sealed_key, sealed_child) in zip(original.items(), sealed.items()):
-            if type(key) is str and key in vocabulary:
-                sealed_key = key
-            elif sealed_key != key:
-                changed[0] += 1
-            kept[sealed_key] = _keep_constants(child, sealed_child, vocabulary, changed)
-        if len(kept) == len(sealed):
-            return kept
-        return sealed
-    if type(original) is list and type(sealed) is list and len(original) == len(sealed):
-        return [
-            _keep_constants(child, sealed_child, vocabulary, changed)
-            for child, sealed_child in zip(original, sealed)
-        ]
-    if sealed != original:
-        changed[0] += 1
-    return sealed
+        if type(original) is dict:
+            if type(cleaned) is not dict or len(cleaned) != len(original):
+                raise YamlReadRefusal(READ_FAILED)
+            sealed: dict[str, Any] = {}
+            for (key, child), (cleaned_key, cleaned_child) in zip(
+                original.items(), cleaned.items()
+            ):
+                if type(key) is not str or type(cleaned_key) is not str:
+                    raise YamlReadRefusal(READ_FAILED)
+                child_position = position
+                if position is None:
+                    child_position = FIELD_POSITIONS.get(key)
+                    if child_position is None:
+                        raise YamlReadRefusal(READ_FAILED)
+                shown = self.key(key, cleaned_key, path)
+                if shown in sealed:
+                    raise YamlReadRefusal(READ_FAILED)
+                sealed[shown] = self.node(
+                    child, cleaned_child, child_position, path + (context_key(key),)
+                )
+            return sealed
+        if type(original) is list:
+            if type(cleaned) is not list or len(cleaned) != len(original) or position is None:
+                raise YamlReadRefusal(READ_FAILED)
+            return [
+                self.node(child, cleaned_child, position, path)
+                for child, cleaned_child in zip(original, cleaned)
+            ]
+        if (original is None or type(original) in (bool, int, float)) and position is not None:
+            if any(is_credential_key(key) or is_connection_key(key) for key in path):
+                self.account.record("credential_key")
+                return CREDENTIAL_MARKER
+            if type(cleaned) is not type(original) or cleaned != original:
+                self.account.record(self.l5_category)
+                return cleaned
+            return original
+        raise YamlReadRefusal(READ_FAILED)
+
+    def key(self, key: str, cleaned_key: str, path: tuple[str, ...]) -> str:
+        screened = screen(
+            key, self.known_secrets, position="key", path=path, vocabulary=self.vocabulary
+        )
+        if screened.kept:
+            if key not in self.vocabulary and cleaned_key != key:
+                self.account.record(self.l5_category)
+                return cleaned_key
+            return key
+        if screened.text != key:
+            self.account.record(screened.category)
+        if screened.projectable and cleaned_key != key:
+            # H1: L5 replaced each known-secret occurrence in the key.
+            return cleaned_key
+        return screened.text
 
 
 def seal_response(
@@ -1186,14 +1453,17 @@ def project_success(
         )
         categories |= account.categories | set(sanitation.redaction_categories)
     limitations.extend(DISCLOSURE_LIMITATIONS)
-    # H1: every field other than the value (already through L4 and L5 above)
-    # passes the final pass; the requested path gets the key-path projection.
+    # H1/H4: every envelope field passes the final pass. The value (already
+    # screened by L4 and through L5 above) is held back as None so its
+    # rendered markers stay intact; the requested path gets the key-path
+    # projection.
     fields, sealed, sealed_categories = seal(
         {
             "file": ALLOWED_FILE,
             "yaml_path": project_path(yaml_path.split("."), known_secrets),
-            "source": "disk",
+            "source": SOURCE,
             "found": found,
+            "value": None,
             "completeness": "partial" if partial else "complete",
             "limitations": limitations,
         },
@@ -1202,7 +1472,7 @@ def project_success(
     redacted += sealed
     categories |= sealed_categories
     summary, _count, _categories = seal(
-        {"redacted_field_count": redacted, "categories": sorted(categories)},
+        {"redaction": {"redacted_field_count": redacted, "categories": sorted(categories)}},
         known_secrets,
     )
     envelope = {
@@ -1213,7 +1483,7 @@ def project_success(
         "value": value,
         "completeness": fields["completeness"],
         "limitations": fields["limitations"],
-        "redaction": summary,
+        "redaction": summary["redaction"],
     }
     return YamlReadResult(
         envelope=envelope,

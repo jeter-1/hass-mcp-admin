@@ -296,6 +296,42 @@ class SanitizationResult:
         return self.redacted_field_count > 0
 
 
+def normalize_key(key: Any) -> str:
+    """The key normalization of the key-scoped rules."""
+
+    return _KEY_NORMALIZER.sub("_", str(key).strip().lower()).strip("_")
+
+
+def key_category(key: str, path: tuple[str, ...]) -> str | None:
+    """The key-scoped rules: the category a normalized key's value gets.
+
+    ``path`` holds the normalized keys above ``key``. The sanitizer and the
+    HAMCP-162 reader's uniform screen share this one definition.
+    """
+
+    if key in _MATTER_CODE_KEYS or (
+        any("matter" in part for part in path) and key in {"code", "manual_code"}
+    ):
+        return "matter_setup_code"
+    if key in _MATTER_PAYLOAD_KEYS or (
+        any("matter" in part for part in path) and key in {"payload", "qr_payload"}
+    ):
+        return "matter_setup_payload"
+    if key in _AUTH_FLOW_KEYS:
+        return "auth_flow"
+    if key == "webhook_id":
+        return "webhook_identifier"
+    if key in _WEBHOOK_KEYS:
+        return "webhook_secret"
+    if key in _TOKEN_KEYS:
+        return "token"
+    if key in _PASSWORD_KEYS:
+        return "password"
+    if key in _COOKIE_KEYS:
+        return "auth_cookie"
+    return None
+
+
 class _Emitted:
     """A marker one strict sanitizer pass produced, held as a piece (H3)."""
 
@@ -331,34 +367,14 @@ class _Sanitizer:
 
     @staticmethod
     def _normalize_key(key: Any) -> str:
-        return _KEY_NORMALIZER.sub("_", str(key).strip().lower()).strip("_")
+        return normalize_key(key)
 
     @staticmethod
     def _marker(category: str) -> str:
         return f"[REDACTED:{category}]"
 
     def _category_for_key(self, key: str, path: tuple[str, ...]) -> str | None:
-        if key in _MATTER_CODE_KEYS or (
-            any("matter" in part for part in path) and key in {"code", "manual_code"}
-        ):
-            return "matter_setup_code"
-        if key in _MATTER_PAYLOAD_KEYS or (
-            any("matter" in part for part in path) and key in {"payload", "qr_payload"}
-        ):
-            return "matter_setup_payload"
-        if key in _AUTH_FLOW_KEYS:
-            return "auth_flow"
-        if key == "webhook_id":
-            return "webhook_identifier"
-        if key in _WEBHOOK_KEYS:
-            return "webhook_secret"
-        if key in _TOKEN_KEYS:
-            return "token"
-        if key in _PASSWORD_KEYS:
-            return "password"
-        if key in _COOKIE_KEYS:
-            return "auth_cookie"
-        return None
+        return key_category(key, path)
 
     def _record_field(self, categories: set[str]) -> None:
         if categories:

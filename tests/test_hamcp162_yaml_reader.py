@@ -189,12 +189,12 @@ def rule_a_mutation(name):
             "        value = decoded.replace('+', ' ')\n",
         )
     if name == "raw":
-        return mutated(y._L4, "_string", "if credential_text(text):", "if credential_text(value):")
+        return mutated(y, "_finding", "elif credential_text(canonical_text):", "elif credential_text(text):")
     if name == "emit_canonical":
         return mutated(
             y._L4, "_string",
             "    # Visible values are emitted raw, never in canonical form.\n    return value",
-            "    return text",
+            "    return canonical(value)[0]",
         )
     raise KeyError(name)
 
@@ -1888,9 +1888,9 @@ class EnvelopeSealTests(unittest.IsolatedAsyncioTestCase):
                          ".".join([f"s{i}" for i in range(16)] + ["*"]))
         # The final seal keeps an Engineering constant even when a configured
         # secret is a substring of it, and redacts everything else.
-        sealed, count, _ = y.seal({"source": "disk", "x": "disk"}, ("isk",))
+        sealed, count, _ = y.seal({"source": "disk", "metadata": {"x": "disk"}}, ("isk",))
         self.assertEqual(sealed["source"], "disk")
-        self.assertEqual(sealed["x"], "disk")
+        self.assertEqual(sealed["metadata"]["x"], "disk")
         sealed, count, _ = y.seal({"source": "risky disk"}, ("isk",))
         self.assertNotIn("isk", json.dumps(sealed))
         self.assertEqual(count, 1)
@@ -2194,11 +2194,16 @@ class RedactionMarkerIdentityTests(unittest.IsolatedAsyncioTestCase):
         marker = f"[REDACTED:{ACCESS_KNOWN}]"
         for name, text in h3_markers(ACCESS_KNOWN):
             with self.subTest(marker=name):
-                sealed, count, categories = y.seal({"upstream_version": text, text: 1}, (ACCESS_KNOWN,))
-                self.assertEqual(sealed, {"upstream_version": MARKER_COLLISION, MARKER_COLLISION: 1})
+                sealed, count, categories = y.seal(
+                    {"metadata": {"upstream_version": text, text: 1}}, (ACCESS_KNOWN,))
+                # H4: a marker-shaped key is still credential context for
+                # the scalar under it.
+                child = y.CREDENTIAL_MARKER if y.is_credential_key(y.context_key(text)) else 1
+                self.assertEqual(sealed, {"metadata": {"upstream_version": MARKER_COLLISION,
+                                                       MARKER_COLLISION: child}})
                 self.assert_secret_absent(sealed, ACCESS_KNOWN)
                 # Byte-identical replacement text is not a visible change.
-                self.assertEqual(count, 0 if text == MARKER_COLLISION else 2)
+                self.assertEqual(count, (0 if text == MARKER_COLLISION else 2) + (child != 1))
                 if count:
                     self.assertIn("redaction_marker_collision", categories)
         body = {"success": False, "metadata": {"upstream_version": marker}, "data": None}

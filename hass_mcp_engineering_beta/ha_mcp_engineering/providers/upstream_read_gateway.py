@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections import Counter
 from copy import deepcopy
-from dataclasses import dataclass, replace as dataclass_replace
+from dataclasses import dataclass, fields as dataclass_fields, replace as dataclass_replace
 import json
 import re
 import threading
@@ -39,7 +39,7 @@ from ..mcp_sdk_compatibility import (
     current_listed_catalog_generation,
     install_catalog_generation_gate,
 )
-from ..models import FailureResponse, SuccessResponse, dump_json
+from ..models import FailureResponse, SuccessResponse, Timing, dump_json
 from ..ha_mcp_readmission import (
     CapabilityAdmissionCoordinator,
     DecisionGeneration,
@@ -711,30 +711,55 @@ class _RouteLease:
 
 
 
+GATEWAY_SUCCESS_SUMMARY = (
+    "Completed a reviewed pure-read operation through the upstream gateway."
+)
+YAML_FAILURE_ERROR = "UpstreamReadGatewayError"
+
+# H4: the key names of a YAML read response are literals of this module and
+# of the response models, never read from the response being sealed.
+_YAML_RESPONSE_KEYS = frozenset(
+    {
+        *(field.name for field in dataclass_fields(SuccessResponse)),
+        *(field.name for field in dataclass_fields(FailureResponse)),
+        *(field.name for field in dataclass_fields(Timing)),
+        "provider",
+        "upstream_tool",
+        "upstream_server",
+        "upstream_version",
+        "classification",
+        "schema_fingerprint",
+        "untrusted_upstream_content",
+        "fallback",
+        "fallback_occurred",
+        "completeness",
+        "response_adapter",
+        "upstream_dispatch_occurred",
+        "failure_category",
+        "line",
+        "column",
+    }
+)
+
+
 def _yaml_response_vocabulary(
-    body: dict[str, Any],
     exposed_name: str,
     policy_entry: Any,
     *constants: str,
 ) -> frozenset[str]:
-    """H1: the gateway-authored text of one YAML read response.
+    """H1/H4: the gateway-authored constant text of one YAML read response.
 
-    The response, metadata, timing and detail key names are literals of this
-    module and of the response models. The values are the exposed and
-    reviewed tool names, the provider and reviewed server identity, the
-    reviewed schema fingerprint, and the fixed strings the caller passes.
-    Caller-derived (request id) and upstream-observed values (server version,
-    an unreviewed server name) are not in it and stay sealed.
+    The key names are the static :data:`_YAML_RESPONSE_KEYS`. The values are
+    the exposed and reviewed tool names, the provider and reviewed server
+    identity, the reviewed schema fingerprint, and the fixed strings the
+    caller passes, each taken from a closed source-defined set. Caller-derived
+    (request id) and upstream-observed values (server version, an unreviewed
+    server name) are not in it and pass the screen.
     """
 
-    keys = {key for key in body if key != "data"}
-    for field_name in ("metadata", "timing", "details"):
-        child = body.get(field_name)
-        if type(child) is dict:
-            keys.update(key for key in child if type(key) is str)
     return frozenset(
         {
-            *keys,
+            *_YAML_RESPONSE_KEYS,
             exposed_name,
             policy_entry.upstream_name,
             policy_entry.input_schema_fingerprint,
@@ -3996,7 +4021,7 @@ class UpstreamReadGateway:
                 metadata["response_adapter"] = response_adapter
             success = SuccessResponse(
                 operation=exposed_name,
-                summary="Completed a reviewed pure-read operation through the upstream gateway.",
+                summary=GATEWAY_SUCCESS_SUMMARY,
                 data=data_value,
                 warnings=warnings,
                 metadata=metadata,
@@ -4010,12 +4035,10 @@ class UpstreamReadGateway:
                         success.as_dict(),
                         self._known_secrets,
                         _yaml_response_vocabulary(
-                            success.as_dict(),
                             exposed_name,
                             policy_entry,
-                            success.summary,
-                            *warnings,
-                            completeness,
+                            GATEWAY_SUCCESS_SUMMARY,
+                            yaml_reader.K7_WARNING,
                         ),
                     )
                 except YamlReadRefusal:
@@ -4136,11 +4159,11 @@ class UpstreamReadGateway:
             )
             if is_yaml_adapter(policy_entry):
                 # H1: error details, message and metadata get the same pass.
+                # The code, message and category come from closed sets.
                 vocabulary = _yaml_response_vocabulary(
-                    failure.as_dict(),
                     exposed_name,
                     policy_entry,
-                    "UpstreamReadGatewayError",
+                    YAML_FAILURE_ERROR,
                     code,
                     public_message,
                     category,
@@ -4150,10 +4173,27 @@ class UpstreamReadGateway:
                         failure.as_dict(), self._known_secrets, vocabulary
                     )
                 except YamlReadRefusal:
-                    failure.details = {"failure_category": category}
-                    failure.request_id = ""
+                    # H4: the constant fallback; nothing of the refused body
+                    # is reused, and it passes the same seal.
+                    fallback_category, fallback_message = yaml_reader.FAILURES[
+                        yaml_reader.READ_FAILED
+                    ]
+                    fallback = FailureResponse(
+                        operation=exposed_name,
+                        error=YAML_FAILURE_ERROR,
+                        error_code=yaml_reader.READ_FAILED,
+                        message=fallback_message,
+                        details={"failure_category": fallback_category},
+                        retryable=False,
+                        metadata={
+                            "provider": PROVIDER_ID,
+                            "upstream_tool": policy_entry.upstream_name,
+                        },
+                        timing=Timing(total_ms=0.0),
+                        request_id="",
+                    )
                     sealed_body = yaml_reader.seal_response(
-                        failure.as_dict(), self._known_secrets, vocabulary
+                        fallback.as_dict(), self._known_secrets, vocabulary
                     )
                 return dump_json(sealed_body, limit=response_limit)
             return failure.to_json(response_limit)
