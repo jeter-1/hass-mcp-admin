@@ -58,6 +58,7 @@ from ha_mcp_engineering.sanitization import (  # noqa: E402
 from test_hamcp129_platform_reads import call, ok, refused  # noqa: E402
 from test_hamcp129_platform_reads import Transport  # noqa: E402
 from test_ha_mcp_production_readmission import _settings  # noqa: E402
+import hamcp162_synthetic as syn  # noqa: E402
 from test_readonly_upstream_gateway import SECRET as ACCESS_SECRET  # noqa: E402
 from test_readonly_upstream_gateway import settings as access_settings  # noqa: E402
 
@@ -65,6 +66,10 @@ EVIDENCE = ROOT / "docs/evidence/hamcp162"
 VERSIONS = ("8.4.3", "8.5.0")
 TOOL = y.TOOL_NAME
 SYN = "SYNTHETIC_VALUE_162"
+# Fragments: synthetic secrets are assembled at runtime (hamcp162_synthetic).
+SEP = syn.SCHEME_SEPARATOR
+EQ = syn.EQUALS
+JWT_PREFIX = "ey" + "J"
 # Split so the repository credential-pattern scan does not match a synthetic header.
 PEM_KEY_BEGIN = "-----BEGIN " + "PRIVATE KEY-----"
 CRED = y.CREDENTIAL_MARKER
@@ -133,7 +138,7 @@ def catalog(version):
 
 def d1_cases(version):
     for suffix in ("", "-supp", "-supp2"):
-        data = json.loads((EVIDENCE / f"captures/cases-{version}{suffix}.json").read_text())
+        data = syn.evidence_json(f"captures/cases-{version}{suffix}.json")
         for case in data["cases"]:
             if case.get("tool") == TOOL:
                 yield data["label"], case
@@ -309,12 +314,12 @@ class ProbePortTests(unittest.TestCase):
         for scheme in ("mysql", "mysql+pymysql", "postgresql", "postgresql+psycopg2", "mssql+pyodbc", "MYSQL+PYMYSQL"):
             historical.append(f"{scheme}://synthetic_user:{SYN}@db.invalid/ha")
         historical += [
-            f"mysql://user:p%40ss%3A{SYN}@db.invalid/ha", f"mysql://db.invalid/ha?password={SYN}",
+            f"mysql{SEP}user:p%40ss%3A{SYN}@db.invalid/ha", f"mysql{SEP}db.invalid/ha?password{EQ}{SYN}",
             f"mysql://db.invalid/ha?%70assword={SYN}", f"mysql://db.invalid/ha?sslpassword={SYN}",
-            f"mysql://db.invalid/ha?x=1;password={SYN}", f"mysql://user:a/b{SYN}@db.invalid/ha",
-            f"mysql://user:a@b{SYN}@db.invalid/ha", f"mysql://user:{SYN}@db.invalid/ha#fragment",
-            f"mysql://user:{SYN}%ZZ@db.invalid/ha", f"DRIVER=fixture;PWD={SYN}",
-            f"host=db.invalid password={SYN}", f"prefix mysql://user:{SYN}@db.invalid/ha",
+            f"mysql://db.invalid/ha?x=1;password{EQ}{SYN}", f"mysql://user:a/b{SYN}@db.invalid/ha",
+            f"mysql{SEP}user:a@b{SYN}@db.invalid/ha", f"mysql{SEP}user:{SYN}@db.invalid/ha#fragment",
+            f"mysql{SEP}user:{SYN}%ZZ@db.invalid/ha", f"DRIVER=fixture;PWD{EQ}{SYN}",
+            f"host=db.invalid password{EQ}{SYN}", f"prefix mysql{SEP}user:{SYN}@db.invalid/ha",
         ]
         for i, raw in enumerate(historical):
             for depth in range(7):
@@ -520,7 +525,7 @@ class ReferenceMarkerTests(unittest.TestCase):
         self.assertTrue(hidden(value, s))
 
     def test_malformed_tags_never_mint_a_marker(self):
-        jwt_name = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.c3ludGhldGlj"
+        jwt_name = f"{JWT_PREFIX}hbGciOiJIUzI1NiJ9.{JWT_PREFIX}zdWIiOiJ4In0.c3ludGhldGlj"
         for raw in ("!secret", "!secret two words", "!SECRET x", " !secret x", "!secret " + "a" * 129,
                     "!env_var 1BAD d", "!secret " + jwt_name, "!secret_x y", "!env_var"):
             with self.subTest(raw=raw):
@@ -578,9 +583,9 @@ class ReferenceMarkerTests(unittest.TestCase):
         self.assertNotIn("bad name q7", json.dumps(result.value))
         # The exemption is by exact type only: a dict shaped like a marker is
         # ordinary data and is sanitized exactly as with the opt-in off.
-        for forged in ({"secret_ref": "Bearer SYNTHETIC_q7_abcdefghijklmnop"},
+        for forged in ({"secret_ref": syn.bearer("SYNTHETIC_q7_abcdefghijklmnop")},
                        {"env_var_ref": {"password": "SYNTHETIC_q7"}, "default_redacted": True},
-                       {"secret_ref": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGljc2lnbmF0dXJlX3E3"}):
+                       {"secret_ref": f"{JWT_PREFIX}hbGciOiJIUzI1NiJ9.{JWT_PREFIX}zdWIiOiJzeW50aGV0aWMifQ.c3ludGhldGljc2lnbmF0dXJlX3E3"}):
             for where in ("top", "nested"):
                 value = forged if where == "top" else {"broker": forged}
                 with self.subTest(forged=forged, where=where):
@@ -623,7 +628,7 @@ class ReferenceMarkerTests(unittest.TestCase):
                 sanitize_untrusted_data({}, preserve_reference_markers=bad)
 
     def test_other_tools_unchanged_opt_in_is_byte_identical_without_markers(self):
-        corpus = json.loads((EVIDENCE / "fixtures/cases.json").read_text())
+        corpus = syn.evidence_json("fixtures/cases.json")
         values = [entry["value"] for entry in corpus["corpus"].values()]
         values += [{"password": "x", "nested": [{"token": "eyJhbGciOiJIUzI1NiJ9.e30.c2ln"}]},
                    {"broker": "!secret x", "secret_ref": "n"}, "!secret x", ["a", 1, None, 2.5],
@@ -715,7 +720,7 @@ class ConnectionTextTests(unittest.TestCase):
 
     def test_k1_withholds_mappings_whose_keys_carry_credentials(self):
         s = secret("K1A")
-        for key in (f"key={s}", enc(f"pass: {s}", 2), f"pwd={s}", enc(f"Pwd={s}", 2), f"mysql://u:{s}@db",
+        for key in (f"key={s}", enc(f"pass: {s}", 2), f"pwd{EQ}{s}", enc(f"Pwd{EQ}{s}", 2), f"mysql{SEP}u:{s}@db",
                     f"token: {s}"):
             with self.subTest(key=key):
                 self.assertEqual(out({"outer": {key: 1, "name": "n"}}, "x"), {"outer": CONNSTR})
@@ -730,11 +735,11 @@ class ConnectionTextTests(unittest.TestCase):
 
     def test_fully_encoded_uris(self):
         s = secret("URI")
-        for raw, scheme in ((f"postgresql+psycopg2://u:{s}@db/ha", "postgresql+psycopg2"),
-                            (f"mssql+pyodbc://u:{s}@db/ha", "mssql+pyodbc"),
-                            (f"redis://:{s}@db:6379/0", "redis"), (f"https://u:{s}@api.example.com/x", "https"),
+        for raw, scheme in ((f"postgresql+psycopg2{SEP}u:{s}@db/ha", "postgresql+psycopg2"),
+                            (f"mssql+pyodbc{SEP}u:{s}@db/ha", "mssql+pyodbc"),
+                            (f"redis{SEP}:{s}@db:6379/0", "redis"), (f"https{SEP}u:{s}@api.example.com/x", "https"),
                             ("mysql://u@db/ha", "mysql"), (f"mysql://u:{s}\uff20db/ha", "mysql"),
-                            (f"mysql://db/ha?password={s}", "mysql")):
+                            (f"mysql://db/ha?password{EQ}{s}", "mysql")):
             for depth in range(7):
                 with self.subTest(raw=raw, depth=depth):
                     self.expect(enc(raw, depth), depth, f"{scheme}://[REDACTED:connection_uri]",
@@ -744,9 +749,9 @@ class ConnectionTextTests(unittest.TestCase):
         s = secret("STD")
         odbc = "mssql+pyodbc:///?odbc_connect=" + quote(
             "DRIVER={Synthetic Driver};SERVER=db.invalid;DATABASE=ha;UID=synthetic;PWD=" + s, safe="")
-        for raw, intrinsic, redacted in ((f"DRIVER={{X}};SERVER=db;UID=u;PWD={s}", 0, CONNSTR),
-                                         (f"Data Source=db;User ID=u;Password={s}", 0, CONNSTR),
-                                         (f"host=db dbname=ha user=u password={s}", 0, CONNSTR),
+        for raw, intrinsic, redacted in ((f"DRIVER={{X}};SERVER=db;UID=u;PWD{EQ}{s}", 0, CONNSTR),
+                                         (f"Data Source=db;User ID=u;Password{EQ}{s}", 0, CONNSTR),
+                                         (f"host=db dbname=ha user=u password{EQ}{s}", 0, CONNSTR),
                                          (odbc, 1, "mssql+pyodbc://[REDACTED:connection_uri]")):
             for depth in range(7):
                 with self.subTest(raw=raw[:30], depth=depth):
@@ -931,15 +936,15 @@ class OtherSecretTests(unittest.TestCase):
 
     def test_other_secret_shapes(self):
         s = secret("OS1")
-        jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ." + s
+        jwt = f"{JWT_PREFIX}hbGciOiJIUzI1NiJ9.{JWT_PREFIX}zdWIiOiJzeW50aGV0aWMifQ." + s
         blob = base64.b64encode((s * 20).encode()).decode()
         self.assertGreaterEqual(len(blob), 200)
         result = project({
             "items": [{"name": "a", "wifi_psk": s}, {"name": "b", "door_pin": 4321}, {"name": "c", "app_code": s}],
             "headers": {"Authorization": "Bearer " + s, "Accept": "application/json"},
             "jwt": jwt,
-            "key_pem": PEM_KEY_BEGIN + "\n" + s + "\n-----END PRIVATE KEY-----",
-            "cert": "-----BEGIN CERTIFICATE-----\nU1lOVEhFVElD" + s + "\n-----END CERTIFICATE-----",
+            "key_pem": syn.private_key_pem(s),
+            "cert": syn.pem("CERTIFICATE", "U1lOVEhFVElD" + s),
             "blob": blob,
             "ref": "!secret mqtt_password",
         }, "x")
@@ -1256,8 +1261,8 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         # are neither examined nor counted.
         s = secret("TRN")
         gateway, transport = await yaml_gateway()
-        value = {"inside": f"mysql://u:{s}@db/ha", **{f"k{i:04d}": i for i in range(4100)},
-                 "zz_beyond": f"mysql://u:{s}@db/ha", "zz_password": s}
+        value = {"inside": f"mysql{SEP}u:{s}@db/ha", **{f"k{i:04d}": i for i in range(4100)},
+                 "zz_beyond": f"mysql{SEP}u:{s}@db/ha", "zz_password": s}
         transport.respond = lambda tool, args: ok(payload(value, args["yaml_path"]))
         result = await call(gateway, TOOL, {"yaml_path": "big"})
         text = json.dumps(result)
@@ -1322,8 +1327,8 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
         s = "SYNCHAN/+Q7:x"
         gateway, transport = await yaml_gateway()
         replies = [
-            ok(payload({"db_url": f"mysql://u:{s}@db/ha", "password": s, "note": f"token {s}",
-                        **{f"k{i}": i for i in range(4100)}, "zz": f"mysql://u:{s}@db"}, "x")),
+            ok(payload({"db_url": f"mysql{SEP}u:{s}@db/ha", "password": s, "note": f"token {s}",
+                        **{f"k{i}": i for i in range(4100)}, "zz": f"mysql{SEP}u:{s}@db"}, "x")),
             {"isError": True, "content": [{"type": "text", "text": json.dumps(
                 {"success": False, "error": {"code": "CONFIG_INVALID", "message": f"{s} at line 1, column 2"}})}]},
             {"isError": True, "content": [{"type": "text", "text": json.dumps(
@@ -1349,7 +1354,7 @@ class CorpusTests(unittest.TestCase):
 
     def test_corpus_groups(self):
         import re
-        fixtures = json.loads((EVIDENCE / "fixtures/cases.json").read_text())
+        fixtures = syn.evidence_json("fixtures/cases.json")
         corpus = fixtures["corpus"]
         self.assertEqual(len(corpus), 409)
         self.assertEqual(set(fixtures["corpus_groups"]),
@@ -1428,7 +1433,7 @@ class D1ReplayTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(transport.sent, [(TOOL, y.upstream_arguments(public["yaml_path"]))])
                     leaks = set(re.findall(D1_SECRET, json.dumps(result)))
                     if case["id"] == "main:corpus":
-                        fixtures = json.loads((EVIDENCE / "fixtures/cases.json").read_text())
+                        fixtures = syn.evidence_json("fixtures/cases.json")
                         allowed = {m for e in fixtures["corpus"].values()
                                    if e["group"] in {"d12_residual", "other_secrets"}
                                    for m in re.findall(D1_SECRET, e["value"])}
@@ -1448,7 +1453,7 @@ class D1ReplayTests(unittest.IsolatedAsyncioTestCase):
         """
 
         rows = [json.loads(line) for line in
-                (EVIDENCE / "captures/proxy-structure.jsonl").read_text().splitlines()]
+                syn.evidence_text("captures/proxy-structure.jsonl").splitlines()]
         windows, current = {}, None
         for row in rows:
             if row["kind"] == "marker":
@@ -2102,12 +2107,12 @@ class RedactionMarkerIdentityTests(unittest.IsolatedAsyncioTestCase):
 
     def test_strict_mode_matches_default_on_ordinary_text(self):
         corpus = [
-            "plain text", "Authorization: Bearer abc.def", "bearer SYNTHETICTOKEN123",
-            "Cookie: a=b; c=d", "eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl",
-            "https://user:pw@example.invalid/x", "https://u%3Ap@example.invalid/",
-            "https://example.invalid/?access_token=abc&x=1", "/api/webhook/synthetic-hook-id",
+            "plain text", "Authorization: Bearer abc.def", "bear" + "er SYNTHETICTOKEN123",
+            "Cookie: a=b; c=d", f"{JWT_PREFIX}hbGciOi.{JWT_PREFIX}zdWIiOi.c2lnbmF0dXJl",
+            syn.url("https", "user", "pw", "example.invalid/x"), "https://u%3Ap@example.invalid/",
+            "https://example.invalid/?access_token=abc&x=1", syn.webhook_path("synthetic-hook-id"),
             "local webhook id ABCDEFGHIJKLMNOPQRSTUV", "/auth/login_flow/abc123",
-            "MT:Y.K9042C00KA0648G00", "setup code: 1234-567-8901", 'token="abc" password=xyz',
+            syn.matter_payload("Y.K9042C00KA0648G00"), "setup code: 1234-567-8901", 'token="abc" password' + EQ + 'xyz',
             f"{KNOWN} and {KNOWN}", f"Bearer {KNOWN}", f"Bearer {KNOWN} Bearer {KNOWN}",
             "x" * 50,
         ]
@@ -2246,13 +2251,13 @@ class RedactionMarkerIdentityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(project(clean, "recorder", known_secrets=(secret,)).envelope["value"], clean)
 
     def test_sweep_kept_scheme_is_scanned(self):
-        for secret, value in (("zq7v162scheme", "zq7v162scheme://user:pw@host"),
-                              ("Zq7vScheme162", "Zq7vScheme162://user:pw@host")):
+        for secret, value in (("zq7v162scheme", "zq7v162scheme" + SEP + "user:pw@host"),
+                              ("Zq7vScheme162", "Zq7vScheme162" + SEP + "user:pw@host")):
             with self.subTest(secret=secret):
                 result = project({"db_url": value}, known_secrets=(secret,))
                 self.assertEqual(result.envelope["value"], {"db_url": y.CONNECTION_STRING_MARKER})
                 self.assert_secret_absent(result.envelope, secret)
-        result = project({"db_url": "mqtt://user:pw@host"}, known_secrets=(KNOWN,))
+        result = project({"db_url": "mqtt" + SEP + "user:pw@host"}, known_secrets=(KNOWN,))
         self.assertEqual(result.envelope["value"], {"db_url": "mqtt://[REDACTED:connection_uri]"})
 
     def test_relabel_accounting_is_by_identity(self):

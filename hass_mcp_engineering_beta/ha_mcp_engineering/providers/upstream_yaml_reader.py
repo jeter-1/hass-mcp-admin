@@ -12,7 +12,9 @@ H4: :func:`screen` is the single entry point every string the reader can
 emit passes, in every output position (:data:`OUTPUT_POSITIONS`): values,
 list items, keys at every level, reference names, key paths, limitations,
 the redaction summary and every gateway response field. It applies the
-complete rule set (:data:`SCANNER_RULES`) with no position-specific skip.
+complete rule set (:data:`SCANNER_RULES`) on every form of the text, with
+no skip for already-canonical text. The only position difference is the
+owner-accepted D12 residual: a value or list item is not judged by key_text.
 
 The upstream tool is an *optional reviewed tool*: it is admitted only for
 exact versions listed in :data:`OPTIONAL_DISPOSITIONS` whose complete runtime
@@ -565,7 +567,10 @@ assert set(FIELD_POSITIONS.values()) <= OUTPUT_POSITIONS
 
 # The rules ``screen`` applies, in order, to every string in every position.
 # "sanitizer" is the shared sanitizer's whole rule set (its segment and
-# serialized rules and the configured known secrets).
+# serialized rules and the configured known secrets). The one position
+# difference is owner decision D12: a value or list item is not judged by
+# key_text (a credential spelled without a credential word stays visible
+# there); every other position gets key_text too.
 SCANNER_RULES = (
     "credential_key_context",
     "key_scoped",
@@ -577,9 +582,9 @@ SCANNER_RULES = (
     "key_text",
     "connection_context",
     "sanitizer",
-    "known_secret_casefold",
     "pem",
     "opaque_blob",
+    "known_secret_casefold",
 )
 
 # Every category a redaction summary can name.
@@ -628,8 +633,9 @@ def screen(
     canonical keys above the string (for a reference name, the key whose
     value it was). Only a byte-exact match of a source-defined constant in
     ``vocabulary`` is kept without the rules; every other string gets every
-    rule of :data:`SCANNER_RULES` on its raw, decoded and canonical forms.
-    There is no fast path for already-canonical text. A finding replaces
+    rule of :data:`SCANNER_RULES` (in a value or list item, all but key_text:
+    D12) on its raw, decoded and canonical forms. There is no fast path for
+    already-canonical text. A finding replaces
     the string whole (a key path segment becomes ``*``).
     """
 
@@ -678,7 +684,12 @@ def _finding(
     # marker_lookalike
     if marker_like_text(text):
         return MARKER_COLLISION, MARKER_COLLISION_CATEGORY
-    # credential_text_* and key_text
+    # credential_text_* and key_text. A key name is shown and its value is
+    # withheld by credential_key_context, so an identifier-shaped key name
+    # is not itself judged by credential words (K1). A value or list item
+    # gets C' only: owner decision D12 accepts a credential spelled without
+    # a credential word (``p_w_d=``, ``pass_word=``) as visible there. Every
+    # other string gets all four rules.
     if position in _PATH_POSITIONS:
         if (
             is_credential_key(canonical_text)
@@ -690,6 +701,8 @@ def _finding(
         if key_text_unsafe(canonical_text):
             return CONNECTION_STRING_MARKER, "connection_string"
     elif credential_text(canonical_text):
+        return redaction_form(canonical_text, known_secrets)
+    elif position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):
         return redaction_form(canonical_text, known_secrets)
     # connection_context; R11 exempts the exact SQLite value shape from it
     # only, so the scanners below still run on that shape.
@@ -779,15 +792,19 @@ PATH_MASK = "*"
 
 
 def path_segment_safe(
-    segment: str, known_secrets: tuple[str, ...], position: str = "yaml_path"
+    segment: str,
+    known_secrets: tuple[str, ...],
+    position: str = "yaml_path",
+    context: tuple[str, ...] = (),
 ) -> bool:
     """A key-path segment may be shown only if it is bounded and ``screen``
-    keeps it (in a path position the segment's own text is also checked as
-    a credential key, K1 key text and C' credential text)."""
+    keeps it under ``context``, the segments above it (in a path position
+    the segment's own text is also checked as a credential key, K1 key text
+    and C' credential text)."""
 
     if type(segment) is not str or not _SEGMENT.fullmatch(segment):
         return False
-    return screen(segment, known_secrets, position=position).kept
+    return screen(segment, known_secrets, position=position, path=context).kept
 
 
 def project_path(
@@ -797,13 +814,14 @@ def project_path(
 
     The first unsafe segment, or a segment past the bound, becomes ``*`` and
     ends the path, so a path never carries key text that the value tree
-    would redact.
+    would redact. Each segment is screened with the segments above it as
+    its context, as a key in the value tree is (H4).
     """
 
     shown: list[str] = []
     for segment in segments:
         if len(shown) >= MAX_PATH_SEGMENTS or not path_segment_safe(
-            segment, known_secrets, position
+            segment, known_secrets, position, tuple(shown)
         ):
             shown.append(PATH_MASK)
             break

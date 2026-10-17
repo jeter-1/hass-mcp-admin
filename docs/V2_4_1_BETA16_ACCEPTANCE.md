@@ -18,7 +18,9 @@ Bind the following:
 - the approved design `docs/HAMCP_162_YAML_READER_DESIGN.md`;
 - the D1 capture evidence in `docs/evidence/hamcp162/` (draft PR #264 head
   `0e3e2264491b8d13b988c3ba9d4d50f4e9b520e5`, merged into the branch), with
-  its `MANIFEST.sha256`;
+  its `MANIFEST.sha256` (committed bytes) and `DECODED.sha256` (the original
+  capture bytes of the files stored through the reversible `codec.py`
+  encoding; `python docs/evidence/hamcp162/codec.py verify` checks both);
 - Josh's 2026-10-16 decisions K1–K11 on HAMCP-162, which govern where the
   evidence and the design differ;
 - the original base `main` (2.4.1-beta.13 at `06d5555`), and every later
@@ -53,6 +55,14 @@ The review needs a security section covering:
   upstream text (keys and values, encoded and look-alike forms) scanned and
   neutralized, never skipped (H3), and the shared sanitizer default mode
   unchanged for every other tool;
+- every emitted string screened by the single `screen` entry point with the
+  complete rule set in all 21 positions, including PEM and opaque blobs on
+  canonical keys and path segments under their context, with the D12
+  value-position exception pinned (H4);
+- the 756-cell rule × position matrix through the reader, the gateway and a
+  real MCP session, and the coverage test over positions and rules;
+- the committed-file secret-pattern scan over every HAMCP-162 test, fixture
+  and evidence file;
 - the explicit per-version dispositions with no default;
 - the complete-descriptor (R4) binding;
 - the generation and dispatch lease (R5), and exclusion from the stock
@@ -77,19 +87,21 @@ Every beta.15 descriptor is unchanged.
 
 ### Offline source evidence
 
-Run `tests/test_hamcp162_yaml_reader.py` and
-`tests/test_hamcp162_yaml_admission.py` against the exact released tree,
-with the D1 fixtures. They must prove each of the following:
+Run `tests/test_hamcp162_yaml_reader.py`,
+`tests/test_hamcp162_yaml_admission.py` and
+`tests/test_hamcp162_h4_pipeline.py` against the exact released tree, with
+the D1 fixtures. They must prove each of the following:
 - the design §8.1 groups;
 - the 438-probe rule model, and the rule-A, B, C′, R10 and R11 counterexamples;
 - the D1 replay for ha-mcp 8.4.3 and 8.5.0;
+- the H4 reproductions, the rule × position matrix and its coverage test;
 - admission, drift and dispositions;
 - lease races in both admission modes;
 - stock invariants;
 - Core gating on 2026.9.2, 2026.10.0 and 2026.10.1.
 
 Run `docs/evidence/hamcp162-mutations/run_mutations.py`. Every design §8.2
-mutation and every correction mutation (H1, H2, H3) must fail at least one
+mutation and every correction mutation (H1, H2, H3, H4) must fail at least one
 test.
 
 ## 2. Publication and recovery preparation

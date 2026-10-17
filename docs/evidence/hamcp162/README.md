@@ -383,7 +383,20 @@ Scans of every committed file under this directory:
 
 - `README.md`: this record.
 - `MANIFEST.sha256`: sha256 of every file in this directory except `README.md`
-  and the manifest itself.
+  and the manifest itself. These are the hashes of the committed bytes, which
+  for the files listed in `DECODED.sha256` are the encoded bytes.
+- `codec.py`: the reversible encoding of committed evidence (HAMCP-162 H4
+  correction batch). Every file whose text matched a secret-shaped pattern (a
+  PEM header, a JWT, an opaque run, URL userinfo, a password assignment and
+  similar synthetic shapes) is stored with the sentinel `⟦split⟧` inserted
+  inside each match, so no committed file contains literal secret-shaped
+  text. Decoding removes every sentinel and restores the original bytes
+  exactly. Records were not re-captured or edited: encoding is mechanical and
+  round-trip checked. `python codec.py verify` checks both hash files; tests
+  read evidence only through `codec.read_text`.
+- `DECODED.sha256`: sha256 of the decoded bytes of each encoded file. They
+  equal the hashes `MANIFEST.sha256` pinned before encoding, so the capture
+  provenance is unchanged.
 - `captures/`: `catalog-<v>-<run>.json` for runs A, A2, B, S, S2 and OFF;
   `cases-<v>.json`, `cases-<v>-supp.json`, `cases-<v>-supp2.json`;
   `analysis.json`; `setup.json`; `component.txt`; `case-table.txt`;

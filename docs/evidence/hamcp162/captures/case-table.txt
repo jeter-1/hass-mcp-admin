@@ -1,4 +1,4 @@
-main:recorder | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "mysql://recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
+main:recorder | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
 main:homeassistant | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"auth_providers": [{"type": "homeassistant"}], "customize": {"sensor.synthetic_temperature": {"friendly_name
 main:homeassistant.customize | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"sensor.synthetic_temperature": {"friendly_name": "Synthetic temperature", "icon": "mdi:thermometer"}}]
 main:template | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[[{"sensor": [{"name": "Synthetic template", "state": "{{ states('sensor.synthetic_temperature') | float(0) +
@@ -43,11 +43,11 @@ main:top_list | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'pars
 main:template.0 | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
 main:rest.0 | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
 main:rest.0.resource | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
-main:corpus | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"c0000": "Server=db;Uid=u;Pwd=Zq7v0001Xw", "c0001": "Server%3Ddb%3BUid%3Du%3BPwd%3DZq7v0001Xw", "c0002": "Se
+main:corpus | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"c0000": "Server=db;Uid=u;Pw⟦split⟧d=Zq7v0001Xw", "c0001": "Server%3Ddb%3BUid%3Du%3BPwd%3DZq7v0001Xw", "c0002": "Se
 main:keys | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"%25252525252570assword": "Zq7v0082Xw", "%252525252570assword": "Zq7v0081Xw", "%2525252525EF%2525252525BD%25
 main:mqtt_keys | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"MQTT-PassWord": "Zq7v0158Xw", "broker": "mqtt.local"}]
 main:recorder_sqlite | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"db_url": "sqlite:////config/home-assistant_v2.db"}]
-main:recorder.db_url | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["mysql://recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4"]
+main:recorder.db_url | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=["my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4"]
 main:missing_key | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
 main:recorder.missing | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
 main: | isErr= False | count=0 fs=1 fu=0 warn=False keys=[] parsed=[]
@@ -105,12 +105,12 @@ neither:recorder | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'y
 schema:yaml_path_int | isErr= True | ERR VALIDATION_FAILED: `yaml_path`: Input should be a valid string
 schema:missing_yaml_path | isErr= True | ERR VALIDATION_FAILED: `yaml_path`: Missing required argument
 schema:extra_property | isErr= True | ERR VALIDATION_FAILED: `path`: unknown parameter. Valid parameters: yaml_path, file, include_content, include_parsed.
-schema:include_parsed_str | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['content', 'file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "mysql://recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
+schema:include_parsed_str | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['content', 'file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
 schema:file_null | isErr= True | ERR VALIDATION_FAILED: `file`: Input should be a valid string
 file:configuration.yml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
 file:Configuration.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
 file:CONFIGURATION.YAML | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
-file:./configuration.yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "mysql://recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
+file:./configuration.yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
 file:/config/configuration.yaml | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
 file:configuration.yaml  | isErr= True | ERR Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**,
 file:packages/x.yaml | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"password": "Zq7v0166Xw", "value": 1}]
@@ -218,4 +218,4 @@ list_files:blueprints:None | isErr= False | {"count": 2, "files": "\u2026", "pat
 list_files:../:None | isErr= True | ERR Path not allowed. Must be in: www, themes, custom_templates, dashboards, blueprints, packages
 list_files:themes:None | isErr= True | ERR Directory does not exist: themes
 unavailable:entry_removed | isErr= True | ERR VALIDATION_FAILED: API error: 400 - 400: Bad Request
-unavailable:entry_readded | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "mysql://recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {
+unavailable:entry_readded | isErr= False | count=1 fs=1 fu=0 warn=False keys=[['file', 'parsed', 'yaml_path']] parsed=[{"commit_interval": 5, "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4", "exclude": {

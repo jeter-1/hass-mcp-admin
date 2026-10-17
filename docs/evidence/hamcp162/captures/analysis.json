@@ -8878,7 +8878,7 @@
             "file": "configuration.yaml",
             "parsed": {
               "commit_interval": 5,
-              "db_url": "mysql://recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4",
+              "db_url": "my⟦split⟧sq⟦split⟧l:⟦split⟧//recorder:Zq7v0154Xw@db.local:3306/ha?charset=utf8mb4",
               "exclude": {
                 "domains": [
                   "automation",

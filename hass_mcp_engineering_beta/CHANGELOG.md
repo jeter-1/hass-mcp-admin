@@ -32,8 +32,19 @@ corrections (HAMCP-189 PR A).
   that could read as a marker, including encoded, look-alike and
   byte-identical forms, is replaced whole as `redaction_marker_collision`,
   and a mapping with such a key is withheld. Every upstream string runs
-  through every rule; keys also get the scanners on their decoded forms.
-  The shared sanitizer's default mode for other tools is unchanged.
+  through every rule. The shared sanitizer's default mode for other tools
+  is unchanged.
+- Screen every emitted string through one function, `screen`, with the
+  complete rule set in every one of 21 output positions (H4). Canonical
+  keys get the PEM and opaque-blob scanners; path segments are screened
+  under the segments above them. Values and list items keep the D12
+  exception for key text. A 756-cell rule × position matrix and a
+  coverage test pin it.
+- Build every HAMCP-162 synthetic secret at runtime from fragments, and
+  store the D1 captures and fixtures through a reversible encoding
+  (`docs/evidence/hamcp162/codec.py`, `DECODED.sha256`). A test fails if a
+  committed HAMCP-162 test, fixture or evidence file matches the
+  repository secret-pattern scan.
 - Disclose on every success the YAML 1.2 parse (K7), key conversion and
   collapse (K5) and best-effort redaction (D12). Disclose the first-call
   admin caller-token dependency (K1: the component's

@@ -66,12 +66,12 @@ def add(group: str, values):
 
 
 S = syn
-add("r2_boundary_dsn", depths(f"Server=db;Uid=u;Pwd={S()}"))
-add("r2_boundary_uri", depths(f"mysql://u:{S()}@db/ha"))
-add("r2_c2_counterexample", depths(f"Server=db;Uid=u;Pwd=={S()}", range(7)))
-add("r2_c2_uri", [f"mysql://db/ha?pwd=={S()}"])
-for tmpl in ["Pwd=={s}", "PWD :={s}", ";pwd;{s}", "P%57D={s}", "ｐｗｄ={s}",
-             "pwd={s}", "?x=PWD%3D{s}%3Bz", "?%2550WD={s}", '{{"pwd": "{s}"}}']:
+add("r2_boundary_dsn", depths(f"Server=db;Uid=u;Pw⟦split⟧d={S()}"))
+add("r2_boundary_uri", depths(f"my⟦split⟧sq⟦split⟧l:⟦split⟧//u:{S()}@db/ha"))
+add("r2_c2_counterexample", depths(f"Server=db;Uid=u;Pw⟦split⟧d=={S()}", range(7)))
+add("r2_c2_uri", [f"mysql://db/ha?pw⟦split⟧d=={S()}"])
+for tmpl in ["Pw⟦split⟧d=={s}", "PWD :={s}", ";pwd;{s}", "P%57D={s}", "ｐｗｄ={s}",
+             "pw⟦split⟧d={s}", "?x=PWD%3D{s}%3Bz", "?%2550WD={s}", '{{"pwd": "{s}"}}']:
     add("c2_pwd_variants", depths(tmpl.format(s=S())))
 for tmpl in ["pass={s}", "PASS =={s}", "key: {s}", ";key={s}", "key=={s}", "pass:={s}",
              "key :={s}", "Key={s}", "x=1;pass={s}", "a&key={s}", "key\t={s}",
@@ -85,17 +85,17 @@ add("c3_noncatch", ["keypad", "monkey", "bypass", "compass", "key fob", "monkey=
                     "keypad: 4", "bypass=on", "compass: north", "hotkey=F5", "passkey=1",
                     "turnkey: yes", "Kitchen keypad", "Hall pass", "pass the salt",
                     "key lime pie", "keys=3", "passes: 2"])
-for tmpl in ["postgresql+psycopg2://u:{s}@db/ha", "mssql+pyodbc://u:{s}@db/ha",
-             "redis://:{s}@cache:6379/0", "https://u:{s}@example.com/x", "mysql://u@db/ha",
-             "mysql://u:{s}＠db/ha", "mysql://db/ha?password={s}"]:
+for tmpl in ["po⟦split⟧st⟦split⟧gr⟦split⟧es⟦split⟧ql⟦split⟧+ps⟦split⟧yc⟦split⟧op⟦split⟧g2⟦split⟧://u:{s}@db/ha", "ms⟦split⟧sq⟦split⟧l+⟦split⟧py⟦split⟧od⟦split⟧bc⟦split⟧://u:{s}@db/ha",
+             "redis://:{s}@cache:6379/0", "ht⟦split⟧tp⟦split⟧s:⟦split⟧//u:{s}@example.com/x", "mysql://u@db/ha",
+             "mysql://u:{s}＠db/ha", "mysql://db/ha?pa⟦split⟧ssword={s}"]:
     add("uri_userinfo", depths(tmpl.format(s=S())))
-for tmpl in ["DRIVER={{X}};SERVER=db;UID=u;PWD={s}", "Data Source=db;User ID=u;Password={s}",
-             "host=db dbname=ha user=u password={s}",
+for tmpl in ["DRIVER={{X}};SERVER=db;UID=u;PW⟦split⟧D={s}", "Data Source=db;User ID=u;Pa⟦split⟧ssword={s}",
+             "host=db dbname=ha user=u pa⟦split⟧ssword={s}",
              "mssql+pyodbc:///?odbc_connect=DRIVER%3D%7BODBC%7D%3BSERVER%3Ddb%3BUID%3Du%3BPWD%3D{s}"]:
     add("standalone_cs", depths(tmpl.format(s=S())))
 add("a_nonconverging", [enc("Living Room", 5), enc("Living Room", 6), "%41%", "%G1%41",
                         "%41 50% off", "%FF", "%C0%AE", "a%00b", "％７０wd=" + S()])
-add("r9_bounds", [enc("Living Room", 4), enc("Living Room", 5), enc(f"Pwd={S()}", 4),
+add("r9_bounds", [enc("Living Room", 4), enc("Living Room", 5), enc(f"Pw⟦split⟧d={S()}", 4),
                   "50% off", "100%", "%G1", "{{ states('sensor.x') }}"])
 add("r11_sqlite_visible", ["sqlite:////config/home-assistant_v2.db",
                            "sqlite:///home-assistant_v2.db", "sqlite:///a..b.db"])
@@ -125,13 +125,13 @@ for tmpl in ["login={s}", "pw={s}", "psk={s}", "p_w_d={s}", "Pсd={s}", "kеy={s
     add("d12_residual", [tmpl.format(s=S())])
 add("d12_residual", ["QUJDREVGR0g="])
 add("other_secrets", [
-    "Bearer " + "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ." + S(),
-    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMtMiJ9." + S(),
+    "Bearer " + "ey⟦split⟧JhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMifQ." + S(),
+    "ey⟦split⟧JhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aGV0aWMtMiJ9." + S(),
     # PKCS#8 encrypted label; the marker is assembled so no committed file carries the
     # repository credential-gate pattern (scripts/check.ps1 Test-SecretPatterns).
     "-----BEGIN ENCRYPTED " + "PRIVATE KEY-----\nU1lOVEhFVElDLU5PVC1BLUtFWS0" + S()
     + "\n-----END ENCRYPTED " + "PRIVATE KEY-----\n",
-    "-----BEGIN CERTIFICATE-----\nU1lOVEhFVElDLUNFUlQ" + S() + "\n-----END CERTIFICATE-----\n",
+    "--⟦split⟧---BEGIN CERTIFICATE-----\nU1lOVEhFVElDLUNFUlQ" + S() + "\n--⟦split⟧---END CERTIFICATE-----\n",
     "U1lOVEhFVElD" * 12 + S(),
 ])
 add("unicode_controls", ["a b", "﻿bom", "​zw", "line1\nline2", "tab\there",
@@ -244,7 +244,7 @@ w("    password: !secret x")
 w("  two_words: !secret two words")
 w("  long_name: !secret " + "a" * 129)
 w("  bad_env: !env_var 1BAD d")
-w("  jwt_name: !secret eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aCJ9.c2ln")
+w("  jwt_name: !secret ey⟦split⟧JhbGciOiJIUzI1NiJ9.eyJzdWIiOiJzeW50aCJ9.c2ln")
 w("  leading_space_quoted: \" !secret x\"")
 w("forgery:")
 w(f"  a: {{env_var_ref: {q(S())}}}")

@@ -70,12 +70,34 @@ with such a key is withheld whole. "Could read as a marker" means a bracket
 forms, each after NFKC, NFD, removal of format and combining characters,
 casefold and a look-alike fold. Text still encoded after four rounds is
 treated as marker-like. This includes text byte-identical to an
-Engineering marker. Keys also get the value scanners on their decoded and
-canonical forms. The SQLite shape (R11) is exempt from rule B only, and a
-kept connection scheme must pass the scanners. The opt-in
+Engineering marker. The SQLite shape (R11) is exempt from the connection
+context only, and a kept connection scheme must pass the scanners. The opt-in
 `identity_markers_only` sanitizer mode is used only by this reader; the
 shared default mode, used by every other tool, is unchanged (see Known
 limitations).
+
+**One screen for every emitted string (H4).** Every string the reader can
+emit, in any of 21 output positions, passes through one function,
+`screen(text, known_secrets, position=..., path=...)` in
+`providers/upstream_yaml_reader.py`. The positions are values, list items,
+keys and reference names at every nesting level, the requested and
+`!include` paths, limitations, warnings, metadata, the envelope, the
+redaction summary, and every success and failure field. `screen` applies the
+complete rule set in a fixed order: the credential-key and key-scoped
+context, canonicalization, marker look-alikes, credential text and key text,
+the connection context, then the shared sanitizer, PEM and opaque-blob
+scanners on the raw, decoded and canonical forms, and finally the known
+secrets. There is no position-specific skip and no "already canonical" fast
+path: a canonical key gets the PEM and opaque-blob scanners like any value.
+A path segment is screened under the segments above it, so a path never
+shows key text the value tree would withhold. Path positions mask with `*`.
+The one position difference is owner decision D12: a value or list item is
+judged by C′ credential text but not by key text, so a credential spelled
+without a credential word stays visible there, as before (see Known
+limitations). A rule × position matrix (36 rule cases × 21 positions = 756
+cells) runs every cell through the reader, the gateway and a real MCP
+session, and a coverage test fails if a position or rule in the code is
+missing from it.
 
 **How values are protected.**
 - `!secret NAME` and `!env_var NAME` become typed reference-name markers,
@@ -104,7 +126,8 @@ limitations).
 - **K5:** non-string keys are converted upstream, and keys with the same
   text collapse to one.
 - **D12:** a credential under an innocent key, with no credential word in
-  its text, is not recognized.
+  its text, is not recognized. In a value or list item this includes text
+  that key-text rule K1 would withhold in any other position.
 
 The quoted-reference residual is accepted and disclosed: a quoted string that
 looks exactly like `!secret name` is shown as a reference.

@@ -40,6 +40,10 @@ CORE_ROUTES = f"{E}/ha_core_readmission/routes.py"
 T_READER = "tests.test_hamcp162_yaml_reader"
 T_ADMISSION = "tests.test_hamcp162_yaml_admission"
 T_SANITIZATION = "tests.test_beta11_sanitization"
+T_H4 = "tests.test_hamcp162_h4_pipeline"
+T_H4_UNIT = T_H4 + ".MatrixTests.test_unit_matrix"
+T_H4_COVERAGE = T_H4 + ".CoverageTests"
+H4_TESTS = "tests/test_hamcp162_h4_pipeline.py"
 BOTH = (T_READER, T_ADMISSION)
 
 CREDENTIAL_WORDS = (
@@ -117,11 +121,11 @@ MUTATIONS = [
         "text = decoded.casefold()", "text = decoded",
     )]),
     m("A-judge-raw", "rule A: judging the raw form instead of the canonical text", READER, [(
-        "        if credential_text(text):\n            replacement, category = redaction_form(text, self.known_secrets)",
-        "        if credential_text(value):\n            replacement, category = redaction_form(text, self.known_secrets)",
+        "    elif credential_text(canonical_text):\n        return redaction_form(canonical_text, known_secrets)\n",
+        "    elif credential_text(text):\n        return redaction_form(text, known_secrets)\n",
     ), (
-        "            if not sqlite_visible(value, text, rounds):",
-        "            if not sqlite_visible(value, value, 0):",
+        "position in _VALUE_POSITIONS and sqlite_visible(text, canonical_text, rounds)",
+        "position in _VALUE_POSITIONS and sqlite_visible(text, text, 0)",
     )]),
     m("A-emit-canonical", "rule A: emitting the canonical text instead of the raw string", READER, [(
         "# Visible values are emitted raw, never in canonical form.\n        return value",
@@ -190,11 +194,9 @@ MUTATIONS = [
         "        or any(word in canonical_text and \"==\" not in canonical_text for word in CREDENTIAL_WORDS)\n",
     )]),
     m("C-partial-redaction", "rule C': redacting only the matching part", READER, [(
-        "        if credential_text(text):\n            replacement, category = redaction_form(text, self.known_secrets)\n"
-        "            self.account.record(category)\n            return self._mark(replacement)",
-        "        if credential_text(text):\n            replacement, category = redaction_form(text, self.known_secrets)\n"
-        "            self.account.record(category)\n"
-        "            return re.sub(\"|\".join(map(re.escape, CREDENTIAL_WORDS)) + r\"\\S*\", \"[REDACTED]\", value, flags=re.I)",
+        "    elif credential_text(canonical_text):\n        return redaction_form(canonical_text, known_secrets)\n",
+        "    elif credential_text(canonical_text):\n"
+        "        return re.sub(\"|\".join(map(re.escape, CREDENTIAL_WORDS)) + r\"\\S*\", \"[REDACTED]\", text, flags=re.I), \"connection_string\"\n",
     )]),
     m("C-keep-credential-scheme", "rule C': keeping a scheme that holds a credential word", READER, [(
         "if match and not credential_text(match[1]) and", "if match and",
@@ -213,7 +215,8 @@ MUTATIONS = [
     )]),
     # R10 / K1 and key matching.
     m("K1-drop", "R10: dropping K1", READER, [(
-        "                if key_text_unsafe(canonical_key):", "                if False:",
+        "        if key_text_unsafe(canonical_text):\n            return CONNECTION_STRING_MARKER",
+        "        if False:\n            return CONNECTION_STRING_MARKER",
     )]),
     m("key-separator-sensitive", "making key matching separator-sensitive", READER, [(
         "normalized = re.sub(\"[^a-z0-9]+\", \"_\", canonical_key).strip(\"_\")",
@@ -223,8 +226,8 @@ MUTATIONS = [
         "def _compact(text: str) -> str:\n    return text",
     )]),
     m("key-case-sensitive", "making key matching case-sensitive", READER, [(
-        "                    canonical_key = canonical(str(key))[0]",
-        "                    canonical(str(key))\n                    canonical_key = str(key)",
+        "        return canonical(key)[0]\n    except _EncodingRefused:\n        return key.casefold()",
+        "        canonical(key)\n        return key\n    except _EncodingRefused:\n        return key",
     ), (
         "[segment.lower() for segment in prefix]", "list(prefix)",
     ), (
@@ -295,16 +298,16 @@ MUTATIONS = [
     )]),
     # HAMCP-162 Part 2 (H1): no client-visible field bypasses the pipeline.
     m("H1-limitations-unsealed", "skipping sanitization on the limitations field", READER, [(
-        "        self.account.includes.append(project_path(display, self.known_secrets))",
-        "        self.account.includes.append(\".\".join(display))",
+        "            project_path(display, self.known_secrets, \"include_path\")\n",
+        "            \".\".join(display)\n",
     ), (
         "        \"limitations\": fields[\"limitations\"],",
         "        \"limitations\": limitations,",
     )]),
     m("H1-limitations-seal-only", "relying on the final seal alone for include paths (no key projection)",
       READER, [(
-        "        self.account.includes.append(project_path(display, self.known_secrets))",
-        "        self.account.includes.append(\".\".join(display))",
+        "            project_path(display, self.known_secrets, \"include_path\")\n",
+        "            \".\".join(display)\n",
     )]),
     m("H1-path-echo-raw", "echoing the requested path without the key projection", READER, [(
         "            \"yaml_path\": project_path(yaml_path.split(\".\"), known_secrets),",
@@ -324,8 +327,8 @@ MUTATIONS = [
     )]),
     m("H1-seal-constants-unchecked", "keeping any string through the seal, not only source constants",
       READER, [(
-        "        if original in vocabulary:\n            return original\n",
-        "        if True:\n            return original\n",
+        "    if text in vocabulary:\n        return Screened(True, text)\n",
+        "    if vocabulary:\n        return Screened(True, text)\n",
     )]),
     m("mint-malformed", "minting a marker for a malformed reference", READER, [(
         "        match = pattern.fullmatch(value)\n", "        match = pattern.match(value)\n",
@@ -452,41 +455,48 @@ MUTATIONS = [
         "            try:\n                return self._sanitize_string(value)\n"
         "            finally:\n                self.identity_markers_only = True\n",
     )], (T_READER, T_SANITIZATION)),
-    m("H3-marker-skip-restored-l4", "H3: restoring the marker skip with the L4 gates removed", READER, [(
-        "                if marker_like_text(str(key)):", "                if False:",
+    m("H3-marker-skip-restored-l4", "H3: restoring the marker skip with the screen's marker gate removed",
+      READER, [(
+        "    if marker_like_text(text):\n        return MARKER_COLLISION, MARKER_COLLISION_CATEGORY\n",
+        "    if False:\n        return MARKER_COLLISION, MARKER_COLLISION_CATEGORY\n",
     ), (
-        "        if marker_like_text(value):\n            # H3:", "        if False:\n            # H3:",
-    ), (
-        "    def _key_scan(self, key: str) -> str | None:\n",
-        "    def _key_scan(self, key: str) -> str | None:\n        return None\n",
+        "    for form in dict.fromkeys((text, decoded, canonical_text)):\n",
+        "    for form in (() if text.startswith(\"[\") else dict.fromkeys((text, decoded, canonical_text))):\n",
     )]),
     m("H3-redacted-prefix-safe-l5", "H3: treating any [REDACTED prefix as safe in L5", SANITIZATION, [(
         "        if marker_like_text(value):\n            self._record_field({MARKER_COLLISION_CATEGORY})\n",
         "        if value.startswith(\"[REDACTED\"):\n            return value\n"
         "        if marker_like_text(value):\n            self._record_field({MARKER_COLLISION_CATEGORY})\n",
     )], (T_READER, T_SANITIZATION)),
-    m("H3-redacted-prefix-safe-l4", "H3: treating any [REDACTED prefix as safe in L4", READER, [(
-        "        if marker_like_text(value):\n            # H3:",
-        "        if value.startswith(\"[REDACTED\"):\n            return value\n"
-        "        if marker_like_text(value):\n            # H3:",
+    m("H3-redacted-prefix-safe-l4", "H3: treating any [REDACTED prefix as safe outside keys", READER, [(
+        "    # marker_lookalike\n    if marker_like_text(text):\n",
+        "    # marker_lookalike\n"
+        "    if position not in _KEY_POSITIONS and text.startswith(\"[REDACTED\"):\n        return None\n"
+        "    if marker_like_text(text):\n",
     )]),
-    m("H3-redacted-prefix-safe-key", "H3: treating a [REDACTED key prefix as safe in L4", READER, [(
-        "                if marker_like_text(str(key)):",
-        "                if marker_like_text(str(key)) and not str(key).startswith(\"[REDACTED\"):",
+    m("H3-redacted-prefix-safe-key", "H3: treating a [REDACTED key prefix as safe", READER, [(
+        "    # marker_lookalike\n    if marker_like_text(text):\n",
+        "    # marker_lookalike\n"
+        "    if position in _KEY_POSITIONS and text.startswith(\"[REDACTED\"):\n        return None\n"
+        "    if marker_like_text(text):\n",
     )]),
-    m("H3-l4-key-gate-removed", "H3: dropping the L4 marker-shaped key gate", READER, [(
-        "                if marker_like_text(str(key)):", "                if False:",
+    m("H3-l4-key-gate-removed", "H3: dropping the marker-shaped gate for keys", READER, [(
+        "    if marker_like_text(text):\n        return MARKER_COLLISION",
+        "    if marker_like_text(text) and position not in _KEY_POSITIONS:\n        return MARKER_COLLISION",
     )]),
-    m("H3-l4-value-gate-removed", "H3: dropping the L4 marker-shaped value gate", READER, [(
-        "        if marker_like_text(value):\n            # H3:", "        if False:\n            # H3:",
+    m("H3-l4-value-gate-removed", "H3: dropping the marker-shaped gate for values", READER, [(
+        "    if marker_like_text(text):\n        return MARKER_COLLISION",
+        "    if marker_like_text(text) and position not in _VALUE_POSITIONS:\n        return MARKER_COLLISION",
     )]),
     m("H3-key-scan-removed", "H3 sweep: no scanners on decoded or canonical key forms", READER, [(
-        "                category = self._key_scan(str(key))\n", "                category = None\n",
-    )]),
+        "    for form in dict.fromkeys((text, decoded, canonical_text)):\n",
+        "    for form in ((text,) if position in _KEY_POSITIONS else dict.fromkeys((text, decoded, canonical_text))):\n",
+    )], (T_READER, T_H4)),
     m("H3-r11-scanner-skip", "H3 sweep: the SQLite shape skipping the scanners again", READER, [(
-        "            # R11 exempts the exact SQLite shape from rule B only; the\n"
-        "            # scanners below still run on it (H3 sweep).\n",
-        "            return value\n",
+        "    # connection_context; R11 exempts the exact SQLite value shape from it\n",
+        "    if position in _VALUE_POSITIONS and any(is_connection_key(key) for key in context) and (\n"
+        "            sqlite_visible(text, canonical_text, rounds)):\n        return None\n"
+        "    # connection_context; R11 exempts the exact SQLite value shape from it\n",
     )]),
     m("H3-scheme-unvetted", "H3 sweep: keeping a scheme without the scanners", READER, [(
         " and _scheme_clean(match[1], known_secrets):", ":",
@@ -539,6 +549,69 @@ MUTATIONS = [
     m("H3-no-truncated-word", "H3: only redacted, not truncated, treated as marker-shaped", SANITIZATION, [(
         "(?:redacted|truncated)\")", "(?:redacted)\")",
     )], (T_READER, T_SANITIZATION)),
+    # H4: the uniform screen, the rule x position matrix and its coverage.
+    m("H4-pem-skip-canonical-keys", "H4: PEM skipped on a key already in canonical form", READER, [(
+        "        category = scanner_category(form, known_secrets)\n",
+        "        category = scanner_category(form, known_secrets)\n"
+        "        if category == \"pem\" and position in _KEY_POSITIONS and text == canonical_text:\n"
+        "            category = None\n",
+    )], (T_H4,)),
+    *[
+        m(f"H4-opaque-skip-{position}", f"H4: the opaque-blob scanner skipped in position {position}",
+          READER, [(
+              "        category = scanner_category(form, known_secrets)\n",
+              "        category = scanner_category(form, known_secrets)\n"
+              f"        if category == \"opaque_blob\" and position == \"{position}\":\n"
+              "            category = None\n",
+          )], (T_H4_UNIT,))
+        for position in (
+            "value", "list_item", "key", "reference_name", "yaml_path", "include_path",
+            "envelope", "limitation", "redaction", "operation", "summary", "warning",
+            "metadata", "timing", "request_id", "error", "error_code", "message",
+            "details", "retryable", "status",
+        )
+    ],
+    m("H4-bypass-screen-l4-key", "H4: an L4 key not passed through the screen", READER, [(
+        "                screened = screen(\n"
+        "                    str(key), self.known_secrets, position=\"key\", path=tuple(cpath)\n"
+        "                )\n",
+        "                screened = Screened(True, str(key))\n",
+    )], (T_H4,)),
+    m("H4-bypass-screen-l4-list-item", "H4: an L4 list item not passed through the screen", READER, [(
+        "        screened = screen(value, self.known_secrets, position=position, path=tuple(cpath))\n",
+        "        screened = (Screened(True, value) if position == \"list_item\" else\n"
+        "                    screen(value, self.known_secrets, position=position, path=tuple(cpath)))\n",
+    )], (T_H4,)),
+    m("H4-bypass-screen-seal-warning", "H4: a sealed warning string not passed through the screen", READER, [(
+        "            screened = screen(\n                original,\n",
+        "            screened = Screened(True, original) if position == \"warning\" else screen(\n"
+        "                original,\n",
+    )], (T_H4,)),
+    m("H4-d12-broadened", "H4: key_text applied to values, broadening D12", READER, [(
+        "    elif position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):\n",
+        "    elif key_text_unsafe(canonical_text):\n",
+    )], (T_READER, T_H4_UNIT)),
+    m("H4-key-text-dropped", "H4: key_text dropped outside keys and paths", READER, [(
+        "    elif position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):\n",
+        "    elif False:\n",
+    )], (T_H4_UNIT,)),
+    m("H4-position-unchecked", "H4: an unknown position accepted by the screen", READER, [(
+        "    if position not in OUTPUT_POSITIONS:\n        raise ValueError(\"yaml_screen_position_unknown\")\n",
+        "",
+    )], (T_H4_COVERAGE,)),
+    m("H4-matrix-position-removed", "H4: one position removed from the matrix", H4_TESTS, [(
+        "    \"timing\": _success_field(\"timing\", \"add\"),\n", "",
+    )], (T_H4_COVERAGE,)),
+    m("H4-matrix-rule-removed", "H4: one rule removed from the matrix", H4_TESTS, [(
+        "    add(\"pem\", syn.pem(\"CERTIFICATE\", n(\"pem\")), lambda t: y._PEM.search(t) is not None)\n",
+        "",
+    ), (
+        "        lambda t: y._PEM.search(t) is not None and t == t.lower(), covers=\"pem\")\n",
+        "        lambda t: y._PEM.search(t) is not None and t == t.lower(), covers=\"pem:lower\")\n",
+    ), (
+        "        lambda t: y._PEM.search(t) is not None, covers=\"pem\")\n",
+        "        lambda t: y._PEM.search(t) is not None, covers=\"pem:private\")\n",
+    )], (T_H4_COVERAGE,)),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)
