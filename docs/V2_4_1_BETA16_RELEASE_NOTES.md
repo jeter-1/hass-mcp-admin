@@ -94,7 +94,7 @@ shows key text the value tree would withhold. Path positions mask with `*`.
 The one position difference is owner decision D12: a value or list item is
 judged by C′ credential text but not by key text, so a credential spelled
 without a credential word stays visible there, as before (see Known
-limitations). A rule × position matrix (36 rule cases × 21 positions = 756
+limitations). A rule × position matrix (38 rule cases × 21 positions = 798
 cells) runs every cell through the reader, the gateway and a real MCP
 session, and a coverage test fails if a position or rule in the code is
 missing from it.
@@ -114,10 +114,16 @@ missing from it.
 - Keys are canonicalized before they are judged: percent-decoding up to
   four rounds, NFKC and casefold (rules A and R10). Values that cannot be
   canonicalized are redacted as `encoding`.
-- PEM blocks, opaque blobs, JWTs and known secrets are redacted.
+- PEM blocks, opaque blobs, JWTs and known secrets are redacted. An opaque
+  blob is a run of 200 or more base64 characters, sought both in the text
+  and with all whitespace removed, so a header-less key body wrapped by
+  newlines or spaces is redacted too (A1).
 - `!include` tags are reported as limitations and never followed.
 - Redaction is best effort and over-redacts. For example, most URLs, and any
-  text mentioning a token, auth or session, are redacted.
+  text mentioning a token, auth or session, are redacted. Text with 200 or
+  more letters and digits and only whitespace between them (no punctuation)
+  is redacted as an opaque blob (A1); ordinary punctuated prose stays
+  visible.
 
 **Disclosures on every successful read.**
 - **K7:** the warning that values are ha-mcp's YAML 1.2 parse and may

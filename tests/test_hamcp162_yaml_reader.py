@@ -1300,7 +1300,9 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_response_too_large_is_a_failure_not_a_partial(self):
         gateway, transport = await yaml_gateway(response_size_limit=20_000)
-        value = {f"k{i}": "lorem ipsum " * 125 for i in range(40)}
+        # Punctuated filler: 200+ unpunctuated letters would be withheld
+        # as an opaque blob (A1) and never reach the size bound.
+        value = {f"k{i}": "lorem ipsum. " * 125 for i in range(40)}
         transport.respond = lambda tool, args: ok(payload(value, args["yaml_path"]))
         result = await call(gateway, TOOL, {"yaml_path": "big"})
         refused(self, result, dispatched=True, category="response_too_large")
@@ -1308,7 +1310,7 @@ class GatewayTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_strings_are_bounded_after_redaction(self):
         gateway, transport = await yaml_gateway()
-        transport.respond = lambda tool, args: ok(payload({"long": "a b " * 9000}, args["yaml_path"]))
+        transport.respond = lambda tool, args: ok(payload({"long": "a b. " * 7200}, args["yaml_path"]))
         result = await call(gateway, TOOL, {"yaml_path": "x"})
         self.assertTrue(result["success"], result)
         self.assertTrue(any(item.startswith("strings_truncated:") for item in result["data"]["limitations"]))

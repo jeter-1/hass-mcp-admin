@@ -349,6 +349,13 @@ MUTATIONS = [
     m("pem-drop", "removing PEM detection", READER, [(
         "    if _PEM.search(text):\n        return \"pem\"", "    if False:\n        return \"pem\"",
     )]),
+    m("A1-wrapped-opaque-drop", "A1: the whitespace-stripped opaque-blob check removed", READER, [(
+        "    if _OPAQUE_BLOB.search(_WHITESPACE.sub(\"\", text)):\n        return \"opaque_blob\"\n",
+        "    if False:\n        return \"opaque_blob\"\n",
+    )], (T_H4,)),
+    m("A1-wrapped-newline-only", "A1: only newlines removed before the opaque-blob check", READER, [(
+        "_WHITESPACE = re.compile(r\"\\s+\")", "_WHITESPACE = re.compile(r\"\\n+\")",
+    )], (T_H4,)),
     m("error-text-passed", "passing upstream error text", READER, [(
         "            return YamlReadRefusal(FILE_NOT_FOUND)\n        return YamlReadRefusal(READ_FAILED)",
         "            return YamlReadRefusal(FILE_NOT_FOUND)\n"

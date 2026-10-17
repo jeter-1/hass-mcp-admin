@@ -18,7 +18,9 @@ corrections (HAMCP-189 PR A).
   - connection-shaped values, except one strict safe SQLite shape;
   - credential text: userinfo, 13 words and the `pass`/`key` token rule;
   - percent-encoding up to four rounds, NFKC and casefold;
-  - PEM, opaque blobs and the existing sanitizer patterns.
+  - PEM, opaque blobs and the existing sanitizer patterns. Opaque blobs
+    are also sought with all whitespace removed, so a wrapped header-less
+    key body is redacted (A1).
 
   `!secret`/`!env_var` become typed reference-name markers, trusted only by
   the identity of a marker the same read minted. Values and `!env_var`
@@ -38,7 +40,7 @@ corrections (HAMCP-189 PR A).
   complete rule set in every one of 21 output positions (H4). Canonical
   keys get the PEM and opaque-blob scanners; path segments are screened
   under the segments above them. Values and list items keep the D12
-  exception for key text. A 756-cell rule × position matrix and a
+  exception for key text. A 798-cell rule × position matrix and a
   coverage test pin it.
 - Build every HAMCP-162 synthetic secret at runtime from fragments, and
   store the D1 captures and fixtures through a reversible encoding

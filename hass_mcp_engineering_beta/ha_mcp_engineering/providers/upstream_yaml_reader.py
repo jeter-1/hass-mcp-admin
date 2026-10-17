@@ -488,6 +488,7 @@ _PEM = re.compile(
     re.IGNORECASE,
 )
 _OPAQUE_BLOB = re.compile(r"[A-Za-z0-9+/=]{200,}")
+_WHITESPACE = re.compile(r"\s+")
 _COLLISION_KEY_SETS = (
     frozenset({"secret_ref"}),
     frozenset({"env_var_ref"}),
@@ -512,6 +513,11 @@ def scanner_category(text: str, known_secrets: tuple[str, ...]) -> str | None:
     if _PEM.search(text):
         return "pem"
     if _OPAQUE_BLOB.search(text):
+        return "opaque_blob"
+    # A1: a key body wrapped by newlines or spaces has no single 200-run, so
+    # the run is also sought with all whitespace removed. This covers a text
+    # made only of base64 characters and whitespace as well.
+    if _OPAQUE_BLOB.search(_WHITESPACE.sub("", text)):
         return "opaque_blob"
     return None
 

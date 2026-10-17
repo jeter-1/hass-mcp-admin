@@ -59,7 +59,11 @@ The review needs a security section covering:
   complete rule set in all 21 positions, including PEM and opaque blobs on
   canonical keys and path segments under their context, with the D12
   value-position exception pinned (H4);
-- the 756-cell rule × position matrix through the reader, the gateway and a
+- opaque blobs detected with all whitespace removed as well as in one run,
+  so newline- and space-wrapped header-less key bodies are withheld in
+  value, list and every other position while punctuated multi-line prose
+  stays visible (A1);
+- the 798-cell rule × position matrix through the reader, the gateway and a
   real MCP session, and the coverage test over positions and rules;
 - the committed-file secret-pattern scan over every HAMCP-162 test, fixture
   and evidence file;

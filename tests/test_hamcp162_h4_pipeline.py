@@ -4,6 +4,9 @@
   versions, through the real pinned MCP ClientSession), the 199/200/201
   opaque-key boundary, nested/list and unlisted-marker-wrapped keys,
   lowercase PEM keys, and the encoded, uppercase and value controls.
+- A1 (architect review): header-less base64 bodies wrapped by newlines or
+  spaces under an innocent key, the wrapped 199/200/201 boundary, and the
+  punctuated multi-line prose that stays visible.
 - The rule x position matrix: one synthetic case for every redaction rule
   (``SCANNER_RULES`` with the shared sanitizer expanded into its segment and
   serialized rules and its known-secret rule) in every output position
@@ -197,6 +200,17 @@ def build_rules() -> tuple[Rule, ...]:
     blob_needle = n("opaque_blob")
     add("opaque_blob", blob_needle + syn.opaque(200 - len(blob_needle)),
         lambda t: y._OPAQUE_BLOB.search(t) is not None and len(t) == 200, needle=blob_needle)
+    # A1: the same 200 characters wrapped at 64, header-less. No single run
+    # reaches 200; only the whitespace-stripped check fires.
+    for wrap, separator in (("newline_wrapped", "\n"), ("space_wrapped", " ")):
+        name = "opaque_blob:" + wrap
+        wrapped_needle = n(name)
+        add(name, syn.wrapped(wrapped_needle + syn.opaque(200 - len(wrapped_needle)),
+                              separator=separator),
+            lambda t, s=separator: s in t and y._OPAQUE_BLOB.search(t) is None
+            and y._OPAQUE_BLOB.fullmatch(re.sub(r"\s", "", t)) is not None
+            and len(re.sub(r"\s", "", t)) == 200,
+            covers="opaque_blob", needle=wrapped_needle)
     return tuple(rules)
 
 
@@ -529,6 +543,137 @@ class CodexReproductionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(key, text)
                 self.assertNotIn(y.canonical(key)[0], text.casefold())
                 self.assertGreater(result.redacted_field_count, 0)
+
+
+# ---------------------------------------------------------------------------
+# A1: a wrapped, header-less key body under an innocent key.
+
+
+def wrapped_body(tag: str, length: int, separator: str = "\n", width: int = 64) -> tuple[str, str]:
+    """(wrapped text, needle): ``length`` base64 characters, needle first."""
+
+    marker = syn.needle(tag)
+    return syn.wrapped(marker + syn.opaque(length - len(marker)), width, separator), marker
+
+
+def ordinary_prose() -> list[str]:
+    """Multi-line and long single-line text a configuration really holds."""
+
+    return [
+        "Turns on the hallway lights when motion is detected after sunset.\n"
+        "The lights stay on for ten minutes, then dim to 20% before turning off.\n"
+        "If someone is still moving, the timer restarts; nothing happens by day.\n"
+        "Set the house mode to away on the dashboard to skip all of this.\n",
+        "{% if is_state('sun.sun', 'below_horizon') %}\n"
+        "  {{ states('sensor.hallway_lux') | float(0) < 40 }}\n"
+        "{% else %}\n  false\n{% endif %}\n",
+        "Reminder for the weekly backup: copy the snapshot to the NAS, check that "
+        "the share is mounted, verify the size against last week's copy, and "
+        "notify the household if anything looks wrong or the copy took too long.",
+    ]
+
+
+class WrappedOpaqueBlobTests(unittest.IsolatedAsyncioTestCase):
+    async def test_the_architect_reproduction_end_to_end(self):
+        # 1,200 base64 characters wrapped at 64 under "note": kept before A1.
+        # The same text on one line is the control.
+        for version in T.VERSIONS:
+            async with sdk_gateway(version) as (peer, run):
+                for wrap, separator in (("newline", "\n"), ("space", " "), ("one_line", "")):
+                    text, marker = wrapped_body("architect" + wrap, 1200, separator)
+                    for shape, value in (("value", {"note": text}),
+                                         ("list_item", {"notes": [text, "kitchen"]})):
+                        with self.subTest(version=version, wrap=wrap, shape=shape):
+                            peer.reply = lambda args, v=value: T.ok(T.payload(v, args["yaml_path"]))
+                            result = await run({"yaml_path": "sensor.value"})
+                            self.assertTrue(result["success"], result)
+                            self.assertTrue(absent(marker, serialized(result)))
+                            data = result["data"]
+                            if shape == "value":
+                                self.assertEqual(data["value"]["note"], "[REDACTED:opaque_blob]")
+                            else:
+                                self.assertEqual(data["value"]["notes"],
+                                                 ["[REDACTED:opaque_blob]", "kitchen"])
+                            self.assertEqual(data["redaction"]["categories"], ["opaque_blob"])
+
+    def test_the_single_run_check_alone_misses_the_wrapped_body(self):
+        # The regression's premise: without A1 no rule fires on this text.
+        for separator in ("\n", " "):
+            text, _marker = wrapped_body("premise", 1200, separator)
+            with self.subTest(separator=separator):
+                self.assertIsNone(y._OPAQUE_BLOB.search(text))
+                self.assertEqual(y.scanner_category(text, ()), "opaque_blob")
+
+    def test_wrapped_boundary_and_whitespace_forms(self):
+        forms = {
+            "newline_64": ("\n", 64), "space_64": (" ", 64), "crlf_76": ("\r\n", 76),
+            "tab_32": ("\t", 32), "double_space_8": ("  ", 8), "newline_1": ("\n", 1),
+            "indented": ("\n    ", 64), "nbsp_64": (" ", 64),
+        }
+        for name, (separator, width) in forms.items():
+            for length in (199, 200, 201):
+                text, marker = wrapped_body("boundary" + name, length, separator, width)
+                for padded in (text, "\n " + text + " \n"):
+                    for position in ("value", "list_item", "key", "reference_name"):
+                        with self.subTest(form=name, length=length, position=position,
+                                          padded=padded != text):
+                            screened = y.screen(padded, (), position=position)
+                            self.assertEqual(screened.kept, length < 200)
+                            if length >= 200:
+                                self.assertEqual(screened.category, "opaque_blob")
+                                self.assertTrue(absent(marker, screened.text))
+
+    def test_a_wrapped_body_is_withheld_in_every_position(self):
+        for separator in ("\n", " "):
+            text, marker = wrapped_body("everyposition", 1200, separator)
+            for position in sorted(y.OUTPUT_POSITIONS):
+                with self.subTest(separator=separator, position=position):
+                    screened = y.screen(text, (), position=position)
+                    self.assertFalse(screened.kept)
+                    self.assertTrue(absent(marker, screened.text))
+
+    def test_a_wrapped_key_is_withheld(self):
+        for separator in ("\n", " "):
+            text, marker = wrapped_body("wrappedkey", 260, separator)
+            with self.subTest(separator=separator):
+                result = T.project({"outer": {text: 1}, "name": "ha"})
+                rendered = serialized(result.envelope)
+                self.assertTrue(absent(marker, rendered))
+                self.assertIn("ha", result.envelope["value"].values())
+                self.assertGreater(result.redacted_field_count, 0)
+
+    async def test_ordinary_multiline_prose_stays_visible(self):
+        prose = ordinary_prose()
+        for text in prose:
+            self.assertGreater(len(text), 120)
+        # More than 200 characters once whitespace is removed, but punctuation
+        # breaks every run well below 200.
+        self.assertGreater(len(re.sub(r"\s", "", prose[0])), 200)
+        for text in prose:
+            for position in ("value", "list_item"):
+                with self.subTest(text=text[:20], position=position):
+                    self.assertTrue(y.screen(text, (), position=position).kept)
+        for version in T.VERSIONS:
+            async with sdk_gateway(version) as (peer, run):
+                value = {"description": prose[0], "template": prose[1], "notes": [prose[2], prose[0]]}
+                peer.reply = lambda args, v=value: T.ok(T.payload(v, args["yaml_path"]))
+                result = await run({"yaml_path": "sensor.value"})
+                with self.subTest(version=version):
+                    self.assertTrue(result["success"], result)
+                    self.assertEqual(result["data"]["value"], value)
+                    self.assertEqual(result["data"]["redaction"]["redacted_field_count"], 0)
+
+    def test_unpunctuated_words_past_the_bound_are_withheld(self):
+        # Disclosed fail-safe boundary of A1: 200 or more letters and digits
+        # with only whitespace between them read as a wrapped body, so such a
+        # text is withheld. One punctuation mark inside each 200 keeps it.
+        words = ("turn on the hallway light when motion is seen after sunset and keep "
+                 "it on for ten minutes unless the door opens again ").split()
+        text = "\n".join(" ".join(words) for _ in range(3))
+        self.assertGreaterEqual(len(re.sub(r"\s", "", text)), 200)
+        self.assertEqual(y.screen(text, (), position="value").category, "opaque_blob")
+        punctuated = "\n".join(" ".join(words) + "." for _ in range(3))
+        self.assertTrue(y.screen(punctuated, (), position="value").kept)
 
 
 # ---------------------------------------------------------------------------

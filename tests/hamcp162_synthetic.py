@@ -88,6 +88,13 @@ def opaque(length: int, unit: str = "b7") -> str:
     return (unit * (length // len(unit) + 1))[:length]
 
 
+def wrapped(text: str, width: int = 64, separator: str = "\n") -> str:
+    """``text`` split into ``width``-character lines joined by ``separator``,
+    the way a header-less key body is wrapped (A1)."""
+
+    return separator.join(text[i:i + width] for i in range(0, len(text), width))
+
+
 def jwt(tag: str) -> str:
     head = "ey" + "J" + "synthHeader0"
     return head + "." + "synthPayload" + needle(tag) + "." + "synthSignature0"

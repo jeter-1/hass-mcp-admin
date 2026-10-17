@@ -779,7 +779,9 @@ survives the steps above; a hit redacts the raw value:
 - **new PEM detection**: any `-----BEGIN [A-Z0-9 ]*(PRIVATE KEY|CERTIFICATE|ENCRYPTED PRIVATE KEY|OPENSSH PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----`
   marker redacts the whole string, not just the block (the #2714 style);
 - a bare base64 run of 200 or more characters is redacted as
-  `opaque_blob`.
+  `opaque_blob`. The run is sought in the text and again with all
+  whitespace removed, so a header-less key body wrapped by newlines or
+  spaces is redacted too (A1, architect review of PR #267).
 
 *Reference markers* (revision 3, R8). One rule applies at every depth and
 under every key, sensitive or not:
