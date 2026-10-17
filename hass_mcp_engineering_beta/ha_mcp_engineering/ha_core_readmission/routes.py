@@ -80,6 +80,9 @@ DELEGATED_CORE_REQUIREMENTS: dict[str, tuple[str, ...]] = {
     "ha_config_get_label": ("core.non_device_registry_read",),
     "ha_config_get_scene": ("core.basic_websocket_read",),
     "ha_config_get_script": ("core.basic_websocket_read",),
+    # HAMCP-162 optional reviewed reader. The ha_mcp_tools component service
+    # routes it reaches are unattested by the basic profiles (disclosed).
+    "ha_config_get_yaml": ("core.basic_rest_read", "core.basic_websocket_read"),
     "ha_config_list_dashboard_resources": ("core.dashboard_configuration_read",),
     "ha_config_list_groups": ("core.basic_websocket_read",),
     "ha_config_list_helpers": ("core.basic_websocket_read",),

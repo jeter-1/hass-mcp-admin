@@ -1,0 +1,627 @@
+{
+ "cases": [
+  {
+   "arguments": {
+    "file": "packages/../secrets.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "mqtt_password"
+   },
+   "client_error": null,
+   "elapsed_s": 0.098,
+   "fixture": {
+    "bytes": 30948,
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 542,
+    "raw_sha256": "3cd475e3841fa17222e30ad76fbe231e32f053d3c2c501adbaf43026ac3c5c9a"
+   },
+   "id": "supp2:get_yaml:packages/../secrets.yaml:mqtt_password",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3379,
+    3390
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 2,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"mqtt_password\",\"matches\":[{\"file\":\"packages/../secrets.yaml\",\"yaml_path\":\"mqtt_password\",\"parsed\":\"[MASKED]\"}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "file": "packages/../secrets.yaml",
+         "parsed": "[MASKED]",
+         "yaml_path": "mqtt_password"
+        }
+       ],
+       "success": true,
+       "yaml_path": "mqtt_password"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "path": "packages/../secrets.yaml"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 681,
+    "raw_sha256": "89528bc0a39f9b5644807ca5361f434bea4cb4e19013d34c21d367b22ef61570"
+   },
+   "id": "supp2:read_file:packages/../secrets.yaml",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3391,
+    3393
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 3,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"path\":\"packages/../secrets.yaml\",\"content\":\"mqtt_password: \\\"[MASKED]\\\"\\nk: \\\"[MASKED]\\\"\\nmqtt_host: \\\"[MASKED]\\\"\\nrecorder_db_url: \\\"[MASKED]\\\"\\nabc: \\\"[MASKED]\\\"\\nx: \\\"[MASKED]\\\"\",\"size\":173,\"modified\":\"2026-10-16T05:31:21.197359\"}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "content": "mqtt_password: \"[MASKED]\"\nk: \"[MASKED]\"\nmqtt_host: \"[MASKED]\"\nrecorder_db_url: \"[MASKED]\"\nabc: \"[MASKED]\"\nx: \"[MASKED]\"",
+       "modified": "2026-10-16T05:31:21.197359",
+       "path": "packages/../secrets.yaml",
+       "size": 173,
+       "success": true
+      }
+     }
+    }
+   },
+   "tool": "ha_read_file"
+  },
+  {
+   "arguments": {
+    "file": "www/../secrets.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "mqtt_password"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 532,
+    "raw_sha256": "9c257b57a47d8e32b98a5a7e70e5b453936a17a93d4481ad759cbf989a92cf64"
+   },
+   "id": "supp2:get_yaml:www/../secrets.yaml:mqtt_password",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3394,
+    3396
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 4,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"mqtt_password\",\"matches\":[{\"file\":\"www/../secrets.yaml\",\"yaml_path\":\"mqtt_password\",\"parsed\":\"[MASKED]\"}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "file": "www/../secrets.yaml",
+         "parsed": "[MASKED]",
+         "yaml_path": "mqtt_password"
+        }
+       ],
+       "success": true,
+       "yaml_path": "mqtt_password"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "path": "www/../secrets.yaml"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 671,
+    "raw_sha256": "9d8a9328c364766d9286f80b8228d2715216e9ac16b7e72111e38a0d2752cbc2"
+   },
+   "id": "supp2:read_file:www/../secrets.yaml",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3397,
+    3399
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 5,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"path\":\"www/../secrets.yaml\",\"content\":\"mqtt_password: \\\"[MASKED]\\\"\\nk: \\\"[MASKED]\\\"\\nmqtt_host: \\\"[MASKED]\\\"\\nrecorder_db_url: \\\"[MASKED]\\\"\\nabc: \\\"[MASKED]\\\"\\nx: \\\"[MASKED]\\\"\",\"size\":173,\"modified\":\"2026-10-16T05:31:21.197359\"}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "content": "mqtt_password: \"[MASKED]\"\nk: \"[MASKED]\"\nmqtt_host: \"[MASKED]\"\nrecorder_db_url: \"[MASKED]\"\nabc: \"[MASKED]\"\nx: \"[MASKED]\"",
+       "modified": "2026-10-16T05:31:21.197359",
+       "path": "www/../secrets.yaml",
+       "size": 173,
+       "success": true
+      }
+     }
+    }
+   },
+   "tool": "ha_read_file"
+  },
+  {
+   "arguments": {
+    "file": "packages/./../secrets.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "mqtt_password"
+   },
+   "client_error": null,
+   "elapsed_s": 0.013,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 546,
+    "raw_sha256": "81f34a722ee5d047b7218139eebef0b5bfd16ed2acf394e584c11c3cf176938e"
+   },
+   "id": "supp2:get_yaml:packages/./../secrets.yaml:mqtt_password",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3400,
+    3402
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 6,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"mqtt_password\",\"matches\":[{\"file\":\"packages/./../secrets.yaml\",\"yaml_path\":\"mqtt_password\",\"parsed\":\"[MASKED]\"}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "file": "packages/./../secrets.yaml",
+         "parsed": "[MASKED]",
+         "yaml_path": "mqtt_password"
+        }
+       ],
+       "success": true,
+       "yaml_path": "mqtt_password"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "path": "packages/./../secrets.yaml"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 685,
+    "raw_sha256": "924dfda4c43ded7b497e4b678e4d15836aca98d86920287fc230963e24ca11a0"
+   },
+   "id": "supp2:read_file:packages/./../secrets.yaml",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3403,
+    3405
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 7,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"path\":\"packages/./../secrets.yaml\",\"content\":\"mqtt_password: \\\"[MASKED]\\\"\\nk: \\\"[MASKED]\\\"\\nmqtt_host: \\\"[MASKED]\\\"\\nrecorder_db_url: \\\"[MASKED]\\\"\\nabc: \\\"[MASKED]\\\"\\nx: \\\"[MASKED]\\\"\",\"size\":173,\"modified\":\"2026-10-16T05:31:21.197359\"}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "content": "mqtt_password: \"[MASKED]\"\nk: \"[MASKED]\"\nmqtt_host: \"[MASKED]\"\nrecorder_db_url: \"[MASKED]\"\nabc: \"[MASKED]\"\nx: \"[MASKED]\"",
+       "modified": "2026-10-16T05:31:21.197359",
+       "path": "packages/./../secrets.yaml",
+       "size": 173,
+       "success": true
+      }
+     }
+    }
+   },
+   "tool": "ha_read_file"
+  },
+  {
+   "arguments": {
+    "file": "secrets.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "mqtt_password"
+   },
+   "client_error": null,
+   "elapsed_s": 0.015,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 518,
+    "raw_sha256": "c9f9d385617837a7f91156a017f7718e2e5b8a6a8eb1a7a12010097b96203010"
+   },
+   "id": "supp2:get_yaml:secrets.yaml:mqtt_password",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3406,
+    3408
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 8,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"mqtt_password\",\"matches\":[{\"file\":\"secrets.yaml\",\"yaml_path\":\"mqtt_password\",\"parsed\":\"[MASKED]\"}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "file": "secrets.yaml",
+         "parsed": "[MASKED]",
+         "yaml_path": "mqtt_password"
+        }
+       ],
+       "success": true,
+       "yaml_path": "mqtt_password"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "path": "secrets.yaml"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 657,
+    "raw_sha256": "9de4c0ab0c7c215f576b519eaa47d203bb48bd0ff5f16c059f7d0fe21340f8f0"
+   },
+   "id": "supp2:read_file:secrets.yaml",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3409,
+    3411
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 9,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"path\":\"secrets.yaml\",\"content\":\"mqtt_password: \\\"[MASKED]\\\"\\nk: \\\"[MASKED]\\\"\\nmqtt_host: \\\"[MASKED]\\\"\\nrecorder_db_url: \\\"[MASKED]\\\"\\nabc: \\\"[MASKED]\\\"\\nx: \\\"[MASKED]\\\"\",\"size\":173,\"modified\":\"2026-10-16T05:31:21.197359\"}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "content": "mqtt_password: \"[MASKED]\"\nk: \"[MASKED]\"\nmqtt_host: \"[MASKED]\"\nrecorder_db_url: \"[MASKED]\"\nabc: \"[MASKED]\"\nx: \"[MASKED]\"",
+       "modified": "2026-10-16T05:31:21.197359",
+       "path": "secrets.yaml",
+       "size": 173,
+       "success": true
+      }
+     }
+    }
+   },
+   "tool": "ha_read_file"
+  },
+  {
+   "arguments": {
+    "file": "packages/../secrets.yaml",
+    "include_content": true,
+    "include_parsed": true,
+    "yaml_path": "mqtt_password"
+   },
+   "client_error": null,
+   "elapsed_s": 0.012,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 606,
+    "raw_sha256": "8deafa2b95fd07f4202400d62dc27271fc780f17b43044e3278a14f74e21911e"
+   },
+   "id": "supp2:get_yaml:packages/../secrets.yaml:mqtt_password:content",
+   "note": "",
+   "prep": null,
+   "proxy_seq": [
+    3412,
+    3414
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 10,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\"success\":true,\"yaml_path\":\"mqtt_password\",\"matches\":[{\"file\":\"packages/../secrets.yaml\",\"yaml_path\":\"mqtt_password\",\"content\":\"\\\"[MASKED]\\\"\\n\",\"parsed\":\"[MASKED]\"}],\"count\":1,\"files_searched\":1,\"files_unreadable\":0}",
+        "type": "text"
+       }
+      ],
+      "isError": false,
+      "structuredContent": {
+       "count": 1,
+       "files_searched": 1,
+       "files_unreadable": 0,
+       "matches": [
+        {
+         "content": "\"[MASKED]\"\n",
+         "file": "packages/../secrets.yaml",
+         "parsed": "[MASKED]",
+         "yaml_path": "mqtt_password"
+        }
+       ],
+       "success": true,
+       "yaml_path": "mqtt_password"
+      }
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "mqtt_password"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 431,
+    "raw_sha256": "2b2d19fae0bb9c912f015297c6dcb76ef2ce0a07ee7e3378b0b00e7ba9a147f1"
+   },
+   "id": "supp2:config_symlink_secrets:mqtt_password",
+   "note": "",
+   "prep": "config_symlink_secrets",
+   "proxy_seq": [
+    3415,
+    3417
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 11,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\n  \"success\": false,\n  \"error\": \"Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**, themes/**, custom_templates/**, dashboards/**, blueprints/**, packages/*.yaml, custom_components/**/*.py\"\n}",
+        "type": "text"
+       }
+      ],
+      "isError": true
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  },
+  {
+   "arguments": {
+    "file": "configuration.yaml",
+    "include_content": false,
+    "include_parsed": true,
+    "yaml_path": "data"
+   },
+   "client_error": null,
+   "elapsed_s": 0.008,
+   "fixture": {
+    "bytes": 30948,
+    "sha256": "cb5823728ecb30deb9209553d4d349a2de4be9939475aa20c98b0610ff808f63",
+    "variant": "main"
+   },
+   "http": {
+    "content_type": "text/event-stream",
+    "http_status": 200,
+    "raw_bytes": 431,
+    "raw_sha256": "14857ffbb3a12c930e67faaf317b7eb1a6dc2d942c21ccc8a0f46a0f2e2d3f7e"
+   },
+   "id": "supp2:config_symlink_storage:data",
+   "note": "",
+   "prep": "config_symlink_storage",
+   "proxy_seq": [
+    3418,
+    3420
+   ],
+   "response": {
+    "inline": true,
+    "message": {
+     "id": 12,
+     "jsonrpc": "2.0",
+     "result": {
+      "content": [
+       {
+        "text": "{\n  \"success\": false,\n  \"error\": \"Path not allowed. Allowed paths: configuration.yaml, automations.yaml, scripts.yaml, scenes.yaml, secrets.yaml, home-assistant.log, home-assistant.log.fault, www/**, themes/**, custom_templates/**, dashboards/**, blueprints/**, packages/*.yaml, custom_components/**/*.py\"\n}",
+        "type": "text"
+       }
+      ],
+      "isError": true
+     }
+    }
+   },
+   "tool": "ha_config_get_yaml"
+  }
+ ],
+ "ha_yaml11_runtime_view": {
+  "ok": true,
+  "yaml11": {
+   "yaml11": {
+    "True_": true,
+    "bigint": 123456789012345678901234567890,
+    "bin": 5,
+    "date": "<date:2026-10-16>",
+    "datetime": "<datetime:2026-10-16 10:00:00+00:00>",
+    "exp": "1e3",
+    "float_": 1.5,
+    "hex": 31,
+    "inf": Infinity,
+    "nan": NaN,
+    "ninf": -Infinity,
+    "no_": false,
+    "null_": null,
+    "octal_0": 15,
+    "octal_0o": "0o17",
+    "off_": false,
+    "on_": true,
+    "plus": 1,
+    "sexagesimal": 45000,
+    "tilde": null,
+    "true_": true,
+    "underscore": 1000,
+    "y_": "y",
+    "yes_": true
+   }
+  }
+ },
+ "label": "8.4.3-supp2",
+ "protocolVersion": "2025-03-26",
+ "server": {
+  "icons": [
+   {
+    "mimeType": "image/svg+xml",
+    "src": "https://raw.githubusercontent.com/homeassistant-ai/ha-mcp/master/packaging/mcpb/icon.svg"
+   },
+   {
+    "mimeType": "image/png",
+    "sizes": [
+     "128x128"
+    ],
+    "src": "https://raw.githubusercontent.com/homeassistant-ai/ha-mcp/master/packaging/mcpb/icon-128.png"
+   }
+  ],
+  "name": "ha-mcp",
+  "version": "8.4.3"
+ }
+}

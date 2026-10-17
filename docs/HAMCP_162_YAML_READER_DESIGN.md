@@ -696,7 +696,7 @@ to the global sanitizer's patterns).
   C′3 needs only an `=` or `:` after optional whitespace, so `==` and `:=`
   are caught there too.
 - **Examples** (synthetic values; `S` is a synthetic credential with no
-  credential word):
+  credential word, and `U` is the URL userinfo `u` + `:` + `S`):
 
   | Key and input | Output |
   |---|---|
@@ -710,7 +710,7 @@ to the global sanitizer's patterns).
   | `external_url: https://example.ui.nabu.casa` | `https://[REDACTED:connection_uri]` (disclosed cost of B) |
   | `value: mysql://db.local:3306/ha?charset=utf8mb4` | unchanged (passes C′) |
   | `value: unknown://host/path` | unchanged (passes C′) |
-  | `value: mysql://u:S@db/ha`, `mysql://u@db/ha` | `mysql://[REDACTED:connection_uri]` (C′1) |
+  | `value: mysql://U@db/ha`, `mysql://u@db/ha` | `mysql://[REDACTED:connection_uri]` (C′1) |
   | `value:` the same URI percent-encoded 1–4 times | `mysql://[REDACTED:connection_uri]` (A, then C′1) |
   | `value:` the same URI percent-encoded 5 or 6 times | `[REDACTED:encoding]` (A) |
   | `value: Server=db;Uid=u;Pwd=S`, encoded 0–4 times | `[REDACTED:connection_string]` (C′2) |
@@ -779,7 +779,9 @@ survives the steps above; a hit redacts the raw value:
 - **new PEM detection**: any `-----BEGIN [A-Z0-9 ]*(PRIVATE KEY|CERTIFICATE|ENCRYPTED PRIVATE KEY|OPENSSH PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----`
   marker redacts the whole string, not just the block (the #2714 style);
 - a bare base64 run of 200 or more characters is redacted as
-  `opaque_blob`.
+  `opaque_blob`. The run is sought in the text and again with all
+  whitespace removed, so a header-less key body wrapped by newlines or
+  spaces is redacted too (A1, architect review of PR #267).
 
 *Reference markers* (revision 3, R8). One rule applies at every depth and
 under every key, sensitive or not:
@@ -1554,13 +1556,13 @@ search every output channel for each one.
    runs at an ordinary path (`sensor.value`) **and** at a connection path
    (the `recorder` mapping and a direct `recorder.db_url` selection),
    unless stated otherwise. `S` is a synthetic credential with no
-   credential word. "Encoded n times" means `urllib.parse.quote(value,
+   credential word, and `U` is the URL userinfo `u` + `:` + `S`. "Encoded n times" means `urllib.parse.quote(value,
    safe="")` applied n times. **Every assertion of the revision-4 delta
    review's probe set (`pr260-3391172/probes.py`, 438 assertions) is a
    required test**, with the 13 expectations that revision 5 deliberately
    flips (§15) asserted in their revision-5 form.
    - **The second delta review's 12 boundary cases, verbatim, including its
-     8 counterexamples.** `Server=db;Uid=u;Pwd=S` and `mysql://u:S@db/ha`,
+     8 counterexamples.** `Server=db;Uid=u;Pwd=S` and `mysql://U@db/ha`,
      each encoded 1–6 times:
      - DSN encoded 1–4 times gives `[REDACTED:connection_string]`;
      - URI encoded 1–4 times gives `mysql://[REDACTED:connection_uri]`;
@@ -1594,7 +1596,7 @@ search every output channel for each one.
      `keys=3` and `passes: 2`.
    - **Fully encoded URIs, depths 0–6:**
      - userinfo in `postgresql+psycopg2://`, `mssql+pyodbc://`,
-       `redis://:S@…` and `https://u:S@…`, user-only `mysql://u@db/ha`, and
+       `redis://:S@…` and `https://U@…`, user-only `mysql://u@db/ha`, and
        a fullwidth `＠` (NFKC gives `@`);
      - a credential query item (`mysql://db/ha?password=S`);
      - also at `rest.resource`.
@@ -1620,7 +1622,7 @@ search every output channel for each one.
        rule B applies;
      - **K1:** a key whose canonical text holds userinfo or a credential
        word and is not a plain identifier (`pwd=S`, `Pwd=S` encoded twice,
-       `mysql://u:S@db`, `token: S`) withholds its mapping as `[REDACTED:connection_string]`;
+       `mysql://U@db`, `token: S`) withholds its mapping as `[REDACTED:connection_string]`;
      - **L3:** a `yaml_path` segment whose compact canonical form contains a
        credential word (`homeassistant.auth_providers`,
        `x.session_timeout`, `mqtt.MQTT-PassWord`) is refused with zero
@@ -1796,7 +1798,7 @@ Each of the following must fail at least one test:
   - dropping raw-equals-canonical: `home%2Dassistant_v2.db` and
     `SQLITE:///x.db` become visible;
 - **rule C′ mutations:**
-  - dropping C′1: `mysql://u:S@db/ha` leaks;
+  - dropping C′1: `mysql://U@db/ha` leaks;
   - dropping C′2 or any one of the 13 words: the case for that word leaks;
   - restoring revision 4's assignment parse (its `==` exemption):
     `Pwd==S` leaks;

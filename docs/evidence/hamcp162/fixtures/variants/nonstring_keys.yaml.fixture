@@ -1,0 +1,10 @@
+nk:
+  1: int_one
+  "1": str_one
+  true: bool_true
+  "True": str_true
+  null: null_key
+  1.5: float_key
+  ? [a, b]
+  : complex_key
+  2026-10-16: date_key

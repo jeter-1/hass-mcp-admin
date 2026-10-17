@@ -1,0 +1,5 @@
+component_ref=v8.6.0
+component_commit=fc54437a804858732e4bc927add98e202d879a09
+component_tree=a2b8b98375c709d47360cd1ed2ca0f65d81c67c7
+component_manifest_version=2.2.1
+component_files_sha256=926cd64802a22b5d817f1c5702621c4c8b215030d70e4841066613afb6c5661c
