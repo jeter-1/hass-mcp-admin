@@ -3916,7 +3916,9 @@ class F3RuntimeIntegration:
             if operation.get("resource_type") != "helper":
                 operation.pop("helper_type", None)
         lease.require_current()
-        created = await self.service.create_configuration_plan(
+        # HAMCP-189 R1: the builder awaits its current-state reads after this
+        # check, so authority is checked again where the plan is saved.
+        created = await self.service._create_configuration_plan(
             title=f"Rollback governed change {source_plan.plan_id}"[:160],
             description=(
                 "Separately governed reverse update using exact prior configuration "
@@ -3928,6 +3930,7 @@ class F3RuntimeIntegration:
                 "rollback_model": "f3-governed-rollback-plan-v1",
                 "excluded_operation_ids": excluded[:8],
             },
+            _before_persist=lease.require_current,
         )
         rollback_plan = self.service._load(created["plan_id"])
         prohibited = retry_source and rollback_plan.policy_decision.policy_class.value == "prohibited"

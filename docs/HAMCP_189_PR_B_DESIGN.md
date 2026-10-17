@@ -14,10 +14,11 @@ out of scope and would be reported before it is changed.
 
 | File | Item |
 | --- | --- |
-| `R/f3_runtime/runtime.py` | R1 (rollback planning lease, garage save-boundary check), O9 (expired pre-intent deadline, including the no-record case) |
+| `R/f3_runtime/runtime.py` | R1 (rollback planning lease, garage save-boundary check, ordinary rollback passes the save hook), O9 (expired pre-intent deadline, including the no-record case) |
 | `R/f3/persistence.py` | O9 (claimless pre-dispatch terminalization and no-record expired materialization primitives) |
 | `R/providers/operational_lifecycle.py` | R2-telemetry |
 | `R/routing.py` | R8, L1 |
+| `R/governance/service.py` | R1 save-boundary hook only (O8 amendment, below) |
 | `.release/next-version` | release staging (consumed by the promotion script) |
 | `hass_mcp_engineering_beta/config.yaml` | release (written by `promote_next_release.py --apply`) |
 | `R/version.py` | release (written by the promotion script) |
@@ -25,7 +26,7 @@ out of scope and would be reported before it is changed.
 
 `R/f3/executor.py` is **not** needed (see O9 below) and is not changed.
 
-**Scope amendment requested (not changed).** Review of `4357b96` (M1) asks
+**O8 amendment (authorized by Josh after review of `b9b04ec`).** Review of `4357b96` (M1) asks
 for the lease check at the save boundary, after every awaited planning read,
 for both the ordinary and the garage rollback builders. The garage builder
 saves through `runtime.persist_rollback_plan`, which is in scope and now
@@ -34,9 +35,15 @@ checks the lease there. The ordinary builder saves inside
 O8. The proposed narrow change is about four lines: a private
 `_before_persist: Callable[[], None] | None = None` keyword on
 `_create_configuration_plan`, called synchronously just before the plan is
-recorded, which the runtime passes as `lease.require_current`. It is
-**not** made in this PR without Josh's amendment. Until then the ordinary
-gap is pinned by an expected-failure test (§2).
+recorded, which the runtime passes as `lease.require_current`. Josh
+authorized exactly this change and nothing else in that file. It is made as
+three added lines: the keyword, and the guarded call after
+`_bind_new_plan_policy` and before either save branch. The default is a
+no-op, so the public `create_configuration_plan`, entity-metadata planning
+and the garage inverse keep their behavior. Only the ordinary F3 rollback
+(`_plan_fresh_rollback`) passes the hook, by calling the private builder
+with the same arguments the public wrapper forwarded (`expiration_minutes`
+keeps its default of 120). The public schema and tool surface are unchanged.
 
 Non-protected files: new tests (`tests/test_hamcp189_*.py`), the edited
 `tests/test_configuration_reverification.py` (flake rider), the
@@ -81,11 +88,13 @@ mirrors `_CoreVerificationAdapter.preflight`:
    (review of `4357b96`, M1). The garage builder's check now runs inside
    `persist_rollback_plan`, in the same projection transaction as the save,
    after every awaited read (the rollback context carries the lease). The
-   ordinary builder saves inside `R/governance/service.py`, outside O8; its
-   save-boundary check waits on the amendment in §1.
-   `test_ordinary_retirement_during_final_builder_read_saves_nothing` is an
-   `expectedFailure` that records this gap and will pass once the hook
-   lands. Entity-metadata rollback is unaffected: its builder makes no read.
+   ordinary builder saves inside `R/governance/service.py`; under the O8
+   amendment (§1) its private `_before_persist` hook runs
+   `lease.require_current` after the final read and before the plan is
+   recorded or any prior plan is superseded.
+   `test_ordinary_retirement_during_final_builder_read_saves_nothing` (an
+   `expectedFailure` at `b9b04ec`) now passes. Entity-metadata rollback is
+   unaffected: its builder makes no read after the runtime's check.
 5. On exit, an exception raised while the lease has retired (for example the
    read client's refusal) is translated into the Core refusal below, so the
    caller sees one truthful reason.

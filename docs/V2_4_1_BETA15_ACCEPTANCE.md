@@ -70,10 +70,11 @@ with synthetic configuration and registry fakes.
   `provider_unavailable` / `core_capability_unavailable`, no rollback plan or
   source rollback pointer is saved, nothing is written, the lease finishes
   once, and a clean retry reads the same resources and creates the plan.
-- `test_ordinary_retirement_during_final_builder_read_saves_nothing` is an
-  `expectedFailure`: the ordinary builder saves inside
-  `governance/service.py`, outside the authorized files, so this gap stays
-  open until Josh's requested scope amendment.
+- `test_ordinary_retirement_during_final_builder_read_saves_nothing`: the
+  same proof for an ordinary configuration rollback (one builder read). The
+  check runs through the private `_before_persist` hook in
+  `governance/service.py` (O8 amendment) before the plan is recorded or any
+  prior plan is superseded.
 - `test_existing_rollback_plan_is_returned_without_core`: the idempotent local
   return still works while Core is degraded.
 - `test_runtime_without_core_keeps_current_behavior`: compositions with no
@@ -140,7 +141,7 @@ reconciler absent:
 
 | Mutation | Failing tests |
 | --- | --- |
-| Rollback planning without the lease (both call sites) | 9 of 11 R1 tests; the existing-plan and no-Core tests pass by design |
+| Rollback planning without the lease (both call sites) | 11 of 13 R1 tests; the existing-plan and no-Core tests pass by design |
 | Unbounded retry: the expired pre-intent deadline removed | the three O9 deadline tests (bounded, deadline, restart); the composition test passes by design, because the service reconciler still ends the task |
 | The audit loses the empty-name reason (L1) | `test_empty_name_audit_and_metric_carry_the_unmapped_reason` |
 | The audit keeps the unhashable lookup (R8) | the list and dict name test (two subtest errors) |
@@ -151,6 +152,8 @@ reconciler absent:
 | Cancel not rechecked inside the projection transaction (review M2) | `test_cancel_recorded_inside_the_projection_window_wins` |
 | A falsey name is not classified (review L1) | five audit tests |
 | A falsey name is not counted (review L1) | five audit tests |
+| The save hook's call removed in `governance/service.py` (O8 amendment) | `test_ordinary_retirement_during_final_builder_read_saves_nothing` |
+| The ordinary rollback omits the save hook (O8 amendment) | `test_ordinary_retirement_during_final_builder_read_saves_nothing` |
 
 ## 2. Release CI and publication
 

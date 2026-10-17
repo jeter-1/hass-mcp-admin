@@ -7,8 +7,9 @@ Builds on 2.4.1-beta.14.
 - Acquire and consume a Core lease inside `rollback_change` before any fresh
   rollback planning read (configuration, garage inverse and entity metadata),
   run every planning read under an authorizer that revalidates it, and require
-  a current lease where a garage-inverse rollback plan is saved, after its
-  last planning read. Under degraded Core,
+  a current lease where a configuration or garage-inverse rollback plan is
+  saved, after its last planning read (the configuration builder gains a
+  private, default-off save hook for this). Under degraded Core,
   fresh planning is refused before any Home Assistant read as
   `provider_unavailable` / `core_capability_unavailable` and no plan is
   created. Existing and cached rollback plans are still returned locally.

@@ -364,12 +364,10 @@ class RollbackCoreLeaseTests(ConfigurationPlanTestCase):
         # The garage inverse builder reads its five planned resources.
         await self.assert_final_read_retirement_saves_nothing(created, 5)
 
-    @unittest.expectedFailure
     async def test_ordinary_retirement_during_final_builder_read_saves_nothing(self):
-        # Review M1, ordinary path: the public builder saves the plan with no
-        # runtime seam after its final read.  Closing it needs a save-boundary
-        # hook in governance/service.py, outside the authorized O8 file list;
-        # this documents the open gap until that scope amendment.
+        # Review M1, ordinary path: the builder's private save-boundary hook
+        # (O8 amendment, governance/service.py) re-checks the lease after the
+        # final read and before the plan is saved.
         created = await self.applied(await self.create_automation_plan())
         await self.assert_final_read_retirement_saves_nothing(created, 1)
 

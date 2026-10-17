@@ -4584,6 +4584,7 @@ class ChangeGovernanceService:
         expiration_minutes: int = 120, caller_context: dict[str, Any] | None = None,
         _rollback_context: dict[str, Any] | None = None,
         _entity_metadata_context: Any | None = None,
+        _before_persist: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         """Internal builder; only F3's inverse route supplies durable context.
 
@@ -5128,6 +5129,8 @@ class ChangeGovernanceService:
             ]
         plan.policy_decision = evaluate_change_policy(plan)
         self._bind_new_plan_policy(plan)
+        if _before_persist is not None:
+            _before_persist()  # HAMCP-189 R1: F3 rollback lease, after last read
         if _rollback_context is not None:
             plan = self.f3_runtime.persist_rollback_plan(plan, _rollback_context)
         else:

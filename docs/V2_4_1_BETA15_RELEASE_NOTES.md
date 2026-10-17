@@ -16,8 +16,8 @@ is local. Before beta.15, fresh rollback planning then read current
 configuration and registry state with no Core authority. Now the rollback
 tool acquires and consumes a Core lease before any rollback planning read:
 - every planning read runs under an authorizer that revalidates the lease;
-- for a garage-inverse rollback, the lease must still be current where the
-  rollback plan is saved, after every planning read;
+- for a configuration or garage-inverse rollback, the lease must still be
+  current where the rollback plan is saved, after every planning read;
 - entity-metadata rollback binds the exact registry target, as
   `create_entity_metadata_plan` does.
 
@@ -25,12 +25,10 @@ Under degraded Core, fresh rollback planning is refused before any Home
 Assistant read as `provider_unavailable` with reason
 `core_capability_unavailable`, and no plan is created. Core retirement during
 planning also refuses: a read after retirement is refused before it is sent,
-and a garage-inverse plan is not saved if Core retired during its last read.
-For an ordinary configuration rollback, a retirement during the builder's
-final read can still save the plan, because that save happens in
-`governance/service.py`, outside this PR's authorized files; a narrow
-amendment has been requested and the gap is pinned by an expected-failure
-test. Returning an existing or cached rollback plan still
+and no rollback plan is saved if Core retired during the builder's last read.
+For an ordinary configuration rollback that check runs through a private,
+default-off save hook in `governance/service.py` (Josh's narrow O8
+amendment); no other plan creation changes. Returning an existing or cached rollback plan still
 works while Core is degraded. With Core degraded, a local planning refusal
 that comes after the lease point (for example an unsupported task state) now
 reports the Core refusal instead; with Core admitted it is unchanged.
@@ -88,9 +86,6 @@ v2.4.1-beta.13 GitHub Release is unchanged.
 **Disclosed residuals:**
 - A task that keeps failing recovery while its approval is still valid keeps
   retrying, as before. That is outside O9.
-- Ordinary configuration rollback: Core retirement during the builder's final
-  read can still save the plan until the requested `governance/service.py`
-  amendment (see above).
 - Pre-existing and unchanged: re-applying an expired contract-v3 plan that is
   already terminal returns the operational adapter's raw `plan_expired`
   error instead of a governed refusal, and cancelling an expired task that
