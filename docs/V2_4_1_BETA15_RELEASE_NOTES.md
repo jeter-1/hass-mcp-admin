@@ -66,6 +66,10 @@ renewing dispatch authority. A recorded cancel and a competing first claim
 keep precedence. Dashboard tasks were never stuck: the existing executor
 preflight already rejects the expired plan.
 
+Past the deadline, the expiry decision and the terminal write happen locally
+before any provider or provider-identity contact, so a slow or failing
+provider cannot delay or block them. This holds for every plan family.
+
 A task whose approval is still valid keeps its unchanged bounded retry.
 
 **The gateway audit keeps the refusal reason (R8, L1).**
@@ -73,6 +77,10 @@ A task whose approval is still valid keeps its unchanged bounded retry.
   breaks the gateway's audit step. Every non-string name, including falsey
   ones (`null`, `false`, `0`, `[]`, `{}`), writes exactly one generic MCP
   request record and one error count, without the raw value.
+- Diagnostic logs never record a malformed tool name's raw value: the
+  gateway's request logs record only `non_string_tool_name:<type>`, and the
+  MCP SDK's request and notification validation warnings keep only their
+  bounded error summary.
 - An empty tool name refused as `core_requirement_unmapped` now writes the
   full unmapped-refusal audit record and its error metric, counted once.
 

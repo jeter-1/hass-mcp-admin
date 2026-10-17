@@ -5848,6 +5848,24 @@ class F3RuntimeIntegration:
                     post_intent_readback = bool(
                         current_recovery_mode == _RECOVERY_MODE_POST_INTENT
                     )
+                    # O9: past the expiry deadline, pre-intent work ends
+                    # locally before preparation, so no provider or provider
+                    # identity contact can precede, delay or gate it.
+                    if (
+                        not post_intent_readback
+                        and now
+                        >= _dispatch_authority_expiry(plan)
+                        + timedelta(
+                            seconds=EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS
+                        )
+                        and self._terminate_expired_pre_intent(
+                            declaration, now=now
+                        )
+                    ):
+                        processed += 1
+                        settled.append(declaration["child_id"])
+                        self._clear_readiness_fault(fault_key, fault_revision)
+                        continue
                     if post_intent_readback:
                         prepared, requests = await self._load_prepared(
                             plan,

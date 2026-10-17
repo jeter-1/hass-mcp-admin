@@ -78,6 +78,72 @@ def _gateway_core_route(
     return static_tool_core_route(tool_name, parameters)
 
 
+def _diagnostic_tool_name(tool_name: object) -> str:
+    """Return a tools/call name as diagnostic logs may record it.
+
+    A non-string name (refused by the SDK) has no tool audit shape and is
+    untrusted, so logs record only its bounded JSON type, never the value.
+    """
+
+    if isinstance(tool_name, str):
+        return tool_name
+    return f"non_string_tool_name:{type(tool_name).__name__}"
+
+
+_SDK_SESSION_MODULE = "mcp.shared.session"
+_SDK_RAW_DIAGNOSTIC_PREFIXES = (
+    "Failed to validate request: ",
+    "Message that failed validation: ",
+    "Failed to validate notification: ",
+)
+_SDK_VALIDATION_SUMMARY = re.compile(
+    r"^[0-9]{1,4} validation errors? for [A-Za-z][A-Za-z0-9_]{0,63}$"
+)
+
+
+class SdkRequestDiagnosticFilter(logging.Filter):
+    """Keep raw request values out of the pinned SDK's validation warnings.
+
+    The SDK session logs a refused request (for example a non-string
+    tools/call name) to the root logger with the request's raw values
+    embedded in the message.  Those records keep only a bounded summary: the
+    validation error count and model name, never a value.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.module != "session" or not record.pathname.replace(
+            "\\", "/"
+        ).endswith("/" + _SDK_SESSION_MODULE.replace(".", "/") + ".py"):
+            return True
+        message = record.msg if isinstance(record.msg, str) else ""
+        prefix = next(
+            (item for item in _SDK_RAW_DIAGNOSTIC_PREFIXES
+             if message.startswith(item)),
+            None,
+        )
+        if prefix is None:
+            return True
+        first_line = message[len(prefix):].split("\n", 1)[0]
+        summary = (
+            first_line
+            if _SDK_VALIDATION_SUMMARY.fullmatch(first_line)
+            else "unclassified"
+        )
+        record.msg = f"{prefix}{summary}; raw request values suppressed"
+        record.args = ()
+        return True
+
+
+def install_sdk_request_diagnostic_filter() -> None:
+    """Install the SDK diagnostic filter on the root logger exactly once."""
+
+    root = logging.getLogger()
+    if not any(
+        isinstance(item, SdkRequestDiagnosticFilter) for item in root.filters
+    ):
+        root.addFilter(SdkRequestDiagnosticFilter())
+
+
 def _delegated_audit_attribution(
     telemetry: RequestTelemetry,
 ) -> dict[str, str]:
@@ -233,6 +299,7 @@ class AuthenticatedMcpGateway:
             settings.rate_limit_per_minute * 2, settings.rate_limit_burst * 2
         )
         self.logger = get_logger("gateway")
+        install_sdk_request_diagnostic_filter()
 
     @property
     def initial_catalog_reconciliation_required(self) -> bool:
@@ -451,6 +518,7 @@ class AuthenticatedMcpGateway:
         caller_id = self._caller_id(client_ip)
         telemetry.caller_id = caller_id
         tool_name = None
+        log_tool_name = None
         rpc_method = None
         rpc = None
         operation_started = None
@@ -559,6 +627,7 @@ class AuthenticatedMcpGateway:
                         if not isinstance(params, dict):
                             raise TypeError("tools/call params must be an object")
                         tool_name = params.get("name")
+                        log_tool_name = _diagnostic_tool_name(tool_name)
                         raw_parameters = params.get("arguments", {})
                         parameters = raw_parameters if isinstance(raw_parameters, dict) else {}
                         capability = capability_for_tool(tool_name)
@@ -645,7 +714,7 @@ class AuthenticatedMcpGateway:
                 logging.INFO,
                 "request_started",
                 "Authenticated MCP request started.",
-                context={"tool": tool_name},
+                context={"tool": log_tool_name},
                 secret=self.settings.access_secret,
             )
             if scope.get("method") == "POST" and request_oversized:
@@ -915,7 +984,7 @@ class AuthenticatedMcpGateway:
                 logging.ERROR,
                 "request_failed",
                 "MCP request failed.",
-                context={"error_code": telemetry.error_code, "tool": tool_name},
+                context={"error_code": telemetry.error_code, "tool": log_tool_name},
                 secret=self.settings.access_secret,
                 exc_info=True,
             )
@@ -1303,7 +1372,7 @@ class AuthenticatedMcpGateway:
                 "request_completed",
                 "MCP request completed.",
                 context={
-                    "tool": tool_name,
+                    "tool": log_tool_name,
                     "mcp_method": rpc_method,
                     "operation_duration_ms": operation_duration,
                     "tool_duration_ms": telemetry.tool_duration_ms,

@@ -121,10 +121,22 @@ reconciler absent:
   retry continues; an operator cancel and a cancel recorded inside the
   projection window keep precedence; a first claim that wins is never
   overwritten, and one that loses finds the terminal record;
+- operational, M2 residual (review of `1189020`): the restart case asserts
+  the full provider-contact tuple unchanged, identity reads included
+  (`test_restart_then_expiry_rejects_without_provider_contact`);
+  `test_recovery_sweep_never_invokes_the_identity_reader`;
+  `test_slow_identity_does_not_delay_local_termination` (Codex's probe: the
+  identity response is held and the task still ends within 0.25 s, the
+  reader never entered); `test_expired_claimed_child_ends_before_provider_contact`
+  (a first claim that won, then expired, ends with zero contact and the
+  provider down); `test_before_deadline_recovery_still_prepares`
+  (preservation);
 - exact helper state (`HelperStateUnclaimedTests`): restart then expiry
   settles with the helper unchanged; before the deadline it keeps retrying;
 - dashboard (`DashboardUnclaimedTests`): restart then expiry is rejected by
-  the existing preflight without the new path, with zero writes.
+  the existing preflight without the new path, with zero writes;
+  `test_restart_past_deadline_ends_locally_without_preread`: past the
+  deadline it ends locally with zero pre-reads and zero writes.
 
 ### Offline proof: gateway audit reason (R8, L1)
 
@@ -135,7 +147,15 @@ reconciler absent:
 - `test_every_non_string_name_writes_one_record_and_one_count`: `None`,
   `False`, `0`, `[]`, `{}` and truthy non-string names each write one generic
   record and one error count, with no raw value;
-- `test_successful_string_name_keeps_one_tool_record_and_no_count`.
+- `test_successful_string_name_keeps_one_tool_record_and_no_count`;
+- L1 residual (review of `1189020`), `RawNameLoggingTests`: Codex's probe
+  through the production `configure_logging` with a debug root capture;
+  `None`, `False`, `0`, `[]`, `{}` and list/dict names carrying a marker log
+  only `non_string_tool_name:<type>`, the SDK warning keeps only its bounded
+  summary, and the marker appears in no app log, SDK log or audit record;
+  a string name is still logged;
+- `SdkDiagnosticFilterTests`: the filter rewrites the three SDK validation
+  messages, leaves every other record untouched and is installed once.
 
 ### Mutations (each must fail)
 
@@ -154,6 +174,11 @@ reconciler absent:
 | A falsey name is not counted (review L1) | five audit tests |
 | The save hook's call removed in `governance/service.py` (O8 amendment) | `test_ordinary_retirement_during_final_builder_read_saves_nothing` |
 | The ordinary rollback omits the save hook (O8 amendment) | `test_ordinary_retirement_during_final_builder_read_saves_nothing` |
+| Provider contact before local termination: the local-first check removed (review M2 residual) | the five provider-contact tests (`test_restart_then_expiry_rejects_without_provider_contact`, `test_recovery_sweep_never_invokes_the_identity_reader`, `test_slow_identity_does_not_delay_local_termination`, `test_expired_claimed_child_ends_before_provider_contact`, `test_restart_past_deadline_ends_locally_without_preread`) |
+| Local-first only for the no-record case (review M2 residual) | `test_expired_claimed_child_ends_before_provider_contact` |
+| Log contexts carry the raw name (review L1 residual) | `test_malformed_names_log_only_a_bounded_type` |
+| The SDK diagnostic filter not installed (review L1 residual) | `test_malformed_names_log_only_a_bounded_type`, `test_gateway_installs_the_filter_once` |
+| The filter keeps the raw SDK message (review L1 residual) | `test_malformed_names_log_only_a_bounded_type`, `test_sdk_validation_messages_keep_only_a_bounded_summary` |
 
 ## 2. Release CI and publication
 

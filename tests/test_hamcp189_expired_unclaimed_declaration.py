@@ -10,7 +10,9 @@ After the same deadline as claimed pre-intent work (dispatch authority expiry
 plus the retry window), recovery now creates the child record already terminal
 from the declaration alone: ``preflight_rejected`` with ``plan_expired`` and
 the existing ``execution_started``/``pre_dispatch_terminal`` events.  The task
-projects ``failed_pre_dispatch``.  No provider is contacted by that step, no
+projects ``failed_pre_dispatch``.  The whole recovery sweep decides and writes
+that outcome locally before preparation: no provider or provider-identity
+contact precedes, delays or gates it (review of ``1189020``, M2-R).  No
 dispatch occurs, the service reconciler is not needed, a recorded cancel takes
 precedence and a competing first claim is never overwritten.  Real governance,
 F3 runtime and persistence; provider I/O is synthetic and offline.
@@ -18,6 +20,7 @@ F3 runtime and persistence; provider I/O is synthetic and offline.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from pathlib import Path
 import tempfile
@@ -189,11 +192,106 @@ class OperationalUnclaimedTests(_UnclaimedExpiry, unittest.IsolatedAsyncioTestCa
         self.lifecycle.outage = True
         before = self.provider_contacts()
         await self.runtime.recover_once("startup")
-        # The sweep's failed preparation attempt may still read provider
-        # identity (pre-existing retry behavior); nothing plans, dispatches
-        # or verifies, and the provider being down does not block the end.
-        self.assertEqual(self.provider_contacts()[1:], before[1:])
+        # The whole sweep is local: identity, planning, dispatch and
+        # verification counters are all unchanged (M2-R).
+        self.assertEqual(self.provider_contacts(), before)
         self.assert_unclaimed_rejected(approved, task, declaration, operation)
+
+    async def test_recovery_sweep_never_invokes_the_identity_reader(self):
+        # Review probe (M2-R): an identity reader that fails the test if it
+        # is invoked at all, after a restart and past the deadline.
+        approved, task, declaration, operation = await self.unclaimed()
+        self.move_to(self.deadline(approved["plan_id"]) + timedelta(seconds=1))
+        invoked = []
+
+        async def forbidden_identity():
+            invoked.append(True)
+            raise AssertionError("provider identity contacted after expiry")
+
+        self.runtime.provider_identity_reader = forbidden_identity
+        before = self.provider_contacts()
+        await self.runtime.recover_once("reviewer-expired-no-child")
+        self.assertEqual(invoked, [])
+        self.assertEqual(self.provider_contacts(), before)
+        self.assert_unclaimed_rejected(approved, task, declaration, operation)
+
+    async def test_slow_identity_does_not_delay_local_termination(self):
+        # Review probe (M2-R): a provider identity response that never
+        # arrives must not delay or block the expiry outcome.
+        approved, task, declaration, operation = await self.unclaimed()
+        self.move_to(self.deadline(approved["plan_id"]) + timedelta(seconds=1))
+        entered = asyncio.Event()
+        release = asyncio.Event()
+
+        async def delayed_identity():
+            entered.set()
+            await release.wait()
+            return await self.read_identity()
+
+        self.runtime.provider_identity_reader = delayed_identity
+        pending = asyncio.create_task(
+            self.runtime.recover_once("reviewer-slow-identity")
+        )
+        try:
+            await asyncio.wait_for(asyncio.shield(pending), timeout=0.25)
+        except TimeoutError:
+            self.fail("local expiry waited for provider identity")
+        finally:
+            release.set()
+            await pending
+        self.assertFalse(entered.is_set())
+        self.assert_unclaimed_rejected(approved, task, declaration, operation)
+
+    async def test_expired_claimed_child_ends_before_provider_contact(self):
+        # The same local-first order holds when a first claim exists but its
+        # owner was lost (claim expired, no intent): the claimed O9 path also
+        # runs before preparation.
+        approved, plan, task = await self.initialized()
+        declaration = self.declaration(task)
+        prepared, _requests = await self.runtime._load_prepared(plan, task)
+        self.competing_claim(declaration, prepared[0])
+        self.restart()
+        self.move_to(self.deadline(approved["plan_id"]) + timedelta(seconds=1))
+        self.provider = "down"
+        self.lifecycle.outage = True
+        before = self.provider_contacts()
+        await self.runtime.recover_once("startup")
+        self.assertEqual(self.provider_contacts(), before)
+        record = self.runtime.children.get(declaration["child_id"])
+        self.assertTrue(record.terminal)
+        self.assertEqual(record.normalized_outcome, "preflight_rejected")
+        self.assertEqual(record.events[-1]["diagnostic_codes"], ["plan_expired"])
+        self.assertIsNone(record.dispatch_intent)
+        self.assertEqual(record.dispatch_count, 0)
+        self.assertEqual(
+            self.service._load_task(task.task_id).state,
+            ExecutionTaskState.FAILED_PRE_DISPATCH,
+        )
+        self.assertTrue(self.runtime.readiness_state()["execution_ready"])
+        self.assertEqual(self.dispatches(), 0)
+
+    async def test_before_deadline_recovery_still_prepares(self):
+        # Preservation: before the deadline the local-first branch does not
+        # run; the sweep prepares as before (one identity read) and keeps the
+        # bounded retry.
+        approved, task, declaration, _operation = await self.unclaimed()
+        self.move_to(self.deadline(approved["plan_id"]) - timedelta(seconds=1))
+        with patch.object(
+            self.runtime,
+            "_terminate_expired_pre_intent",
+            side_effect=AssertionError("local expiry ran before the deadline"),
+        ):
+            before = self.identity_reads
+            await self.runtime.recover_once("startup")
+        self.assertEqual(self.identity_reads, before + 1)
+        self.assertIsNone(self.runtime.children.get(declaration["child_id"]))
+        self.assertEqual(
+            self.runtime.children.runtime(declaration["child_id"])[
+                "reconciliation_result"
+            ],
+            "bounded_retry",
+        )
+        self.assertEqual(self.dispatches(), 0)
 
     async def test_terminalization_step_contacts_no_provider(self):
         approved, task, declaration, operation = await self.unclaimed()
@@ -454,6 +552,18 @@ class DashboardUnclaimedTests(_UnclaimedExpiry, unittest.IsolatedAsyncioTestCase
 
     def dispatches(self):
         return self.dashboard.write_count
+
+    def provider_contacts(self):
+        return (self.dashboard.preread_count, self.dashboard.write_count)
+
+    async def test_restart_past_deadline_ends_locally_without_preread(self):
+        # Past the deadline a dashboard declaration also ends locally before
+        # preparation: no dashboard pre-read and no write (M2-R).
+        approved, task, declaration, operation = await self.unclaimed()
+        before = await self.expire_and_recover(approved, declaration)
+        self.assertEqual(self.provider_contacts(), before)
+        self.assert_unclaimed_rejected(approved, task, declaration, operation)
+        self.assertEqual(self.dashboard.configuration["title"], "Before")
 
     async def test_restart_then_expiry_is_rejected_without_the_unclaimed_path(self):
         # Dashboard preparation does not refuse an expired plan, so the

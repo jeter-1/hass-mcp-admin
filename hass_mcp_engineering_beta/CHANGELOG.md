@@ -25,12 +25,15 @@ Builds on 2.4.1-beta.14.
   claim, no recorded cancel and only their own recorded locks qualify. A task
   saved before its first child record gets the same terminal outcome after the
   same deadline, written locally with no provider contact; cancel and a
-  competing first claim keep precedence. No new stored string; nothing is
-  dispatched.
+  competing first claim keep precedence. Past the deadline the terminal
+  write happens locally before any provider or provider-identity contact.
+  No new stored string; nothing is dispatched.
 - Audit an empty tool name refused as `core_requirement_unmapped` with the
   full unmapped-refusal record and metric, counted once, and audit every
   non-string tool name (including `null`, `false`, `0`, `[]` and `{}`) as
   one generic request with one error count instead of failing the audit.
+  Diagnostic logs record only `non_string_tool_name:<type>` for such a name,
+  and the MCP SDK's validation warnings keep only a bounded summary.
 - Correct the repository's beta.13 release notes: three allowlisted tools are
   not "local state only", and rollback planning read without Core authority.
   The published beta.13 GitHub Release is unchanged.

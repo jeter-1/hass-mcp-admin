@@ -179,9 +179,11 @@ terminate the task itself, truthfully, independent of the service reconciler.
 
 ### 4.2 Design
 
-In `_recover_active_candidates`, when a recovery attempt for a child raises,
-`_terminate_expired_pre_intent(...)` decides whether this is a stuck expired
-task that has passed its deadline:
+In `_recover_active_candidates`, `_terminate_expired_pre_intent(...)`
+decides whether this is a stuck expired task that has passed its deadline.
+It runs at two points: when a recovery attempt for a child raises, and,
+once the deadline has passed, before preparation for any pre-intent child
+(local-first, review of `1189020`, M2 residual; see below). It requires:
 
 - the child exists, is not terminal, has no dispatch intent,
   `dispatch_count == 0`, and its claim has expired (no live owner);
@@ -200,9 +202,24 @@ Before the deadline, the existing `bounded_retry` path runs unchanged (backoff
 is anchored on the durable `expires_at`, and backoff only grows. At most 7
 expired-family retries fit in the window, even across restarts, and the
 tests assert that bound. The window tolerates a wall-clock correction near expiry. A clock
-stepped back before `expires_at` returns the task to the normal path. The
-hook runs only when the attempt raises: configuration plans, whose executor
-preflight rejects the expired plan itself, never reach it.
+stepped back before `expires_at` returns the task to the normal path.
+Before the deadline the hook runs only when the attempt raises:
+configuration plans, whose executor preflight rejects the expired plan
+itself, never reach it then.
+
+**Local-first past the deadline (review of `1189020`, M2 residual).** Once
+`now >= expires_at + 600 s`, the sweep calls the helper for a pre-intent
+child (no post-intent readback) *before* `_load_prepared`/`_prepare`. So the
+expiry decision and the terminal `failed_pre_dispatch` / `plan_expired`
+write happen before any provider or provider-identity contact: none can
+precede, delay or gate it. The check sits inside the per-child `try`, so an
+exception in it takes the existing handler (one more helper attempt, else
+`bounded_retry`). When the helper declines (live claim, intent, dispatch
+count, recorded cancel, conflict hold), recovery continues unchanged.
+Before the deadline the guard is false and preparation runs as before.
+This applies to every plan family, so a configuration or dashboard plan
+past the deadline now ends through the same local primitives instead of its
+executor preflight; the stored strings are identical.
 
 After the deadline, the runtime:
 
@@ -283,15 +300,19 @@ declaration and plan:
   `transition_processed`, so readiness is restored.
 
 No provider is contacted and no dispatch authority is renewed: preparation is
-not rerun after expiry. The record format and the strings are the existing
+not rerun after expiry. Past the deadline the whole recovery sweep makes no
+provider or provider-identity call for the task: the local-first check
+(§4.2) runs before `_load_prepared`, which for an operational contract-v3
+plan reads the provider identity (review of `1189020`, M2 residual). The record format and the strings are the existing
 ones (table above). Cancel keeps precedence (a recorded cancel is checked
 inside the same transaction), and the first claim keeps precedence (the
 primitive never overwrites a record).
 
-**Dashboard declarations were never stuck.** For a dashboard declaration,
-the existing executor preflight rejects the expired plan itself
-(`preflight_rejected` / `plan_expired`) and the new path is not reached; the
-test asserts that.
+**Dashboard declarations were never stuck.** Before the deadline, the
+existing executor preflight of a dashboard declaration rejects the expired
+plan itself (`preflight_rejected` / `plan_expired`) and the new path is not
+reached; the test asserts that. Past the deadline the local-first check
+ends it with the same strings and no dashboard pre-read.
 
 **Pre-existing, unchanged (disclosed).** On `bdb5af8`, re-applying any
 contract-v3 plan that has reached a terminal state after expiry raises the
@@ -336,10 +357,19 @@ case (§4.2a):
   cancel (cancel wins), a cancel recorded inside the projection window
   (cancel wins), a competing first claim that wins (never overwritten) and
   one that loses (finds the terminal record);
+- operational, M2 residual (review of `1189020`): the restart case asserts
+  the full provider-contact tuple is unchanged (identity reads included);
+  a forbidden identity reader is never invoked by the sweep; Codex's
+  delayed-identity probe terminates within 0.25 s while the identity
+  response is held, and the reader is never entered; a child whose first
+  claim won, then expired, past the deadline with the provider down, ends
+  `failed_pre_dispatch` / `plan_expired` with zero contact; before the
+  deadline recovery still prepares (one identity read, `bounded_retry`);
 - exact helper state: restart then expiry settles with the helper unchanged;
   before the deadline it keeps retrying;
 - dashboard: restart then expiry is rejected by the existing preflight
-  without reaching the new path, with zero writes.
+  without reaching the new path, with zero writes; restart then past the
+  deadline ends locally with zero pre-reads and zero writes.
 
 ## 5. R8 and L1 — the gateway audit keeps the refusal reason
 
@@ -359,6 +389,31 @@ case (§4.2a):
   name (`None`, `False`, `0`, `[]`, `{}`) now gets the generic `mcp_request`
   record and its count like any other non-string name, and the raw name is
   never logged.
+
+**Diagnostic logs (review of `1189020`, L1 residual).** Two log channels
+carried the raw malformed name:
+
+- the gateway's own `request_started` / `request_failed` /
+  `request_completed` events. Their `tool` field now records a string name
+  as-is and anything else only as `non_string_tool_name:<type>` (for
+  example `non_string_tool_name:list`); the audit and telemetry are
+  unchanged;
+- the pinned SDK (`mcp` 1.30.0, `mcp/shared/session.py`) logs a refused
+  request to the root logger as `Failed to validate request: <pydantic
+  error>` (with `input_value=` holding the raw value) and, at debug,
+  `Message that failed validation: <raw message>`; notifications log
+  `Failed to validate notification: ...`. The gateway installs, once, a
+  root-logger filter (`SdkRequestDiagnosticFilter`) that rewrites only
+  those records from that SDK module to
+  `<prefix><N validation errors for Model>; raw request values suppressed`
+  (or `unclassified`). The filter covers every SDK request or notification
+  validation diagnostic, not only tool names; all other records pass
+  untouched.
+
+`tests/test_hamcp189_gateway_audit_reason.py` replays Codex's probe through
+the production `configure_logging` and a debug root capture for `None`,
+`False`, `0`, `[]`, `{}` and list/dict names carrying a marker: the marker
+never appears in the app logs, the SDK logs or the audit.
 
 ## 6. L2 — beta.13 release-notes correction
 
