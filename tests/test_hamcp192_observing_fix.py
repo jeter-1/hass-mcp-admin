@@ -5,7 +5,7 @@ release a manual-review hold only on a governed Ingress decision.
 Deterministic offline fixtures: synthetic transport, fake clock and fake sleep.
 """
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 import json
 from pathlib import Path
 import re
@@ -20,8 +20,6 @@ sys.path[:0] = [str(ROOT / "hass_mcp_engineering_beta"), str(ROOT)]
 import httpx
 
 from ha_mcp_engineering.approval_web import create_approval_application
-from ha_mcp_engineering.f3.executor import SharedOperationExecutor
-from ha_mcp_engineering.f3.models import parse_timestamp
 from ha_mcp_engineering.fan.authority import FanCoreAuthority
 from ha_mcp_engineering.fan.contracts import FanRefusal, FanRequest, digest
 from ha_mcp_engineering.fan.locks import FAN_LOCK_TIMING
@@ -196,7 +194,7 @@ class LeaseAndSweepTests(ObservingFixture):
         self.assertTrue(held)
         for item in held:
             # Decision 2: the lease is 30 s from the last renewal, never 120 s.
-            lease = parse_timestamp(item.lease_expires_at, field_name="lease") - self.clock()
+            lease = datetime.fromisoformat(item.lease_expires_at) - self.clock()
             self.assertEqual(lease, timedelta(seconds=30))
         self.assertEqual(status["next_reobservation_not_before"], held[0].lease_expires_at)
 
@@ -231,7 +229,7 @@ class SlowDeviceTests(ObservingFixture):
         passes = await self.sweep(request.task_id)
         when, _reads, receipt = passes[-1]
         self.assertEqual(receipt["state"], "succeeded_verified", receipt)
-        deadline = parse_timestamp(receipt["observation_status"]["evidence_deadline"], field_name="d")
+        deadline = datetime.fromisoformat(receipt["observation_status"]["evidence_deadline"])
         self.assertLess(when, deadline)
         self.assertEqual(self.owned(request.task_id), [])
         self.assertEqual(self.service.health()["conflict_hold_count"], 0)
@@ -246,7 +244,7 @@ class DeadlineFinalReadTests(ObservingFixture):
         await self.call(request)
         passes = await self.sweep(request.task_id)
         when, reads, receipt = passes[-1]
-        deadline = parse_timestamp(receipt["observation_status"]["evidence_deadline"], field_name="d")
+        deadline = datetime.fromisoformat(receipt["observation_status"]["evidence_deadline"])
         self.assertGreaterEqual(when, deadline)
         self.assertEqual(reads, 1)
         self.assertEqual(receipt["state"], "succeeded_verified", receipt)
@@ -254,7 +252,9 @@ class DeadlineFinalReadTests(ObservingFixture):
         self.assertEqual(self.transport.writes, 1)
 
     async def test_without_the_opt_in_the_shared_executor_keeps_the_pre_read_check(self):
-        self.assertFalse(SharedOperationExecutor.__init__.__kwdefaults__["final_read_at_deadline"])
+        # The shared executor default stays off for every other F3 family.
+        executor_type = type(self.service.executor())
+        self.assertFalse(executor_type.__init__.__kwdefaults__["final_read_at_deadline"])
 
         class PreReadDeadline(FanService):
             def executor(self):
@@ -277,7 +277,7 @@ class NeverMatchingTests(ObservingFixture):
         await self.call(request)
         passes = await self.sweep(request.task_id)
         when, reads, receipt = passes[-1]
-        deadline = parse_timestamp(receipt["observation_status"]["evidence_deadline"], field_name="d")
+        deadline = datetime.fromisoformat(receipt["observation_status"]["evidence_deadline"])
         self.assertGreaterEqual(when, deadline)
         self.assertEqual(reads, 1)  # one final read, then the decision
         self.assertTrue(all(not item[2]["terminal"] for item in passes[:-1]))
