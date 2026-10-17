@@ -519,6 +519,7 @@ class ToolRefusalTests(unittest.TestCase):
         self.assertIn(INVALID_IDENTIFIER_MESSAGE, json.dumps(payload))
         self.assertEqual(audit["error_code"], "invalid_request")
         self.assertEqual(audit["result_status"], "failure")
+        self.assertEqual(audit["ha_endpoint_categories"], [])
         self.assertEqual(after["invalid_request"] - before["invalid_request"], 1)
         self.assertEqual(factory.sessions, 0)
         self.assertEqual(factory.requests, [])
@@ -547,6 +548,12 @@ class ToolRefusalTests(unittest.TestCase):
                 self.assertEqual(
                     [str(request["url"]) for request in factory.requests],
                     ["http://supervisor/core/api/config/automation/config/" + value],
+                )
+                self.assertEqual(
+                    self.audit_record(f"hamcp200-automation-valid-{index}")[
+                        "ha_endpoint_categories"
+                    ],
+                    ["config/automation"],
                 )
 
     def test_get_entity_refuses_traversal_without_a_request(self):
