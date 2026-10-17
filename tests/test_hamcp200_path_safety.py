@@ -775,6 +775,69 @@ class SourceScanTests(unittest.TestCase):
                 self.assertEqual(scan_source(source), [])
 
 
+HARNESS_METHODS = frozenset({"GET", "POST", "PUT", "DELETE", "PATCH"})
+HARNESS_BINDERS = frozenset({"rest_path", "state_path"})
+STATIC_ROUTE = re.compile(r"(?:/[a-z0-9_]+)+\Z")
+
+
+def scan_harness_source(source: str) -> list[str]:
+    """Flag a Home Assistant REST client call whose path the transport would refuse."""
+
+    findings = []
+    for node in ast.walk(ast.parse(source)):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "request"
+            and len(node.args) >= 2
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value in HARNESS_METHODS
+        ):
+            continue
+        receiver = ast.unparse(node.func.value)
+        if receiver != "rest" and not receiver.endswith("rest_client"):
+            continue
+        path = node.args[1]
+        if isinstance(path, ast.Constant) and isinstance(path.value, str):
+            if STATIC_ROUTE.fullmatch(path.value):
+                continue
+        elif isinstance(path, ast.Call) and isinstance(path.func, ast.Name) and path.func.id in HARNESS_BINDERS:
+            continue
+        findings.append(f"{node.lineno}: {ast.unparse(node)[:90]}")
+    return findings
+
+
+class HarnessScriptTests(unittest.TestCase):
+    """Disposable-Core harnesses call the guarded transport with bound paths."""
+
+    def test_harness_scripts_bind_every_home_assistant_rest_path(self):
+        findings = []
+        for script in sorted((ROOT / "scripts").glob("*.py")):
+            source = script.read_text(encoding="utf-8")
+            if "ha_mcp_engineering.clients" not in source:
+                continue
+            findings.extend(f"{script.name}:{item}" for item in scan_harness_source(source))
+        self.assertEqual(findings, [])
+
+    def test_harness_scanner_flags_paths_the_transport_refuses(self):
+        for source in (
+            'await rest.request("GET", "/states/" + FAN)',
+            'await rest.request("POST", "/states/light.synthetic_search_fixture", body={})',
+            'await rest.request("GET", f"/config/script/config/{key}")',
+            'await gateway.rest_client.request("DELETE", f"/config/{kind}/config/{rid}")',
+        ):
+            with self.subTest(source=source):
+                self.assertTrue(scan_harness_source(source))
+        for source in (
+            'await rest.request("GET", "/config")',
+            'await rest.request("GET", state_path(FAN))',
+            'await rest.request("GET", rest_path("/config/script/config/{}", key))',
+            'await session.request("GET", url)',
+        ):
+            with self.subTest(source=source):
+                self.assertEqual(scan_harness_source(source), [])
+
+
 class CompatibilityEntryPointTests(unittest.TestCase):
     """Finding 15: the compatibility module is not a second server."""
 

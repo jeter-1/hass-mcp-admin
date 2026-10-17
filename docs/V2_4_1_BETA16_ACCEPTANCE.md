@@ -80,6 +80,9 @@ Bind the following:
   - The Engineering package has no raw interpolated request path.
   - Every named exemption is still present.
   - The scanner flags each of 12 raw forms and accepts guarded forms.
+- `HarnessScriptTests`: every Home Assistant REST call in the disposable-Core
+  harness scripts uses a fixed static route or a `rest_path` binding. The
+  scan flags all 21 sites in the pre-fix harness scripts.
 - `CompatibilityEntryPointTests`: `tools/compatibility.py` has no `main`,
   gateway, token bucket, audit writer or `__main__` guard, and the canonical
   `ha_mcp_engineering/__main__.py` remains.

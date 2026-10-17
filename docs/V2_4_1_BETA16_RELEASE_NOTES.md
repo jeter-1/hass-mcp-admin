@@ -112,3 +112,12 @@ Assistant path, base URL or session-request argument:
 - `.format`, `.join` or `.replace`.
 
 Three exempt sites are named and pinned.
+
+The disposable-Core CI harnesses (`scripts/ha_mcp_850_container_acceptance.py`,
+`scripts/real_ha_contract_tests.py` and
+`scripts/typed_core_container_contract.py`) call the same guarded transport.
+Their 21 concatenated or dotted `/states/...` and `/config/.../config/...`
+paths now bind through `rest_path`. A second scan in the same test file fails
+on any harness REST call whose path the transport would refuse. Before this
+fix, the 8.5.0 runtime-acceptance harness reported `synthetic_fan_unavailable`
+because its fan readiness probe was refused as an unbound path.
