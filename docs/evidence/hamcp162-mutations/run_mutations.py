@@ -43,6 +43,9 @@ T_SANITIZATION = "tests.test_beta11_sanitization"
 T_H4 = "tests.test_hamcp162_h4_pipeline"
 T_H4_UNIT = T_H4 + ".MatrixTests.test_unit_matrix"
 T_H4_COVERAGE = T_H4 + ".CoverageTests"
+T_H4_RULE_CELLS = T_H4_COVERAGE + ".test_rules_from_the_code_are_all_in_the_matrix"
+T_H4_ATTRIBUTION = T_H4_COVERAGE + ".test_every_withheld_cell_is_decided_by_a_registered_rule"
+T_H4_EXECUTOR_PIN = T_H4_COVERAGE + ".test_the_executor_holds_no_check_outside_the_registry"
 H4_TESTS = "tests/test_hamcp162_h4_pipeline.py"
 BOTH = (T_READER, T_ADMISSION)
 
@@ -121,11 +124,18 @@ MUTATIONS = [
         "text = decoded.casefold()", "text = decoded",
     )]),
     m("A-judge-raw", "rule A: judging the raw form instead of the canonical text", READER, [(
-        "    elif credential_text(canonical_text):\n        return redaction_form(canonical_text, known_secrets)\n",
-        "    elif credential_text(text):\n        return redaction_form(text, known_secrets)\n",
+        "    if scan.position in _KEY_POSITIONS or not predicate(scan.canonical_text):\n"
+        "        return None\n    if scan.position in _PATH_POSITIONS:\n"
+        "        return CREDENTIAL_MARKER, \"credential_key\"\n"
+        "    return redaction_form(scan.canonical_text, scan.known_secrets)\n",
+        "    judged = scan.canonical_text if scan.position in _PATH_POSITIONS else scan.text\n"
+        "    if scan.position in _KEY_POSITIONS or not predicate(judged):\n"
+        "        return None\n    if scan.position in _PATH_POSITIONS:\n"
+        "        return CREDENTIAL_MARKER, \"credential_key\"\n"
+        "    return redaction_form(judged, scan.known_secrets)\n",
     ), (
-        "position in _VALUE_POSITIONS and sqlite_visible(text, canonical_text, rounds)",
-        "position in _VALUE_POSITIONS and sqlite_visible(text, text, 0)",
+        "and sqlite_visible(scan.text, scan.canonical_text, scan.rounds)",
+        "and sqlite_visible(scan.text, scan.text, 0)",
     )]),
     m("A-emit-canonical", "rule A: emitting the canonical text instead of the raw string", READER, [(
         "# Visible values are emitted raw, never in canonical form.\n        return value",
@@ -175,11 +185,10 @@ MUTATIONS = [
     )]),
     # Rule C'.
     m("C1-drop", "rule C': dropping C'1", READER, [(
-        "        _userinfo(canonical_text)\n        or any(word in canonical_text",
-        "        False\n        or any(word in canonical_text",
+        "    return _credential_text_finding(scan, _userinfo)\n", "    return None\n",
     )]),
     m("C2-drop", "rule C': dropping C'2", READER, [(
-        "        or any(word in canonical_text for word in CREDENTIAL_WORDS)\n", "",
+        "    return _credential_text_finding(scan, credential_word)\n", "    return None\n",
     )]),
     *[
         m(f"C2-word-{word}", f"rule C': dropping the word {word!r}", READER, [(
@@ -190,13 +199,14 @@ MUTATIONS = [
         for word in CREDENTIAL_WORDS
     ],
     m("C-rev4-double-equals", "rule C': restoring revision 4's == exemption", READER, [(
-        "        or any(word in canonical_text for word in CREDENTIAL_WORDS)\n",
-        "        or any(word in canonical_text and \"==\" not in canonical_text for word in CREDENTIAL_WORDS)\n",
+        "    return any(word in canonical_text for word in CREDENTIAL_WORDS)\n",
+        "    return any(word in canonical_text and \"==\" not in canonical_text for word in CREDENTIAL_WORDS)\n",
     )]),
     m("C-partial-redaction", "rule C': redacting only the matching part", READER, [(
-        "    elif credential_text(canonical_text):\n        return redaction_form(canonical_text, known_secrets)\n",
-        "    elif credential_text(canonical_text):\n"
-        "        return re.sub(\"|\".join(map(re.escape, CREDENTIAL_WORDS)) + r\"\\S*\", \"[REDACTED]\", text, flags=re.I), \"connection_string\"\n",
+        "        return CREDENTIAL_MARKER, \"credential_key\"\n"
+        "    return redaction_form(scan.canonical_text, scan.known_secrets)\n",
+        "        return CREDENTIAL_MARKER, \"credential_key\"\n"
+        "    return re.sub(\"|\".join(map(re.escape, CREDENTIAL_WORDS)) + r\"\\S*\", \"[REDACTED]\", scan.text, flags=re.I), \"connection_string\"\n",
     )]),
     m("C-keep-credential-scheme", "rule C': keeping a scheme that holds a credential word", READER, [(
         "    return screen(scheme, known_secrets, position=\"value\").kept\n",
@@ -211,8 +221,8 @@ MUTATIONS = [
         "_DELIMITED_TOKEN = re.compile(r\"(pass|key)\\s*[=:]\")",
     )]),
     m("C3-plain-substring", "rule C': C'3 as a plain substring", READER, [(
-        "        or any(word in canonical_text for word in CREDENTIAL_WORDS)\n",
-        "        or any(word in canonical_text for word in CREDENTIAL_WORDS + (\"pass\", \"key\"))\n",
+        "    return any(word in canonical_text for word in CREDENTIAL_WORDS)\n",
+        "    return any(word in canonical_text for word in CREDENTIAL_WORDS + (\"pass\", \"key\"))\n",
     )]),
     # R10 / K1 and key matching.
     m("K1-drop", "R10: dropping K1", READER, [(
@@ -347,11 +357,11 @@ MUTATIONS = [
     )]),
     # Value scanners, errors and output bounds.
     m("pem-drop", "removing PEM detection", READER, [(
-        "    if _PEM.search(text):\n        return \"pem\"", "    if False:\n        return \"pem\"",
+        "    return \"pem\" if _PEM.search(form) else None\n", "    return None\n",
     )]),
     m("A1-wrapped-opaque-drop", "A1: the whitespace-stripped opaque-blob check removed", READER, [(
-        "    if _OPAQUE_BLOB.search(_WHITESPACE.sub(\"\", text)):\n        return \"opaque_blob\"\n",
-        "    if False:\n        return \"opaque_blob\"\n",
+        "    return \"opaque_blob\" if _OPAQUE_BLOB.search(_WHITESPACE.sub(\"\", form)) else None\n",
+        "    return None\n",
     )], (T_H4,)),
     m("A1-wrapped-newline-only", "A1: only newlines removed before the opaque-blob check", READER, [(
         "_WHITESPACE = re.compile(r\"\\s+\")", "_WHITESPACE = re.compile(r\"\\n+\")",
@@ -465,11 +475,11 @@ MUTATIONS = [
     )], (T_READER, T_SANITIZATION)),
     m("H3-marker-skip-restored-l4", "H3: restoring the marker skip with the screen's marker gate removed",
       READER, [(
-        "    if marker_like_text(text):\n        return MARKER_COLLISION, MARKER_COLLISION_CATEGORY\n",
+        "    if marker_like_text(scan.text):\n        return MARKER_COLLISION, MARKER_COLLISION_CATEGORY\n",
         "    if False:\n        return MARKER_COLLISION, MARKER_COLLISION_CATEGORY\n",
     ), (
-        "    for form in dict.fromkeys((text, decoded, canonical_text)):\n",
-        "    for form in (() if text.startswith(\"[\") else dict.fromkeys((text, decoded, canonical_text))):\n",
+        "            for form in scan.forms():\n",
+        "            for form in (() if text.startswith(\"[\") else scan.forms()):\n",
     )]),
     m("H3-redacted-prefix-safe-l5", "H3: treating any [REDACTED prefix as safe in L5", SANITIZATION, [(
         "        if marker_like_text(value):\n            self._record_field({MARKER_COLLISION_CATEGORY})\n",
@@ -477,34 +487,36 @@ MUTATIONS = [
         "        if marker_like_text(value):\n            self._record_field({MARKER_COLLISION_CATEGORY})\n",
     )], (T_READER, T_SANITIZATION)),
     m("H3-redacted-prefix-safe-l4", "H3: treating any [REDACTED prefix as safe outside keys", READER, [(
-        "    # marker_lookalike\n    if marker_like_text(text):\n",
-        "    # marker_lookalike\n"
-        "    if position not in _KEY_POSITIONS and text.startswith(\"[REDACTED\"):\n        return None\n"
-        "    if marker_like_text(text):\n",
+        "                found = rule.check(scan)\n",
+        "                if rule.rule_id == \"marker_lookalike\" and position not in _KEY_POSITIONS and (\n"
+        "                        text.startswith(\"[REDACTED\")):\n                    return None\n"
+        "                found = rule.check(scan)\n",
     )]),
     m("H3-redacted-prefix-safe-key", "H3: treating a [REDACTED key prefix as safe", READER, [(
-        "    # marker_lookalike\n    if marker_like_text(text):\n",
-        "    # marker_lookalike\n"
-        "    if position in _KEY_POSITIONS and text.startswith(\"[REDACTED\"):\n        return None\n"
-        "    if marker_like_text(text):\n",
+        "                found = rule.check(scan)\n",
+        "                if rule.rule_id == \"marker_lookalike\" and position in _KEY_POSITIONS and (\n"
+        "                        text.startswith(\"[REDACTED\")):\n                    return None\n"
+        "                found = rule.check(scan)\n",
     )]),
     m("H3-l4-key-gate-removed", "H3: dropping the marker-shaped gate for keys", READER, [(
-        "    if marker_like_text(text):\n        return MARKER_COLLISION",
-        "    if marker_like_text(text) and position not in _KEY_POSITIONS:\n        return MARKER_COLLISION",
+        "    if marker_like_text(scan.text):\n        return MARKER_COLLISION",
+        "    if marker_like_text(scan.text) and scan.position not in _KEY_POSITIONS:\n        return MARKER_COLLISION",
     )]),
     m("H3-l4-value-gate-removed", "H3: dropping the marker-shaped gate for values", READER, [(
-        "    if marker_like_text(text):\n        return MARKER_COLLISION",
-        "    if marker_like_text(text) and position not in _VALUE_POSITIONS:\n        return MARKER_COLLISION",
+        "    if marker_like_text(scan.text):\n        return MARKER_COLLISION",
+        "    if marker_like_text(scan.text) and scan.position not in _VALUE_POSITIONS:\n        return MARKER_COLLISION",
     )]),
     m("H3-key-scan-removed", "H3 sweep: no scanners on decoded or canonical key forms", READER, [(
-        "    for form in dict.fromkeys((text, decoded, canonical_text)):\n",
-        "    for form in ((text,) if position in _KEY_POSITIONS else dict.fromkeys((text, decoded, canonical_text))):\n",
+        "            for form in scan.forms():\n",
+        "            for form in ((text,) if position in _KEY_POSITIONS else scan.forms()):\n",
     )], (T_READER, T_H4)),
     m("H3-r11-scanner-skip", "H3 sweep: the SQLite shape skipping the scanners again", READER, [(
-        "    # connection_context; R11 exempts the exact SQLite value shape from it\n",
-        "    if position in _VALUE_POSITIONS and any(is_connection_key(key) for key in context) and (\n"
-        "            sqlite_visible(text, canonical_text, rounds)):\n        return None\n"
-        "    # connection_context; R11 exempts the exact SQLite value shape from it\n",
+        "                found = rule.check(scan)\n",
+        "                if rule.rule_id == \"connection_context\" and position in _VALUE_POSITIONS and any(\n"
+        "                        is_connection_key(key) for key in context) and (\n"
+        "                        sqlite_visible(text, scan.canonical_text, scan.rounds)):\n"
+        "                    return None\n"
+        "                found = rule.check(scan)\n",
     )]),
     m("H3-scheme-unvetted", "H3 sweep: keeping a scheme without the scanners", READER, [(
         " and _scheme_clean(match[1], known_secrets):", ":",
@@ -559,18 +571,19 @@ MUTATIONS = [
     )], (T_READER, T_SANITIZATION)),
     # H4: the uniform screen, the rule x position matrix and its coverage.
     m("H4-pem-skip-canonical-keys", "H4: PEM skipped on a key already in canonical form", READER, [(
-        "        category = scanner_category(form, known_secrets)\n",
-        "        category = scanner_category(form, known_secrets)\n"
-        "        if category == \"pem\" and position in _KEY_POSITIONS and text == canonical_text:\n"
-        "            category = None\n",
+        "                    category = rule.check(form, known_secrets)\n",
+        "                    category = rule.check(form, known_secrets)\n"
+        "                    if category == \"pem\" and position in _KEY_POSITIONS and (\n"
+        "                            text == scan.canonical_text):\n"
+        "                        category = None\n",
     )], (T_H4,)),
     *[
         m(f"H4-opaque-skip-{position}", f"H4: the opaque-blob scanner skipped in position {position}",
           READER, [(
-              "        category = scanner_category(form, known_secrets)\n",
-              "        category = scanner_category(form, known_secrets)\n"
-              f"        if category == \"opaque_blob\" and position == \"{position}\":\n"
-              "            category = None\n",
+              "                    category = rule.check(form, known_secrets)\n",
+              "                    category = rule.check(form, known_secrets)\n"
+              f"                    if category == \"opaque_blob\" and position == \"{position}\":\n"
+              "                        category = None\n",
           )], (T_H4_UNIT,))
         for position in (
             "value", "list_item", "key", "reference_name", "yaml_path", "include_path",
@@ -596,11 +609,11 @@ MUTATIONS = [
         "                original,\n",
     )], (T_H4,)),
     m("H4-d12-broadened", "H4: key_text applied to values, broadening D12", READER, [(
-        "    elif position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):\n",
+        "    elif scan.position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):\n",
         "    elif key_text_unsafe(canonical_text):\n",
     )], (T_READER, T_H4_UNIT)),
     m("H4-key-text-dropped", "H4: key_text dropped outside keys and paths", READER, [(
-        "    elif position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):\n",
+        "    elif scan.position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):\n",
         "    elif False:\n",
     )], (T_H4_UNIT,)),
     m("H4-position-unchecked", "H4: an unknown position accepted by the screen", READER, [(
@@ -620,6 +633,40 @@ MUTATIONS = [
         "        lambda t: y._PEM.search(t) is not None, covers=\"pem\")\n",
         "        lambda t: y._PEM.search(t) is not None, covers=\"pem:private\")\n",
     )], (T_H4_COVERAGE,)),
+    m("M1-inline-check-in-executor", "M1: a check written inline in _finding, bypassing the registry",
+      READER, [(
+        "    scan = _Scan(text, known_secrets, position, path, context)\n",
+        "    scan = _Scan(text, known_secrets, position, path, context)\n"
+        "    if \"inline\" in text:\n        return Finding(\"pem\", \"[REDACTED:pem]\", \"pem\")\n",
+    )], (T_H4_EXECUTOR_PIN,)),
+    m("M1-inline-check-in-screen", "M1: a check written inline in screen, bypassing the registry",
+      READER, [(
+        "    finding = _finding(text, known_secrets, position, tuple(path))\n",
+        "    if \"inline\" in text:\n        return Screened(False, \"[REDACTED:pem]\", \"pem\")\n"
+        "    finding = _finding(text, known_secrets, position, tuple(path))\n",
+    )], (T_H4_EXECUTOR_PIN,)),
+    m("M1-rule-unregistered", "M1: a matrixed rule (pem) no longer registered, so not executed",
+      READER, [(
+        "@_rule(\"pem\", per_form=True)\n", "",
+    )], (T_H4_RULE_CELLS,)),
+    m("M1-wrapped-rule-unregistered", "M1: A1's whitespace-stripped rule no longer registered",
+      READER, [(
+        "@_rule(\"opaque_blob_wrapped\", per_form=True)\n", "",
+    )], (T_H4_RULE_CELLS,)),
+    m("M1-unmatrixed-rule-registered", "M1: a new registered rule with no matrix case", READER, [(
+        "@_rule(\"known_secret_casefold\")\n",
+        "@_rule(\"unmatrixed_extra\")\ndef _unmatrixed_extra_rule(scan):\n    return None\n\n\n"
+        "@_rule(\"known_secret_casefold\")\n",
+    )], (T_H4_RULE_CELLS,)),
+    m("M1-executor-skips-a-rule", "M1: the executor skipping a registered rule", READER, [(
+        "            for rule in rules:\n                found = rule.check(scan)\n",
+        "            for rule in rules[:-1]:\n                found = rule.check(scan)\n",
+    )], (T_H4_ATTRIBUTION,)),
+    m("M1-matrix-wrapped-rows-uncovered", "M1: A1's wrapped rows no longer cover their rule",
+      H4_TESTS, [(
+        "            covers=\"opaque_blob_wrapped\", needle=wrapped_needle)\n",
+        "            covers=\"opaque_blob\", needle=wrapped_needle)\n",
+    )], (T_H4_RULE_CELLS,)),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)

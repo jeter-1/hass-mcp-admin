@@ -8,15 +8,19 @@
   spaces under an innocent key, the wrapped 199/200/201 boundary, and the
   punctuated multi-line prose that stays visible.
 - The rule x position matrix: one synthetic case for every redaction rule
-  (``SCANNER_RULES`` with the shared sanitizer expanded into its segment and
-  serialized rules and its known-secret rule) in every output position
+  (the rules registered in ``SCANNER_REGISTRY``, which is the execution
+  path, with the shared sanitizer expanded into its segment and serialized
+  rules and its known-secret rule) in every output position
   (``OUTPUT_POSITIONS``). Each case runs through ``screen`` directly and
   end to end through the gateway: at 8.5.0 over a real MCP client session
   to the Engineering server and a real ClientSession to a synthetic ha-mcp
   peer, and at 8.4.3 through the in-memory transport. The needle never
   appears in the serialized response.
-- The coverage test: positions and rules enumerated from the code must
-  equal the matrix dimensions.
+- The coverage test (M1): every registered rule x every position is a
+  matrix cell and every matrix cell names a registered rule; proof tests
+  show that an unmatrixed registered rule and an unregistered matrixed rule
+  each fail it, every withheld cell is decided by a registered rule, and
+  the executor holds no check outside the registry.
 - The uniform-entry test: every emitted string is a ``screen`` output in
   its field's position.
 - The committed-file scan: no HAMCP-162 test, fixture or evidence file
@@ -28,6 +32,7 @@ Synthetic peers only; no live Home Assistant, no real credential.
 
 import ast
 import asyncio
+from collections import Counter
 from contextlib import ExitStack, asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, fields as dataclass_fields, replace
@@ -104,15 +109,27 @@ SEGMENT_RULE_NAMES = tuple(_pattern_names(S)[id(pattern)] for pattern, _c, _f in
 SERIALIZED_CATEGORIES = tuple(category for _pattern, category in S._SERIALIZED_PATTERNS)
 
 
-def expected_rule_ids() -> set[str]:
-    """Every redaction rule, enumerated from the code."""
+SANITIZER_RULE_IDS = frozenset(
+    {"segment:" + name for name in SEGMENT_RULE_NAMES}
+    | {"serialized:" + category for category in SERIALIZED_CATEGORIES}
+    | {"sanitizer:known_secret"}
+)
 
-    return (
-        (set(y.SCANNER_RULES) - {"sanitizer"})
-        | {"segment:" + name for name in SEGMENT_RULE_NAMES}
-        | {"serialized:" + category for category in SERIALIZED_CATEGORIES}
-        | {"sanitizer:known_secret"}
-    )
+
+def expected_rule_ids() -> set[str]:
+    """Every redaction rule, enumerated at call time from the registry that
+    executes them (M1); "sanitizer" expands into the sanitizer's own rules."""
+
+    registered = set(y.scanner_rule_ids())
+    if "sanitizer" in registered:
+        registered = (registered - {"sanitizer"}) | SANITIZER_RULE_IDS
+    return registered
+
+
+def registered_rule(covers: str) -> str:
+    """The registry rule a matrix case's covered rule belongs to."""
+
+    return "sanitizer" if covers in SANITIZER_RULE_IDS else covers
 
 
 _SEGMENT_BUILDERS: dict[str, Callable[[str], str]] = {
@@ -210,7 +227,7 @@ def build_rules() -> tuple[Rule, ...]:
             lambda t, s=separator: s in t and y._OPAQUE_BLOB.search(t) is None
             and y._OPAQUE_BLOB.fullmatch(re.sub(r"\s", "", t)) is not None
             and len(re.sub(r"\s", "", t)) == 200,
-            covers="opaque_blob", needle=wrapped_needle)
+            covers="opaque_blob_wrapped", needle=wrapped_needle)
     return tuple(rules)
 
 
@@ -782,6 +799,10 @@ def code_positions() -> set[str]:
         y._KEY_POSITIONS) | set(y._VALUE_POSITIONS)
 
 
+# The positions every matrix case runs in (each has an end-to-end injector).
+MATRIX_POSITIONS = tuple(sorted(y.OUTPUT_POSITIONS))
+
+
 class CoverageTests(unittest.TestCase):
     def test_positions_from_the_code_are_all_in_the_matrix(self):
         self.assertLessEqual(code_positions(), set(y.OUTPUT_POSITIONS))
@@ -797,13 +818,112 @@ class CoverageTests(unittest.TestCase):
         self.assertLessEqual(set(envelope) - {"value"}, set(y.FIELD_POSITIONS))
 
     def test_rules_from_the_code_are_all_in_the_matrix(self):
-        covered = {rule.covers for rule in RULES}
-        self.assertLessEqual({name for name, _p in D12_RESIDUALS}, covered)
-        self.assertLessEqual({p for _n, p in D12_RESIDUALS}, set(y.OUTPUT_POSITIONS))
-        self.assertEqual(covered, expected_rule_ids())
+        # M1: rules come from the registry that executes them, positions
+        # from OUTPUT_POSITIONS and FIELD_POSITIONS; every rule x position
+        # is a matrix cell, and every matrix cell names a registered rule.
+        positions = set(y.OUTPUT_POSITIONS) | set(y.FIELD_POSITIONS.values())
+        required = {(rule_id, position) for rule_id in expected_rule_ids()
+                    for position in positions}
+        cells = {(rule.covers, position) for rule in RULES for position in MATRIX_POSITIONS}
+        self.assertEqual(required - cells, set(), "registered rule x position without a case")
+        self.assertEqual(cells - required, set(), "matrix case for an unregistered rule")
+        self.assertLessEqual(D12_RESIDUALS, {(rule.name, p) for rule in RULES for p in positions})
+        self.assertLessEqual({("opaque_blob_wrapped", p) for p in positions}, cells)
         self.assertEqual(len(SEGMENT_RULE_NAMES), 12)
         self.assertEqual(len(SERIALIZED_CATEGORIES), 8)
         self.assertEqual(len({rule.name for rule in RULES}), len(RULES))
+
+    def test_the_registry_is_the_execution_path(self):
+        ids = y.scanner_rule_ids()
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(ids, tuple(rule.rule_id for rule in y.SCANNER_REGISTRY))
+        self.assertFalse(hasattr(y, "SCANNER_RULES"), "no list independent of the registry")
+        self.assertIn("opaque_blob_wrapped", ids)
+        self.assertLess(ids.index("canonicalize"), ids.index("marker_lookalike"))
+        with self.assertRaises(ValueError):
+            y._rule(ids[0])(lambda scan: None)
+        self.assertEqual(y.scanner_rule_ids(), ids)
+
+    def _coverage_failures(self) -> int:
+        result = unittest.TestResult()
+        CoverageTests("test_rules_from_the_code_are_all_in_the_matrix").run(result)
+        self.assertEqual(result.errors, [])
+        return len(result.failures)
+
+    def test_proof_an_unmatrixed_registered_rule_fails_coverage(self):
+        self.assertEqual(self._coverage_failures(), 0)
+        trigger = syn.needle("unmatrixedrule")
+        dummy = y.ScannerRule(
+            "test_only_unmatrixed",
+            lambda scan: (y.CREDENTIAL_MARKER, "credential_key") if trigger in scan.text else None)
+        with patch.object(y, "SCANNER_REGISTRY", y.SCANNER_REGISTRY + (dummy,)):
+            # The dummy really executes: its trigger is withheld everywhere.
+            for position in sorted(y.OUTPUT_POSITIONS):
+                self.assertFalse(y.screen(trigger, (), position=position).kept, position)
+            self.assertEqual(y._finding(trigger, (), "value", ()).rule, dummy.rule_id)
+            self.assertEqual(self._coverage_failures(), 1)
+        self.assertTrue(y.screen(trigger, (), position="value").kept)
+        self.assertEqual(self._coverage_failures(), 0)
+
+    def test_proof_a_matrixed_rule_removed_from_execution_fails_coverage(self):
+        pem_text = next(rule.text for rule in RULES if rule.name == "pem")
+        self.assertEqual(y._finding(pem_text, (), "value", ()).rule, "pem")
+        without = tuple(rule for rule in y.SCANNER_REGISTRY if rule.rule_id != "pem")
+        with patch.object(y, "SCANNER_REGISTRY", without):
+            finding = y._finding(pem_text, (), "value", ())
+            self.assertTrue(finding is None or finding.rule != "pem")
+            self.assertEqual(self._coverage_failures(), 1)
+        self.assertEqual(self._coverage_failures(), 0)
+
+    def test_every_withheld_cell_is_decided_by_a_registered_rule(self):
+        registered = set(y.scanner_rule_ids())
+        deciders: dict[str, set[str]] = {}
+        for rule in RULES:
+            for position in sorted(y.OUTPUT_POSITIONS):
+                with self.subTest(rule=rule.name, position=position):
+                    finding = y._finding(rule.text, (KNOWN,), position,
+                                         unit_path(rule, position))
+                    screened = y.screen(rule.text, (KNOWN,), position=position,
+                                        path=unit_path(rule, position))
+                    self.assertEqual(finding is None, screened.kept)
+                    if finding is None:
+                        self.assertIn((rule.name, position), D12_RESIDUALS)
+                        continue
+                    self.assertIn(finding.rule, registered)
+                    self.assertEqual(finding.category, screened.category)
+                    deciders.setdefault(registered_rule(rule.covers), set()).add(finding.rule)
+        # Each registered rule decides at least one of its own cases.
+        for rule_id in registered:
+            with self.subTest(rule_id=rule_id):
+                self.assertIn(rule_id, deciders.get(rule_id, set()))
+
+    def test_the_executor_holds_no_check_outside_the_registry(self):
+        # A check written inline in the executor or in screen (bypassing the
+        # registry) changes these exact shapes.
+        def shape(function):
+            node = ast.parse(inspect.getsource(function)).body[0]
+            body = node.body[1:] if isinstance(node.body[0], ast.Expr) else node.body
+            names = {n.id for statement in body for n in ast.walk(statement)
+                     if isinstance(n, ast.Name)}
+            kinds = [type(n).__name__ for statement in body for n in ast.walk(statement)
+                     if isinstance(n, (ast.If, ast.Return, ast.For, ast.While, ast.Try,
+                                       ast.With, ast.IfExp, ast.BoolOp, ast.Compare))]
+            return names, Counter(kinds)
+
+        names, kinds = shape(y._finding)
+        self.assertEqual(names, {
+            "Finding", "SCANNER_REGISTRY", "_Scan", "attrgetter", "category", "context",
+            "form", "found", "group", "groupby", "known_secrets", "path", "per_form",
+            "position", "rule", "rules", "scan", "text", "tuple"})
+        self.assertEqual(kinds, Counter({"If": 3, "Return": 3, "For": 4, "IfExp": 1,
+                                         "Compare": 3}))
+        names, kinds = shape(y.screen)
+        self.assertEqual(names, {
+            "OUTPUT_POSITIONS", "PATH_MASK", "Screened", "TypeError", "ValueError",
+            "_PATH_POSITIONS", "_finding", "_projectable", "category", "finding",
+            "known_secrets", "path", "position", "replacement", "str", "text", "tuple",
+            "type", "vocabulary"})
+        self.assertEqual(kinds, Counter({"If": 5, "Return": 3, "Compare": 6, "BoolOp": 1}))
 
     def test_unknown_position_and_non_text_are_refused(self):
         with self.assertRaises(ValueError):

@@ -12,8 +12,10 @@ H4: :func:`screen` is the single entry point every string the reader can
 emit passes, in every output position (:data:`OUTPUT_POSITIONS`): values,
 list items, keys at every level, reference names, key paths, limitations,
 the redaction summary and every gateway response field. It applies the
-complete rule set (:data:`SCANNER_RULES`) on every form of the text, with
-no skip for already-canonical text. The only position difference is the
+complete rule set on every form of the text, with no skip for
+already-canonical text. The rules register themselves in
+:data:`SCANNER_REGISTRY`, which is the execution path itself, so the rules
+that run and the rules a test can enumerate are one list (M1). The only position difference is the
 owner-accepted D12 residual: a value or list item is not judged by key_text.
 
 The upstream tool is an *optional reviewed tool*: it is admitted only for
@@ -26,10 +28,12 @@ from __future__ import annotations
 
 from collections import Counter, deque
 from dataclasses import dataclass
+from itertools import groupby
 import json
+from operator import attrgetter
 import re
 import unicodedata
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import unquote_to_bytes
 
 from ..sanitization import (
@@ -407,13 +411,25 @@ def _userinfo(text: str) -> bool:
     return index >= 0 and "@" in text[index + 3 :]
 
 
+def credential_word(canonical_text: str) -> bool:
+    """C'2: a credential word anywhere in the text (substring)."""
+
+    return any(word in canonical_text for word in CREDENTIAL_WORDS)
+
+
+def delimited_token(canonical_text: str) -> bool:
+    """C'3: a delimited credential token."""
+
+    return _DELIMITED_TOKEN.search(canonical_text) is not None
+
+
 def credential_text(canonical_text: str) -> bool:
     """C'1 userinfo, C'2 credential word (substring), C'3 delimited token."""
 
     return (
         _userinfo(canonical_text)
-        or any(word in canonical_text for word in CREDENTIAL_WORDS)
-        or _DELIMITED_TOKEN.search(canonical_text) is not None
+        or credential_word(canonical_text)
+        or delimited_token(canonical_text)
     )
 
 
@@ -497,28 +513,17 @@ _COLLISION_KEY_SETS = (
 
 
 def scanner_category(text: str, known_secrets: tuple[str, ...]) -> str | None:
-    """Existing sanitizer patterns plus PEM and opaque-blob detection.
+    """The per-form rules of :data:`SCANNER_REGISTRY` on one form of text.
 
-    The sanitizer runs with ``identity_markers_only`` (H3): marker-shaped
-    text is never skipped as already redacted, and is itself a finding.
+    These are the existing sanitizer patterns plus PEM and opaque-blob
+    detection, in registration order.
     """
 
-    result = sanitize_untrusted_data(
-        text, known_secrets=known_secrets, identity_markers_only=True
-    )
-    if result.failed_closed:
-        return "sanitization_failure"
-    if result.redaction_applied:
-        return sorted(result.redaction_categories)[0]
-    if _PEM.search(text):
-        return "pem"
-    if _OPAQUE_BLOB.search(text):
-        return "opaque_blob"
-    # A1: a key body wrapped by newlines or spaces has no single 200-run, so
-    # the run is also sought with all whitespace removed. This covers a text
-    # made only of base64 characters and whitespace as well.
-    if _OPAQUE_BLOB.search(_WHITESPACE.sub("", text)):
-        return "opaque_blob"
+    for rule in SCANNER_REGISTRY:
+        if rule.per_form:
+            category = rule.check(text, known_secrets)
+            if category is not None:
+                return category
     return None
 
 
@@ -571,27 +576,212 @@ FIELD_POSITIONS: dict[str, str] = {
 }
 assert set(FIELD_POSITIONS.values()) <= OUTPUT_POSITIONS
 
-# The rules ``screen`` applies, in order, to every string in every position.
-# "sanitizer" is the shared sanitizer's whole rule set (its segment and
-# serialized rules and the configured known secrets). The one position
-# difference is owner decision D12: a value or list item is not judged by
-# key_text (a credential spelled without a credential word stays visible
-# there); every other position gets key_text too.
-SCANNER_RULES = (
-    "credential_key_context",
-    "key_scoped",
-    "canonicalize",
-    "marker_lookalike",
-    "credential_text_userinfo",
-    "credential_text_word",
-    "credential_text_delimited",
-    "key_text",
-    "connection_context",
-    "sanitizer",
-    "pem",
-    "opaque_blob",
-    "known_secret_casefold",
-)
+
+@dataclass(frozen=True)
+class ScannerRule:
+    """One rule of the uniform screen (M1).
+
+    A text rule's ``check(scan)`` returns ``(replacement, category)`` or
+    None. A per-form rule's ``check(form, known_secrets)`` runs on the raw,
+    decoded and canonical forms and returns a category or None; its
+    replacement is ``[REDACTED:<category>]``.
+    """
+
+    rule_id: str
+    check: Callable[..., Any]
+    per_form: bool = False
+
+
+@dataclass(frozen=True)
+class Finding:
+    """The rule that decided a string, and its replacement."""
+
+    rule: str
+    replacement: str
+    category: str
+
+
+@dataclass
+class _Scan:
+    """One string under screening; ``canonicalize`` fills the forms."""
+
+    text: str
+    known_secrets: tuple[str, ...]
+    position: str
+    path: tuple[str, ...]
+    context: tuple[str, ...]
+    canonical_text: str = ""
+    rounds: int = 0
+    decoded: str = ""
+
+    def forms(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((self.text, self.decoded, self.canonical_text)))
+
+
+# M1: the rules ``screen`` applies, in registration order, to every string
+# in every position. A rule exists only by registering here, and
+# :func:`_finding` runs exactly this registry, so no rule can run without
+# being enumerable (and so covered by the H4 matrix). "sanitizer" is the
+# shared sanitizer's whole rule set (its segment and serialized rules and
+# the configured known secrets). The one position difference is owner
+# decision D12: a value or list item is not judged by key_text (a
+# credential spelled without a credential word stays visible there); every
+# other position gets key_text too.
+SCANNER_REGISTRY: tuple[ScannerRule, ...] = ()
+
+
+def _rule(rule_id: str, *, per_form: bool = False) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def register(check: Callable[..., Any]) -> Callable[..., Any]:
+        global SCANNER_REGISTRY
+        if any(rule.rule_id == rule_id for rule in SCANNER_REGISTRY):
+            raise ValueError("yaml_screen_rule_duplicate")
+        SCANNER_REGISTRY = (*SCANNER_REGISTRY, ScannerRule(rule_id, check, per_form))
+        return check
+
+    return register
+
+
+def scanner_rule_ids() -> tuple[str, ...]:
+    """The registered rule ids, in execution order."""
+
+    return tuple(rule.rule_id for rule in SCANNER_REGISTRY)
+
+
+@_rule("credential_key_context")
+def _credential_key_context_rule(scan: _Scan) -> tuple[str, str] | None:
+    if any(is_credential_key(key) for key in scan.context):
+        return CREDENTIAL_MARKER, "credential_key"
+    return None
+
+
+@_rule("key_scoped")
+def _key_scoped_rule(scan: _Scan) -> tuple[str, str] | None:
+    # Rule B, shared with the sanitizer.
+    normalized = tuple(normalize_key(key) for key in scan.context)
+    for index, key in enumerate(normalized):
+        category = key_category(key, normalized[:index])
+        if category is not None:
+            return f"[REDACTED:{category}]", category
+    return None
+
+
+@_rule("canonicalize")
+def _canonicalize_rule(scan: _Scan) -> tuple[str, str] | None:
+    # Rule A; every later rule reads the forms it fills in.
+    try:
+        scan.canonical_text, scan.rounds, scan.decoded = canonical_forms(scan.text)
+    except _EncodingRefused:
+        return ENCODING_MARKER, "encoding"
+    return None
+
+
+@_rule("marker_lookalike")
+def _marker_lookalike_rule(scan: _Scan) -> tuple[str, str] | None:
+    if marker_like_text(scan.text):
+        return MARKER_COLLISION, MARKER_COLLISION_CATEGORY
+    return None
+
+
+# credential_text_* and key_text. A key name is shown and its value is
+# withheld by credential_key_context, so an identifier-shaped key name is
+# not itself judged by credential words (K1). A value or list item gets C'
+# only: owner decision D12 accepts a credential spelled without a
+# credential word (``p_w_d=``, ``pass_word=``) as visible there. Every other
+# string gets all four rules.
+def _credential_text_finding(
+    scan: _Scan, predicate: Callable[[str], bool]
+) -> tuple[str, str] | None:
+    if scan.position in _KEY_POSITIONS or not predicate(scan.canonical_text):
+        return None
+    if scan.position in _PATH_POSITIONS:
+        return CREDENTIAL_MARKER, "credential_key"
+    return redaction_form(scan.canonical_text, scan.known_secrets)
+
+
+@_rule("credential_text_userinfo")
+def _credential_text_userinfo_rule(scan: _Scan) -> tuple[str, str] | None:
+    return _credential_text_finding(scan, _userinfo)
+
+
+@_rule("credential_text_word")
+def _credential_text_word_rule(scan: _Scan) -> tuple[str, str] | None:
+    return _credential_text_finding(scan, credential_word)
+
+
+@_rule("credential_text_delimited")
+def _credential_text_delimited_rule(scan: _Scan) -> tuple[str, str] | None:
+    return _credential_text_finding(scan, delimited_token)
+
+
+@_rule("key_text")
+def _key_text_rule(scan: _Scan) -> tuple[str, str] | None:
+    canonical_text = scan.canonical_text
+    if scan.position in _PATH_POSITIONS:
+        if is_credential_key(canonical_text) or key_text_unsafe(canonical_text):
+            return CREDENTIAL_MARKER, "credential_key"
+    elif scan.position in _KEY_POSITIONS:
+        if key_text_unsafe(canonical_text):
+            return CONNECTION_STRING_MARKER, "connection_string"
+    elif scan.position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):
+        return redaction_form(canonical_text, scan.known_secrets)
+    return None
+
+
+@_rule("connection_context")
+def _connection_context_rule(scan: _Scan) -> tuple[str, str] | None:
+    # R11 exempts the exact SQLite value shape from this rule only, so the
+    # scanners below still run on that shape.
+    if any(is_connection_key(key) for key in scan.context) and not (
+        scan.position in _VALUE_POSITIONS
+        and sqlite_visible(scan.text, scan.canonical_text, scan.rounds)
+    ):
+        if scan.position in _KEY_POSITIONS:
+            return CONNECTION_STRING_MARKER, "connection_string"
+        return redaction_form(scan.canonical_text, scan.known_secrets)
+    return None
+
+
+@_rule("sanitizer", per_form=True)
+def _sanitizer_rule(form: str, known_secrets: tuple[str, ...]) -> str | None:
+    # identity_markers_only (H3): marker-shaped text is never skipped as
+    # already redacted, and is itself a finding.
+    result = sanitize_untrusted_data(
+        form, known_secrets=known_secrets, identity_markers_only=True
+    )
+    if result.failed_closed:
+        return "sanitization_failure"
+    if result.redaction_applied:
+        return sorted(result.redaction_categories)[0]
+    return None
+
+
+@_rule("pem", per_form=True)
+def _pem_rule(form: str, known_secrets: tuple[str, ...]) -> str | None:
+    return "pem" if _PEM.search(form) else None
+
+
+@_rule("opaque_blob", per_form=True)
+def _opaque_blob_rule(form: str, known_secrets: tuple[str, ...]) -> str | None:
+    return "opaque_blob" if _OPAQUE_BLOB.search(form) else None
+
+
+@_rule("opaque_blob_wrapped", per_form=True)
+def _opaque_blob_wrapped_rule(form: str, known_secrets: tuple[str, ...]) -> str | None:
+    # A1: a key body wrapped by newlines or spaces has no single 200-run, so
+    # the run is also sought with all whitespace removed. This covers a text
+    # made only of base64 characters and whitespace as well.
+    return "opaque_blob" if _OPAQUE_BLOB.search(_WHITESPACE.sub("", form)) else None
+
+
+@_rule("known_secret_casefold")
+def _known_secret_casefold_rule(scan: _Scan) -> tuple[str, str] | None:
+    if any(
+        secret.casefold() in scan.canonical_text
+        for secret in scan.known_secrets
+        if secret
+    ):
+        return KNOWN_SECRET_MARKER, "token"
+    return None
 
 # Every category a redaction summary can name.
 REDACTION_CATEGORIES = frozenset(
@@ -639,8 +829,8 @@ def screen(
     canonical keys above the string (for a reference name, the key whose
     value it was). Only a byte-exact match of a source-defined constant in
     ``vocabulary`` is kept without the rules; every other string gets every
-    rule of :data:`SCANNER_RULES` (in a value or list item, all but key_text:
-    D12) on its raw, decoded and canonical forms. There is no fast path for
+    rule of :data:`SCANNER_REGISTRY` (in a value or list item, all but
+    key_text: D12) on its raw, decoded and canonical forms. There is no fast path for
     already-canonical text. A finding replaces
     the string whole (a key path segment becomes ``*``).
     """
@@ -654,7 +844,7 @@ def screen(
     finding = _finding(text, known_secrets, position, tuple(path))
     if finding is None:
         return Screened(True, text)
-    replacement, category = finding
+    replacement, category = finding.replacement, finding.category
     if position in _PATH_POSITIONS:
         replacement = PATH_MASK
     return Screened(
@@ -667,65 +857,32 @@ def screen(
 
 def _finding(
     text: str, known_secrets: tuple[str, ...], position: str, path: tuple[str, ...]
-) -> tuple[str, str] | None:
-    """The first rule of :data:`SCANNER_RULES` that ``text`` triggers."""
+) -> Finding | None:
+    """The first rule of :data:`SCANNER_REGISTRY` that ``text`` triggers.
+
+    This is the only executor: it runs the registry in order and holds no
+    check of its own. Consecutive per-form rules run form-major (every such
+    rule on the raw form, then on the decoded form, then on the canonical
+    form).
+    """
 
     # A reference name may sit under a credential key; the key above it is
     # the context.
     context = path[:-1] if position == "reference_name" else path
-    # credential_key_context
-    if any(is_credential_key(key) for key in context):
-        return CREDENTIAL_MARKER, "credential_key"
-    # key_scoped (rule B, shared with the sanitizer)
-    normalized = tuple(normalize_key(key) for key in context)
-    for index, key in enumerate(normalized):
-        category = key_category(key, normalized[:index])
-        if category is not None:
-            return f"[REDACTED:{category}]", category
-    # canonicalize (rule A)
-    try:
-        canonical_text, rounds, decoded = canonical_forms(text)
-    except _EncodingRefused:
-        return ENCODING_MARKER, "encoding"
-    # marker_lookalike
-    if marker_like_text(text):
-        return MARKER_COLLISION, MARKER_COLLISION_CATEGORY
-    # credential_text_* and key_text. A key name is shown and its value is
-    # withheld by credential_key_context, so an identifier-shaped key name
-    # is not itself judged by credential words (K1). A value or list item
-    # gets C' only: owner decision D12 accepts a credential spelled without
-    # a credential word (``p_w_d=``, ``pass_word=``) as visible there. Every
-    # other string gets all four rules.
-    if position in _PATH_POSITIONS:
-        if (
-            is_credential_key(canonical_text)
-            or key_text_unsafe(canonical_text)
-            or credential_text(canonical_text)
-        ):
-            return CREDENTIAL_MARKER, "credential_key"
-    elif position in _KEY_POSITIONS:
-        if key_text_unsafe(canonical_text):
-            return CONNECTION_STRING_MARKER, "connection_string"
-    elif credential_text(canonical_text):
-        return redaction_form(canonical_text, known_secrets)
-    elif position not in _VALUE_POSITIONS and key_text_unsafe(canonical_text):
-        return redaction_form(canonical_text, known_secrets)
-    # connection_context; R11 exempts the exact SQLite value shape from it
-    # only, so the scanners below still run on that shape.
-    if any(is_connection_key(key) for key in context) and not (
-        position in _VALUE_POSITIONS and sqlite_visible(text, canonical_text, rounds)
-    ):
-        if position in _KEY_POSITIONS:
-            return CONNECTION_STRING_MARKER, "connection_string"
-        return redaction_form(canonical_text, known_secrets)
-    # sanitizer, pem and opaque_blob, on every form
-    for form in dict.fromkeys((text, decoded, canonical_text)):
-        category = scanner_category(form, known_secrets)
-        if category is not None:
-            return f"[REDACTED:{category}]", category
-    # known_secret_casefold
-    if any(secret.casefold() in canonical_text for secret in known_secrets if secret):
-        return KNOWN_SECRET_MARKER, "token"
+    scan = _Scan(text, known_secrets, position, path, context)
+    for per_form, group in groupby(SCANNER_REGISTRY, attrgetter("per_form")):
+        rules = tuple(group)
+        if per_form:
+            for form in scan.forms():
+                for rule in rules:
+                    category = rule.check(form, known_secrets)
+                    if category is not None:
+                        return Finding(rule.rule_id, f"[REDACTED:{category}]", category)
+        else:
+            for rule in rules:
+                found = rule.check(scan)
+                if found is not None:
+                    return Finding(rule.rule_id, *found)
     return None
 
 

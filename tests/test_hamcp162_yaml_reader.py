@@ -194,7 +194,8 @@ def rule_a_mutation(name):
             "        value = decoded.replace('+', ' ')\n",
         )
     if name == "raw":
-        return mutated(y, "_finding", "elif credential_text(canonical_text):", "elif credential_text(text):")
+        return mutated(y, "_credential_text_finding", "not predicate(scan.canonical_text)",
+                       "not predicate(scan.text)")
     if name == "emit_canonical":
         return mutated(
             y._L4, "_string",
