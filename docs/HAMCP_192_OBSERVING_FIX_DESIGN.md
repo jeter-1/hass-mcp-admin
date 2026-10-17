@@ -16,8 +16,7 @@ of scope and would be reported before it is changed.
 | --- | --- | --- |
 | `R/fan/service.py` | 1, 2, 3, 4, 5, 6 | inline poll wrapper; 30 s lease; opt into the final read; receipt hints and blocker naming; governed hold release |
 | `R/f3/executor.py` | 3 | opt-in `final_read_at_deadline` flag (default off), used only by typed fan/power |
-| `R/fan/locks.py` | 2, 6 | the promotion handle's lease timing (120 → 30 s, the same lease as decision 2); a released hold counts as settled; no re-promotion after an authorized release |
-| `R/fan/audit.py` | 6 | one repository method that appends a hold-release event to a terminal manual-review record under the existing exclusive transaction |
+| `R/fan/locks.py` | 2 | the shared `FAN_LOCK_TIMING` (30 s) constant, also used by the promotion handle (was 120 s) |
 | `R/approval_web.py` | 6 | Ingress admin review page and POST for a typed hold release, copying the F3 reconciliation CSRF/binding pattern |
 | `.release/next-version` | release | consumed by the promotion script |
 | `hass_mcp_engineering_beta/config.yaml` | release | written by `promote_next_release.py --apply` |
@@ -30,10 +29,12 @@ Compared with the expected list in the task:
   `FanService` and inherits every change.
 - No capability, tool, registry, routing or plan file is changed, because the
   hold release adds **no MCP tool and no plan type** (§7).
-- `R/fan/locks.py`, `R/fan/audit.py` and `R/approval_web.py` are the
-  recovery, persistence and approval files for the hold release, which the
+- `R/approval_web.py` is the approval file for the hold release, which the
   task's category "the relevant runtime/recovery and tool/plan files for the
-  hold release" covers. They are named here before any change.
+  hold release" covers. It is named here before any change.
+- **Amendment 1 (before implementation of decision 6):** `R/fan/audit.py` is
+  no longer changed, and `R/fan/locks.py` changes only for decision 2. See
+  §7 "Stored-format disclosure" for the reason.
 - `R/fan/adapter.py` is **not** changed. The inline poll lives in
   `R/fan/service.py` as an adapter wrapper (§3).
 
@@ -237,22 +238,20 @@ external approval.
    3. **Fresh readback:** one read through the inner adapter's `observe`
       (`core.read` → `provider.state`). If the read fails, the release is
       refused and nothing changes.
-   4. Append a durable event `conflict_hold_release_authorized` to the
-      execution record, with diagnostic codes:
-      - `admin_ingress_approval`;
-      - `readback_matches_requested_state` or
-        `readback_differs_from_requested_state`;
-      - `readback_<sha256 of state>`;
-      - `authority_<sha256 of principal>`.
+   4. Under the declaration transaction, re-check the reviewed facts, then
+      atomically write the release sidecar
+      `<namespace>/hold-releases/<task_id>.json` with `released_at: null`:
+      prepared hash, record event count, hold key and generation, authority
+      hash (sha256 of the principal), readback hash, match flag and
+      `authorized_at`. A second decision finds the sidecar and is refused.
    5. `release_conflict_hold(owner=<rebuilt from the record identity>,
       tokens=(entity token,), reason_code="owner_authorized_release")`. This
       is the same fenced primitive F3 uses. It requires the exact key,
       generation, owner, and a conflict hold.
-   6. Append `conflict_hold_released`.
+   6. Rewrite the sidecar with `released_at`.
    7. Write one audit entry `<kind>_hold_release_action`: authority hash,
-      readback hash, match flag, outcome, `dispatch: "none"`. The repository
-      projection also emits `<kind>_conflict_hold_release_authorized` and
-      `<kind>_conflict_hold_released`.
+      readback hash, match flag, hold key/generation, outcome,
+      `dispatch: "none"`.
 4. **Truthful outcome.**
    - The task's `terminal_outcome` **stays `manual_review_required`**. It is
      never relabeled verified.
@@ -263,10 +262,11 @@ external approval.
    counter is unchanged.
 6. **Never automatic.**
    - Neither recovery nor `recover_once` ever *starts* a release.
-   - **Interrupted release:** the authorized event is durable, but the
-     process died before the released event. `reconcile` then finishes it
-     without provider access: it releases only the exact hold still owned by
-     the task, then appends `conflict_hold_released`. This mirrors F3
+   - **Interrupted release:** the sidecar is durable with
+     `released_at: null`, but the process died before it was completed.
+     `reconcile` then finishes it without the executor, adapter or provider:
+     it releases only the exact hold still owned by the task, then records
+     `released_at`. This mirrors F3
      `_finish_pending_hold_releases`, and completes an already approved
      release; it does not create one.
 
@@ -281,16 +281,21 @@ external approval.
 
 ### Stored-format disclosure
 
-- **No new stored field and no new file.** The two new event types and their
-  diagnostic codes go in the existing bounded `events` list of the existing
-  execution record:
-  - schema version unchanged;
-  - `EVIDENCE_PATTERN` codes;
-  - `MAX_EXECUTION_EVENTS` = 128.
-- A record at the event bound refuses the release, and the hold stays.
-- **Rollback note:** pre-HAMCP-192 code reading a released task would find no
-  owned hold. Its recovery would count one `recovery_failures` per sweep for
-  that task. It would not dispatch.
+- **Amendment 1.** The original plan (two new event types in the execution
+  record) is not possible without a stored-format change: `f3/models.py`
+  validates post-intent records against a closed event-type set, so new
+  event types would need a change to that shared protected file, and older
+  code would refuse to read a released record after a rollback.
+- **Chosen instead: one additive sidecar file per released task**,
+  `<namespace>/hold-releases/<task_id>.json` (model
+  `typed-hold-release-v1`, closed field set, ≤ 4 KiB, strictly validated;
+  an invalid sidecar fails closed: no release, the hold stays, and recovery
+  counts a failure).
+- **No existing stored format changes**: declaration, execution record, lock
+  record and audit formats are unchanged. No field is added to any of them.
+- **Rollback note:** pre-HAMCP-192 code ignores the sidecar directory. For a
+  released task it finds no owned hold, so its recovery counts one
+  `recovery_failures` per sweep for that task. It never dispatches.
 
 ## 8. Tests and mutations
 
