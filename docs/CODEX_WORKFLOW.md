@@ -164,6 +164,11 @@ Keep publication eligibility/scheduling changes separate from action updates.
    evidence. It does not generate a PR draft; `scripts/pr-evidence.py` is the
    separate bounded PR-draft generator.
 
+   Both tiers run the complete unittest suite in one process by default. On a
+   quiet multi-core host, `-Parallel <1-4>` opts in to the sharded local run
+   described in **Local sharded unit tests** below, for example
+   `.\scripts\check.ps1 -Tier Evidence -Parallel 4`.
+
    If the external task explicitly names a protected file or subtree, declare
    that exact repository-relative scope on any tier, for example:
 
@@ -356,6 +361,69 @@ state. `tests/test_module_isolation.py` runs the modules that once depended on
 suite order alone, loaded as a shard loads them, in a fresh interpreter. It also
 requires each module that initializes an upstream read gateway to restore the
 empty process-wide dynamic catalog the gateway publishes.
+
+### Local sharded unit tests
+
+`check.ps1 -Tier Full` and `-Tier Evidence` accept `-Parallel <N>` with
+`1 <= N <= 4`. If you omit it, the unittest step is the unchanged
+single-process `python -m unittest discover -s tests -v`. The parameter is
+rejected on `-Tier Fast`.
+
+With `-Parallel`, `scripts/local_unit_test_shards.py` runs CI's plan locally. It
+imports `scripts/unit_test_shards.py` and does not copy its logic:
+
+- Each shard process calls `run_shard`, which re-discovers the suite, executes
+  only its `plan` assignment and writes a manifest.
+- At most `N` general shards run at once.
+- The final real-time shard (every `@real_time_measurement` unit) starts only
+  after all general shards have exited, and runs alone.
+- `verify`, the same function CI's `aggregate` uses, then re-discovers the suite
+  and refuses unless every shard manifest is present exactly once. The union of
+  executed test IDs must equal the discovered IDs with nothing missing or
+  repeated. Every outcome must have succeeded. Run, commit and plan must all
+  agree.
+
+The local run identity is a fresh random run ID. It is passed to these functions
+directly and never placed in the test environment.
+
+The step fails closed if any of these happens:
+
+- a shard reports a failing test;
+- a worker crashes, is killed or exits nonzero;
+- a manifest or the unittest summary is missing;
+- a shard exceeds the per-shard timeout (default one hour);
+- the suite changes during the run;
+- the completeness proof refuses.
+
+The output of each failed shard is printed. A partial result is never reported
+as passing.
+
+The reported totals are the sum of each shard's own unittest summary
+(`Ran N tests`, `skipped=K`). They equal the single-process totals because each
+test runs exactly once. One caveat: a module- or class-level `SkipTest` in a
+module whose tests are split across shards would be counted once per shard.
+
+Evidence keeps schema v2 and the same step names. It adds `unit_test_execution`:
+
+- Single-process runs record `mode`, `sharded`, `workers` and `executed`.
+- Sharded runs also record the result, shard counts, run ID, proof digests and
+  totals. They record the proof's `source_sha`, which must equal the Evidence
+  head.
+
+Shard logs, manifests and `summary.json` stay under the ignored
+`.artifacts/unit-test-shards/` directory.
+
+Prefer the default serial run when:
+
+- the host is shared with another suite, mutation or build process;
+- the host has fewer than about `2 * N` free cores or little free memory;
+- you are diagnosing a timing-sensitive or order-dependent failure;
+- you need the canonical single-process transcript.
+
+Tests with unmarked wall-clock bounds can fail spuriously under CPU contention.
+A test that fails only under `-Parallel` should be rerun serially, and its
+timing bound reviewed for `@real_time_measurement`. Whether `-Parallel` becomes
+the default is a separate owner decision.
 
 The full tier (schedule, `workflow_dispatch` and `workflow_call`) also
 regenerates the Beta 6 compatibility fixtures from their exact historical

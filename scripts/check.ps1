@@ -7,7 +7,9 @@ param(
     [string[]]$TestTarget,
     [string]$PythonExecutable,
     [string]$BaseRef = "origin/main",
-    [string[]]$AuthorizedProtectedPath = @()
+    [string[]]$AuthorizedProtectedPath = @(),
+    [ValidateRange(1, 4)]
+    [int]$Parallel
 )
 
 Set-StrictMode -Version Latest
@@ -20,12 +22,21 @@ $script:HadFailure = $false
 $script:NormalizedAuthorizedProtectedPaths = @()
 $script:ResolvedBaseSha = $null
 $script:ResolvedHeadSha = $null
+$script:UnitTestExecution = if ($Parallel) {
+    [ordered]@{ mode = "sharded"; sharded = $true; workers = $Parallel; executed = $false }
+}
+else {
+    [ordered]@{ mode = "single_process"; sharded = $false; workers = 1; executed = $false }
+}
 
 if (($Area -or $TestTarget) -and $Tier -ne "Fast") {
     throw "-Area and -TestTarget are supported only with -Tier Fast."
 }
 if ($Area -and $TestTarget) {
     throw "Use either -Area or -TestTarget, not both."
+}
+if ($Parallel -and $Tier -eq "Fast") {
+    throw "-Parallel is supported only with -Tier Full or -Tier Evidence."
 }
 
 if (-not $PythonExecutable) {
@@ -118,6 +129,97 @@ function Invoke-NativeStep {
     }
     $status = if ($exitCode -eq 0) { "passed" } else { "failed" }
     Add-Result -Name $Label -Command $commandText -Status $status -ExitCode $exitCode -DurationSeconds $timer.Elapsed.TotalSeconds -TestCount $testCount -Note $note
+}
+
+function Invoke-ShardedUnitTestStep {
+    # Opt-in (-Parallel): CI's shard plan run as local workers. The helper
+    # reuses scripts/unit_test_shards.py for assignment and the completeness
+    # proof; this step passes only when the helper exits 0 and its summary
+    # reports a proven, passing run for this exact head and worker count.
+    $label = "Run complete unittest suite"
+    $stamp = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmssZ", [Globalization.CultureInfo]::InvariantCulture)
+    $relativeRunDirectory = ".artifacts/unit-test-shards/$stamp-$PID"
+    $arguments = @(
+        "scripts/local_unit_test_shards.py", "run", "--workers", "$Parallel", "--output-dir", $relativeRunDirectory
+    )
+    Write-Step $label
+    $commandText = Format-Command -Executable $PythonExecutable -Arguments $arguments
+    Write-Host $commandText
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    $output = @()
+    $exitCode = 127
+    $previousErrorPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = "Continue"
+        $output = @(& $PythonExecutable @arguments 2>&1 | ForEach-Object { "$_" })
+        $exitCode = $LASTEXITCODE
+    }
+    catch {
+        $output += $_.Exception.Message
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorPreference
+        $timer.Stop()
+    }
+    foreach ($line in $output) {
+        Write-Host $line
+    }
+    $problems = New-Object System.Collections.Generic.List[string]
+    if ($exitCode -ne 0) {
+        $problems.Add("sharded run exited $exitCode")
+    }
+    $execution = [ordered]@{
+        mode = "sharded"
+        sharded = $true
+        workers = $Parallel
+        executed = $true
+        result = "failed"
+        summary = "$relativeRunDirectory/summary.json"
+    }
+    $testCount = $null
+    $skipped = $null
+    $summaryPath = Join-Path $RepoRoot "$relativeRunDirectory/summary.json"
+    try {
+        if (-not (Test-Path -LiteralPath $summaryPath -PathType Leaf)) {
+            throw "no sharded summary was written"
+        }
+        $summary = [IO.File]::ReadAllText($summaryPath) | ConvertFrom-Json
+        foreach ($field in @("shard_count", "general_shards", "serial_shards", "run_id", "source_sha", "discovered_count", "discovered_sha256", "plan_sha256", "tests_run", "skipped")) {
+            $execution[$field] = $summary.$field
+        }
+        if ($summary.result -ne "passed") {
+            throw "sharded summary result is $($summary.result)"
+        }
+        if ($summary.mode -ne "sharded" -or [int]$summary.workers -ne $Parallel) {
+            throw "sharded summary does not match the requested $Parallel worker(s)"
+        }
+        if ($null -eq $summary.tests_run -or $null -eq $summary.skipped -or $null -eq $summary.discovered_count) {
+            throw "sharded summary has no proven totals"
+        }
+        if ($script:ResolvedHeadSha -and $summary.source_sha -ne $script:ResolvedHeadSha) {
+            throw "sharded proof is bound to $($summary.source_sha), not the Evidence head"
+        }
+        $testCount = [int]$summary.tests_run
+        $skipped = [int]$summary.skipped
+    }
+    catch {
+        $problems.Add($_.Exception.Message)
+    }
+    $status = if ($problems.Count -eq 0) { "passed" } else { "failed" }
+    if ($status -eq "failed" -and $exitCode -eq 0) {
+        $exitCode = 1
+    }
+    $execution.result = $status
+    $script:UnitTestExecution = $execution
+    $note = "sharded workers=$Parallel"
+    if ($status -eq "passed") {
+        $note = "skipped_tests=$skipped; $note shards=$($execution.shard_count) serial_real_time_shards=$(@($execution.serial_shards) -join ',')"
+    }
+    else {
+        $note = "$note; $($problems -join '; ')"
+        Write-Host "Sharded unittest step failed: $($problems -join '; ')" -ForegroundColor Red
+    }
+    Add-Result -Name $label -Command $commandText -Status $status -ExitCode $exitCode -DurationSeconds $timer.Elapsed.TotalSeconds -TestCount $testCount -Note $note
 }
 
 function Invoke-LocalStep {
@@ -528,6 +630,7 @@ function Write-Evidence {
         base_sha = $baseSha
         head_sha = $headSha
         working_tree = $workingTree
+        unit_test_execution = $script:UnitTestExecution
         authorized_protected_paths = @($script:NormalizedAuthorizedProtectedPaths)
         overall_status = $(if ($script:HadFailure) { "failed" } else { "passed" })
         steps = $script:Results.ToArray()
@@ -553,6 +656,20 @@ function Write-Evidence {
         "none"
     }
     $summary.Add("- Authorized protected paths: $authorizedPathText")
+    $execution = $script:UnitTestExecution
+    $executionText = if ($execution.sharded) {
+        "sharded, $($execution.workers) worker(s)"
+    }
+    else {
+        "single process"
+    }
+    if (-not $execution.executed) {
+        $executionText += " (not executed)"
+    }
+    elseif ($execution.sharded -and $execution.Contains("shard_count")) {
+        $executionText += ", $($execution.shard_count) shards, real-time shard(s) $(@($execution.serial_shards) -join ',') run serially; result $($execution.result)"
+    }
+    $summary.Add("- Unit test execution: $executionText")
     $summary.Add("")
     $summary.Add("| Step | Status | Exit | Tests | Duration (s) | Note |")
     $summary.Add("|---|---:|---:|---:|---:|---|")
@@ -623,9 +740,15 @@ try {
         Invoke-NativeStep -Label "Compile repository Python" -Executable $PythonExecutable -Arguments @(
             "-m", "compileall", "-q", "hass_mcp_admin", "hass_mcp_engineering_beta", "scripts", "tests"
         )
-        Invoke-NativeStep -Label "Run complete unittest suite" -Executable $PythonExecutable -Arguments @(
-            "-m", "unittest", "discover", "-s", "tests", "-v"
-        )
+        if ($Parallel) {
+            Invoke-ShardedUnitTestStep
+        }
+        else {
+            Invoke-NativeStep -Label "Run complete unittest suite" -Executable $PythonExecutable -Arguments @(
+                "-m", "unittest", "discover", "-s", "tests", "-v"
+            )
+            $script:UnitTestExecution.executed = $true
+        }
         Invoke-NativeStep -Label "Validate add-on metadata" -Executable $PythonExecutable -Arguments @(
             "scripts/validate_addon_metadata.py", "--repo-root", ".", "--base-ref", $script:ResolvedBaseSha
         )
