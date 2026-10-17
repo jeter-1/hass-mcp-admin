@@ -26,8 +26,10 @@ from urllib.parse import unquote_to_bytes
 
 from ..sanitization import (
     ENV_VAR_REFERENCE_NAME,
+    MARKER_COLLISION,
+    MARKER_COLLISION_CATEGORY,
     SECRET_REFERENCE_NAME,
-    REDACTION_MARKER,
+    EngineeringMarker,
     ReferenceMarker,
     ReferenceMarkerRegistry,
     _AUTH_FLOW_KEYS,
@@ -37,6 +39,7 @@ from ..sanitization import (
     _PASSWORD_KEYS,
     _TOKEN_KEYS,
     _WEBHOOK_KEYS,
+    marker_like_text,
     sanitize_untrusted_data,
 )
 
@@ -435,13 +438,25 @@ INCLUDE_MALFORMED_MARKER = "[REDACTED:include_malformed]"
 DEPTH_MARKER = "[TRUNCATED:max_depth]"
 
 
-def redaction_form(canonical_text: str | None) -> tuple[str, str]:
-    """C' redaction form: at most the canonical scheme survives."""
+def redaction_form(
+    canonical_text: str | None, known_secrets: tuple[str, ...] = ()
+) -> tuple[str, str]:
+    """C' redaction form: at most the canonical scheme survives.
+
+    The scheme is upstream text, so it is kept only when it carries no
+    credential word and passes the scanners (H3 sweep).
+    """
 
     match = _SCHEME.match(canonical_text) if isinstance(canonical_text, str) else None
-    if match and not credential_text(match[1]):
+    if match and not credential_text(match[1]) and _scheme_clean(match[1], known_secrets):
         return match[1] + CONNECTION_URI_SUFFIX, "connection_uri"
     return CONNECTION_STRING_MARKER, "connection_string"
+
+
+def _scheme_clean(scheme: str, known_secrets: tuple[str, ...]) -> bool:
+    return scanner_category(scheme, known_secrets) is None and not any(
+        secret.casefold() in scheme for secret in known_secrets if secret
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -472,9 +487,15 @@ _COLLISION_KEY_SETS = (
 
 
 def scanner_category(text: str, known_secrets: tuple[str, ...]) -> str | None:
-    """Existing sanitizer patterns plus PEM and opaque-blob detection."""
+    """Existing sanitizer patterns plus PEM and opaque-blob detection.
 
-    result = sanitize_untrusted_data(text, known_secrets=known_secrets)
+    The sanitizer runs with ``identity_markers_only`` (H3): marker-shaped
+    text is never skipped as already redacted, and is itself a finding.
+    """
+
+    result = sanitize_untrusted_data(
+        text, known_secrets=known_secrets, identity_markers_only=True
+    )
     if result.failed_closed:
         return "sanitization_failure"
     if result.redaction_applied:
@@ -600,29 +621,38 @@ class _L4:
                 if marker is not None:
                     return self._minted(marker)
             self.account.record("credential_key")
-            return CREDENTIAL_MARKER
+            return self._mark(CREDENTIAL_MARKER)
         if type(value) is dict and frozenset(value) in _COLLISION_KEY_SETS:
             self.account.record("reference_marker_collision")
-            return COLLISION_MARKER
+            return self._mark(COLLISION_MARKER)
         connection = any(is_connection_key(key) for key in cpath)
         if type(value) is dict:
             if connection:
                 self.account.record("connection_string")
-                return CONNECTION_STRING_MARKER
+                return self._mark(CONNECTION_STRING_MARKER)
             canonical_keys = []
             for key in value:
                 try:
                     canonical_key = canonical(str(key))[0]
                 except _EncodingRefused:
                     self.account.record("encoding")
-                    return ENCODING_MARKER
+                    return self._mark(ENCODING_MARKER)
+                if marker_like_text(str(key)):
+                    # H3: a key that could read as a marker withholds the
+                    # whole mapping, like K1; its text is never trusted.
+                    self.account.record(MARKER_COLLISION_CATEGORY)
+                    return self._mark(MARKER_COLLISION)
                 if key_text_unsafe(canonical_key):
                     self.account.record("connection_string")
-                    return CONNECTION_STRING_MARKER
+                    return self._mark(CONNECTION_STRING_MARKER)
+                category = self._key_scan(str(key))
+                if category is not None:
+                    self.account.record(category)
+                    return self._mark(f"[REDACTED:{category}]")
                 canonical_keys.append(canonical_key)
             if value and depth >= MAX_DEPTH:
                 self.account.depth_truncated += 1
-                return DEPTH_MARKER
+                return self._mark(DEPTH_MARKER)
             return {
                 key: self.redact(child, display + [str(key)], cpath + [canonical_key], depth + 1)
                 for (key, child), canonical_key in zip(value.items(), canonical_keys)
@@ -630,21 +660,41 @@ class _L4:
         if type(value) is list:
             if connection:
                 self.account.record("connection_string")
-                return CONNECTION_STRING_MARKER
+                return self._mark(CONNECTION_STRING_MARKER)
             if value and depth >= MAX_DEPTH:
                 self.account.depth_truncated += 1
-                return DEPTH_MARKER
+                return self._mark(DEPTH_MARKER)
             # List elements are transparent: they inherit the holding key's path.
             return [self.redact(child, display, cpath, depth + 1) for child in value]
         if type(value) is str:
             return self._string(value, display, connection)
         if connection:
             self.account.record("connection_string")
-            return CONNECTION_STRING_MARKER
+            return self._mark(CONNECTION_STRING_MARKER)
         if value is None or type(value) in (bool, int, float):
             return value
         self.account.record("encoding")
-        return ENCODING_MARKER
+        return self._mark(ENCODING_MARKER)
+
+    def _mark(self, text: str) -> EngineeringMarker:
+        # H3: L5 and rendering trust this marker by registry identity only.
+        return self.registry.mint_marker(text)
+
+    def _key_scan(self, key: str) -> str | None:
+        """H3 sweep: key text gets the value scanners on its rule-A forms.
+
+        L5 scans the raw key text and replaces only the key; a finding only
+        a decoded or canonical form shows withholds the mapping, like K1.
+        """
+
+        text, _rounds, decoded = canonical_forms(key)
+        for form in dict.fromkeys((decoded, text)):
+            if form == key:
+                continue
+            category = scanner_category(form, self.known_secrets)
+            if category is not None:
+                return category
+        return None
 
     def _minted(self, marker: ReferenceMarker) -> ReferenceMarker:
         if marker.default_redacted:
@@ -658,27 +708,33 @@ class _L4:
             return self._minted(marker)
         if reference_like(value):
             self.account.record("reference_malformed")
-            return REFERENCE_MALFORMED_MARKER
+            return self._mark(REFERENCE_MALFORMED_MARKER)
         if _INCLUDE.fullmatch(value):
             self._include(display)
         elif _INCLUDE_LIKE.match(value):
             self.account.record("include_malformed")
-            return INCLUDE_MALFORMED_MARKER
+            return self._mark(INCLUDE_MALFORMED_MARKER)
         try:
             text, rounds, decoded = canonical_forms(value)
         except _EncodingRefused:
             self.account.record("encoding")
-            return ENCODING_MARKER
+            return self._mark(ENCODING_MARKER)
+        if marker_like_text(value):
+            # H3: upstream text that could read as a marker is never kept
+            # and never treated as already redacted.
+            self.account.record(MARKER_COLLISION_CATEGORY)
+            return self._mark(MARKER_COLLISION)
         if credential_text(text):
-            replacement, category = redaction_form(text)
+            replacement, category = redaction_form(text, self.known_secrets)
             self.account.record(category)
-            return replacement
+            return self._mark(replacement)
         if connection:
-            if sqlite_visible(value, text, rounds):
-                return value
-            replacement, category = redaction_form(text)
-            self.account.record(category)
-            return replacement
+            if not sqlite_visible(value, text, rounds):
+                replacement, category = redaction_form(text, self.known_secrets)
+                self.account.record(category)
+                return self._mark(replacement)
+            # R11 exempts the exact SQLite shape from rule B only; the
+            # scanners below still run on it (H3 sweep).
         # The existing patterns are case-sensitive (JWT, known secrets), so
         # they run on the decoded text before casefold as well.
         category = scanner_category(decoded, self.known_secrets) or scanner_category(
@@ -686,7 +742,7 @@ class _L4:
         )
         if category is not None:
             self.account.record(category)
-            return f"[REDACTED:{category}]"
+            return self._mark(f"[REDACTED:{category}]")
         # Visible values are emitted raw, never in canonical form.
         return value
 
@@ -751,24 +807,23 @@ def truncate_breadth_first(value: Any, cap: int = MAX_NODES) -> tuple[Any, int]:
     return root, total - kept
 
 
-def _relabeled_count(before: Any, after: Any) -> int:
+def _relabeled_count(before: Any, after: Any, registry: ReferenceMarkerRegistry) -> int:
     """Fields L4 already redacted that L5 replaced again under its own key rule.
 
     L5 keeps the tree shape, so a parallel walk finds them; each such field
-    was counted once by L4 and must not be counted again.
+    was counted once by L4 and must not be counted again. An L4 redaction is
+    recognized by registry identity, never by marker text (H3).
     """
 
     if type(before) is dict and type(after) is dict:
         return sum(
-            _relabeled_count(child, after[key]) for key, child in before.items() if key in after
+            _relabeled_count(child, after[key], registry)
+            for key, child in before.items()
+            if key in after
         )
     if type(before) is list and type(after) is list:
-        return sum(_relabeled_count(a, b) for a, b in zip(before, after))
-    return int(
-        type(before) is str
-        and before != after
-        and REDACTION_MARKER.search(before) is not None
-    )
+        return sum(_relabeled_count(a, b, registry) for a, b in zip(before, after))
+    return int(registry.emitted(before) and after is not before)
 
 
 def render_markers(
@@ -776,10 +831,17 @@ def render_markers(
 ) -> Any:
     """Serialize minted markers after L5; nothing sanitizes after this.
 
-    Only a marker this read's registry minted renders as a reference (H2).
-    Any other marker, and any plain mapping that has acquired a rendered
-    marker's key set, is withheld: no transform can forge a reference.
+    Only a marker this read's registry minted renders as a reference (H2)
+    or as its redaction text (H3). Any other marker, and any plain mapping
+    that has acquired a rendered marker's key set, is withheld: no
+    transform can forge a reference or a redaction.
     """
+
+    if type(value) is EngineeringMarker or isinstance(value, EngineeringMarker):
+        if not registry.emitted(value) or not value.valid():
+            account.record(MARKER_COLLISION_CATEGORY)
+            return MARKER_COLLISION
+        return value.text
 
     if type(value) is ReferenceMarker or isinstance(value, ReferenceMarker):
         if not registry.minted(value) or not value.valid():
@@ -1002,7 +1064,11 @@ def seal(
     """
 
     vocabulary = ENVELOPE_VOCABULARY | vocabulary
-    result = sanitize_untrusted_data(value, known_secrets=known_secrets)
+    # H3: no input text counts as already redacted; marker-shaped text is
+    # replaced whole. Only the exact constants below are restored.
+    result = sanitize_untrusted_data(
+        value, known_secrets=known_secrets, identity_markers_only=True
+    )
     if result.failed_closed:
         raise YamlReadRefusal(READ_FAILED)
     changed = [0]
@@ -1106,6 +1172,7 @@ def project_success(
             known_secrets=known_secrets,
             max_string=max_string,
             preserve_reference_markers=registry,
+            identity_markers_only=True,
         )
         sanitization_failed = sanitation.failed_closed
         if sanitation.truncated_field_count:
@@ -1115,7 +1182,7 @@ def project_success(
             )
         value = render_markers(sanitation.value, registry, account)
         redacted += account.redacted + sanitation.redacted_field_count - _relabeled_count(
-            redacted_tree, sanitation.value
+            redacted_tree, sanitation.value, registry
         )
         categories |= account.categories | set(sanitation.redaction_categories)
     limitations.extend(DISCLOSURE_LIMITATIONS)

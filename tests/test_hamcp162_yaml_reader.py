@@ -22,9 +22,11 @@ from pathlib import Path
 import sys
 import tempfile
 import textwrap
+from typing import Any
+import unicodedata
 import unittest
 from unittest.mock import patch
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, unquote
 import uuid
 
 import anyio
@@ -47,6 +49,8 @@ from ha_mcp_engineering.providers.upstream_read_gateway import (  # noqa: E402
 )
 from ha_mcp_engineering.routing import AuthenticatedMcpGateway  # noqa: E402
 from ha_mcp_engineering.sanitization import (  # noqa: E402
+    EngineeringMarker,
+    MARKER_COLLISION,
     ReferenceMarker,
     ReferenceMarkerRegistry,
     sanitize_untrusted_data,
@@ -1621,6 +1625,9 @@ def strings(value):
         yield value
     elif isinstance(value, ReferenceMarker):
         yield value.name
+    elif isinstance(value, EngineeringMarker):
+        # H3: an L4 marker leaves L5 as its registered object.
+        yield value.text
     elif isinstance(value, dict):
         for key, child in value.items():
             if type(key) is str:
@@ -1677,6 +1684,62 @@ def h1_channels(known):
         ("plain_key", "sensor.value", {known: 1, "a": known}),
         ("selected_path", "sensor." + known, "ordinary"),
         ("selected_path_deep", f"a.b.{known}.c", {known: include}),
+        # H3: marker-shaped text carrying the secret, as keys and values.
+        *((f"h3_{name}", "sensor.value", value) for name, value in h3_channels(known)),
+    ]
+
+
+def pct(text: str) -> str:
+    """Percent-encode every character (``quote`` keeps letters and digits)."""
+
+    return "".join(f"%{byte:02X}" for byte in text.encode("utf-8"))
+
+
+def h3_markers(secret: str) -> list[tuple[str, str]]:
+    """Marker-shaped text with and without the secret, in many spellings."""
+
+    fullwidth = "".join(chr(ord(char) + 0xFEE0) if "!" <= char <= "~" else char
+                        for char in f"[REDACTED:{secret}]")
+    return [
+        ("exact", f"[REDACTED:{secret}]"),
+        ("no_secret", "[REDACTED:token]"),
+        ("engineering_identical", y.CREDENTIAL_MARKER),
+        ("collision_identical", MARKER_COLLISION),
+        ("truncated", f"[TRUNCATED:{secret}]"),
+        ("depth_identical", y.DEPTH_MARKER),
+        ("embedded", f"see [REDACTED:{secret}] here"),
+        ("marker_then_secret", f"[REDACTED:token] {secret}"),
+        ("lowercase", f"[redacted:{secret}]"),
+        ("spaced", f"[ REDACTED : {secret} ]"),
+        ("open_only", f"[REDACTED {secret}"),
+        ("encoded_1", enc(f"[REDACTED:{secret}]", 1)),
+        ("encoded_2", enc(f"[REDACTED:{secret}]", 2)),
+        ("encoded_3", enc(f"[REDACTED:{secret}]", 3)),
+        ("encoded_all", pct(f"[REDACTED:{secret}]")),
+        ("fullwidth", fullwidth),
+        ("cyrillic", f"[R\u0415D\u0410\u0421T\u0415D:{secret}]"),
+        ("greek_cherokee", f"[\u13a1\u0395\u13a0\u0391\u03f9\u03a4\u0395D:{secret}]"),
+        ("zero_width", f"[RE\u200bDACTED:{secret}]"),
+        ("combining", f"[R\u0301EDACTED:{secret}]"),
+        ("bracket_lookalike", f"\u27e6REDACTED:{secret}\u27e7"),
+        ("cjk_bracket", f"\u3010REDACTED:{secret}\u3011"),
+        ("angle_truncated", f"{secret}...<truncated>"),
+        ("scheme_prefix", f"mqtt://[REDACTED:{secret}]"),
+    ]
+
+
+def h3_channels(known: str) -> list[tuple[str, Any]]:
+    marker = f"[REDACTED:{known}]"
+    return [
+        ("marker_key", {marker: "ordinary"}),
+        ("marker_key_nested", {"outer": {marker: 1}}),
+        ("marker_key_list", [{marker: 1}]),
+        ("marker_value", {"a": marker}),
+        ("marker_value_list", ["ok", marker]),
+        ("marker_value_encoded", {"a": enc(marker, 2)}),
+        ("marker_key_fullwidth", {h3_markers(known)[15][1]: 1}),
+        ("marker_key_truncated", {f"[TRUNCATED:{known}]": 1}),
+        ("encoded_key", {pct(known): 1}),
     ]
 
 
@@ -1914,6 +1977,284 @@ class MarkerProvenanceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(rendered["list"], [{"secret_ref": "other_pw"}])
                 self.assertNotIn("1234", json.dumps(rendered))
                 self.assertEqual(result["data"]["completeness"], "complete")
+
+
+def decoded_texts(text: str) -> list[str]:
+    forms = [text]
+    for _ in range(4):
+        forms.append(unquote(forms[-1]))
+    return forms
+
+
+class RedactionMarkerIdentityTests(unittest.IsolatedAsyncioTestCase):
+    """H3: a redaction marker is trusted by registry identity, never by text."""
+
+    def assert_secret_absent(self, value, secret):
+        text = json.dumps(value, ensure_ascii=False)
+        for form in decoded_texts(text):
+            assert_absent(self, form, secret)
+            self.assertNotIn(secret.casefold(), unicodedata.normalize("NFKC", form).casefold())
+
+    def assert_only_engineering_markers(self, value):
+        """Every string a client could read as a marker is a valid Engineering marker."""
+
+        for text in strings(value):
+            if sanitization.marker_like_text(text):
+                self.assertTrue(EngineeringMarker(text).valid(), f"marker-shaped text kept: {text!r}")
+
+    async def test_codex_h3_reproductions_over_a_real_session(self):
+        """The six Codex reproductions: known secret in a marker-shaped key."""
+
+        key = f"[REDACTED:{ACCESS_KNOWN}]"
+        for version in VERSIONS:
+            for setting, known in (("access_secret", ACCESS_KNOWN), ("ha_token", ACCESS_KNOWN)):
+                peer = YamlPeer(catalog(version), version)
+                gateway = UpstreamReadGateway()
+                gateway.configure(
+                    replace(_settings("synthetic-no-key"), ha_mcp_release_registry_enabled=False,
+                            **{setting: known}),
+                    transport=upstream_read.McpReadGatewayTransport("", timeout_seconds=5,
+                                                                    client_version="synthetic"),
+                )
+                with patch.object(upstream_read, "streamablehttp_client", peer.connect):
+                    await gateway.initialize(FastMCP(f"synthetic-hamcp162-h3-{version}"))
+                    for shape, value, expected in (
+                        ("direct", {key: "ordinary"}, MARKER_COLLISION),
+                        ("nested", {"outer": {key: 1}}, {"outer": MARKER_COLLISION}),
+                        ("list", [{key: 1}], [MARKER_COLLISION]),
+                    ):
+                        with self.subTest(version=version, setting=setting, shape=shape):
+                            peer.reply = lambda args, v=value: ok(payload(v, args["yaml_path"]))
+                            with pipeline_spy() as (outputs, vocabulary):
+                                result = await call(gateway, TOOL, {"yaml_path": "sensor.value"})
+                            self.assertTrue(result["success"], result)
+                            self.assertNotIn(ACCESS_KNOWN, json.dumps(result))
+                            EnvelopeSealTests.assert_sealed(self, result, ACCESS_KNOWN)
+                            EnvelopeSealTests.assert_through_pipeline(self, result, outputs, vocabulary)
+                            data = result["data"]
+                            self.assertEqual(data["value"], expected)
+                            self.assertIn("redaction_marker_collision", data["redaction"]["categories"])
+                            self.assertEqual(data["redaction"]["redacted_field_count"], 1)
+                            self.assertEqual(result["metadata"]["provider"], "upstream_read_gateway")
+                self.assertEqual(len(peer.calls), 3)
+
+    def test_marker_shaped_keys_and_values_are_withheld(self):
+        known = (ACCESS_KNOWN,)
+        for name, marker in h3_markers(ACCESS_KNOWN):
+            cases = (
+                ("value", {"a": marker}, {"a": MARKER_COLLISION}),
+                ("list_value", ["ok", marker], ["ok", MARKER_COLLISION]),
+                ("connection_value", {"db_url": marker}, {"db_url": MARKER_COLLISION}),
+                # L4 withholds it; L5 relabels by the key, as for any value.
+                ("credential_value", {"password": marker}, {"password": "[REDACTED:password]"}),
+                ("key", {marker: "ordinary"}, MARKER_COLLISION),
+                ("nested_key", {"outer": {marker: 1}, "b": 2}, {"outer": MARKER_COLLISION, "b": 2}),
+                ("list_key", [{marker: 1}, {"c": 3}], [MARKER_COLLISION, {"c": 3}]),
+            )
+            for where, value, expected in cases:
+                with self.subTest(marker=name, where=where):
+                    result = project(value, known_secrets=known)
+                    self.assertEqual(result.envelope["value"], expected)
+                    self.assert_secret_absent(result.envelope, ACCESS_KNOWN)
+                    self.assert_only_engineering_markers(result.envelope)
+                    self.assertFalse(result.sanitization_failed)
+                    self.assertGreaterEqual(result.redacted_field_count, 1)
+
+    def test_l4_withholds_marker_shaped_text_on_its_own(self):
+        # Layer independence: L4 alone withholds marker-shaped text; it emits
+        # only registry-minted markers, never a marker-shaped string.
+        for name, marker in h3_markers(ACCESS_KNOWN):
+            for where, value in (("value", marker), ("key", {marker: 1}),
+                                 ("nested_key", {"o": {marker: 1}})):
+                with self.subTest(marker=name, where=where):
+                    registry = ReferenceMarkerRegistry()
+                    walker = y._L4((ACCESS_KNOWN,), registry)
+                    redacted = walker.redact(value, ["sensor", "value"], ["sensor", "value"], 1)
+                    emitted = redacted["o"] if where == "nested_key" else redacted
+                    self.assertIs(type(emitted), EngineeringMarker)
+                    self.assertTrue(registry.emitted(emitted))
+                    self.assertEqual(emitted.text, MARKER_COLLISION)
+                    self.assertEqual(walker.account.categories, {"redaction_marker_collision"})
+
+    def test_l5_strict_mode_scans_marker_shaped_text_on_its_own(self):
+        # Layer independence: the strict sanitizer alone trusts no marker text.
+        for name, marker in h3_markers(ACCESS_KNOWN):
+            for where, value, expected in (
+                ("value", marker, MARKER_COLLISION),
+                ("key", {marker: "ordinary"}, {MARKER_COLLISION: "ordinary"}),
+                ("sensitive_key_value", {"token": marker}, {"token": "[REDACTED:token]"}),
+                ("list", [marker], [MARKER_COLLISION]),
+            ):
+                with self.subTest(marker=name, where=where):
+                    result = sanitize_untrusted_data(
+                        value, known_secrets=(ACCESS_KNOWN,), identity_markers_only=True)
+                    self.assertEqual(result.value, expected)
+                    self.assert_secret_absent(result.value, ACCESS_KNOWN)
+                    self.assertFalse(result.failed_closed)
+        # A sensitive key's own text passes the scan too (default keeps it raw).
+        odd = "~token~"
+        default = sanitize_untrusted_data({odd: "x"}, known_secrets=(odd,))
+        self.assertEqual(default.value, {odd: "[REDACTED:token]"})
+        strict = sanitize_untrusted_data({odd: "x"}, known_secrets=(odd,), identity_markers_only=True)
+        self.assertEqual(strict.value, {"[REDACTED:token]": "[REDACTED:token]"})
+        strict = sanitize_untrusted_data({"[REDACTED:x] token": "x"}, identity_markers_only=True)
+        self.assertEqual(strict.value, {MARKER_COLLISION: "x"})
+
+    def test_strict_mode_matches_default_on_ordinary_text(self):
+        corpus = [
+            "plain text", "Authorization: Bearer abc.def", "bearer SYNTHETICTOKEN123",
+            "Cookie: a=b; c=d", "eyJhbGciOi.eyJzdWIiOi.c2lnbmF0dXJl",
+            "https://user:pw@example.invalid/x", "https://u%3Ap@example.invalid/",
+            "https://example.invalid/?access_token=abc&x=1", "/api/webhook/synthetic-hook-id",
+            "local webhook id ABCDEFGHIJKLMNOPQRSTUV", "/auth/login_flow/abc123",
+            "MT:Y.K9042C00KA0648G00", "setup code: 1234-567-8901", 'token="abc" password=xyz',
+            f"{KNOWN} and {KNOWN}", f"Bearer {KNOWN}", f"Bearer {KNOWN} Bearer {KNOWN}",
+            "x" * 50,
+        ]
+        for text in corpus:
+            for max_string in (None, 20):
+                with self.subTest(text=text, max_string=max_string):
+                    default = sanitize_untrusted_data(text, known_secrets=(KNOWN,), max_string=max_string)
+                    strict = sanitize_untrusted_data(text, known_secrets=(KNOWN,), max_string=max_string,
+                                                     identity_markers_only=True)
+                    self.assertEqual(strict.value, default.value)
+                    self.assertEqual(strict.redaction_categories, default.redaction_categories)
+                    self.assertEqual(strict.redacted_field_count, default.redacted_field_count)
+                    self.assertEqual(strict.truncated_field_count, default.truncated_field_count)
+
+    def test_emitted_markers_are_skipped_by_identity(self):
+        # Known secrets that are parts of marker text cannot rewrite an
+        # emitted marker: later rules skip emitted pieces by type.
+        result = sanitize_untrusted_data("a token b", known_secrets=("token", "REDACTED", "["),
+                                         identity_markers_only=True)
+        self.assertEqual(result.value, "a [REDACTED:token] b")
+        result = sanitize_untrusted_data("Bearer abc", known_secrets=("REDACTED",),
+                                         identity_markers_only=True)
+        self.assertEqual(result.value, "Bearer [REDACTED:token]")
+
+    def test_default_mode_is_unchanged_for_other_callers(self):
+        # Pinned so any change to the shared default is a visible decision.
+        self.assertEqual(sanitize_untrusted_data("[REDACTED:abc] x").value, "[REDACTED:abc] x")
+        self.assertEqual(sanitize_untrusted_data({"token": "v"}).value, {"token": "[REDACTED:token]"})
+        self.assertEqual(sanitize_untrusted_data(f"[REDACTED:token] {KNOWN}", known_secrets=(KNOWN,)).value,
+                         "[REDACTED:token]")
+        self.assertEqual(
+            sanitize_untrusted_data(EngineeringMarker(y.CREDENTIAL_MARKER)).value, MARKER_COLLISION)
+        with self.assertRaises(TypeError):
+            sanitize_untrusted_data("x", identity_markers_only=1)
+
+    def test_upstream_string_identical_to_an_engineering_marker_is_not_trusted(self):
+        constants = (y.CREDENTIAL_MARKER, y.ENCODING_MARKER, y.CONNECTION_STRING_MARKER,
+                     "mqtt" + y.CONNECTION_URI_SUFFIX, y.REFERENCE_MALFORMED_MARKER, y.COLLISION_MARKER,
+                     y.INCLUDE_MALFORMED_MARKER, y.DEPTH_MARKER, MARKER_COLLISION,
+                     sanitization.SANITIZATION_FAILURE_MARKER, "[REDACTED:token]")
+        for constant in constants:
+            with self.subTest(constant=constant):
+                result = project({"a": constant, constant: 1}, known_secrets=(KNOWN,))
+                self.assertEqual(result.envelope["value"], MARKER_COLLISION)
+                result = project({"a": constant}, known_secrets=(KNOWN,))
+                self.assertEqual(result.envelope["value"], {"a": MARKER_COLLISION})
+                self.assertIn("redaction_marker_collision", result.redaction_categories)
+                self.assertEqual(result.redacted_field_count, 1)
+
+    def test_l5_and_render_trust_registry_identity_only(self):
+        registry = ReferenceMarkerRegistry()
+        minted = registry.mint_marker(y.CREDENTIAL_MARKER)
+        kept = sanitize_untrusted_data({"a": [minted]}, preserve_reference_markers=registry,
+                                       identity_markers_only=True)
+        self.assertIs(kept.value["a"][0], minted)
+        account = y._Accounting()
+        self.assertEqual(y.render_markers(kept.value, registry, account), {"a": [y.CREDENTIAL_MARKER]})
+        self.assertEqual(account.redacted, 0)
+
+        class Sub(EngineeringMarker):
+            pass
+
+        strangers = (EngineeringMarker(y.CREDENTIAL_MARKER),
+                     ReferenceMarkerRegistry().mint_marker(y.CREDENTIAL_MARKER),
+                     Sub(y.CREDENTIAL_MARKER), y.CREDENTIAL_MARKER)
+        for stranger in strangers:
+            with self.subTest(stranger=repr(stranger)):
+                result = sanitize_untrusted_data({"a": [stranger]}, preserve_reference_markers=registry,
+                                                 identity_markers_only=True)
+                self.assertEqual(result.value, {"a": [MARKER_COLLISION]})
+                account = y._Accounting()
+                if type(stranger) is not str:
+                    self.assertEqual(y.render_markers({"a": [stranger]}, registry, account),
+                                     {"a": [MARKER_COLLISION]})
+                    self.assertEqual(account.categories, {"redaction_marker_collision"})
+        # A minted marker whose text is not a marker grammar is withheld.
+        forged = registry.mint_marker(f"x{KNOWN}")
+        self.assertFalse(forged.valid())
+        self.assertEqual(sanitize_untrusted_data([forged], preserve_reference_markers=registry,
+                                                 identity_markers_only=True).value, [MARKER_COLLISION])
+        self.assertEqual(y.render_markers([forged], registry, y._Accounting()), [MARKER_COLLISION])
+
+    def test_seal_neutralizes_marker_shaped_metadata(self):
+        marker = f"[REDACTED:{ACCESS_KNOWN}]"
+        for name, text in h3_markers(ACCESS_KNOWN):
+            with self.subTest(marker=name):
+                sealed, count, categories = y.seal({"upstream_version": text, text: 1}, (ACCESS_KNOWN,))
+                self.assertEqual(sealed, {"upstream_version": MARKER_COLLISION, MARKER_COLLISION: 1})
+                self.assert_secret_absent(sealed, ACCESS_KNOWN)
+                # Byte-identical replacement text is not a visible change.
+                self.assertEqual(count, 0 if text == MARKER_COLLISION else 2)
+                if count:
+                    self.assertIn("redaction_marker_collision", categories)
+        body = {"success": False, "metadata": {"upstream_version": marker}, "data": None}
+        sealed = y.seal_response(body, (ACCESS_KNOWN,))
+        self.assertEqual(sealed["metadata"]["upstream_version"], MARKER_COLLISION)
+
+    def test_marker_like_predicate(self):
+        for name, text in h3_markers("SyntheticOnly"):
+            with self.subTest(text=text):
+                self.assertTrue(sanitization.marker_like_text(text), name)
+        for text in ("the value was redacted by the admin", "value_truncated:3 nodes omitted",
+                     "strings_truncated:2", "include_not_followed_truncated", "[note] truncated",
+                     "sqlite:////config/home-assistant_v2.db", "!secret broker_pw", "mqtt://broker",
+                     "REDACTED", "token"):
+            with self.subTest(text=text):
+                self.assertFalse(sanitization.marker_like_text(text))
+        # Still encoded after the bound: fail closed.
+        self.assertTrue(sanitization.marker_like_text(enc("[x]", 6)))
+
+    def test_sweep_encoded_and_lookalike_key_text_is_scanned(self):
+        fullwidth = "".join(chr(ord(char) + 0xFEE0) for char in KNOWN)
+        for name, key in (("percent_all", pct(KNOWN)), ("double", enc(pct(KNOWN), 1)),
+                          ("fullwidth", fullwidth)):
+            with self.subTest(key=name):
+                result = project({key: 1, "b": 2}, known_secrets=(KNOWN,))
+                self.assertEqual(result.envelope["value"], "[REDACTED:token]")
+                self.assert_secret_absent(result.envelope, KNOWN)
+        # A raw key keeps L5's key-only replacement (the useful H1 behavior).
+        result = project({"x" + KNOWN: 1, "b": 2}, known_secrets=(KNOWN,))
+        self.assertEqual(result.envelope["value"], {"x[REDACTED:token]": 1, "b": 2})
+
+    def test_sweep_sqlite_shape_still_gets_the_scanners(self):
+        secret = "a1" * 32
+        value = {"recorder": {"db_url": f"sqlite:////config/{secret}.db"}}
+        result = project(value, "recorder", known_secrets=(secret,))
+        self.assertEqual(result.envelope["value"], {"recorder": {"db_url": "[REDACTED:token]"}})
+        self.assert_secret_absent(result.envelope, secret)
+        # The reviewed R11 shape stays visible.
+        clean = {"db_url": "sqlite:////config/home-assistant_v2.db"}
+        self.assertEqual(project(clean, "recorder", known_secrets=(secret,)).envelope["value"], clean)
+
+    def test_sweep_kept_scheme_is_scanned(self):
+        for secret, value in (("zq7v162scheme", "zq7v162scheme://user:pw@host"),
+                              ("Zq7vScheme162", "Zq7vScheme162://user:pw@host")):
+            with self.subTest(secret=secret):
+                result = project({"db_url": value}, known_secrets=(secret,))
+                self.assertEqual(result.envelope["value"], {"db_url": y.CONNECTION_STRING_MARKER})
+                self.assert_secret_absent(result.envelope, secret)
+        result = project({"db_url": "mqtt://user:pw@host"}, known_secrets=(KNOWN,))
+        self.assertEqual(result.envelope["value"], {"db_url": "mqtt://[REDACTED:connection_uri]"})
+
+    def test_relabel_accounting_is_by_identity(self):
+        # L4 redacts the credential key; L5 relabels it; counted once.
+        self.assertEqual(project({"token": "synthetic"}).redacted_field_count, 1)
+        self.assertEqual(project({"matter": {"payload": "[REDACTED:x]"}}, "sensor.value").redacted_field_count, 1)
+        self.assertEqual(project({"a": "[REDACTED:token]", "token": "x"}).redacted_field_count, 2)
 
 
 if __name__ == "__main__":

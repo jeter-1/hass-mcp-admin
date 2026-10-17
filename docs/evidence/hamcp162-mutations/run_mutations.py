@@ -117,11 +117,11 @@ MUTATIONS = [
         "text = decoded.casefold()", "text = decoded",
     )]),
     m("A-judge-raw", "rule A: judging the raw form instead of the canonical text", READER, [(
-        "        if credential_text(text):\n            replacement, category = redaction_form(text)",
-        "        if credential_text(value):\n            replacement, category = redaction_form(text)",
+        "        if credential_text(text):\n            replacement, category = redaction_form(text, self.known_secrets)",
+        "        if credential_text(value):\n            replacement, category = redaction_form(text, self.known_secrets)",
     ), (
-        "            if sqlite_visible(value, text, rounds):",
-        "            if sqlite_visible(value, value, 0):",
+        "            if not sqlite_visible(value, text, rounds):",
+        "            if not sqlite_visible(value, value, 0):",
     )]),
     m("A-emit-canonical", "rule A: emitting the canonical text instead of the raw string", READER, [(
         "# Visible values are emitted raw, never in canonical form.\n        return value",
@@ -148,13 +148,13 @@ MUTATIONS = [
     )]),
     m("B-walk-connection-dict", "rule B: walking into a container under a connection key", READER, [(
         "            if connection:\n                self.account.record(\"connection_string\")\n"
-        "                return CONNECTION_STRING_MARKER\n            canonical_keys = []",
+        "                return self._mark(CONNECTION_STRING_MARKER)\n            canonical_keys = []",
         "            canonical_keys = []",
     )]),
     m("B-walk-connection-list", "rule B: walking into a list under a connection key", READER, [(
         "        if type(value) is list:\n            if connection:\n"
         "                self.account.record(\"connection_string\")\n"
-        "                return CONNECTION_STRING_MARKER\n",
+        "                return self._mark(CONNECTION_STRING_MARKER)\n",
         "        if type(value) is list:\n",
     )]),
     # R11.
@@ -190,14 +190,14 @@ MUTATIONS = [
         "        or any(word in canonical_text and \"==\" not in canonical_text for word in CREDENTIAL_WORDS)\n",
     )]),
     m("C-partial-redaction", "rule C': redacting only the matching part", READER, [(
-        "        if credential_text(text):\n            replacement, category = redaction_form(text)\n"
-        "            self.account.record(category)\n            return replacement",
-        "        if credential_text(text):\n            replacement, category = redaction_form(text)\n"
+        "        if credential_text(text):\n            replacement, category = redaction_form(text, self.known_secrets)\n"
+        "            self.account.record(category)\n            return self._mark(replacement)",
+        "        if credential_text(text):\n            replacement, category = redaction_form(text, self.known_secrets)\n"
         "            self.account.record(category)\n"
         "            return re.sub(\"|\".join(map(re.escape, CREDENTIAL_WORDS)) + r\"\\S*\", \"[REDACTED]\", value, flags=re.I)",
     )]),
     m("C-keep-credential-scheme", "rule C': keeping a scheme that holds a credential word", READER, [(
-        "if match and not credential_text(match[1]):", "if match:",
+        "if match and not credential_text(match[1]) and", "if match and",
     )]),
     m("C3-drop", "rule C': dropping C'3", READER, [(
         "_DELIMITED_TOKEN = re.compile(r\"\\b(pass|key)\\s*[=:]\")",
@@ -443,6 +443,102 @@ MUTATIONS = [
     m("core-mapping-removed", "removing the Core mapping", CORE_ROUTES, [(
         "    \"ha_config_get_yaml\": (\"core.basic_rest_read\", \"core.basic_websocket_read\"),\n", "",
     )], (T_ADMISSION,)),
+    # H3 (correction batch 2): markers are trusted by registry identity only;
+    # upstream marker-shaped text is scanned and neutralized, never skipped.
+    m("H3-marker-skip-restored", "H3: restoring the pre-fix marker skip in L4 and L5", SANITIZATION, [(
+        "        if marker_like_text(value):\n            self._record_field({MARKER_COLLISION_CATEGORY})\n"
+        "            return MARKER_COLLISION\n",
+        "        if REDACTION_MARKER.search(value):\n            self.identity_markers_only = False\n"
+        "            try:\n                return self._sanitize_string(value)\n"
+        "            finally:\n                self.identity_markers_only = True\n",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-marker-skip-restored-l4", "H3: restoring the marker skip with the L4 gates removed", READER, [(
+        "                if marker_like_text(str(key)):", "                if False:",
+    ), (
+        "        if marker_like_text(value):\n            # H3:", "        if False:\n            # H3:",
+    ), (
+        "    def _key_scan(self, key: str) -> str | None:\n",
+        "    def _key_scan(self, key: str) -> str | None:\n        return None\n",
+    )]),
+    m("H3-redacted-prefix-safe-l5", "H3: treating any [REDACTED prefix as safe in L5", SANITIZATION, [(
+        "        if marker_like_text(value):\n            self._record_field({MARKER_COLLISION_CATEGORY})\n",
+        "        if value.startswith(\"[REDACTED\"):\n            return value\n"
+        "        if marker_like_text(value):\n            self._record_field({MARKER_COLLISION_CATEGORY})\n",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-redacted-prefix-safe-l4", "H3: treating any [REDACTED prefix as safe in L4", READER, [(
+        "        if marker_like_text(value):\n            # H3:",
+        "        if value.startswith(\"[REDACTED\"):\n            return value\n"
+        "        if marker_like_text(value):\n            # H3:",
+    )]),
+    m("H3-redacted-prefix-safe-key", "H3: treating a [REDACTED key prefix as safe in L4", READER, [(
+        "                if marker_like_text(str(key)):",
+        "                if marker_like_text(str(key)) and not str(key).startswith(\"[REDACTED\"):",
+    )]),
+    m("H3-l4-key-gate-removed", "H3: dropping the L4 marker-shaped key gate", READER, [(
+        "                if marker_like_text(str(key)):", "                if False:",
+    )]),
+    m("H3-l4-value-gate-removed", "H3: dropping the L4 marker-shaped value gate", READER, [(
+        "        if marker_like_text(value):\n            # H3:", "        if False:\n            # H3:",
+    )]),
+    m("H3-key-scan-removed", "H3 sweep: no scanners on decoded or canonical key forms", READER, [(
+        "                category = self._key_scan(str(key))\n", "                category = None\n",
+    )]),
+    m("H3-r11-scanner-skip", "H3 sweep: the SQLite shape skipping the scanners again", READER, [(
+        "            # R11 exempts the exact SQLite shape from rule B only; the\n"
+        "            # scanners below still run on it (H3 sweep).\n",
+        "            return value\n",
+    )]),
+    m("H3-scheme-unvetted", "H3 sweep: keeping a scheme without the scanners", READER, [(
+        " and _scheme_clean(match[1], known_secrets):", ":",
+    )]),
+    m("H3-relabel-by-text", "H3 sweep: relabel accounting by marker text", READER, [(
+        "    return int(registry.emitted(before) and after is not before)",
+        "    return int(type(before) is str and before != after and \"[REDACTED:\" in before)",
+    )]),
+    m("H3-render-without-registry", "H3: rendering an EngineeringMarker by type only", READER, [(
+        "        if not registry.emitted(value) or not value.valid():", "        if not value.valid():",
+    )]),
+    m("H3-l5-without-registry", "H3: L5 keeping an EngineeringMarker by type only", SANITIZATION, [(
+        "            and self.minted_markers.emitted(value)\n", "",
+    )]),
+    m("H3-emitted-by-equality", "H3: registry membership by equality instead of identity", SANITIZATION, [(
+        "        return type(value) is EngineeringMarker and self._emitted.get(id(value)) is value",
+        "        return isinstance(value, EngineeringMarker) and value in self._emitted.values()",
+    )]),
+    m("H3-marker-grammar-unchecked", "H3: keeping a registered marker of any text", SANITIZATION, [(
+        "        return type(self.text) is str and _ENGINEERING_MARKER_TEXT.fullmatch(self.text) is not None",
+        "        return type(self.text) is str",
+    )]),
+    m("H3-strict-key-raw", "H3: a sensitive key's text skipping the strict scan", SANITIZATION, [(
+        "        if key_category and not self.identity_markers_only:", "        if key_category:",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-seal-default-mode", "H3: seal using the default marker-skipping sanitizer", READER, [(
+        "        value, known_secrets=known_secrets, identity_markers_only=True\n",
+        "        value, known_secrets=known_secrets, identity_markers_only=False\n",
+    )]),
+    m("H3-fold-no-nfd", "H3: no NFD, so precomposed combining marks survive", SANITIZATION, [(
+        "    folded = unicodedata.normalize(\"NFD\", unicodedata.normalize(\"NFKC\", folded))",
+        "    folded = unicodedata.normalize(\"NFKC\", folded)",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-fold-no-lookalikes", "H3: no look-alike table", SANITIZATION, [(
+        "    return folded.translate(_MARKER_FOLD).casefold().translate(_MARKER_FOLD)",
+        "    return folded.casefold()",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-fold-no-pretable", "H3: look-alike table only after NFKC", SANITIZATION, [(
+        "    folded = text.translate(_MARKER_FOLD)\n", "    folded = text\n",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-fold-keeps-format", "H3: zero-width and combining characters kept", SANITIZATION, [(
+        "if unicodedata.category(char) not in (\"Cf\", \"Mn\", \"Me\")", "if True",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-no-decode", "H3: marker shape judged on the raw text only", SANITIZATION, [(
+        "        decoded = unquote(value, errors=\"replace\")\n", "        decoded = value\n",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-decode-bound-open", "H3: text still encoded after the bound treated as clean", SANITIZATION, [(
+        "        value = decoded\n    return True\n", "        value = decoded\n    return False\n",
+    )], (T_READER, T_SANITIZATION)),
+    m("H3-no-truncated-word", "H3: only redacted, not truncated, treated as marker-shaped", SANITIZATION, [(
+        "(?:redacted|truncated)\")", "(?:redacted)\")",
+    )], (T_READER, T_SANITIZATION)),
 ]
 
 _FAILURE_LINE = re.compile(r"^(FAIL|ERROR): (\S+) \(([^)]+)\)", re.MULTILINE)
