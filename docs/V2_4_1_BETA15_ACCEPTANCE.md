@@ -48,6 +48,10 @@ The review needs a security section covering:
 - node truncation before redaction (H2, owner direction superseding design
   sections 4 and 8.1), and the final pass of every client-visible field
   through the pipeline (H1);
+- redaction markers trusted by registry identity only, with marker-shaped
+  upstream text (keys and values, encoded and look-alike forms) scanned and
+  neutralized, never skipped (H3), and the shared sanitizer default mode
+  unchanged for every other tool;
 - the explicit per-version dispositions with no default;
 - the complete-descriptor (R4) binding;
 - the generation and dispatch lease (R5), and exclusion from the stock
@@ -84,7 +88,8 @@ with the D1 fixtures. They must prove each of the following:
 - Core gating on 2026.9.2, 2026.10.0 and 2026.10.1.
 
 Run `docs/evidence/hamcp162-mutations/run_mutations.py`. Every design §8.2
-mutation must fail at least one test.
+mutation and every correction mutation (H1, H2, H3) must fail at least one
+test.
 
 ## 2. Publication and recovery preparation
 

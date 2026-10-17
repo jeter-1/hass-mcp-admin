@@ -26,6 +26,12 @@ corrections (HAMCP-189).
   are withheld. Pass every other client-visible field (limitations, include
   and path descriptions, warnings, metadata, error details) through a final
   shared-sanitizer pass with the configured known secrets.
+- Trust redaction markers by registry identity only (H3). Upstream text
+  that could read as a marker, including encoded, look-alike and
+  byte-identical forms, is replaced whole as `redaction_marker_collision`,
+  and a mapping with such a key is withheld. Every upstream string runs
+  through every rule; keys also get the scanners on their decoded forms.
+  The shared sanitizer's default mode for other tools is unchanged.
 - Disclose on every success the YAML 1.2 parse (K7), key conversion and
   collapse (K5) and best-effort redaction (D12). Disclose the first-call
   admin caller-token dependency (K1: the component's

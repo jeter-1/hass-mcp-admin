@@ -58,6 +58,25 @@ trusted only by the identity of a marker the same read minted. A mapping
 shaped like a rendered marker, from upstream data or from truncation, is
 withheld as `reference_marker_collision`.
 
+**Redaction markers are trusted by identity, never by text (H3).** Every
+upstream string, key or value, runs through every rule (A, B, C′, R10, the
+credential-key context and the scanners). No input text counts as already
+redacted. A redaction marker survives only when this read's L4 produced it
+as a registered marker object. Upstream text that could read as a marker is
+replaced whole with `[REDACTED:redaction_marker_collision]`, and a mapping
+with such a key is withheld whole. "Could read as a marker" means a bracket
+(`[`, `(`, `<` or `{`, or a look-alike) followed by `redacted` or
+`truncated`. The check runs on the raw text and up to four percent-decoded
+forms, each after NFKC, NFD, removal of format and combining characters,
+casefold and a look-alike fold. Text still encoded after four rounds is
+treated as marker-like. This includes text byte-identical to an
+Engineering marker. Keys also get the value scanners on their decoded and
+canonical forms. The SQLite shape (R11) is exempt from rule B only, and a
+kept connection scheme must pass the scanners. The opt-in
+`identity_markers_only` sanitizer mode is used only by this reader; the
+shared default mode, used by every other tool, is unchanged (see Known
+limitations).
+
 **How values are protected.**
 - `!secret NAME` and `!env_var NAME` become typed reference-name markers,
   `{"secret_ref": NAME}` and `{"env_var_ref": NAME}`. Secret values and
@@ -132,6 +151,12 @@ This is an accepted dependency, disclosed in the tool description.
 tools on ha-mcp 8.4.3, and from 77 to 80 on 8.5.0. The three added tools are
 `ha_config_get_yaml`, `ha_list_files` and `ha_read_file`. A stock catalog
 without them is unchanged.
+
+**Known limitation (shared sanitizer default).** The shared sanitizer's
+default mode, used by the other Engineering tools, still treats existing
+`[REDACTED:...]` text as an immutable delimiter and does not scan it. This
+release does not change that behavior for other tools; whether to adopt the
+identity-only mode there is a separate decision for Josh.
 
 **Audit.** Refusals and reads use the existing generic delegated audit:
 error code plus argument field names, never values. The design's per-path

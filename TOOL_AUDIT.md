@@ -12,7 +12,8 @@ over ha-mcp's tool of the same name. It reads one mapping-key path of
   upstream call.
 - Values are projected through key-path, connection-string and
   credential-text redaction, with typed `!secret`/`!env_var` reference-name
-  markers.
+  markers. Redaction markers are trusted by registry identity only, and
+  marker-shaped upstream text is neutralized (H3).
 
 It is an optional reviewed tool:
 - admitted only on an exact complete-descriptor binding for ha-mcp 8.4.3
