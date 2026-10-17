@@ -17,7 +17,15 @@ from typing import Any, Awaitable, Callable
 from ..errors import ErrorCode, GovernanceError
 from .health_scan import HealthScanFence
 from ..governance.task_storage import TaskHealthSnapshotSuperseded
-from ..f3.executor import PreIntentRetryRequired, SharedOperationExecutor
+from ..f3.executor import (
+    DispatchAuthorityRefused,
+    PreIntentRetryRequired,
+    SharedOperationExecutor,
+)
+from ..ha_core_readmission.routes import (
+    CORE_REQUIREMENT_UNMAPPED,
+    f3_requirements,
+)
 from ..f3.contracts import (
     LockMode,
     LockRequest,
@@ -148,7 +156,14 @@ RECOVERY_SWEEP_TIME_BUDGET_SECONDS = 5.0
 RECOVERY_CURSOR_HEALTH_DEFERRAL_LIMIT = 3
 ORPHAN_RECOVERY_SCAN_LIMIT = RECOVERY_DECLARATION_PAGE_SIZE
 ORPHAN_RECONCILIATION_REASON = "orphaned_terminal_parent_recovery"
+# O3: a durable operator cancel is recorded on the child before any provider
+# contact; recovery and projection honor it by this exact marker.
+OPERATOR_CANCEL_REASON = "operator_cancel_requested"
 ORPHAN_RECONCILIATION_RESULT = "orphaned_pre_dispatch_child_reconciled"
+# O9: abandoned pre-intent work whose dispatch authority has expired keeps its
+# bounded retries for this long after the durable expiry, then is rejected
+# before dispatch.  Backoff only grows, so at most a handful of retries fit.
+EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS = 600
 PERSISTED_AUDIT_EVENT_MODEL = "f3-persisted-audit-event-v1"
 _RECOVERY_MODE_CHECKPOINT = "checkpoint"
 _RECOVERY_MODE_POST_INTENT = "post_intent"
@@ -221,28 +236,79 @@ def _setter_call_not_sent_recorded(declaration: Any, record: Any) -> bool:
     )
 
 
+def _dispatch_authority_expiry(plan: Any) -> datetime:
+    """Return the earliest durable instant after which the plan cannot run."""
+
+    values = [plan.expires_at]
+    if plan.approval is not None and plan.approval.approval_expires_at:
+        values.append(plan.approval.approval_expires_at)
+    instants = [datetime.fromisoformat(value) for value in values]
+    if any(item.tzinfo is None for item in instants):
+        raise ValueError("plan expiry is not timezone-aware")
+    return min(instants)
+
+
+def _operator_cancelled(record: Any) -> bool:
+    """Return whether a child carries a durable pre-intent operator cancel."""
+
+    return bool(
+        record is not None
+        and record.terminal
+        and record.dispatch_intent is None
+        and record.normalized_outcome == "cancelled_pre_dispatch"
+        and any(
+            event.get("event_type") == "execution_cancelled"
+            and OPERATOR_CANCEL_REASON
+            in tuple(event.get("diagnostic_codes") or ())
+            for event in record.events
+        )
+    )
+
+
+def _refuse_unmapped_f3_operation(prepared: object) -> None:
+    """R6: name an F3 operation with no Core route before any lease attempt."""
+
+    if "core.unsupported_f3_operation" in f3_requirements(prepared):
+        raise DispatchAuthorityRefused(CORE_REQUIREMENT_UNMAPPED)
+
+
 class _CoreDispatchAuthorityGuard:
     """Bind one F3 dispatch to the exact current Core authority generation."""
 
     def __init__(self, runtime: Any, plan_created_at: str):
         self.runtime = runtime
         self.plan_created_at = plan_created_at
+        # The adapter's dispatch-window authorizer reads these; they are set
+        # only by the executor's own acquire/consume calls.
+        self.authority: object | None = None
+        self.commits: object | None = None
 
     async def acquire(
         self, prepared: object, preflight: object
     ) -> object | None:
         del preflight
+        _refuse_unmapped_f3_operation(prepared)
         # A mutation may not rely on the periodic snapshot alone.  Re-run the
         # bounded two-observation contract after final adapter preflight and
         # before approval consumption; any Core drift retires the old lease.
         await self.runtime.reconcile_once("mutation_pre_dispatch")
-        return self.runtime.acquire_f3(
+        self.authority = self.runtime.acquire_f3(
             prepared,
             plan_created_at=self.plan_created_at,
         )
+        return self.authority
 
     def consume(self, authority: object) -> object | None:
-        return self.runtime.consume(authority)
+        commits = self.runtime.consume(authority)
+        if authority is self.authority:
+            self.commits = commits
+        return commits
+
+    def authorizes_current_call(self) -> bool:
+        authority, commits = self.authority, self.commits
+        if authority is None or commits is None:
+            return False
+        return self.runtime.revalidate(authority, commits) is True
 
     def revalidate(self, authority: object, commits: object) -> bool:
         return self.runtime.revalidate(authority, commits)
@@ -535,6 +601,140 @@ class _LegacyConflictAdapter:
         return result
 
 
+class _core_call_window:
+    """Install a chained request authorizer for one bounded call window."""
+
+    def __init__(self, authorize: Callable[[], bool]):
+        self._authorize = authorize
+        self._telemetry: Any = None
+        self._token: Any = None
+        self._prior: Any = None
+
+    async def __aenter__(self) -> None:
+        telemetry = current_telemetry()
+        if telemetry is None:
+            telemetry, self._token = begin_request()
+        self._telemetry = telemetry
+        prior = self._prior = telemetry.core_dispatch_authorizer
+        authorize = self._authorize
+
+        def authorize_core_dispatch() -> bool:
+            if prior is not None and prior() is not True:
+                return False
+            return authorize() is True
+
+        telemetry.core_dispatch_authorizer = authorize_core_dispatch
+
+    async def __aexit__(self, *exc_info: Any) -> None:
+        telemetry = self._telemetry
+        telemetry.core_dispatch_authorizer = lambda: False
+        if self._token is not None:
+            end_request(self._token)
+        else:
+            telemetry.core_dispatch_authorizer = self._prior
+
+
+ROLLBACK_PLANNING_REQUIREMENTS = ("core.dependency_helper_planning",)
+# The same pair the gateway maps for create_entity_metadata_plan.
+ROLLBACK_ENTITY_METADATA_REQUIREMENTS = (
+    "core.dependency_helper_planning",
+    "core.entity_registry_metadata_operation",
+)
+
+
+def _rollback_core_refusal(*, acquired: bool) -> GovernanceError:
+    return GovernanceError(
+        ErrorCode.PROVIDER_UNAVAILABLE,
+        details={
+            "reason": "core_capability_unavailable",
+            "reason_code": "core_capability_unavailable",
+            "core_authority_acquired": acquired,
+            "plan_created": False,
+            "provider_dispatch_occurred": False,
+        },
+    )
+
+
+class _rollback_planning_lease:
+    """HAMCP-189 R1: hold current Core authority for one fresh rollback plan.
+
+    ``rollback_change`` is Core-independent at the gateway because an existing
+    rollback plan is a local idempotent return.  Fresh planning reads current
+    configuration, so the lease is acquired and consumed before the first
+    planning read, every read in the window is revalidated, and the caller
+    requires the lease to be current before it persists a plan.  A runtime
+    composed without Core enforces nothing, like the gateway.
+    """
+
+    def __init__(
+        self,
+        core_runtime: Any,
+        requirements: tuple[str, ...],
+        *,
+        target: dict[str, str] | None = None,
+    ):
+        self._core = core_runtime
+        self._requirements = requirements
+        self._target = target
+        self._authority: Any = None
+        self._commits: Any = None
+        self._window: _core_call_window | None = None
+        self._refusal: GovernanceError | None = None
+
+    def _authorize(self) -> bool:
+        return self._core.revalidate(self._authority, self._commits) is True
+
+    def _refuse(self) -> GovernanceError:
+        self._refusal = _rollback_core_refusal(acquired=True)
+        return self._refusal
+
+    def require_current(self) -> None:
+        if self._core is not None and not self._authorize():
+            raise self._refuse()
+
+    async def __aenter__(self) -> "_rollback_planning_lease":
+        core = self._core
+        if core is None:
+            return self
+        authority = (
+            core.acquire(self._requirements)
+            if self._target is None
+            else core.acquire(self._requirements, target=self._target)
+        )
+        if authority is None:
+            raise _rollback_core_refusal(acquired=False)
+        commits = core.consume(authority)
+        if commits is None:
+            core.release(authority)
+            raise _rollback_core_refusal(acquired=True)
+        self._authority, self._commits = authority, commits
+        self._window = _core_call_window(self._authorize)
+        try:
+            await self._window.__aenter__()
+        except BaseException:
+            core.finish(commits)
+            raise
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        if self._core is None:
+            return False
+        # A planning failure while Core retired is reported as the Core
+        # refusal, never as a planning verdict reached on unadmitted Core.
+        retired = (
+            isinstance(exc, Exception)
+            and exc is not self._refusal
+            and not self._authorize()
+        )
+        try:
+            await self._window.__aexit__(exc_type, exc, tb)
+        finally:
+            self._core.finish(self._commits)
+        if retired:
+            raise self._refuse() from None
+        return False
+
+
 class _ReadbackOnlyRecoveryAdapter:
     """Expose only observation and verification for a durable old intent."""
 
@@ -555,9 +755,15 @@ class _ReadbackOnlyRecoveryAdapter:
 class _CoreVerificationAdapter:
     """Require current Core readback authority without enabling redispatch."""
 
-    def __init__(self, adapter: Any, core_runtime: Any):
+    def __init__(
+        self,
+        adapter: Any,
+        core_runtime: Any,
+        dispatch_guard: _CoreDispatchAuthorityGuard | None = None,
+    ):
         self._adapter = adapter
         self._core_runtime = core_runtime
+        self._dispatch_guard = dispatch_guard
         self.capabilities = adapter.capabilities
 
     def __getattr__(self, name: str) -> Any:
@@ -622,6 +828,58 @@ class _CoreVerificationAdapter:
                 end_request(request_token)
             else:
                 telemetry.core_dispatch_authorizer = prior_authorizer
+
+    async def preflight(self, prepared: Any, *, acquired_locks: Any):
+        # O1: preflight reads may conclude "already satisfied", which is a
+        # verified outcome.  Acquire and validate current Core authority
+        # before the first read and require it to remain current after the
+        # last one; any refusal is raised before a Home Assistant read.
+        if self._dispatch_guard is None:
+            raise DispatchAuthorityRefused("dispatch_authority_unavailable")
+        _refuse_unmapped_f3_operation(prepared)
+        await self._core_runtime.reconcile_once("mutation_pre_dispatch")
+        authority = self._core_runtime.acquire_f3(
+            prepared,
+            plan_created_at=self._dispatch_guard.plan_created_at,
+        )
+        if authority is None:
+            raise DispatchAuthorityRefused("dispatch_authority_unavailable")
+        commits = self._core_runtime.consume(authority)
+        if commits is None:
+            self._core_runtime.release(authority)
+            raise DispatchAuthorityRefused("dispatch_authority_unavailable")
+
+        def authorize() -> bool:
+            return self._core_runtime.revalidate(authority, commits) is True
+
+        try:
+            async with _core_call_window(authorize):
+                result = await self._adapter.preflight(
+                    prepared, acquired_locks=acquired_locks
+                )
+            if not authorize():
+                raise DispatchAuthorityRefused(
+                    "dispatch_authority_unavailable"
+                )
+            return result
+        finally:
+            self._core_runtime.finish(commits)
+
+    async def dispatch(
+        self, prepared: Any, preflight: Any, *, before_dispatch: Any
+    ):
+        # The executor consumes and revalidates the guard's authority inside
+        # before_dispatch; client calls in this window are admitted only
+        # after that consumption and only while it remains current.
+        guard = self._dispatch_guard
+        authorize = (
+            guard.authorizes_current_call if guard is not None
+            else (lambda: False)
+        )
+        async with _core_call_window(authorize):
+            return await self._adapter.dispatch(
+                prepared, preflight, before_dispatch=before_dispatch
+            )
 
     async def recover(self, prepared: Any, *, context: Any):
         return await self._observe_with_authority(
@@ -1824,6 +2082,7 @@ class F3RuntimeIntegration:
         task: Any,
         *,
         readback_child_id: str | None = None,
+        cancel_only: bool = False,
     ):
         declarations = self.children.declarations_for_task(task.task_id)
         if not declarations:
@@ -1876,7 +2135,9 @@ class F3RuntimeIntegration:
                 provider_identity["evidence_hash"]
             ):
                 raise GovernanceError(ErrorCode.EXECUTION_TASK_STORAGE_ERROR)
-            if all(
+            # A cancel binds only the stored declaration identity; it must
+            # succeed while the provider is unavailable or has drifted (O3).
+            if not cancel_only and all(
                 (record := self.children.get(item["child_id"])) is None
                 or record.dispatch_intent is None
                 for item in declarations
@@ -2407,8 +2668,15 @@ class F3RuntimeIntegration:
         adapter = _LegacyConflictAdapter(
             adapter, self._has_active_legacy_conflict
         )
+        dispatch_guard = (
+            _CoreDispatchAuthorityGuard(self.core_runtime, plan.created_at)
+            if self.core_runtime is not None and not readback_only
+            else None
+        )
         if self.core_runtime is not None:
-            adapter = _CoreVerificationAdapter(adapter, self.core_runtime)
+            adapter = _CoreVerificationAdapter(
+                adapter, self.core_runtime, dispatch_guard
+            )
         if readback_only:
             # Keep the reduced recovery protocol outermost so none of the
             # normal sequence/conflict wrappers can re-expose preflight or
@@ -2430,13 +2698,7 @@ class F3RuntimeIntegration:
                 approval_consumption=lambda: self._consume_approval_counted(
                     plan, task, declaration
                 ),
-                dispatch_authority=(
-                    _CoreDispatchAuthorityGuard(
-                        self.core_runtime, plan.created_at
-                    )
-                    if self.core_runtime is not None and not readback_only
-                    else None
-                ),
+                dispatch_authority=dispatch_guard,
             )
             if "lock_storage_failure" in result.diagnostic_codes:
                 self._readiness_fault("execution_storage")
@@ -2747,6 +3009,22 @@ class F3RuntimeIntegration:
             elif failed_index is not None:
                 failed = records[failed_index]
                 assert failed is not None
+                if _operator_cancelled(failed) and all(
+                    item is None or item.dispatch_intent is None
+                    for item in records
+                ):
+                    # O3: a durable operator cancel projects exactly as the
+                    # cancel call does, including after a restart between
+                    # the child cancel and the public event.
+                    terminal_event(
+                        "task_cancelled_pre_dispatch",
+                        new_state=ExecutionTaskState.CANCELLED_PRE_DISPATCH,
+                        changes={
+                            "completed_at": self.service._timestamp(),
+                            "terminal_outcome": "cancelled_pre_dispatch",
+                        },
+                    )
+                    return
                 if not completed and failed.dispatch_intent is None:
                     terminal_event(
                         "preflight_failed", new_state=ExecutionTaskState.FAILED_PRE_DISPATCH,
@@ -3015,6 +3293,20 @@ class F3RuntimeIntegration:
             current = self.service._load_task(task.task_id)
             return await self._cancel_locked(current)
 
+    def _cancel_recorded(self, task_id: str) -> bool:
+        """Return whether durable state records a pre-intent cancel (O3)."""
+
+        current = self.service.task_repository.get(task_id)
+        if (
+            current is not None
+            and current.state == ExecutionTaskState.CANCELLED_PRE_DISPATCH
+        ):
+            return True
+        return any(
+            _operator_cancelled(self.children.get(item["child_id"]))
+            for item in self.children.declarations_for_task(task_id)
+        )
+
     def _cancel_refusal(self, task: Any) -> GovernanceError:
         facts = self.dispatch_facts_for_task(task)
         details = {"task_id": task.task_id, "task_state": task.state.value}
@@ -3039,13 +3331,14 @@ class F3RuntimeIntegration:
             # facts only describe the refusal (HAMCP-181 S11, display only).
             raise self._cancel_refusal(task)
         plan = self.service._load(task.plan_id)
-        prepared, _requests = await self._load_prepared(plan, task)
         # Only the first unresolved child can be active in an ordered sequence.
         # Materializing that exact child before cancellation closes the race in
         # which another process might otherwise create it after a public-only
-        # cancellation record.
-        for declaration, operation, record in zip(
-            declarations, prepared, records, strict=True
+        # cancellation record.  O3: the durable child cancel is written before
+        # any provider contact; an existing record is cancelled directly and a
+        # missing one is materialized from the stored declaration identity.
+        for index, (declaration, record) in enumerate(
+            zip(declarations, records, strict=True)
         ):
             if record is not None and record.terminal:
                 if record.normalized_outcome == "succeeded_verified":
@@ -3059,6 +3352,10 @@ class F3RuntimeIntegration:
                 owner_id=f"cancel-{uuid.uuid4().hex}",
             )
             if record is None:
+                prepared, _requests = await self._load_prepared(
+                    plan, task, cancel_only=True
+                )
+                operation = prepared[index]
                 try:
                     self.children.claim(
                         identity=identity,
@@ -3074,7 +3371,9 @@ class F3RuntimeIntegration:
                 except DuplicateExecutionActive:
                     pass
             if not self.children.cancel(
-                declaration["child_id"], now=self.service.now()
+                declaration["child_id"],
+                now=self.service.now(),
+                diagnostic_codes=(OPERATOR_CANCEL_REASON,),
             ):
                 raise self._cancel_refusal(task)
             break
@@ -3090,6 +3389,8 @@ class F3RuntimeIntegration:
         return {
             "status": "cancelled_pre_dispatch",
             "provider_dispatch_occurred": False,
+            # The cancel path records locally and never contacts a provider.
+            "provider_contacted": False,
             "task": self.service._public_task(task),
         }
 
@@ -3321,6 +3622,12 @@ class F3RuntimeIntegration:
         # The existing short public-projection transaction serializes only
         # durable plan/link issuance. No awaits, HA reads or dispatch under it.
         with self.children.public_projection_transaction():
+            lease = context.get("lease")
+            if lease is not None:
+                # HAMCP-189 R1: the builder's last planning read is awaited
+                # after the caller's check; authority must still be current
+                # where the plan is saved.
+                lease.require_current()
             source = self.service.repository.get(context["snapshot"]["plan_id"])
             if source is None or self._rollback_source_snapshot(source) != context["snapshot"]:
                 raise GovernanceError(ErrorCode.ROLLBACK_NOT_AVAILABLE)
@@ -3380,6 +3687,14 @@ class F3RuntimeIntegration:
                     "approval_required": cached.status != PlanStatus.APPLIED,
                     "plan_hash": self.service.plan_hash(cached),
                 }
+        async with _rollback_planning_lease(
+            self.core_runtime, ROLLBACK_PLANNING_REQUIREMENTS
+        ) as lease:
+            return await self._plan_garage_inverse(
+                source, snapshot, plan_id, lease
+            )
+
+    async def _plan_garage_inverse(self, source, snapshot, plan_id, lease):
         from ..governance.resources import resource_identity_matches
         observed = []
         for op in source.operations:
@@ -3405,7 +3720,8 @@ class F3RuntimeIntegration:
                 "depends_on": [] if not operations else [operations[-1]["operation_id"]],
             })
         context = {"plan_id": plan_id, "snapshot": snapshot, "observed": observed,
-                   "selected": selected, "complete": complete}
+                   "selected": selected, "complete": complete, "lease": lease}
+        lease.require_current()
         created = await self.service._create_configuration_plan(
             title="Restore exact verified garage configuration prefix",
             description=inverse_eligibility.DISCLOSURE,
@@ -3478,11 +3794,39 @@ class F3RuntimeIntegration:
                     "plan_hash": self.service.plan_hash(existing),
                 }
         task = self.service.task_repository.get_for_plan(source_plan.plan_id)
-        if source_plan.contract_version == 2 and any(
+        entity_metadata = source_plan.contract_version == 2 and any(
             operation.resource_type == ENTITY_METADATA_RESOURCE_TYPE
             for operation in source_plan.operations
-        ):
-            return await self._create_entity_metadata_rollback(source_plan, task)
+        )
+        # HAMCP-189 R1: every return above is local.  Fresh planning reads
+        # current state, so it runs inside its own Core lease.
+        async with _rollback_planning_lease(
+            self.core_runtime,
+            (
+                ROLLBACK_ENTITY_METADATA_REQUIREMENTS
+                if entity_metadata
+                else ROLLBACK_PLANNING_REQUIREMENTS
+            ),
+            target=(
+                {
+                    "target_type": "entity_registry_metadata",
+                    "target_id": source_plan.operations[0].target_id,
+                }
+                if entity_metadata
+                else None
+            ),
+        ) as lease:
+            if entity_metadata:
+                return await self._create_entity_metadata_rollback(
+                    source_plan, task, lease
+                )
+            return await self._plan_fresh_rollback(
+                source_plan, task, retry_source, lease
+            )
+
+    async def _plan_fresh_rollback(
+        self, source_plan: Any, task: Any, retry_source: bool, lease: Any
+    ) -> dict[str, Any]:
         if task is None or task.state not in {
             ExecutionTaskState.SUCCEEDED_VERIFIED,
             ExecutionTaskState.MANUAL_REVIEW_REQUIRED,
@@ -3571,7 +3915,10 @@ class F3RuntimeIntegration:
         for operation in operations:
             if operation.get("resource_type") != "helper":
                 operation.pop("helper_type", None)
-        created = await self.service.create_configuration_plan(
+        lease.require_current()
+        # HAMCP-189 R1: the builder awaits its current-state reads after this
+        # check, so authority is checked again where the plan is saved.
+        created = await self.service._create_configuration_plan(
             title=f"Rollback governed change {source_plan.plan_id}"[:160],
             description=(
                 "Separately governed reverse update using exact prior configuration "
@@ -3583,6 +3930,7 @@ class F3RuntimeIntegration:
                 "rollback_model": "f3-governed-rollback-plan-v1",
                 "excluded_operation_ids": excluded[:8],
             },
+            _before_persist=lease.require_current,
         )
         rollback_plan = self.service._load(created["plan_id"])
         prohibited = retry_source and rollback_plan.policy_decision.policy_class.value == "prohibited"
@@ -3608,7 +3956,7 @@ class F3RuntimeIntegration:
         }
 
     async def _create_entity_metadata_rollback(
-        self, source_plan: Any, task: Any
+        self, source_plan: Any, task: Any, lease: Any
     ) -> dict[str, Any]:
         """Plan the reverse of one verified entity metadata update (§8).
 
@@ -3705,6 +4053,7 @@ class F3RuntimeIntegration:
             ) from None
         if prepared.no_change is not None:
             raise refuse("forward_not_verified")
+        lease.require_current()
         created = await self.service._create_configuration_plan(
             title=f"Rollback governed change {source_plan.plan_id}"[:160],
             description=entity_metadata_planning.ROLLBACK_DISCLOSURE.format(
@@ -4884,13 +5233,21 @@ class F3RuntimeIntegration:
         ]
 
     @staticmethod
+    def _declared_record_operation(declaration: dict[str, Any]) -> str:
+        """The adapter operation a child record of ``declaration`` carries."""
+
+        return (declaration["capability_id"]
+                if declaration["plan_contract_version"] in {1, 2}
+                else declaration["operation_id"])
+
+    @staticmethod
     def _lock_record_matches_execution_authority(
         declaration: dict[str, Any], record: Any, lock_record: Any
     ) -> bool:
         identity = record.execution_identity()
-        expected_operation = (declaration["capability_id"]
-                              if declaration["plan_contract_version"] in {1, 2}
-                              else declaration["operation_id"])
+        expected_operation = F3RuntimeIntegration._declared_record_operation(
+            declaration
+        )
         token_matches = [
             item
             for item in record.lock_tokens
@@ -5261,6 +5618,151 @@ class F3RuntimeIntegration:
             "next_cursor": next_cursor,
         }
 
+    def _terminate_expired_pre_intent(
+        self, declaration: dict[str, Any], *, now: datetime
+    ) -> bool:
+        """O9: reject abandoned pre-intent work after its expiry deadline.
+
+        Recovery of a child whose plan dispatch authority has expired fails on
+        every sweep.  Once the durable expiry plus the retry window has
+        passed, the child is rejected before dispatch with the outcome the
+        configuration preflight gives an expired plan, its exact locks are
+        released and the task is projected.  Anything less certain keeps the
+        bounded retry.  The executor is never called.
+        """
+
+        child_id = declaration["child_id"]
+        record = self.children.get(child_id)
+        if record is None:
+            return self._terminate_expired_unclaimed(declaration, now=now)
+        if (
+            record.terminal
+            or record.dispatch_intent is not None
+            or record.dispatch_count
+            or datetime.fromisoformat(record.claim_expires_at) > now
+        ):
+            return False
+        plan = self.service._load_for_projection(declaration["plan_id"])
+        task = self.service._load_task(declaration["public_task_id"])
+        if (
+            self.service.plan_hash(plan) != declaration["plan_hash"]
+            or self._cancel_recorded(task.task_id)
+        ):
+            return False
+        deadline = _dispatch_authority_expiry(plan) + timedelta(
+            seconds=EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS
+        )
+        if now < deadline:
+            return False
+        if any(
+            item.conflict_hold
+            or not self._lock_record_matches_execution_authority(
+                declaration, record, item
+            )
+            for item in self._related_lock_records(
+                declaration, record, self.locks.records()
+            )
+        ):
+            # A hold or an unrecorded generation needs its own reconciler.
+            return False
+        record = self.children.terminalize_expired_claim_pre_dispatch(
+            child_id,
+            expected_claim_generation=record.claim_generation,
+            diagnostic_codes=("plan_expired",),
+            now=now,
+        )
+        self._release_orphaned_child_locks(declaration, record)
+        self._project(plan, task)
+        self.children.update_runtime(
+            child_id,
+            changes={
+                "last_reconciliation_at": now.isoformat(),
+                "reconciliation_result": "transition_processed",
+                "backoff_seconds": 0,
+                "next_eligible_at": None,
+            },
+        )
+        return True
+
+    def _terminate_expired_unclaimed(
+        self, declaration: dict[str, Any], *, now: datetime
+    ) -> bool:
+        """O9: reject expired declared work whose child was never claimed.
+
+        A crash between task initialization and the first child claim leaves a
+        declaration without a record, and expired preparation can never build
+        one.  After the same deadline, the record is created already terminal
+        from the declaration's own identity.  The public projection
+        transaction orders this against cancel, and the child transaction
+        orders it against a first claim; losing either race changes nothing.
+        """
+
+        child_id = declaration["child_id"]
+        plan = self.service._load_for_projection(declaration["plan_id"])
+        task = self.service._load_task(declaration["public_task_id"])
+        if (
+            self.service.plan_hash(plan) != declaration["plan_hash"]
+            or now
+            < _dispatch_authority_expiry(plan)
+            + timedelta(seconds=EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS)
+        ):
+            return False
+        declarations = self.children.declarations_for_task(task.task_id)
+        ordinals = [item["child_id"] for item in declarations]
+        if child_id not in ordinals:
+            return False
+        index = ordinals.index(child_id)
+        for position, item in enumerate(declarations):
+            current = self.children.get(item["child_id"])
+            if position < index and (
+                current is None
+                or current.normalized_outcome != "succeeded_verified"
+            ):
+                return False
+            if position > index and current is not None:
+                return False
+        if any(
+            item.task_id == child_id for item in self.locks.records()
+        ):
+            # Locks without a claim record need their own reconciler.
+            return False
+        with self.children.public_projection_transaction():
+            current_task = self.service._load_task(task.task_id)
+            if current_task.state not in {
+                ExecutionTaskState.CREATED,
+                ExecutionTaskState.PREFLIGHT,
+            } or self._cancel_recorded(task.task_id):
+                return False
+            record = self.children.materialize_expired_pre_dispatch(
+                identity=ExecutionIdentity(
+                    task_id=child_id,
+                    plan_id=declaration["plan_id"],
+                    attempt_id=declaration["attempt_id"],
+                    request_id=declaration["request_id"],
+                    owner_id=f"expired-{uuid.uuid4().hex}",
+                ),
+                adapter_id=declaration["adapter_id"],
+                operation=self._declared_record_operation(declaration),
+                target_type=declaration["target_type"],
+                target_id=declaration["target_id"],
+                prepared_operation_hash=declaration["prepared_operation_hash"],
+                diagnostic_codes=("plan_expired",),
+                now=now,
+            )
+        if record is None:
+            return False
+        self._project(plan, task)
+        self.children.update_runtime(
+            child_id,
+            changes={
+                "last_reconciliation_at": now.isoformat(),
+                "reconciliation_result": "transition_processed",
+                "backoff_seconds": 0,
+                "next_eligible_at": None,
+            },
+        )
+        return True
+
     async def _recover_active_candidates(
         self,
         candidates: tuple[tuple[dict[str, Any], Any | None], ...],
@@ -5332,17 +5834,38 @@ class F3RuntimeIntegration:
                     # record. It can never initialize or dispatch pre-intent
                     # work under current authority.
                     raise GovernanceError(ErrorCode.POLICY_SNAPSHOT_MISMATCH)
-                if record is not None and record.terminal:
+                if (record is not None and record.terminal) or (
+                    self._cancel_recorded(task.task_id)
+                ):
                     # Terminal recovery is projection-only. Keeping this
                     # branch before preparation makes provider preparation
                     # and execution unreachable for both successful and
-                    # non-success terminal outcomes.
+                    # non-success terminal outcomes, and for any recorded
+                    # operator cancel (O3).
                     pass
                 else:
                     current_recovery_mode = self._active_recovery_mode(record)
                     post_intent_readback = bool(
                         current_recovery_mode == _RECOVERY_MODE_POST_INTENT
                     )
+                    # O9: past the expiry deadline, pre-intent work ends
+                    # locally before preparation, so no provider or provider
+                    # identity contact can precede, delay or gate it.
+                    if (
+                        not post_intent_readback
+                        and now
+                        >= _dispatch_authority_expiry(plan)
+                        + timedelta(
+                            seconds=EXPIRED_PRE_INTENT_RETRY_WINDOW_SECONDS
+                        )
+                        and self._terminate_expired_pre_intent(
+                            declaration, now=now
+                        )
+                    ):
+                        processed += 1
+                        settled.append(declaration["child_id"])
+                        self._clear_readiness_fault(fault_key, fault_revision)
+                        continue
                     if post_intent_readback:
                         prepared, requests = await self._load_prepared(
                             plan,
@@ -5354,9 +5877,15 @@ class F3RuntimeIntegration:
                             plan, task
                         )
                     operation = prepared[declaration["operation_ordinal"]]
-                    if record is None or record.dispatch_intent is None:
-                        task = self._enter_public_preflight(task)
-                    if post_intent_readback:
+                    # A cancel recorded during the awaits above wins; recovery
+                    # never enters preflight or dispatch for it (O3).
+                    cancelled_meanwhile = (
+                        not post_intent_readback
+                        and self._cancel_recorded(task.task_id)
+                    )
+                    if cancelled_meanwhile:
+                        result = None
+                    elif post_intent_readback:
                         result = await self._execute_child(
                             plan,
                             task,
@@ -5366,6 +5895,8 @@ class F3RuntimeIntegration:
                             readback_only=True,
                         )
                     else:
+                        if record is None or record.dispatch_intent is None:
+                            task = self._enter_public_preflight(task)
                         result = await self._execute_child(
                             plan,
                             task,
@@ -5373,7 +5904,7 @@ class F3RuntimeIntegration:
                             operation,
                             requests,
                         )
-                    if result.duplicate_execution:
+                    if result is not None and result.duplicate_execution:
                         self._sweep_collisions += 1
                         # Reusing an expired claim for readback is also marked
                         # duplicate. Only a live ownership collision defers
@@ -5415,6 +5946,17 @@ class F3RuntimeIntegration:
                 settled.append(declaration["child_id"])
                 self._clear_readiness_fault(fault_key, fault_revision)
             except Exception:
+                try:
+                    expired_terminal = self._terminate_expired_pre_intent(
+                        declaration, now=now
+                    )
+                except Exception:
+                    expired_terminal = False
+                if expired_terminal:
+                    processed += 1
+                    settled.append(declaration["child_id"])
+                    self._clear_readiness_fault(fault_key, fault_revision)
+                    continue
                 self._readiness_fault(fault_key)
                 self._sweep_failures += 1
                 backoff = min(

@@ -37,8 +37,25 @@ The refusal is audited with argument field names only, never values.
 recorded basis and justification:
 - `get_core_log_history`: Supervisor only;
 - `get_blueprint`: mounted read-only source;
-- eight tools on Engineering local state only;
+- eight tools on Engineering local state only (see the correction below);
 - six tools that acquire their own exact typed or F3 Core authority at dispatch.
+
+> **Correction (2026-10-16, HAMCP-189).** "Engineering local state only"
+> overstates three of the eight tools. Each is still Core-independent at the
+> gateway, but it is not purely local:
+> - `get_execution_task`: typed fan and power tasks reconcile through their
+>   own typed Core authority;
+> - `cancel_execution_task`: cancelling a contract-v3 operational task reads
+>   the `ha-mcp` provider identity (a Supervisor-backed add-on read, not a
+>   Core read);
+> - `approve_change_plan`: the queued approval notification is posted to
+>   Core outside the request.
+>
+> In the same group of six, `rollback_change` read current configuration
+> while planning without Core authority. That is fixed in a later beta: fresh
+> rollback planning now acquires its own Core lease before any read. This
+> note corrects the repository copy only. The published `v2.4.1-beta.13`
+> GitHub Release is left as published.
 
 `server_info` and `get_server_health` stay Core-independent only with
 `check_ha=false`.
