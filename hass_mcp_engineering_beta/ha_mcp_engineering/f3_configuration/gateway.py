@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..clients.paths import rest_path
 from ..clients.rest import ExpectedHttpStatus
 from ..governance.resources import ConfigurationResourceGateway
 
@@ -43,7 +44,7 @@ class ExistingConfigurationGatewayBridge:
             return True, "target_absent"
         state = await self._gateway.rest_client.request(
             "GET",
-            f"/states/{target_id}",
+            rest_path("/states/{}", target_id, kinds=("entity_id",)),
             expected_statuses=frozenset({404}),
         )
         if isinstance(state, ExpectedHttpStatus) and state.status == 404:

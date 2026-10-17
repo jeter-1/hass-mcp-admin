@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch
 
 from jsonschema import validate
 from mcp.server.fastmcp import FastMCP
+from yarl import URL
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -325,6 +326,7 @@ class _RawJsonSnapshotSession(_ProbeSession):
         self.validation_payload = validation_payload
 
     def get(self, url, **_kwargs):
+        url = str(url)  # HAMCP-200: the transport passes a verified yarl URL.
         path = next(path for path in self.rest_payloads if url.endswith(path))
         return _RawJsonResponse(self.rest_payloads[path])
 
@@ -1869,12 +1871,13 @@ class Core20269SourceTests(unittest.IsolatedAsyncioTestCase):
             session.calls,
             [
                 (
-                    configured.api_url + "/config/core/check_config",
+                    URL(configured.api_url + "/config/core/check_config"),
                     {
                         "headers": {
                             "Authorization": f"Bearer {configured.ha_token}",
                             "Content-Type": "application/json",
-                        }
+                        },
+                        "allow_redirects": False,
                     },
                 )
             ],

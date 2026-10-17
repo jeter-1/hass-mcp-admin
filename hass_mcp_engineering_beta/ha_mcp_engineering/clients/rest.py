@@ -19,6 +19,7 @@ from ..errors import (
 )
 from ..observability import METRICS
 from ..request_context import current_telemetry
+from .paths import request_url, require_route
 from .single_read import SINGLE_READ, session_options, response_text
 from . import logbook
 
@@ -65,14 +66,18 @@ class HomeAssistantRestClient:
         *,
         logbook_read: bool = False,
     ) -> Any:
-        if logbook_read and (method != "GET" or not path.startswith("/logbook/")
+        # HAMCP-200: the route is verified before a credential, telemetry
+        # authorization or session exists. An unsafe path fails closed here.
+        route = require_route(path)
+        url = request_url(self.settings.api_url, route)
+        if logbook_read and (method != "GET" or not route.template.startswith("/logbook/")
                              or body is not None or not raw or expected_statuses):
             raise ValueError("invalid_internal_logbook_request")
         headers = {
             "Authorization": f"Bearer {self.settings.ha_token}",
             "Content-Type": "application/json",
         }
-        category = endpoint_category(path)
+        category = endpoint_category(route.template)
         telemetry = current_telemetry()
         if telemetry is not None and not telemetry.authorize_core_dispatch():
             telemetry.error_code = ErrorCode.PROVIDER_UNAVAILABLE.value
@@ -103,26 +108,27 @@ class HomeAssistantRestClient:
                        if logbook_read else session_options())
             async with aiohttp.ClientSession(timeout=timeout, **options) as session:
                 async with session.request(
-                    method, f"{self.settings.api_url}{path}", headers=headers, json=body
+                    method, url, headers=headers, json=body, allow_redirects=False
                 ) as response:
                     # Received HTTP failure is authoritative even if its body
                     # is oversized, encoded or malformed. Do not consume it.
-                    text = ("" if logbook_read and response.status >= 400 else
+                    text = ("" if logbook_read and response.status >= 300 else
                             await logbook.read_body(response) if logbook_read else
                             await response_text(response))
                     record()
                     if response.status in expected_statuses:
                         return ExpectedHttpStatus(response.status)
-                    if response.status >= 400:
+                    if response.status >= 300:
+                        # Redirects are never followed; a 3xx is a failure.
                         details = {
                             "status": response.status,
                             "method": method,
                             "endpoint_category": category,
                             "provider_response_received": True,
                         }
-                        if response.status == 404 and path.startswith("/states/"):
+                        if response.status == 404 and route.template.startswith("/states/"):
                             error = EntityNotFoundError(details=details)
-                        elif response.status == 404 and "/automation/" in path:
+                        elif response.status == 404 and "/automation/" in route.template:
                             error = AutomationNotFoundError(details=details)
                         else:
                             error = HomeAssistantApiError(details=details)

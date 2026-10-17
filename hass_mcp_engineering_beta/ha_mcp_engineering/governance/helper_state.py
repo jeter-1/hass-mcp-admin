@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import re
 from typing import Any, Awaitable, Callable
 
+from ..clients.paths import rest_path
 from ..errors import (
     AuthorizationError,
     EntityNotFoundError,
@@ -99,7 +100,9 @@ class HelperStateGateway:
     async def read_state(self, entity_id: str) -> dict[str, Any]:
         entity_id = validate_input_boolean_entity_id(entity_id)
         try:
-            value = await self.rest_client.request("GET", f"/states/{entity_id}")
+            value = await self.rest_client.request(
+                "GET", rest_path("/states/{}", entity_id, kinds=("entity_id",))
+            )
         except EntityNotFoundError:
             raise HelperStateGatewayError("entity_not_found") from None
         except AuthorizationError:
