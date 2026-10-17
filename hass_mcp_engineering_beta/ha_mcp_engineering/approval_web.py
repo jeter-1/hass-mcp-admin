@@ -25,7 +25,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, Response
 from starlette.routing import Route
 
-from .errors import GovernanceError
+from .errors import EngineeringServerError, GovernanceError
 from .f3_dashboard.approval_projection import (
     validate_dashboard_approval_projection,
 )
@@ -54,6 +54,8 @@ MAX_STEP_WARNINGS = 10
 SUPERVISOR_INGRESS_PEER = "172.30.32.2"
 _INGRESS_PATH = re.compile(r"^/api/hassio_ingress/[A-Za-z0-9_-]{8,128}$")
 _HA_USER_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
+_TYPED_TASK_ID = re.compile(r"^[a-f0-9]{32}$")
+TYPED_HOLD_KINDS = ("fan", "power")
 
 SECURITY_HEADERS = {
     "Cache-Control": "no-store",
@@ -340,11 +342,16 @@ class IngressApprovalApplication:
         *,
         allowed_peers: tuple[str, ...] = (SUPERVISOR_INGRESS_PEER,),
         require_ingress_header: bool = True,
+        typed_services=None,
     ):
         self.governance = governance
         self.allowed_peers = frozenset(allowed_peers)
         self.require_ingress_header = require_ingress_header
         self._f3_csrf: dict[str, tuple[str, str, int, str, str]] = {}
+        # HAMCP-192 decision 6: typed fan/power hold release. ``typed_services``
+        # maps kind -> zero-argument callable returning the configured service.
+        self._typed_services = typed_services
+        self._typed_csrf: dict[tuple[str, str], tuple[str, str, int, str, str]] = {}
 
     def create(self) -> Starlette:
         app = Starlette(
@@ -357,6 +364,9 @@ class IngressApprovalApplication:
                 Route("/f3", self.f3_inbox, methods=["GET"]),
                 Route("/f3/{child_id}", self.f3_review, methods=["GET"]),
                 Route("/f3/{child_id}/reconcile", self.f3_reconcile, methods=["POST"]),
+                Route("/typed", self.typed_inbox, methods=["GET"]),
+                Route("/typed/{kind}/{task_id}", self.typed_review, methods=["GET"]),
+                Route("/typed/{kind}/{task_id}/release", self.typed_release, methods=["POST"]),
             ],
         )
         app.add_middleware(_SecurityHeadersMiddleware)
@@ -714,6 +724,205 @@ class IngressApprovalApplication:
             )
         )
 
+    def _require_admin(self, request: Request) -> tuple[str, str] | Response:
+        context = self._deny_unless_ingress(request)
+        if isinstance(context, Response):
+            return context
+        prefix, principal = context
+        if principal == DEFAULT_APPROVER_PRINCIPAL:
+            return self._response(
+                _page(
+                    "Forbidden",
+                    "<p>An authenticated Home Assistant administrator identity is required.</p>",
+                    prefix=prefix,
+                ),
+                403,
+            )
+        return context
+
+    def _typed_service(self, kind: str):
+        if kind not in TYPED_HOLD_KINDS:
+            return None
+        if self._typed_services is not None:
+            source = self._typed_services.get(kind)
+            return source() if source is not None else None
+        if kind == "fan":
+            from .fan.service import FAN_OPERATIONS
+            return FAN_OPERATIONS.service
+        from .power.service import POWER_OPERATIONS
+        return POWER_OPERATIONS.service
+
+    async def typed_inbox(self, request: Request) -> Response:
+        context = self._require_admin(request)
+        if isinstance(context, Response):
+            return context
+        prefix, _principal = context
+        rows = []
+        for kind in TYPED_HOLD_KINDS:
+            service = self._typed_service(kind)
+            if service is None:
+                continue
+            for item in service.hold_release_items():
+                task_id = _text(item["task_id"], 32)
+                rows.append(
+                    '<li><a href="{}">{}</a> — {} — {} — {}</li>'.format(
+                        escape(f"{prefix}/typed/{kind}/{task_id}", quote=True),
+                        escape(task_id),
+                        escape(kind),
+                        escape(_text(item["entity_id"], 255)),
+                        escape(_text(item["manual_review_reason"], 96)),
+                    )
+                )
+        content = (
+            "<p>No typed fan or power manual-review holds.</p>"
+            if not rows else "<ul>" + "".join(rows) + "</ul>"
+        )
+        return self._response(_page("Typed hold release", content, prefix=prefix))
+
+    async def typed_review(self, request: Request) -> Response:
+        context = self._require_admin(request)
+        if isinstance(context, Response):
+            return context
+        prefix, principal = context
+        kind = request.path_params["kind"]
+        task_id = request.path_params["task_id"]
+        service = self._typed_service(kind)
+        item = None
+        if service is not None and _TYPED_TASK_ID.fullmatch(task_id):
+            try:
+                item = service.hold_release_item(task_id)
+            except Exception:
+                item = None
+        if item is None:
+            return self._response(
+                _page(
+                    "Typed hold unavailable",
+                    "<p>No releasable manual-review hold exists.</p>",
+                    prefix=prefix,
+                ),
+                404,
+            )
+        token = secrets.token_urlsafe(32)
+        if len(self._typed_csrf) >= 128:
+            self._typed_csrf.pop(next(iter(self._typed_csrf)))
+        self._typed_csrf[(kind, task_id)] = (
+            hashlib.sha256(token.encode()).hexdigest(),
+            principal,
+            item["record_generation"],
+            item["prepared_hash"],
+            item["hold_binding"],
+        )
+        rows = "".join(
+            f"<tr><th>{escape(label)}</th><td><code>{escape(_text(value, 1000))}</code></td></tr>"
+            for label, value in (
+                ("Kind", kind),
+                ("Task", item["task_id"]),
+                ("Operation", item["operation_id"]),
+                ("Entity", item["entity_id"]),
+                ("Action", item["action"]),
+                ("Prepared hash", item["prepared_hash"]),
+                ("Hold", item["hold_binding"]),
+                ("Evidence deadline", item["evidence_deadline"]),
+                ("Manual review reason", item["manual_review_reason"]),
+                ("Observation attempts", item["observation_attempts"]),
+                ("Last observed", item["last_observed_at"]),
+                ("Updated", item["updated_at"]),
+            )
+        )
+        hidden = "".join(
+            f'<input type="hidden" name="{name}" value="{escape(str(value), quote=True)}">'
+            for name, value in (
+                ("csrf", token),
+                ("record_generation", item["record_generation"]),
+                ("prepared_hash", item["prepared_hash"]),
+                ("hold_binding", item["hold_binding"]),
+            )
+        )
+        action_url = escape(f"{prefix}/typed/{kind}/{task_id}/release", quote=True)
+        notice = (
+            "<p>Releasing reads the device once and records that readback. It sends no "
+            "command and does not change the manual-review outcome.</p>"
+        )
+        form = (
+            f'<form method="post" action="{action_url}">{hidden}'
+            '<button type="submit">release hold after fresh readback</button></form>'
+        )
+        return self._response(
+            _page("Typed manual-review hold", f"<table>{rows}</table>{notice}{form}", prefix=prefix)
+        )
+
+    async def typed_release(self, request: Request) -> Response:
+        context = self._require_admin(request)
+        if isinstance(context, Response):
+            return context
+        prefix, principal = context
+        content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        if content_type != "application/x-www-form-urlencoded":
+            return self._response(
+                _page("Invalid request", "<p>Unsupported content type.</p>", prefix=prefix),
+                415,
+            )
+        kind = request.path_params["kind"]
+        task_id = request.path_params["task_id"]
+        try:
+            content_length = int(request.headers.get("content-length", "0"))
+            if not 1 <= content_length <= MAX_BODY_BYTES:
+                raise ValueError
+            raw = await asyncio.wait_for(request.body(), timeout=MAX_REQUEST_SECONDS)
+            if len(raw) > MAX_BODY_BYTES:
+                raise ValueError
+            parsed = parse_qs(raw.decode("utf-8", "strict"), keep_blank_values=True, max_num_fields=8)
+            one = lambda name: parsed.get(name, [""])[0]
+            binding = self._typed_csrf.pop((kind, task_id), None)
+            supplied = hashlib.sha256(one("csrf")[:256].encode()).hexdigest()
+            if binding is None or binding[1] != principal or not hmac.compare_digest(binding[0], supplied):
+                raise ValueError
+            generation = int(one("record_generation"))
+            hold_binding = one("hold_binding")[:512]
+            if (generation, one("prepared_hash"), hold_binding) != binding[2:]:
+                raise ValueError
+            service = self._typed_service(kind)
+            if service is None:
+                raise ValueError
+            result = await service.release_hold(
+                task_id,
+                record_generation=generation,
+                prepared_hash=one("prepared_hash")[:64],
+                hold_binding=hold_binding,
+                authorized_principal=principal,
+            )
+        except TimeoutError:
+            return self._response(
+                _page("Request timeout", "<p>The bounded release request timed out.</p>", prefix=prefix),
+                408,
+            )
+        except EngineeringServerError as exc:
+            return self._response(
+                _page("Hold release refused", f"<p>{escape(_text(exc.safe_message, 96))}</p>", prefix=prefix),
+                409,
+            )
+        except (UnicodeDecodeError, ValueError):
+            return self._response(
+                _page("Invalid request", "<p>The bounded action is invalid or stale.</p>", prefix=prefix),
+                400,
+            )
+        except Exception:
+            return self._response(
+                _page("Hold release refused", "<p>The hold was not released.</p>", prefix=prefix),
+                409,
+            )
+        return self._response(
+            _page(
+                "Hold release recorded",
+                f"<p>{escape(_text(result.get('status'), 96))}</p>"
+                "<p>Dispatch: none. Outcome remains "
+                f"{escape(_text(result.get('terminal_outcome'), 96))}.</p>"
+                f'<p><a href="{escape(f"{prefix}/typed", quote=True)}">'
+                "Return to typed hold release</a></p>",
+                prefix=prefix,
+            )
+        )
+
     async def _decide(self, request: Request, decision: str) -> Response:
         context = self._deny_unless_ingress(request)
         if isinstance(context, Response):
@@ -812,11 +1021,13 @@ def create_approval_application(
     *,
     allowed_peers: tuple[str, ...] = (SUPERVISOR_INGRESS_PEER,),
     require_ingress_header: bool = True,
+    typed_services=None,
 ) -> Starlette:
     return IngressApprovalApplication(
         governance,
         allowed_peers=allowed_peers,
         require_ingress_header=require_ingress_header,
+        typed_services=typed_services,
     ).create()
 
 
