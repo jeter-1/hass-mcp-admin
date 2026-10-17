@@ -11,7 +11,7 @@ from ha_mcp_engineering.clients.rest import HomeAssistantRestClient
 from ha_mcp_engineering.clients.websocket import HomeAssistantWebSocketClient
 from ha_mcp_engineering.clients.single_read import SINGLE_READ, MAX_READ_BYTES, session_options
 from ha_mcp_engineering.configuration import Settings
-from ha_mcp_engineering.errors import HomeAssistantUnavailableError
+from ha_mcp_engineering.errors import HomeAssistantApiError, HomeAssistantUnavailableError
 
 
 class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
@@ -109,9 +109,14 @@ class ReverificationTransportTests(unittest.IsolatedAsyncioTestCase):
         token = SINGLE_READ.set(False)
         try:
             self.assertEqual(session_options(), {})
+            # HAMCP-200: redirects are never followed outside the scope either;
+            # the 3xx is the authoritative failure and the target is not read.
             self.mode = "redirect"
-            self.assertEqual(await self.rest.request("GET", "/config/automation/config/example"), {"observed": True})
-            self.assertEqual(self.calls[-1], "/redirected")
+            with self.assertRaises(HomeAssistantApiError) as caught:
+                await self.rest.request("GET", "/config/automation/config/example")
+            self.assertEqual(caught.exception.details["status"], 302)
+            self.assertEqual(self.calls[-1], "/api/config/automation/config/example")
+            self.assertNotIn("/redirected", self.calls)
         finally:
             SINGLE_READ.reset(token)
 

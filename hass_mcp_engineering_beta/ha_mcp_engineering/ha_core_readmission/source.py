@@ -10,6 +10,7 @@ from typing import Any
 
 import aiohttp
 
+from ..clients.paths import request_url
 from ..configuration import Settings
 from .device_registry import DeviceRegistrySchema, assess_device_registry
 from .models import CORE_IDENTITY
@@ -397,7 +398,9 @@ class AiohttpCoreSnapshotSource:
             "Content-Type": "application/json",
         }
         async with session.get(
-            f"{self._settings.api_url}{path}", headers=headers
+            request_url(self._settings.api_url, path),
+            headers=headers,
+            allow_redirects=False,
         ) as response:
             value = await self._bounded_response_json(response)
             if not isinstance(value, (Mapping, Sequence)) or isinstance(
@@ -422,8 +425,9 @@ class AiohttpCoreSnapshotSource:
         # {result, errors, warnings} taxonomy; it performs no configuration
         # mutation.
         async with session.post(
-            f"{self._settings.api_url}/config/core/check_config",
+            request_url(self._settings.api_url, "/config/core/check_config"),
             headers=headers,
+            allow_redirects=False,
         ) as response:
             value = await self._bounded_response_json(response)
             if not _configuration_validation_response(value):

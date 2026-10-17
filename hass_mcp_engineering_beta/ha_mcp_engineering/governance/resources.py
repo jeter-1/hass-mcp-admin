@@ -12,6 +12,7 @@ import math
 import re
 from typing import Any
 
+from ..clients.paths import UnsafeRequestPathError, rest_path
 from ..clients.rest import ExpectedHttpStatus, HomeAssistantRestClient
 from ..clients.websocket import HomeAssistantWebSocketClient
 from ..errors import AuthorizationError, HomeAssistantApiError
@@ -92,9 +93,10 @@ _LOG_LEVELS = frozenset(
     {"debug", "info", "warning", "error", "critical", "silent"}
 )
 _INPUT_NUMBER_MODES = frozenset({"box", "slider"})
+# Fixed route templates; the resource ID is the one guarded segment.
 _CONFIG_ENDPOINTS = {
-    "automation": "/config/automation/config",
-    "script": "/config/script/config",
+    "automation": "/config/automation/config/{}",
+    "script": "/config/script/config/{}",
 }
 _HELPER_ID_FIELDS = {
     "input_boolean": "input_boolean_id",
@@ -565,7 +567,7 @@ class ConfigurationResourceGateway:
         if resource_type in _CONFIG_ENDPOINTS:
             value = await self.rest_client.request(
                 "GET",
-                f"{_CONFIG_ENDPOINTS[resource_type]}/{resource_id}",
+                rest_path(_CONFIG_ENDPOINTS[resource_type], resource_id),
                 expected_statuses=frozenset({404}),
             )
             if isinstance(value, ExpectedHttpStatus) and value.status == 404:
@@ -674,7 +676,7 @@ class ConfigurationResourceGateway:
         try:
             entity_state = await self.rest_client.request(
                 "GET",
-                f"/states/{resource_id}",
+                rest_path("/states/{}", resource_id, kinds=("entity_id",)),
                 expected_statuses=frozenset({404}),
             )
         except Exception as exc:
@@ -876,9 +878,19 @@ class ConfigurationResourceGateway:
         approved_config: dict[str, Any],
     ) -> Any:
         try:
+            path = rest_path(_CONFIG_ENDPOINTS[resource_type], resource_id)
+        except UnsafeRequestPathError as exc:
+            raise ConfigurationMutationNotDispatchedError(
+                details={
+                    "operation": f"{resource_type}_configuration_write",
+                    "reason": "invalid_identifier",
+                    "provider_response_received": False,
+                }
+            ) from exc
+        try:
             return await self.rest_client.request(
                 "POST",
-                f"{_CONFIG_ENDPOINTS[resource_type]}/{resource_id}",
+                path,
                 body=configuration_write_config(
                     resource_type, approved_config
                 ),

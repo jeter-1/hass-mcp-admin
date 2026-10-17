@@ -3,13 +3,13 @@
 import asyncio
 from contextlib import asynccontextmanager
 import time
-from urllib.parse import quote
 
 import aiohttp
 
 from ..audit_baseline import capture_contracts as c
 from ..observability import METRICS
 from ..request_context import current_telemetry
+from .paths import UnsafeRequestPathError, request_url, rest_path
 
 
 async def no_retry(request, handler):
@@ -146,17 +146,22 @@ class BaselinePeer:
         if (type(configuration_id) is not str or not c.ID.fullmatch(configuration_id)
                 or configuration_id in {".", ".."}):
             raise c.CaptureError("invalid_arguments")
-        # IDs containing ':' remain data in one path segment; no traversal or query.
-        path = "/config/automation/config/" + quote(configuration_id, safe="")
+        # IDs containing ':' remain data in one path segment; a dot, separator
+        # or encoded form is refused before any request (HAMCP-200).
+        try:
+            path = rest_path("/config/automation/config/{}", configuration_id)
+        except UnsafeRequestPathError:
+            raise c.CaptureError("invalid_arguments") from None
         result = await self._rest(path, c.CONFIG_BYTES, "configuration")
         if type(result) is not dict:
             raise c.CaptureError("malformed_response")
         return result
 
     async def _rest(self, path, maximum, category):
+        url = request_url(self.client._api_url, path)
         async with self.attempt(category):
             async with self.session.get(
-                self.client._api_url + path, allow_redirects=False,
+                url, allow_redirects=False,
                 headers={"Authorization": "Bearer " + self.client._token}) as response:
                 if response.status in (401, 403):
                     raise c.CaptureError("access_denied")

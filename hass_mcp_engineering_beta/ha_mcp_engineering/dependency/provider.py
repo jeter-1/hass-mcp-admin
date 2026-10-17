@@ -15,6 +15,7 @@ import re
 import time
 from typing import Any
 
+from ..clients.paths import rest_path
 from ..facilitation import EvidenceReference
 from ..observability import METRICS
 from ..logging_config import redact_data
@@ -400,7 +401,9 @@ class DirectHaDependencyProvider(DependencySourceProvider):
             try:
                 config = await request(
                     "automation_config",
-                    lambda: self.rest_client.request("GET", f"/config/automation/config/{internal_id}"),
+                    lambda: self.rest_client.request(
+                        "GET", rest_path("/config/automation/config/{}", internal_id)
+                    ),
                     queued=True,
                 )
                 if not isinstance(config, dict):

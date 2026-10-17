@@ -1,7 +1,16 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.15** closes the remaining HAMCP-189 residuals:
-fresh rollback planning acquires its own Core lease before any planning read,
+Engineering **2.4.1-beta.16** makes every Home Assistant REST path safe by
+construction (HAMCP-200). Every request is built from a fixed template plus
+values bound through one guard. The guard refuses dot segments, separators,
+control characters and their encoded forms. The transport sends a request
+only when the normalized URL equals the template, and it never follows
+redirects. `get_automation_config`, `get_entity`, `get_history` and
+`automation_reliability_analysis` refuse an invalid identifier as
+`invalid_request` without contacting Home Assistant. Automation
+configuration IDs no longer accept dots. The compatibility module's
+standalone entry point is removed. It builds on beta.15, which closes the
+remaining HAMCP-189 residuals: fresh rollback planning acquires its own Core lease before any planning read,
 so under degraded Core it is refused before any Home Assistant read; an
 observed read counts an upstream attempt only after the Core authorizer
 passes; a contract-v3 task whose approval expired before its dispatch intent
@@ -38,8 +47,8 @@ beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA15_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA15_ACCEPTANCE.md).
+See the [release notes](docs/V2_4_1_BETA16_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA16_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -123,14 +132,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.15 release notes](docs/V2_4_1_BETA15_RELEASE_NOTES.md) and
-[2.4.1-beta.15 acceptance contract](docs/V2_4_1_BETA15_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.16 release notes](docs/V2_4_1_BETA16_RELEASE_NOTES.md) and
+[2.4.1-beta.16 acceptance contract](docs/V2_4_1_BETA16_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.15 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.16 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

@@ -40,6 +40,12 @@ LABEL = "io.hass-mcp.assessment"
 PHASE = "preparation"
 
 
+def state_path(entity_id):
+    """Bind an entity ID through the HAMCP-200 path guard (lazy: relay mode lacks it)."""
+    from ha_mcp_engineering.clients.paths import rest_path
+    return rest_path("/states/{}", entity_id, kinds=("entity_id",))
+
+
 def phase(value):
     global PHASE
     PHASE = value
@@ -542,7 +548,7 @@ async def assess(architecture, output, private, identity, pins):
             await websocket.command({"type": "lovelace/config/save", "url_path": DASHBOARD, "config": original})
             for _ in range(30):
                 try:
-                    state = await rest.request("GET", "/states/" + FAN)
+                    state = await rest.request("GET", state_path(FAN))
                     if state["state"] == "off":
                         break
                 except Exception:
@@ -740,7 +746,7 @@ async def candidate_contract(kind, configured, core, rest, websocket, original, 
             require((receipt.get("core_binding") or {}).get("version") ==
                     (core_version if typed_core(core_version) else None), "fan_core_binding_mismatch")
             require(await fan_service.control(request) == receipt, "candidate_duplicate_fan_changed")
-            independent = await rest.request("GET", "/states/" + FAN)
+            independent = await rest.request("GET", state_path(FAN))
             require(independent["state"] == ("off" if action == "turn_off" else "on")
                     and (percentage is None or independent["attributes"]["percentage"] == percentage),
                     "candidate_fan_independent_readback")
@@ -907,8 +913,8 @@ async def search_checks(kind,configured,core,rest,websocket,output):
     phase(kind+'_component_search')
     hidden='light.hamcp_contract_light'
     group='sensor.synthetic_search_group'
-    await rest.request('POST','/states/'+group,body={'state':'on','attributes':{'friendly_name':'Synthetic Search Group','entity_id':[hidden,'switch.hamcp_contract_switch']}})
-    await rest.request('POST','/states/light.synthetic_search_fixture',body={'state':'on','attributes':{'friendly_name':'Synthetic Search Fixture Light'}})
+    await rest.request('POST',state_path(group),body={'state':'on','attributes':{'friendly_name':'Synthetic Search Group','entity_id':[hidden,'switch.hamcp_contract_switch']}})
+    await rest.request('POST',state_path('light.synthetic_search_fixture'),body={'state':'on','attributes':{'friendly_name':'Synthetic Search Fixture Light'}})
     baseline=await websocket.command({'type':'config/entity_registry/get','entity_id':hidden})
     require(baseline.get('hidden_by') is None,'synthetic_hidden_baseline')
     await websocket.command({'type':'config/entity_registry/update','entity_id':hidden,'hidden_by':'user'})
@@ -975,8 +981,8 @@ async def search_checks(kind,configured,core,rest,websocket,output):
     finally:
         if g._transport:await g._transport.aclose()
         await websocket.command({'type':'config/entity_registry/update','entity_id':hidden,'hidden_by':None})
-        await rest.request('DELETE','/states/'+group)
-        await rest.request('DELETE','/states/light.synthetic_search_fixture')
+        await rest.request('DELETE',state_path(group))
+        await rest.request('DELETE',state_path('light.synthetic_search_fixture'))
 
 
 async def power_only_candidate_contract(kind, configured, core, rest, output, private, version):
@@ -1034,7 +1040,7 @@ async def power_contract(service, rest, telemetry, kind, output, version="8.5.0"
     from ha_mcp_engineering.power.contracts import PowerRequest, POWER_RELEASES, POWER_SEMANTIC_CONTRACTS, digest
     receipts = []
     for entity in POWER_TARGETS:
-        initial = await rest.request("GET", "/states/" + entity)
+        initial = await rest.request("GET", state_path(entity))
         require(initial["state"] == "off", "power_fixture_not_off")
         calls = initial["attributes"]["synthetic_service_calls"]
         for action in ("turn_on", "turn_off"):
@@ -1058,7 +1064,7 @@ async def power_contract(service, rest, telemetry, kind, output, version="8.5.0"
             require((receipt.get("core_binding") or {}).get("version") ==
                     (core_version if typed_core(core_version) else None), "power_core_binding_mismatch")
             require(await service.control(request) == receipt, "candidate_duplicate_power_changed")
-            readback = await rest.request("GET", "/states/" + entity)
+            readback = await rest.request("GET", state_path(entity))
             calls += 1
             require(readback["state"] == ("on" if action == "turn_on" else "off")
                     and readback["attributes"]["synthetic_service_calls"] == calls,

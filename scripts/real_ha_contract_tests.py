@@ -31,6 +31,7 @@ from ha_mcp_engineering.clients import (  # noqa: E402
     HomeAssistantRestClient,
     HomeAssistantWebSocketClient,
 )
+from ha_mcp_engineering.clients.paths import rest_path  # noqa: E402
 from ha_mcp_engineering.dependency.index import DependencyIndex  # noqa: E402
 from ha_mcp_engineering.dependency.runtime import DependencyAnalysisRuntime  # noqa: E402
 from ha_mcp_engineering.dependency.provider import (  # noqa: E402
@@ -948,7 +949,7 @@ async def prepare_migration_fixture() -> None:
     }
     await rest.request(
         "POST",
-        f"/config/automation/config/{MIGRATION_AUTOMATION_ID}",
+        rest_path("/config/automation/config/{}", MIGRATION_AUTOMATION_ID),
         automation,
     )
     await rest.request("POST", "/services/automation/reload", {})
@@ -2894,7 +2895,7 @@ async def _run_device_migration_contract(
     )
 
     automation = await rest.request(
-        "GET", f"/config/automation/config/{MIGRATION_AUTOMATION_ID}"
+        "GET", rest_path("/config/automation/config/{}", MIGRATION_AUTOMATION_ID)
     )
     _assert_device_contract(
         _contains_exact_value(automation, "device_id", old_device_id),
@@ -2914,7 +2915,7 @@ async def _run_device_migration_contract(
         }
     )
     for entity_id in entity_ids:
-        state = await rest.request("GET", f"/states/{entity_id}")
+        state = await rest.request("GET", rest_path("/states/{}", entity_id, kinds=("entity_id",)))
         _assert_device_contract(
             state.get("state") == "on", "direct_device_target"
         )
@@ -2928,7 +2929,7 @@ async def _run_device_migration_contract(
         }
     )
     for entity_id in entity_ids:
-        state = await rest.request("GET", f"/states/{entity_id}")
+        state = await rest.request("GET", rest_path("/states/{}", entity_id, kinds=("entity_id",)))
         _assert_device_contract(
             state.get("state") == "off", "direct_device_target"
         )
@@ -3263,7 +3264,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
         for key in keys:
             # Track attempted creation, including an uncertain response, for cleanup.
             created.append(key)
-            await rest.request("POST", f"/config/script/config/{key}", bodies[key])
+            await rest.request("POST", rest_path("/config/script/config/{}", key), bodies[key])
         stage = "fixture_reload"
         # Reload and registry changes are disposable setup, outside feature capture.
         await rest.request("POST", "/services/script/reload", {})
@@ -3292,7 +3293,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
         assert identities[package_key] in {row.get("entity_id") for row in states}
         stage = "stored_configuration_readback"
         for key in keys:
-            readback = await rest.request("GET", f"/config/script/config/{key}")
+            readback = await rest.request("GET", rest_path("/config/script/config/{}", key))
             for field in ("sequence", "use_blueprint"):
                 if field in bodies[key]:
                     assert readback[field] == bodies[key][field]
@@ -3382,7 +3383,7 @@ async def _run_script_dependency_contract(configured, core_runtime, read_gateway
         cleanup_errors = []
         for key in reversed(created):
             try:
-                await rest.request("DELETE", f"/config/script/config/{key}")
+                await rest.request("DELETE", rest_path("/config/script/config/{}", key))
             except Exception:
                 cleanup_errors.append("stored_script_cleanup_failed")
         if files_prepared:
@@ -3864,7 +3865,7 @@ async def _cleanup_configuration_resources(
         else:
             await gateway.rest_client.request(
                 "DELETE",
-                f"/config/{resource_type}/config/{resource_id}",
+                rest_path("/config/{}/config/{}", resource_type, resource_id),
             )
         assert await gateway.read(resource_type, resource_id) is None
 
