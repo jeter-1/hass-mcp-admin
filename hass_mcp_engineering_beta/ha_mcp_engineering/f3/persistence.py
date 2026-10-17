@@ -841,6 +841,133 @@ class DurableExecutionRepository:
             mutator=update,
         )
 
+    def terminalize_expired_claim_pre_dispatch(
+        self,
+        task_id: str,
+        *,
+        expected_claim_generation: int,
+        diagnostic_codes: tuple[str, ...],
+        now: datetime | None = None,
+    ) -> ExecutionRecord:
+        """Reject abandoned pre-intent work whose dispatch authority expired.
+
+        There is no owner to claim through: only an expired claim of the
+        expected generation qualifies, so a live owner is never overtaken.
+        """
+
+        instant = now or utc_now()
+        now_text = timestamp(instant)
+        codes = bounded_diagnostics(diagnostic_codes)
+        with self._exclusive_transaction():
+            record = self._read_unlocked(task_id)
+            if record is None:
+                raise ExecutionRecordCorrupt("execution record is missing")
+            if record.dispatch_intent is not None or record.dispatch_count:
+                raise BlindRedispatchProhibited(
+                    "post-intent work cannot become pre-dispatch"
+                )
+            if record.terminal:
+                raise ExecutionStorageError(
+                    "terminal execution cannot be rejected again"
+                )
+            if (
+                record.claim_generation != expected_claim_generation
+                or parse_timestamp(
+                    record.claim_expires_at, field_name="claim_expires_at"
+                )
+                > instant
+            ):
+                raise ExecutionClaimLost(
+                    "execution claim is live or has changed"
+                )
+            record.normalized_outcome = "preflight_rejected"
+            record.task_state = NORMALIZED_OUTCOME_TO_TASK_STATE[
+                "preflight_rejected"
+            ]
+            record.state = "terminal"
+            record.terminal = True
+            append_execution_event(
+                record,
+                event_type="pre_dispatch_terminal",
+                occurred_at=now_text,
+                diagnostic_codes=codes,
+            )
+            record.validate()
+            self._write_unlocked(record)
+            return record
+
+    def materialize_expired_pre_dispatch(
+        self,
+        *,
+        identity: ExecutionIdentity,
+        adapter_id: str,
+        operation: str,
+        target_type: str,
+        target_id: str,
+        prepared_operation_hash: str,
+        diagnostic_codes: tuple[str, ...],
+        now: datetime | None = None,
+    ) -> ExecutionRecord | None:
+        """Reject expired declared work that was never claimed.
+
+        The record is created already terminal in the same exclusive
+        transaction a first claim uses, so either that claim wins and nothing
+        is written here, or the claim finds this terminal record and stops.
+        Any existing record is left unchanged and ``None`` is returned.
+        """
+
+        identity.validate()
+        validate_identifier(adapter_id, field_name="adapter_id")
+        validate_identifier(operation, field_name="operation")
+        validate_identifier(target_type, field_name="target_type")
+        validate_identifier(target_id, field_name="target_id")
+        validate_sha256(
+            prepared_operation_hash, field_name="prepared_operation_hash"
+        )
+        now_text = timestamp(now or utc_now())
+        codes = bounded_diagnostics(diagnostic_codes)
+        with self._exclusive_transaction():
+            if self._read_unlocked(identity.task_id) is not None:
+                return None
+            record = ExecutionRecord(
+                schema_version=EXECUTION_RECORD_SCHEMA_VERSION,
+                identity={
+                    "task_id": identity.task_id,
+                    "plan_id": identity.plan_id,
+                    "attempt_id": identity.attempt_id,
+                    "request_id": identity.request_id,
+                    "owner_id": identity.owner_id,
+                },
+                adapter_model=F3_ADAPTER_CONTRACT_MODEL,
+                adapter_id=adapter_id,
+                operation=operation,
+                target={"target_type": target_type, "target_id": target_id},
+                prepared_operation_hash=prepared_operation_hash,
+                state="terminal",
+                normalized_outcome="preflight_rejected",
+                task_state=NORMALIZED_OUTCOME_TO_TASK_STATE[
+                    "preflight_rejected"
+                ],
+                terminal=True,
+                created_at=now_text,
+                updated_at=now_text,
+                claim_generation=1,
+                # No owner ever held this claim; it is born expired.
+                claim_expires_at=now_text,
+            )
+            append_execution_event(
+                record, event_type="execution_started", occurred_at=now_text
+            )
+            append_execution_event(
+                record,
+                event_type="pre_dispatch_terminal",
+                occurred_at=now_text,
+                diagnostic_codes=codes,
+            )
+            record.validate()
+            self._write_unlocked(record)
+            return record
+
     def terminalize_verified_no_dispatch(
         self,
         task_id: str,

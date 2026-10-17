@@ -1,57 +1,44 @@
 # Changelog
 
-## 2.4.1-beta.15 - Optional reviewed YAML configuration reader (HAMCP-162)
+## 2.4.1-beta.15 - Rollback Core lease, cancel telemetry, expired pre-intent deadline, gateway audit reason (HAMCP-189)
 
-Builds on 2.4.1-beta.14's Core-authority, unmapped-refusal and durable-cancel
-corrections (HAMCP-189).
+Builds on 2.4.1-beta.14.
 
-- Add the delegated read-only tool `ha_config_get_yaml` for one mapping-key
-  path of `configuration.yaml`. Engineering sends a fixed upstream shape
-  (`include_content: false`, `include_parsed: true`).
-- Refuse every other file (including `secrets.yaml`, `packages/`,
-  `configuration.yml` and case variants) and every credential-shaped path
-  before route acquisition, Core acquisition and any upstream call.
-- Redact on absolute canonical key paths:
-  - credential-shaped keys and containers;
-  - connection-shaped values, except one strict safe SQLite shape;
-  - credential text: userinfo, 13 words and the `pass`/`key` token rule;
-  - percent-encoding up to four rounds, NFKC and casefold;
-  - PEM, opaque blobs and the existing sanitizer patterns.
-
-  `!secret`/`!env_var` become typed reference-name markers, trusted only by
-  the identity of a marker the same read minted. Values and `!env_var`
-  defaults are never returned, and `!include` is never followed.
-- Apply the 4,000-node cap to the upstream tree before redaction, so a
-  truncated mapping is judged in its returned shape; marker-shaped mappings
-  are withheld. Pass every other client-visible field (limitations, include
-  and path descriptions, warnings, metadata, error details) through a final
-  shared-sanitizer pass with the configured known secrets.
-- Trust redaction markers by registry identity only (H3). Upstream text
-  that could read as a marker, including encoded, look-alike and
-  byte-identical forms, is replaced whole as `redaction_marker_collision`,
-  and a mapping with such a key is withheld. Every upstream string runs
-  through every rule; keys also get the scanners on their decoded forms.
-  The shared sanitizer's default mode for other tools is unchanged.
-- Disclose on every success the YAML 1.2 parse (K7), key conversion and
-  collapse (K5) and best-effort redaction (D12). Disclose the first-call
-  admin caller-token dependency (K1: the component's
-  `POST ha_mcp_tools/get_caller_token`) in the description; Engineering makes
-  no write or service call.
-- Map upstream errors to fixed codes, with no upstream text. HTTP 400 is
-  reported as "upstream validation failed or component unavailable" (K2);
-  non-UTF-8 and other 500 errors as "upstream read failed" (K4).
-- Admit the tool as optional only on the exact complete-descriptor binding
-  for ha-mcp 8.4.3 (78 -> 81 upstream tools) and 8.5.0 (77 -> 80):
-  - explicit dispositions for every registry version, with no default;
-  - excluded from the stock order fingerprint, aggregate admission and signed
-    selections;
-  - a drift, removal or disposition change between admission and dispatch
-    gives zero dispatch;
-  - Core mapping: basic REST and WebSocket reads.
-- `ha_list_files` and `ha_read_file` stay reviewed and never exposed. The
-  catalog grows from 87 to 88 tools (29 delegated).
-- Preserve signed registries, HOLD, support window, policy JSON, persisted
-  formats, workflows and stable v1.
+- Acquire and consume a Core lease inside `rollback_change` before any fresh
+  rollback planning read (configuration, garage inverse and entity metadata),
+  run every planning read under an authorizer that revalidates it, and require
+  a current lease where a configuration or garage-inverse rollback plan is
+  saved, after its last planning read (the configuration builder gains a
+  private, default-off save hook for this). Under degraded Core,
+  fresh planning is refused before any Home Assistant read as
+  `provider_unavailable` / `core_capability_unavailable` and no plan is
+  created. Existing and cached rollback plans are still returned locally.
+- Begin an observed operational read's upstream attempt only after the Core
+  dispatch authorizer passes, so a refused read reports zero upstream
+  requests, and refuse a retained-session dispatch whose caller stopped
+  waiting.
+- Terminate a contract-v3 task whose dispatch authority expired before its
+  dispatch intent: bounded retries continue for 600 s after expiry, then the
+  F3 runtime ends the child `preflight_rejected` / `plan_expired`, the task
+  `failed_pre_dispatch` and the plan `FAILED`, releases its exact locks and
+  restores readiness. Only children with no intent, no dispatch count, no live
+  claim, no recorded cancel and only their own recorded locks qualify. A task
+  saved before its first child record gets the same terminal outcome after the
+  same deadline, written locally with no provider contact; cancel and a
+  competing first claim keep precedence. Past the deadline the terminal
+  write happens locally before any provider or provider-identity contact.
+  No new stored string; nothing is dispatched.
+- Audit an empty tool name refused as `core_requirement_unmapped` with the
+  full unmapped-refusal record and metric, counted once, and audit every
+  non-string tool name (including `null`, `false`, `0`, `[]` and `{}`) as
+  one generic request with one error count instead of failing the audit.
+  Diagnostic logs record only `non_string_tool_name:<type>` for such a name,
+  and the MCP SDK's validation warnings keep only a bounded summary.
+- Correct the repository's beta.13 release notes: three allowlisted tools are
+  not "local state only", and rollback planning read without Core authority.
+  The published beta.13 GitHub Release is unchanged.
+- Preserve the 87-tool catalog, input schemas, signed registries, HOLD,
+  support window, persisted formats, workflows and stable v1.
 
 ## 2.4.1-beta.14 - Core authority before "already satisfied", exact unmapped refusal, durable cancel (HAMCP-189)
 

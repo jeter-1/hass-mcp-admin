@@ -1,170 +1,113 @@
 # Engineering 2.4.1-beta.15 release notes
 
-Engineering 2.4.1-beta.15 adds one read-only delegated tool,
-**`ha_config_get_yaml`**, which reads one mapping-key path of
-`configuration.yaml` through ha-mcp (HAMCP-162). It builds on beta.14
-(HAMCP-189) and beta.13 (HAMCP-164).
+Engineering 2.4.1-beta.15 closes the remaining HAMCP-189 residuals from the
+HAMCP-164 triage (PR B and PR C, delivered together). It builds on beta.14
+(HAMCP-189 PR A).
 
-The approved design is
-[`HAMCP_162_YAML_READER_DESIGN.md`](HAMCP_162_YAML_READER_DESIGN.md). The
-D1 capture evidence is in [`evidence/hamcp162/`](evidence/hamcp162/README.md).
-Josh's 2026-10-16 decisions K1–K11 apply.
+No tool, input schema, description, provider route, signed registry, HOLD,
+support window, persisted format, workflow or stable-v1 change is included. No
+new write, dispatch, service-call or fallback path is reachable. The design
+note is [`HAMCP_189_PR_B_DESIGN.md`](HAMCP_189_PR_B_DESIGN.md), and the
+triage is [`HAMCP_189_TRIAGE.md`](HAMCP_189_TRIAGE.md).
 
-No signed registry, HOLD, support window, Core profile, probe fingerprint,
-persisted format, workflow or stable-v1 change is included. No write,
-reload, restart, deletion or fallback path is reachable, and Engineering
-makes no service call. The one accepted exception is the K1 caller-token
-bootstrap: the first call may make the ha-mcp component call
-`POST ha_mcp_tools/get_caller_token` and persist the admin caller token (see
-**K1 dependency** below). Only `ha_config_get_yaml` is exposed.
-`ha_list_files` and `ha_read_file` stay reviewed and never exposed.
+**Rollback planning holds its own Core lease (R1).** `rollback_change` is
+Core-independent at the gateway because returning an existing rollback plan
+is local. Before beta.15, fresh rollback planning then read current
+configuration and registry state with no Core authority. Now the rollback
+tool acquires and consumes a Core lease before any rollback planning read:
+- every planning read runs under an authorizer that revalidates the lease;
+- for a configuration or garage-inverse rollback, the lease must still be
+  current where the rollback plan is saved, after every planning read;
+- entity-metadata rollback binds the exact registry target, as
+  `create_entity_metadata_plan` does.
 
-The healthy catalog grows from 87 to **88 tools: 59 native and 29 delegated
-reads**.
+Under degraded Core, fresh rollback planning is refused before any Home
+Assistant read as `provider_unavailable` with reason
+`core_capability_unavailable`, and no plan is created. Core retirement during
+planning also refuses: a read after retirement is refused before it is sent,
+and no rollback plan is saved if Core retired during the builder's last read.
+For an ordinary configuration rollback that check runs through a private,
+default-off save hook in `governance/service.py` (Josh's narrow O8
+amendment); no other plan creation changes. Returning an existing or cached rollback plan still
+works while Core is degraded. With Core degraded, a local planning refusal
+that comes after the lease point (for example an unsupported task state) now
+reports the Core refusal instead; with Core admitted it is unchanged.
 
-**What it reads.**
-- One dotted mapping-key path (at most eight segments) of
-  `configuration.yaml` only.
-- The `file` argument may be omitted or be exactly `configuration.yaml`.
-  Engineering always sends the fixed upstream shape
-  `{yaml_path, file: "configuration.yaml", include_content: false,
-  include_parsed: true}`. Caller keys are never forwarded.
-- Every other file, including `secrets.yaml`, `packages/`, `.storage/`,
-  case variants and `configuration.yml`, is refused before route
-  acquisition, Core acquisition and any upstream call (zero upstream calls).
-- A path naming a credential-shaped key is refused the same way. Read the
-  parent instead.
+**Cancel telemetry counts only admitted upstream attempts (R2-telemetry).** An
+observed operational read now begins its upstream attempt only after the Core
+dispatch authorizer passes. A refused read reports zero upstream requests, and
+a transport failure before dispatch is no longer counted as an attempt. A
+retained-session dispatch whose caller has stopped waiting is refused instead
+of starting an attempt that nothing would finish.
 
-**What it returns.** The result is a bounded envelope with the following
-fields:
-- `file`, `yaml_path`, `source: "disk"`, `found` and `value`;
-- `completeness`;
-- `limitations`;
-- `redaction` (count and categories).
+**Expired pre-intent tasks terminate truthfully (O9).** Before beta.15, a
+contract-v3 task (operational, exact helper state or dashboard) whose approval
+expired before its dispatch intent was recorded failed every F3 recovery
+sweep. Its child stayed in preflight with a bounded backoff, and the readiness
+fault kept new F3 applies blocked until the separate service reconciler ended
+the task (as a cancel nobody requested). Now the F3 runtime terminates such a
+task itself:
+- bounded retries continue for 600 seconds after the dispatch authority
+  expires (at most 7 retries with the existing backoff);
+- after that, the child ends `preflight_rejected` with diagnostic
+  `plan_expired`, the task ends `failed_pre_dispatch` and the plan `FAILED`.
+  These are the strings configuration plans already produce for the same
+  cause;
+- it applies only when the child has no dispatch intent, no dispatch count,
+  no live claim, no recorded cancel and only its own recorded locks;
+- its exact locks are released and readiness is restored. Nothing is
+  dispatched.
 
-Every one of these fields passes the redaction pipeline (H1): `value`
-through L4 and L5, and every other field, including include and path
-descriptions, limitations, warnings, metadata and error details, through a
-final shared-sanitizer pass with the configured known secrets. Key paths in
-`limitations` and the `yaml_path` echo use the key pipeline and end in `*` at
-the first segment the value tree would redact.
+The same applies to a task saved before its first child record exists (for
+example a restart between saving the task and creating its first child):
+after the same deadline, the runtime writes the child directly as
+`preflight_rejected` / `plan_expired`, without contacting any provider or
+renewing dispatch authority. A recorded cancel and a competing first claim
+keep precedence. Dashboard tasks were never stuck: the existing executor
+preflight already rejects the expired plan.
 
-**Truncation runs before redaction (H2, owner direction 2026-10-16).** The
-4,000-node cap applies to the decoded upstream tree first; redaction then
-judges exactly the kept shapes. This supersedes design sections 4 and 8.1
-("redaction runs before truncation"). Nodes beyond the cap are never
-returned, so they are neither examined nor counted. Reference markers are
-trusted only by the identity of a marker the same read minted. A mapping
-shaped like a rendered marker, from upstream data or from truncation, is
-withheld as `reference_marker_collision`.
+Past the deadline, the expiry decision and the terminal write happen locally
+before any provider or provider-identity contact, so a slow or failing
+provider cannot delay or block them. This holds for every plan family.
 
-**Redaction markers are trusted by identity, never by text (H3).** Every
-upstream string, key or value, runs through every rule (A, B, C′, R10, the
-credential-key context and the scanners). No input text counts as already
-redacted. A redaction marker survives only when this read's L4 produced it
-as a registered marker object. Upstream text that could read as a marker is
-replaced whole with `[REDACTED:redaction_marker_collision]`, and a mapping
-with such a key is withheld whole. "Could read as a marker" means a bracket
-(`[`, `(`, `<` or `{`, or a look-alike) followed by `redacted` or
-`truncated`. The check runs on the raw text and up to four percent-decoded
-forms, each after NFKC, NFD, removal of format and combining characters,
-casefold and a look-alike fold. Text still encoded after four rounds is
-treated as marker-like. This includes text byte-identical to an
-Engineering marker. Keys also get the value scanners on their decoded and
-canonical forms. The SQLite shape (R11) is exempt from rule B only, and a
-kept connection scheme must pass the scanners. The opt-in
-`identity_markers_only` sanitizer mode is used only by this reader; the
-shared default mode, used by every other tool, is unchanged (see Known
-limitations).
+A task whose approval is still valid keeps its unchanged bounded retry.
 
-**How values are protected.**
-- `!secret NAME` and `!env_var NAME` become typed reference-name markers,
-  `{"secret_ref": NAME}` and `{"env_var_ref": NAME}`. Secret values and
-  `!env_var` defaults are never returned; a default is recorded only as
-  `"default_redacted": true`.
-- Values are redacted whole under credential-shaped keys (absolute canonical
-  path, including the requested prefix). This covers containers, not only
-  leaves.
-- Values under connection-shaped keys are redacted whole, except one strict
-  safe SQLite shape (rules B and R11).
-- Credential text anywhere is redacted whole: userinfo URLs, the 13
-  credential words, and the `pass`/`key` delimited-token rule C′3.
-- Keys are canonicalized before they are judged: percent-decoding up to
-  four rounds, NFKC and casefold (rules A and R10). Values that cannot be
-  canonicalized are redacted as `encoding`.
-- PEM blocks, opaque blobs, JWTs and known secrets are redacted.
-- `!include` tags are reported as limitations and never followed.
-- Redaction is best effort and over-redacts. For example, most URLs, and any
-  text mentioning a token, auth or session, are redacted.
+**The gateway audit keeps the refusal reason (R8, L1).**
+- A tool name that is not a string (for example a list or object) no longer
+  breaks the gateway's audit step. Every non-string name, including falsey
+  ones (`null`, `false`, `0`, `[]`, `{}`), writes exactly one generic MCP
+  request record and one error count, without the raw value.
+- Diagnostic logs never record a malformed tool name's raw value: the
+  gateway's request logs record only `non_string_tool_name:<type>`, and the
+  MCP SDK's request and notification validation warnings keep only their
+  bounded error summary.
+- An empty tool name refused as `core_requirement_unmapped` now writes the
+  full unmapped-refusal audit record and its error metric, counted once.
 
-**Disclosures on every successful read.**
-- **K7:** the warning that values are ha-mcp's YAML 1.2 parse and may
-  differ from Home Assistant's YAML 1.1 interpretation (for example
-  `on`/`off`/`yes`/`no` and numbers with leading zeros).
-- **K5:** non-string keys are converted upstream, and keys with the same
-  text collapse to one.
-- **D12:** a credential under an innocent key, with no credential word in
-  its text, is not recognized.
+**Beta.13 release-notes correction (L2).** The repository's beta.13 release
+notes overstated the Core-independent allowlist as "local state only". They
+now carry a dated correction: `get_execution_task`, `cancel_execution_task`
+and `approve_change_plan` are not purely local, and `rollback_change`
+planning read without Core authority (fixed above). The published
+v2.4.1-beta.13 GitHub Release is unchanged.
 
-The quoted-reference residual is accepted and disclosed: a quoted string that
-looks exactly like `!secret name` is shown as a reference.
+**Disclosed residuals:**
+- A task that keeps failing recovery while its approval is still valid keeps
+  retrying, as before. That is outside O9.
+- Pre-existing and unchanged: re-applying an expired contract-v3 plan that is
+  already terminal returns the operational adapter's raw `plan_expired`
+  error instead of a governed refusal, and cancelling an expired task that
+  has no child record fails the same way. Neither dispatches.
+- `hass_mcp_engineering_beta/ha_mcp_engineering/ha_core_readmission/routes.py` still justifies `rollback_change` with
+  the pre-R1 wording; it is HAMCP-162 territory and is not edited here.
+- The configuration stale-state race (R3c) is inherent to the Home Assistant
+  configuration API.
 
-**K1 dependency.** The first call may make the ha-mcp component fetch an
-admin caller token (`POST ha_mcp_tools/get_caller_token`) and persist it.
-This is an accepted dependency, disclosed in the tool description.
-
-**Fixed failure codes.** Upstream text is never forwarded.
-
-| Code | Meaning |
-| --- | --- |
-| `yaml_read_arguments_invalid` | Pre-dispatch refusal: arguments |
-| `yaml_file_not_allowed` | Pre-dispatch refusal: file |
-| `yaml_path_invalid` | Pre-dispatch refusal: path syntax |
-| `yaml_path_sensitive` | Pre-dispatch refusal: credential-shaped path |
-| `yaml_file_not_allowed_upstream` | The component refused the path |
-| `yaml_file_not_found` | `configuration.yaml` was not found |
-| `yaml_parse_error` | Parse error, with integer line and column only |
-| `yaml_upstream_validation_or_component_unavailable` | K2: "upstream validation failed or component unavailable". It never claims the component is definitely unavailable. |
-| `yaml_read_failed` | "upstream read failed": non-UTF-8 files, oversized integers and other generic 500s (K4) |
-| `yaml_read_response_identity_invalid` | The response did not match the reviewed shape |
-
-**Admission.** The tool is optional and reviewed:
-- It is admitted only when its complete descriptor (top-level fields plus
-  the runtime-contract fingerprint) exactly matches the explicit binding for
-  ha-mcp **8.4.3** or **8.5.0**.
-- Every registry version has an explicit disposition. 8.6.0 and all older
-  versions are `held`, and nothing is admitted by default.
-- It is withheld under a signed-registry selection, under `read_gateway:
-  held`, and when its Core requirements are unavailable.
-- It is excluded from the stock order fingerprint, from stock admission and
-  aggregate health, and from signed selections.
-- Drift, removal or a disposition change between admission and dispatch
-  causes zero dispatch.
-- Its Core mapping is `core.basic_rest_read` plus `core.basic_websocket_read`
-  (HAMCP-164's gate applies).
-- `server_info` reports the following fields:
-  - `optional_tools`;
-  - `optional_reviewed_accounting_valid`;
-  - `optional_sibling_drift`.
-
-**Upstream catalog accounting (K9).** The exact catalog grows from 78 to 81
-tools on ha-mcp 8.4.3, and from 77 to 80 on 8.5.0. The three added tools are
-`ha_config_get_yaml`, `ha_list_files` and `ha_read_file`. A stock catalog
-without them is unchanged.
-
-**Known limitation (shared sanitizer default).** The shared sanitizer's
-default mode, used by the other Engineering tools, still treats existing
-`[REDACTED:...]` text as an immutable delimiter and does not scan it. This
-release does not change that behavior for other tools; whether to adopt the
-identity-only mode there is a separate decision for Josh.
-
-**Audit.** Refusals and reads use the existing generic delegated audit:
-error code plus argument field names, never values. The design's per-path
-audit detail is not included (`routing.py` was not in scope). This is more
-conservative than the design.
+The healthy catalog remains **87 tools: 59 native and 28 delegated reads**.
 
 Downgrade: beta.14 reads every beta.15 record, since no persisted format
-changes. A downgraded server no longer exposes `ha_config_get_yaml`, and the
-catalog returns to 87.
+changes and every stored string already exists. A downgraded server again
+plans rollbacks without Core authority, again counts refused observed reads,
+and again leaves expired contract-v3 tasks to the service reconciler.
 
 Follow the [beta.15 acceptance contract](V2_4_1_BETA15_ACCEPTANCE.md).

@@ -1,19 +1,14 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.15** adds one optional reviewed delegated read,
-`ha_config_get_yaml` (HAMCP-162). It reads one mapping-key path of
-`configuration.yaml` only:
-- every other file, including `secrets.yaml`, and every credential-shaped
-  path is refused before any upstream call;
-- `!secret`/`!env_var` become reference-name markers;
-- credential-shaped keys, connection strings and credential text are redacted
-  whole;
-- every result discloses that values are ha-mcp's YAML 1.2 parse.
-
-It is admitted only on the exact reviewed ha-mcp 8.4.3 and 8.5.0
-descriptors. `ha_list_files` and `ha_read_file` stay unexposed.
-
-It builds on beta.14, which closes three HAMCP-189 residuals: a governed
+Engineering **2.4.1-beta.15** closes the remaining HAMCP-189 residuals:
+fresh rollback planning acquires its own Core lease before any planning read,
+so under degraded Core it is refused before any Home Assistant read; an
+observed read counts an upstream attempt only after the Core authorizer
+passes; a contract-v3 task whose approval expired before its dispatch intent
+ends truthfully as `failed_pre_dispatch` (`plan_expired`) after bounded
+retries, with no dispatch; and the gateway audit keeps the exact refusal
+reason for empty and non-string tool names. It builds on beta.14
+(HAMCP-189 PR A), where a governed
 step acquires Core authority before any read that could conclude "already
 satisfied", so under degraded Core it is refused before any Home Assistant
 read; an unmapped F3 operation is refused with the exact reason
@@ -40,8 +35,8 @@ beta.7's delegated platform reads (`ha_get_system_health`, `ha_get_app` and
 deep-health correction, beta.4's dormant governed
 entity-registry metadata administration (`create_entity_metadata_plan`) and
 beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
-The healthy catalog is **88 tools: 59 native and 29 admitted delegated
-reads** (87 and 28 where ha-mcp is not 8.4.3 or 8.5.0). The Core profiles, probe and signed fingerprints, storage
+The healthy catalog is **87 tools: 59 native and 28 admitted delegated
+reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
 See the [release notes](docs/V2_4_1_BETA15_RELEASE_NOTES.md) and
 [acceptance contract](docs/V2_4_1_BETA15_ACCEPTANCE.md).
@@ -178,8 +173,7 @@ implement Host/Origin enforcement.
 ## Capabilities and compatibility
 
 This development source paired with an exactly admitted **ha-mcp 8.4.3, 8.5.0 or 8.6.0** defines
-**59 static tools plus 28 delegated reads, 87 total**, plus the optional reviewed
-`ha_config_get_yaml` on 8.4.3 and 8.5.0 only (**88 total**). The Core inventory represents
+**59 static tools plus 28 delegated reads, 87 total**. The Core inventory represents
 **22 capability profiles** (one dormant, unselected by any signed entry). Each signed entry selects its exact reviewed reference
 set; historical journal sequences do not prove the current installation.
 Actual authority and provider admission determine availability. Fresh protocol

@@ -1,188 +1,222 @@
 # Engineering 2.4.1-beta.15 acceptance
 
-This contract covers HAMCP-162 Part 2: the optional reviewed delegated read
-`ha_config_get_yaml`. It builds on beta.14 (HAMCP-189) and beta.13
-(HAMCP-164).
+This contract covers HAMCP-189 PR B and PR C, delivered in one PR (O6
+amended):
+- R1: rollback planning holds its own Core lease;
+- R2-telemetry: an observed read counts an upstream attempt only after the
+  Core authorizer passes;
+- O9: a truthful, bounded terminal outcome for an expired pre-intent task;
+- R8 and L1: the gateway audit keeps the refusal reason;
+- L2: the beta.13 release-notes correction.
 
-It separates four stages:
-1. source and disposable acceptance;
+It builds on 2.4.1-beta.14 (HAMCP-189 PR A).
+
+Design and final protected-file list: `docs/HAMCP_189_PR_B_DESIGN.md`.
+Authority: `docs/HAMCP_189_TRIAGE.md` and Josh's 2026-10-16 decisions O1–O9
+on register row HAMCP-189. Release notes:
+[`V2_4_1_BETA15_RELEASE_NOTES.md`](V2_4_1_BETA15_RELEASE_NOTES.md).
+
+Release target: the next Engineering beta, first ready, first served together
+with HAMCP-162. `2.4.1-beta.15` was staged in `.release/next-version` and then
+materialized in this PR by one owner-authorized run of
+`scripts/promote_next_release.py --apply`, which consumed the declaration. If
+HAMCP-162 merges first and takes this version, this PR merges `main`,
+restages and rematerializes the next beta, and renames this document and the
+release notes to match.
+
+The contract separates four stages:
+1. source and offline acceptance;
 2. release CI;
 3. publication;
 4. installed Engineering acceptance.
 
-This document authorizes none of the later stages.
+It authorizes none of the later stages.
 
-## 1. Source, review and CI
+## 1. Source and offline acceptance
 
 Bind the following:
-- the approved design `docs/HAMCP_162_YAML_READER_DESIGN.md`;
-- the D1 capture evidence in `docs/evidence/hamcp162/` (draft PR #264 head
-  `0e3e2264491b8d13b988c3ba9d4d50f4e9b520e5`, merged into the branch), with
-  its `MANIFEST.sha256`;
-- Josh's 2026-10-16 decisions K1–K11 on HAMCP-162, which govern where the
-  evidence and the design differ;
-- the original base `main` (2.4.1-beta.13 at `06d5555`), and every later
-  `main` merge into the branch, including 2.4.1-beta.14 (HAMCP-189, #266) at
-  `bdb5af8`;
-- the final reviewed commit and tree.
+- the design note;
+- `2.4.1-beta.15` materialized in all three version authorities, with exact
+  acceptance and release-note resolution from `scripts/codex-context.py` and
+  no staged declaration left over;
+- the PR head SHA;
+- the passing PR `validate` run for that exact head;
+- the Full and Evidence tier logs named in the PR.
 
-Earlier review does not cover changed code.
+### Offline proof: rollback under degraded Core refuses before any read (R1)
 
-Materialize 2.4.1-beta.15 in all three version authorities through the
-existing staging tool. Require exact acceptance and release-note resolution,
-with no staged declaration left over. Complete Full/Evidence on clean source
-and the bounded independent review.
+`tests/test_hamcp189_rollback_core_lease.py` uses a real signed Core runtime
+with synthetic configuration and registry fakes.
 
-The review needs a security section covering:
-- exposure of `ha_config_get_yaml` only, with `ha_list_files` and
-  `ha_read_file` never exposed;
-- zero write, reload, restart, deletion, fallback or forwarding
-  reachability, and no Engineering service call; the one accepted exception
-  is the K1 caller-token bootstrap (first call: the component's
-  `POST ha_mcp_tools/get_caller_token`, persisted);
-- the fixed upstream argument shape;
-- refusal of every non-`configuration.yaml` file and every credential-shaped
-  path before route acquisition, Core acquisition and any upstream call;
-- the L4/L5 redaction rules A, B, C′, R10 and R11, and the default-off
-  reference-marker exemption by registry identity only (H2);
-- node truncation before redaction (H2, owner direction superseding design
-  sections 4 and 8.1), and the final pass of every client-visible field
-  through the pipeline (H1);
-- redaction markers trusted by registry identity only, with marker-shaped
-  upstream text (keys and values, encoded and look-alike forms) scanned and
-  neutralized, never skipped (H3), and the shared sanitizer default mode
-  unchanged for every other tool;
-- the explicit per-version dispositions with no default;
-- the complete-descriptor (R4) binding;
-- the generation and dispatch lease (R5), and exclusion from the stock
-  order, aggregate and signed selections;
-- the explicit Core mapping;
-- the fixed failure codes, with no upstream text.
+- `test_degraded_core_refuses_fresh_rollback_before_any_read`,
+  `test_garage_inverse_refuses_before_any_read_under_degraded_core` and
+  `test_degraded_core_refuses_before_any_registry_read`: under degraded Core,
+  fresh rollback planning (configuration, garage inverse and entity metadata)
+  is refused as `provider_unavailable` / `core_capability_unavailable` with
+  zero configuration or registry reads and no rollback plan.
+- `test_unconsumable_lease_is_released_and_refused_before_any_read`: an
+  acquired lease that cannot be consumed is released and refused.
+- `test_admitted_core_creates_the_plan_inside_one_current_lease`,
+  `test_garage_inverse_plans_inside_the_lease_and_returns_existing` and
+  `test_admitted_core_plans_every_registry_read_inside_the_lease`: under
+  admitted Core, every planning read runs with an installed authorizer that
+  returns true, the plan is created and the lease finishes once. The
+  entity-metadata lease binds the exact registry target.
+- `test_core_retired_during_planning_creates_no_plan` and
+  `test_core_retired_during_registry_planning_creates_no_plan`: a retirement
+  before a planning read refuses that read and creates no plan.
+- `test_garage_retirement_during_final_builder_read_saves_nothing`: Core
+  retires after the garage builder's last awaited read returns. The refusal is
+  `provider_unavailable` / `core_capability_unavailable`, no rollback plan or
+  source rollback pointer is saved, nothing is written, the lease finishes
+  once, and a clean retry reads the same resources and creates the plan.
+- `test_ordinary_retirement_during_final_builder_read_saves_nothing`: the
+  same proof for an ordinary configuration rollback (one builder read). The
+  check runs through the private `_before_persist` hook in
+  `governance/service.py` (O8 amendment) before the plan is recorded or any
+  prior plan is superseded.
+- `test_existing_rollback_plan_is_returned_without_core`: the idempotent local
+  return still works while Core is degraded.
+- `test_runtime_without_core_keeps_current_behavior`: compositions with no
+  Core runtime are unchanged.
+
+### Offline proof: cancel telemetry (R2-telemetry)
+
+`tests/test_hamcp189_observed_read_telemetry.py`: a refused read reports zero
+upstream attempts; a retirement counts only the admitted read; admitted reads
+count every dispatch; a failure before dispatch is not an attempt; a late
+retained-session dispatch after the caller returned is not started.
+
+### Offline proof: expired pre-intent deadline (O9)
+
+`tests/test_hamcp189_expired_pre_intent_deadline.py` uses the real exact
+helper-state F3 path. Approval consumption is refused at the Core seam, so the
+child records `pre_intent_retry_required` with no dispatch intent.
+
+- `test_expired_task_terminates_after_bounded_retries`: recovery at every
+  eligible instant after expiry terminates the child after at most 7 retries,
+  at or after the deadline, as `preflight_rejected` / `plan_expired`. The task
+  is `failed_pre_dispatch` and the plan `FAILED`. Zero dispatch, locks and
+  leases settled, readiness restored, later sweeps change nothing.
+- `test_retries_continue_until_the_deadline`: one second before the deadline
+  the child still retries and readiness is still false.
+- `test_unexpired_failure_keeps_its_bounded_retry`: a failure while the plan
+  is valid keeps `bounded_retry`; after preparation recovers, the same task
+  dispatches exactly once.
+- `test_deadline_survives_a_restart`.
+- `test_service_reconciler_composition_never_dispatches`.
+- `ExpiredClaimTerminalPrimitiveTests`: the claimless primitive refuses a live
+  claim, a changed generation, an already-terminal child and a dispatched
+  child (`BlindRedispatchProhibited`), leaving each record unchanged.
+
+### Offline proof: expired work with no child record (O9, review M2)
+
+`tests/test_hamcp189_expired_unclaimed_declaration.py`, with the service
+reconciler absent:
+- operational (`OperationalUnclaimedTests`): restart between saving the
+  declaration and the first child, then expiry with the provider down, ends
+  `failed_pre_dispatch` / `plan_expired` with zero planning, dispatch and
+  verification calls and readiness restored; the terminalization step itself
+  contacts no provider; in-process expiry; before the deadline the bounded
+  retry continues; an operator cancel and a cancel recorded inside the
+  projection window keep precedence; a first claim that wins is never
+  overwritten, and one that loses finds the terminal record;
+- operational, M2 residual (review of `1189020`): the restart case asserts
+  the full provider-contact tuple unchanged, identity reads included
+  (`test_restart_then_expiry_rejects_without_provider_contact`);
+  `test_recovery_sweep_never_invokes_the_identity_reader`;
+  `test_slow_identity_does_not_delay_local_termination` (Codex's probe: the
+  identity response is held and the task still ends within 0.25 s, the
+  reader never entered); `test_expired_claimed_child_ends_before_provider_contact`
+  (a first claim that won, then expired, ends with zero contact and the
+  provider down); `test_before_deadline_recovery_still_prepares`
+  (preservation);
+- exact helper state (`HelperStateUnclaimedTests`): restart then expiry
+  settles with the helper unchanged; before the deadline it keeps retrying;
+- dashboard (`DashboardUnclaimedTests`): restart then expiry is rejected by
+  the existing preflight without the new path, with zero writes;
+  `test_restart_past_deadline_ends_locally_without_preread`: past the
+  deadline it ends locally with zero pre-reads and zero writes.
+
+### Offline proof: gateway audit reason (R8, L1)
+
+`tests/test_hamcp189_gateway_audit_reason.py`:
+- `test_empty_name_audit_and_metric_carry_the_unmapped_reason` (L1);
+- `test_nonempty_unmapped_name_keeps_one_record_and_one_count`;
+- `test_list_and_dict_names_write_exactly_one_generic_record` (R8);
+- `test_every_non_string_name_writes_one_record_and_one_count`: `None`,
+  `False`, `0`, `[]`, `{}` and truthy non-string names each write one generic
+  record and one error count, with no raw value;
+- `test_successful_string_name_keeps_one_tool_record_and_no_count`;
+- L1 residual (review of `1189020`), `RawNameLoggingTests`: Codex's probe
+  through the production `configure_logging` with a debug root capture;
+  `None`, `False`, `0`, `[]`, `{}` and list/dict names carrying a marker log
+  only `non_string_tool_name:<type>`, the SDK warning keeps only its bounded
+  summary, and the marker appears in no app log, SDK log or audit record;
+  a string name is still logged;
+- `SdkDiagnosticFilterTests`: the filter rewrites the three SDK validation
+  messages, leaves every other record untouched and is installed once.
+
+### Mutations (each must fail)
+
+| Mutation | Failing tests |
+| --- | --- |
+| Rollback planning without the lease (both call sites) | 11 of 13 R1 tests; the existing-plan and no-Core tests pass by design |
+| Unbounded retry: the expired pre-intent deadline removed | the three O9 deadline tests (bounded, deadline, restart); the composition test passes by design, because the service reconciler still ends the task |
+| The audit loses the empty-name reason (L1) | `test_empty_name_audit_and_metric_carry_the_unmapped_reason` |
+| The audit keeps the unhashable lookup (R8) | the list and dict name test (two subtest errors) |
+| The attempt starts before the authorizer (R2-telemetry) | four telemetry tests |
+| No lease check at the garage save boundary (review M1) | `test_garage_retirement_during_final_builder_read_saves_nothing` |
+| The no-record expired declaration is left stuck (review M2) | four no-record tests |
+| The primitive overwrites a first claim (review M2) | `test_first_claim_that_wins_is_never_overwritten` |
+| Cancel not rechecked inside the projection transaction (review M2) | `test_cancel_recorded_inside_the_projection_window_wins` |
+| A falsey name is not classified (review L1) | five audit tests |
+| A falsey name is not counted (review L1) | five audit tests |
+| The save hook's call removed in `governance/service.py` (O8 amendment) | `test_ordinary_retirement_during_final_builder_read_saves_nothing` |
+| The ordinary rollback omits the save hook (O8 amendment) | `test_ordinary_retirement_during_final_builder_read_saves_nothing` |
+| Provider contact before local termination: the local-first check removed (review M2 residual) | the five provider-contact tests (`test_restart_then_expiry_rejects_without_provider_contact`, `test_recovery_sweep_never_invokes_the_identity_reader`, `test_slow_identity_does_not_delay_local_termination`, `test_expired_claimed_child_ends_before_provider_contact`, `test_restart_past_deadline_ends_locally_without_preread`) |
+| Local-first only for the no-record case (review M2 residual) | `test_expired_claimed_child_ends_before_provider_contact` |
+| Log contexts carry the raw name (review L1 residual) | `test_malformed_names_log_only_a_bounded_type` |
+| The SDK diagnostic filter not installed (review L1 residual) | `test_malformed_names_log_only_a_bounded_type`, `test_gateway_installs_the_filter_once` |
+| The filter keeps the raw SDK message (review L1 residual) | `test_malformed_names_log_only_a_bounded_type`, `test_sdk_validation_messages_keep_only_a_bounded_summary` |
+
+## 2. Release CI and publication
 
 Require exact-head CI before release acceptance. Pending or unavailable jobs
-are not passing evidence.
+are not passing evidence. Publication needs Josh's Ready authorization and the
+protected merge handoff. Verify the merged source, v2.4.1-beta.15, the
+immutable version and commit images, provenance and SBOM with the shipped
+verifiers. Never invent future image identities. Retain the beta.14 artifacts
+and the known-good earlier artifacts for recovery.
 
-Preserve the following:
-- stable v1.1.2;
-- historical persisted fixtures and durable formats;
-- probe fingerprints, the Core capability profiles, every owner-signed Core
-  registry entry and the signed ha-mcp registry;
-- the 8.6.0 HOLD and the support window;
-- the reviewed policy JSON and release registry JSON;
-- dependency locks, build inputs, pinned runners and workflow permissions.
-
-The public catalog grows from 87 to **88 tools (59 native, 29 delegated)**.
-Every beta.14 descriptor is unchanged.
-
-### Offline source evidence
-
-Run `tests/test_hamcp162_yaml_reader.py` and
-`tests/test_hamcp162_yaml_admission.py` against the exact released tree,
-with the D1 fixtures. They must prove each of the following:
-- the design §8.1 groups;
-- the 438-probe rule model, and the rule-A, B, C′, R10 and R11 counterexamples;
-- the D1 replay for ha-mcp 8.4.3 and 8.5.0;
-- admission, drift and dispositions;
-- lease races in both admission modes;
-- stock invariants;
-- Core gating on 2026.9.2, 2026.10.0 and 2026.10.1.
-
-Run `docs/evidence/hamcp162-mutations/run_mutations.py`. Every design §8.2
-mutation and every correction mutation (H1, H2, H3) must fail at least one
-test.
-
-## 2. Publication and recovery preparation
-
-Publication needs Josh's applicable Ready authorization and the protected merge
-handoff. Verify the following with the shipped verifiers:
-- the merged source;
-- v2.4.1-beta.15;
-- the immutable version and commit images;
-- provenance and SBOM.
-
-Never invent future image identities. Retain the beta.14 and beta.13 artifacts
-and the known-good beta.12 and beta.11 artifacts and options for recovery.
-
-No new persisted format is introduced, and beta.14 reads every beta.15
-record.
+No new persisted format is introduced:
+- the O9 terminal uses the existing `preflight_rejected` outcome,
+  `pre_dispatch_terminal` event, `plan_expired` diagnostic,
+  `transition_processed` runtime result and `failed_pre_dispatch` task state;
+- beta.14 reads every record this change writes.
 
 ## 3. Installed Engineering
 
 All installed checks below are read-only unless a step names Josh's explicit
-authorization. The first `ha_config_get_yaml` call may make the ha-mcp
-component fetch and persist an admin caller token (K1, an accepted and
-disclosed dependency). Record whether it occurred, but do not inspect or
-record the token.
+authorization.
 
 1. **Installed-image binding.** Separately authorize installation of the
-   published Engineering artifact. Bind the running add-on to the published
-   image index digest, the v2.4.1-beta.15 tag and the protected `main` merge
-   commit. A source version alone does not prove the installed image.
-2. **Live catalog 88.** Enumerate the live catalog with a fresh protocol
-   enumeration:
-   - exactly 88 tools (59 native, 29 delegated);
-   - `ha_config_get_yaml` present, with the reviewed title, schema,
-     read-only annotations and description;
-   - `ha_list_files` and `ha_read_file` absent.
+   published Engineering artifact. Bind the running add-on to:
+   - the published image index digest;
+   - the v2.4.1-beta.15 tag;
+   - the protected `main` merge commit that contains this PR.
 
-   Compare the other 87 descriptors with beta.14. `server_info` must report:
-   - `optional_tools` with `ha_config_get_yaml: admitted`;
-   - both siblings as `prohibited_withheld` or `optional_absent`;
-   - `optional_reviewed_accounting_valid: true`;
-   - `optional_sibling_drift: []`.
-
-   Also compare Core signed selection, storage and audit health, F3
-   readiness and zero fallback. Production ha-mcp must be 8.5.0, or 8.4.3
-   on rollback. On any other version, the tool must be absent and the
-   catalog stays at 87.
-
-   The tool requires ha-mcp's filesystem beta sub-flag
-   (`HAMCP_ENABLE_FILESYSTEM_TOOLS`, already on in production). With the
-   flag on, `upstream_advertised_tool_count` is 80 on 8.5.0 (81 on 8.4.3).
-   `reviewed_policy_entry_count` must stay at the stock 77 (78 on 8.4.3).
-   The stock `reviewed_tool_accounting_valid` keeps its meaning and reports
-   `false` with the flag on, exactly as on beta.14. The three optional names
-   are accounted by `optional_reviewed_accounting_valid`, which must be
-   `true`. With the flag off, the tool is
-   `optional_absent` and the catalog is 87 with no quarantine.
-3. **Credential-free read.** Read one credential-free section Josh chooses
-   (for example `homeassistant.customize` or `logger`). The result must
-   succeed, with:
-   - `file: configuration.yaml`, `source: disk`, `found: true`;
-   - the K7 YAML 1.2 disclosure in the warnings and limitations;
-   - the K5 and D12 limitations.
-
-   Record the redaction count and categories only. Do not record values.
-4. **Redaction visible.** Read one credential-bearing section Josh chooses
-   (for example the parent of a `!secret` password, such as `mqtt` or
-   `recorder`). Credential-shaped values must show
-   `[REDACTED:credential_key]`, or a `secret_ref` / `env_var_ref` marker
-   holding only a reference name. No secret value and no `!env_var` default
-   may appear. Record only the marker shapes and categories.
-5. **secrets.yaml refused, zero upstream calls.** Call with
-   `file: "secrets.yaml"`. The result must be `yaml_file_not_allowed`
-   ("Only configuration.yaml is readable."), with:
-   - `metadata.upstream_dispatch_occurred: false`;
-   - `timing.upstream_request_count: 0`;
-   - no retry.
-
-   Repeat the call with `file: "packages/x.yaml"`, which must also give
-   `yaml_file_not_allowed`. Then call with a credential-shaped path (for
-   example `mqtt.password`), which must give `yaml_path_sensitive`. Both
-   must show the same zero-dispatch facts. The audit records for all three
-   calls must show no upstream request. They hold error codes and argument
-   field names only.
-6. **Power and dashboard canaries unchanged.**
-   - Repeat the beta.14 read-only checks: one delegated read, one native read
-     and `get_core_log_history`, each exactly as on beta.14.
-   - Power, fan, dashboard and entity-metadata capabilities must report the
-     same admission as beta.14.
-   - With Josh's explicit authorization only, repeat the beta.6 power canary
-     and the beta.8 dashboard canary on the entity and test dashboard Josh
-     chooses. The outcomes must match beta.14.
-
-   No published tool may return `CoreRequirementUnmapped`. Any occurrence is
-   a stop condition.
+   A source version alone does not prove the installed image.
+2. **Catalog unchanged.** This PR changes no tool registration, input schema
+   or result field. Compare the public descriptors with the previous beta.
+   Also compare:
+   - Core signed selection;
+   - storage and audit health;
+   - F3 readiness;
+   - zero fallback.
+3. **Degraded-Core rollback refusal, telemetry, expired-task termination and
+   audit reasons.** These are proven offline only (§1). No live degradation,
+   expiry, rollback, cancel or malformed request is run to accept this change.
 
 No push, CI trigger, signing, publication, installation or live action is
 authorized by source completion.
