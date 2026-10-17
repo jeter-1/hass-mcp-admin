@@ -1,6 +1,14 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.14** closes three HAMCP-189 residuals: a governed
+Engineering **2.4.1-beta.15** closes the remaining HAMCP-189 residuals:
+fresh rollback planning acquires its own Core lease before any planning read,
+so under degraded Core it is refused before any Home Assistant read; an
+observed read counts an upstream attempt only after the Core authorizer
+passes; a contract-v3 task whose approval expired before its dispatch intent
+ends truthfully as `failed_pre_dispatch` (`plan_expired`) after bounded
+retries, with no dispatch; and the gateway audit keeps the exact refusal
+reason for empty and non-string tool names. It builds on beta.14
+(HAMCP-189 PR A), where a governed
 step acquires Core authority before any read that could conclude "already
 satisfied", so under degraded Core it is refused before any Home Assistant
 read; an unmapped F3 operation is refused with the exact reason
@@ -30,8 +38,8 @@ beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA14_ACCEPTANCE.md).
+See the [release notes](docs/V2_4_1_BETA15_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA15_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -115,14 +123,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.14 release notes](docs/V2_4_1_BETA14_RELEASE_NOTES.md) and
-[2.4.1-beta.14 acceptance contract](docs/V2_4_1_BETA14_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.15 release notes](docs/V2_4_1_BETA15_RELEASE_NOTES.md) and
+[2.4.1-beta.15 acceptance contract](docs/V2_4_1_BETA15_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.14 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.15 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.

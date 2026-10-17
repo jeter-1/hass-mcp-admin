@@ -300,7 +300,14 @@ class ConfigurationReverificationTests(unittest.IsolatedAsyncioTestCase):
         from ha_mcp_engineering.governance import configuration_reverification as module
         async def hung(*args):
             await asyncio.Event().wait()
-        with patch.object(self.gateway, "read", side_effect=hung), patch.object(module, "DEADLINE_SECONDS", 0.02):
+        # The asyncio deadline alone must end the hung read.  A frozen
+        # module-local clock keeps the authority window's elapsed-time check
+        # from expiring first on a slow host, and the larger deadline leaves
+        # setup time before the read intent is recorded.
+        frozen_clock = SimpleNamespace(monotonic=lambda: 0.0)
+        with patch.object(self.gateway, "read", side_effect=hung), \
+                patch.object(module, "DEADLINE_SECONDS", 0.5), \
+                patch.object(module, "time", frozen_clock):
             result = await self.run_check()
         self.assertEqual(result["status"], "read_timeout")
         replay = await self.run_check()

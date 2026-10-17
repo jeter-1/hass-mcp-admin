@@ -639,15 +639,23 @@ class ReviewedOperationalLifecycleProvider:
         """Execute one reviewed read with truthful per-request attribution."""
 
         telemetry = current_telemetry()
-        started = time.perf_counter()
-        if telemetry:
-            telemetry.begin_upstream_attempt(started)
+        # The attempt is counted only once the Core authorizer admits the
+        # dispatch, so a refused read reports zero upstream attempts.  A
+        # dispatch that the caller has stopped waiting for is not started,
+        # which keeps every begun attempt paired with its finish.
+        attempt: dict[str, Any] = {"started": None, "closed": False}
 
         async def require_current_core_authority() -> None:
-            if telemetry is None or not telemetry.authorize_core_dispatch():
+            if (
+                telemetry is None
+                or attempt["closed"]
+                or not telemetry.authorize_core_dispatch()
+            ):
                 raise OperationalLifecycleProviderError(
                     "provider_unavailable", dispatched=False
                 )
+            attempt["started"] = time.perf_counter()
+            telemetry.begin_upstream_attempt(attempt["started"])
 
         try:
             return await self._transport.execute_read(
@@ -662,7 +670,9 @@ class ReviewedOperationalLifecycleProvider:
                 ),
             )
         finally:
-            if telemetry:
+            attempt["closed"] = True
+            started = attempt["started"]
+            if telemetry and started is not None:
                 finished = time.perf_counter()
                 telemetry.finish_upstream_attempt(
                     finished,
