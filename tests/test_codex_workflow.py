@@ -265,6 +265,12 @@ from support.real_time import real_time_measurement
 
 
 class MixTests(unittest.TestCase):
+    def run(self, result=None):
+        if os.path.exists(".fixture-unstarted") and self._testMethodName == "test_plain":
+            print("fixture-unstarted-diagnostic " + self.id())
+            return result
+        return super().run(result)
+
     def test_plain(self):
         self.assertFalse(os.path.exists(".fixture-test-failure"), "synthetic fixture test failure")
 
@@ -1688,6 +1694,24 @@ class CheckScriptExecutionTests(unittest.TestCase):
         self.assertIn("synthetic fixture test failure", output)
         self.assertRegex(output, r"----- shard \d output")
         self.assertIn("Sharded unittest step failed", output)
+        self.assertNotIn("Full validation passed", output)
+
+    def test_parallel_completeness_only_failure_names_the_test_and_shows_its_shard(self):
+        # Every worker exits 0 with an OK summary, but one assigned test never started.
+        self.fixture.write(".fixture-unstarted", "skip run\n")
+        result = self.fixture.run_check(self.powershell, "Full", parallel="2")
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertRegex(
+            output,
+            r"Completeness check FAILED \(completeness_refused:shard_execution_incomplete_or_extra\): "
+            r"shard\(s\) 2 missing: test_shard_mix\.MixTests\.test_plain",
+        )
+        self.assertIn("----- shard 2 output (completeness_missing) -----", output)
+        self.assertIn("fixture-unstarted-diagnostic test_shard_mix.MixTests.test_plain", output)
+        self.assertNotRegex(output, r"(?m)^Shard \d+ \([a-z_]+\): passed")
+        self.assertNotIn("Completeness proven", output)
+        self.assertIn("sharded summary result is failed", output)
         self.assertNotIn("Full validation passed", output)
 
     def test_parallel_evidence_failure_is_recorded_as_failed(self):

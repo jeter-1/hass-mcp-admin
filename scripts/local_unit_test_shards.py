@@ -22,11 +22,16 @@ ended with unittest's own ``OK`` summary, and ``verify`` accepted the manifests
 (each discovered test executed exactly once across the shards and succeeded).
 Anything else, including a crashed, killed or timed-out worker, fails the run
 and prints that shard's output. Partial results are never reported as passing.
+When only the final proof refuses, no shard is reported as passed: the shards
+whose manifests name missing or repeated tests are marked failed and their
+output printed (every shard's output when none can be named), and the refusal
+is reported on its own line with those test IDs.
 """
 
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import os
 from pathlib import Path
@@ -46,6 +51,7 @@ DEFAULT_SHARD_TIMEOUT = 3600
 SUMMARY_SCHEMA_VERSION = 1
 RUN_ATTEMPT = "1"
 POLL_SECONDS = 0.2
+MAX_LISTED_IDS = 20
 RAN_LINE = re.compile(r"^Ran (\d+) tests? in [0-9.]+s$")
 STATUS_LINE = re.compile(r"^(OK|FAILED|NO TESTS RAN)(?: \((.*)\))?$")
 
@@ -232,6 +238,48 @@ def finalize(root, manifests_dir, run_id, shard_results):
     return proof, []
 
 
+def completeness_findings(manifests_dir):
+    """Name the tests behind a refused proof, per shard; a diagnostic, never a verdict.
+
+    ``unit_test_shards.verify`` alone decides completeness. This only rereads
+    the manifests the workers wrote so a person can see which shard lost,
+    repeated or added which test IDs. An unreadable manifest names nothing.
+    """
+
+    findings = []
+    shards_by_test = {}
+    for path in sorted(Path(manifests_dir).glob("*.json")):
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            shard, assigned, executed = manifest["shard"], manifest["assigned"], manifest["executed"]
+            ids = [row[0] for row in executed]
+            counts = Counter(ids)
+            missing, extra = sorted(set(assigned) - set(ids)), sorted(set(ids) - set(assigned))
+        except (OSError, ValueError, TypeError, KeyError, IndexError):
+            continue
+        if type(shard) is not int:
+            continue
+        for test_id in counts:
+            shards_by_test.setdefault(test_id, []).append(shard)
+        for kind, tests in (("missing", missing), ("duplicated", sorted(t for t, n in counts.items() if n > 1)),
+                            ("unassigned", extra)):
+            if tests:
+                findings.append({"kind": kind, "shards": [shard], "tests": tests})
+    across = {}
+    for test_id, owners in sorted(shards_by_test.items()):
+        if len(owners) > 1:
+            across.setdefault(tuple(sorted(owners)), []).append(test_id)
+    findings.extend({"kind": "executed_in_multiple_shards", "shards": list(owners), "tests": tests}
+                    for owners, tests in sorted(across.items()))
+    return findings
+
+
+def listed(tests):
+    shown = ", ".join(tests[:MAX_LISTED_IDS])
+    hidden = len(tests) - MAX_LISTED_IDS
+    return shown + (f", ... and {hidden} more (see summary.json)" if hidden > 0 else "")
+
+
 def run(root, workers, output_dir, *, python=sys.executable, timeout=DEFAULT_SHARD_TIMEOUT, stream=sys.stdout):
     if type(workers) is not int or not 1 <= workers <= MAX_WORKERS:
         raise unit_test_shards.Refusal("invalid_worker_count")
@@ -249,9 +297,24 @@ def run(root, workers, output_dir, *, python=sys.executable, timeout=DEFAULT_SHA
     results = [shard.outcome(started) for shard in parallel + serial]
     problems = [f"shard_{row['shard']}:{p}" for row in results for p in row["problems"]]
     proof = {}
+    completeness = None
     if not problems:
         proof, final_problems = finalize(root, layout["manifests"], run_id, results)
         problems.extend(final_problems)
+        if final_problems:
+            # Every worker exited cleanly, but the proof refused: no shard has passed.
+            findings = completeness_findings(layout["manifests"])
+            implicated = {shard for finding in findings for shard in finding["shards"]}
+            completeness = {"result": "failed", "problems": final_problems, "findings": findings,
+                            "implicated_shards": sorted(implicated)}
+            for row in results:
+                if row["shard"] in implicated or not implicated:
+                    row["status"] = "failed"
+                    row["problems"] = sorted({f"completeness_{f['kind']}" for f in findings
+                                              if row["shard"] in f["shards"]}) or ["completeness_refused"]
+                    problems.extend(f"shard_{row['shard']}:{p}" for p in row["problems"])
+                else:
+                    row["status"] = "unproven"
     passed = not problems
     summary = {
         "schema_version": SUMMARY_SCHEMA_VERSION,
@@ -268,19 +331,29 @@ def run(root, workers, output_dir, *, python=sys.executable, timeout=DEFAULT_SHA
         "skipped": sum(row["skipped"] for row in results) if passed else None,
         "wall_seconds": round(time.monotonic() - started, 3),
         "shards": results,
+        "completeness": completeness,
         **{key: proof.get(key) for key in (
             "source_sha", "discovered_count", "discovered_sha256", "plan_sha256")},
     }
     (layout["root"] / "summary.json").write_text(json.dumps(summary, indent=1, sort_keys=True) + "\n",
                                                  encoding="utf-8")
     for row, shard in zip(results, parallel + serial):
-        print(f"Shard {row['shard']} ({row['phase']}): {row['status']}, exit {row['exit_code']}, "
+        status = row["status"]
+        if status == "unproven":
+            status = "unproven (worker exited cleanly; completeness refused)"
+        print(f"Shard {row['shard']} ({row['phase']}): {status}, exit {row['exit_code']}, "
               f"ran {row['tests_run']}, skipped {row['skipped']}, {row['duration_seconds']}s, log {row['log']}",
               file=stream)
-        if row["status"] != "passed":
+        if row["status"] == "failed":
             print(f"----- shard {row['shard']} output ({', '.join(row['problems'])}) -----", file=stream)
             print(shard.text().rstrip("\n"), file=stream)
             print(f"----- end shard {row['shard']} output -----", file=stream)
+    if completeness:
+        print("Completeness check FAILED (" + ", ".join(completeness["problems"]) + "): "
+              + ("; ".join(f"shard(s) {', '.join(map(str, f['shards']))} {f['kind'].replace('_', ' ')}: "
+                           f"{listed(f['tests'])}" for f in completeness["findings"])
+                 or "no shard manifest names the offending tests; every shard's output is shown above"),
+              file=stream)
     if passed:
         print(f"Completeness proven: {summary['discovered_count']} discovered tests executed exactly once "
               f"(discovery {summary['discovered_sha256']}, plan {summary['plan_sha256']}).", file=stream)

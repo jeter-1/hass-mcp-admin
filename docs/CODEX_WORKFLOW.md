@@ -398,6 +398,15 @@ The step fails closed if any of these happens:
 The output of each failed shard is printed. A partial result is never reported
 as passing.
 
+The completeness proof can refuse after every worker exited cleanly with
+unittest's `OK`. Then no shard is reported as passed. A separate
+`Completeness check FAILED` line names the refusal and, per shard, the missing,
+duplicated, unassigned or multiply executed test IDs read from the manifests.
+Those shards are marked failed and their output is printed; the rest are marked
+`unproven`. If no manifest names an offending test, every shard is marked failed
+and every shard's output is printed. The test IDs are diagnostic only; the
+pass/fail verdict comes from `verify` alone.
+
 The reported totals are the sum of each shard's own unittest summary
 (`Ran N tests`, `skipped=K`). They equal the single-process totals because each
 test runs exactly once. One caveat: a module- or class-level `SkipTest` in a

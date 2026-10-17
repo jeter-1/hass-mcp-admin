@@ -79,9 +79,22 @@ class Delta(unittest.TestCase):
                 "import unittest\\n\\nclass Late(unittest.TestCase):\\n    def test_late(self):\\n        pass\\n")
 """,
     "test_epsilon.py": """
+import os
+import sys
 import unittest
 
 class Epsilon(unittest.TestCase):
+    def run(self, result=None):
+        # A worker can exit 0 with an OK summary while its manifest is wrong:
+        # the test never starts, or starts twice. Only the final proof sees it.
+        if os.environ.get("SYNTHETIC_UNSTARTED"):
+            print("synthetic-unstarted-diagnostic " + self.id(), file=sys.stderr)
+            return result
+        if os.environ.get("SYNTHETIC_TWICE"):
+            print("synthetic-twice-diagnostic " + self.id(), file=sys.stderr)
+            super().run(result)
+        return super().run(result)
+
     def test_runs(self):
         self.assertTrue(True)
 """,
@@ -103,7 +116,7 @@ PLAN = {
     "module_seconds": {"test_alpha": 5, "test_beta": 3, "test_delta": 2, "test_epsilon": 1},
 }
 SYNTHETIC_KEYS = ("SYNTHETIC_FAIL", "SYNTHETIC_CRASH", "SYNTHETIC_KILL", "SYNTHETIC_HANG",
-                  "SYNTHETIC_GROW", "SYNTHETIC_ENV_PROBE")
+                  "SYNTHETIC_GROW", "SYNTHETIC_ENV_PROBE", "SYNTHETIC_UNSTARTED", "SYNTHETIC_TWICE")
 
 
 def plain_env(**extra):
@@ -320,6 +333,57 @@ class LocalFailureTests(LocalShardFixture):
         root = self.clone("growing")
         result, summary = self.run_local(root, 1, "growing", env=plain_env(SYNTHETIC_GROW="1"))
         self.assertFailedRun(result, summary, "completeness_refused:")
+        # No manifest names an offending test, so every shard is failed and its output shown.
+        self.assertEqual(summary["completeness"]["findings"], [])
+        self.assertEqual({r["status"] for r in summary["shards"]}, {"failed"})
+        self.assertIn("no shard manifest names the offending tests; every shard's output is shown above",
+                      result.stdout)
+        for row in summary["shards"]:
+            self.assertIn(f"----- shard {row['shard']} output (completeness_refused) -----", result.stdout)
+
+    def assertCompletenessOnlyFailure(self, name, switch, refusal, kind, marker):
+        result, summary = self.run_local(self.root, 2, name, env=plain_env(**{switch: "1"}))
+        test_id = "test_epsilon.Epsilon.test_runs"
+        shard = next(s for s, m in self.manifests().items() if test_id in m["assigned"])
+        self.assertFailedRun(result, summary, f"completeness_refused:{refusal}", f"shard_{shard}:completeness_{kind}")
+        # Every worker exited 0 with unittest's OK; only the final proof refused.
+        self.assertEqual({r["exit_code"] for r in summary["shards"]}, {0})
+        self.assertEqual(summary["completeness"]["findings"], [{"kind": kind, "shards": [shard], "tests": [test_id]}])
+        statuses = {r["shard"]: r["status"] for r in summary["shards"]}
+        self.assertEqual(statuses, {s: "failed" if s == shard else "unproven" for s in statuses})
+        self.assertNotRegex(result.stdout, r"(?m)^Shard \d+ \([a-z_]+\): passed")
+        self.assertIn(f"Completeness check FAILED (completeness_refused:{refusal}): shard(s) {shard} {kind}: {test_id}",
+                      result.stdout)
+        # The offending shard's console output is shown; the others' are not.
+        self.assertIn(f"----- shard {shard} output (completeness_{kind}) -----", result.stdout)
+        self.assertIn(f"{marker} {test_id}", result.stdout)
+        for other in set(statuses) - {shard}:
+            self.assertNotIn(f"----- shard {other} output", result.stdout)
+
+    def test_unstarted_test_fails_completeness_with_its_id_and_shard_output(self):
+        self.assertCompletenessOnlyFailure("unstarted", "SYNTHETIC_UNSTARTED", "shard_execution_incomplete_or_extra",
+                                           "missing", "synthetic-unstarted-diagnostic")
+
+    def test_test_run_twice_fails_completeness_with_its_id_and_shard_output(self):
+        self.assertCompletenessOnlyFailure("twice", "SYNTHETIC_TWICE", "test_executed_more_than_once",
+                                           "duplicated", "synthetic-twice-diagnostic")
+
+    def test_completeness_findings_name_ids_and_shards(self):
+        directory = self.base / "tampered" / "findings"
+        shutil.copytree(self.base / "runs/passing/manifests", directory)
+        paths = {int(p.stem.split("-")[1]): p for p in directory.glob("shard-*.json")}
+        first, second = json.loads(paths[0].read_text()), json.loads(paths[1].read_text())
+        lost, moved = first["executed"][0][0], second["executed"][0][0]
+        first["executed"] = first["executed"][1:] + [second["executed"][0]]
+        paths[0].write_text(json.dumps(first))
+        (directory / "unreadable.json").write_text("{not json")
+        findings = local.completeness_findings(directory)
+        self.assertIn({"kind": "missing", "shards": [0], "tests": [lost]}, findings)
+        self.assertIn({"kind": "unassigned", "shards": [0], "tests": [moved]}, findings)
+        self.assertIn({"kind": "executed_in_multiple_shards", "shards": [0, 1], "tests": [moved]}, findings)
+        self.assertEqual(len(findings), 3)
+        self.assertEqual(local.listed([f"t{i}" for i in range(local.MAX_LISTED_IDS + 3)]).split(", ")[-1],
+                         "... and 3 more (see summary.json)")
 
     def verify(self, directory, run_id=None):
         """Apply the helper's completeness proof in a subprocess (discovery imports test modules)."""
