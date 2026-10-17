@@ -76,6 +76,16 @@ On beta.15, against `light.back_guest_room_lamp`:
 
 The offline probe reproduces both timelines exactly (see Q2 and Q4).
 
+One live detail remains unconfirmed. Source and probe both predict that the
+30 s sweep would itself have verified the turn_on task 120-150 s after the
+inline read. The live record shows a same-ID replay doing it at about 2.5 min,
+with "no background resolution" before that. That is consistent with the
+replay simply arriving before the first post-lease sweep. Offline evidence
+cannot rule out a sweep that was skipped, for example because
+`f3_runtime.recover_once` raised (see Q1). An architect-run read-only check
+would settle it: the `ordinary_power` health `recovery_failures`, plus the
+task's audit events for the turn_off task `a2e476a1…`.
+
 ## Execution path (shared by fan and power)
 
 1. **Entry.** `PowerService` subclasses `FanService` (`power/service.py`).
