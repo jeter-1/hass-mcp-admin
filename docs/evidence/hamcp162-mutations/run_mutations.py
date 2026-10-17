@@ -199,7 +199,8 @@ MUTATIONS = [
         "        return re.sub(\"|\".join(map(re.escape, CREDENTIAL_WORDS)) + r\"\\S*\", \"[REDACTED]\", text, flags=re.I), \"connection_string\"\n",
     )]),
     m("C-keep-credential-scheme", "rule C': keeping a scheme that holds a credential word", READER, [(
-        "if match and not credential_text(match[1]) and", "if match and",
+        "    return screen(scheme, known_secrets, position=\"value\").kept\n",
+        "    return screen(scheme, known_secrets, position=\"value\").kept or bool(credential_text(scheme))\n",
     )]),
     m("C3-drop", "rule C': dropping C'3", READER, [(
         "_DELIMITED_TOKEN = re.compile(r\"\\b(pass|key)\\s*[=:]\")",
@@ -329,7 +330,7 @@ MUTATIONS = [
       READER, [(
         "    if text in vocabulary:\n        return Screened(True, text)\n",
         "    if vocabulary:\n        return Screened(True, text)\n",
-    )]),
+    )], tests=(T_READER, T_H4)),
     m("mint-malformed", "minting a marker for a malformed reference", READER, [(
         "        match = pattern.fullmatch(value)\n", "        match = pattern.match(value)\n",
     )]),

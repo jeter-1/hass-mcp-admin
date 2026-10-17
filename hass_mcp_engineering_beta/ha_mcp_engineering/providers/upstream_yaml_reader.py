@@ -453,12 +453,12 @@ def redaction_form(
 ) -> tuple[str, str]:
     """C' redaction form: at most the canonical scheme survives.
 
-    The scheme is upstream text, so it is kept only when it carries no
-    credential word and passes the scanners (H3 sweep).
+    The scheme is upstream text, so it is kept only when it passes the
+    uniform screen, which includes the C' credential words (H3 sweep, H4).
     """
 
     match = _SCHEME.match(canonical_text) if isinstance(canonical_text, str) else None
-    if match and not credential_text(match[1]) and _scheme_clean(match[1], known_secrets):
+    if match and _scheme_clean(match[1], known_secrets):
         return match[1] + CONNECTION_URI_SUFFIX, "connection_uri"
     return CONNECTION_STRING_MARKER, "connection_string"
 

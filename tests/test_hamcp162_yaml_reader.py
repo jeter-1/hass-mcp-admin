@@ -868,6 +868,22 @@ class ConnectionTextTests(unittest.TestCase):
         self.assertEqual(result.envelope["value"], {"db_url": CONNSTR})
         self.assertEqual(result.redacted_field_count, 1)
 
+    def test_mappings_under_connection_keys_are_replaced_whole(self):
+        # Rule B replaces a mapping under a connection-shaped key before its
+        # keys are screened, so even an empty mapping shows no structure.
+        self.assertEqual(out({"db_url": {}}, "recorder"), {"db_url": CONNSTR})
+        self.assertEqual(out({}, "influxdb.database"), CONNSTR)
+        result = project({"database": {}}, "influxdb")
+        self.assertEqual(result.envelope["value"], {"database": CONNSTR})
+        self.assertEqual(result.redacted_field_count, 1)
+        for value in ({}, {"name": "ha"}, {"o": {"p": 1}}):
+            with self.subTest(value=value):
+                walker = y._L4((), ReferenceMarkerRegistry())
+                redacted = walker.redact(value, ["influxdb", "database"], ["influxdb", "database"], 1)
+                self.assertIs(type(redacted), EngineeringMarker)
+                self.assertEqual(redacted.text, CONNSTR)
+                self.assertEqual(walker.account.categories, {"connection_string"})
+
     def test_each_credential_word_alone_redacts_value_text(self):
         words = ("pwd", "passw", "secret", "token", "apikey", "api_key", "api-key", "auth",
                  "credential", "private", "bearer", "cookie", "session")
@@ -2214,6 +2230,21 @@ class RedactionMarkerIdentityTests(unittest.IsolatedAsyncioTestCase):
         body = {"success": False, "metadata": {"upstream_version": marker}, "data": None}
         sealed = y.seal_response(body, (ACCESS_KNOWN,))
         self.assertEqual(sealed["metadata"]["upstream_version"], MARKER_COLLISION)
+
+    def test_seal_whole_body_pass_never_skips_marker_text(self):
+        # The H1 key projection takes the whole-body sanitizer's key. That
+        # pass is strict (H3): a configured secret that itself contains
+        # marker-shaped text is not skipped as already redacted, even when
+        # another known secret in the same key is replaced.
+        shaped = syn.needle("sealshapedaa") + "[REDACTED:" + "probe]" + syn.needle("sealshapedbb")
+        plain = syn.needle("sealplainsecret")
+        for key in ("sensor " + shaped + " " + plain, plain + " " + shaped):
+            with self.subTest(key=key):
+                sealed, count, categories = y.seal({"value": {key: 1}}, (shaped, plain))
+                self.assertEqual(list(sealed["value"]), [MARKER_COLLISION])
+                for secret in (shaped, plain):
+                    self.assert_secret_absent(sealed, secret)
+                self.assertIn("redaction_marker_collision", categories)
 
     def test_marker_like_predicate(self):
         for name, text in h3_markers("SyntheticOnly"):

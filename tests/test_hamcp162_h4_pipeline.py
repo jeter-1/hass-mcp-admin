@@ -504,6 +504,32 @@ class CodexReproductionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(y.path_segment_safe(child, (), position))
                 self.assertFalse(y.path_segment_safe(child, (), position, ("db_url",)))
 
+    def test_a_key_is_scanned_in_its_decoded_and_canonical_forms(self):
+        # The scanners run on the raw, decoded and canonical forms of a key
+        # too. A full-width or fully percent-encoded run hides from the raw
+        # scan and is caught only in a decoded or canonical form.
+        def full_width(text):
+            return "".join(chr(ord(c) + 0xFEE0) if "!" <= c <= "~" else c for c in text)
+
+        blob = syn.opaque(220)
+        cases = {
+            "full_width_opaque": (full_width(blob), "opaque_blob"),
+            "percent_encoded_opaque": ("".join(f"%{ord(c):02X}" for c in blob), "opaque_blob"),
+            "full_width_pem": (full_width(syn.pem("CERTIFICATE", syn.needle("widekey"))), "pem"),
+        }
+        for name, (key, category) in cases.items():
+            with self.subTest(case=name):
+                self.assertIsNone(y.scanner_category(key, ()), "the raw form must hide the run")
+                for position in sorted(y._KEY_POSITIONS):
+                    screened = y.screen(key, (), position=position)
+                    self.assertFalse(screened.kept, (name, position))
+                    self.assertEqual(screened.category, category)
+                result = T.project({key: 1, "name": "ha"})
+                text = serialized(result.envelope)
+                self.assertNotIn(key, text)
+                self.assertNotIn(y.canonical(key)[0], text.casefold())
+                self.assertGreater(result.redacted_field_count, 0)
+
 
 # ---------------------------------------------------------------------------
 # The rule x position matrix.
