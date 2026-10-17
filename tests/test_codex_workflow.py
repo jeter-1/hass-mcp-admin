@@ -16,6 +16,8 @@ CONTEXT_SCRIPT = ROOT / "scripts" / "codex-context.py"
 PROMOTION_SCRIPT = ROOT / "scripts" / "promote_next_release.py"
 EVIDENCE_SCRIPT = ROOT / "scripts" / "pr-evidence.py"
 CHECK_SCRIPT = ROOT / "scripts" / "check.ps1"
+SHARD_SCRIPT = ROOT / "scripts" / "unit_test_shards.py"
+LOCAL_SHARD_SCRIPT = ROOT / "scripts" / "local_unit_test_shards.py"
 REPOSITORY_CODE_SENTINEL = "FIXTURE_REPOSITORY_CODE_EXECUTED"
 
 
@@ -243,6 +245,46 @@ class SmokeTests(unittest.TestCase):
 """,
         )
         self.write("tests/test_codex_workflow.py", "# Fixture workflow test module.\n")
+        # Inputs for the opt-in -Parallel path: the real shard modules, a
+        # two-general-shard plan, and one real-time measurement.
+        self.write("scripts/unit_test_shards.py", SHARD_SCRIPT.read_text(encoding="utf-8"))
+        self.write("scripts/local_unit_test_shards.py", LOCAL_SHARD_SCRIPT.read_text(encoding="utf-8"))
+        self.write(
+            "ci/unit-test-shards.json",
+            json.dumps({"schema_version": 1, "general_shards": 2, "default_module_seconds": 1,
+                        "module_seconds": {}}) + "\n",
+        )
+        self.write("tests/support/__init__.py", "")
+        self.write("tests/support/real_time.py", (ROOT / "tests" / "support" / "real_time.py").read_text(encoding="utf-8"))
+        self.write(
+            "tests/test_shard_mix.py",
+            """import os
+import unittest
+
+from support.real_time import real_time_measurement
+
+
+class MixTests(unittest.TestCase):
+    def run(self, result=None):
+        if os.path.exists(".fixture-unstarted") and self._testMethodName == "test_plain":
+            print("fixture-unstarted-diagnostic " + self.id())
+            return result
+        return super().run(result)
+
+    def test_plain(self):
+        self.assertFalse(os.path.exists(".fixture-test-failure"), "synthetic fixture test failure")
+
+    @unittest.skip("synthetic skip")
+    def test_skipped(self):
+        raise AssertionError("not reached")
+
+
+class MeasuredTests(unittest.TestCase):
+    @real_time_measurement("synthetic latency bound")
+    def test_measured(self):
+        self.assertTrue(True)
+""",
+        )
         self.write(
             ".github/workflows/ci.yml",
             """name: Fixture CI
@@ -286,6 +328,7 @@ __pycache__/
         *,
         base_ref: str = "origin/main",
         authorized_paths: tuple[str, ...] = (),
+        parallel: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
         arguments = [executable, "-NoProfile", "-NonInteractive"]
         if os.name == "nt":
@@ -307,6 +350,8 @@ __pycache__/
                 self.powershell_literal(path) for path in authorized_paths
             )
             invocation.extend(("-AuthorizedProtectedPath", f"@({path_array})"))
+        if parallel is not None:
+            invocation.extend(("-Parallel", parallel))
         arguments.extend(("-Command", " ".join(invocation)))
         return run(arguments, cwd=self.root, check=False)
 
@@ -1569,6 +1614,183 @@ class CheckScriptExecutionTests(unittest.TestCase):
                         self.assertEqual(payload["overall_status"], "failed")
                 finally:
                     fixture.close()
+
+    def evidence_payload(self) -> dict:
+        return json.loads(
+            (self.fixture.root / ".artifacts" / "validation.json").read_text(encoding="utf-8")
+        )
+
+    @staticmethod
+    def unittest_step(payload: dict) -> dict:
+        return next(step for step in payload["steps"] if step["name"] == "Run complete unittest suite")
+
+    def test_default_evidence_is_unchanged_single_process_and_recorded(self):
+        result = self.fixture.run_check(self.powershell, "Evidence")
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        payload = self.evidence_payload()
+        self.assertEqual(
+            payload["unit_test_execution"],
+            {"mode": "single_process", "sharded": False, "workers": 1, "executed": True},
+        )
+        step = self.unittest_step(payload)
+        self.assertTrue(step["command"].endswith(" -m unittest discover -s tests -v"), step["command"])
+        self.assertEqual((step["status"], step["test_count"], step["note"]), ("passed", 4, "skipped_tests=1"))
+        self.assertNotIn("local_unit_test_shards", output)
+        self.assertFalse((self.fixture.root / ".artifacts" / "unit-test-shards").exists())
+        summary = (self.fixture.root / ".artifacts" / "validation.md").read_text(encoding="utf-8")
+        self.assertIn("- Unit test execution: single process\n", summary)
+
+    def test_parallel_evidence_binds_the_snapshot_and_matches_single_process_totals(self):
+        serial = self.fixture.run_check(self.powershell, "Evidence")
+        self.assertEqual(serial.returncode, 0, self.output(serial))
+        serial_payload = self.evidence_payload()
+        result = self.fixture.run_check(self.powershell, "Evidence", parallel="2")
+        output = self.output(result)
+        self.assertEqual(result.returncode, 0, output)
+        self.assertIn("Evidence validation passed", output)
+        payload = self.evidence_payload()
+        head = git(self.fixture.root, "rev-parse", "HEAD")
+        self.assertEqual((payload["head_sha"], payload["working_tree"]), (head, "clean"))
+        self.assertEqual(payload["base_sha"], serial_payload["base_sha"])
+        self.assertEqual(payload["schema_version"], 2)
+        execution = payload["unit_test_execution"]
+        self.assertEqual(
+            {key: execution[key] for key in ("mode", "sharded", "workers", "executed", "result")},
+            {"mode": "sharded", "sharded": True, "workers": 2, "executed": True, "result": "passed"},
+        )
+        self.assertEqual(
+            (execution["shard_count"], execution["general_shards"], execution["serial_shards"]), (3, 2, [2])
+        )
+        self.assertEqual(execution["source_sha"], head)
+        self.assertEqual((execution["discovered_count"], execution["tests_run"], execution["skipped"]), (4, 4, 1))
+        self.assertRegex(execution["run_id"], r"^[1-9][0-9]{18}$")
+        summary_file = self.fixture.root / execution["summary"]
+        self.assertEqual(json.loads(summary_file.read_text(encoding="utf-8"))["run_id"], execution["run_id"])
+        step, serial_step = self.unittest_step(payload), self.unittest_step(serial_payload)
+        self.assertIn("local_unit_test_shards.py run --workers 2 --output-dir", step["command"])
+        self.assertEqual(step["test_count"], serial_step["test_count"])
+        self.assertTrue(step["note"].startswith(serial_step["note"] + "; sharded workers=2"), step["note"])
+        self.assertEqual(
+            [s["name"] for s in payload["steps"]], [s["name"] for s in serial_payload["steps"]]
+        )
+        markdown = (self.fixture.root / ".artifacts" / "validation.md").read_text(encoding="utf-8")
+        self.assertIn("- Unit test execution: sharded, 2 worker(s), 3 shards", markdown)
+        # The bounded PR-draft generator still trusts the sharded receipt.
+        draft = self.fixture.root / ".artifacts" / "pr.md"
+        run([sys.executable, str(self.fixture.root / "scripts" / "pr-evidence.py"), "--repo-root",
+             str(self.fixture.root), "--base", "origin/main", "--head", "HEAD", "--output", str(draft)],
+            cwd=self.fixture.root)
+        text = draft.read_text(encoding="utf-8")
+        self.assertNotIn("not accepted", text)
+        self.assertIn("Overall local status: **passed**", text)
+
+    def test_parallel_test_failure_fails_the_tier_with_the_shard_output(self):
+        self.fixture.write(".fixture-test-failure", "fail\n")
+        result = self.fixture.run_check(self.powershell, "Full", parallel="2")
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("Sharded unittest run FAILED", output)
+        self.assertIn("synthetic fixture test failure", output)
+        self.assertRegex(output, r"----- shard \d output")
+        self.assertIn("Sharded unittest step failed", output)
+        self.assertNotIn("Full validation passed", output)
+
+    def test_parallel_completeness_only_failure_names_the_test_and_shows_its_shard(self):
+        # Every worker exits 0 with an OK summary, but one assigned test never started.
+        self.fixture.write(".fixture-unstarted", "skip run\n")
+        result = self.fixture.run_check(self.powershell, "Full", parallel="2")
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertRegex(
+            output,
+            r"Completeness check FAILED \(completeness_refused:shard_execution_incomplete_or_extra\): "
+            r"shard\(s\) 2 missing: test_shard_mix\.MixTests\.test_plain",
+        )
+        self.assertIn("----- shard 2 output (completeness_missing) -----", output)
+        self.assertIn("fixture-unstarted-diagnostic test_shard_mix.MixTests.test_plain", output)
+        self.assertNotRegex(output, r"(?m)^Shard \d+ \([a-z_]+\): passed")
+        self.assertNotIn("Completeness proven", output)
+        self.assertIn("sharded summary result is failed", output)
+        self.assertNotIn("Full validation passed", output)
+
+    def test_parallel_evidence_failure_is_recorded_as_failed(self):
+        self.fixture.write(".fixture-test-failure", "fail\n")
+        self.fixture.commit("fixture failing test")
+        result = self.fixture.run_check(self.powershell, "Evidence", parallel="3")
+        self.assertNotEqual(result.returncode, 0, self.output(result))
+        payload = self.evidence_payload()
+        self.assertEqual(payload["overall_status"], "failed")
+        step = self.unittest_step(payload)
+        self.assertEqual(step["status"], "failed")
+        self.assertNotEqual(step["exit_code"], 0)
+        self.assertEqual(step["test_count"], "unknown")
+        execution = payload["unit_test_execution"]
+        self.assertEqual((execution["result"], execution["workers"], execution["tests_run"]), ("failed", 3, None))
+
+    def test_parallel_never_accepts_a_helper_without_a_proven_summary(self):
+        forged_summary = (
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "out = Path(sys.argv[sys.argv.index('--output-dir') + 1])\n"
+            "out.mkdir(parents=True)\n"
+            "(out / 'summary.json').write_text(json.dumps({'result': RESULT, 'mode': 'sharded', 'workers': WORKERS,"
+            " 'tests_run': 4, 'skipped': 1, 'discovered_count': 4, 'shard_count': 3, 'general_shards': 2,"
+            " 'serial_shards': [2], 'run_id': '1000000000000000000', 'source_sha': 'f' * 40,"
+            " 'discovered_sha256': 'x', 'plan_sha256': 'y'}))\n"
+            "print('Ran 4 tests in 0.1s')\nprint('OK')\n"
+        )
+        helpers = {
+            "crashed after printing a passing unittest summary": (
+                "print('Ran 4 tests in 0.1s')\nprint('OK')\nraise SystemExit(0)\n", "no sharded summary was written"),
+            "nonzero exit beside a passing summary": (
+                forged_summary.replace("RESULT", "'passed'").replace("WORKERS", "2") + "raise SystemExit(3)\n",
+                "sharded run exited 3"),
+            "failed summary with exit 0": (
+                forged_summary.replace("RESULT", "'failed'").replace("WORKERS", "2"), "sharded summary result is failed"),
+            "summary for another worker count": (
+                forged_summary.replace("RESULT", "'passed'").replace("WORKERS", "4"),
+                "does not match the requested 2 worker(s)"),
+        }
+        for name, (body, message) in helpers.items():
+            with self.subTest(name):
+                self.fixture.write("scripts/local_unit_test_shards.py", body)
+                result = self.fixture.run_check(self.powershell, "Full", parallel="2")
+                output = self.output(result)
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn(message, output)
+                self.assertNotIn("Full validation passed", output)
+
+    def test_parallel_evidence_refuses_a_proof_bound_to_another_head(self):
+        body = (
+            "import json, sys\n"
+            "from pathlib import Path\n"
+            "out = Path(sys.argv[sys.argv.index('--output-dir') + 1])\n"
+            "out.mkdir(parents=True)\n"
+            "(out / 'summary.json').write_text(json.dumps({'result': 'passed', 'mode': 'sharded', 'workers': 2,"
+            " 'tests_run': 4, 'skipped': 1, 'discovered_count': 4, 'shard_count': 3, 'general_shards': 2,"
+            " 'serial_shards': [2], 'run_id': '1000000000000000000', 'source_sha': 'f' * 40,"
+            " 'discovered_sha256': 'x', 'plan_sha256': 'y'}))\n"
+        )
+        self.fixture.write("scripts/local_unit_test_shards.py", body)
+        self.fixture.commit("fixture foreign proof")
+        result = self.fixture.run_check(self.powershell, "Evidence", parallel="2")
+        output = self.output(result)
+        self.assertNotEqual(result.returncode, 0, output)
+        self.assertIn("not the Evidence head", output)
+        self.assertEqual(self.evidence_payload()["overall_status"], "failed")
+
+    def test_parallel_is_rejected_on_fast_and_outside_the_worker_bound(self):
+        cases = (("Fast", "2", "-Parallel is supported only with -Tier Full or -Tier Evidence"),
+                 ("Full", "5", "Parallel"), ("Full", "0", "Parallel"))
+        for tier, workers, message in cases:
+            with self.subTest(tier=tier, workers=workers):
+                result = self.fixture.run_check(self.powershell, tier, parallel=workers)
+                output = self.output(result)
+                self.assertNotEqual(result.returncode, 0, output)
+                self.assertIn(message, output)
+                self.assertNotIn(REPOSITORY_CODE_SENTINEL, output)
+                self.assertNotIn("validation passed", output)
 
 
 class InstructionFileTests(unittest.TestCase):
