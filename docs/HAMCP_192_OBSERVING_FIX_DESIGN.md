@@ -16,6 +16,7 @@ of scope and would be reported before it is changed.
 | --- | --- | --- |
 | `R/fan/service.py` | 1, 2, 3, 4, 5, 6 | inline poll wrapper; 30 s lease; opt into the final read; receipt hints and blocker naming; governed hold release |
 | `R/f3/executor.py` | 3 | opt-in `final_read_at_deadline` flag (default off), used only by typed fan/power |
+| `R/f3/locks.py` | 4 (amendment 3) | one shared `holder_blocks` predicate, used by acquisition and by the receipt's blocker naming; behaviour-identical refactor |
 | `R/fan/locks.py` | 2 | the shared `FAN_LOCK_TIMING` (30 s) constant, also used by the promotion handle (was 120 s) |
 | `R/approval_web.py` | 6 | Ingress admin review page and POST for a typed hold release, copying the F3 reconciliation CSRF/binding pattern |
 | `.release/next-version` | release | consumed by the promotion script |
@@ -214,8 +215,10 @@ external approval.
 ### Flow
 
 1. **Review (GET `/typed/{kind}/{task_id}`, kind ∈ {fan, power}).**
-   - Ingress plus an authenticated HA administrator are required. Otherwise
-     403, as for `/f3`.
+   - Ingress plus the authenticated Ingress principal are required, through
+     the same identity check as `/f3`. Otherwise 403. That check does not
+     verify the Home Assistant administrator role on any approval page; the
+     system-wide role check is deferred to HAMCP-205 (amendment 3, H1).
    - The page is shown only for a terminal `manual_review_required` task
      whose hold is settled: exactly the entity hold, owned by the task.
    - It shows the receipt facts, the hold token, and the last recorded
@@ -330,6 +333,65 @@ external approval.
 - **Files:** `R/fan/service.py`, `R/approval_web.py` (both already on the
   list). No new file.
 
+### Amendment 3 — exactly-once release audit and one blocks predicate (Codex M1, M2; Josh, 2026-10-18)
+
+**M1 — the release is recorded and audited exactly once.**
+
+- The sidecar gains one closed field, `audit_recorded` (bool). The
+  sidecar format never shipped (beta.18 went to HAMCP-171), so this is not a
+  stored-format change for any released build.
+- **Stable release ID:** `hold_release_id` is a digest over the authorized
+  decision fields only (task, prepared hash, record generation, hold key and
+  generation, authority hash, readback hash and match, `authorized_at`), not
+  over `released_at` or `audit_recorded`. The audit entry's
+  `audit_event_id` is a digest of that release ID under the model
+  `typed-hold-release-audit-v1`, so every retry writes the same ID.
+- **Idempotent write:** the production `AuditLogger` already deduplicates by
+  `audit_event_id` under its file lock, across the log and its rotation. A
+  repeated write of the same entry is therefore a no-op, not a second entry.
+- **One completion path:** `release_hold` and the recovery sweep's
+  `reconcile` both call `_finish_hold_release`, which runs under the
+  service's declarations lock and is resumable from each step:
+  1. the decision is recorded (sidecar, `released_at = null`,
+     `audit_recorded = false`);
+  2. the hold is cleared (with the original fencing) and `released_at` is
+     written;
+  3. the audit entry is written; only a confirmed write of exactly one entry
+     sets `audit_recorded = true`. A failed or partial write counts
+     `audit_projection_failures` and leaves the step for recovery to retry.
+- `audit_recorded = true` with `released_at = null` is rejected as corrupt
+  (fail closed).
+- A release counts as settled only once it is released, owns nothing, and is
+  audited (or no audit target is configured).
+- The receipt and status add `hold_release_id` and `audit_recorded`.
+
+**M2 — one "currently blocks" predicate.**
+
+- `DurableLockStore.holder_blocks(holder, request_mode, now)` in
+  `R/f3/locks.py` is the one acquisition predicate. `acquire_once` uses it,
+  and so does the receipt's `blocking_tasks`, so a hint can never disagree
+  with the refusal it explains. `transfer_complete` keeps its own
+  equivalent inline check; this PR does not change it.
+- **Expired-lease semantics (unchanged, now documented):** a holder blocks
+  when it is a conflict hold, when either side is exclusive, or when its
+  lease has expired. Expiry alone never frees a key, even between two shared
+  holders: only task-aware stale recovery releases, transfers or holds it.
+- The receipt now shows expired, unreconciled holders that it previously
+  omitted (Codex's reproduction). Each entry has a `lease_status` of
+  `active`, `expired_pending_recovery` or `conflict_hold`. For an expired
+  lease, `expected_release_at` is `null`, `lease_expired_at` gives the
+  expiry, and `release` is `"recovery_sweep_reconciles_expired_lease"`.
+  Requested shared keys are listed only when the predicate says they block.
+
+**H1 (approval-page administrator role) — deferred to HAMCP-205: the /typed
+pages share the existing pages' identity check; the system-wide
+administrator check lands in HAMCP-205.** No approval page checks the Home
+Assistant administrator role today, so the gap is not specific to the typed
+pages and is fixed once, for every approval page, in HAMCP-205. Practical
+exposure is near zero, because the one non-administrator account cannot see
+the panel. This PR adds no administrator check and does not change the plan
+or F3 pages.
+
 ## 8. Tests and mutations
 
 New tests are in `tests/test_hamcp192_observing_fix.py`. They use a
@@ -347,6 +409,10 @@ deterministic fake clock and a fake sleep, and offline fixtures.
 | restart mid-observation | process loss during the inline poll; a replacement service verifies after the claim expires, with no second dispatch |
 | F3 default | executor without the flag keeps the pre-read deadline check |
 | side-by-side review (amendment 2) | the review page and the release result show requested vs freshly read values per field with `same`/`DIFFERENT` and a verdict, before the form; a state change after review refuses the release (409) and changes nothing; a failed review read gives 503 with no form; no read without an admin |
+| crash points (amendment 3, M1) | a crash after the decision, after the hold is cleared, after `released_at`, after the audit write and after `audit_recorded`, then a restart with a replacement service: exactly one audit entry with the stable ID, and a consistent, settled hold state |
+| audit failure (amendment 3, M1) | a failed audit write leaves `audit_recorded = false`; recovery retries and settles with one entry |
+| concurrent finishers (amendment 3, M1) | two threads finishing the same release write one audit entry |
+| expired blocker (amendment 3, M2) | an expired, unreconciled lease is named (`expired_pending_recovery`); an active shared holder is not named; both call sites use the one predicate |
 
 Each mutation must make at least one test fail:
 
@@ -355,6 +421,11 @@ Each mutation must make at least one test fail:
 - release without approval (principal check removed);
 - release dispatches;
 - (amendment 2) the review page omits the side-by-side comparison.
+- (amendment 3, M1) a non-idempotent audit ID (a fresh random ID per write);
+- (amendment 3, M1) release completion not serialized;
+- (amendment 3, M1) `audit_recorded` set without a confirmed write;
+- (amendment 3, M2) hints computed with a separate filter;
+- (amendment 3, M2) the lock check stops using the shared predicate.
 
 ## 9. HAMCP-162 overlap
 
@@ -386,3 +457,18 @@ Each mutation must make at least one test fail:
   Ingress routes for this add-on's own pages, not Home Assistant routes.
 - HAMCP-171's runtime PR (#277, beta.18 planned) was still an open draft at
   merge time; its recovery-sweep change is not in this branch.
+
+### Merge record 2 (2026-10-18)
+
+- `origin/main` at `51d63fc` (HAMCP-171 beta.18) was merged with a merge
+  commit (`1d22d87`). Four documentation conflicts, all resolved to main's
+  content: `README.md`, `hass_mcp_engineering_beta/CHANGELOG.md`, and the
+  add/add conflicts `docs/V2_4_1_BETA18_RELEASE_NOTES.md` and
+  `docs/V2_4_1_BETA18_ACCEPTANCE.md`. beta.18 belongs to HAMCP-171, so this
+  PR's release text moved to beta.19.
+- `origin/main` at `8a55103` (HAMCP-202 #275: workflows, scripts and tests
+  only, no version change) was merged with a merge commit (`ae7caf7`). No
+  conflicts; no file in common with this PR.
+- This PR is then restaged as `2.4.1-beta.19` with
+  `promote_next_release.py --apply`. The beta.18 files are byte-identical to
+  `main`.

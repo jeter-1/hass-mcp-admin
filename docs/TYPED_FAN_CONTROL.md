@@ -123,14 +123,24 @@ Receipts add derived hints and do not change any stored format.
 `observation_status` reports why the task is observing, the evidence deadline,
 the earliest next re-read (`next_reobservation_not_before`), the attempt count,
 and the last-observed and verified timestamps. A `lock_conflict` receipt names
-each blocking task in `blocking_tasks`: task ID, lock key, state, expected
-release time (`null` for a manual-review hold) and how it releases. A new command
+each blocking task in `blocking_tasks`: task ID, lock key, state,
+`lease_status`, expected release time and how it releases. The list uses the
+lock store's own acquisition predicate, so it names exactly the holders that
+caused the refusal. A holder blocks when it is a conflict hold, when either
+side is exclusive, or when its lease has expired: expiry alone never frees a
+key, even between two shared holders, until task-aware recovery releases,
+transfers or holds it. `lease_status` is `active` (expected release at the
+lease expiry), `conflict_hold` (expected release `null`; a governed release is
+required) or `expired_pending_recovery` (expected release `null`,
+`lease_expired_at` gives the expiry, and the recovery sweep reconciles it). A new command
 on a held fan is still refused; it is never queued and never supersedes the
 holder.
 
 Governed hold release (HAMCP-192). A manual-review hold is never released
-automatically. A Home Assistant administrator can release it at the add-on's
-Ingress page `/typed/fan/<task_id>`. The page shows the exact reviewed facts
+automatically. It can be released at the add-on's Ingress page
+`/typed/fan/<task_id>`. The page uses the same Ingress identity check as the
+existing approval pages; the system-wide Home Assistant administrator-role
+check for every approval page is deferred to HAMCP-205. The page shows the exact reviewed facts
 behind a single-use CSRF token bound to the record generation, prepared hash and
 hold generation. The page also reads the device once and shows the requested
 state and the freshly read state side by side, field by field, with an explicit
@@ -138,7 +148,12 @@ verdict, before the release button; the token is bound to that readback, so a
 state change after review refuses the release until it is reviewed again.
 Release performs one fresh state readback and records it with
 the decision in an additive sidecar (`hold-releases/<task_id>.json`). It then
-clears only that hold and writes one `fan_hold_release_action` audit entry. The
+clears only that hold and writes one `fan_hold_release_action` audit entry.
+The audit entry is written exactly once: its event ID derives from a stable
+`hold_release_id` over the authorized decision, the audit logger deduplicates
+by that ID, and the sidecar's `audit_recorded` is set only after a confirmed
+write. A crash or a failed audit write at any step is finished by recovery
+without a second entry. The
 task outcome stays `manual_review_required`, and the readback match is reported
 truthfully. Release never dispatches. Recovery may finish an interrupted release
 from the sidecar without any provider access. An invalid sidecar fails closed
