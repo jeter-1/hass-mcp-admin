@@ -571,16 +571,42 @@ class WorkflowBoundaryTests(unittest.TestCase):
                                                  "types": ["completed"]})
         self.assertEqual(workflow["permissions"], {})
         self.assertNotIn("write", workflow["jobs"]["detect-release"]["permissions"].values())
-        steps = workflow["jobs"]["promote"]["steps"]
+        # HAMCP-204: the claim moved to its own job. It still follows an
+        # authority recheck, and the registry-holding build job needs it, so
+        # no GHCR login or build can start before the attempt is consumed.
+        jobs = workflow["jobs"]
+        steps = jobs["claim"]["steps"]
         names = [step.get("name") for step in steps]
         claim_index = names.index("Consume create-only publication attempt authority")
-        self.assertLess(names.index("Revalidate publication authority before registry access"), claim_index)
-        self.assertLess(claim_index, names.index("Log in to GHCR"))
-        self.assertLess(claim_index, names.index("Build release commit without a temporary tag"))
+        self.assertEqual(names[claim_index - 1], "Revalidate publication authority before claiming the attempt")
+        self.assertEqual(claim_index + 1, len(names))
+        self.assertIn("claim", jobs["build"]["needs"])
+        build_names = [step.get("name") for step in jobs["build"]["steps"]]
+        self.assertEqual(build_names[build_names.index("Revalidate publication authority before registry access"):],
+                         ["Revalidate publication authority before registry access",
+                          "Bind the image build to this attempt's publication claim",
+                          "Log in to GHCR", "Build release commit without a temporary tag"])
+        for name, job in jobs.items():
+            if name != "build":
+                job_names = [step.get("name") for step in job.get("steps", [])]
+                self.assertNotIn("Log in to GHCR", job_names, name)
+                self.assertNotIn("Build release commit without a temporary tag", job_names, name)
         self.assertIn('"$SOURCE_MODE" == "resume_digest"', steps[claim_index]["run"])
         self.assertIn('publication_claim.py" resume', steps[claim_index]["run"])
         text = (ROOT / ".github/workflows/publish-rc-image.yml").read_text()
-        self.assertEqual(text.count('"$DETECTED_RELEASE_MODE" == "protected_merge_handoff"'), 5)
+        needle = '"$DETECTED_RELEASE_MODE" == "protected_merge_handoff"'
+        self.assertEqual(text.count(needle), 6)
+        locations = {(name, step.get("name")): str(step.get("run", "")).count(needle)
+                     for name, job in jobs.items() for step in job.get("steps", [])
+                     if needle in str(step.get("run", ""))}
+        self.assertEqual(locations, {
+            ("verify-release", "Validate protected release commit"): 1,
+            ("claim", "Revalidate publication authority before claiming the attempt"): 1,
+            ("build", "Revalidate publication authority before registry access"): 1,
+            ("promote", "Revalidate publication authority before final image tags"): 1,
+            ("promote", "Finalize release commit and annotated tag"): 1,
+            ("promote", "Create and verify GitHub Release"): 1,
+        })
         self.assertNotIn("actions: write", text)
 
 

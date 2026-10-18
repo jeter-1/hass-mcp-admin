@@ -26,6 +26,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 RELEASE_REGISTRY = "prepare-ha-mcp-release-registry-update.yml"
+PUBLISH = "publish-rc-image.yml"
 COMPATIBILITY = "prepare-upstream-compatibility-attestation.yml"
 SIGNING_WORKFLOWS = {
     RELEASE_REGISTRY: ("ha-mcp-release-registry-signing", ("HA_MCP_RELEASE_REGISTRY_SIGNING_KEY",)),
@@ -93,18 +94,34 @@ SIGNING_JOB_ACTIONS = {
     "actions/upload-artifact",
 }
 
-# Reviewed exceptions outside HAMCP-202 scope.  The publication `promote` job
-# pushes its release tag through persisted checkout credentials and runs the
-# release-validation unittest stack while holding contents/packages write.
-# Changing it is a separate publication-authority task (HAMCP-202 follow-up).
-# The set must match observed violations exactly so it cannot go stale.
-REVIEWED_EXCEPTIONS = {
-    ("publish-rc-image.yml", "promote"): {
-        "CHECKOUT_PERSISTS_CREDENTIALS",
-        "GENERAL_TEST_STACK",
-        "PIP_CACHE",
-    },
-}
+# Write jobs of a workflow that holds `packages: write` publish images (HAMCP-204).
+# They install nothing, not even a hash lock, run no release-validation stack,
+# and run Python only from workflow-authority files or inline standard input.
+PUBLISHING_TEST_STACK = GENERAL_TEST_STACK + (
+    "compileall",
+    "discover",
+    "requirements.lock",
+    "unit_test_shards",
+)
+PYTHON_WORD = re.compile(r"(?<![\w./$-])python(?:[0-9]+(?:\.[0-9]+)?)?(?![\w.-])")
+AUTHORITY_ENV = "${{ github.sha }}"
+POLICY_DIRECTORY = "$RUNNER_TEMP/publication-policy"
+POLICY_SCRIPT = re.compile(r'"\$RUNNER_TEMP/publication-policy/[A-Za-z0-9_]+\.py"')
+# The reviewed materialization: workflow-authority scripts into the policy directory.
+POLICY_MATERIALIZATION = (
+    'mkdir -p "$RUNNER_TEMP/publication-policy"',
+    'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/${policy}" '
+    '> "$RUNNER_TEMP/publication-policy/${policy}"',
+)
+POLICY_INVOCATION = re.compile(
+    r'(?<![\w./$-])python(?:[0-9]+(?:\.[0-9]+)?)?[ \t]+' + POLICY_SCRIPT.pattern
+)
+QUOTED_VARIABLE = re.compile(r'"\$([A-Za-z_][A-Za-z0-9_]*)"')
+
+# Reviewed exceptions.  HAMCP-204 split the publication `promote` job, so no
+# privileged job is exempt.  The set must match observed violations exactly so
+# it cannot go stale or hide a new violation.
+REVIEWED_EXCEPTIONS: dict[tuple[str, str], set[str]] = {}
 
 
 def _load(name: str) -> dict:
@@ -405,7 +422,82 @@ def _install_violations(text: str) -> bool:
     )
 
 
-def job_violations(workflow: dict, job: dict, *, signing_workflow: bool) -> set[str]:
+def _publishes_packages(workflow: dict, job: dict) -> bool:
+    permissions = _permissions(workflow, job)
+    if isinstance(permissions, str):
+        return permissions == "write-all"
+    return isinstance(permissions, dict) and permissions.get("packages") == "write"
+
+
+def _authority_materialization(step: dict) -> str | None:
+    """Return the step text without its reviewed policy materialization, if any."""
+    run = _run_text(step)
+    env = step.get("env", {}) or {}
+    if env.get("WORKFLOW_AUTHORITY_SHA") != AUTHORITY_ENV or not all(
+        line in run for line in POLICY_MATERIALIZATION
+    ):
+        return None
+    for line in POLICY_MATERIALIZATION:
+        run = run.replace(line, "")
+    return run
+
+
+def _runs_release_python(step: dict) -> bool:
+    """Return whether a step runs Python other than workflow-authority code.
+
+    Allowed forms are inline standard input (``python - ... <<'PY'``), a
+    materialized policy script (``python "$RUNNER_TEMP/publication-policy/x.py"``)
+    and a quoted variable that the same step wrote from the workflow authority
+    commit (``git show "${WORKFLOW_AUTHORITY_SHA}:scripts/x.py" > "$var"``).
+    Anything else, including ``python -m`` and release-checkout paths, fails.
+    """
+    run = _run_text(step)
+    env = step.get("env", {}) or {}
+    for match in PYTHON_WORD.finditer(run):
+        rest = run[match.end():].lstrip(" \t")
+        if re.match(r"-(?:\s|$)", rest) or POLICY_SCRIPT.match(rest):
+            continue
+        variable = QUOTED_VARIABLE.match(rest)
+        if (
+            variable
+            and env.get("WORKFLOW_AUTHORITY_SHA") == AUTHORITY_ENV
+            and re.search(
+                r'git show "\$\{WORKFLOW_AUTHORITY_SHA\}:scripts/[A-Za-z0-9_]+\.py" > "\$'
+                + re.escape(variable.group(1))
+                + '"',
+                run,
+            )
+        ):
+            continue
+        return True
+    return False
+
+
+def _publishing_violations(steps: list[dict], serialized: str) -> set[str]:
+    violations: set[str] = set()
+    if any(marker in serialized for marker in PUBLISHING_TEST_STACK):
+        violations.add("PUBLISHING_JOB_RUNS_TEST_STACK")
+    for step in steps:
+        installs = install_invocations(_run_text(step))
+        if installs is None or any(install.is_install for install in installs):
+            violations.add("PUBLISHING_JOB_INSTALLS_PACKAGES")
+        if _runs_release_python(step):
+            violations.add("PUBLISHING_JOB_RUNS_RELEASE_PYTHON")
+        # Only the reviewed materialization may write the policy directory.
+        remainder = _authority_materialization(step)
+        text = _run_text(step) if remainder is None else remainder
+        if POLICY_DIRECTORY in POLICY_INVOCATION.sub("", text):
+            violations.add("PUBLISHING_JOB_RUNS_RELEASE_PYTHON")
+    return violations
+
+
+def job_violations(
+    workflow: dict,
+    job: dict,
+    *,
+    signing_workflow: bool,
+    publishing_workflow: bool = False,
+) -> set[str]:
     signing = _is_signing_job(job)
     write = _has_write(_permissions(workflow, job))
     if not (signing or write):
@@ -455,12 +547,15 @@ def job_violations(workflow: dict, job: dict, *, signing_workflow: bool) -> set[
             re.search(r"\b(python[0-9.]*|pip[0-9.]*)\b", _run_text(step)) for step in steps
         ):
             violations.add("WRITE_JOB_RUNS_PYTHON")
+    if write and publishing_workflow:
+        violations |= _publishing_violations(steps, serialized)
     return violations
 
 
 def workflow_violations(name: str, workflow: dict) -> dict[str, set[str]]:
     jobs = workflow.get("jobs", {})
     signing_workflow = any(_is_signing_job(job) for job in jobs.values())
+    publishing_workflow = any(_publishes_packages(workflow, job) for job in jobs.values())
     if signing_workflow:
         # Secrets may never be referenced by a non-signing job of a signer.
         for job_name, job in jobs.items():
@@ -470,7 +565,12 @@ def workflow_violations(name: str, workflow: dict) -> dict[str, set[str]]:
                 raise AssertionError(f"{name}:{job_name} references a signing secret")
     result = {}
     for job_name, job in jobs.items():
-        found = job_violations(workflow, job, signing_workflow=signing_workflow)
+        found = job_violations(
+            workflow,
+            job,
+            signing_workflow=signing_workflow,
+            publishing_workflow=publishing_workflow,
+        )
         if found:
             result[job_name] = found
     return result
@@ -499,7 +599,22 @@ class PrivilegedJobSupplyChainGuardTests(unittest.TestCase):
             self.assertIn((name, "sign"), privileged)
             self.assertIn((name, "publish"), privileged)
             self.assertNotIn((name, "evidence"), privileged)
-        self.assertIn(("publish-rc-image.yml", "promote"), privileged)
+        for job_name in ("claim", "build", "promote"):
+            self.assertIn((PUBLISH, job_name), privileged)
+        for job_name in ("verify-release", "verify-image", "summary"):
+            self.assertNotIn((PUBLISH, job_name), privileged)
+
+    def test_publishing_rules_cover_exactly_the_image_publication_workflow(self) -> None:
+        publishing = {
+            path.name
+            for path in sorted(WORKFLOWS.glob("*.y*ml"))
+            if any(
+                _publishes_packages(_load(path.name), job)
+                for job in _load(path.name).get("jobs", {}).values()
+            )
+        }
+        self.assertEqual(publishing, {PUBLISH})
+        self.assertEqual(REVIEWED_EXCEPTIONS, {})
 
     def test_signing_workflows_split_observation_signing_and_publication(self) -> None:
         for name, (environment, secrets) in SIGNING_WORKFLOWS.items():
@@ -775,17 +890,198 @@ class GuardMutationTests(unittest.TestCase):
             )
         )
 
-    def test_reviewed_exception_cannot_hide_new_violations(self) -> None:
-        workflow = copy.deepcopy(_load("publish-rc-image.yml"))
-        step = next(
-            step
-            for step in workflow["jobs"]["promote"]["steps"]
-            if "--require-hashes" in step.get("run", "")
+
+class PublishingJobGuardTests(unittest.TestCase):
+    """HAMCP-204: image-publishing write jobs hold no installer or test stack."""
+
+    PUBLISHING_JOBS = ("claim", "build", "promote")
+
+    def _mutated(self, mutate) -> dict[str, set[str]]:
+        workflow = copy.deepcopy(_load(PUBLISH))
+        mutate(workflow["jobs"])
+        return workflow_violations(PUBLISH, workflow)
+
+    @staticmethod
+    def _append(job: dict, run: str, **extra) -> None:
+        job["steps"].append({"name": "mutation", "shell": "bash", "run": run, **extra})
+
+    @staticmethod
+    def _checkout(job: dict) -> dict:
+        return next(step for step in job["steps"] if _action(step) == "actions/checkout")
+
+    @staticmethod
+    def _setup_python(job: dict) -> dict:
+        return next(step for step in job["steps"] if _action(step) == "actions/setup-python")
+
+    def test_baseline_is_clean_and_read_only_jobs_hold_no_write(self) -> None:
+        self.assertEqual(self._mutated(lambda jobs: None), {})
+        jobs = _load(PUBLISH)["jobs"]
+        self.assertEqual(jobs["verify-release"]["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["verify-image"]["permissions"], {"contents": "read"})
+        self.assertEqual(jobs["summary"]["permissions"], {})
+        # The validation stack still runs, in a job that cannot publish.
+        self.assertIn("unittest", json.dumps(jobs["verify-release"]))
+
+    def test_pre_split_promote_pattern_fails(self) -> None:
+        # The old single promote job: persisted checkout credentials, a pip
+        # cache, the hash-locked tests stack and release-checkout unittest.
+        def old_pattern(jobs):
+            job = jobs["promote"]
+            self._checkout(job)["with"]["persist-credentials"] = True
+            self._setup_python(job)["with"]["cache"] = "pip"
+            self._append(job, LOCKED_INSTALL.replace(SIGNING_LOCK, "tests/requirements.lock"))
+            self._append(job, "python -m unittest discover -s tests -v")
+
+        self.assertEqual(
+            self._mutated(old_pattern),
+            {
+                "promote": {
+                    "CHECKOUT_PERSISTS_CREDENTIALS",
+                    "PIP_CACHE",
+                    "GENERAL_TEST_STACK",
+                    "PUBLISHING_JOB_INSTALLS_PACKAGES",
+                    "PUBLISHING_JOB_RUNS_TEST_STACK",
+                    "PUBLISHING_JOB_RUNS_RELEASE_PYTHON",
+                }
+            },
         )
-        step["run"] = step["run"].replace("--require-hashes ", "")
-        found = workflow_violations("publish-rc-image.yml", workflow)["promote"]
-        self.assertNotEqual(found, REVIEWED_EXCEPTIONS[("publish-rc-image.yml", "promote")])
-        self.assertIn("UNHASHED_INSTALL", found)
+
+    def test_unhashed_install_fails_in_every_publishing_job(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for run in ("pip install requests", "python -m pip install -r scripts/requirements.txt"):
+                with self.subTest(job=job_name, run=run):
+                    found = self._mutated(
+                        lambda jobs, job_name=job_name, run=run: self._append(jobs[job_name], run)
+                    )[job_name]
+                    self.assertIn("UNHASHED_INSTALL", found)
+                    self.assertIn("PUBLISHING_JOB_INSTALLS_PACKAGES", found)
+
+    def test_hash_locked_install_still_fails_in_publishing_jobs(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            with self.subTest(job=job_name):
+                found = self._mutated(
+                    lambda jobs, job_name=job_name: self._append(jobs[job_name], LOCKED_INSTALL)
+                )[job_name]
+                self.assertIn("PUBLISHING_JOB_INSTALLS_PACKAGES", found)
+                self.assertNotIn("UNHASHED_INSTALL", found)
+
+    def test_persisted_credentials_fail_in_every_publishing_job(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            for value in (True, None):
+                def mutate(jobs, job_name=job_name, value=value):
+                    options = self._checkout(jobs[job_name])["with"]
+                    if value is None:
+                        options.pop("persist-credentials")
+                    else:
+                        options["persist-credentials"] = value
+                with self.subTest(job=job_name, value=value):
+                    self.assertIn("CHECKOUT_PERSISTS_CREDENTIALS", self._mutated(mutate)[job_name])
+
+    def test_floating_python_or_pip_cache_fails_in_publishing_jobs(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            def floating(jobs, job_name=job_name):
+                self._setup_python(jobs[job_name])["with"]["python-version"] = "3.12"
+
+            def cached(jobs, job_name=job_name):
+                self._setup_python(jobs[job_name])["with"]["cache"] = "pip"
+
+            with self.subTest(job=job_name):
+                self.assertIn("FLOATING_PYTHON", self._mutated(floating)[job_name])
+                self.assertIn("PIP_CACHE", self._mutated(cached)[job_name])
+
+    def test_test_stack_fails_in_every_publishing_job(self) -> None:
+        stacks = {
+            "unittest": "python -m unittest discover -s tests -v",
+            "compileall": "python -m compileall -q hass_mcp_engineering_beta",
+            "check.ps1": "pwsh -File scripts/check.ps1 -Tier Full",
+            "tests lock": 'git show "${WORKFLOW_AUTHORITY_SHA}:tests/requirements.lock" > "$RUNNER_TEMP/lock"',
+            "shards": "echo scripts/unit_test_shards.py",
+        }
+        for job_name in self.PUBLISHING_JOBS:
+            for label, run in stacks.items():
+                with self.subTest(job=job_name, stack=label):
+                    found = self._mutated(
+                        lambda jobs, job_name=job_name, run=run: self._append(jobs[job_name], run)
+                    )[job_name]
+                    self.assertIn("PUBLISHING_JOB_RUNS_TEST_STACK", found)
+
+    def test_release_checkout_python_fails_in_publishing_jobs(self) -> None:
+        runs = (
+            "python scripts/publication_digest_binding.py --github-output x",
+            "python -m json.tool x.json",
+            "python3 -c 'print(1)'",
+            'verifier="scripts/verify_publication_source_image.py"\npython "$verifier" verify-source',
+            'cp scripts/publication_claim.py "$RUNNER_TEMP/publication-policy/publication_claim.py"',
+            'python "$RUNNER_TEMP/elsewhere/publication_claim.py" create',
+        )
+        for job_name in self.PUBLISHING_JOBS:
+            for run in runs:
+                with self.subTest(job=job_name, run=run):
+                    found = self._mutated(
+                        lambda jobs, job_name=job_name, run=run: self._append(
+                            jobs[job_name], run, env={"WORKFLOW_AUTHORITY_SHA": AUTHORITY_ENV}
+                        )
+                    )[job_name]
+                    self.assertIn("PUBLISHING_JOB_RUNS_RELEASE_PYTHON", found)
+
+    def test_policy_materialized_from_the_release_checkout_fails(self) -> None:
+        for job_name in self.PUBLISHING_JOBS:
+            def release_authority(jobs, job_name=job_name):
+                step = next(
+                    step
+                    for step in jobs[job_name]["steps"]
+                    if _authority_materialization(step) is not None
+                )
+                step["env"]["WORKFLOW_AUTHORITY_SHA"] = (
+                    "${{ needs.detect-release.outputs.release_sha }}"
+                )
+            with self.subTest(job=job_name):
+                self.assertIn(
+                    "PUBLISHING_JOB_RUNS_RELEASE_PYTHON",
+                    self._mutated(release_authority)[job_name],
+                )
+
+    def test_workflow_authority_python_forms_still_pass(self) -> None:
+        allowed = (
+            'python "$RUNNER_TEMP/publication-policy/publication_claim.py" resume',
+            "python - \"$x\" <<'PY'\nprint(1)\nPY",
+            'publisher="$RUNNER_TEMP/p.py"\n'
+            'git show "${WORKFLOW_AUTHORITY_SHA}:scripts/publish_registry_tags_guarded.py" '
+            '> "$publisher"\npython "$publisher" --help',
+        )
+        for run in allowed:
+            with self.subTest(run=run):
+                step = {"run": run, "env": {"WORKFLOW_AUTHORITY_SHA": AUTHORITY_ENV}}
+                self.assertFalse(_runs_release_python(step))
+        # The variable form needs the workflow-authority environment binding.
+        self.assertTrue(_runs_release_python({"run": allowed[2], "env": {}}))
+
+    def test_non_publishing_write_workflow_is_not_subject_to_publishing_rules(self) -> None:
+        # A contents-write job elsewhere may run Python; adding packages: write
+        # brings it under the publishing rules.
+        workflow = copy.deepcopy(_load(PUBLISH))
+        job = workflow["jobs"]["claim"]
+        self._append(job, "python -m json.tool x.json")
+        for name in ("build", "promote"):
+            workflow["jobs"].pop(name)
+        self.assertEqual(workflow_violations(PUBLISH, workflow), {})
+        job["permissions"]["packages"] = "write"
+        self.assertEqual(
+            workflow_violations(PUBLISH, workflow),
+            {"claim": {"PUBLISHING_JOB_RUNS_RELEASE_PYTHON"}},
+        )
+
+    def test_reviewed_exception_mutation_fails_the_exact_match(self) -> None:
+        # Re-adding the pre-HAMCP-204 exception no longer matches the observed set.
+        stale = {
+            (PUBLISH, "promote"): {
+                "CHECKOUT_PERSISTS_CREDENTIALS",
+                "GENERAL_TEST_STACK",
+                "PIP_CACHE",
+            },
+        }
+        self.assertNotEqual(all_violations(), stale)
+        self.assertEqual(all_violations(), REVIEWED_EXCEPTIONS)
 
 
 LOCKED_INSTALL = (

@@ -211,7 +211,16 @@ class PublicationValidationWiringTests(unittest.TestCase):
     def test_publisher_uses_protected_trigger_verifier_and_complete_ci_result(self):
         publisher = yaml.safe_load((ROOT / ".github/workflows/publish-rc-image.yml").read_text())
         self.assertEqual(publisher["jobs"]["validate"]["uses"], "./.github/workflows/ci.yml")
-        prepare = next(s for s in publisher["jobs"]["promote"]["steps"] if s.get("id") == "prepare")
+        # HAMCP-204: release validation moved from promote to verify-release,
+        # which every later publication job needs; it is the only prepare step.
+        prepares = [(name, s) for name, job in publisher["jobs"].items()
+                    for s in job.get("steps", []) if s.get("id") == "prepare"]
+        self.assertEqual([name for name, _ in prepares], ["verify-release"])
+        prepare = prepares[0][1]
+        self.assertIn("validate", publisher["jobs"]["verify-release"]["needs"])
+        for name in ("claim", "build", "verify-image", "promote"):
+            self.assertIn("verify-release", publisher["jobs"][name]["needs"])
+            self.assertIn("validate", publisher["jobs"][name]["needs"])
         self.assertEqual(prepare["env"]["COMPLETE_CI_RESULT"], "${{ needs.validate.result }}")
         self.assertEqual(prepare["env"]["SOURCE_VALIDATION_RECEIPT"], "${{ needs.validate.outputs.source_validation }}")
         script = prepare["run"]

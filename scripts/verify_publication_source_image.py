@@ -45,6 +45,11 @@ BUILD_TYPE = (
 )
 WORKFLOW_NAME = "Publish reviewed Engineering release"
 WORKFLOW_PATH = ".github/workflows/publish-rc-image.yml"
+# The job that ran docker/build-push-action is recorded as github_job in the
+# BuildKit provenance. HAMCP-204 moved it from `promote` to `build`; digest
+# recovery of a run that predates the split must still verify exactly.
+BUILD_JOBS = ("build", "promote")
+BUILD_ACTION = "docker/build-push-action@"
 MERGE_WORKFLOW_PATH = ".github/workflows/enable-auto-merge.yml"
 SOURCE_DIRECTORY = "hass_mcp_engineering_beta"
 
@@ -208,6 +213,37 @@ def release_platforms(repo: Path, release_sha: str) -> dict:
         _fail("RELEASE_ARCHITECTURE_SET_INVALID")
     return {ARCHITECTURE_PLATFORMS[name]: REQUIRED_PLATFORMS[ARCHITECTURE_PLATFORMS[name]]
             for name in architectures}
+
+
+def source_build_job(repo: Path, workflow_sha: str) -> str:
+    """Return the one job of the exact source workflow commit that builds the image."""
+    import yaml
+
+    _exact_pattern(workflow_sha, SHA_PATTERN, "EXPECTED_WORKFLOW_SHA_INVALID")
+    raw = release_blob(repo, workflow_sha, WORKFLOW_PATH, limit=262_144)
+    try:
+        workflow = yaml.safe_load(raw)
+    except (yaml.YAMLError, UnicodeError, RecursionError) as exc:
+        raise VerificationError("SOURCE_WORKFLOW_INVALID") from exc
+    jobs = workflow.get("jobs") if isinstance(workflow, dict) else None
+    if not isinstance(jobs, dict):
+        _fail("SOURCE_WORKFLOW_INVALID")
+    builders = []
+    for name, job in jobs.items():
+        steps = job.get("steps", []) if isinstance(job, dict) else []
+        if not isinstance(steps, list):
+            _fail("SOURCE_WORKFLOW_INVALID")
+        if any(isinstance(step, dict) and str(step.get("uses", "")).startswith(BUILD_ACTION)
+               for step in steps):
+            builders.append(name)
+    if len(builders) != 1 or builders[0] not in BUILD_JOBS:
+        _fail("SOURCE_WORKFLOW_BUILD_JOB_INVALID")
+    return builders[0]
+
+
+def emit_source_build_job(args: argparse.Namespace) -> None:
+    job = source_build_job(args.release_repo, args.expected_workflow_sha)
+    _write_lines(args.github_output, (f"build_job={job}",))
 
 
 def emit_release_platforms(args: argparse.Namespace) -> None:
@@ -973,6 +1009,8 @@ def verify_source(args: argparse.Namespace) -> None:
         _fail("EXPECTED_RUN_ATTEMPT_INVALID")
     if args.expected_event_name not in {"push", "workflow_dispatch", "workflow_run"}:
         _fail("EXPECTED_EVENT_NAME_INVALID")
+    if args.expected_build_job not in BUILD_JOBS:
+        _fail("EXPECTED_BUILD_JOB_INVALID")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repository):
         _fail("EXPECTED_REPOSITORY_INVALID")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", args.owner):
@@ -1029,7 +1067,7 @@ def verify_source(args: argparse.Namespace) -> None:
     expected_internal = {
         "github_actor": args.owner,
         "github_event_name": args.expected_event_name,
-        "github_job": "promote",
+        "github_job": args.expected_build_job,
         "github_ref": "refs/heads/main",
         "github_ref_name": "main",
         "github_ref_protected": "true",
@@ -1205,6 +1243,12 @@ def parser() -> argparse.ArgumentParser:
     platforms.add_argument("--github-output", type=Path, required=True)
     platforms.set_defaults(handler=emit_release_platforms)
 
+    build_job = commands.add_parser("source-build-job")
+    build_job.add_argument("--release-repo", type=Path, required=True)
+    build_job.add_argument("--expected-workflow-sha", required=True)
+    build_job.add_argument("--github-output", type=Path, required=True)
+    build_job.set_defaults(handler=emit_source_build_job)
+
     run = commands.add_parser("verify-recovery-run")
     run.add_argument("--run-json", type=Path, required=True)
     run.add_argument("--expected-run-id", required=True)
@@ -1227,6 +1271,7 @@ def parser() -> argparse.ArgumentParser:
     source.add_argument("--expected-run-attempt", type=int, required=True)
     source.add_argument("--expected-workflow-sha", required=True)
     source.add_argument("--expected-event-name", required=True)
+    source.add_argument("--expected-build-job", required=True)
     source.add_argument("--expected-handoff", default="")
     source.add_argument("--repository", required=True)
     source.add_argument("--owner", required=True)
