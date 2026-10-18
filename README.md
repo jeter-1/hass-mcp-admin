@@ -1,5 +1,18 @@
 # HA MCP Engineering Server
 
+Engineering **2.4.1-beta.20** gives every tool one shared sanitizer with
+identity-only redaction markers (HAMCP-191). Every rule runs first, then any
+untrusted string that still looks like a redaction marker is replaced as a
+whole by a collision marker, which closes two leaks where forged marker text
+let a secret through. Markers that Engineering produced in the same request
+are kept by object identity; stored plans keep beta.19's tolerance on re-read
+until HAMCP-207. `get_server_health` counts collisions and refusals, and a
+redacted delegated read now reports `partial`. Ordinary data is unchanged.
+Read the [2.4.1-beta.20 release notes](docs/V2_4_1_BETA20_RELEASE_NOTES.md) and
+[2.4.1-beta.20 acceptance contract](docs/V2_4_1_BETA20_ACCEPTANCE.md).
+
+It builds on beta.19 below.
+
 Engineering **2.4.1-beta.19** verifies slow typed fan and power devices
 promptly (HAMCP-192). After dispatch it polls the entity inline for about 10
 seconds and verifies on the first match, so a device that reports a few
@@ -184,7 +197,7 @@ not prove publication, deployment or installed acceptance.
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.19 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.20 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
