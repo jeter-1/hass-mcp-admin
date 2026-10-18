@@ -47,7 +47,14 @@ class ReadinessHistoryTests(unittest.IsolatedAsyncioTestCase):
                                 self.fixture.service.task_repository, 'list',
                                 wraps=self.fixture.service.task_repository.list))
                             worker = stack.enter_context(patch('asyncio.to_thread', side_effect=AssertionError('readiness enqueued work')))
-                            observation = await self._measure_requests(gateway, contention=contention)
+                            # Measure readiness CPU work, not collection of the
+                            # retained-history fixtures or earlier suite state.
+                            gc.collect()
+                            gc.disable()
+                            try:
+                                observation = await self._measure_requests(gateway, contention=contention)
+                            finally:
+                                gc.enable()
                         print(json.dumps({
                             'phase': 'routine_readiness', 'history': count,
                             'preparation_seconds': preparation_seconds,

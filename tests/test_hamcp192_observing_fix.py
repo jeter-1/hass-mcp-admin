@@ -965,6 +965,39 @@ class HoldReleaseExactlyOnceTests(ObservingFixture):
             await self.assert_settled_once(request, replacement, dispatches=2)
         self.assertEqual(len(self.release_entries()), 2)
 
+    async def test_backfilled_audit_timestamp_is_the_original_release_time(self):
+        self.audit.enabled = False
+        request = await self.held_task()
+        await self.decide(request)
+        original_release = self.service._load_release(request.task_id)
+        released_at = original_release["released_at"]
+        self.assertEqual(released_at, self.clock().isoformat())
+        self.assertFalse(original_release["audit_recorded"])
+        self.assertEqual(self.release_entries(), [])
+        expected_event_id = digest({
+            "model": HOLD_RELEASE_AUDIT_MODEL,
+            "release_id": self.service.hold_release_id(original_release),
+        })
+
+        # A later process must backfill the release event's time, not its
+        # recovery time. Capture the expected value before either stored
+        # record can change, so mutating both records cannot satisfy the test.
+        self.clock.advance(3600)
+        self.audit = AuditLogger(str(self.audit_path), "synthetic-audit-secret-not-real")
+        replacement = self.build()
+        reads, writes = self.transport.reads(), self.transport.writes
+        await replacement.recover_once()
+
+        entries = self.release_entries()
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["timestamp"], released_at)
+        self.assertNotEqual(entries[0]["timestamp"], self.clock().isoformat())
+        self.assertEqual(entries[0]["audit_event_id"], expected_event_id)
+        self.assertEqual(replacement._load_release(request.task_id)["released_at"], released_at)
+        self.assertEqual((self.transport.reads(), self.transport.writes), (reads, writes))
+        await self.assert_settled_once(request, replacement)
+        self.assertEqual(self.release_entries()[0]["timestamp"], released_at)
+
     async def test_write_failure_records_false_then_backfills_after_disable_and_reenable(self):
         request = await self.held_task()
         with patch.object(self.audit, "_write_safe_unlocked", side_effect=OSError("synthetic")):
