@@ -47,10 +47,13 @@ The review needs a security section covering:
 - process memory only: nothing persisted, empty at start, and no
   authoritative read, save, approval or execution path consulting the cache;
 - bounded reporting with no digest, path or key material;
-- the one public schema change: `get_server_health` gains the optional
-  boolean `deep_storage_audit` (default `false`). Every other descriptor is
-  unchanged and the catalog stays at 88. The three F2 snapshot pins are
-  updated for that descriptor only;
+- the one public descriptor change: `get_server_health` gains the optional
+  boolean `deep_storage_audit` (default `false`), and its description gains
+  two lines documenting it. Every other descriptor is unchanged and the
+  catalog stays at 88. The three F2 snapshot pins are updated for that
+  descriptor only. The two historical catalog-continuity tests keep their
+  baseline fixtures and strip exactly that property and those two lines
+  before comparing;
 - the sweep parent-read rule, with at-most-once dispatch, no blind
   redispatch, HAMCP-189 local-first expiry and durable cancel unchanged;
 - zero new write, reload, restart, deletion, service-call, fallback or
@@ -103,6 +106,10 @@ fail at least one test, including the brief's three:
 - the cache ignores the content hash;
 - the cache survives a record change;
 - the sweep skips a needed parent read.
+
+The recorded run is in `docs/evidence/hamcp171-mutations/results.json`
+(Python 3.12.14, against this branch's runtime). The baseline passed, and
+8 of 8 mutations were killed, none by an import or syntax error.
 
 ### Measured effect
 
@@ -190,7 +197,8 @@ content.
 2. **Live catalog 88.** Enumerate the live catalog with a fresh protocol
    enumeration: exactly 88 tools (59 native, 29 delegated).
    `get_server_health` must show the reviewed schema with the optional
-   `deep_storage_audit` boolean. Every other descriptor must match beta.16.
+   `deep_storage_audit` boolean and the two added description lines. Every
+   other descriptor must match beta.16.
    Also compare Core signed selection, storage and audit health, F3
    readiness and zero fallback.
 3. **Two consecutive health calls.** After the add-on has started, call

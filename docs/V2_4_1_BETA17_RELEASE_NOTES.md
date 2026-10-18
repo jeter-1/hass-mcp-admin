@@ -52,9 +52,10 @@ written records are detected exactly as before.
 
 **Deep re-scan.** `get_server_health(deep_storage_audit=true)` discards every
 verdict, re-validates every record and repopulates the cache. The input is
-optional and defaults to `false`. It is this release's only public schema
-change: the `get_server_health` input schema gains this one boolean, and
-every other descriptor is unchanged. The internal `deep_audit_plan_store`
+optional and defaults to `false`. It is this release's only public
+descriptor change: the `get_server_health` input schema gains this one
+boolean and its description gains two lines documenting it. Every other
+descriptor is unchanged. The internal `deep_audit_plan_store`
 reconciliation also discards every verdict.
 
 **Reporting.** `governance.plan_store_scaling.safety_verdict_cache` reports:

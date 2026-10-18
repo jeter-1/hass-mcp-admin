@@ -34,6 +34,26 @@ import test_dashboard_analysis_transport as transport_cases
 from support.real_time import real_time_measurement
 
 
+# HAMCP-171 (2.4.1-beta.17) adds exactly one optional input to
+# get_server_health and two description lines documenting it. Every other part
+# of that descriptor must still equal the historical baseline, so strip only
+# that reviewed property and text before comparing.
+HAMCP171_DEEP_STORAGE_AUDIT = {"default": False, "title": "Deep Storage Audit", "type": "boolean"}
+HAMCP171_DESCRIPTION_LINES = (
+    "    Set deep_storage_audit=True to discard the in-memory safety verdicts and\n"
+    "    re-validate every persisted plan record (slower; read-only).\n"
+)
+
+
+def _without_hamcp171_deep_storage_audit(case, descriptor):
+    descriptor = json.loads(json.dumps(descriptor))
+    properties = descriptor["inputSchema"]["properties"]
+    case.assertEqual(properties.pop("deep_storage_audit"), HAMCP171_DEEP_STORAGE_AUDIT)
+    case.assertEqual(descriptor["description"].count(HAMCP171_DESCRIPTION_LINES), 1)
+    descriptor["description"] = descriptor["description"].replace(HAMCP171_DESCRIPTION_LINES, "")
+    return descriptor
+
+
 class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
     async def test_old_native_descriptors_are_identical_and_only_one_is_added(self):
         from ha_mcp_engineering.tools import get_registered_server
@@ -43,6 +63,7 @@ class PublicBoundaryTests(unittest.IsolatedAsyncioTestCase):
         # HAMCP-069A-1 adds exactly one further native tool after the c82 baseline.
         self.assertEqual(set(current) - set(baseline["descriptors"]),
                          {"dashboard_integrity_analysis", "create_entity_metadata_plan"})
+        current["get_server_health"] = _without_hamcp171_deep_storage_audit(self, current["get_server_health"])
         self.assertEqual({name: current[name] for name in baseline["descriptors"]}, baseline["descriptors"])
 
     async def test_old_delegated_descriptors_are_identical(self):

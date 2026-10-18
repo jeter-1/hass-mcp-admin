@@ -1,0 +1,192 @@
+{
+  "baseline": {
+    "modules": [
+      "tests.test_f3_orphan_child_recovery",
+      "tests.test_governance_async_health",
+      "tests.test_hamcp171_health_verdict_cache",
+      "tests.test_hamcp171_sweep_parent_reads"
+    ],
+    "returncode": 0,
+    "seconds": 192.9,
+    "summary": "OK"
+  },
+  "mutation_count": 8,
+  "killed": 8,
+  "survived": [],
+  "python": "3.12.14",
+  "results": [
+    {
+      "id": "A-cache-ignores-sha256",
+      "design_item": "brief: the cache ignores the content hash",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+      "replacements": [
+        [
+          "else (observed.path, observed.stat, observed.sha256, context)",
+          "else (observed.path, observed.stat, \"\", context)"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp171_health_verdict_cache"
+      ],
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_same_size_same_mtime_content_change_misses (tests.test_hamcp171_health_verdict_cache.VerdictCacheTests.test_same_size_same_mtime_content_change_misses)"
+      ],
+      "seconds": 6.5
+    },
+    {
+      "id": "B1-cache-survives-record-change",
+      "design_item": "brief: the cache survives a record change",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+      "replacements": [
+        [
+          "and self._safety_verdict_cache.get(plan.plan_id) == proof",
+          "and plan.plan_id in self._safety_verdict_cache"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp171_health_verdict_cache"
+      ],
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_detector_context_change_misses (tests.test_hamcp171_health_verdict_cache.VerdictCacheTests.test_detector_context_change_misses)"
+      ],
+      "seconds": 4.0
+    },
+    {
+      "id": "B2-no-invalidation-on-worker-failure",
+      "design_item": "D1: a failed scan keeps cached verdicts",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+      "replacements": [
+        [
+          "                    self._safety_verdict_invalidate()\n                    raise",
+          "                    raise"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp171_health_verdict_cache"
+      ],
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_unexpected_worker_failure_discards_every_verdict (tests.test_hamcp171_health_verdict_cache.VerdictCacheTests.test_unexpected_worker_failure_discards_every_verdict)"
+      ],
+      "seconds": 8.4
+    },
+    {
+      "id": "B3-no-invalidation-on-abandoned-job-failure",
+      "design_item": "D1: an abandoned job's drained failure keeps cached verdicts",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+      "replacements": [
+        [
+          "                    # caller cancellation (BaseException) must not be swallowed.\n                    self._safety_verdict_invalidate()",
+          "                    # caller cancellation (BaseException) must not be swallowed.\n                    pass"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp171_health_verdict_cache"
+      ],
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_abandoned_job_failure_discards_every_verdict (tests.test_hamcp171_health_verdict_cache.VerdictCacheTests.test_abandoned_job_failure_discards_every_verdict)"
+      ],
+      "seconds": 2.3
+    },
+    {
+      "id": "B4-deep-audit-keeps-verdicts",
+      "design_item": "D1: the internal deep audit keeps cached verdicts",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+      "replacements": [
+        [
+          "        self._safety_verdict_invalidate()\n        plan = self.repository.rebuild_navigation_index()",
+          "        plan = self.repository.rebuild_navigation_index()"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp171_health_verdict_cache"
+      ],
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_internal_deep_audit_discards_every_verdict (tests.test_hamcp171_health_verdict_cache.VerdictCacheTests.test_internal_deep_audit_discards_every_verdict)"
+      ],
+      "seconds": 4.6
+    },
+    {
+      "id": "F-deep-rescan-uses-cache",
+      "design_item": "D1: the deep re-scan reuses cached verdicts",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+      "replacements": [
+        [
+          "        if deep:\n            self._safety_verdict_cache.clear()\n",
+          "        if deep:\n"
+        ],
+        [
+          "                not deep\n                and proof is not None\n",
+          "                proof is not None\n"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp171_health_verdict_cache"
+      ],
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_deep_rescan_bypasses_then_repopulates (tests.test_hamcp171_health_verdict_cache.VerdictCacheTests.test_deep_rescan_bypasses_then_repopulates)"
+      ],
+      "seconds": 3.3
+    },
+    {
+      "id": "C-sweep-skips-needed-parent-read",
+      "design_item": "brief: the sweep skips a needed parent read",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/f3_runtime/runtime.py",
+      "replacements": [
+        [
+          "            if record is not None and (\n                record.dispatch_intent is None",
+          "            if False and record is not None and (\n                record.dispatch_intent is None"
+        ]
+      ],
+      "tests": [
+        "tests.test_hamcp171_sweep_parent_reads",
+        "tests.test_f3_orphan_child_recovery"
+      ],
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "FAIL test_orphan_cleanup_still_reads_parent_and_converges (tests.test_hamcp171_sweep_parent_reads.SweepParentReadTests.test_orphan_cleanup_still_reads_parent_and_converges)"
+      ],
+      "seconds": 3.5
+    },
+    {
+      "id": "D-worker-on-loop-thread",
+      "design_item": "GIL/event loop: validation runs on the owner loop",
+      "path": "hass_mcp_engineering_beta/ha_mcp_engineering/governance/service.py",
+      "replacements": [
+        [
+          "job = asyncio.create_task(asyncio.to_thread(\n                    _validate_health_records,",
+          "job = asyncio.create_task((lambda f, *a: asyncio.sleep(0, f(*a)))(\n                    _validate_health_records,"
+        ]
+      ],
+      "tests": [
+        "tests.test_governance_async_health"
+      ],
+      "returncode": 1,
+      "killed": true,
+      "killed_by_import_or_syntax_error": false,
+      "first_failures": [
+        "ERROR test_abandoned_unexpected_failure_does_not_poison_fresh_reader (tests.test_governance_async_health.AsyncHealthTests.test_abandoned_unexpected_failure_does_not_poison_fresh_reader)"
+      ],
+      "seconds": 8.3
+    }
+  ]
+}

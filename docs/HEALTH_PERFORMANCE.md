@@ -62,8 +62,9 @@ validate the record they load.
 
 **Deep re-scan.** `get_server_health(deep_storage_audit=true)` clears the
 cache, re-validates every record, and repopulates it from that run. The input
-is optional and defaults to `false`; it is the only public schema change, and
-the tool count is unchanged. The existing internal `deep_audit_plan_store`
+is optional and defaults to `false`. It and the two description lines that
+document it are the only public descriptor change, and the tool count is
+unchanged. The existing internal `deep_audit_plan_store`
 reconciliation also discards every verdict, so the next health call validates
 every record.
 

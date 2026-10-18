@@ -17,8 +17,8 @@ Builds on 2.4.1-beta.16's optional reviewed YAML configuration reader
   are never persisted, are empty at start and are never used by
   authoritative paths.
 - Add the optional `get_server_health(deep_storage_audit=true)` input, which
-  bypasses and repopulates the cache. It is the only public schema change;
-  the catalog stays at 88. The internal `deep_audit_plan_store` also
+  bypasses and repopulates the cache. It and two description lines are the
+  only public descriptor change; the catalog stays at 88. The internal `deep_audit_plan_store` also
   discards every verdict.
 - Report cache hits, misses, deep re-scans and invalidations under
   `plan_store_scaling.safety_verdict_cache`. `health_cache_hit_count` now
