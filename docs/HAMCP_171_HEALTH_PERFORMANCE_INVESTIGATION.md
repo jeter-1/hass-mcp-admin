@@ -16,6 +16,20 @@ full); `sanitization.py` and `application.py` are at the package root. In the
 `governance/service.py`; elsewhere it refers to the file most recently named
 in the same cell or sentence.
 
+**Base update (`2.4.1-beta.16`).** While this report was in validation,
+`main` advanced to `119be1b` (PR #267, HAMCP-162, `2.4.1-beta.16`), and this
+branch merged it. Of the files cited here, only `sanitization.py` changed. Its
+default pass now drives the same 12 segment rules and 8 serialized patterns
+(20 `_replace` passes per segment) from a `_SEGMENT_RULES` table, and
+`_sanitize_segment` (now `:411`) is still pure. The new strict pass
+(`identity_markers_only`) is used only by `providers/upstream_yaml_reader.py`,
+never by the health path, and `governance/resources.py` is unchanged. All
+`file:line` references stay pinned to `27df75b`. Re-run offline on the same
+435-plan store with `119be1b` code: the validation worker took 18.5 s (21.1 s
+at `27df75b`), and the per-job memo took 3.8 s (4.8×) with identical verdicts
+and the same 97.9% hit rate. The conclusions and owner decisions are
+unchanged.
+
 ## Evidence labels
 
 | Label | Meaning |
