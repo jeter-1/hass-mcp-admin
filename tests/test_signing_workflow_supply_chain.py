@@ -14,7 +14,10 @@ import copy
 import json
 from pathlib import Path
 import re
+import shlex
+import sys
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -37,8 +40,22 @@ SIGNING_WORKFLOWS = {
 SIGNING_LOCK = "hass_mcp_engineering_beta/requirements.lock"
 EXACT_PYTHON = re.compile(r"[0-9]+\.[0-9]+\.[0-9]+")
 SECRET_REFERENCE = re.compile(r"secrets\.([A-Za-z_][A-Za-z0-9_]*)")
+# Locates install steps for the tests; the guard itself parses every command.
 PIP_INSTALL = re.compile(r"\bpip3?\b[^\n]*?\binstall\b[^\n]*")
-REQUIREMENT_FILE = re.compile(r"(?:^|\s)(?:-r|--requirement)(?:\s+|=)(\S+)")
+# Shell control operators and command substitutions that start a new command.
+# Quotes are deliberately ignored here: a separator inside a quoted argument
+# only splits more aggressively, and an unbalanced remainder fails closed.
+SHELL_SEPARATOR = re.compile(r"&&|\|\||[;&|\n()`{}]|\$\(")
+# Every package-installer name in a run script must belong to a parsed
+# invocation; one that cannot be attributed (for example inside a Python
+# string) fails closed.
+INSTALLER_NAME = re.compile(r"(?<![\w.-])(?:pip(?:3(?:\.[0-9]+)?)?|pipx|uvx?)(?![\w.-])")
+PIP_PROGRAM = re.compile(r"pip(?:3(?:\.[0-9]+)?)?")
+PYTHON_PROGRAM = re.compile(r"python(?:3(?:\.[0-9]+)?)?")
+NESTED_SHELL_TEXT = re.compile(r"\s")
+# The only options a hash-locked pip install may carry.
+INSTALL_FLAGS = {"--isolated", "--require-hashes"}
+INSTALL_VALUE_OPTIONS = {"--index-url", "-i", "-r", "--requirement", "--only-binary"}
 GENERAL_TEST_STACK = ("unittest", "pytest", "check.ps1", "tests/requirements")
 OBSERVATION_STACK = (
     "docker ",
@@ -100,15 +117,143 @@ def _is_signing_job(job: dict) -> bool:
     return "environment" in job or bool(_signing_secrets(job))
 
 
+class Install:
+    """One parsed package-installer invocation from a run script."""
+
+    def __init__(self, tool: str, arguments: list[str]) -> None:
+        self.tool = tool
+        self.arguments = arguments
+        # Installer names this invocation accounts for (``uv pip`` has two).
+        self.names = len(tool.split())
+
+    def __repr__(self) -> str:
+        return f"Install({self.tool!r}, {self.arguments!r})"
+
+    @property
+    def is_install(self) -> bool:
+        if self.tool in {"pipx", "uvx", "uv"}:
+            # pipx, uvx and uv project/tool commands resolve and install
+            # packages without the committed hash lock.
+            return True
+        return "install" in self.arguments or "sync" in self.arguments
+
+    def requirement_files(self) -> list[str] | None:
+        """Return the -r files of a hash-locked pip install, or None if unlocked."""
+
+        if self.tool not in {"pip", "uv pip"}:
+            return None
+        arguments = list(self.arguments)
+        subcommand = "install"
+        while arguments and arguments[0] == "--isolated":
+            arguments.pop(0)
+        if not arguments or arguments.pop(0) != subcommand:
+            return None
+        flags: set[str] = set()
+        values: dict[str, list[str]] = {}
+        while arguments:
+            argument = arguments.pop(0)
+            option, equals, inline = argument.partition("=")
+            if argument in INSTALL_FLAGS:
+                flags.add(argument)
+            elif option in INSTALL_VALUE_OPTIONS:
+                if equals:
+                    value = inline
+                elif arguments:
+                    value = arguments.pop(0)
+                else:
+                    return None
+                values.setdefault(option, []).append(value)
+            else:
+                # Package specifiers, editable installs, extra indexes,
+                # constraints, redirections and every unknown option fail.
+                return None
+        files = values.get("-r", []) + values.get("--requirement", [])
+        if (
+            "--require-hashes" not in flags
+            or values.get("--only-binary") != [":all:"]
+            or len(values.get("--index-url", []) + values.get("-i", [])) > 1
+            or not files
+            or any(not value.endswith(".lock") for value in files)
+        ):
+            return None
+        return files
+
+
+def _segment_installs(argv: list[str]) -> list[Install]:
+    """Find every installer invocation in one simple command's words."""
+
+    starts: list[tuple[int, int, str]] = []
+    for index, word in enumerate(argv):
+        name = word.rsplit("/", 1)[-1]
+        following = argv[index + 1 : index + 3]
+        if PIP_PROGRAM.fullmatch(name):
+            if index >= 1 and argv[index - 1] in {"-m", "uv"}:
+                continue  # counted at its python -m or uv prefix
+            starts.append((index, index + 1, "pip"))
+        elif name == "pipx":
+            starts.append((index, index + 1, "pipx"))
+        elif name == "uvx":
+            starts.append((index, index + 1, "uvx"))
+        elif name == "uv":
+            if following[:1] == ["pip"]:
+                starts.append((index, index + 2, "uv pip"))
+            else:
+                starts.append((index, index + 1, "uv"))
+        elif PYTHON_PROGRAM.fullmatch(name):
+            rest = argv[index + 1 :]
+            if "-m" in rest:
+                module_at = rest.index("-m")
+                module = rest[module_at + 1 : module_at + 2]
+                if module and PIP_PROGRAM.fullmatch(module[0]):
+                    starts.append((index, index + module_at + 3, "pip"))
+    installs: list[Install] = []
+    for position, (_start, arguments_at, tool) in enumerate(starts):
+        end = starts[position + 1][0] if position + 1 < len(starts) else len(argv)
+        installs.append(Install(tool, argv[arguments_at:end]))
+    return installs
+
+
+def install_invocations(text: str) -> list[Install] | None:
+    """Parse every installer invocation in a run script, or None if unparseable.
+
+    Commands are split on ``&&``, ``||``, ``;``, ``|``, ``&``, newlines,
+    subshells, braces and command substitutions; quoted words that contain
+    shell text (``bash -c "..."``) are parsed recursively.
+    """
+
+    text = re.sub(r"\\\n\s*", " ", text)
+    installs: list[Install] = []
+    for segment in SHELL_SEPARATOR.split(text):
+        if not segment.strip():
+            continue
+        try:
+            argv = shlex.split(segment)
+        except ValueError:
+            if INSTALLER_NAME.search(segment):
+                return None
+            continue
+        installs.extend(_segment_installs(argv))
+        for word in argv:
+            if NESTED_SHELL_TEXT.search(word) and INSTALLER_NAME.search(word):
+                nested = install_invocations(word)
+                if nested is None:
+                    return None
+                installs.extend(nested)
+    # Every installer name must be attributed to a parsed invocation; an
+    # unattributed name means an install the parser cannot see.
+    if len(INSTALLER_NAME.findall(text)) != sum(install.names for install in installs):
+        return None
+    return installs
+
+
 def _install_violations(text: str) -> bool:
-    for match in PIP_INSTALL.finditer(text):
-        command = match.group(0)
-        if "--require-hashes" not in command or "--only-binary=:all:" not in command:
-            return True
-        files = [value.strip("'\"") for value in REQUIREMENT_FILE.findall(command)]
-        if not files or any(not value.endswith(".lock") for value in files):
-            return True
-    return False
+    installs = install_invocations(text)
+    if installs is None:
+        return True
+    return any(
+        install.is_install and install.requirement_files() is None
+        for install in installs
+    )
 
 
 def job_violations(workflow: dict, job: dict, *, signing_workflow: bool) -> set[str]:
@@ -143,9 +288,8 @@ def job_violations(workflow: dict, job: dict, *, signing_workflow: bool) -> set[
             action = _action(step)
             if action and action not in SIGNING_JOB_ACTIONS:
                 violations.add("SIGNING_JOB_EXTRA_ACTION")
-            for install in PIP_INSTALL.finditer(_run_text(step)):
-                files = REQUIREMENT_FILE.findall(install.group(0))
-                if [value.strip("'\"") for value in files] != [SIGNING_LOCK]:
+            for install in install_invocations(_run_text(step)) or []:
+                if install.is_install and install.requirement_files() != [SIGNING_LOCK]:
                     violations.add("SIGNING_JOB_EXTRA_INSTALL")
         if SECRET_REFERENCE.search(json.dumps(job.get("env", {}))):
             violations.add("SIGNING_SECRET_SCOPE")
@@ -493,6 +637,174 @@ class GuardMutationTests(unittest.TestCase):
         found = workflow_violations("publish-rc-image.yml", workflow)["promote"]
         self.assertNotEqual(found, REVIEWED_EXCEPTIONS[("publish-rc-image.yml", "promote")])
         self.assertIn("UNHASHED_INSTALL", found)
+
+
+LOCKED_INSTALL = (
+    "python -m pip --isolated install --require-hashes --only-binary=:all: "
+    f"--index-url https://pypi.org/simple -r {SIGNING_LOCK}"
+)
+UNHASHED_PACKAGE = "synthetic-unhashed-package"
+
+
+def _first_install_only(text: str) -> list[Install] | None:
+    """Mutant parser: sees only the first installer invocation in a step."""
+
+    installs = _REAL_INSTALL_INVOCATIONS(text)
+    return installs if installs is None else installs[:1]
+
+
+def _line_regex_install_violations(text: str) -> bool:
+    """Mutant guard: the pre-correction (7974e33) physical-line regex check."""
+
+    for match in PIP_INSTALL.finditer(text):
+        command = match.group(0)
+        if "--require-hashes" not in command or "--only-binary=:all:" not in command:
+            return True
+        files = re.findall(r"(?:^|\s)(?:-r|--requirement)(?:\s+|=)(\S+)", command)
+        files = [value.strip("'\"") for value in files]
+        if not files or any(not value.endswith(".lock") for value in files):
+            return True
+    return False
+
+
+_REAL_INSTALL_INVOCATIONS = install_invocations
+
+
+class ChainedInstallGuardTests(unittest.TestCase):
+    """Every install in a privileged step is parsed and locked (Codex M2)."""
+
+    CHAINS = {
+        "and": f"{LOCKED_INSTALL} && python -m pip install {UNHASHED_PACKAGE}",
+        "or": f"{LOCKED_INSTALL} || python -m pip install {UNHASHED_PACKAGE}",
+        "semicolon": f"{LOCKED_INSTALL}; python -m pip install {UNHASHED_PACKAGE}",
+        "newline": f"{LOCKED_INSTALL}\npython -m pip install {UNHASHED_PACKAGE}",
+    }
+
+    def _sign_with(self, name: str, run: str) -> set[str]:
+        workflow = copy.deepcopy(_load(name))
+        step = GuardMutationTests._step(
+            workflow["jobs"]["sign"], lambda step: PIP_INSTALL.search(_run_text(step))
+        )
+        self.assertEqual(step["run"], LOCKED_INSTALL)
+        step["run"] = run
+        return workflow_violations(name, workflow).get("sign", set())
+
+    def test_codex_chained_probe_fails_in_both_signing_jobs(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            for label, run in self.CHAINS.items():
+                with self.subTest(workflow=name, chain=label):
+                    found = self._sign_with(name, run)
+                    self.assertIn("UNHASHED_INSTALL", found)
+                    self.assertIn("SIGNING_JOB_EXTRA_INSTALL", found)
+
+    def test_every_shell_separator_exposes_the_second_install(self) -> None:
+        second = f"pip install {UNHASHED_PACKAGE}"
+        scripts = {
+            "and": f"{LOCKED_INSTALL} && {second}",
+            "or": f"{LOCKED_INSTALL} || {second}",
+            "semicolon": f"{LOCKED_INSTALL};{second}",
+            "pipe": f"echo y | {second}",
+            "background": f"{LOCKED_INSTALL} & {second}",
+            "newline": f"{LOCKED_INSTALL}\n{second}",
+            "continuation": f"{LOCKED_INSTALL} \\\n  && {second}",
+            "continued arguments": f"{LOCKED_INSTALL} \\\n  {UNHASHED_PACKAGE}",
+            "subshell": f"{LOCKED_INSTALL} && ({second})",
+            "command substitution": f"echo $({second})",
+            "backticks": f"echo `{second}`",
+            "braces": f"{{ {LOCKED_INSTALL}; {second}; }}",
+            "bash -c": f"bash -c '{LOCKED_INSTALL} && {second}'",
+            "sh -c double quotes": f'sh -c "{second}"',
+            "if": f"if true; then {second}; fi",
+            "trailing package": f"{LOCKED_INSTALL} {UNHASHED_PACKAGE}",
+            "unbalanced quote": f"{LOCKED_INSTALL} && {second} '",
+            "python string": f"python -c \"import os; os.system('{second}')\"",
+        }
+        for label, script in scripts.items():
+            with self.subTest(separator=label):
+                self.assertTrue(_install_violations(script))
+
+    def test_every_installer_invocation_is_checked(self) -> None:
+        variants = {
+            "pip": f"pip install {UNHASHED_PACKAGE}",
+            "pip3": f"pip3 install {UNHASHED_PACKAGE}",
+            "pip3.12": f"pip3.12 install {UNHASHED_PACKAGE}",
+            "absolute pip": f"/usr/bin/pip install {UNHASHED_PACKAGE}",
+            "python -m pip": f"python -m pip install {UNHASHED_PACKAGE}",
+            "python3 -m pip": f"python3 -m pip install {UNHASHED_PACKAGE}",
+            "python3.12 -m pip3": f"python3.12 -m pip3 install {UNHASHED_PACKAGE}",
+            "python -I -m pip": f"python -I -m pip install {UNHASHED_PACKAGE}",
+            "sudo pip": f"sudo pip install {UNHASHED_PACKAGE}",
+            "env pip": f"env PIP_NO_INPUT=1 pip install {UNHASHED_PACKAGE}",
+            "uv pip": f"uv pip install {UNHASHED_PACKAGE}",
+            "uv pip sync": "uv pip sync requirements.txt",
+            "uv tool": f"uv tool install {UNHASHED_PACKAGE}",
+            "uv add": f"uv add {UNHASHED_PACKAGE}",
+            "uvx": f"uvx {UNHASHED_PACKAGE}",
+            "pipx": f"pipx install {UNHASHED_PACKAGE}",
+            "pipx run": f"pipx run {UNHASHED_PACKAGE}",
+            "extra package": f"{LOCKED_INSTALL} {UNHASHED_PACKAGE}",
+            "extra index": f"{LOCKED_INSTALL} --extra-index-url https://example.invalid/simple",
+            "second index": f"{LOCKED_INSTALL} --index-url https://example.invalid/simple",
+            "unlocked file": LOCKED_INSTALL.replace(".lock", ".txt"),
+            "constraint": f"{LOCKED_INSTALL} -c constraints.txt",
+            "editable": f"{LOCKED_INSTALL} -e .",
+            "no hashes": LOCKED_INSTALL.replace("--require-hashes ", ""),
+            "source builds": LOCKED_INSTALL.replace("--only-binary=:all: ", ""),
+            "partial binary": LOCKED_INSTALL.replace(":all:", "cryptography"),
+        }
+        for label, script in variants.items():
+            with self.subTest(invocation=label):
+                self.assertTrue(_install_violations(script))
+
+    def test_signing_job_rejects_a_second_locked_file(self) -> None:
+        for name in SIGNING_WORKFLOWS:
+            run = (
+                f"{LOCKED_INSTALL} && python -m pip install --require-hashes "
+                "--only-binary=:all: -r scripts/other.lock"
+            )
+            with self.subTest(workflow=name):
+                found = self._sign_with(name, run)
+                self.assertNotIn("UNHASHED_INSTALL", found)
+                self.assertIn("SIGNING_JOB_EXTRA_INSTALL", found)
+
+    def test_legitimate_locked_installs_still_pass(self) -> None:
+        legitimate = {
+            "single locked": LOCKED_INSTALL,
+            "two locked": f"{LOCKED_INSTALL} && {LOCKED_INSTALL}",
+            "folded multiline": (
+                "python -m pip --isolated install --require-hashes --only-binary=:all: \\\n"
+                '  --index-url https://pypi.org/simple -r "$RUNNER_TEMP/release-validation.lock"'
+            ),
+            "requirement option": LOCKED_INSTALL.replace(" -r ", " --requirement="),
+            "uv pip locked": (
+                f"uv pip install --require-hashes --only-binary=:all: -r {SIGNING_LOCK}"
+            ),
+            "coreutils install": "install -D -m 0644 -- source target",
+            "pip version": "python -m pip --version",
+            "no installer": "python scripts/sign.py --output out.json",
+        }
+        for label, script in legitimate.items():
+            with self.subTest(script=label):
+                self.assertFalse(_install_violations(script))
+        for name in SIGNING_WORKFLOWS:
+            with self.subTest(workflow=name):
+                self.assertEqual(self._sign_with(name, LOCKED_INSTALL), set())
+        self.assertEqual(all_violations(), REVIEWED_EXCEPTIONS)
+
+    def test_first_install_only_guard_misses_the_chain(self) -> None:
+        module = sys.modules[__name__]
+        for name in SIGNING_WORKFLOWS:
+            run = self.CHAINS["and"]
+            with self.subTest(workflow=name, guard="real"):
+                self.assertIn("UNHASHED_INSTALL", self._sign_with(name, run))
+            with self.subTest(workflow=name, guard="first install only"):
+                with mock.patch.object(module, "install_invocations", _first_install_only):
+                    self.assertEqual(self._sign_with(name, run), set())
+            with self.subTest(workflow=name, guard="pre-correction line regex"):
+                with mock.patch.object(
+                    module, "_install_violations", _line_regex_install_violations
+                ):
+                    self.assertNotIn("UNHASHED_INSTALL", self._sign_with(name, run))
 
 
 # How each workflow binds the recorded revision to the verified attestation.
