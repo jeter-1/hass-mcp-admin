@@ -2928,20 +2928,24 @@ class Core20269CatalogTests(unittest.IsolatedAsyncioTestCase):
             {"ha_get_operation_status"},
         )
         self.assertEqual(ENGINEERING_STATIC_TOOL_COUNT + counts["automatic_read"], 87)
-        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 30)
+        # HAMCP-162: the optional ha_config_get_yaml route is mapped but is
+        # never a stock policy entry (30 -> 31).
+        self.assertEqual(len(DELEGATED_CORE_REQUIREMENTS), 31)
         self.assertEqual(
             {
                 item.upstream_name
                 for item in policy.tools
                 if item.is_read_route or item.classification == "held_for_canary"
             },
-            set(DELEGATED_CORE_REQUIREMENTS) - {"ha_manage_blueprints"},
+            set(DELEGATED_CORE_REQUIREMENTS)
+            - {"ha_manage_blueprints", "ha_config_get_yaml"},
         )
         current = registry.by_version["8.5.0"].policy
         self.assertEqual(
             {item.upstream_name for item in current.tools
              if item.is_read_route or item.classification == "held_for_canary"},
-            set(DELEGATED_CORE_REQUIREMENTS) - {"ha_get_blueprint"},
+            set(DELEGATED_CORE_REQUIREMENTS)
+            - {"ha_get_blueprint", "ha_config_get_yaml"},
         )
         self.assertEqual(
             delegated_requirements("ha_manage_blueprints"),

@@ -1,5 +1,73 @@
 # Changelog
 
+## 2.4.1-beta.16 - Optional reviewed YAML configuration reader (HAMCP-162)
+
+Builds on 2.4.1-beta.15's rollback Core lease, cancel telemetry, expired
+pre-intent deadline and gateway audit reason corrections (HAMCP-189 PR B + C)
+and 2.4.1-beta.14's Core-authority, unmapped-refusal and durable-cancel
+corrections (HAMCP-189 PR A).
+
+- Add the delegated read-only tool `ha_config_get_yaml` for one mapping-key
+  path of `configuration.yaml`. Engineering sends a fixed upstream shape
+  (`include_content: false`, `include_parsed: true`).
+- Refuse every other file (including `secrets.yaml`, `packages/`,
+  `configuration.yml` and case variants) and every credential-shaped path
+  before route acquisition, Core acquisition and any upstream call.
+- Redact on absolute canonical key paths:
+  - credential-shaped keys and containers;
+  - connection-shaped values, except one strict safe SQLite shape;
+  - credential text: userinfo, 13 words and the `pass`/`key` token rule;
+  - percent-encoding up to four rounds, NFKC and casefold;
+  - PEM, opaque blobs and the existing sanitizer patterns. Opaque blobs
+    are also sought with all whitespace removed, so a wrapped header-less
+    key body is redacted (A1).
+
+  `!secret`/`!env_var` become typed reference-name markers, trusted only by
+  the identity of a marker the same read minted. Values and `!env_var`
+  defaults are never returned, and `!include` is never followed.
+- Apply the 4,000-node cap to the upstream tree before redaction, so a
+  truncated mapping is judged in its returned shape; marker-shaped mappings
+  are withheld. Pass every other client-visible field (limitations, include
+  and path descriptions, warnings, metadata, error details) through a final
+  shared-sanitizer pass with the configured known secrets.
+- Trust redaction markers by registry identity only (H3). Upstream text
+  that could read as a marker, including encoded, look-alike and
+  byte-identical forms, is replaced whole as `redaction_marker_collision`,
+  and a mapping with such a key is withheld. Every upstream string runs
+  through every rule. The shared sanitizer's default mode for other tools
+  is unchanged.
+- Screen every emitted string through one function, `screen`, with the
+  complete rule set in every one of 21 output positions (H4). Canonical
+  keys get the PEM and opaque-blob scanners; path segments are screened
+  under the segments above them. Values and list items keep the D12
+  exception for key text. A 798-cell rule × position matrix and a
+  coverage test pin it.
+- Build every HAMCP-162 synthetic secret at runtime from fragments, and
+  store the D1 captures and fixtures through a reversible encoding
+  (`docs/evidence/hamcp162/codec.py`, `DECODED.sha256`). A test fails if a
+  committed HAMCP-162 test, fixture or evidence file matches the
+  repository secret-pattern scan.
+- Disclose on every success the YAML 1.2 parse (K7), key conversion and
+  collapse (K5) and best-effort redaction (D12). Disclose the first-call
+  admin caller-token dependency (K1: the component's
+  `POST ha_mcp_tools/get_caller_token`) in the description; Engineering makes
+  no write or service call.
+- Map upstream errors to fixed codes, with no upstream text. HTTP 400 is
+  reported as "upstream validation failed or component unavailable" (K2);
+  non-UTF-8 and other 500 errors as "upstream read failed" (K4).
+- Admit the tool as optional only on the exact complete-descriptor binding
+  for ha-mcp 8.4.3 (78 -> 81 upstream tools) and 8.5.0 (77 -> 80):
+  - explicit dispositions for every registry version, with no default;
+  - excluded from the stock order fingerprint, aggregate admission and signed
+    selections;
+  - a drift, removal or disposition change between admission and dispatch
+    gives zero dispatch;
+  - Core mapping: basic REST and WebSocket reads.
+- `ha_list_files` and `ha_read_file` stay reviewed and never exposed. The
+  catalog grows from 87 to 88 tools (29 delegated).
+- Preserve signed registries, HOLD, support window, policy JSON, persisted
+  formats, workflows and stable v1.
+
 ## 2.4.1-beta.15 - Rollback Core lease, cancel telemetry, expired pre-intent deadline, gateway audit reason (HAMCP-189)
 
 Builds on 2.4.1-beta.14.
