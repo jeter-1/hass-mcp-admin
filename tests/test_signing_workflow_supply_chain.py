@@ -6,8 +6,10 @@ committed hash locks on an exact Python.  Signing jobs additionally hold no
 write token, run no general test or upstream-observation stack, install only
 the runtime lock, and receive their secret in exactly one step.  Write jobs in
 signing workflows run no Python at all.  Image-publishing write jobs (HAMCP-204)
-install nothing and run Python only as allowlisted stdlib-only workflow-authority
-scripts.  Mutation tests prove each rule fails.
+install nothing and run Python only as ``python3 -I -S`` on allowlisted,
+self-contained workflow-authority scripts: the flags exclude implicit
+third-party loading; code review, backed by a static check, governs deliberate
+loading.  Mutation tests prove each rule fails.
 """
 
 from __future__ import annotations
@@ -106,11 +108,14 @@ SIGNING_JOB_ACTIONS = {
 # ``python3 -I -S`` executing an allowlisted, self-contained, stdlib-only
 # repository script that the job materialized from the workflow-authority
 # commit, by path, with no other interpreter option, no ``-c``/``-m`` and no
-# code or data on standard input.  ``-S`` keeps every site-packages directory
-# off ``sys.path`` and ``-I`` ignores ``PYTHON*`` variables, the user site and
-# the script's own directory, so no installed or sibling module is importable
-# by any spelling; that runtime isolation is the boundary.  The static
-# stdlib-import check below is a secondary net.
+# code or data on standard input.  ``python3 -I -S`` guarantees that no
+# third-party package is loaded IMPLICITLY (from site-packages, PYTHON*
+# environment variables, the user site or the current directory).  It does
+# NOT, and cannot, prevent a script from DELIBERATELY loading code (sys.path
+# edits, pickle, exec, etc.).  Deliberate in-script loading in the allowlisted
+# scripts is governed by code review (every change goes through a reviewed PR),
+# backed by the static check ``_stdlib_violations`` below, which is a backstop
+# and not a complete guarantee (HAMCP-204 M4; residual owner-accepted).
 PUBLISHING_TEST_STACK = GENERAL_TEST_STACK + (
     "compileall",
     "discover",
@@ -1681,6 +1686,95 @@ M3_DYNAMIC_IMPORT_SOURCES = (
 )
 
 
+# Codex R4 (M4), verbatim: an optional loader that edits the import path through
+# ``from sys import path`` and imports a planted module through pickle.  It
+# passed every test at 7e29fb2 and loads the planted module under ``-I -S``.
+CODEX_R4_PROBE = (
+    "from sys import path\n"
+    "import pickle\n"
+    "path.insert(0, str(Path(__file__).parent))\n"
+    "try:\n"
+    "    _optional_value = pickle.loads(b\"cyaml\\nSENTINEL\\n.\")\n"
+    "except (ImportError, AttributeError):\n"
+    "    pass\n"
+)
+# HAMCP-204 M4: obvious deliberate-loading constructs, by class.  Each must
+# fail the static backstop; none is prevented by ``python3 -I -S`` itself.
+DELIBERATE_LOADER_SOURCES = {
+    "sys-path": (
+        "import sys\nsys.path.insert(0, '.')\n",
+        "import sys as s\ns.path.append('.')\n",
+        "from sys import path\npath.insert(0, '.')\n",
+        "from sys import path as p\np.append('.')\n",
+        "import sys\ngetattr(sys, 'path').append('.')\n",
+        "import sys\nvars(sys)['path'].append('.')\n",
+        "import os\nos.sys.path.append('.')\n",
+        "from sys import *\npath.append('.')\n",
+    ),
+    "sys-meta-path": (
+        "import sys\nsys.meta_path.insert(0, object())\n",
+        "from sys import meta_path\nmeta_path.clear()\n",
+        "import sys as s\ns.meta_path.clear()\n",
+    ),
+    "sys-path-hooks": (
+        "import sys\nsys.path_hooks.append(object)\n",
+        "from sys import path_hooks\npath_hooks.append(object)\n",
+        "import sys\nsys.path_importer_cache.clear()\n",
+    ),
+    "deserializer": (
+        "import pickle\npickle.loads(b'cyaml\\nSENTINEL\\n.')\n",
+        "from pickle import loads\nloads(b'')\n",
+        "import _pickle\n",
+        "import marshal\nmarshal.loads(b'')\n",
+        "import shelve\nshelve.open('db')\n",
+        "import copyreg\n",
+        "import json\njson.pickle\n",
+        "from json import Unpickler\n",
+    ),
+    "exec-eval-compile": (
+        "exec(open('x').read())\n",
+        "eval(input())\n",
+        "code = compile(open('x').read(), 'x', 'exec')\n",
+        "run = exec\nrun(open('x').read())\n",
+        "exec('import yaml')\n",
+    ),
+    "importlib-file-loader": (
+        "from importlib.util import spec_from_file_location, module_from_spec\n",
+        "import importlib.util\n",
+        "from importlib.machinery import SourceFileLoader\n",
+        "import json\njson.spec_from_file_location('x', 'x.py')\n",
+        "import json\njson.module_from_spec(None)\n",
+        "import json\njson.SourceFileLoader('x', 'x.py').load_module()\n",
+        "import json\njson.loader.exec_module(None)\n",
+        "import _frozen_importlib_external\n",
+        "import _imp\n",
+    ),
+    "runpy": (
+        "import runpy\nrunpy.run_path('x.py')\n",
+        "from runpy import run_module\nrun_module('yaml')\n",
+        "import json\njson.run_path('x.py')\n",
+    ),
+    "ctypes": (
+        "import ctypes\n",
+        "from ctypes import CDLL\n",
+        "import ctypes.util\n",
+        "import _ctypes\n",
+    ),
+    "zipimport": (
+        "import zipimport\nzipimport.zipimporter('x.zip').load_module('yaml')\n",
+        "from zipimport import zipimporter\n",
+        "import json\njson.zipimporter('x.zip')\n",
+    ),
+    "dunder-import": (
+        "name = 'yaml'\n__import__(name)\n",
+        "__import__(input())\n",
+        "load = __import__\nload(open('x').read())\n",
+        "import builtins\nbuiltins.__import__(name)\n",
+        "getattr(__builtins__, '__import__')(name)\n",
+    ),
+}
+
+
 def _stdin_blind_approved_python(words: list[str], position: int) -> bool:
     """Mutant: approves an allowlisted script whatever feeds its standard input."""
 
@@ -1696,30 +1790,71 @@ def _stdin_blind_approved_python(words: list[str], position: int) -> bool:
 
 
 
-# Secondary net (HAMCP-204 M3) behind the ``python3 -I -S`` runtime boundary:
-# modules that load or run code dynamically, and names and attributes that
-# reach the import or code-execution primitives by any reference, call or not
-# (aliases, ``builtins.__import__``, ``getattr`` strings).  It is deliberately
-# conservative, not a sandbox.
+# What ``python3 -I -S`` does and does not guarantee (HAMCP-204 M4, owner
+# decision): it guarantees that no third-party package is loaded IMPLICITLY
+# (from site-packages, PYTHON* environment variables, the user site or the
+# current directory).  It does NOT, and cannot, prevent a script from
+# DELIBERATELY loading code (sys.path edits, pickle, exec, etc.).  Deliberate
+# in-script loading in the allowlisted publication scripts is governed by code
+# review (every change goes through a reviewed PR), backed by the static check
+# below.  That residual is owner-accepted.
+#
+# The static check is a backstop that human review complements, NOT a
+# complete guarantee: Python has more ways to load code than any denylist can
+# name.  It fails on the obvious deliberate-loading constructs, by any
+# reference, call or not (aliases, ``from`` imports, ``builtins.__import__``,
+# ``getattr`` strings): non-stdlib or repository imports; import, loader,
+# deserializer and foreign-function modules; ``exec``/``eval``/``compile``
+# and ``__import__`` (literal arguments included, since ``exec('import x')``
+# is itself a loader); importlib file loaders; and any reference to the
+# import-path state of ``sys`` (``sys.path``, ``meta_path``, ``path_hooks``),
+# including through an alias, a ``from sys import`` or the bare module.
 DYNAMIC_MODULES = frozenset({
-    "builtins", "code", "codeop", "ctypes", "importlib", "imp", "marshal", "pkgutil",
-    "runpy", "site", "zipimport",
+    # Import machinery and code runners.
+    "_frozen_importlib", "_frozen_importlib_external", "_imp", "builtins", "code", "codeop",
+    "imp", "importlib", "pkgutil", "runpy", "site", "zipimport",
+    # Deserializers that import and call named objects.
+    "_pickle", "copyreg", "marshal", "pickle", "shelve",
+    # Foreign-function interfaces.
+    "_ctypes", "ctypes",
 })
 DYNAMIC_NAMES = frozenset({
     "__builtins__", "__import__", "__loader__", "__spec__", "compile", "eval", "exec",
     "import_module",
 })
+# Loader entry points, reachable as attributes or ``from`` imports.
+LOADER_NAMES = frozenset({
+    "ExtensionFileLoader", "FileFinder", "PathFinder", "SourceFileLoader",
+    "SourcelessFileLoader", "Unpickler", "exec_module", "load_module",
+    "module_from_spec", "run_module", "run_path", "spec_from_file_location",
+    "spec_from_loader", "zipimporter",
+})
 DYNAMIC_ATTRIBUTES = frozenset({
     "__builtins__", "__import__", "__loader__", "__spec__", "eval", "exec", "import_module",
-    "meta_path", "path_hooks", "path_importer_cache",
+    "meta_path", "path_hooks", "path_importer_cache", "sys",
+}) | LOADER_NAMES
+SYS_ATTRIBUTES = frozenset({
+    "executable", "meta_path", "modules", "path", "path_hooks", "path_importer_cache",
 })
-SYS_ATTRIBUTES = frozenset({"executable", "modules", "path"})
 
 
 def _stdlib_violations(path: Path) -> list[str]:
-    """Non-stdlib or repository imports, or dynamic code loading, in a script."""
+    """Non-stdlib or repository imports, or obvious deliberate code loading, in a script.
+
+    A backstop for code review, not a complete guarantee (see above).
+    """
 
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    sys_names = {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == "sys"
+    }
+    attribute_bases = {
+        id(node.value) for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+    }
     found = []
     for node in ast.walk(tree):
         modules = []
@@ -1730,8 +1865,12 @@ def _stdlib_violations(path: Path) -> list[str]:
                 found.append(f"relative import at line {node.lineno}")
             modules = [node.module or ""]
             for alias in node.names:
+                if alias.name == "*":
+                    found.append(f"star import from {node.module} at line {node.lineno}")
                 if alias.name in DYNAMIC_NAMES | DYNAMIC_ATTRIBUTES:
                     found.append(f"dynamic name {alias.name} imported at line {node.lineno}")
+                if node.module == "sys" and alias.name in SYS_ATTRIBUTES:
+                    found.append(f"sys.{alias.name} imported at line {node.lineno}")
         for module in modules:
             top = module.split(".", 1)[0]
             if top in DYNAMIC_MODULES:
@@ -1742,14 +1881,26 @@ def _stdlib_violations(path: Path) -> list[str]:
                 found.append(f"non-stdlib import {module} at line {node.lineno}")
         if isinstance(node, ast.Name) and node.id in DYNAMIC_NAMES:
             found.append(f"dynamic name {node.id} at line {node.lineno}")
+        if isinstance(node, ast.Name) and node.id in LOADER_NAMES:
+            found.append(f"loader name {node.id} at line {node.lineno}")
         if isinstance(node, ast.Attribute) and node.attr in DYNAMIC_ATTRIBUTES:
             found.append(f"dynamic attribute {node.attr} at line {node.lineno}")
+        if isinstance(node, ast.Attribute) and node.attr in DYNAMIC_MODULES:
+            # A loader module re-exported by another module (``json.pickle``).
+            found.append(f"dynamic module attribute {node.attr} at line {node.lineno}")
         if isinstance(node, ast.Constant) and node.value in {"__builtins__", "__import__"}:
             found.append(f"dynamic name string {node.value!r} at line {node.lineno}")
         if isinstance(node, ast.Attribute) and node.attr in SYS_ATTRIBUTES and (
-            isinstance(node.value, ast.Name) and node.value.id == "sys"
+            isinstance(node.value, ast.Name) and node.value.id in sys_names | {"sys"}
         ):
             found.append(f"sys.{node.attr} at line {node.lineno}")
+        if (
+            isinstance(node, ast.Name)
+            and node.id in sys_names
+            and id(node) not in attribute_bases
+        ):
+            # ``getattr(sys, ...)``, ``vars(sys)``, ``s = sys``: indirect access.
+            found.append(f"sys module used indirectly at line {node.lineno}")
     return found
 
 
@@ -1976,6 +2127,37 @@ class PublishingPythonInterpreterTests(unittest.TestCase):
             path.write_text(mutated, encoding="utf-8")
             self.assertTrue(_stdlib_violations(path))
 
+    def test_static_backstop_flags_each_deliberate_loading_class(self) -> None:
+        self.assertEqual(
+            set(DELIBERATE_LOADER_SOURCES),
+            {"sys-path", "sys-meta-path", "sys-path-hooks", "deserializer",
+             "exec-eval-compile", "importlib-file-loader", "runpy", "ctypes",
+             "zipimport", "dunder-import"},
+        )
+        for kind, sources in DELIBERATE_LOADER_SOURCES.items():
+            for source in sources:
+                with self.subTest(kind=kind, source=source), \
+                        tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "candidate.py"
+                    path.write_text(source, encoding="utf-8")
+                    self.assertTrue(_stdlib_violations(path))
+
+    def test_codex_r4_path_and_pickle_loader_fails_the_static_net(self) -> None:
+        # Codex R4 verbatim in the allowlisted release script: green on every
+        # test at 7e29fb2.  Both the ``from sys import path`` edit and the
+        # pickle loader are flagged independently.
+        source = (ROOT / "scripts/publication_github_release.py").read_text(encoding="utf-8")
+        self.assertEqual(source.count("\nimport sys\n"), 1)
+        mutated = source.replace("\nimport sys\n", "\nimport sys\n" + CODEX_R4_PROBE)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "publication_github_release.py"
+            path.write_text(mutated, encoding="utf-8")
+            violations = _stdlib_violations(path)
+        self.assertTrue(any(item.startswith("sys.path imported") for item in violations))
+        self.assertTrue(
+            any(item.startswith("dynamic import machinery pickle") for item in violations)
+        )
+
     def test_python3_without_isolation_or_no_site_fails(self) -> None:
         script = '"$RUNNER_TEMP/publication-policy/publication_digest_binding.py"'
         for run in (
@@ -2103,7 +2285,15 @@ def _isolated_run(script: Path, *arguments: str, flags=("-I", "-S"), env=None):
 
 
 class PublishingScriptIsolatedRuntimeTests(unittest.TestCase):
-    """HAMCP-204 M3: ``python3 -I -S`` is the stdlib-only boundary, proven by execution."""
+    """HAMCP-204 M3/M4: what ``python3 -I -S`` guarantees, proven by execution.
+
+    It guarantees that no third-party package is loaded IMPLICITLY (from
+    site-packages, PYTHON* environment variables, the user site or the current
+    directory).  It does NOT, and cannot, prevent a script from DELIBERATELY
+    loading code (sys.path edits, pickle, exec, etc.); Codex R4 below shows
+    one such load succeeding under the flags.  Deliberate loading is governed
+    by code review, backed by the static check ``_stdlib_violations``.
+    """
 
     def test_each_allowlisted_script_runs_alone_under_isolated_no_site(self) -> None:
         for name in sorted(PUBLISHING_SCRIPTS):
@@ -2147,6 +2337,31 @@ class PublishingScriptIsolatedRuntimeTests(unittest.TestCase):
             result = _isolated_run(script)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), "False")
+
+    def test_codex_r4_deliberate_loader_is_outside_the_runtime_guarantee(self) -> None:
+        # The owner-accepted residual, stated as fact: the flags do not stop a
+        # script that deliberately edits its import path and unpickles a
+        # planted module.  The static backstop flags R4; review governs the rest.
+        source = (ROOT / "scripts/publication_github_release.py").read_text(encoding="utf-8")
+        mutated = source.replace("\nimport sys\n", "\nimport sys\n" + CODEX_R4_PROBE)
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / "publication_github_release.py"
+            script.write_text(mutated, encoding="utf-8")
+            (Path(directory) / "yaml.py").write_text(
+                "print('planted yaml loaded')\nSENTINEL = 1\n", encoding="utf-8"
+            )
+            result = _isolated_run(script, "--help")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("planted yaml loaded", result.stdout)
+            self.assertTrue(_stdlib_violations(script))
+            # The implicit form of the same load is what the flags exclude.
+            implicit = Path(directory) / "implicit.py"
+            implicit.write_text("import yaml\n", encoding="utf-8")
+            self.assertIn("planted yaml loaded", _isolated_run(implicit, flags=("-S",)).stdout)
+            result = _isolated_run(implicit)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("planted yaml loaded", result.stdout)
+            self.assertIn("No module named 'yaml'", result.stderr)
 
     def test_isolation_ignores_planted_siblings_and_python_path(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
