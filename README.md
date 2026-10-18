@@ -1,6 +1,19 @@
 # HA MCP Engineering Server
 
-Engineering **2.4.1-beta.17** makes every Home Assistant REST path safe by
+Engineering **2.4.1-beta.18** verifies slow typed fan and power devices
+promptly (HAMCP-192). After dispatch it polls the entity inline for about 10
+seconds and verifies on the first match, so a device that reports a few
+seconds late is `succeeded_verified` instead of `observing`. The typed entity
+lease is 30 s instead of 120 s, so a task that still yields is re-read within
+about a minute, and one final read at the evidence deadline decides verified
+or manual review. A `lock_conflict` receipt names the blocking task, and
+receipts gain additive `observation_status` hints. A manual-review hold can be
+released only by a Home Assistant administrator on the Ingress page `/typed`,
+which shows the requested and freshly read state side by side; the release
+records a fresh readback, never dispatches and keeps the outcome
+`manual_review_required`.
+
+It builds on beta.17, which makes every Home Assistant REST path safe by
 construction (HAMCP-200). The REST transport accepts only a typed `Route`
 issued by `rest_path` for a reviewed template in a closed registry; a plain
 string is refused before any session or credential exists. Each bound value
@@ -16,7 +29,7 @@ could make Engineering send token-bearing GET requests to other
 HA/Supervisor routes, including any GET-enabled webhook (which can trigger
 automations); no POST/PUT/DELETE/PATCH was reachable.
 
-It builds on beta.16, which adds one optional reviewed delegated read,
+Beta.17 builds on beta.16, which adds one optional reviewed delegated read,
 `ha_config_get_yaml` (HAMCP-162). It reads one mapping-key path of
 `configuration.yaml` only:
 - every other file, including `secrets.yaml`, and every credential-shaped
@@ -67,8 +80,8 @@ beta.3's exact **ha-mcp 8.6.0** and **Core 2026.10.0** support.
 The healthy catalog is **87 tools: 59 native and 28 admitted delegated
 reads**. The Core profiles, probe and signed fingerprints, storage
 formats and RC1's multidict 6.9.1 security correction are preserved.
-See the [release notes](docs/V2_4_1_BETA17_RELEASE_NOTES.md) and
-[acceptance contract](docs/V2_4_1_BETA17_ACCEPTANCE.md).
+See the [release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
+[acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md).
 Installing Engineering does not upgrade upstream or complete installed acceptance.
 
 Josh's Engineering installation continues on the development track. The earlier
@@ -152,14 +165,14 @@ No second installation or migration is required. Historical v1.1.2 in
 `hass_mcp_admin/` is frozen and operationally retired; it is neither the
 current installation target nor a supported Engineering rollback.
 
-Read the [2.4.1-beta.17 release notes](docs/V2_4_1_BETA17_RELEASE_NOTES.md) and
-[2.4.1-beta.17 acceptance contract](docs/V2_4_1_BETA17_ACCEPTANCE.md). A source version does
+Read the [2.4.1-beta.18 release notes](docs/V2_4_1_BETA18_RELEASE_NOTES.md) and
+[2.4.1-beta.18 acceptance contract](docs/V2_4_1_BETA18_ACCEPTANCE.md). A source version does
 not prove publication, deployment or installed acceptance.
 
 ## Install or update Engineering
 
 Read the [inbound policy and migration requirements](docs/INBOUND_SECURITY.md)
-before an authorized 2.4.1-beta.17 deployment. MCP aliases beyond the strict loopback
+before an authorized 2.4.1-beta.18 deployment. MCP aliases beyond the strict loopback
 authority defaults and browser Origins need exact configuration. Explicit host
 lists replace the defaults. Retain independent management access because invalid
 options refuse startup; historical acceptance does not establish this boundary.
